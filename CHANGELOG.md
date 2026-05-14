@@ -9,6 +9,32 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [0.1.0] — 2026-05-13
 
+### Fixed
+
+- `LMStudioClient`: wrap raw `httpx` exceptions into typed `LLMTimeout` /
+  `LLMUnavailable` / `LLMBadResponse` subclasses across `complete()`, `ping()`,
+  and `_stream_impl()` so API responses always carry the structured error
+  envelope and correct HTTP status mapping.
+- `SQLiteRepository`: serialise all access to the shared connection with a
+  `threading.Lock` to make concurrent writes from `dispatch_fan_out` safe.
+- `ToolCallParser`: bare `{...}` objects that fail JSON validation now return
+  `None` (treated as prose) instead of raising; only fenced ```json``` blocks
+  raise `LLMBadResponse` on malformed JSON.
+- `FileMemoryRepository`: use UTC for episodic file naming so filenames are
+  stable across timezones and cloud regions.
+- `SummarizeAgent`: include every message in each historical turn (not only
+  the first user message) so multi-message turns retain full context.
+- `AccessLogMiddleware`: wrap `call_next` in `try/except/finally` so failed
+  requests still emit an INFO access log with status `500` and latency.
+- `telemetry.configure_telemetry`: attach `TraceContextFilter` to the
+  configured handler (not the root logger) so `trace_id` / `span_id` are
+  injected into every log record from child loggers.
+- `api/app.py` lifespan: simplify shutdown checks; `ctx.repo.close()` is
+  protected by a `None` check rather than `hasattr`.
+- `Dockerfile`: create `/app/data` and `/data` and `chown` to the `mangomas`
+  user so the default SQLite path and compose volume are writable from the
+  non-root runtime user.
+
 ### Added
 
 **Core platform**

@@ -32,6 +32,11 @@ COPY --from=builder /dist/*.whl /tmp/wheels/
 RUN pip install --no-cache-dir /tmp/wheels/*.whl \
     && rm -rf /tmp/wheels
 
+# Create writable data dir for default SQLite path (./data/mangomas.db) and the
+# compose-mounted /data volume.  Both are owned by the non-root user.
+RUN mkdir -p /app/data /data \
+    && chown -R mangomas:mangomas /app /data
+
 USER mangomas
 
 EXPOSE 8000

@@ -146,13 +146,21 @@ class ToolCallParser:
             return self._parse_raw(raw)
 
         # Priority 2: bare {...} object containing a "tool" key.
+        # Only fenced blocks raise on malformed JSON; bare detection must be
+        # tolerant so that prose containing curly braces never crashes the agent.
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and start < end:
             raw = text[start : end + 1]
             if '"tool"' in raw or "'tool'" in raw:
                 logger.debug("ToolCallParser: bare JSON object detected")
-                return self._parse_raw(raw)
+                try:
+                    return self._parse_raw(raw)
+                except LLMBadResponse:
+                    logger.debug(
+                        "ToolCallParser: bare JSON object failed validation; treating as prose"
+                    )
+                    return None
 
         return None
 

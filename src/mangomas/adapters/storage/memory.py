@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mangomas.config import MemorySettings
@@ -33,7 +33,8 @@ class FileMemoryRepository:
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _episodic_path(self, *, prefix: str = "") -> Path:
-        today = date.today().isoformat()
+        # UTC for stable filenames across timezones / cloud regions.
+        today = datetime.now(UTC).date().isoformat()
         stem = f"{prefix}-{today}" if prefix else today
         return self._root / f"{stem}.md"
 

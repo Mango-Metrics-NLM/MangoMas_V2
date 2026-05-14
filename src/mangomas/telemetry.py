@@ -123,15 +123,16 @@ def configure_telemetry(
             handler.setFormatter(
                 logging.Formatter("%(asctime)s %(levelname)s %(name)s :: %(message)s")
             )
+        # Filters attached to handlers run for every propagated record;
+        # filters attached to the root logger do NOT run for records emitted
+        # by child loggers, so trace_id/span_id must be injected here.
+        handler.addFilter(TraceContextFilter())
 
         logging.basicConfig(
             level=getattr(logging, log_level.upper(), logging.INFO),
             handlers=[handler],
             force=True,
         )
-
-        # Inject trace/span IDs into every log record.
-        logging.getLogger().addFilter(TraceContextFilter())
 
         # Install W3C TraceContext propagator for distributed tracing.
         set_global_textmap(TraceContextTextMapPropagator())

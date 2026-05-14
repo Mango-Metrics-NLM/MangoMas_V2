@@ -84,7 +84,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         ctx = app.state.orchestrator.context
         if hasattr(ctx.llm, "aclose"):
             await ctx.llm.aclose()
-        if hasattr(ctx.repo, "close") and ctx.repo is not None:
+        if ctx.repo is not None:
             ctx.repo.close()
         if ctx.memory is not None:
             ctx.memory.close()

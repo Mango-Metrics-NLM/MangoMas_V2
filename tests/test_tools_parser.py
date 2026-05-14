@@ -44,10 +44,15 @@ def test_parser_fenced_wrong_shape_raises_llm_bad_response() -> None:
         parser.parse('```json\n{"tool": "search", "arguments": "bad"}\n```')
 
 
-def test_parser_bare_json_invalid_raises_llm_bad_response() -> None:
+def test_parser_bare_json_invalid_returns_none() -> None:
+    """Bare ``{...}`` objects that fail JSON validation must NOT raise.
+
+    Only fenced ``` ```json ``` blocks are treated as authoritative tool calls;
+    bare braces in prose are best-effort and should fall through to ``None`` so
+    the LLM response is treated as natural text.
+    """
     parser = ToolCallParser()
-    with pytest.raises(LLMBadResponse, match="syntactically invalid"):
-        parser.parse('{"tool": bad}')
+    assert parser.parse('{"tool": bad}') is None
 
 
 def test_parser_valid_fenced_json_returns_tool_call() -> None:

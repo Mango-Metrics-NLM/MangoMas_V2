@@ -10,13 +10,31 @@ from typing import Any
 import httpx
 
 from mangomas.core.agent import Message
-from mangomas.errors import LLMBadResponse
+from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 
 logger = logging.getLogger(__name__)
 
 
 class LMStudioError(LLMBadResponse):
     """Raised when LM Studio returns an unexpected or malformed response."""
+
+
+def _translate_httpx_error(exc: BaseException, *, base_url: str) -> Exception:
+    """Map raw ``httpx`` exceptions to typed :class:`~mangomas.errors.LLMError` subclasses."""
+    if isinstance(exc, httpx.TimeoutException):
+        return LLMTimeout(
+            f"LM Studio request timed out at {base_url}",
+            detail=str(exc)[:200],
+        )
+    if isinstance(exc, httpx.HTTPStatusError):
+        return LMStudioError(
+            f"LM Studio returned HTTP {exc.response.status_code}",
+            detail=str(exc)[:200],
+        )
+    return LLMUnavailable(
+        f"LM Studio unreachable at {base_url}",
+        detail=f"{type(exc).__name__}: {exc}"[:200],
+    )
 
 
 class LMStudioClient:
@@ -52,8 +70,15 @@ class LMStudioClient:
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": (self._default_temperature if temperature is None else temperature),
         }
-        resp = await self._client.post(f"{self._base_url}/chat/completions", json=payload)
-        resp.raise_for_status()
+        try:
+            resp = await self._client.post(f"{self._base_url}/chat/completions", json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.error(
+                "LM Studio request failed",
+                extra={"error": type(exc).__name__, "base_url": self._base_url},
+            )
+            raise _translate_httpx_error(exc, base_url=self._base_url) from exc
         data = resp.json()
         try:
             return str(data["choices"][0]["message"]["content"])
@@ -66,8 +91,15 @@ class LMStudioClient:
 
     async def ping(self) -> None:
         """GET ``/models`` to verify the LM Studio server is reachable."""
-        resp = await self._client.get(f"{self._base_url}/models")
-        resp.raise_for_status()
+        try:
+            resp = await self._client.get(f"{self._base_url}/models")
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.error(
+                "LM Studio ping failed",
+                extra={"error": type(exc).__name__, "base_url": self._base_url},
+            )
+            raise _translate_httpx_error(exc, base_url=self._base_url) from exc
         logger.debug("LM Studio ping OK (%s)", self._base_url)
 
     async def stream(
@@ -92,23 +124,46 @@ class LMStudioClient:
             "temperature": (self._default_temperature if temperature is None else temperature),
             "stream": True,
         }
-        async with self._client.stream(
-            "POST", f"{self._base_url}/chat/completions", json=payload
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                chunk_data = line[len("data: ") :]
-                if chunk_data.strip() == "[DONE]":
-                    return
+        try:
+            stream_cm = self._client.stream(
+                "POST", f"{self._base_url}/chat/completions", json=payload
+            )
+            async with stream_cm as resp:
                 try:
-                    data = json.loads(chunk_data)
-                    content = str(data["choices"][0]["delta"].get("content") or "")
-                    if content:
-                        yield content
-                except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-                    logger.debug("Skipping unparseable SSE chunk: %s", exc)
+                    resp.raise_for_status()
+                except httpx.HTTPError as status_exc:
+                    raise _translate_httpx_error(
+                        status_exc, base_url=self._base_url
+                    ) from status_exc
+                async for line in resp.aiter_lines():
+                    yield_value = self._parse_sse_line(line)
+                    if yield_value is None:
+                        continue
+                    if yield_value == "":  # sentinel for [DONE]
+                        return
+                    yield yield_value
+        except httpx.HTTPError as exc:
+            logger.error(
+                "LM Studio stream request failed",
+                extra={"error": type(exc).__name__, "base_url": self._base_url},
+            )
+            raise _translate_httpx_error(exc, base_url=self._base_url) from exc
+
+    @staticmethod
+    def _parse_sse_line(line: str) -> str | None:
+        """Return a content token, an empty string sentinel for [DONE], or None to skip."""
+        if not line.startswith("data: "):
+            return None
+        chunk_data = line[len("data: ") :]
+        if chunk_data.strip() == "[DONE]":
+            return ""
+        try:
+            data = json.loads(chunk_data)
+            content = str(data["choices"][0]["delta"].get("content") or "")
+            return content or None
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            logger.debug("Skipping unparseable SSE chunk: %s", exc)
+            return None
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client (if owned)."""

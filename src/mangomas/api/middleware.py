@@ -45,22 +45,36 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
             extra={"request_id": request_id},
         )
 
-        response = await call_next(request)
-
-        latency_ms = round((time.perf_counter() - start) * 1000, 2)
-        logger.info(
-            "%s %s %d %.1fms",
-            request.method,
-            request.url.path,
-            response.status_code,
-            latency_ms,
-            extra={
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": response.status_code,
-                "latency_ms": latency_ms,
-            },
-        )
-
-        return response
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception:
+            logger.exception(
+                "%s %s unhandled exception",
+                request.method,
+                request.url.path,
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                },
+            )
+            raise
+        finally:
+            latency_ms = round((time.perf_counter() - start) * 1000, 2)
+            logger.info(
+                "%s %s %d %.1fms",
+                request.method,
+                request.url.path,
+                status_code,
+                latency_ms,
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": status_code,
+                    "latency_ms": latency_ms,
+                },
+            )

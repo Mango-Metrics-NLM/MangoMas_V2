@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -61,8 +62,13 @@ class SQLiteRepository:
         if self._path != ":memory:":
             Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
-        self._conn.execute(self._SCHEMA)
-        self._conn.commit()
+        # Serialise all access to the single shared connection.  ``sqlite3``
+        # supports ``check_same_thread=False`` but is not safe for concurrent
+        # writes/reads on one connection.
+        self._lock = threading.Lock()
+        with self._lock:
+            self._conn.execute(self._SCHEMA)
+            self._conn.commit()
 
     async def save_turn(
         self,
@@ -73,17 +79,18 @@ class SQLiteRepository:
         """Persist a single turn; returns the new row id."""
 
         def _write() -> int:
-            cur = self._conn.execute(
-                "INSERT INTO turns (ts, agent, request, response) VALUES (?, ?, ?, ?)",
-                (
-                    datetime.now(UTC).isoformat(),
-                    agent,
-                    request.model_dump_json(),
-                    response.model_dump_json(),
-                ),
-            )
-            self._conn.commit()
-            return int(cur.lastrowid or 0)
+            with self._lock:
+                cur = self._conn.execute(
+                    "INSERT INTO turns (ts, agent, request, response) VALUES (?, ?, ?, ?)",
+                    (
+                        datetime.now(UTC).isoformat(),
+                        agent,
+                        request.model_dump_json(),
+                        response.model_dump_json(),
+                    ),
+                )
+                self._conn.commit()
+                return int(cur.lastrowid or 0)
 
         return await asyncio.to_thread(_write)
 
@@ -91,10 +98,12 @@ class SQLiteRepository:
         """Return the most recent turns, newest first."""
 
         def _read() -> list[dict[str, Any]]:
-            cur = self._conn.execute(
-                "SELECT id, ts, agent, request, response FROM turns ORDER BY id DESC LIMIT ?",
-                (limit,),
-            )
+            with self._lock:
+                cur = self._conn.execute(
+                    "SELECT id, ts, agent, request, response FROM turns ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                )
+                rows = cur.fetchall()
             return [
                 {
                     "id": row[0],
@@ -103,11 +112,12 @@ class SQLiteRepository:
                     "request": json.loads(row[3]),
                     "response": json.loads(row[4]),
                 }
-                for row in cur.fetchall()
+                for row in rows
             ]
 
         return await asyncio.to_thread(_read)
 
     def close(self) -> None:
         """Close the underlying connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()

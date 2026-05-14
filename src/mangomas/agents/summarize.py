@@ -24,6 +24,8 @@ def _format_turns(turns: list[dict[str, Any]]) -> str:
     """Render persisted turns as a human-readable string (oldest turn first).
 
     ``list_turns`` returns newest-first; we reverse for chronological order.
+    Every message in the request is included so multi-message turns (system,
+    user, tool results) are not silently dropped.
     """
     lines: list[str] = []
     for turn in reversed(turns):
@@ -31,13 +33,14 @@ def _format_turns(turns: list[dict[str, Any]]) -> str:
         request_data: dict[str, Any] = turn.get("request", {})
         response_data: dict[str, Any] = turn.get("response", {})
         messages: list[dict[str, Any]] = request_data.get("messages", [])
-        user_msg: str = next(
-            (str(m.get("content", "")) for m in messages if m.get("role") == "user"),
-            "",
-        )
+        for m in messages:
+            role = str(m.get("role", "?")).capitalize()
+            content = str(m.get("content", ""))
+            if content:
+                lines.append(f"[{agent_name}] {role}: {content}")
         reply: str = str(response_data.get("content", ""))
-        lines.append(f"[{agent_name}] User: {user_msg}")
-        lines.append(f"[{agent_name}] Assistant: {reply}")
+        if reply:
+            lines.append(f"[{agent_name}] Assistant: {reply}")
     return "\n".join(lines)
 
 

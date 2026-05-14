@@ -90,7 +90,7 @@ def test_format_turns_chronological_order() -> None:
 
 
 def test_format_turns_missing_user_message() -> None:
-    """Graceful when request has no user message."""
+    """Graceful when request has no user message: only the assistant line appears."""
     turns = [
         {
             "agent": "chat",
@@ -99,7 +99,7 @@ def test_format_turns_missing_user_message() -> None:
         }
     ]
     text = _format_turns(turns)
-    assert "[chat] User:" in text  # empty but not crashed
+    assert "[chat] User:" not in text  # nothing to render for empty message list
     assert "[chat] Assistant: response" in text
 
 
