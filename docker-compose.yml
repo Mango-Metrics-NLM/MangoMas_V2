@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    image: mangomas:local
+    ports:
+      - "8000:8000"
+    environment:
+      # On Windows/macOS, host.docker.internal resolves to the host where LM Studio runs.
+      MANGOMAS_LLM__BASE_URL: "http://host.docker.internal:1234/v1"
+      MANGOMAS_LLM__MODEL: "local-model"
+      MANGOMAS_DB__URL: "sqlite:////data/mangomas.db"
+    volumes:
+      - mangomas-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mangomas-data:

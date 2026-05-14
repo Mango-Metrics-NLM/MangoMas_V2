@@ -1,0 +1,71 @@
+# C3 — Component Diagram (FastAPI Application)
+
+This diagram shows the components inside the FastAPI Application container and
+how they interact at the class / module level.
+
+```mermaid
+C4Component
+  title Mango-Mas V2 — FastAPI Application Components
+
+  Container_Boundary(api_boundary, "FastAPI Application (src/mangomas/api/)") {
+    Component(app_factory, "create_app()", "FastAPI factory function", "Constructs and configures the FastAPI app. Wires middleware, exception handlers, and routes. Invokes build_orchestrator() during lifespan unless an orchestrator is injected (test mode).")
+    Component(access_log, "AccessLogMiddleware", "Starlette middleware", "Emits a structured access-log record (method, path, status, duration) for every request.")
+    Component(trace_mw, "TraceMiddleware", "Starlette middleware / OTel", "Opens and closes an OpenTelemetry span per request. Tracer is obtained lazily via trace.get_tracer() to avoid capturing NoopTracer at import time.")
+    Component(error_handler, "MangomasError handler", "FastAPI exception handler", "Walks the exception MRO to select the most specific HTTP status code and returns a structured JSON envelope.")
+    Component(health_routes, "Health routes", "FastAPI routes", "GET /healthz (+ /health alias) → liveness. GET /readyz (+ /ready alias) → ReadinessReport from check_ready().")
+    Component(agent_routes, "Agent routes", "FastAPI routes", "GET /agents, POST /agents/{name}/invoke, POST /agents/{name}/stream. Delegates to Orchestrator.")
+  }
+
+  Container_Boundary(core_boundary, "Core (src/mangomas/core/)") {
+    Component(orchestrator, "Orchestrator", "Domain service", "dispatch() and stream_dispatch() look up agents in a Registry[Agent], invoke handle() or stream(), and persist turns. Lazy OTel tracer.")
+    Component(registry, "Registry[T]", "Generic registry", "Thread-safe name → factory/instance store. Used for agents, LLM providers, and storage providers.")
+    Component(health_svc, "check_ready()", "Health service", "Pings LLM via PingableLLMClient.ping() and checks DB connectivity. Returns ReadinessReport.")
+  }
+
+  Container_Boundary(agents_boundary, "Agents (src/mangomas/agents/)") {
+    Component(chat_agent, "ChatAgent", "Agent + StreamingAgent", "Single-turn conversational agent. Falls back to buffered complete() with a warning log when the LLM does not implement StreamingLLMClient.")
+    Component(summarize_agent, "SummarizeAgent", "Agent", "Fetches recent turns from TurnRepository and asks the LLM to summarise them.")
+    Component(tool_agent, "ToolAgent", "Agent", "Multi-step control loop: calls LLM, parses tool-call fences, dispatches ToolSpec, repeats up to max_steps.")
+    Component(planner_agent, "PlannerAgent", "Agent", "Generates a structured plan from user input.")
+    Component(reviewer_agent, "ReviewerAgent", "Agent", "Reviews a plan or response and returns structured feedback.")
+  }
+
+  Container_Boundary(adapters_boundary, "Adapters (src/mangomas/adapters/)") {
+    Component(lmstudio_client, "LMStudioClient", "LLMClient + StreamingLLMClient + PingableLLMClient", "Sends requests to LM Studio /v1/chat/completions and /v1/models via httpx.AsyncClient.")
+    Component(sqlite_repo, "SQLiteRepository", "TurnRepository", "Persists conversation turns to a local SQLite database.")
+  }
+
+  Rel(app_factory, access_log, "adds middleware")
+  Rel(app_factory, trace_mw, "adds middleware")
+  Rel(app_factory, error_handler, "registers exception handler")
+  Rel(app_factory, health_routes, "mounts routes")
+  Rel(app_factory, agent_routes, "mounts routes")
+  Rel(agent_routes, orchestrator, "dispatch() / stream_dispatch()")
+  Rel(health_routes, health_svc, "check_ready(orchestrator)")
+  Rel(health_svc, lmstudio_client, "ping()")
+  Rel(orchestrator, registry, "looks up Agent by name")
+  Rel(orchestrator, sqlite_repo, "persists turn via TurnRepository")
+  Rel(registry, chat_agent, "resolves 'chat'")
+  Rel(registry, summarize_agent, "resolves 'summarize'")
+  Rel(registry, tool_agent, "resolves 'tool_agent'")
+  Rel(registry, planner_agent, "resolves 'planner'")
+  Rel(registry, reviewer_agent, "resolves 'reviewer'")
+  Rel(chat_agent, lmstudio_client, "complete() / stream()")
+  Rel(summarize_agent, lmstudio_client, "complete()")
+  Rel(tool_agent, lmstudio_client, "complete()")
+  Rel(planner_agent, lmstudio_client, "complete()")
+  Rel(reviewer_agent, lmstudio_client, "complete()")
+```
+
+## Notes
+
+- `Registry[T]` is the single extensibility point for agents and providers.
+  Adding a new agent or LLM adapter does not require changes to `Orchestrator`,
+  `create_app()`, or any existing component.
+- `TraceMiddleware` and `AccessLogMiddleware` are the two middleware components.
+  There is no separate "request-id middleware" — correlation is carried via the
+  OTel span context.
+- `check_ready()` is in `src/mangomas/api/health.py` and is called by the
+  `/readyz` route handler.
+- All components that accept external input are configurable via
+  `mangomas.config.Settings`; no hardcoded endpoints or model ids.

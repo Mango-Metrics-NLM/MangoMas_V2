@@ -1,0 +1,140 @@
+"""Application configuration via pydantic-settings.
+
+All settings can be overridden by env vars with the ``MANGOMAS_`` prefix and
+``__`` as the nested delimiter (e.g. ``MANGOMAS_LLM__BASE_URL``).
+
+Default values are also exposed as module-level ``DEFAULT_*`` constants so
+tests can import them instead of repeating magic literals.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ── Module-level defaults (single source of truth) ────────────────────────────
+
+DEFAULT_LLM_PROVIDER: str = "lmstudio"
+DEFAULT_LLM_BASE_URL: str = "http://localhost:1234/v1"
+DEFAULT_LLM_MODEL: str = "local-model"
+DEFAULT_LLM_API_KEY: str = "lm-studio"
+DEFAULT_LLM_TIMEOUT_SECONDS: float = 60.0
+DEFAULT_LLM_TEMPERATURE: float = 0.2
+
+DEFAULT_DB_PROVIDER: str = "sqlite"
+DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"
+
+DEFAULT_API_HOST: str = "0.0.0.0"  # noqa: S104
+DEFAULT_API_PORT: int = 8000
+DEFAULT_API_READY_TIMEOUT: float = 2.0
+
+DEFAULT_LOG_FORMAT: Literal["text", "json"] = "text"
+DEFAULT_LOG_BODY_TRUNCATE: int = 512
+
+DEFAULT_LOOP_MAX_STEPS: int = 1
+DEFAULT_LOOP_STEP_TIMEOUT: float = 30.0
+DEFAULT_TOOL_MAX_STEPS: int = 5
+
+DEFAULT_MEMORY_PROVIDER: str = "file"
+DEFAULT_MEMORY_DIR: str = "memory"
+DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
+DEFAULT_MEMORY_ENABLED: bool = False
+
+
+# ── Sub-settings models ────────────────────────────────────────────────────────
+
+
+class LLMSettings(BaseModel):
+    """LLM endpoint configuration (LM Studio by default; OpenAI-compatible)."""
+
+    provider: str = DEFAULT_LLM_PROVIDER
+    base_url: str = DEFAULT_LLM_BASE_URL
+    model: str = DEFAULT_LLM_MODEL
+    api_key: str = DEFAULT_LLM_API_KEY
+    timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
+    temperature: float = DEFAULT_LLM_TEMPERATURE
+
+
+class DBSettings(BaseModel):
+    """Persistence configuration."""
+
+    provider: str = DEFAULT_DB_PROVIDER
+    url: str = DEFAULT_DB_URL
+
+
+class APISettings(BaseModel):
+    """HTTP server configuration."""
+
+    host: str = DEFAULT_API_HOST
+    port: int = DEFAULT_API_PORT
+    ready_timeout_seconds: float = DEFAULT_API_READY_TIMEOUT
+
+
+class LogSettings(BaseModel):
+    """Logging format and filtering configuration."""
+
+    format: Literal["text", "json"] = DEFAULT_LOG_FORMAT
+    body_truncate: int = DEFAULT_LOG_BODY_TRUNCATE
+
+
+class AgentSettings(BaseModel):
+    """Per-agent overrides loaded from ``MANGOMAS_AGENTS__<NAME>__*`` env vars."""
+
+    system_prompt: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    model_override: str | None = None
+
+
+class LoopSettings(BaseModel):
+    """Iterative control-loop parameters."""
+
+    max_steps: int = DEFAULT_LOOP_MAX_STEPS
+    step_timeout_seconds: float = DEFAULT_LOOP_STEP_TIMEOUT
+
+
+class MemorySettings(BaseModel):
+    """Dual-layer markdown memory configuration."""
+
+    enabled: bool = DEFAULT_MEMORY_ENABLED
+    provider: str = DEFAULT_MEMORY_PROVIDER
+    memory_dir: str = DEFAULT_MEMORY_DIR
+    index_file: str = DEFAULT_MEMORY_INDEX
+
+
+class Settings(BaseSettings):
+    """Top-level application settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MANGOMAS_",
+        env_nested_delimiter="__",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    env: Literal["local", "dev", "prod"] = "local"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+    llm: LLMSettings = Field(default_factory=LLMSettings)
+    db: DBSettings = Field(default_factory=DBSettings)
+    api: APISettings = Field(default_factory=APISettings)
+    log: LogSettings = Field(default_factory=LogSettings)
+
+    # Per-agent overrides keyed by agent name.
+    agents: dict[str, AgentSettings] = Field(default_factory=dict)
+
+    loop: LoopSettings = Field(default_factory=LoopSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
+
+    # Set to True to enable entry-point-based agent discovery (Phase C).
+    discovery_enabled: bool = False
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return the cached settings singleton."""
+    return Settings()

@@ -1,0 +1,102 @@
+"""Shared pytest fixtures."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+from mangomas.adapters.storage import SQLiteRepository
+from mangomas.agents import ChatAgent
+from mangomas.config import Settings, get_settings
+from mangomas.core import AgentContext, Orchestrator
+
+# Re-export fakes so existing ``from tests.conftest import FakeLLM`` imports
+# continue to work during the one-cycle migration window.
+from tests.fakes import (
+    FakeLLM,
+    FakeMemoryRepository,
+    FakeRepository,
+    FakeTool,
+    NonPingableFakeLLM,
+)
+
+__all__ = ["FakeLLM", "FakeMemoryRepository", "FakeRepository", "FakeTool", "NonPingableFakeLLM"]
+
+
+# ── Collection gates ────────────────────────────────────────────────────────
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Skip integration/LM Studio tests unless explicitly enabled."""
+    run_integration = os.getenv("RUN_INTEGRATION") == "1"
+    run_lmstudio = os.getenv("RUN_LMSTUDIO") == "1"
+    integration_skip = pytest.mark.skip(reason="set RUN_INTEGRATION=1 to run integration tests")
+    lmstudio_skip = pytest.mark.skip(reason="set RUN_LMSTUDIO=1 to run LM Studio tests")
+
+    for item in items:
+        path_parts = set(Path(str(item.fspath)).parts)
+        if "integration" in path_parts and not run_integration:
+            item.add_marker(integration_skip)
+        if "lmstudio" in item.keywords and not run_lmstudio:
+            item.add_marker(lmstudio_skip)
+
+
+# ── Settings fixture ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def settings() -> Iterator[Settings]:
+    """Return a fresh Settings instance and clear the lru_cache on teardown."""
+    get_settings.cache_clear()
+    yield Settings()
+    get_settings.cache_clear()
+
+
+# ── Storage fixtures ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def repo() -> Iterator[SQLiteRepository]:
+    """In-memory SQLiteRepository (for storage-layer tests)."""
+    r = SQLiteRepository(":memory:")
+    yield r
+    r.close()
+
+
+@pytest.fixture
+def fake_repo() -> FakeRepository:
+    """Pure in-memory FakeRepository (for unit tests that don't touch SQLite)."""
+    return FakeRepository()
+
+
+@pytest.fixture
+def fake_memory() -> FakeMemoryRepository:
+    """Pure in-memory FakeMemoryRepository (for unit tests)."""
+    return FakeMemoryRepository()
+
+
+# ── LLM fixture ───────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def fake_llm() -> FakeLLM:
+    return FakeLLM()
+
+
+@pytest.fixture
+def fake_tool() -> FakeTool:
+    return FakeTool()
+
+
+# ── Orchestrator fixture ──────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def orchestrator(fake_llm: FakeLLM, repo: SQLiteRepository) -> Orchestrator:
+    ctx = AgentContext(llm=fake_llm, repo=repo)
+    orch = Orchestrator(ctx)
+    orch.register(ChatAgent())
+    return orch
