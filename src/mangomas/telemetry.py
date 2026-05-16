@@ -127,6 +127,10 @@ def configure_telemetry(
         # filters attached to the root logger do NOT run for records emitted
         # by child loggers, so trace_id/span_id must be injected here.
         handler.addFilter(TraceContextFilter())
+        # Import locally to avoid an import cycle (mangomas.api → mangomas.telemetry).
+        from mangomas.api.correlation import CorrelationFilter
+
+        handler.addFilter(CorrelationFilter())
 
         logging.basicConfig(
             level=getattr(logging, log_level.upper(), logging.INFO),
