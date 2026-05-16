@@ -29,6 +29,7 @@ from mangomas.config import (
 )
 from mangomas.core import Agent, AgentContext, Orchestrator
 from mangomas.registry import Registry
+from mangomas.secrets import secrets_registry
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,29 @@ AgentFactory: TypeAlias = Callable[[AgentSettings | None], Agent]
 agent_registry: Registry[AgentFactory] = Registry("agent")
 
 # ── Factory helpers ────────────────────────────────────────────────────────────
+
+
+def _resolve_llm_secrets(llm_cfg: LLMSettings, secrets_provider_name: str) -> LLMSettings:
+    """Return *llm_cfg* with ``api_key`` resolved via the SecretsProvider seam.
+
+    When ``llm_cfg.secret_ref`` is unset, *llm_cfg* is returned unchanged. When
+    set, the named secrets provider is looked up and its ``get(secret_ref)``
+    return value replaces ``api_key`` on a fresh copy of the settings model.
+    If the provider returns ``None`` the inline ``api_key`` is kept — local
+    development with no env var configured continues to work without a vault.
+    """
+    if not llm_cfg.secret_ref:
+        return llm_cfg
+    provider = secrets_registry.get(secrets_provider_name)
+    resolved = provider.get(llm_cfg.secret_ref)
+    if resolved is None:
+        logger.debug(
+            "secret_ref %r not resolved by provider %r; keeping inline api_key",
+            llm_cfg.secret_ref,
+            secrets_provider_name,
+        )
+        return llm_cfg
+    return llm_cfg.model_copy(update={"api_key": resolved})
 
 
 def _lmstudio_factory(cfg: LLMSettings) -> LMStudioClient:
@@ -100,7 +124,8 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         extra={"llm_provider": cfg.llm.provider, "db_provider": cfg.db.provider},
     )
 
-    llm = llm_registry.get(cfg.llm.provider)(cfg.llm)
+    llm_cfg = _resolve_llm_secrets(cfg.llm, cfg.secrets.provider)
+    llm = llm_registry.get(llm_cfg.provider)(llm_cfg)
     repo = _storage_registry.get(cfg.db.provider)(cfg.db)
 
     memory = None
