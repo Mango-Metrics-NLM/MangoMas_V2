@@ -1,4 +1,4 @@
-"""Shared fixtures for the LM Studio E2E suite.
+"""Shared fixtures and helpers for the LM Studio E2E suite.
 
 All fixtures read configuration from the environment with the canonical
 defaults from :mod:`mangomas.config` as fallback. No model ids or URLs are
@@ -18,12 +18,30 @@ Fixtures
     ASGI app built via :func:`~mangomas.api.app.create_app` with the
     orchestrator above injected (so no lifespan is run). Suitable for
     :class:`httpx.AsyncClient` over :class:`httpx.ASGITransport`.
+
+Helpers (importable)
+--------------------
+``parse_sse_data(line)``
+    Decode a ``data: {...}`` SSE line into a dict (returns ``None`` for
+    non-data frames).
+``make_lmstudio_settings(base_url, model, *, timeout_seconds=...)``
+    Build a fresh :class:`~mangomas.config.Settings` instance pointed at
+    LM Studio with an in-memory SQLite repo — for scenarios that need to
+    construct an orchestrator outside the standard fixture (e.g. to swap
+    the LLM provider via :meth:`Registry.scoped`).
+``orchestrator_cleanup(orch)``
+    Async context manager that yields and then closes the LLM client and
+    SQLite repo on the way out. Replaces the manual try/finally
+    ``aclose() + close()`` pattern.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -49,6 +67,66 @@ from tests.constants import LMSTUDIO_BASE_URL_ENV, LMSTUDIO_MODEL_ENV
 # MANGOMAS_LLM__TIMEOUT_SECONDS at the env level.
 LMSTUDIO_E2E_TIMEOUT_SECONDS: float = 240.0
 
+# In-memory SQLite URL used by every E2E scenario so a developer's local
+# DB is never touched by an LM Studio test run.
+_E2E_DB_URL: str = "sqlite:///:memory:"
+
+
+# ── Shared utility helpers ───────────────────────────────────────────────────
+
+
+def parse_sse_data(line: str) -> dict[str, Any] | None:
+    """Decode a ``data: {...}`` SSE line. Returns ``None`` for non-data lines."""
+    if not line.startswith("data: "):
+        return None
+    payload = line[len("data: ") :].strip()
+    if not payload:
+        return None
+    decoded: dict[str, Any] = json.loads(payload)
+    return decoded
+
+
+def make_lmstudio_settings(
+    base_url: str,
+    model: str,
+    *,
+    timeout_seconds: float = LMSTUDIO_E2E_TIMEOUT_SECONDS,
+) -> Settings:
+    """Construct a fresh :class:`Settings` pointed at LM Studio + in-memory SQLite.
+
+    Used by scenarios that build their own orchestrator (e.g. to swap the
+    LLM provider via :meth:`Registry.scoped` or to target a bad URL path).
+    """
+    return Settings(
+        llm=LLMSettings(
+            provider="lmstudio",
+            base_url=base_url,
+            model=model,
+            api_key=DEFAULT_LLM_API_KEY,
+            timeout_seconds=timeout_seconds,
+            temperature=DEFAULT_LLM_TEMPERATURE,
+        ),
+        db=DBSettings(provider="sqlite", url=_E2E_DB_URL),
+    )
+
+
+@asynccontextmanager
+async def orchestrator_cleanup(orch: Orchestrator) -> AsyncIterator[None]:
+    """Async context manager that closes the orchestrator's LLM + repo on exit.
+
+    Replaces the boilerplate ``try: ... finally: ctx.llm.aclose() +
+    ctx.repo.close()`` pattern across E2E scenarios that build their own
+    orchestrator.
+    """
+    try:
+        yield
+    finally:
+        ctx = orch.context
+        if hasattr(ctx.llm, "aclose"):
+            await ctx.llm.aclose()
+        if isinstance(ctx.repo, SQLiteRepository):
+            ctx.repo.close()
+
 
 @pytest.fixture
 def lmstudio_base_url() -> str:
@@ -73,26 +151,10 @@ async def lmstudio_orchestrator(
     so that the developer's local env vars cannot accidentally redirect
     persistence to a real database. Storage is always in-memory SQLite.
     """
-    settings = Settings(
-        llm=LLMSettings(
-            provider="lmstudio",
-            base_url=lmstudio_base_url,
-            model=lmstudio_model,
-            api_key=DEFAULT_LLM_API_KEY,
-            timeout_seconds=LMSTUDIO_E2E_TIMEOUT_SECONDS,
-            temperature=DEFAULT_LLM_TEMPERATURE,
-        ),
-        db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
-    )
+    settings = make_lmstudio_settings(lmstudio_base_url, lmstudio_model)
     orch = build_orchestrator(settings)
-    try:
+    async with orchestrator_cleanup(orch):
         yield orch
-    finally:
-        ctx = orch.context
-        if hasattr(ctx.llm, "aclose"):
-            await ctx.llm.aclose()
-        if ctx.repo is not None:
-            ctx.repo.close()
 
 
 @pytest.fixture

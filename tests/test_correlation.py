@@ -174,3 +174,52 @@ async def test_middleware_resets_correlation_after_request(
     # After the request returns, the contextvar in *this* task must not retain
     # the request-scoped value.
     assert get_correlation_id() is None
+
+
+# ── Middleware exception path ─────────────────────────────────────────────────
+
+
+class _BoomAgent:
+    """Agent whose ``handle()`` raises a non-MangomasError unhandled exception.
+
+    Used to drive ``AccessLogMiddleware``'s ``except`` branch — the code
+    path that logs ``unhandled exception`` and re-raises with the
+    correlation id attached.
+    """
+
+    name = "boom"
+
+    async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:  # noqa: ARG002
+        raise RuntimeError("intentional test failure inside handler")
+
+
+@pytest.fixture
+def _boom_app() -> Iterator[FastAPI]:
+    llm = FakeLLM()
+    ctx = AgentContext(llm=llm, repo=None)
+    orch = Orchestrator(ctx)
+    orch.register(_BoomAgent())
+    yield create_app(orchestrator=orch)
+
+
+async def test_middleware_logs_unhandled_exception_with_correlation(
+    _boom_app: FastAPI,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The ``except Exception`` branch must log + re-raise with correlation context."""
+    transport = httpx.ASGITransport(app=_boom_app, raise_app_exceptions=False)
+    with caplog.at_level(logging.ERROR, logger="mangomas.api.middleware"):
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                "/agents/boom/invoke",
+                json={"messages": []},
+                headers={"X-Request-ID": "boom-trace-id"},
+            )
+
+    # Starlette's default ServerErrorMiddleware converts the re-raise to 500.
+    assert response.status_code == 500, response.text
+    # The middleware's structured exception log must have fired.
+    unhandled = [rec for rec in caplog.records if "unhandled exception" in rec.message]
+    assert unhandled, "expected an 'unhandled exception' log line from the middleware"
+    # Correlation id must be on the record (set via ``extra=...``).
+    assert any(getattr(rec, "correlation_id", None) == "boom-trace-id" for rec in unhandled)

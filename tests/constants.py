@@ -18,6 +18,22 @@ DEFAULT_TEMPERATURE: float = 0.2
 LMSTUDIO_BASE_URL_ENV: str = "LMSTUDIO_BASE_URL"
 LMSTUDIO_MODEL_ENV: str = "LMSTUDIO_MODEL"
 
+# ── HTTP client timeouts (test-scoped) ────────────────────────────────────────
+# Per-request timeout for httpx.AsyncClient calls in E2E tests. The underlying
+# LMStudioClient timeout is configured separately via
+# ``LMSTUDIO_E2E_TIMEOUT_SECONDS`` in ``tests/lmstudio/conftest.py``; this
+# value bounds how long the test itself waits for the ASGI roundtrip to
+# return (which for LM Studio scenarios is effectively bounded by the LLM
+# client's timeout anyway).
+HTTPX_REQUEST_TIMEOUT_SECONDS: float = 60.0
+# Tighter timeout for tests that *expect* a fast failure response and should
+# not be patient about hanging requests.
+HTTPX_ERROR_PATH_TIMEOUT_SECONDS: float = 30.0
+
+# ── ASGI test transport base URL ──────────────────────────────────────────────
+# httpx idiom for in-process ASGI testing — not a real server.
+ASGI_TEST_BASE_URL: str = "http://testserver"
+
 # ── DB defaults ───────────────────────────────────────────────────────────────
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"

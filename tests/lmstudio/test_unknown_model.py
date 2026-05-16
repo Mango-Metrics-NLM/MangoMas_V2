@@ -20,17 +20,10 @@ import logging
 import httpx
 import pytest
 
-from mangomas.adapters.storage import SQLiteRepository
 from mangomas.api.app import create_app
 from mangomas.composition import build_orchestrator
-from mangomas.config import (
-    DEFAULT_LLM_API_KEY,
-    DEFAULT_LLM_TEMPERATURE,
-    DBSettings,
-    LLMSettings,
-    Settings,
-)
-from tests.lmstudio.conftest import LMSTUDIO_E2E_TIMEOUT_SECONDS
+from tests.constants import ASGI_TEST_BASE_URL, HTTPX_ERROR_PATH_TIMEOUT_SECONDS
+from tests.lmstudio.conftest import make_lmstudio_settings, orchestrator_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -47,35 +40,20 @@ async def test_bad_api_path_returns_502_envelope(
     base_without_version = lmstudio_base_url.rsplit("/v", 1)[0]
     bad_base_url = f"{base_without_version}{_BAD_API_VERSION_SUFFIX}"
 
-    settings = Settings(
-        llm=LLMSettings(
-            provider="lmstudio",
-            base_url=bad_base_url,
-            model=lmstudio_model,
-            api_key=DEFAULT_LLM_API_KEY,
-            timeout_seconds=LMSTUDIO_E2E_TIMEOUT_SECONDS,
-            temperature=DEFAULT_LLM_TEMPERATURE,
-        ),
-        db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
-    )
+    settings = make_lmstudio_settings(bad_base_url, lmstudio_model)
     orch = build_orchestrator(settings)
     app = create_app(orchestrator=orch)
     transport = httpx.ASGITransport(app=app)
-    try:
+    async with orchestrator_cleanup(orch):
         with caplog.at_level(logging.WARNING, logger="mangomas.api.app"):
             async with httpx.AsyncClient(
-                transport=transport, base_url="http://testserver"
+                transport=transport, base_url=ASGI_TEST_BASE_URL
             ) as client:
                 response = await client.post(
                     "/agents/chat/invoke",
                     json={"messages": [{"role": "user", "content": "hello"}]},
-                    timeout=30.0,
+                    timeout=HTTPX_ERROR_PATH_TIMEOUT_SECONDS,
                 )
-    finally:
-        ctx = orch.context
-        await ctx.llm.aclose()
-        if isinstance(ctx.repo, SQLiteRepository):
-            ctx.repo.close()
 
     assert response.status_code == 502, response.text
     body = response.json()
