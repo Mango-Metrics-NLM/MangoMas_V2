@@ -1,13 +1,13 @@
 """Composition root: build the orchestrator with adapters wired via registries.
 
-The module-level ``_llm_registry`` and ``_storage_registry`` are seeded once at
+The module-level ``llm_registry`` and ``_storage_registry`` are seeded once at
 import time.  ``build_orchestrator`` reads ``settings.llm.provider`` and
 ``settings.db.provider`` to look up the appropriate factory, constructs adapters,
 and registers all agents with the orchestrator.
 
 Adding a new LLM or storage provider requires only:
   1. Implementing the corresponding Protocol (``LLMClient`` / ``TurnRepository``).
-  2. Calling ``_llm_registry.register(name, factory)`` here.
+  2. Calling ``llm_registry.register(name, factory)`` here.
 """
 
 from __future__ import annotations
@@ -35,8 +35,13 @@ logger = logging.getLogger(__name__)
 # ── Provider registries ────────────────────────────────────────────────────────
 # Values are callables (factories) that accept the relevant sub-settings object
 # and return a fully initialised adapter.
+#
+# ``llm_registry`` is exported (not underscore-prefixed) so test suites can use
+# :meth:`Registry.scoped` to swap an LLM factory for the duration of a block
+# (e.g. for streaming-fallback exercises). Storage and memory registries remain
+# private — tests can provide explicit Settings instead.
 
-_llm_registry: Registry[Callable[[LLMSettings], Any]] = Registry("llm")
+llm_registry: Registry[Callable[[LLMSettings], Any]] = Registry("llm")
 _storage_registry: Registry[Callable[[DBSettings], Any]] = Registry("storage")
 _memory_registry: Registry[Callable[[MemorySettings], Any]] = Registry("memory")
 AgentFactory: TypeAlias = Callable[[AgentSettings | None], Agent]
@@ -64,7 +69,7 @@ def _file_memory_factory(cfg: MemorySettings) -> FileMemoryRepository:
 
 
 # Seed registries — add more providers here when needed.
-_llm_registry.register("lmstudio", _lmstudio_factory)
+llm_registry.register("lmstudio", _lmstudio_factory)
 _storage_registry.register("sqlite", _sqlite_factory)
 _memory_registry.register("file", _file_memory_factory)
 
@@ -95,7 +100,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         extra={"llm_provider": cfg.llm.provider, "db_provider": cfg.db.provider},
     )
 
-    llm = _llm_registry.get(cfg.llm.provider)(cfg.llm)
+    llm = llm_registry.get(cfg.llm.provider)(cfg.llm)
     repo = _storage_registry.get(cfg.db.provider)(cfg.db)
 
     memory = None

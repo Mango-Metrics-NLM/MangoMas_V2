@@ -8,7 +8,9 @@ Call ``registry.register(name, factory)`` during app wiring; call
 from __future__ import annotations
 
 import logging
-from typing import Generic, TypeVar
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Generic, TypeVar, cast
 
 from mangomas.errors import UnknownProvider
 
@@ -47,3 +49,27 @@ class Registry(Generic[T]):
     def available(self) -> list[str]:
         """Return a sorted list of registered provider names."""
         return sorted(self._store)
+
+    @contextmanager
+    def scoped(self, name: str, value: T) -> Iterator[None]:
+        """Temporarily register *value* under *name* for the duration of a block.
+
+        Restores the prior binding (or deletes the entry if absent before) on
+        exit, even when the wrapped block raises. Intended for tests that need
+        to swap a single provider without mutating global state permanently.
+
+        Example:
+            with llm_registry.scoped("lmstudio", non_streaming_factory):
+                orch = build_orchestrator(settings)
+                ...
+        """
+        had_prior = name in self._store
+        prior_value = self._store.get(name)
+        self._store[name] = value
+        try:
+            yield
+        finally:
+            if had_prior:
+                self._store[name] = cast("T", prior_value)
+            else:
+                self._store.pop(name, None)

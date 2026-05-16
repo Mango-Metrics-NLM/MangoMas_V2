@@ -59,3 +59,38 @@ def test_registry_log_on_unknown_get(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.ERROR, logger="mangomas.registry"), pytest.raises(UnknownProvider):
         reg.get("ghost")
     assert "ghost" in caplog.text
+
+
+# ── scoped() context manager ─────────────────────────────────────────────────
+
+
+def test_scoped_overrides_existing_value_then_restores() -> None:
+    reg: Registry[str] = Registry("test")
+    reg.register("k", "original")
+    with reg.scoped("k", "swapped"):
+        assert reg.get("k") == "swapped"
+    assert reg.get("k") == "original"
+
+
+def test_scoped_inserts_then_removes_when_no_prior_value() -> None:
+    reg: Registry[str] = Registry("test")
+    with reg.scoped("new", "temp"):
+        assert reg.get("new") == "temp"
+    with pytest.raises(UnknownProvider):
+        reg.get("new")
+
+
+def test_scoped_restores_prior_value_when_block_raises() -> None:
+    reg: Registry[str] = Registry("test")
+    reg.register("k", "original")
+    with pytest.raises(RuntimeError), reg.scoped("k", "swapped"):
+        raise RuntimeError("boom")
+    assert reg.get("k") == "original"
+
+
+def test_scoped_removes_value_when_block_raises_and_no_prior() -> None:
+    reg: Registry[str] = Registry("test")
+    with pytest.raises(RuntimeError), reg.scoped("k", "temp"):
+        raise RuntimeError("boom")
+    with pytest.raises(UnknownProvider):
+        reg.get("k")
