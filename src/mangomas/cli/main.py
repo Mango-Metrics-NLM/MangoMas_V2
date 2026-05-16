@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
+from mangomas.composition import build_orchestrator
 from mangomas.core import AgentRequest, Message
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -20,9 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build() -> Orchestrator:
-    # Imported lazily so `--help` doesn't require runtime config.
-    from mangomas.composition import build_orchestrator
-
+    """Construct the orchestrator with full settings + adapter wiring."""
     return build_orchestrator()
 
 

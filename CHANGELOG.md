@@ -137,12 +137,45 @@ Versioning: [Semantic Versioning](https://semver.org/).
   factories via `Registry.scoped()` without poking module internals.
 - `AccessLogMiddleware` now emits both `request_id` and `correlation_id`
   fields on every access-log line (today they always carry the same value).
-- `scripts/check_coverage.py` adds a 100% floor for `src/mangomas/secrets/*.py`.
+- `scripts/check_coverage.py` adds 100 % floors for `src/mangomas/secrets/*.py`
+  and `src/mangomas/correlation.py`.
+- **Correlation primitives moved to `src/mangomas/correlation.py`** (top-level)
+  to break the `mangomas.api → mangomas.telemetry` import cycle without a
+  lazy import. `mangomas.api.correlation` remains as a backwards-compatible
+  re-export shim — existing imports continue to work.
+- **Streaming buffered-fallback extracted** into
+  `mangomas.agents._streaming.stream_with_buffered_fallback`. The three
+  agents (`ChatAgent`, `PlannerAgent`, `ReviewerAgent`) now delegate to a
+  single helper after building their respective message lists, replacing
+  three near-identical 18-line `_do_stream` bodies. The fallback warning
+  text is a module-level constant so log-grep filters survive future edits.
+- `ruff` pinned to `>=0.11,<1.0` in dev deps; `respx`/`tests.*` mypy
+  overrides added so the CI scope (`src tests scripts`) passes `--strict`.
 
 ### Fixed
 
-- `cli/main.py` — drop a stale `# noqa: PLC0415` directive (PLC0415 isn't
-  enabled in the ruff rule set).
+- **CI lint job (PLC0415)**: Local ruff 0.8.0 and CI's newer ruff disagreed on
+  whether `PLC0415` (lazy import) was enabled, causing CI to fail with errors
+  local couldn't reproduce. Root cause addressed structurally: the lazy import
+  in `telemetry.py` was removed (the cycle is gone now that correlation lives
+  at top level) and `cli/main.py`'s lazy `build_orchestrator` import was
+  promoted to module-level.
+- **Inbound `X-Request-ID` sanitisation**: Inbound values are now passed
+  through `mangomas.correlation.sanitize_inbound_correlation_id`, which strips
+  characters outside `[A-Za-z0-9_\-./:]` (blocking CR/LF log-injection) and
+  truncates at `MAX_CORRELATION_ID_LENGTH = 64` characters. Falls back to a
+  fresh generated id when the inbound value is empty, whitespace-only, or
+  entirely composed of disallowed characters.
+- **`X-Request-ID` echoed on error responses**: The middleware now sets the
+  header in its `finally` block (so handled `MangomasError` JSONResponses and
+  any 4xx/5xx produced by FastAPI exception handlers carry it) and
+  synthesises its own `PlainTextResponse` with the header attached when an
+  unhandled exception escapes `call_next`, instead of re-raising and losing
+  the correlation handle inside Starlette's default `ServerErrorMiddleware`.
+- **`Registry` thread-safety**: All mutations and reads now acquire an
+  internal `threading.RLock`, matching the thread-safety guarantee documented
+  in `docs/architecture/c3-component.md`. `RLock` (not `Lock`) so `scoped()`
+  can call `get`/`register` under the same lock without deadlocking.
 
 <!-- next release goes above this line -->
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0

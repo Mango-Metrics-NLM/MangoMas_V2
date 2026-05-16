@@ -12,15 +12,23 @@ Correlation IDs
 ---------------
 The middleware reads the inbound ``X-Request-ID`` header when present (so
 upstream services and clients can propagate their own correlation id) and
-falls back to a freshly generated 8-hex-char token. The resolved value is:
+falls back to a freshly generated 8-hex-char token. Inbound values are
+sanitised via :func:`~mangomas.correlation.sanitize_inbound_correlation_id`
+to clamp the length (max :data:`~mangomas.correlation.MAX_CORRELATION_ID_LENGTH`)
+and strip control characters / CR / LF, which prevents log injection from
+hostile clients.
 
-* stored on a :class:`contextvars.ContextVar` via
-  :func:`~mangomas.api.correlation.set_correlation_id` so log records and
-  downstream code in the same async context can read it;
-* attached to the current OpenTelemetry baggage as ``mangomas.correlation_id``
-  so distributed traces carry it across service boundaries;
+The resolved value is:
+
+* stored on a :class:`contextvars.ContextVar` so log records and downstream
+  code in the same async context can read it;
+* attached to the current OpenTelemetry baggage as
+  ``mangomas.correlation_id`` so distributed traces carry it across service
+  boundaries;
 * echoed on the outgoing response as ``X-Request-ID`` so clients can
-  reference it in support requests.
+  reference it in support requests — **including** error responses produced
+  by FastAPI exception handlers (the header is set in the ``finally`` block,
+  so handled errors carry the same correlation id as successful responses).
 
 ``request_id`` is retained as an attribute distinct from ``correlation_id``
 for backwards compatibility with existing log consumers; today they always
@@ -37,19 +45,21 @@ from opentelemetry import baggage
 from opentelemetry import context as otel_context
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import PlainTextResponse, Response
 
-from mangomas.api.correlation import (
+from mangomas.correlation import (
     correlation_id as _correlation_var,
 )
-from mangomas.api.correlation import (
-    generate_correlation_id,
+from mangomas.correlation import (
+    resolve_correlation_id,
 )
 
 logger = logging.getLogger(__name__)
 
 _REQUEST_ID_HEADER = "X-Request-ID"
 _BAGGAGE_KEY = "mangomas.correlation_id"
+_FALLBACK_ERROR_STATUS = 500
+_INTERNAL_ERROR_BODY = "Internal Server Error"
 
 
 class AccessLogMiddleware(BaseHTTPMiddleware):
@@ -60,8 +70,8 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        inbound = request.headers.get(_REQUEST_ID_HEADER)
-        correlation = inbound.strip() if inbound and inbound.strip() else generate_correlation_id()
+        # Sanitise + clamp the inbound header (or mint a fresh id when absent).
+        correlation = resolve_correlation_id(request.headers.get(_REQUEST_ID_HEADER))
 
         ctx_token = _correlation_var.set(correlation)
         baggage_ctx = baggage.set_baggage(_BAGGAGE_KEY, correlation)
@@ -76,14 +86,19 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
             extra={"request_id": correlation, "correlation_id": correlation},
         )
 
-        status_code = 500
+        status_code = _FALLBACK_ERROR_STATUS
         response: Response | None = None
         try:
             response = await call_next(request)
             status_code = response.status_code
-            response.headers[_REQUEST_ID_HEADER] = correlation
             return response
         except Exception:
+            # An unhandled exception (one without a registered FastAPI handler)
+            # propagated out of the route. Log the full traceback with the
+            # correlation id attached, then synthesise a minimal 500 response
+            # *here* — instead of re-raising and letting Starlette's default
+            # ServerErrorMiddleware build the response — so we can attach the
+            # X-Request-ID header. Clients can quote the id even on a crash.
             logger.exception(
                 "%s %s unhandled exception",
                 request.method,
@@ -95,8 +110,22 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
                     "path": request.url.path,
                 },
             )
-            raise
+            response = PlainTextResponse(
+                _INTERNAL_ERROR_BODY,
+                status_code=_FALLBACK_ERROR_STATUS,
+            )
+            status_code = _FALLBACK_ERROR_STATUS
+            return response
         finally:
+            # Echo the correlation id on **every** outbound response, including
+            # error envelopes produced by FastAPI exception handlers. Setting
+            # the header here (not in the success branch) ensures handled
+            # MangomasError responses, validation 422s, and any other
+            # framework-generated 4xx/5xx still carry the same X-Request-ID
+            # the client can quote when filing a support ticket.
+            if response is not None:
+                response.headers[_REQUEST_ID_HEADER] = correlation
+
             latency_ms = round((time.perf_counter() - start) * 1000, 2)
             logger.info(
                 "%s %s %d %.1fms",

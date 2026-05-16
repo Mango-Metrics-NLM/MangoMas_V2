@@ -206,7 +206,7 @@ async def test_middleware_logs_unhandled_exception_with_correlation(
     _boom_app: FastAPI,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The ``except Exception`` branch must log + re-raise with correlation context."""
+    """The ``except Exception`` branch must log + return a 500 with X-Request-ID."""
     transport = httpx.ASGITransport(app=_boom_app, raise_app_exceptions=False)
     with caplog.at_level(logging.ERROR, logger="mangomas.api.middleware"):
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -216,10 +216,96 @@ async def test_middleware_logs_unhandled_exception_with_correlation(
                 headers={"X-Request-ID": "boom-trace-id"},
             )
 
-    # Starlette's default ServerErrorMiddleware converts the re-raise to 500.
+    # Middleware synthesises its own 500 (so it can attach the header).
     assert response.status_code == 500, response.text
+    # X-Request-ID must be echoed even on the unhandled-error response.
+    assert response.headers.get("x-request-id") == "boom-trace-id"
     # The middleware's structured exception log must have fired.
     unhandled = [rec for rec in caplog.records if "unhandled exception" in rec.message]
     assert unhandled, "expected an 'unhandled exception' log line from the middleware"
     # Correlation id must be on the record (set via ``extra=...``).
     assert any(getattr(rec, "correlation_id", None) == "boom-trace-id" for rec in unhandled)
+
+
+# ── X-Request-ID echo on FastAPI handled errors ──────────────────────────────
+
+
+class _MangomasErrorAgent:
+    """Agent that raises a ``MangomasError`` (handled by FastAPI exception handler)."""
+
+    name = "explode"
+
+    async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:  # noqa: ARG002
+        from mangomas.errors import (
+            LLMBadResponse,
+        )
+
+        raise LLMBadResponse("synthetic bad response for header-echo test")
+
+
+@pytest.fixture
+def _mangomas_error_app() -> Iterator[FastAPI]:
+    llm = FakeLLM()
+    ctx = AgentContext(llm=llm, repo=None)
+    orch = Orchestrator(ctx)
+    orch.register(_MangomasErrorAgent())
+    yield create_app(orchestrator=orch)
+
+
+async def test_x_request_id_is_echoed_on_handled_error_response(
+    _mangomas_error_app: FastAPI,
+) -> None:
+    """``MangomasError`` -> JSONResponse via FastAPI handler must echo X-Request-ID."""
+    transport = httpx.ASGITransport(app=_mangomas_error_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/agents/explode/invoke",
+            json={"messages": []},
+            headers={"X-Request-ID": "handled-error-id"},
+        )
+
+    assert response.status_code == 502, response.text
+    # The handler returned a JSONResponse; middleware's finally must have
+    # attached X-Request-ID to it before the response went out.
+    assert response.headers.get("x-request-id") == "handled-error-id"
+
+
+async def test_x_request_id_is_echoed_when_inbound_header_is_sanitised(
+    _correlation_app: FastAPI,
+) -> None:
+    """An inbound value with CR/LF/control chars is sanitised before being echoed."""
+    transport = httpx.ASGITransport(app=_correlation_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/agents/echo/invoke",
+            json={"messages": []},
+            headers={"X-Request-ID": "good\r\nINJECT FAKE-LOG"},
+        )
+
+    echoed = response.headers.get("x-request-id")
+    # CR/LF gone, but the legitimate prefix survives (spaces also stripped).
+    assert echoed == "goodINJECTFAKE-LOG"
+    assert "\r" not in (echoed or "")
+    assert "\n" not in (echoed or "")
+
+
+async def test_x_request_id_is_truncated_when_inbound_is_oversize(
+    _correlation_app: FastAPI,
+) -> None:
+    """An oversize inbound id is clamped to MAX_CORRELATION_ID_LENGTH."""
+    from mangomas.correlation import (
+        MAX_CORRELATION_ID_LENGTH,
+    )
+
+    oversize = "x" * (MAX_CORRELATION_ID_LENGTH + 100)
+    transport = httpx.ASGITransport(app=_correlation_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/agents/echo/invoke",
+            json={"messages": []},
+            headers={"X-Request-ID": oversize},
+        )
+
+    echoed = response.headers.get("x-request-id")
+    assert echoed is not None
+    assert len(echoed) == MAX_CORRELATION_ID_LENGTH
