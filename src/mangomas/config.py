@@ -43,6 +43,8 @@ DEFAULT_MEMORY_DIR: str = "memory"
 DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
 DEFAULT_MEMORY_ENABLED: bool = False
 
+DEFAULT_SECRETS_PROVIDER: str = "env"
+
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
 
@@ -56,6 +58,16 @@ class LLMSettings(BaseModel):
     api_key: str = DEFAULT_LLM_API_KEY
     timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
     temperature: float = DEFAULT_LLM_TEMPERATURE
+    # Optional reference resolved via the SecretsProvider seam. When set,
+    # the resolved value overrides ``api_key`` at orchestrator-build time.
+    # See ``mangomas.secrets`` and ``composition._lmstudio_factory``.
+    secret_ref: str | None = None
+
+
+class SecretsSettings(BaseModel):
+    """Configuration for the SecretsProvider seam."""
+
+    provider: str = DEFAULT_SECRETS_PROVIDER
 
 
 class DBSettings(BaseModel):
@@ -129,6 +141,7 @@ class Settings(BaseSettings):
 
     loop: LoopSettings = Field(default_factory=LoopSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    secrets: SecretsSettings = Field(default_factory=SecretsSettings)
 
     # Set to True to enable entry-point-based agent discovery (Phase C).
     discovery_enabled: bool = False

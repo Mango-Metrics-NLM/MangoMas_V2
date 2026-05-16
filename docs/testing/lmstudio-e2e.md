@@ -39,9 +39,9 @@ raising.
 
 ---
 
-### Scenario 2 — Chat happy path ☐ Planned
+### Scenario 2 — Chat happy path ✅ Implemented
 
-**File:** `tests/lmstudio/test_chat.py` (to be created)
+**File:** `tests/lmstudio/test_chat_invoke.py`
 
 **What is tested:**  
 `POST /agents/chat/invoke` with a single user turn against the full FastAPI
@@ -63,9 +63,9 @@ app = create_app(orchestrator=orch)
 
 ---
 
-### Scenario 3 — Streaming happy path ☐ Planned
+### Scenario 3 — Streaming happy path ✅ Implemented
 
-**File:** `tests/lmstudio/test_stream.py` (to be created)
+**File:** `tests/lmstudio/test_chat_stream.py`
 
 **What is tested:**  
 `POST /agents/chat/stream` SSE endpoint; token delivery and sentinel frame.
@@ -81,9 +81,10 @@ app = create_app(orchestrator=orch)
 
 ---
 
-### Scenario 4 — Streaming fallback warning ☐ Planned
+### Scenario 4 — Streaming fallback warning ✅ Implemented
 
-**File:** `tests/lmstudio/test_stream.py` (to be created; same file as Scenario 3)
+**File:** `tests/lmstudio/test_stream_fallback.py` (uses `Registry.scoped()`
+to swap in a `NonStreamingLMStudioClient` wrapper for the test's duration)
 
 **What is tested:**  
 The streaming endpoint falls back to buffered `complete()` and emits a warning
@@ -99,9 +100,9 @@ returns `False`.
 
 ---
 
-### Scenario 5 — Summarize agent with persisted turns ☐ Planned
+### Scenario 5 — Summarize agent with persisted turns ✅ Implemented
 
-**File:** `tests/lmstudio/test_summarize.py` (to be created)
+**File:** `tests/lmstudio/test_summarize_invoke.py`
 
 **What is tested:**  
 `POST /agents/summarize/invoke` with a multi-message thread; the summarize
@@ -119,9 +120,9 @@ agent fetches prior turns from the repository and generates a summary.
 
 ---
 
-### Scenario 6 — Error path: unavailable / bogus model ☐ Planned
+### Scenario 6 — Error path: unavailable / bogus model ✅ Implemented
 
-**File:** `tests/lmstudio/test_errors.py` (to be created)
+**File:** `tests/lmstudio/test_unknown_model.py`
 
 **What is tested:**  
 `POST /agents/chat/invoke` when `LMSTUDIO_MODEL` points to a model id that is
@@ -150,5 +151,6 @@ not loaded in LM Studio.  The adapter raises `LMStudioError` (subclass of
   fallback defaults — never hardcode model ids.
 - Clean up `LMStudioClient` instances in `finally:` blocks or via `pytest` fixtures.
 - Log at `INFO` level before and after each scenario step for debug traceability.
-- Remaining scenarios land in a follow-up PR after Scenario 1 is confirmed
-  working end-to-end on the developer's machine.
+- Shared fixtures (`lmstudio_base_url`, `lmstudio_model`, `lmstudio_orchestrator`,
+  `lmstudio_app`) live in `tests/lmstudio/conftest.py` and consume the env vars
+  documented above.

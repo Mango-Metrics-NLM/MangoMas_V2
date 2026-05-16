@@ -9,11 +9,17 @@ C4Component
 
   Container_Boundary(api_boundary, "FastAPI Application (src/mangomas/api/)") {
     Component(app_factory, "create_app()", "FastAPI factory function", "Constructs and configures the FastAPI app. Wires middleware, exception handlers, and routes. Invokes build_orchestrator() during lifespan unless an orchestrator is injected (test mode).")
-    Component(access_log, "AccessLogMiddleware", "Starlette middleware", "Emits a structured access-log record (method, path, status, duration) for every request.")
+    Component(access_log, "AccessLogMiddleware", "Starlette middleware", "Emits structured access-log records. Reads/echoes X-Request-ID, sets the correlation_id ContextVar, and pushes the value into OTel baggage as 'mangomas.correlation_id'.")
+    Component(correlation, "correlation.py", "ContextVar + logging filter", "ContextVar carrying the per-request correlation id; CorrelationFilter injects it into every log record.")
     Component(trace_mw, "TraceMiddleware", "Starlette middleware / OTel", "Opens and closes an OpenTelemetry span per request. Tracer is obtained lazily via trace.get_tracer() to avoid capturing NoopTracer at import time.")
     Component(error_handler, "MangomasError handler", "FastAPI exception handler", "Walks the exception MRO to select the most specific HTTP status code and returns a structured JSON envelope.")
     Component(health_routes, "Health routes", "FastAPI routes", "GET /healthz (+ /health alias) → liveness. GET /readyz (+ /ready alias) → ReadinessReport from check_ready().")
     Component(agent_routes, "Agent routes", "FastAPI routes", "GET /agents, POST /agents/{name}/invoke, POST /agents/{name}/stream. Delegates to Orchestrator.")
+  }
+
+  Container_Boundary(secrets_boundary, "Secrets (src/mangomas/secrets/)") {
+    Component(secrets_provider, "SecretsProvider", "Protocol", "get(name) -> str | None. Resolves a secret reference at orchestrator-build time. Today only the env-var backend ships; cloud backends register additional factories without core changes.")
+    Component(env_secrets, "EnvSecretsProvider", "SecretsProvider impl", "Reads secrets from os.environ. Used when LLMSettings.secret_ref is set.")
   }
 
   Container_Boundary(core_boundary, "Core (src/mangomas/core/)") {
@@ -36,6 +42,7 @@ C4Component
   }
 
   Rel(app_factory, access_log, "adds middleware")
+  Rel(access_log, correlation, "set_correlation_id() / OTel baggage")
   Rel(app_factory, trace_mw, "adds middleware")
   Rel(app_factory, error_handler, "registers exception handler")
   Rel(app_factory, health_routes, "mounts routes")
@@ -53,8 +60,10 @@ C4Component
   Rel(chat_agent, lmstudio_client, "complete() / stream()")
   Rel(summarize_agent, lmstudio_client, "complete()")
   Rel(tool_agent, lmstudio_client, "complete()")
-  Rel(planner_agent, lmstudio_client, "complete()")
-  Rel(reviewer_agent, lmstudio_client, "complete()")
+  Rel(planner_agent, lmstudio_client, "complete() / stream()")
+  Rel(reviewer_agent, lmstudio_client, "complete() / stream()")
+  Rel(app_factory, secrets_provider, "resolves api_key via LLMSettings.secret_ref")
+  Rel(secrets_provider, env_secrets, "default impl (provider='env')")
 ```
 
 ## Notes
@@ -63,8 +72,14 @@ C4Component
   Adding a new agent or LLM adapter does not require changes to `Orchestrator`,
   `create_app()`, or any existing component.
 - `TraceMiddleware` and `AccessLogMiddleware` are the two middleware components.
-  There is no separate "request-id middleware" — correlation is carried via the
-  OTel span context.
+  `AccessLogMiddleware` owns the **correlation id** lifecycle: it reads/echoes
+  `X-Request-ID`, sets the `correlation_id` ContextVar, and pushes the value into
+  OTel baggage as `mangomas.correlation_id`. See
+  [observability.md](observability.md) for the full request lifecycle.
+- The **SecretsProvider seam** (`src/mangomas/secrets/`) is consulted at
+  orchestrator-build time when `LLMSettings.secret_ref` is set. Cloud backends
+  (GCP Secret Manager, Vault) plug in via `secrets_registry.register()` with
+  no changes to agents or adapters.
 - `check_ready()` is in `src/mangomas/api/health.py` and is called by the
   `/readyz` route handler.
 - All components that accept external input are configurable via

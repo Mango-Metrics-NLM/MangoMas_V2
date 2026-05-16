@@ -22,36 +22,16 @@ code changes.  No model ids are hardcoded.
 from __future__ import annotations
 
 import logging
-import os
 
 import pytest
 
 from mangomas.adapters.llm.lmstudio import LMStudioClient
-from mangomas.config import DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
-# ── Environment-variable names (single source of truth) ──────────────────────
-
-_ENV_BASE_URL: str = "LMSTUDIO_BASE_URL"
-_ENV_MODEL: str = "LMSTUDIO_MODEL"
-
-
-def _base_url() -> str:
-    """Return the LM Studio base URL from env or the configured default."""
-    return os.environ.get(_ENV_BASE_URL, DEFAULT_LLM_BASE_URL)
-
-
-def _model() -> str:
-    """Return the LM Studio model id from env or the configured default."""
-    return os.environ.get(_ENV_MODEL, DEFAULT_LLM_MODEL)
-
-
-# ── Smoke test ────────────────────────────────────────────────────────────────
-
 
 @pytest.mark.lmstudio
-async def test_lmstudio_ping() -> None:
+async def test_lmstudio_ping(lmstudio_base_url: str, lmstudio_model: str) -> None:
     """Verify the LM Studio server is reachable via ``GET /models``.
 
     Exercises :meth:`~mangomas.adapters.llm.lmstudio.LMStudioClient.ping`.
@@ -60,15 +40,13 @@ async def test_lmstudio_ping() -> None:
 
     Skipped unless ``RUN_LMSTUDIO=1`` is set.
     """
-    base_url = _base_url()
-    model = _model()
     logger.info(
         "LM Studio ping test starting",
-        extra={"base_url": base_url, "model": model},
+        extra={"base_url": lmstudio_base_url, "model": lmstudio_model},
     )
-    client = LMStudioClient(base_url=base_url, model=model)
+    client = LMStudioClient(base_url=lmstudio_base_url, model=lmstudio_model)
     try:
         await client.ping()
-        logger.info("LM Studio ping succeeded", extra={"base_url": base_url})
+        logger.info("LM Studio ping succeeded", extra={"base_url": lmstudio_base_url})
     finally:
         await client.aclose()

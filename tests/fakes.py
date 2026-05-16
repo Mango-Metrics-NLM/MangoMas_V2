@@ -132,6 +132,18 @@ class FakeTool:
 
 
 @dataclass
+class FakeSecretsProvider:
+    """In-memory stub satisfying :class:`mangomas.secrets.SecretsProvider`."""
+
+    values: dict[str, str] = field(default_factory=dict)
+    calls: list[str] = field(default_factory=list)
+
+    def get(self, name: str) -> str | None:
+        self.calls.append(name)
+        return self.values.get(name)
+
+
+@dataclass
 class FakeMemoryRepository:
     """In-memory stub satisfying
     :class:`~mangomas.adapters.storage.base.MemoryRepository`.
