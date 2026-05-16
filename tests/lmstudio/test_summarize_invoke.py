@@ -46,6 +46,4 @@ async def test_summarize_invoke_persists_with_summarize_agent(
     repo = lmstudio_orchestrator.context.repo
     assert repo is not None
     history = await repo.list_turns(limit=5)
-    assert any(turn["agent"] == "summarize" for turn in history), (
-        "summarize turn must be persisted"
-    )
+    assert any(turn["agent"] == "summarize" for turn in history), "summarize turn must be persisted"

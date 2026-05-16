@@ -30,9 +30,9 @@ def test_configure_telemetry_json_format() -> None:
     _reset()
     telemetry.configure_telemetry(service_name="test", log_format="json")
     root_logger = logging.getLogger()
-    assert any(isinstance(h.formatter, JsonFormatter) for h in root_logger.handlers), (
-        "Expected a JsonFormatter on the root handler"
-    )
+    assert any(
+        isinstance(h.formatter, JsonFormatter) for h in root_logger.handlers
+    ), "Expected a JsonFormatter on the root handler"
 
 
 def test_get_tracer_returns_tracer() -> None:

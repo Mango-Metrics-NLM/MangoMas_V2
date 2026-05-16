@@ -43,22 +43,22 @@ async def test_chat_stream_emits_token_and_done_frames(lmstudio_app: FastAPI) ->
             timeout=60.0,
         ) as response,
     ):
-            assert response.status_code == 200, response.reason_phrase
-            assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.status_code == 200, response.reason_phrase
+        assert response.headers["content-type"].startswith("text/event-stream")
 
-            async for line in response.aiter_lines():
-                frame = _parse_sse_data(line)
-                if frame is None:
-                    continue
-                if frame.get("event") == "token":
-                    token_frames.append(frame)
-                elif frame.get("event") == "done":
-                    done_seen = True
-                    break
+        async for line in response.aiter_lines():
+            frame = _parse_sse_data(line)
+            if frame is None:
+                continue
+            if frame.get("event") == "token":
+                token_frames.append(frame)
+            elif frame.get("event") == "done":
+                done_seen = True
+                break
 
     assert token_frames, "expected at least one token frame from SSE stream"
     assert done_seen, "expected SSE stream to terminate with an event=done frame"
     # Tokens must carry content (non-empty string).
-    assert any(f["data"]["content"] for f in token_frames), (
-        "at least one token frame must have non-empty content"
-    )
+    assert any(
+        f["data"]["content"] for f in token_frames
+    ), "at least one token frame must have non-empty content"

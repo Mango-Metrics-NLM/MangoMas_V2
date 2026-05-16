@@ -35,6 +35,7 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/api/*.py", 90, "api"),
     Floor("src/mangomas/cli/*.py", 90, "cli"),
     Floor("src/mangomas/adapters/**/*.py", 85, "adapters"),
+    Floor("src/mangomas/secrets/*.py", 100, "secrets"),
 ]
 
 GLOBAL_FLOOR = Floor("src/mangomas/**/*.py", 90, "global")

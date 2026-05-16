@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def _build() -> Orchestrator:
     # Imported lazily so `--help` doesn't require runtime config.
-    from mangomas.composition import build_orchestrator  # noqa: PLC0415
+    from mangomas.composition import build_orchestrator
 
     return build_orchestrator()
 

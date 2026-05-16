@@ -92,6 +92,7 @@ def test_build_orchestrator_substitutes_api_key_from_secrets_provider() -> None:
 
     def _capturing_factory(cfg: LLMSettings) -> object:
         captured["api_key"] = cfg.api_key
+
         # Return a minimal object with aclose so cleanup doesn't crash.
         class _Stub:
             async def aclose(self) -> None: ...
