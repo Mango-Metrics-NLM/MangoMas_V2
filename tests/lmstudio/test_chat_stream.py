@@ -50,6 +50,6 @@ async def test_chat_stream_emits_token_and_done_frames(lmstudio_app: FastAPI) ->
     assert token_frames, "expected at least one token frame from SSE stream"
     assert done_seen, "expected SSE stream to terminate with an event=done frame"
     # Tokens must carry content (non-empty string).
-    assert any(
-        f["data"]["content"] for f in token_frames
-    ), "at least one token frame must have non-empty content"
+    assert any(f["data"]["content"] for f in token_frames), (
+        "at least one token frame must have non-empty content"
+    )

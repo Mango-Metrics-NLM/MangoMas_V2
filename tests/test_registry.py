@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 import pytest
 
@@ -101,8 +102,6 @@ def test_scoped_removes_value_when_block_raises_and_no_prior() -> None:
 
 def test_concurrent_register_and_get_does_not_corrupt_store() -> None:
     """Many threads writing + reading should never observe a torn state."""
-    import threading
-
     reg: Registry[int] = Registry("test")
     iterations = 200
     thread_count = 8
@@ -147,8 +146,6 @@ def test_concurrent_register_and_get_does_not_corrupt_store() -> None:
 
 def test_scoped_under_concurrent_load_restores_prior_value() -> None:
     """Nested `scoped()` from many threads must each restore their prior on exit."""
-    import threading
-
     reg: Registry[str] = Registry("test")
     reg.register("shared", "original")
     iterations = 50

@@ -28,7 +28,7 @@ from mangomas.core.agent import AgentContext, Message
 logger = logging.getLogger(__name__)
 
 _FALLBACK_WARNING_MESSAGE: str = (
-    "Streaming requested but LLM client does not support streaming; " "using complete() fallback"
+    "Streaming requested but LLM client does not support streaming; using complete() fallback"
 )
 
 

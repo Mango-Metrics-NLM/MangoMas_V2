@@ -61,6 +61,6 @@ async def test_bad_api_path_returns_502_envelope(
     assert "message" in body
     # A structured warning must be logged for the failure.
     error_messages = [rec.message for rec in caplog.records if "Request error" in rec.message]
-    assert any(
-        "llm_bad_response" in msg for msg in error_messages
-    ), "expected a structured 'Request error llm_bad_response' warning"
+    assert any("llm_bad_response" in msg for msg in error_messages), (
+        "expected a structured 'Request error llm_bad_response' warning"
+    )

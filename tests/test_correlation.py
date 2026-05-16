@@ -24,6 +24,8 @@ from mangomas.api.correlation import (
 )
 from mangomas.api.middleware import _BAGGAGE_KEY
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
+from mangomas.correlation import MAX_CORRELATION_ID_LENGTH
+from mangomas.errors import LLMBadResponse
 from tests.fakes import FakeLLM
 
 # ── ContextVar plumbing ───────────────────────────────────────────────────────
@@ -236,10 +238,6 @@ class _MangomasErrorAgent:
     name = "explode"
 
     async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:  # noqa: ARG002
-        from mangomas.errors import (
-            LLMBadResponse,
-        )
-
         raise LLMBadResponse("synthetic bad response for header-echo test")
 
 
@@ -293,10 +291,6 @@ async def test_x_request_id_is_truncated_when_inbound_is_oversize(
     _correlation_app: FastAPI,
 ) -> None:
     """An oversize inbound id is clamped to MAX_CORRELATION_ID_LENGTH."""
-    from mangomas.correlation import (
-        MAX_CORRELATION_ID_LENGTH,
-    )
-
     oversize = "x" * (MAX_CORRELATION_ID_LENGTH + 100)
     transport = httpx.ASGITransport(app=_correlation_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
