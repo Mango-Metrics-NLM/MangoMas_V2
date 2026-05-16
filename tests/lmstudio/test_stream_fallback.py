@@ -26,12 +26,12 @@ from mangomas.composition import build_orchestrator, llm_registry
 from mangomas.config import (
     DEFAULT_LLM_API_KEY,
     DEFAULT_LLM_TEMPERATURE,
-    DEFAULT_LLM_TIMEOUT_SECONDS,
     DBSettings,
     LLMSettings,
     Settings,
 )
 from mangomas.core.agent import Message
+from tests.lmstudio.conftest import LMSTUDIO_E2E_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ async def test_stream_fallback_warns_and_delivers_buffered_content(
             base_url=lmstudio_base_url,
             model=lmstudio_model,
             api_key=DEFAULT_LLM_API_KEY,
-            timeout_seconds=DEFAULT_LLM_TIMEOUT_SECONDS,
+            timeout_seconds=LMSTUDIO_E2E_TIMEOUT_SECONDS,
             temperature=DEFAULT_LLM_TEMPERATURE,
         ),
         db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),

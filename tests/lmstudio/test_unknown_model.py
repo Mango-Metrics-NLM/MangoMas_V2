@@ -1,8 +1,14 @@
-"""LM Studio E2E — scenario 6: error path with an unavailable model id.
+"""LM Studio E2E — scenario 6: error path with a bad LM Studio base URL.
 
-Points the orchestrator at an unknown model and asserts that the invoke
-endpoint returns the typed 502 envelope from ``LMStudioError`` /
-``LLMBadResponse`` (mapped by :data:`~mangomas.api.app._ERROR_STATUS`).
+The original spec described "unknown model id" as the failure trigger, but
+LM Studio silently serves from the currently-loaded model when given an
+unknown id — it does NOT 4xx. To exercise the real ``LMStudioError`` →
+``LLMBadResponse`` → ``502`` envelope path end-to-end, this scenario
+instead points the LM Studio client at an API version prefix LM Studio
+does not serve (``/v999``). LM Studio returns ``404 Not Found`` for the
+unknown path, which ``_translate_httpx_error`` wraps into
+``LMStudioError`` (a ``LLMBadResponse`` subclass) — and ``_ERROR_STATUS``
+maps that to ``502 Bad Gateway``.
 
 Skipped unless ``RUN_LMSTUDIO=1``.
 """
@@ -20,29 +26,34 @@ from mangomas.composition import build_orchestrator
 from mangomas.config import (
     DEFAULT_LLM_API_KEY,
     DEFAULT_LLM_TEMPERATURE,
-    DEFAULT_LLM_TIMEOUT_SECONDS,
     DBSettings,
     LLMSettings,
     Settings,
 )
+from tests.lmstudio.conftest import LMSTUDIO_E2E_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
-_UNKNOWN_MODEL_ID = "no-such-model-deliberately-bogus-id"
+_BAD_API_VERSION_SUFFIX = "/v999"
 
 
 @pytest.mark.lmstudio
-async def test_unknown_model_returns_502_envelope(
+async def test_bad_api_path_returns_502_envelope(
     lmstudio_base_url: str,
+    lmstudio_model: str,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # Strip the /v1 suffix (if any) and append a path LM Studio doesn't serve.
+    base_without_version = lmstudio_base_url.rsplit("/v", 1)[0]
+    bad_base_url = f"{base_without_version}{_BAD_API_VERSION_SUFFIX}"
+
     settings = Settings(
         llm=LLMSettings(
             provider="lmstudio",
-            base_url=lmstudio_base_url,
-            model=_UNKNOWN_MODEL_ID,
+            base_url=bad_base_url,
+            model=lmstudio_model,
             api_key=DEFAULT_LLM_API_KEY,
-            timeout_seconds=DEFAULT_LLM_TIMEOUT_SECONDS,
+            timeout_seconds=LMSTUDIO_E2E_TIMEOUT_SECONDS,
             temperature=DEFAULT_LLM_TEMPERATURE,
         ),
         db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),

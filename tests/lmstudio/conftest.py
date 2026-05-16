@@ -36,13 +36,18 @@ from mangomas.config import (
     DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TEMPERATURE,
-    DEFAULT_LLM_TIMEOUT_SECONDS,
     DBSettings,
     LLMSettings,
     Settings,
 )
 from mangomas.core import Orchestrator
 from tests.constants import LMSTUDIO_BASE_URL_ENV, LMSTUDIO_MODEL_ENV
+
+# Local-LLM runs on CPU can take well over 60s per completion. The fixtures
+# bump the per-request timeout so the suite is patient enough for slow
+# hardware; developers on faster setups can still override via
+# MANGOMAS_LLM__TIMEOUT_SECONDS at the env level.
+LMSTUDIO_E2E_TIMEOUT_SECONDS: float = 240.0
 
 
 @pytest.fixture
@@ -74,7 +79,7 @@ async def lmstudio_orchestrator(
             base_url=lmstudio_base_url,
             model=lmstudio_model,
             api_key=DEFAULT_LLM_API_KEY,
-            timeout_seconds=DEFAULT_LLM_TIMEOUT_SECONDS,
+            timeout_seconds=LMSTUDIO_E2E_TIMEOUT_SECONDS,
             temperature=DEFAULT_LLM_TEMPERATURE,
         ),
         db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
