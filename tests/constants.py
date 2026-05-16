@@ -14,6 +14,10 @@ DEFAULT_API_KEY: str = "lm-studio"
 DEFAULT_TIMEOUT_SECONDS: float = 60.0
 DEFAULT_TEMPERATURE: float = 0.2
 
+# ── LM Studio E2E env-var names (single source of truth) ──────────────────────
+LMSTUDIO_BASE_URL_ENV: str = "LMSTUDIO_BASE_URL"
+LMSTUDIO_MODEL_ENV: str = "LMSTUDIO_MODEL"
+
 # ── DB defaults ───────────────────────────────────────────────────────────────
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"
