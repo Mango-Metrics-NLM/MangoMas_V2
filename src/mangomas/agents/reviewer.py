@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from mangomas.adapters.llm.base import StreamingLLMClient
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import build_structured_prompt
 
@@ -48,12 +50,44 @@ class ReviewerAgent:
         else:
             self._system_prompt = base_prompt
 
-    async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
-        """Return a structured JSON review for the given request."""
+    def _build_messages(self, request: AgentRequest) -> list[Message]:
+        """Prepend the schema-aware system prompt when absent from the request."""
         messages = list(request.messages)
         if not any(m.role == "system" for m in messages):
             messages.insert(0, Message(role="system", content=self._system_prompt))
+        return messages
 
+    async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
+        """Return a structured JSON review for the given request."""
+        messages = self._build_messages(request)
         logger.debug("ReviewerAgent: calling LLM for review")
         content = await ctx.llm.complete(messages)
         return AgentResponse(content=content, agent=self.name)
+
+    async def stream(
+        self,
+        request: AgentRequest,
+        ctx: AgentContext,
+    ) -> AsyncIterator[str]:
+        """Return an async iterator that yields review tokens from the LLM."""
+        return self._do_stream(request, ctx)
+
+    async def _do_stream(
+        self,
+        request: AgentRequest,
+        ctx: AgentContext,
+    ) -> AsyncGenerator[str, None]:
+        messages = self._build_messages(request)
+        logger.debug("ReviewerAgent streaming %d messages", len(messages))
+        if isinstance(ctx.llm, StreamingLLMClient):
+            async for chunk in await ctx.llm.stream(messages):
+                yield chunk
+        else:
+            # Fallback for non-streaming LLM clients: complete and yield as one chunk.
+            logger.warning(
+                "Streaming requested but LLM client does not support streaming; "
+                "using complete() fallback",
+                extra={"agent": self.name},
+            )
+            content = await ctx.llm.complete(messages)
+            yield content
