@@ -10,46 +10,49 @@ extension, backwards-compatible contracts.
 
 ## Near term
 
-### LM Studio end-to-end scenarios (follow-up to v0.1.0 ping scaffold)
+_(All near-term workstreams from v0.1.0 landed in v0.2.0 — see "Done in v0.2.0"
+below. Next near-term item is the Vertex AI provider — see "Mid term".)_
 
-The `tests/lmstudio/` directory currently holds a single readiness-probe
-smoke test.  The remaining five scenarios from the
-[LM Studio E2E Scenario Plan](docs/testing/lmstudio-e2e.md) are the
-immediate next implementation step — in order:
+---
 
-- [ ] **Chat happy path** — `POST /agents/chat/invoke` against a real LM
-  Studio instance; assert 200, non-empty `content`, and persisted turn.
-- [ ] **Streaming happy path** — `POST /agents/chat/stream` SSE; assert at
-  least one `event: token` frame and the `event: done` sentinel.
-- [ ] **Streaming fallback warning** — exercise the buffered-completion
-  fallback path when the LLM does not implement `StreamingLLMClient`; assert
-  warning log line and complete response.
-- [ ] **Summarize agent** — invoke `summarize` through the public API with a
-  multi-message thread; assert persisted turn with `agent=summarize`.
-- [ ] **Error path — unavailable model** — point `LMSTUDIO_MODEL` at an
-  unknown id; assert `502` error envelope from `LMStudioError`/`LLMBadResponse`
-  and a structured warning log entry.
+## Done in v0.2.0
 
-All tests must be gated by `RUN_LMSTUDIO=1`, read model id from
-`LMSTUDIO_MODEL`, and use `DEFAULT_LLM_BASE_URL` / `DEFAULT_LLM_MODEL` as
-fallback defaults.  No hardcoded model ids.
+### LM Studio end-to-end scenarios (scenarios 2–6)
+
+All five follow-up scenarios from the
+[LM Studio E2E Scenario Plan](docs/testing/lmstudio-e2e.md) ship under
+`tests/lmstudio/`, gated on `RUN_LMSTUDIO=1`:
+
+- [x] **Chat happy path** — `tests/lmstudio/test_chat_invoke.py`
+- [x] **Streaming happy path** — `tests/lmstudio/test_chat_stream.py`
+- [x] **Streaming fallback warning** — `tests/lmstudio/test_stream_fallback.py`
+      (uses `Registry.scoped()` to swap in a `NonStreamingLMStudioClient`)
+- [x] **Summarize agent** — `tests/lmstudio/test_summarize_invoke.py`
+- [x] **Error path — unavailable model** — `tests/lmstudio/test_unknown_model.py`
+
+Shared fixtures (`lmstudio_base_url`, `lmstudio_model`,
+`lmstudio_orchestrator`, `lmstudio_app`) live in `tests/lmstudio/conftest.py`.
 
 ### Planner / Reviewer streaming support
 
-`PlannerAgent` and `ReviewerAgent` implement `Agent` but not `StreamingAgent`.
-Add `_do_stream` to both so the streaming endpoint can deliver plan/review
-tokens incrementally without the buffered fallback.
+Both `PlannerAgent` and `ReviewerAgent` now satisfy `StreamingAgent` via an
+async `stream()` method that yields LLM tokens incrementally and falls back
+to a single buffered chunk + warning log when the configured client does
+not implement `StreamingLLMClient`.
 
 ### Secrets-manager seam
 
-Add a `SecretsProvider` abstraction (from ADR-001) consumed at settings
-construction time so that credentials can be read from environment variables,
-files, or a secrets manager without changing agent/adapter code.
+`src/mangomas/secrets/` ships the `SecretsProvider` protocol,
+`EnvSecretsProvider` env-var backend, and `secrets_registry`.
+`LLMSettings.secret_ref` is resolved at orchestrator-build time. Cloud
+backends (GCP Secret Manager) still tracked under "Mid term".
 
 ### Per-request correlation IDs
 
-Propagate a request-scoped correlation ID through log records and the OTel
-span context so that distributed traces can be correlated across services.
+`src/mangomas/api/correlation.py` exposes a `ContextVar` + `CorrelationFilter`;
+`AccessLogMiddleware` reads inbound `X-Request-ID`, sets the ContextVar,
+pushes the value into OpenTelemetry baggage as `mangomas.correlation_id`,
+and echoes it on the outgoing response.
 
 ---
 
@@ -62,7 +65,7 @@ independently through the existing registry mechanism; no core changes.
 ### Vertex AI LLM provider
 
 Implement `VertexLLMClient` satisfying `LLMClient` + `StreamingLLMClient`.
-Register as `_llm_registry.register("vertex", ...)`.
+Register as `llm_registry.register("vertex", ...)`.
 Activate via `MANGOMAS_LLM__PROVIDER=vertex`.
 
 ### Cloud SQL / Postgres storage provider

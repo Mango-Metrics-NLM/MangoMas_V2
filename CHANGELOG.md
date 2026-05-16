@@ -99,5 +99,50 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **LM Studio E2E scenarios 2–6** under `tests/lmstudio/`: chat invoke happy path,
+  chat stream SSE (token + done frames), buffered-fallback warning via
+  `Registry.scoped()`, summarize agent through the public API, and the
+  unknown-model 502 error envelope. All are `@pytest.mark.lmstudio` and gated
+  on `RUN_LMSTUDIO=1`.
+- **Streaming support on `PlannerAgent` and `ReviewerAgent`** via an async
+  `stream()` method that mirrors `ChatAgent._do_stream`'s buffered-fallback
+  pattern. Both now satisfy the `StreamingAgent` protocol so
+  `/agents/{name}/stream` delivers tokens incrementally with no orchestrator
+  changes.
+- **Per-request correlation IDs** end-to-end. New
+  `src/mangomas/api/correlation.py` exposes a `ContextVar` and a
+  `CorrelationFilter` for log records. `AccessLogMiddleware` reads
+  `X-Request-ID` from inbound headers (falling back to a fresh 8-hex-char
+  token), pushes the value into OpenTelemetry baggage as
+  `mangomas.correlation_id`, and echoes it on the outgoing response.
+- **SecretsProvider seam** (`src/mangomas/secrets/`): `SecretsProvider`
+  protocol, `EnvSecretsProvider` env-var backend, and module-level
+  `secrets_registry`. `LLMSettings.secret_ref` (new optional field) is
+  resolved at orchestrator-build time and used to replace `api_key` when
+  set. Cloud backends are deferred to Phase 3.
+- **`Registry.scoped()`** context manager for test-scoped provider
+  substitution. Restores the prior binding (or removes the entry if absent)
+  on block exit, even when the wrapped block raises.
+- **Shared LM Studio E2E fixtures** in `tests/lmstudio/conftest.py`:
+  `lmstudio_base_url`, `lmstudio_model`, `lmstudio_orchestrator`,
+  `lmstudio_app` (ASGITransport over the real `create_app`).
+
+### Changed
+
+- `_llm_registry` renamed to `llm_registry` (public) so tests can swap LLM
+  factories via `Registry.scoped()` without poking module internals.
+- `AccessLogMiddleware` now emits both `request_id` and `correlation_id`
+  fields on every access-log line (today they always carry the same value).
+- `scripts/check_coverage.py` adds a 100% floor for `src/mangomas/secrets/*.py`.
+
+### Fixed
+
+- `cli/main.py` — drop a stale `# noqa: PLC0415` directive (PLC0415 isn't
+  enabled in the ruff rule set).
+
 <!-- next release goes above this line -->
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0
