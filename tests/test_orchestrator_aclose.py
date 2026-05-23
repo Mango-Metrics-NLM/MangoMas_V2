@@ -17,9 +17,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import Message
 from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository
+
+
+class _AcloseBoom(Exception):
+    """Marker exception for tests that need to simulate a failing close hook."""
+
+
+@dataclass
+class _FailingAcloseLLM:
+    """LLM stub whose ``aclose`` always raises — exercises partial-close behaviour."""
+
+    closed_attempted: bool = False
+
+    async def complete(
+        self,
+        messages: list[Message],  # noqa: ARG002
+        *,
+        temperature: float | None = None,  # noqa: ARG002
+    ) -> str:
+        return ""
+
+    async def aclose(self) -> None:
+        self.closed_attempted = True
+        raise _AcloseBoom("simulated LLM teardown failure")
 
 
 @dataclass
@@ -160,3 +185,36 @@ async def test_aclose_is_idempotent() -> None:
     assert llm.closed is False, "second aclose() must not re-close the LLM"
     assert repo.closed is False, "second aclose() must not re-close the repo"
     assert memory.closed is False, "second aclose() must not re-close memory"
+
+
+# ── Fault tolerance: partial close on hook failure ───────────────────────────
+
+
+async def test_aclose_runs_all_hooks_even_when_llm_raises() -> None:
+    """If LLM aclose raises, repo and memory must still be closed."""
+    failing_llm = _FailingAcloseLLM()
+    repo = FakeRepository()
+    memory = FakeMemoryRepository()
+    orch = _orch_with(llm=failing_llm, repo=repo, memory=memory)
+
+    with pytest.raises(_AcloseBoom):
+        await orch.aclose()
+
+    assert failing_llm.closed_attempted is True
+    assert repo.closed is True, "repo must close even if LLM aclose failed"
+    assert memory.closed is True, "memory must close even if LLM aclose failed"
+
+
+async def test_aclose_latches_closed_flag_after_failure() -> None:
+    """A failed first call still latches the closed flag so a second call is a no-op."""
+    failing_llm = _FailingAcloseLLM()
+    repo = FakeRepository()
+    orch = _orch_with(llm=failing_llm, repo=repo)
+
+    with pytest.raises(_AcloseBoom):
+        await orch.aclose()
+
+    # Reset the repo flag and call again; the second call must not re-touch anything.
+    repo.closed = False
+    await orch.aclose()  # must not raise
+    assert repo.closed is False, "second aclose() must skip all hooks after a failed first call"

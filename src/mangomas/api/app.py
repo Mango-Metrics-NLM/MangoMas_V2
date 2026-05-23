@@ -81,18 +81,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        ctx = app.state.orchestrator.context
-        if hasattr(ctx.llm, "aclose"):
-            await ctx.llm.aclose()
-        if ctx.repo is not None:
-            # Prefer async teardown when available (asyncpg pool); fall back
-            # to the sync ``close()`` for SQLite and other simple backends.
-            if hasattr(ctx.repo, "aclose"):
-                await ctx.repo.aclose()
-            else:
-                ctx.repo.close()
-        if ctx.memory is not None:
-            ctx.memory.close()
+        # Delegate to the orchestrator's single tested teardown path so the
+        # FastAPI lifespan, the CLI, and the demo scripts cannot diverge on
+        # close ordering or async/sync dispatch rules.
+        await app.state.orchestrator.aclose()
         logger.info("Application shut down")
 
 

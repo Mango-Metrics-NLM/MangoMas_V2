@@ -28,6 +28,7 @@ class _DemoModel(BaseModel):
     name: str
     value: int
 
+
 _HypothesisDecorator = Callable[[Callable[..., Any]], Callable[..., Any]]
 _hypothesis = pytest.importorskip("hypothesis")
 given = cast(Callable[..., _HypothesisDecorator], _hypothesis.given)

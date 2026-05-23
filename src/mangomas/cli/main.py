@@ -106,23 +106,23 @@ def history(
         logging.basicConfig(level=logging.DEBUG)
 
     orch = _build()
-    repo = orch.context.repo
 
-    async def _run() -> list[dict[str, object]]:
+    async def _run() -> list[dict[str, object]] | None:
+        """Return rows, or ``None`` to signal "no repository configured"."""
         try:
+            repo = orch.context.repo
             if repo is None:
-                return []
+                return None
             return await repo.list_turns(limit=limit)
         finally:
             await _close_orchestrator(orch)
 
-    if repo is None:
-        # Still close adapters before exiting so we don't leak resources.
-        asyncio.run(_close_orchestrator(orch))
+    rows = asyncio.run(_run())
+    if rows is None:
         typer.echo("No repository configured.", err=True)
         raise typer.Exit(code=1)
 
-    for row in asyncio.run(_run()):
+    for row in rows:
         typer.echo(json.dumps(row, ensure_ascii=False))
 
 

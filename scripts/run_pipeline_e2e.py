@@ -25,6 +25,7 @@ from mangomas.composition import build_orchestrator
 from mangomas.core import Orchestrator
 from mangomas.core.agent import AgentRequest, Message
 from mangomas.core.tools import Tool, ToolSpec, parse_or_recover
+from mangomas.errors import ToolExecutionError
 from mangomas.registry import Registry
 
 logger = logging.getLogger("pipeline_e2e")
@@ -98,8 +99,17 @@ class BinaryNumericTool:
         return self._spec
 
     async def execute(self, arguments: dict[str, Any]) -> str:
-        a = float(arguments["a"])
-        b = float(arguments["b"])
+        # LLM may omit a/b or pass non-numeric values despite the schema —
+        # surface those as the typed ToolExecutionError so ToolAgent reports
+        # a clean error code instead of a raw KeyError/TypeError/ValueError.
+        try:
+            a = float(arguments["a"])
+            b = float(arguments["b"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ToolExecutionError(
+                f"{self._name}: invalid arguments {arguments!r}: {exc}",
+                tool_name=self._name,
+            ) from exc
         return json.dumps({"result": self._op(a, b)})
 
 

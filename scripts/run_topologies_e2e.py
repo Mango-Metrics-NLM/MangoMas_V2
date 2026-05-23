@@ -61,8 +61,7 @@ _HAIKU_REFINEMENT_PROMPT: str = (
 )
 
 _BIAS_VARIANCE_PROMPT: str = (
-    "Explain the difference between bias and variance in machine learning. "
-    "Keep it under 100 words."
+    "Explain the difference between bias and variance in machine learning. Keep it under 100 words."
 )
 
 
@@ -123,8 +122,7 @@ async def run_fan_out(orch: Orchestrator) -> None:
 
     speedup = serial_secs / parallel_secs if parallel_secs > 0 else float("inf")
     print(
-        f"[timing] parallel={parallel_secs:.2f}s  serial={serial_secs:.2f}s  "
-        f"speedup={speedup:.2f}x"
+        f"[timing] parallel={parallel_secs:.2f}s  serial={serial_secs:.2f}s  speedup={speedup:.2f}x"
     )
 
 
@@ -164,9 +162,7 @@ async def run_streaming(orch: Orchestrator) -> None:
     """Stream the chat agent's response token-by-token; measure TTFT and throughput."""
     _hr(f"Topology 3/3 — streaming ({_STREAM_AGENT} token-by-token)")
 
-    request = AgentRequest(
-        messages=[Message(role="user", content=_BIAS_VARIANCE_PROMPT)]
-    )
+    request = AgentRequest(messages=[Message(role="user", content=_BIAS_VARIANCE_PROMPT)])
     stream = await orch.stream_dispatch(_STREAM_AGENT, request)
 
     t0 = time.perf_counter()

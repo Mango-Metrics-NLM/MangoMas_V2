@@ -37,32 +37,62 @@ class Orchestrator:
         return self._ctx
 
     async def aclose(self) -> None:
-        """Release adapter resources cleanly. Idempotent.
+        """Release adapter resources cleanly. Idempotent and fault-tolerant.
 
         Dispatches on ``hasattr(component, "aclose")`` to support async-pool
         backends (PostgresRepository, LMStudioClient) while still respecting
         the sync ``close()`` contract used by SQLite. The same teardown rules
-        previously lived in the CLI and demo scripts — centralising them here
-        means every entry point (CLI, FastAPI lifespan, scripts) shares a
+        previously lived in the CLI, the FastAPI lifespan, and the demo
+        scripts — centralising them here means every entry point shares a
         single tested code path and cannot diverge.
 
-        Subsequent calls are no-ops, so callers can invoke this defensively
-        from nested ``finally`` blocks without risking double-close errors.
+        Fault tolerance: each component's close hook runs under its own
+        ``try/except``, so a failure in one (e.g. LLM aclose timing out)
+        does not prevent the others (repo, memory) from being closed.
+        The first encountered exception is re-raised after every other
+        hook has been attempted, preserving the original failure for the
+        caller while still releasing the remaining resources.
+
+        Idempotency: ``_closed`` is latched in a ``finally`` so a second
+        call is a safe no-op, but only after a complete teardown attempt.
+        Callers may invoke this defensively from nested ``finally`` blocks
+        without risking double-close errors.
         """
         if self._closed:
             logger.debug("Orchestrator.aclose: already closed, skipping")
             return
-        self._closed = True
 
-        if hasattr(self._ctx.llm, "aclose"):
-            await self._ctx.llm.aclose()
-        if self._ctx.repo is not None:
-            if hasattr(self._ctx.repo, "aclose"):
-                await self._ctx.repo.aclose()
-            else:
-                self._ctx.repo.close()
-        if self._ctx.memory is not None:
-            self._ctx.memory.close()
+        first_exc: BaseException | None = None
+        try:
+            if hasattr(self._ctx.llm, "aclose"):
+                try:
+                    await self._ctx.llm.aclose()
+                except Exception as exc:
+                    logger.exception("Orchestrator.aclose: LLM close failed")
+                    first_exc = first_exc or exc
+
+            if self._ctx.repo is not None:
+                try:
+                    if hasattr(self._ctx.repo, "aclose"):
+                        await self._ctx.repo.aclose()
+                    else:
+                        self._ctx.repo.close()
+                except Exception as exc:
+                    logger.exception("Orchestrator.aclose: repo close failed")
+                    first_exc = first_exc or exc
+
+            if self._ctx.memory is not None:
+                try:
+                    self._ctx.memory.close()
+                except Exception as exc:
+                    logger.exception("Orchestrator.aclose: memory close failed")
+                    first_exc = first_exc or exc
+        finally:
+            self._closed = True
+            logger.debug("Orchestrator.aclose: complete")
+
+        if first_exc is not None:
+            raise first_exc
 
     def register(self, agent: Agent) -> None:
         """Register an agent. Last registration wins for a given name."""
