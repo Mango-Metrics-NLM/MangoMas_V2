@@ -177,8 +177,7 @@ class PostgresRepository:
         try:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, ts, agent, request, response FROM turns "
-                    "ORDER BY id DESC LIMIT $1",
+                    "SELECT id, ts, agent, request, response FROM turns ORDER BY id DESC LIMIT $1",
                     limit,
                 )
         except asyncpg.PostgresError as exc:

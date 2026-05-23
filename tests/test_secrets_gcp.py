@@ -104,9 +104,7 @@ class _FakeSecretClient:
     raises: BaseException | None = None
     calls: list[dict[str, Any]] = field(default_factory=list)
 
-    def access_secret_version(
-        self, *, request: dict[str, str], timeout: float
-    ) -> _FakeResponse:
+    def access_secret_version(self, *, request: dict[str, str], timeout: float) -> _FakeResponse:
         self.calls.append({"name": request["name"], "timeout": timeout})
         if self.raises is not None:
             raise self.raises
