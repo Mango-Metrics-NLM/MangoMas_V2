@@ -109,12 +109,24 @@ def _split_frontmatter(text: str) -> dict[str, object]:
     return loaded
 
 
+def _normalize_path(p: str) -> str:
+    """Normalize path separators and strip leading './' without destroying '.github'."""
+    normalized = p.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+_MIN_SUBAGENT_PATH_DEPTH = 3  # .github/agents/<parent>/<child>.agent.md
+
+
 def _parent_slug_of(agent_path: str) -> str | None:
     """Return the parent slug for *agent_path* or ``None`` if it is a parent file."""
-    dirname = os.path.dirname(agent_path)
-    if dirname == ".github/agents":
+    normalized = _normalize_path(agent_path)
+    parts = normalized.split("/")
+    if len(parts) <= _MIN_SUBAGENT_PATH_DEPTH:
         return None
-    return os.path.basename(dirname)
+    return parts[-2]
 
 
 # ── Validators ────────────────────────────────────────────────────────────────
@@ -137,6 +149,8 @@ def _validate_skill(path: str) -> list[str]:
 def _validate_agent(path: str, all_agent_paths: list[str]) -> list[str]:
     """Return a list of error messages (empty when valid)."""
     errors: list[str] = []
+    normalized_path = _normalize_path(path)
+    normalized_all = [_normalize_path(p) for p in all_agent_paths]
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
@@ -150,18 +164,18 @@ def _validate_agent(path: str, all_agent_paths: list[str]) -> list[str]:
     if agent.sub_agents is None:
         return []
 
-    parent_slug = _parent_slug_of(path)
+    parent_slug = _parent_slug_of(normalized_path)
     if parent_slug is not None:
         # Sub-agents declaring further sub-agents is intentionally disallowed
         # to keep the hierarchy two-deep and predictable.
         errors.append(f"{path}: sub_agents is only valid on parent agent files")
         return errors
 
-    parent_filename = os.path.basename(path)
+    parent_filename = os.path.basename(normalized_path)
     parent_name_slug = parent_filename.removesuffix(".agent.md")
     for child_slug in agent.sub_agents:
         expected = f".github/agents/{parent_name_slug}/{child_slug}.agent.md"
-        if expected not in all_agent_paths:
+        if expected not in normalized_all:
             errors.append(f"{path}: sub_agents references missing file {expected!r}")
     return errors
 
