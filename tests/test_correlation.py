@@ -26,6 +26,7 @@ from mangomas.correlation import (
     set_correlation_id,
 )
 from mangomas.errors import LLMBadResponse
+from tests.constants import ASGI_TEST_BASE_URL
 from tests.fakes import FakeLLM
 
 # ── ContextVar plumbing ───────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ async def test_middleware_generates_correlation_when_header_absent(
     _correlation_app: FastAPI,
 ) -> None:
     transport = httpx.ASGITransport(app=_correlation_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         response = await client.post("/agents/echo/invoke", json={"messages": []})
 
     assert response.status_code == 200, response.text
@@ -136,7 +137,7 @@ async def test_middleware_echoes_inbound_correlation_header(
     _correlation_app: FastAPI,
 ) -> None:
     transport = httpx.ASGITransport(app=_correlation_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         response = await client.post(
             "/agents/echo/invoke",
             json={"messages": []},
@@ -151,7 +152,7 @@ async def test_middleware_echoes_inbound_correlation_header(
 
 async def test_middleware_ignores_blank_inbound_header(_correlation_app: FastAPI) -> None:
     transport = httpx.ASGITransport(app=_correlation_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         response = await client.post(
             "/agents/echo/invoke",
             json={"messages": []},
@@ -167,7 +168,7 @@ async def test_middleware_resets_correlation_after_request(
     _correlation_app: FastAPI,
 ) -> None:
     transport = httpx.ASGITransport(app=_correlation_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         await client.post(
             "/agents/echo/invoke",
             json={"messages": []},
@@ -211,7 +212,7 @@ async def test_middleware_logs_unhandled_exception_with_correlation(
     """The ``except Exception`` branch must log + return a 500 with X-Request-ID."""
     transport = httpx.ASGITransport(app=_boom_app, raise_app_exceptions=False)
     with caplog.at_level(logging.ERROR, logger="mangomas.api.middleware"):
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
             response = await client.post(
                 "/agents/boom/invoke",
                 json={"messages": []},
@@ -255,7 +256,7 @@ async def test_x_request_id_is_echoed_on_handled_error_response(
 ) -> None:
     """``MangomasError`` -> JSONResponse via FastAPI handler must echo X-Request-ID."""
     transport = httpx.ASGITransport(app=_mangomas_error_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         response = await client.post(
             "/agents/explode/invoke",
             json={"messages": []},
@@ -273,7 +274,7 @@ async def test_x_request_id_is_echoed_when_inbound_header_is_sanitised(
 ) -> None:
     """An inbound value with CR/LF/control chars is sanitised before being echoed."""
     transport = httpx.ASGITransport(app=_correlation_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         response = await client.post(
             "/agents/echo/invoke",
             json={"messages": []},
@@ -293,7 +294,7 @@ async def test_x_request_id_is_truncated_when_inbound_is_oversize(
     """An oversize inbound id is clamped to MAX_CORRELATION_ID_LENGTH."""
     oversize = "x" * (MAX_CORRELATION_ID_LENGTH + 100)
     transport = httpx.ASGITransport(app=_correlation_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         response = await client.post(
             "/agents/echo/invoke",
             json={"messages": []},

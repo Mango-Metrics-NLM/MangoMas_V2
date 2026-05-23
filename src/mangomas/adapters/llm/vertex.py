@@ -16,8 +16,9 @@ import json
 import logging
 import time
 from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
+from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 
@@ -27,6 +28,11 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 __all__ = ["VertexClient", "VertexError"]
+
+# Minimal prompt used by ``VertexClient.ping`` to exercise the Vertex endpoint.
+# Vertex AI does not expose a free-form health endpoint; the cheapest reachable
+# probe is a one-token completion. Module-level so the literal is named.
+_PING_PROMPT: Final[str] = "ping"
 
 
 class VertexError(LLMBadResponse):
@@ -143,8 +149,8 @@ class VertexClient:
         model: str,
         credentials_path: str | None = None,
         credentials_json: str | None = None,
-        timeout_seconds: float = 60.0,
-        default_temperature: float = 0.2,
+        timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS,
+        default_temperature: float = DEFAULT_LLM_TEMPERATURE,
         client: Any | None = None,
     ) -> None:
         self._project_id = project_id
@@ -313,9 +319,9 @@ class VertexClient:
         """
         try:
             await self._client.generate_content_async(
-                [{"role": "user", "content": "ping"}]
+                [{"role": "user", "content": _PING_PROMPT}]
                 if self._Content is None
-                else [self._Content(role="user", parts=[self._Part.from_text("ping")])],
+                else [self._Content(role="user", parts=[self._Part.from_text(_PING_PROMPT)])],
                 generation_config={"temperature": 0.0, "max_output_tokens": 1},
             )
         except Exception as exc:

@@ -7,13 +7,16 @@ from pathlib import Path
 import pytest
 
 from mangomas.eval.dataset import DatasetError, load_jsonl
+from tests.constants import STUB_REPLY
 
 
 async def test_load_jsonl_mixed_fixture(fixtures_dir: Path) -> None:
     rows = await load_jsonl(fixtures_dir / "mixed.jsonl")
     assert len(rows) == 3
     assert rows[0].id == "m1"
-    assert rows[0].expected == "stub-reply"
+    # Fixture rows align with the FakeLLM's default reply so exact-match
+    # scoring is deterministic across the eval test suite.
+    assert rows[0].expected == STUB_REPLY
     assert rows[2].metadata == {"category": "smoke"}
 
 

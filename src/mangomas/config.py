@@ -187,9 +187,6 @@ class Settings(BaseSettings):
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
 
-    # Set to True to enable entry-point-based agent discovery (Phase C).
-    discovery_enabled: bool = False
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

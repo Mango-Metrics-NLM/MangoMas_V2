@@ -44,6 +44,14 @@ HTTPX_ERROR_PATH_TIMEOUT_SECONDS: float = 30.0
 # httpx idiom for in-process ASGI testing — not a real server.
 ASGI_TEST_BASE_URL: str = "http://testserver"
 
+# ── In-process mock LM Studio base URL ───────────────────────────────────────
+# Used by respx-mocked unit tests in ``tests/test_lmstudio.py`` — the value
+# does not need to resolve; respx intercepts on hostname match. Kept distinct
+# from ``ASGI_TEST_BASE_URL`` so a future refactor that shares the ASGI URL
+# does not accidentally redirect mocked LLM traffic.
+TEST_LMSTUDIO_MOCK_BASE_URL: str = "http://lm/v1"
+TEST_LMSTUDIO_MOCK_MODEL: str = "m"
+
 # ── DB defaults ───────────────────────────────────────────────────────────────
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"

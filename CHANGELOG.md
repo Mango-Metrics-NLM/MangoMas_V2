@@ -180,6 +180,23 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `cli` 90 → 95, global 90 → 95. New `eval` floor at 95 %. `agents`
   (95 %) and `adapters` (85 %) unchanged. `pyproject.toml` global
   `--cov-fail-under=90` → `95`.
+- **Magic-number cleanup in LLM adapters**: `LMStudioClient` and
+  `VertexClient` constructors now reference `DEFAULT_LLM_TIMEOUT_SECONDS`
+  and `DEFAULT_LLM_TEMPERATURE` from `mangomas.config` instead of inline
+  literals. The SSE `[DONE]` sentinel and the Vertex ping prompt are
+  named module-level `Final` constants.
+- **Test-side magic literal cleanup**: `tests/test_lmstudio.py` consumes
+  new `TEST_LMSTUDIO_MOCK_BASE_URL` / `TEST_LMSTUDIO_MOCK_MODEL`
+  constants; `tests/test_correlation.py`, `tests/integration/test_api_flow.py`
+  consume `ASGI_TEST_BASE_URL`; `tests/test_api.py`, `tests/test_cli.py`,
+  `tests/eval/test_dataset.py` consume `STUB_REPLY`; `tests/test_sqlite.py`
+  consumes `DEFAULT_AGENT_NAME`.
+- **`tests/conftest.py`** no longer re-exports `Fake*` from
+  `tests.fakes`. The one remaining importer (`tests/test_agent.py`) now
+  imports from the canonical `tests.fakes` path. Mirrors the
+  `mangomas.api.correlation` shim removal earlier in this release.
+- **Stale docstring** in `secrets/provider.py` referring to v0.2.0
+  updated to a version-agnostic statement.
 
 ### Removed
 
@@ -188,6 +205,11 @@ Versioning: [Semantic Versioning](https://semver.org/).
   short-term migration aid; with no external consumers (project is pre-1.0)
   the duplicate import path is now retired. Update imports to
   `from mangomas.correlation import ...`.
+- **`Settings.discovery_enabled`** field removed. Defined in v0.1.0 as a
+  placeholder for entry-point-based agent discovery; no factory ever read
+  it. The feature itself remains tracked under `NEXT_STEPS.md` "Long term"
+  and will re-introduce a field alongside the real implementation if and
+  when it lands.
 
 ### Fixed
 
