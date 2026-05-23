@@ -18,6 +18,16 @@ DEFAULT_TEMPERATURE: float = 0.2
 LMSTUDIO_BASE_URL_ENV: str = "LMSTUDIO_BASE_URL"
 LMSTUDIO_MODEL_ENV: str = "LMSTUDIO_MODEL"
 
+# ── Vertex AI E2E env-var names (single source of truth) ──────────────────────
+VERTEX_PROJECT_ENV: str = "VERTEX_PROJECT_ID"
+VERTEX_LOCATION_ENV: str = "VERTEX_LOCATION"
+VERTEX_MODEL_ENV: str = "VERTEX_MODEL"
+VERTEX_CREDENTIALS_PATH_ENV: str = "VERTEX_CREDENTIALS_PATH"
+RUN_VERTEX_ENV: str = "RUN_VERTEX"
+# Default Vertex model used by E2E tests when ``VERTEX_MODEL`` is unset.
+DEFAULT_VERTEX_TEST_MODEL: str = "gemini-1.5-flash"
+STUB_VERTEX_REPLY: str = "stub-vertex-reply"
+
 # ── HTTP client timeouts (test-scoped) ────────────────────────────────────────
 # Per-request timeout for httpx.AsyncClient calls in E2E tests. The underlying
 # LMStudioClient timeout is configured separately via

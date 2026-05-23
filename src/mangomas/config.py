@@ -24,6 +24,11 @@ DEFAULT_LLM_API_KEY: str = "lm-studio"
 DEFAULT_LLM_TIMEOUT_SECONDS: float = 60.0
 DEFAULT_LLM_TEMPERATURE: float = 0.2
 
+# Vertex AI provider defaults. ``project_id``/``credentials_path`` have no
+# safe defaults — they must be supplied explicitly via env vars when using
+# the ``vertex`` provider.
+DEFAULT_VERTEX_LOCATION: str = "us-central1"
+
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"
 
@@ -50,7 +55,13 @@ DEFAULT_SECRETS_PROVIDER: str = "env"
 
 
 class LLMSettings(BaseModel):
-    """LLM endpoint configuration (LM Studio by default; OpenAI-compatible)."""
+    """LLM endpoint configuration (LM Studio by default; OpenAI-compatible).
+
+    Vertex-specific fields (``project_id``, ``location``, ``credentials_path``)
+    are optional and only consulted when ``provider == "vertex"``. They default
+    to ``None``/``DEFAULT_VERTEX_LOCATION`` so existing LM Studio deployments
+    see no behaviour change.
+    """
 
     provider: str = DEFAULT_LLM_PROVIDER
     base_url: str = DEFAULT_LLM_BASE_URL
@@ -60,8 +71,13 @@ class LLMSettings(BaseModel):
     temperature: float = DEFAULT_LLM_TEMPERATURE
     # Optional reference resolved via the SecretsProvider seam. When set,
     # the resolved value overrides ``api_key`` at orchestrator-build time.
+    # For Vertex this resolved value is treated as a service-account JSON body.
     # See ``mangomas.secrets`` and ``composition._lmstudio_factory``.
     secret_ref: str | None = None
+    # Vertex-specific fields.
+    project_id: str | None = None
+    location: str = DEFAULT_VERTEX_LOCATION
+    credentials_path: str | None = None
 
 
 class SecretsSettings(BaseModel):

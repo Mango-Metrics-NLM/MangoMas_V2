@@ -16,7 +16,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, TypeAlias
 
-from mangomas.adapters.llm import LMStudioClient
+from mangomas.adapters.llm import LMStudioClient, VertexClient
 from mangomas.adapters.storage import FileMemoryRepository, SQLiteRepository
 from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, SummarizeAgent, ToolAgent
 from mangomas.config import (
@@ -84,6 +84,27 @@ def _lmstudio_factory(cfg: LLMSettings) -> LMStudioClient:
     )
 
 
+def _vertex_factory(cfg: LLMSettings) -> VertexClient:
+    """Build a :class:`VertexClient` from :class:`LLMSettings`.
+
+    When ``secret_ref`` is set, ``_resolve_llm_secrets`` has already replaced
+    ``api_key`` with the resolved secret payload — for Vertex this is treated
+    as a service-account JSON body and forwarded as ``credentials_json``.
+    Otherwise the factory falls back to ``credentials_path`` (or Application
+    Default Credentials when both are absent).
+    """
+    credentials_json = cfg.api_key if cfg.secret_ref else None
+    return VertexClient(
+        project_id=cfg.project_id,
+        location=cfg.location,
+        model=cfg.model,
+        credentials_path=cfg.credentials_path,
+        credentials_json=credentials_json,
+        timeout_seconds=cfg.timeout_seconds,
+        default_temperature=cfg.temperature,
+    )
+
+
 def _sqlite_factory(cfg: DBSettings) -> SQLiteRepository:
     return SQLiteRepository(cfg.url)
 
@@ -94,6 +115,7 @@ def _file_memory_factory(cfg: MemorySettings) -> FileMemoryRepository:
 
 # Seed registries — add more providers here when needed.
 llm_registry.register("lmstudio", _lmstudio_factory)
+llm_registry.register("vertex", _vertex_factory)
 _storage_registry.register("sqlite", _sqlite_factory)
 _memory_registry.register("file", _file_memory_factory)
 
