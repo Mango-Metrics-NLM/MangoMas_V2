@@ -27,3 +27,8 @@ CHANGELOG.md
 NEXT_STEPS.md
 README.md
 typings/
+
+# Claude Code harness assets — development tooling, not part of the runtime image
+.claude/
+scripts/harness_session_start.py
+scripts/lint_agent_frontmatter.py

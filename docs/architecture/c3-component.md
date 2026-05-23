@@ -25,6 +25,7 @@ C4Component
 
   Container_Boundary(core_boundary, "Core (src/mangomas/core/)") {
     Component(orchestrator, "Orchestrator", "Domain service", "dispatch() and stream_dispatch() look up agents in a Registry[Agent], invoke handle() or stream(), and persist turns. Lazy OTel tracer.")
+    Component(harness_orch, "_HarnessOrchestrator (opt-in)", "Orchestrator subclass", "Engaged only when MANGOMAS_HARNESS__ENABLED=true. Wraps dispatch + stream_dispatch in a harness.agent_invoke parent span carrying agent.name, harness.topology, messages.count attributes. Delegates the actual work to Orchestrator via super(). dispatch_pipeline / dispatch_fan_out inherit the wrap because they delegate through dispatch.")
     Component(registry, "Registry[T]", "Generic registry", "Thread-safe name → factory/instance store. Used for agents, LLM providers, and storage providers.")
     Component(health_svc, "check_ready()", "Health service", "Pings LLM via PingableLLMClient.ping() and checks DB connectivity. Returns ReadinessReport.")
   }
@@ -49,7 +50,8 @@ C4Component
   Rel(app_factory, error_handler, "registers exception handler")
   Rel(app_factory, health_routes, "mounts routes")
   Rel(app_factory, agent_routes, "mounts routes")
-  Rel(agent_routes, orchestrator, "dispatch() / stream_dispatch()")
+  Rel(agent_routes, orchestrator, "dispatch() / stream_dispatch() (or _HarnessOrchestrator when harness.enabled=true)")
+  Rel(harness_orch, orchestrator, "delegates via super() — harness only adds the parent span")
   Rel(health_routes, health_svc, "check_ready(orchestrator)")
   Rel(health_svc, llm_client, "ping()")
   Rel(orchestrator, registry, "looks up Agent by name")
@@ -98,5 +100,13 @@ C4Component
   the FastAPI Application container — it is a CLI consumer of the same
   composition root and uses the same `Orchestrator`. See
   [docs/eval/harness.md](../eval/harness.md) for its component layout.
+- The **Claude Code harness** (`_HarnessOrchestrator`, the frontmatter
+  linter, the SessionStart hook) is opt-in via
+  `MANGOMAS_HARNESS__ENABLED`. When disabled (the default),
+  `build_orchestrator` returns a plain `Orchestrator` and the harness
+  components above are not engaged. When enabled, the wrapper is
+  transparent — every existing `dispatch` / `stream_dispatch` call works
+  unchanged; the only observable difference is a `harness.agent_invoke`
+  parent span and three extra debug-level log lines per invocation.
 - All components that accept external input are configurable via
   `mangomas.config.Settings`; no hardcoded endpoints or model ids.

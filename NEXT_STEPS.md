@@ -12,9 +12,24 @@ extension, backwards-compatible contracts.
 
 _(The Vertex AI LLM provider, Postgres `TurnRepository`, GCP Secret
 Manager backend, and the offline evaluation harness all landed in
-v0.3.0 — see "Done in v0.3.0" below. Next near-term items are the
-Cloud Logging / Cloud Trace exporter swap and the Cloud Run deployment
-pipeline, promoted from "Mid term".)_
+v0.3.0; the Claude Code enterprise harness — skills, sub-agents,
+`HarnessSettings`, `_HarnessOrchestrator`, frontmatter linter,
+SessionStart hook, PR template, secret-scan job — landed in the
+current Unreleased band on the `claude/agent-md-enterprise-harness-*`
+branch. Next near-term items are the Cloud Logging / Cloud Trace
+exporter swap, the Cloud Run deployment pipeline, and the harness
+metrics-exporter selection switch.)_
+
+### Harness metrics-exporter selection
+
+Wire `HarnessSettings.metrics_namespace` into a configurable OTel
+exporter so the `harness.agent_invoke` parent spans can be routed to a
+different OTLP endpoint than the application spans. Today the
+namespace is honoured by the tracer but exporter selection is
+shared. Activate via a new `MANGOMAS_HARNESS__METRICS_EXPORTER` env;
+default falls through to the application-wide exporter to preserve
+the existing behaviour. Pairs naturally with the Cloud Trace work
+below.
 
 ### Cloud Logging + Cloud Trace exporter swap
 
@@ -37,6 +52,44 @@ backends raise a new `SecretsResolutionError` instead of returning
 `None` on auth/permission/timeout failures. Preserves the local-dev
 contract by default; gives operators an opt-in "fail loud" mode for
 production.
+
+---
+
+## Done on the harness branch (Unreleased)
+
+### Claude Code enterprise harness
+
+End-to-end Claude Code harness landed as a non-breaking opt-in layer:
+
+- **8 skills** under `.github/skills/<name>/SKILL.md` covering
+  testing, adapter authoring, agent addition, error taxonomy,
+  observability, config, release, and topology.
+- **12 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
+  grouped under the 4 parent agents. The new `sub_agents:`
+  frontmatter key is optional and backwards-compatible.
+- **`HarnessSettings`** (env prefix `MANGOMAS_HARNESS__`,
+  `enabled=False` default) drives whether `build_orchestrator`
+  returns a `_HarnessOrchestrator` wrapper that adds a
+  `harness.agent_invoke` parent span over `dispatch` *and*
+  `stream_dispatch`. Pipeline + fan-out topologies inherit the wrap.
+- **`scripts/lint_agent_frontmatter.py`** enforces frontmatter
+  schemas (Pydantic), resolves `sub_agents:` slugs, and gates
+  protected core paths via a `BREAKING-CHANGE` marker. Wired into
+  CI as `frontmatter-lint`.
+- **`scripts/harness_session_start.py`** emits a single-line JSON
+  probe report on session start (venv + LM Studio reachability).
+  Always returns `EXIT_OK` so a failed probe never blocks a session.
+- **PR template** + **secret-scan job** + **ADR template** complete
+  the PR automation.
+- Composition coverage rises 90 % → 100 % via six new tests covering
+  every harness branch (dispatch wrap, stream wrap, file-memory
+  factory, memory-enabled wiring, linter EXIT_SCHEMA, git-failure
+  branch in `_staged_diff`). Global coverage 96.95 % across 505
+  unit tests.
+
+See `.github/agents/`, `.github/skills/`, and the new `harness:`
+block in `Settings`. C4 diagrams in `docs/architecture/` (c2 + c3)
+describe where the harness sits.
 
 ---
 

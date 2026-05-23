@@ -175,6 +175,43 @@ Built-in scorers (registered through `mangomas.eval.scorer_registry`):
 
 ---
 
+## Claude Code harness (opt-in)
+
+The repository ships an enterprise Claude Code harness configured under
+`.github/agents/` (parents + sub-agents), `.github/skills/`, and
+`.claude/settings.json`. It is **opt-in** — production callers behave
+identically until the switch is flipped:
+
+```env
+MANGOMAS_HARNESS__ENABLED=true
+MANGOMAS_HARNESS__METRICS_NAMESPACE=mangomas.harness
+MANGOMAS_HARNESS__HOOK_LOG_LEVEL=INFO
+```
+
+When enabled, `build_orchestrator` returns a `_HarnessOrchestrator`
+wrapper that adds a `harness.agent_invoke` parent span (with
+`agent.name`, `harness.topology`, `messages.count` attributes) above the
+existing `orchestrator.*` spans. Otherwise, the wrapper is bypassed and
+no extra spans, logs, or hooks are emitted by the runtime process.
+
+What ships in the harness:
+
+| Surface | Path | Status |
+|---|---|---|
+| Skills (workflow helpers) | `.github/skills/<name>/SKILL.md` | 8 skills |
+| Parent agents | `.github/agents/<parent>.agent.md` | 4 parents |
+| Sub-agents (opt-in `sub_agents:` key) | `.github/agents/<parent>/<slug>.agent.md` | 12 specialised sub-agents |
+| Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
+| SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
+| Project settings | `.claude/settings.json` | Allow/Deny + Stop/PostToolUse hooks |
+| PR template + secret-scan job | `.github/PULL_REQUEST_TEMPLATE.md` + `ci.yml` | Mandatory PR checklist |
+
+See `CLAUDE.md` for the full skill/sub-agent map and protected-path
+table; `docs/architecture/c2-container.md` and `c3-component.md` for
+where the harness sits in the C4 model.
+
+---
+
 ## Docker
 
 ```bash

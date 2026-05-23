@@ -147,6 +147,70 @@ To add a new agent:
 
 ---
 
+## Claude Code Sub-Agents
+
+Each parent agent in `.github/agents/<parent>.agent.md` may declare specialised
+sub-agents via the optional `sub_agents:` frontmatter list. Sub-agent files
+live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
+
+| Parent | Sub-agents |
+|--------|-----------|
+| `architect` | `protocol-auditor`, `layering-auditor`, `adr-author`, `pr-watcher` |
+| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev` |
+| `test-engineer` | `fake-builder`, `hypothesis-fuzz`, `integration-runner` |
+| `api-dev` | `sse-streamer`, `schema-evolution` |
+
+The `sub_agents:` key is optional and backward-compatible — parents without it
+remain valid. Slugs are resolved to `<parent>/<slug>.agent.md`.
+
+## Claude Code Harness (opt-in)
+
+The enterprise harness layer is configured by `HarnessSettings` (env prefix
+`MANGOMAS_HARNESS__`) and engaged only when `enabled=True`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MANGOMAS_HARNESS__ENABLED` | `false` | Wrap dispatch + stream_dispatch in `harness.agent_invoke` |
+| `MANGOMAS_HARNESS__METRICS_NAMESPACE` | `mangomas.harness` | OTel tracer namespace for harness spans |
+| `MANGOMAS_HARNESS__HOOK_LOG_LEVEL` | `INFO` | Level for SessionStart-hook log records |
+
+When enabled, `composition.py::build_orchestrator` returns
+`_HarnessOrchestrator` instead of the bare `Orchestrator`. The subclass
+overrides both `dispatch` and `stream_dispatch` to add a
+`harness.agent_invoke` parent span with attributes `agent.name`,
+`harness.topology` (`dispatch` or `stream`), and `messages.count`.
+`dispatch_pipeline` and `dispatch_fan_out` inherit the wrap because
+they delegate through `dispatch`.
+
+Two scripts in `scripts/` complete the harness:
+
+- `lint_agent_frontmatter.py` — Pydantic-validated lint of `*.agent.md`
+  / `SKILL.md` frontmatter and `sub_agents:` resolution. Also gates
+  protected core paths (`src/mangomas/core/agent.py`,
+  `src/mangomas/registry.py`, `src/mangomas/core/orchestrator.py`,
+  `src/mangomas/core/tools.py`) with a required `BREAKING-CHANGE`
+  marker on staged diffs. Wired into CI as `frontmatter-lint`.
+- `harness_session_start.py` — SessionStart hook for Claude Code on
+  the web. Emits a single-line JSON probe report (venv + LM Studio)
+  so a fresh session knows what's available. Always returns `EXIT_OK`.
+
+## Claude Code Skills
+
+Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
+
+| Skill | Use when |
+|-------|----------|
+| `mango-testing` | Writing/running tests, extending fakes, coverage |
+| `mango-adapter` | Adding a new LLM/storage/memory/secrets adapter |
+| `mango-agent-add` | Adding a new agent following the 4-step pattern |
+| `mango-error` | Adding a new error type with HTTP mapping |
+| `mango-observability` | Instrumenting with spans + structured logging |
+| `mango-config` | Adding a new tunable to `Settings` |
+| `mango-topology` | Composing pipelines, fan-outs, acceptance loops |
+| `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
+
+---
+
 ## Multi-Agent Topologies
 
 ```python

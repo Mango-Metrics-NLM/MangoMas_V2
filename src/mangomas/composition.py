@@ -13,7 +13,7 @@ Adding a new LLM or storage provider requires only:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeAlias
 
 from mangomas.adapters.llm import LMStudioClient, VertexClient
@@ -22,6 +22,7 @@ from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, SummarizeAge
 from mangomas.config import (
     AgentSettings,
     DBSettings,
+    HarnessSettings,
     LLMSettings,
     MemorySettings,
     SecretsSettings,
@@ -29,9 +30,12 @@ from mangomas.config import (
     get_settings,
 )
 from mangomas.core import Agent, AgentContext, Orchestrator
+from mangomas.core.agent import AgentRequest, AgentResponse
+from mangomas.core.loop import AcceptanceFn
 from mangomas.errors import ConfigError
 from mangomas.registry import Registry
 from mangomas.secrets import secrets_registry
+from mangomas.telemetry import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +167,75 @@ agent_registry.register("reviewer", lambda settings: ReviewerAgent(settings=sett
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+_HARNESS_SPAN_NAME = "harness.agent_invoke"
+_HARNESS_TOPOLOGY_DISPATCH = "dispatch"
+_HARNESS_TOPOLOGY_STREAM = "stream"
+
+
+class _HarnessOrchestrator(Orchestrator):
+    """Orchestrator subclass that wraps dispatch paths in a harness-level span.
+
+    Engaged only when ``Settings.harness.enabled`` is ``True``. The parent
+    span sits above the existing ``orchestrator.*`` spans so operators can
+    filter or alert on agent invocations at the harness layer without
+    disturbing the in-orchestrator instrumentation. Because
+    ``dispatch_pipeline`` and ``dispatch_fan_out`` delegate through
+    ``dispatch``, those topologies inherit the wrap automatically;
+    ``stream_dispatch`` does not, so it is wrapped explicitly below.
+    """
+
+    def __init__(self, ctx: AgentContext, harness_cfg: HarnessSettings) -> None:
+        super().__init__(ctx)
+        self._harness_tracer = get_tracer(harness_cfg.metrics_namespace)
+        self._harness_cfg = harness_cfg
+        logger.debug(
+            "Harness orchestrator engaged",
+            extra={
+                "metrics_namespace": harness_cfg.metrics_namespace,
+                "hook_log_level": harness_cfg.hook_log_level,
+            },
+        )
+
+    async def dispatch(
+        self,
+        agent_name: str,
+        request: AgentRequest,
+        *,
+        acceptance_fn: AcceptanceFn | None = None,
+        max_steps: int | None = None,
+    ) -> AgentResponse:
+        with self._harness_tracer.start_as_current_span(_HARNESS_SPAN_NAME) as span:
+            span.set_attribute("agent.name", agent_name)
+            span.set_attribute("harness.topology", _HARNESS_TOPOLOGY_DISPATCH)
+            span.set_attribute("messages.count", len(request.messages))
+            logger.debug(
+                "Harness wrapping dispatch",
+                extra={"agent": agent_name, "messages": len(request.messages)},
+            )
+            return await super().dispatch(
+                agent_name,
+                request,
+                acceptance_fn=acceptance_fn,
+                max_steps=max_steps,
+            )
+
+    async def stream_dispatch(
+        self,
+        agent_name: str,
+        request: AgentRequest,
+    ) -> AsyncIterator[str]:
+        """Wrap streaming dispatch so the harness parent span covers token emission too."""
+        with self._harness_tracer.start_as_current_span(_HARNESS_SPAN_NAME) as span:
+            span.set_attribute("agent.name", agent_name)
+            span.set_attribute("harness.topology", _HARNESS_TOPOLOGY_STREAM)
+            span.set_attribute("messages.count", len(request.messages))
+            logger.debug(
+                "Harness wrapping stream_dispatch",
+                extra={"agent": agent_name, "messages": len(request.messages)},
+            )
+            return await super().stream_dispatch(agent_name, request)
+
+
 def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
     """Wire adapters → context → orchestrator → agents.
 
@@ -197,7 +270,14 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         logger.info("Memory enabled (provider=%s)", cfg.memory.provider)
 
     ctx = AgentContext(llm=llm, repo=repo, memory=memory)
-    orch = Orchestrator(ctx)
+    if cfg.harness.enabled:
+        orch: Orchestrator = _HarnessOrchestrator(ctx, cfg.harness)
+        logger.info(
+            "Harness telemetry enabled",
+            extra={"metrics_namespace": cfg.harness.metrics_namespace},
+        )
+    else:
+        orch = Orchestrator(ctx)
 
     for agent_name in agent_registry.available():
         factory = agent_registry.get(agent_name)

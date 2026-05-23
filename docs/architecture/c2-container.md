@@ -13,7 +13,8 @@ C4Container
     Container(api, "FastAPI Application", "Python / FastAPI", "Exposes REST endpoints. Factory: create_app(). Middleware: AccessLogMiddleware, TraceMiddleware. Manages lifespan: startup wires adapters, shutdown closes clients.")
     Container(cli, "Typer CLI", "Python / Typer", "mangomas chat (single-turn), mangomas history (turn log), mangomas eval (offline harness). Shares the same composition root as the API.")
     Container(eval_harness, "Evaluation Harness", "Python package (src/mangomas/eval/)", "Drives a JSONL dataset through the orchestrator and aggregates per-row Scorer results. In-process; no extra runtime dependency. Surfaced via the CLI's `eval` subcommand.")
-    Container(composition, "Composition Root", "Python module", "composition.py — wires LLM, storage, secrets, and agent registries at startup. No hardcoded provider classes; everything resolves through Registry[T].")
+    Container(composition, "Composition Root", "Python module", "composition.py — wires LLM, storage, secrets, agent, and harness registries at startup. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
+    Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .github/agents and .github/skills), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
   }
 
   System_Ext(lmstudio, "LM Studio", ":1234 — OpenAI-compatible LLM server (default)")
@@ -35,6 +36,8 @@ C4Container
   Rel(composition, mem_file, "file memory provider — reads/writes index (when memory enabled)", "filesystem")
   Rel(eval_harness, eval_output, "writes JSON report when --output-json is set", "filesystem")
   Rel(api, otel_out, "TraceMiddleware emits spans; structured logs via logging", "OTLP / stdout")
+  Rel(composition, harness, "Engages _HarnessOrchestrator wrapper + emits harness.agent_invoke spans (when harness.enabled=true)")
+  Rel(harness, otel_out, "harness.agent_invoke parent spans + JSON structured logs", "OTLP / stdout")
 ```
 
 ## Notes
@@ -50,5 +53,13 @@ C4Container
 - The evaluation harness ships its own Scorer registry
   (`mangomas.eval.scorer_registry`) parallel to the agent/LLM/storage
   registries. Built-in scorers: `exact_match`, `llm_judge`, `embedding`.
-- `memory/` and `eval-output/` are excluded from git and Docker (see
-  `.gitignore` / `.dockerignore`).
+- The Claude Code harness container is opt-in: with
+  `MANGOMAS_HARNESS__ENABLED=false` (the default), the
+  `_HarnessOrchestrator` wrapper is never engaged and the box is
+  effectively absent. Skills, sub-agents, and the frontmatter linter
+  remain installed but inert at runtime — they're consumed by the
+  Claude Code IDE/web client and CI, not the FastAPI process.
+- `memory/`, `eval-output/`, and harness scratch state
+  (`.claude/cache/`, `.claude/state/`, `.claude/logs/`,
+  `.claude/settings.local.json`) are excluded from git and Docker
+  (see `.gitignore` / `.dockerignore`).
