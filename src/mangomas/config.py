@@ -50,6 +50,13 @@ DEFAULT_MEMORY_ENABLED: bool = False
 
 DEFAULT_SECRETS_PROVIDER: str = "env"
 
+# Evaluation harness defaults.
+DEFAULT_EVAL_SCORER: str = "exact_match"
+DEFAULT_EVAL_AGENT: str = "chat"
+DEFAULT_EVAL_OUTPUT_DIR: str = "eval-output"
+DEFAULT_EVAL_PARALLELISM: int = 1
+DEFAULT_EVAL_FAIL_FAST: bool = False
+
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
 
@@ -133,6 +140,26 @@ class MemorySettings(BaseModel):
     index_file: str = DEFAULT_MEMORY_INDEX
 
 
+class EvalSettings(BaseModel):
+    """Evaluation harness configuration.
+
+    ``dataset_path`` has no safe default — the CLI requires it explicitly so
+    that ``mangomas eval`` never runs against an unintended dataset. The
+    rest of the fields ship safe defaults so most invocations can rely on
+    ``MANGOMAS_EVAL__DATASET_PATH=...`` alone.
+    """
+
+    dataset_path: str | None = None
+    scorer: str = DEFAULT_EVAL_SCORER
+    agent: str = DEFAULT_EVAL_AGENT
+    output_dir: str = DEFAULT_EVAL_OUTPUT_DIR
+    parallelism: int = DEFAULT_EVAL_PARALLELISM
+    fail_fast: bool = DEFAULT_EVAL_FAIL_FAST
+    # Free-form per-scorer options (e.g. ``{"threshold": 0.8}``). Forwarded
+    # verbatim to the scorer's factory.
+    scorer_options: dict[str, object] = Field(default_factory=dict)
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -158,6 +185,7 @@ class Settings(BaseSettings):
     loop: LoopSettings = Field(default_factory=LoopSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
+    eval: EvalSettings = Field(default_factory=EvalSettings)
 
     # Set to True to enable entry-point-based agent discovery (Phase C).
     discovery_enabled: bool = False
