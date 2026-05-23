@@ -88,10 +88,19 @@ All settings are env-driven with prefix `MANGOMAS_`:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `MANGOMAS_LLM__PROVIDER` | `lmstudio` | LLM registry entry; `vertex` enables Vertex AI |
 | `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
 | `MANGOMAS_LLM__MODEL` | `local-model` | Model id |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
+| `MANGOMAS_LLM__PROJECT` | _(none)_ | GCP project id (required when `PROVIDER=vertex`) |
+| `MANGOMAS_LLM__LOCATION` | `us-central1` | GCP region for Vertex |
+| `MANGOMAS_LLM__MAX_OUTPUT_TOKENS` | _(none)_ | Optional Gemini generation_config ceiling |
+| `MANGOMAS_DB__PROVIDER` | `sqlite` | Storage registry entry; `postgres` enables Cloud SQL |
 | `MANGOMAS_DB__URL` | `sqlite:///./mangomas.db` | Turn-storage database |
+| `MANGOMAS_DB__POOL_MIN` | `1` | asyncpg pool minimum |
+| `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
+| `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
+| `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
 | `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap |
 | `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout |
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |

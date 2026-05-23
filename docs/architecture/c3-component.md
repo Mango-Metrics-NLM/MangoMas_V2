@@ -18,8 +18,9 @@ C4Component
   }
 
   Container_Boundary(secrets_boundary, "Secrets (src/mangomas/secrets/)") {
-    Component(secrets_provider, "SecretsProvider", "Protocol", "get(name) -> str | None. Resolves a secret reference at orchestrator-build time. Today only the env-var backend ships; cloud backends register additional factories without core changes.")
+    Component(secrets_provider, "SecretsProvider", "Protocol", "get(name) -> str | None. Resolves a secret reference at orchestrator-build time. Cloud backends plug in via secrets_registry.")
     Component(env_secrets, "EnvSecretsProvider", "SecretsProvider impl", "Reads secrets from os.environ. Used when LLMSettings.secret_ref is set.")
+    Component(gcp_secrets, "GCPSecretManagerProvider", "SecretsProvider impl", "Resolves secrets via google-cloud-secret-manager + ADC. Collapses all failure modes into None per ADR-002. Activated by MANGOMAS_SECRETS__PROVIDER=gcp.")
   }
 
   Container_Boundary(core_boundary, "Core (src/mangomas/core/)") {
@@ -38,7 +39,9 @@ C4Component
 
   Container_Boundary(adapters_boundary, "Adapters (src/mangomas/adapters/)") {
     Component(lmstudio_client, "LMStudioClient", "LLMClient + StreamingLLMClient + PingableLLMClient", "Sends requests to LM Studio /v1/chat/completions and /v1/models via httpx.AsyncClient.")
+    Component(vertex_client, "VertexLLMClient", "LLMClient + StreamingLLMClient + PingableLLMClient", "Vertex AI Gemini client via google-cloud-aiplatform. Identity via ADC / Workload Identity Federation. Activated by MANGOMAS_LLM__PROVIDER=vertex.")
     Component(sqlite_repo, "SQLiteRepository", "TurnRepository", "Persists conversation turns to a local SQLite database.")
+    Component(postgres_repo, "PostgresRepository", "TurnRepository + AsyncCloseableRepository", "Persists conversation turns to Postgres via asyncpg with a connection pool. Activated by MANGOMAS_DB__PROVIDER=postgres.")
   }
 
   Rel(app_factory, access_log, "adds middleware")
