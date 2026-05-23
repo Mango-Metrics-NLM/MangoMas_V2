@@ -11,18 +11,24 @@ import respx
 from mangomas.adapters.llm.lmstudio import LMStudioClient, LMStudioError
 from mangomas.core import Message
 from mangomas.errors import LLMTimeout, LLMUnavailable
+from tests.constants import TEST_LMSTUDIO_MOCK_BASE_URL, TEST_LMSTUDIO_MOCK_MODEL
+
+_CHAT_COMPLETIONS_URL = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/chat/completions"
+_MODELS_URL = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/models"
+# Used in one test that exercises trailing-slash normalisation in the adapter.
+_BASE_URL_WITH_TRAILING_SLASH = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/"
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_complete_returns_content() -> None:
-    route = respx.post("http://lm/v1/chat/completions").mock(
+    route = respx.post(_CHAT_COMPLETIONS_URL).mock(
         return_value=httpx.Response(
             200,
             json={"choices": [{"message": {"role": "assistant", "content": "hello!"}}]},
         )
     )
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         out = await client.complete([Message(role="user", content="hi")])
     finally:
@@ -37,10 +43,10 @@ async def test_complete_returns_content() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_complete_raises_on_malformed() -> None:
-    respx.post("http://lm/v1/chat/completions").mock(
+    respx.post(_CHAT_COMPLETIONS_URL).mock(
         return_value=httpx.Response(200, json={"unexpected": True})
     )
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         with pytest.raises(LMStudioError):
             await client.complete([Message(role="user", content="hi")])
@@ -51,10 +57,8 @@ async def test_complete_raises_on_malformed() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_complete_raises_on_http_error() -> None:
-    respx.post("http://lm/v1/chat/completions").mock(
-        return_value=httpx.Response(500, json={"error": "boom"})
-    )
-    client = LMStudioClient(base_url="http://lm/v1/", model="m")
+    respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(500, json={"error": "boom"}))
+    client = LMStudioClient(base_url=_BASE_URL_WITH_TRAILING_SLASH, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         # HTTPStatusError is translated to LMStudioError (a typed LLMBadResponse).
         with pytest.raises(LMStudioError):
@@ -66,10 +70,8 @@ async def test_complete_raises_on_http_error() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_complete_raises_llm_unavailable_on_connect_error() -> None:
-    respx.post("http://lm/v1/chat/completions").mock(
-        side_effect=httpx.ConnectError("connection refused")
-    )
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    respx.post(_CHAT_COMPLETIONS_URL).mock(side_effect=httpx.ConnectError("connection refused"))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         with pytest.raises(LLMUnavailable):
             await client.complete([Message(role="user", content="hi")])
@@ -80,7 +82,9 @@ async def test_complete_raises_llm_unavailable_on_connect_error() -> None:
 @pytest.mark.asyncio
 async def test_external_client_not_closed() -> None:
     async with httpx.AsyncClient() as external:
-        client = LMStudioClient(base_url="http://lm/v1", model="m", client=external)
+        client = LMStudioClient(
+            base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL, client=external
+        )
         await client.aclose()
         # External client must remain usable.
         assert not external.is_closed
@@ -92,8 +96,8 @@ async def test_external_client_not_closed() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_ping_succeeds() -> None:
-    respx.get("http://lm/v1/models").mock(return_value=httpx.Response(200, json={"data": []}))
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    respx.get(_MODELS_URL).mock(return_value=httpx.Response(200, json={"data": []}))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         await client.ping()  # no raise
     finally:
@@ -103,8 +107,8 @@ async def test_ping_succeeds() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_ping_translates_http_error() -> None:
-    respx.get("http://lm/v1/models").mock(return_value=httpx.Response(503))
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    respx.get(_MODELS_URL).mock(return_value=httpx.Response(503))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         with pytest.raises(LMStudioError):
             await client.ping()
@@ -115,8 +119,8 @@ async def test_ping_translates_http_error() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_ping_translates_connect_error_to_unavailable() -> None:
-    respx.get("http://lm/v1/models").mock(side_effect=httpx.ConnectError("no route"))
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    respx.get(_MODELS_URL).mock(side_effect=httpx.ConnectError("no route"))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         with pytest.raises(LLMUnavailable):
             await client.ping()
@@ -140,10 +144,10 @@ def _sse_body(*chunks: str) -> bytes:
 @pytest.mark.asyncio
 @respx.mock
 async def test_stream_yields_content_tokens() -> None:
-    respx.post("http://lm/v1/chat/completions").mock(
+    respx.post(_CHAT_COMPLETIONS_URL).mock(
         return_value=httpx.Response(200, content=_sse_body("Hello", " ", "world"))
     )
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     tokens: list[str] = []
     try:
         async for tok in await client.stream([Message(role="user", content="hi")]):
@@ -156,8 +160,8 @@ async def test_stream_yields_content_tokens() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_stream_raises_translated_error_on_http_status() -> None:
-    respx.post("http://lm/v1/chat/completions").mock(return_value=httpx.Response(500))
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(500))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         with pytest.raises(LMStudioError):
             async for _ in await client.stream([Message(role="user", content="hi")]):
@@ -169,8 +173,8 @@ async def test_stream_raises_translated_error_on_http_status() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_stream_raises_unavailable_on_connect_error() -> None:
-    respx.post("http://lm/v1/chat/completions").mock(side_effect=httpx.ConnectError("refused"))
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    respx.post(_CHAT_COMPLETIONS_URL).mock(side_effect=httpx.ConnectError("refused"))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         with pytest.raises(LLMUnavailable):
             async for _ in await client.stream([Message(role="user", content="hi")]):
@@ -210,8 +214,8 @@ def test_parse_sse_line_skips_empty_content() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_complete_translates_timeout() -> None:
-    respx.post("http://lm/v1/chat/completions").mock(side_effect=httpx.ReadTimeout("slow"))
-    client = LMStudioClient(base_url="http://lm/v1", model="m")
+    respx.post(_CHAT_COMPLETIONS_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
     try:
         with pytest.raises(LLMTimeout):
             await client.complete([Message(role="user", content="hi")])

@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from mangomas.agents import ChatAgent
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
+from tests.constants import STUB_REPLY
 from tests.fakes import FakeLLM
 
 
@@ -42,7 +43,7 @@ def test_agents_command(runner: CliRunner) -> None:
 def test_chat_command(runner: CliRunner) -> None:
     result = runner.invoke(cli_main.app, ["chat", "hello"])
     assert result.exit_code == 0
-    assert "stub-reply" in result.stdout
+    assert STUB_REPLY in result.stdout
 
 
 def test_chat_command_with_system(runner: CliRunner) -> None:
@@ -56,7 +57,7 @@ def test_chat_command_verbose(runner: CliRunner) -> None:
     """--verbose flag sets logging to DEBUG without crashing."""
     result = runner.invoke(cli_main.app, ["chat", "hello", "--verbose"])
     assert result.exit_code == 0
-    assert "stub-reply" in result.stdout
+    assert STUB_REPLY in result.stdout
 
 
 def test_history_command(runner: CliRunner) -> None:

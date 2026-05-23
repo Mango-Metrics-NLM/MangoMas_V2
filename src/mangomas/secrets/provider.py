@@ -6,8 +6,9 @@ plaintext value. Returning ``None`` indicates the secret is not configured —
 callers should fall back to the inline ``api_key`` setting rather than fail
 loudly, so local development continues to work without a vault.
 
-The protocol is intentionally sync-only for v0.2.0; cloud backends with
-async APIs can be added without a breaking change later (see ADR-001).
+The protocol is intentionally sync-only; cloud backends with async APIs can
+be added behind an extension protocol without breaking this surface
+(see ADR-001).
 """
 
 from __future__ import annotations

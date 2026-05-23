@@ -15,6 +15,7 @@ from mangomas.core import AgentContext, Orchestrator
 from mangomas.secrets import secrets_registry
 from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository, FakeTool
 
+
 # ── Cross-test isolation for lazy-registered cloud providers ──────────────────
 
 
@@ -30,6 +31,7 @@ def _teardown_lazy_gcp_secrets() -> Iterator[None]:
     """
     yield
     secrets_registry._store.pop("gcp", None)
+
 
 # ── Collection gates ────────────────────────────────────────────────────────
 
@@ -57,7 +59,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(lmstudio_skip)
         if ("postgres" in path_parts or "postgres" in item.keywords) and not run_postgres:
             item.add_marker(postgres_skip)
-        if ("vertex" in path_parts or "vertex" in item.keywords) and not run_vertex:
+        if "vertex" in item.keywords and not run_vertex:
             item.add_marker(vertex_skip)
         if "gcp_secrets" in item.keywords and not run_gcp_secrets:
             item.add_marker(gcp_secrets_skip)

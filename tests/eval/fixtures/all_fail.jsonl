@@ -1,0 +1,2 @@
+{"id": "f1", "messages": [{"role": "user", "content": "x"}], "expected": "not-stub-reply"}
+{"id": "f2", "messages": [{"role": "user", "content": "y"}], "expected": "definitely-not-it"}

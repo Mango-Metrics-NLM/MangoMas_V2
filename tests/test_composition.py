@@ -6,6 +6,8 @@ from typing import Any
 
 import pytest
 
+import mangomas.composition as composition_module
+from mangomas.adapters.llm import VertexClient
 from mangomas.composition import (
     _build_gcp_secrets_provider,
     _file_memory_factory,
@@ -20,13 +22,13 @@ from mangomas.config import (
     DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS,
     DBSettings,
     LLMSettings,
-    MemorySettings,
     SecretsSettings,
     Settings,
 )
 from mangomas.core import Orchestrator
 from mangomas.errors import ConfigError
 from mangomas.secrets import secrets_registry
+from tests.fakes import FakeVertexGenerativeModel
 
 
 def _close_repo(orch: Orchestrator) -> None:
@@ -65,6 +67,107 @@ def test_default_agents_are_registered_in_agent_registry() -> None:
     assert "reviewer" in agent_registry.available()
 
 
+# ── Vertex factory (uses main's VertexClient + project_id/credentials_path) ──
+
+
+def test_vertex_factory_is_registered_in_llm_registry() -> None:
+    assert "vertex" in llm_registry.available()
+
+
+def test_vertex_factory_forwards_settings_to_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_vertex_factory`` must forward LLMSettings fields to ``VertexClient``.
+
+    We monkeypatch the ``VertexClient`` symbol imported by ``composition.py``
+    with a recorder so the test doesn't need the real Vertex SDK.
+    """
+    captured: dict[str, Any] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(composition_module, "VertexClient", _Recorder)
+
+    cfg = LLMSettings(
+        provider="vertex",
+        model="gemini-fake",
+        project_id="proj-x",
+        location="europe-west4",
+        credentials_path="/keys/sa.json",
+        timeout_seconds=42.0,
+        temperature=0.7,
+    )
+    _vertex_factory(cfg)
+    assert captured == {
+        "project_id": "proj-x",
+        "location": "europe-west4",
+        "model": "gemini-fake",
+        "credentials_path": "/keys/sa.json",
+        "credentials_json": None,
+        "timeout_seconds": 42.0,
+        "default_temperature": 0.7,
+    }
+
+
+def test_vertex_factory_uses_resolved_secret_as_credentials_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``secret_ref`` is set, the resolved ``api_key`` becomes ``credentials_json``."""
+    captured: dict[str, Any] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(composition_module, "VertexClient", _Recorder)
+
+    cfg = LLMSettings(
+        provider="vertex",
+        model="gemini-fake",
+        project_id="proj-x",
+        secret_ref="VERTEX_SA",  # noqa: S106 — test fixture, not a real secret
+        api_key='{"client_email": "x@y.z"}',  # would be the resolved secret value
+    )
+    _vertex_factory(cfg)
+    assert captured["credentials_json"] == '{"client_email": "x@y.z"}'
+    assert captured["credentials_path"] is None
+
+
+def test_vertex_factory_builds_vertex_client_with_injected_model() -> None:
+    """The seeded vertex factory must accept LLMSettings and yield a VertexClient.
+
+    We swap the factory inside a :meth:`Registry.scoped` block to inject a
+    fake :class:`FakeVertexGenerativeModel` so the test does not import the
+    real SDK or touch the network.
+    """
+    fake_model = FakeVertexGenerativeModel(reply="vertex-says-hi")
+
+    def _vertex_factory_with_fake(cfg: LLMSettings) -> VertexClient:
+        return VertexClient(
+            project_id=cfg.project_id,
+            location=cfg.location,
+            model=cfg.model,
+            client=fake_model,
+            timeout_seconds=cfg.timeout_seconds,
+            default_temperature=cfg.temperature,
+        )
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.llm.provider = "vertex"
+    settings.llm.project_id = "test-project"
+    settings.llm.model = "gemini-fake"
+    settings.db.url = "sqlite:///:memory:"
+
+    with llm_registry.scoped("vertex", _vertex_factory_with_fake):
+        orch = build_orchestrator(settings)
+        try:
+            assert isinstance(orch.context.llm, VertexClient)
+        finally:
+            _close_repo(orch)
+
+
 def test_build_orchestrator_wires_all_agents() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     settings.db.url = "sqlite:///:memory:"
@@ -82,23 +185,24 @@ def test_build_orchestrator_wires_all_agents() -> None:
         _close_repo(orch)
 
 
-# ── Cloud provider registration (v0.3.0) ──────────────────────────────────────
+def test_build_orchestrator_wires_memory_when_enabled(tmp_path: Any) -> None:
+    """Exercise ``_file_memory_factory`` + the memory-enabled branch."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    settings.memory.enabled = True
+    settings.memory.memory_dir = str(tmp_path / "memory")
+    orch = build_orchestrator(settings)
+    try:
+        assert orch.context.memory is not None
+    finally:
+        _close_repo(orch)
 
 
-def test_vertex_factory_registered_in_llm_registry() -> None:
-    assert "vertex" in llm_registry.available()
+# ── Postgres + GCP Secret Manager registration (v0.3.0 cloud swap-in) ────────
 
 
 def test_postgres_factory_registered_in_storage_registry() -> None:
     assert "postgres" in _storage_registry.available()
-
-
-def test_vertex_factory_raises_config_error_when_project_missing() -> None:
-    """Calling the vertex factory without LLMSettings.project must fail loud."""
-    factory = llm_registry.get("vertex")
-    cfg = LLMSettings(provider="vertex", project=None)
-    with pytest.raises(ConfigError, match="MANGOMAS_LLM__PROJECT"):
-        factory(cfg)
 
 
 def test_postgres_factory_constructs_repo_without_io() -> None:
@@ -137,8 +241,6 @@ def test_gcp_secrets_lazy_registers_on_build_when_provider_selected() -> None:
             assert "gcp" in secrets_registry.available()
         finally:
             _close_repo(orch)
-            # Tidy up so other tests don't see the lazily-registered provider.
-            secrets_registry._store.pop("gcp", None)
 
 
 def test_gcp_secrets_lazy_register_raises_when_project_id_missing() -> None:
@@ -154,35 +256,15 @@ def test_gcp_secrets_lazy_register_raises_when_project_id_missing() -> None:
         build_orchestrator(settings)
 
 
-# ── Direct factory coverage ──────────────────────────────────────────────────
+def test_file_memory_factory_constructs_without_io(tmp_path: Any) -> None:
+    """Direct exercise of _file_memory_factory."""
+    from mangomas.config import MemorySettings
 
-
-def test_vertex_factory_constructs_client_when_project_set() -> None:
-    """Success branch of _vertex_factory (closes composition.py:107-109 gap).
-
-    The factory still lazy-imports the SDK at the boundary — we can't reach
-    the SDK import without the optional ``vertex`` extra installed. Instead
-    we assert ConfigError is NOT raised and the import-time failure surfaces
-    as ImportError (proving control flow advanced past the validation
-    check). Equally valid: success when SDK is present.
-    """
-    cfg = LLMSettings(provider="vertex", project="my-proj", location="us-central1")
-    try:
-        client = _vertex_factory(cfg)
-    except ImportError:
-        # SDK not installed in dev — proves we cleared the ConfigError
-        # check on line 105 and reached the lazy import on line 107.
-        return
-    # If the SDK IS installed, the client must be constructable.
-    assert client is not None
-
-
-def test_file_memory_factory_constructs_without_io() -> None:
-    """Direct exercise of _file_memory_factory (closes composition.py:94 gap)."""
-    cfg = MemorySettings(enabled=True, provider="file", memory_dir="memory_test")
+    cfg = MemorySettings(
+        enabled=True, provider="file", memory_dir=str(tmp_path / "memory_test")
+    )
     repo = _file_memory_factory(cfg)
     assert repo is not None
-    # Smoke-check: the constructed repo satisfies the close() contract.
     repo.close()
 
 
@@ -197,19 +279,3 @@ def test_build_gcp_secrets_provider_returns_provider_when_valid() -> None:
     provider = _build_gcp_secrets_provider(cfg)
     assert provider is not None
     assert provider._project_id == "my-proj"
-
-
-def test_build_orchestrator_with_memory_enabled() -> None:
-    """Exercise the memory-enabled branch in build_orchestrator
-    (closes composition.py:190-191 gap)."""
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
-    settings.memory.enabled = True
-    settings.memory.memory_dir = "memory_test"
-    orch = build_orchestrator(settings)
-    try:
-        assert orch.context.memory is not None
-    finally:
-        _close_repo(orch)
-        if orch.context.memory is not None:
-            orch.context.memory.close()
