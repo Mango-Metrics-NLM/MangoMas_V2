@@ -12,19 +12,7 @@ from mangomas.adapters.storage import SQLiteRepository
 from mangomas.agents import ChatAgent
 from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
-
-# Re-export fakes so existing ``from tests.conftest import FakeLLM`` imports
-# continue to work during the one-cycle migration window.
-from tests.fakes import (
-    FakeLLM,
-    FakeMemoryRepository,
-    FakeRepository,
-    FakeTool,
-    NonPingableFakeLLM,
-)
-
-__all__ = ["FakeLLM", "FakeMemoryRepository", "FakeRepository", "FakeTool", "NonPingableFakeLLM"]
-
+from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository, FakeTool
 
 # ── Collection gates ────────────────────────────────────────────────────────
 

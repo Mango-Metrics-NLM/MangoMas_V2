@@ -15,16 +15,16 @@ from fastapi import FastAPI
 from opentelemetry import baggage
 
 from mangomas.api.app import create_app
-from mangomas.api.correlation import (
+from mangomas.api.middleware import _BAGGAGE_KEY
+from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
+from mangomas.correlation import (
+    MAX_CORRELATION_ID_LENGTH,
     CorrelationFilter,
     correlation_id,
     generate_correlation_id,
     get_correlation_id,
     set_correlation_id,
 )
-from mangomas.api.middleware import _BAGGAGE_KEY
-from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
-from mangomas.correlation import MAX_CORRELATION_ID_LENGTH
 from mangomas.errors import LLMBadResponse
 from tests.fakes import FakeLLM
 
