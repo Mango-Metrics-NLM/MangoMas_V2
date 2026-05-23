@@ -103,4 +103,4 @@ def test_embedding_scorer_rejects_invalid_threshold() -> None:
 def test_embedding_factory_uses_default_threshold() -> None:
     scorer = scorer_registry.get("embedding")({})
     assert isinstance(scorer, EmbeddingScorer)
-    assert scorer._threshold == DEFAULT_EMBEDDING_THRESHOLD  # noqa: SLF001
+    assert scorer._threshold == DEFAULT_EMBEDDING_THRESHOLD

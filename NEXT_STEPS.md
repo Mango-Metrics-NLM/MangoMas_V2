@@ -10,10 +10,33 @@ extension, backwards-compatible contracts.
 
 ## Near term
 
-_(All near-term workstreams from v0.1.0 landed in v0.2.0, and the first
-mid-term GCP-swap item plus the long-term evaluation harness landed in
-v0.3.0 — see "Done in v0.3.0" and "Done in v0.2.0" below. Next near-term
-item is the Postgres / Cloud SQL storage adapter — see "Mid term".)_
+_(The Vertex AI LLM provider, Postgres `TurnRepository`, GCP Secret
+Manager backend, and the offline evaluation harness all landed in
+v0.3.0 — see "Done in v0.3.0" below. Next near-term items are the
+Cloud Logging / Cloud Trace exporter swap and the Cloud Run deployment
+pipeline, promoted from "Mid term".)_
+
+### Cloud Logging + Cloud Trace exporter swap
+
+Add a Cloud Trace OTLP exporter behind the existing
+`configure_telemetry()` entry point. Activate via a new
+`MANGOMAS_TELEMETRY__EXPORTER=gcp` option. `MANGOMAS_LOG__FORMAT=json`
+is already supported.
+
+### Cloud Run deployment pipeline
+
+Add a `deploy/` directory with:
+- Cloud Run service YAML (or Terraform module).
+- GitHub Actions workflow step for image push to Artifact Registry.
+- Environment-variable contract documented for Cloud Run service configuration.
+
+### SecretsSettings.strict mode (ADR-002 follow-up)
+
+Add `SecretsSettings.strict: bool = False`; when set, cloud secrets
+backends raise a new `SecretsResolutionError` instead of returning
+`None` on auth/permission/timeout failures. Preserves the local-dev
+contract by default; gives operators an opt-in "fail loud" mode for
+production.
 
 ---
 
@@ -28,7 +51,33 @@ item is the Postgres / Cloud SQL storage adapter — see "Mid term".)_
 `vertex` optional extra (`pip install 'mangomas[vertex]'`). New
 `LLMSettings` fields: `project_id`, `location`, `credentials_path`. The
 existing `secret_ref` flow is reused — the resolved value becomes the
-service-account JSON body. See `docs/adapters/vertex.md`.
+service-account JSON body. See `docs/adapters/vertex.md` and
+`docs/testing/vertex-e2e.md`.
+
+### Cloud SQL / Postgres storage provider
+
+`PostgresRepository` (`src/mangomas/adapters/storage/postgres.py`)
+satisfies `TurnRepository` and the new `AsyncCloseableRepository`
+extension protocol. Backed by `asyncpg` with a connection pool — no
+`threading.Lock` (native async). Registered as
+`_storage_registry.register("postgres", _postgres_factory)`. Activate
+via `MANGOMAS_DB__PROVIDER=postgres` plus
+`MANGOMAS_DB__URL=postgresql://...` and the `postgres` optional extra
+(`pip install 'mangomas[postgres]'`). A JSONB codec is registered on
+every connection so `list_turns` returns dicts (matching SQLite's
+row shape). testcontainers-backed integration suite under
+`tests/postgres/` gated by `RUN_POSTGRES=1`. See
+`docs/testing/postgres-integration.md`.
+
+### Cloud Secret Manager provider
+
+`GCPSecretManagerProvider` (`src/mangomas/secrets/gcp.py`) satisfies
+`SecretsProvider`. Lazily registered in `secrets_registry` at
+orchestrator-build time. Activate via `MANGOMAS_SECRETS__PROVIDER=gcp`
+plus `MANGOMAS_SECRETS__PROJECT_ID=...` and the `gcp` optional extra
+(`pip install 'mangomas[gcp]'`). Collapses all failure modes into
+`None` per [ADR-002](docs/adr/0002-secrets-provider-error-semantics.md);
+operators MUST alert on `logger=mangomas.secrets.gcp severity=ERROR`.
 
 ### Evaluation harness
 
@@ -38,16 +87,29 @@ JSONL dataset loader, `EvalRunner` (reuses the existing
 `llm_judge`, `embedding`), an `EvalSettings` block (`MANGOMAS_EVAL__*`),
 and a `mangomas eval` CLI subcommand. The embedding scorer raises
 `NotImplementedError` against providers that don't expose `.embed()`
-(none do yet — documented gap). See `docs/eval/harness.md`.
+(see "Embedding-capable LLM provider" under "Long term"). See
+`docs/eval/harness.md`.
+
+### Concurrency regression tests
+
+`tests/test_sqlite_concurrency.py` closes the gap from v0.1.0's
+`threading.Lock` fix with a direct 50-way `asyncio.gather` regression.
+`tests/postgres/test_concurrency.py` pins the asyncpg pool's
+concurrent-write contract symmetrically.
 
 ### Coverage / hygiene tightening
 
-Per-package floors in `scripts/check_coverage.py` raised to match
+Per-package floors in `scripts/check_coverage.py` raised to match the
 post-v0.3.0 actuals: `composition` / `api` / `cli` / `global` all
 90 → 95. New `eval` floor at 95 %. `pyproject.toml`
 `--cov-fail-under=90` → `95`. The backwards-compat
 `mangomas.api.correlation` re-export shim was removed; imports must use
-the canonical `mangomas.correlation` path.
+the canonical `mangomas.correlation` path. The `DEFAULT_ERROR_DETAIL_TRUNCATE`
+constant replaces inline `[:200]` literals across the cloud adapters.
+
+See [`docs/architecture/cloud-providers.md`](docs/architecture/cloud-providers.md)
+for the full configuration matrix and the lazy-SDK-import /
+ambient-identity pattern shared across all three cloud adapters.
 
 ---
 
@@ -80,49 +142,15 @@ not implement `StreamingLLMClient`.
 
 `src/mangomas/secrets/` ships the `SecretsProvider` protocol,
 `EnvSecretsProvider` env-var backend, and `secrets_registry`.
-`LLMSettings.secret_ref` is resolved at orchestrator-build time. Cloud
-backends (GCP Secret Manager) still tracked under "Mid term".
+`LLMSettings.secret_ref` is resolved at orchestrator-build time. The
+GCP Secret Manager backend landed in v0.3.0.
 
 ### Per-request correlation IDs
 
-`src/mangomas/api/correlation.py` exposes a `ContextVar` + `CorrelationFilter`;
+`src/mangomas/correlation.py` exposes a `ContextVar` + `CorrelationFilter`;
 `AccessLogMiddleware` reads inbound `X-Request-ID`, sets the ContextVar,
 pushes the value into OpenTelemetry baggage as `mangomas.correlation_id`,
 and echoes it on the outgoing response.
-
----
-
-## Mid term (GCP swap-in — see ADR-001)
-
-These items implement the cloud-target swap matrix from
-[ADR-001](docs/adr/0001-cloud-targets.md).  Each boundary is swapped
-independently through the existing registry mechanism; no core changes.
-The Vertex AI provider shipped in v0.3.0 — see "Done in v0.3.0" above.
-
-### Cloud SQL / Postgres storage provider
-
-Implement `PostgresRepository` satisfying `TurnRepository`.
-Register as `_storage_registry.register("postgres", ...)`.
-Activate via `MANGOMAS_DB__PROVIDER=postgres`.
-
-### Cloud Secret Manager provider
-
-Implement the `SecretsProvider` abstraction above backed by Google Secret
-Manager.  Add `MANGOMAS_SECRETS__PROVIDER=gcp` activation path.
-
-### Cloud Logging + Cloud Trace exporter swap
-
-Add a structured JSON log formatter and a Cloud Trace OTLP exporter behind the
-existing `configure_telemetry()` entry point.  Swap via
-`MANGOMAS_LOG__FORMAT=json` (already supported) and a new
-`MANGOMAS_TELEMETRY__EXPORTER=gcp` option.
-
-### Cloud Run deployment pipeline
-
-Add a `deploy/` directory with:
-- Cloud Run service YAML (or Terraform module).
-- GitHub Actions workflow step for image push to Artifact Registry.
-- Environment-variable contract documented for Cloud Run service configuration.
 
 ---
 

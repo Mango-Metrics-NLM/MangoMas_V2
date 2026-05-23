@@ -18,7 +18,13 @@ this PR, not a full secret-rotation story.
 from __future__ import annotations
 
 from mangomas.secrets.env import EnvSecretsProvider
+from mangomas.secrets.gcp import GCPSecretManagerProvider
 from mangomas.secrets.provider import SecretsProvider
 from mangomas.secrets.registry import secrets_registry
 
-__all__ = ["EnvSecretsProvider", "SecretsProvider", "secrets_registry"]
+__all__ = [
+    "EnvSecretsProvider",
+    "GCPSecretManagerProvider",
+    "SecretsProvider",
+    "secrets_registry",
+]

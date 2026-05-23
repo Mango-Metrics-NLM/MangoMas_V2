@@ -122,7 +122,7 @@ async def test_loop_persists_final_turn_only() -> None:
         return call_count >= 3
 
     await orch.dispatch("chat", req, acceptance_fn=accept, max_steps=5)
-    assert len(repo._turns) == 1  # noqa: SLF001
+    assert len(repo._turns) == 1
 
 
 # ── Loop metadata in response ─────────────────────────────────────────────────

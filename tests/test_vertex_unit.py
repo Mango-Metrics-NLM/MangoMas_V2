@@ -215,7 +215,7 @@ async def test_aclose_with_owned_client_calls_close_if_present() -> None:
     )
     # Manually flip the owned flag for this test — production code only sets
     # this when constructing through the lazy-import path.
-    client._owns_client = True  # noqa: SLF001
+    client._owns_client = True
     await client.aclose()
     assert fake.closed is True
 
@@ -255,7 +255,7 @@ def test_build_contents_dict_fallback_for_injected_client() -> None:
         Message(role="assistant", content="hello"),
         Message(role="tool", content="tool-result"),
     ]
-    contents = client._build_contents(messages)  # noqa: SLF001
+    contents = client._build_contents(messages)
     assert contents == [
         {"role": "user", "content": "[system] be terse"},
         {"role": "user", "content": "hi"},
@@ -279,14 +279,14 @@ def test_credentials_json_parse_error_raises_vertex_error(
         lambda: object,  # not used; JSON parse fails first
     )
     with pytest.raises(VertexError):
-        VertexClient._resolve_credentials(  # noqa: SLF001
+        VertexClient._resolve_credentials(
             credentials_path=None,
             credentials_json="this is not json",
         )
 
 
 def test_resolve_credentials_returns_none_when_no_inputs() -> None:
-    out = VertexClient._resolve_credentials(  # noqa: SLF001
+    out = VertexClient._resolve_credentials(
         credentials_path=None,
         credentials_json=None,
     )
@@ -313,7 +313,7 @@ def test_resolve_credentials_uses_json_body(monkeypatch: pytest.MonkeyPatch) -> 
     import mangomas.adapters.llm.vertex as vertex_module  # noqa: PLC0415
 
     monkeypatch.setattr(vertex_module, "_lazy_import_credentials", lambda: _StubCredentialsCls)
-    out = VertexClient._resolve_credentials(  # noqa: SLF001
+    out = VertexClient._resolve_credentials(
         credentials_path=None,
         credentials_json='{"client_email": "x@y.z"}',
     )
@@ -325,7 +325,7 @@ def test_resolve_credentials_uses_file_path(monkeypatch: pytest.MonkeyPatch) -> 
     import mangomas.adapters.llm.vertex as vertex_module  # noqa: PLC0415
 
     monkeypatch.setattr(vertex_module, "_lazy_import_credentials", lambda: _StubCredentialsCls)
-    out = VertexClient._resolve_credentials(  # noqa: SLF001
+    out = VertexClient._resolve_credentials(
         credentials_path="/some/key.json",
         credentials_json=None,
     )
@@ -355,9 +355,9 @@ def test_build_contents_real_sdk_branch() -> None:
     """When ``_Content`` and ``_Part`` are populated, build real Content objects."""
     fake = FakeVertexGenerativeModel()
     client, _ = _make_client(model=fake)
-    client._Content = _StubContent  # noqa: SLF001
-    client._Part = _StubPart  # noqa: SLF001
-    out = client._build_contents(  # noqa: SLF001
+    client._Content = _StubContent
+    client._Part = _StubPart
+    out = client._build_contents(
         [Message(role="user", content="hi"), Message(role="system", content="be terse")]
     )
     assert len(out) == 2

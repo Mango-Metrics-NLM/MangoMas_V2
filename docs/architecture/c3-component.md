@@ -18,8 +18,9 @@ C4Component
   }
 
   Container_Boundary(secrets_boundary, "Secrets (src/mangomas/secrets/)") {
-    Component(secrets_provider, "SecretsProvider", "Protocol", "get(name) -> str | None. Resolves a secret reference at orchestrator-build time. Today only the env-var backend ships; cloud backends register additional factories without core changes.")
+    Component(secrets_provider, "SecretsProvider", "Protocol", "get(name) -> str | None. Resolves a secret reference at orchestrator-build time. Cloud backends plug in via secrets_registry.")
     Component(env_secrets, "EnvSecretsProvider", "SecretsProvider impl", "Reads secrets from os.environ. Used when LLMSettings.secret_ref is set.")
+    Component(gcp_secrets, "GCPSecretManagerProvider", "SecretsProvider impl", "Resolves secrets via google-cloud-secret-manager + ADC. Collapses all failure modes into None per ADR-002. Activated by MANGOMAS_SECRETS__PROVIDER=gcp.")
   }
 
   Container_Boundary(core_boundary, "Core (src/mangomas/core/)") {
@@ -39,6 +40,7 @@ C4Component
   Container_Boundary(adapters_boundary, "Adapters (src/mangomas/adapters/)") {
     Component(llm_client, "LLMClient (resolved by llm_registry)", "Protocol — at runtime LMStudioClient or VertexClient", "Provider selected by MANGOMAS_LLM__PROVIDER. Both implementations satisfy LLMClient, StreamingLLMClient, and PingableLLMClient. Vertex requires the `mangomas[vertex]` optional extra; the SDK is lazy-imported so importing the module is always safe.")
     Component(sqlite_repo, "SQLiteRepository", "TurnRepository", "Persists conversation turns to a local SQLite database.")
+    Component(postgres_repo, "PostgresRepository", "TurnRepository + AsyncCloseableRepository", "Persists conversation turns to Postgres via asyncpg with a connection pool. Activated by MANGOMAS_DB__PROVIDER=postgres; requires the `mangomas[postgres]` optional extra.")
   }
 
   Rel(app_factory, access_log, "adds middleware")

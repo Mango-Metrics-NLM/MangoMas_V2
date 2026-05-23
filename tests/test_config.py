@@ -78,3 +78,69 @@ def test_memory_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
     assert s.memory.enabled is True
     assert s.memory.memory_dir == "custom_mem"
+
+
+# ── LLMSettings — Vertex AI fields ────────────────────────────────────────────
+
+
+def test_llm_vertex_defaults_do_not_disturb_lmstudio() -> None:
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.llm.project_id is None
+    assert s.llm.location == config_module.DEFAULT_VERTEX_LOCATION
+    assert s.llm.credentials_path is None
+
+
+def test_llm_vertex_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_LLM__PROJECT_ID", "my-gcp-project")
+    monkeypatch.setenv("MANGOMAS_LLM__LOCATION", "europe-west4")
+    monkeypatch.setenv("MANGOMAS_LLM__CREDENTIALS_PATH", "/keys/sa.json")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.llm.project_id == "my-gcp-project"
+    assert s.llm.location == "europe-west4"
+    assert s.llm.credentials_path == "/keys/sa.json"
+
+
+# ── DBSettings — Postgres pool fields ─────────────────────────────────────────
+
+
+def test_db_postgres_pool_defaults() -> None:
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.db.pool_min == config_module.DEFAULT_DB_POOL_MIN
+    assert s.db.pool_max == config_module.DEFAULT_DB_POOL_MAX
+    assert s.db.connect_timeout_seconds == config_module.DEFAULT_DB_CONNECT_TIMEOUT_SECONDS
+    assert s.db.statement_timeout_seconds is config_module.DEFAULT_DB_STATEMENT_TIMEOUT_SECONDS
+
+
+def test_db_postgres_pool_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_DB__POOL_MIN", "2")
+    monkeypatch.setenv("MANGOMAS_DB__POOL_MAX", "20")
+    monkeypatch.setenv("MANGOMAS_DB__CONNECT_TIMEOUT_SECONDS", "30.0")
+    monkeypatch.setenv("MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS", "5.5")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.db.pool_min == 2
+    assert s.db.pool_max == 20
+    assert s.db.connect_timeout_seconds == 30.0
+    assert s.db.statement_timeout_seconds == 5.5
+
+
+# ── SecretsSettings — GCP fields ──────────────────────────────────────────────
+
+
+def test_secrets_gcp_defaults() -> None:
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.secrets.provider == config_module.DEFAULT_SECRETS_PROVIDER
+    assert s.secrets.project_id is None
+    assert s.secrets.timeout_seconds == config_module.DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS
+    assert s.secrets.default_version == config_module.DEFAULT_GCP_SECRET_VERSION
+
+
+def test_secrets_gcp_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_SECRETS__PROVIDER", "gcp")
+    monkeypatch.setenv("MANGOMAS_SECRETS__PROJECT_ID", "my-gcp-project")
+    monkeypatch.setenv("MANGOMAS_SECRETS__TIMEOUT_SECONDS", "10.0")
+    monkeypatch.setenv("MANGOMAS_SECRETS__DEFAULT_VERSION", "3")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.secrets.provider == "gcp"
+    assert s.secrets.project_id == "my-gcp-project"
+    assert s.secrets.timeout_seconds == 10.0
+    assert s.secrets.default_version == "3"

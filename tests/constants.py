@@ -70,3 +70,13 @@ DEFAULT_LOOP_MAX_STEPS: int = 1
 # ── Tool stubs ────────────────────────────────────────────────────────────────
 DEFAULT_TOOL_NAME: str = "echo"
 DEFAULT_TOOL_RESULT: str = "echo-result"
+
+# ── Postgres testcontainer parameters ─────────────────────────────────────────
+POSTGRES_TEST_IMAGE: str = "postgres:16-alpine"
+POSTGRES_TEST_DB: str = "mangomas_test"
+POSTGRES_TEST_USER: str = "mangomas"
+POSTGRES_TEST_PASSWORD: str = "mangomas_test"  # noqa: S105  test-only
+
+# ── GCP Secret Manager E2E env-var names ──────────────────────────────────────
+GCP_SECRETS_PROJECT_ENV: str = "GCP_SECRETS_PROJECT"
+GCP_SECRETS_SECRET_NAME_ENV: str = "GCP_SECRETS_SECRET_NAME"  # noqa: S105  env-var name
