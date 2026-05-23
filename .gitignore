@@ -37,6 +37,7 @@ data/
 
 # Runtime / local state
 memory/
+eval-output/
 *.log
 *.tmp
 
