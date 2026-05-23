@@ -37,8 +37,15 @@ data/
 
 # Runtime / local state
 memory/
+eval-output/
 *.log
 *.tmp
+
+# Claude Code harness — local overrides + hook scratch state
+.claude/settings.local.json
+.claude/cache/
+.claude/state/
+.claude/logs/
 
 # Test artefacts
 coverage.xml

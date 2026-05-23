@@ -15,11 +15,11 @@ hook = load_script_module("harness_session_start.py")
 
 def test_check_venv_returns_true_when_present(tmp_path: Path) -> None:
     (tmp_path / hook.VENV_DIRECTORY).mkdir()
-    assert hook._check_venv(tmp_path) is True  # noqa: SLF001
+    assert hook._check_venv(tmp_path) is True
 
 
 def test_check_venv_returns_false_when_absent(tmp_path: Path) -> None:
-    assert hook._check_venv(tmp_path) is False  # noqa: SLF001
+    assert hook._check_venv(tmp_path) is False
 
 
 async def test_probe_lmstudio_returns_false_on_connection_error(
@@ -41,7 +41,7 @@ async def test_probe_lmstudio_returns_false_on_connection_error(
         return _RaisingClient()
 
     monkeypatch.setattr(hook.httpx, "AsyncClient", fake_ctor)
-    result = await hook._probe_lmstudio(constants.DEFAULT_LLM_BASE_URL)  # noqa: SLF001
+    result = await hook._probe_lmstudio(constants.DEFAULT_LLM_BASE_URL)
     assert result is False
 
 
@@ -66,7 +66,7 @@ async def test_probe_lmstudio_returns_true_on_success(
         return _OkClient()
 
     monkeypatch.setattr(hook.httpx, "AsyncClient", fake_ctor)
-    assert await hook._probe_lmstudio(constants.DEFAULT_LLM_BASE_URL) is True  # noqa: SLF001
+    assert await hook._probe_lmstudio(constants.DEFAULT_LLM_BASE_URL) is True
 
 
 async def _make_false_coroutine(*_args: object, **_kwargs: object) -> bool:

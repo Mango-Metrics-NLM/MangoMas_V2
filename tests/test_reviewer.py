@@ -42,14 +42,14 @@ def test_review_result_suggestions_default_empty() -> None:
 
 def test_reviewer_agent_system_prompt_contains_schema_fields() -> None:
     agent = ReviewerAgent()
-    assert "passed" in agent._system_prompt  # noqa: SLF001
-    assert "score" in agent._system_prompt  # noqa: SLF001
-    assert "feedback" in agent._system_prompt  # noqa: SLF001
+    assert "passed" in agent._system_prompt
+    assert "score" in agent._system_prompt
+    assert "feedback" in agent._system_prompt
 
 
 def test_reviewer_agent_custom_prefix_prepended() -> None:
     agent = ReviewerAgent(system_prompt="You are a reviewer.")
-    assert agent._system_prompt.startswith("You are a reviewer.")  # noqa: SLF001
+    assert agent._system_prompt.startswith("You are a reviewer.")
 
 
 # ── ReviewerAgent.handle ──────────────────────────────────────────────────────

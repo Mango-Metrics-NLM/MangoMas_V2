@@ -88,10 +88,19 @@ All settings are env-driven with prefix `MANGOMAS_`:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `MANGOMAS_LLM__PROVIDER` | `lmstudio` | LLM registry entry; `vertex` enables Vertex AI |
 | `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
 | `MANGOMAS_LLM__MODEL` | `local-model` | Model id |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
+| `MANGOMAS_LLM__PROJECT` | _(none)_ | GCP project id (required when `PROVIDER=vertex`) |
+| `MANGOMAS_LLM__LOCATION` | `us-central1` | GCP region for Vertex |
+| `MANGOMAS_LLM__MAX_OUTPUT_TOKENS` | _(none)_ | Optional Gemini generation_config ceiling |
+| `MANGOMAS_DB__PROVIDER` | `sqlite` | Storage registry entry; `postgres` enables Cloud SQL |
 | `MANGOMAS_DB__URL` | `sqlite:///./mangomas.db` | Turn-storage database |
+| `MANGOMAS_DB__POOL_MIN` | `1` | asyncpg pool minimum |
+| `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
+| `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
+| `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
 | `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap |
 | `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout |
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
@@ -153,6 +162,37 @@ live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
 
 The `sub_agents:` key is optional and backward-compatible — parents without it
 remain valid. Slugs are resolved to `<parent>/<slug>.agent.md`.
+
+## Claude Code Harness (opt-in)
+
+The enterprise harness layer is configured by `HarnessSettings` (env prefix
+`MANGOMAS_HARNESS__`) and engaged only when `enabled=True`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MANGOMAS_HARNESS__ENABLED` | `false` | Wrap dispatch + stream_dispatch in `harness.agent_invoke` |
+| `MANGOMAS_HARNESS__METRICS_NAMESPACE` | `mangomas.harness` | OTel tracer namespace for harness spans |
+| `MANGOMAS_HARNESS__HOOK_LOG_LEVEL` | `INFO` | Level for SessionStart-hook log records |
+
+When enabled, `composition.py::build_orchestrator` returns
+`_HarnessOrchestrator` instead of the bare `Orchestrator`. The subclass
+overrides both `dispatch` and `stream_dispatch` to add a
+`harness.agent_invoke` parent span with attributes `agent.name`,
+`harness.topology` (`dispatch` or `stream`), and `messages.count`.
+`dispatch_pipeline` and `dispatch_fan_out` inherit the wrap because
+they delegate through `dispatch`.
+
+Two scripts in `scripts/` complete the harness:
+
+- `lint_agent_frontmatter.py` — Pydantic-validated lint of `*.agent.md`
+  / `SKILL.md` frontmatter and `sub_agents:` resolution. Also gates
+  protected core paths (`src/mangomas/core/agent.py`,
+  `src/mangomas/registry.py`, `src/mangomas/core/orchestrator.py`,
+  `src/mangomas/core/tools.py`) with a required `BREAKING-CHANGE`
+  marker on staged diffs. Wired into CI as `frontmatter-lint`.
+- `harness_session_start.py` — SessionStart hook for Claude Code on
+  the web. Emits a single-line JSON probe report (venv + LM Studio)
+  so a fresh session knows what's available. Always returns `EXIT_OK`.
 
 ## Claude Code Skills
 

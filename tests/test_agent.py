@@ -7,7 +7,7 @@ import pytest
 from mangomas.adapters.storage import SQLiteRepository
 from mangomas.agents import ChatAgent
 from mangomas.core import AgentContext, AgentRequest, Message
-from tests.conftest import FakeLLM
+from tests.fakes import FakeLLM
 
 
 @pytest.mark.asyncio

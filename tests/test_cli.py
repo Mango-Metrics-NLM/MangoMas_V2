@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from mangomas.agents import ChatAgent
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
+from tests.constants import STUB_REPLY
 from tests.fakes import FakeLLM
 
 
@@ -22,6 +23,16 @@ def runner() -> CliRunner:
 def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) -> None:
     monkeypatch.setattr(cli_main, "_build", lambda: orchestrator)
 
+    # In production each CLI invocation spawns a fresh process; the test
+    # scaffold shares ONE orchestrator across multiple ``runner.invoke``
+    # calls (so ``history`` can see the row ``chat`` persisted). Disable
+    # the close path here to preserve that semantic — the close itself
+    # is exercised by tests/test_cli_close.py instead.
+    async def _noop_close(_orch: Orchestrator) -> None:
+        return None
+
+    monkeypatch.setattr(cli_main, "_close_orchestrator", _noop_close)
+
 
 def test_agents_command(runner: CliRunner) -> None:
     result = runner.invoke(cli_main.app, ["agents"])
@@ -32,7 +43,7 @@ def test_agents_command(runner: CliRunner) -> None:
 def test_chat_command(runner: CliRunner) -> None:
     result = runner.invoke(cli_main.app, ["chat", "hello"])
     assert result.exit_code == 0
-    assert "stub-reply" in result.stdout
+    assert STUB_REPLY in result.stdout
 
 
 def test_chat_command_with_system(runner: CliRunner) -> None:
@@ -46,7 +57,7 @@ def test_chat_command_verbose(runner: CliRunner) -> None:
     """--verbose flag sets logging to DEBUG without crashing."""
     result = runner.invoke(cli_main.app, ["chat", "hello", "--verbose"])
     assert result.exit_code == 0
-    assert "stub-reply" in result.stdout
+    assert STUB_REPLY in result.stdout
 
 
 def test_history_command(runner: CliRunner) -> None:

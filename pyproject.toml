@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mangomas"
-version = "0.1.0"
+version = "0.3.0"
 description = "Mango-Mas V2 — modular, local-first agent platform (LM Studio now, GCP later)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,6 +35,32 @@ dev = [
     # Used by scripts/lint_agent_frontmatter.py (the Claude Code harness linter).
     "pyyaml>=6.0",
     "types-PyYAML>=6.0",
+    # Postgres test support: asyncpg is needed for the unit-level DSN tests
+    # to collect even when the live testcontainer suite is gated off, and
+    # testcontainers powers the gated tests/postgres/ suite when
+    # RUN_POSTGRES=1 is set.
+    "asyncpg>=0.29",
+    # testcontainers 4.x ships the postgres helper inline (no extras needed).
+    "testcontainers>=4.7",
+]
+# Vertex AI provider — install with `pip install 'mangomas[vertex]'`.
+# Required runtime SDK; the adapter lazy-imports it so it remains optional.
+vertex = [
+    "google-cloud-aiplatform>=1.71",
+    "google-auth>=2.30",
+]
+# Cloud SQL Postgres provider — install with `pip install 'mangomas[postgres]'`.
+postgres = [
+    "asyncpg>=0.29",
+]
+# GCP Secret Manager provider — install with `pip install 'mangomas[gcp]'`.
+gcp = [
+    "google-cloud-secret-manager>=2.20",
+    "google-auth>=2.30",
+]
+# Convenience meta-extra: install all cloud adapters.
+cloud = [
+    "mangomas[vertex,postgres,gcp]",
 ]
 
 [project.scripts]
@@ -53,7 +79,8 @@ select = ["E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG"]
 ignore = ["PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["PLR2004", "S101"]
+# SLF001: tests routinely assert on adapter internals (e.g. lazy-pool state).
+"tests/*" = ["PLR2004", "S101", "SLF001"]
 "scripts/*" = ["T201", "S603", "S607"]
 
 [tool.mypy]
@@ -66,7 +93,40 @@ warn_unused_ignores = true
 disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
-module = ["opentelemetry.*", "respx", "respx.*"]
+module = [
+    "opentelemetry.*",
+    "respx",
+    "respx.*",
+    "asyncpg",
+    "asyncpg.*",
+    "testcontainers",
+    "testcontainers.*",
+    "google",
+    "google.*",
+    "google.cloud",
+    "google.cloud.*",
+    "google.api_core.*",
+    "google.auth.*",
+    "vertexai",
+    "vertexai.*",
+]
+ignore_missing_imports = true
+
+# Vertex SDK is an optional extra; the adapter lazy-imports it and mypy must
+# not require type stubs that ship with `mangomas[vertex]` to be installed.
+[[tool.mypy.overrides]]
+module = [
+    "vertexai",
+    "vertexai.*",
+    "google.api_core",
+    "google.api_core.*",
+    "google.auth",
+    "google.auth.*",
+    "google.oauth2",
+    "google.oauth2.*",
+    "google.cloud",
+    "google.cloud.*",
+]
 ignore_missing_imports = true
 
 # Test modules use untyped third-party decorators (respx.mock, pytest fixtures
@@ -80,13 +140,16 @@ disallow_incomplete_defs = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=90"
+addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=95"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
 markers = [
     "integration: tests that exercise the application through public boundaries",
     "lmstudio: tests that require a reachable LM Studio server",
+    "postgres: tests that require a Postgres instance (testcontainers or live)",
+    "vertex: tests that require a reachable Vertex AI project (ADC + project_id)",
+    "gcp_secrets: tests that require GCP Secret Manager access (ADC + project)",
 ]
 
 [tool.coverage.run]

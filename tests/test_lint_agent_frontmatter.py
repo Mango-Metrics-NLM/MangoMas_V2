@@ -30,13 +30,13 @@ def _arbitrary_unprotected_path() -> str:
 def test_valid_skill_frontmatter_returns_no_errors(tmp_path: Path) -> None:
     skill_path = tmp_path / "SKILL.md"
     skill_path.write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
-    assert linter._validate_skill(str(skill_path)) == []  # noqa: SLF001
+    assert linter._validate_skill(str(skill_path)) == []
 
 
 def test_short_description_skill_returns_error(tmp_path: Path) -> None:
     skill_path = tmp_path / "SKILL.md"
     skill_path.write_text(constants.MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION, encoding="utf-8")
-    errors = linter._validate_skill(str(skill_path))  # noqa: SLF001
+    errors = linter._validate_skill(str(skill_path))
     assert len(errors) == 1
     assert "schema violation" in errors[0]
 
@@ -44,7 +44,7 @@ def test_short_description_skill_returns_error(tmp_path: Path) -> None:
 def test_missing_frontmatter_returns_error(tmp_path: Path) -> None:
     skill_path = tmp_path / "SKILL.md"
     skill_path.write_text("just a body, no frontmatter\n", encoding="utf-8")
-    errors = linter._validate_skill(str(skill_path))  # noqa: SLF001
+    errors = linter._validate_skill(str(skill_path))
     assert len(errors) == 1
     assert "missing frontmatter" in errors[0]
 
@@ -55,13 +55,13 @@ def test_missing_frontmatter_returns_error(tmp_path: Path) -> None:
 def test_valid_agent_frontmatter_returns_no_errors(tmp_path: Path) -> None:
     parent_path = tmp_path / "parent.agent.md"
     parent_path.write_text(constants.VALID_AGENT_FRONTMATTER, encoding="utf-8")
-    assert linter._validate_agent(str(parent_path), [str(parent_path)]) == []  # noqa: SLF001
+    assert linter._validate_agent(str(parent_path), [str(parent_path)]) == []
 
 
 def test_missing_tools_agent_returns_error(tmp_path: Path) -> None:
     parent_path = tmp_path / "parent.agent.md"
     parent_path.write_text(constants.MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS, encoding="utf-8")
-    errors = linter._validate_agent(str(parent_path), [str(parent_path)])  # noqa: SLF001
+    errors = linter._validate_agent(str(parent_path), [str(parent_path)])
     assert len(errors) == 1
     assert "schema violation" in errors[0]
 
@@ -70,7 +70,7 @@ def test_agent_unknown_tool_returns_error(tmp_path: Path) -> None:
     invalid = constants.VALID_AGENT_FRONTMATTER.replace("tools: [read, search]", "tools: [delete]")
     parent_path = tmp_path / "parent.agent.md"
     parent_path.write_text(invalid, encoding="utf-8")
-    errors = linter._validate_agent(str(parent_path), [str(parent_path)])  # noqa: SLF001
+    errors = linter._validate_agent(str(parent_path), [str(parent_path)])
     assert len(errors) == 1
     assert "schema violation" in errors[0]
 
@@ -96,7 +96,7 @@ def test_sub_agents_resolves_to_existing_child(
     child_path.write_text(constants.VALID_AGENT_FRONTMATTER, encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    errors = linter._validate_agent(  # noqa: SLF001
+    errors = linter._validate_agent(
         ".github/agents/myparent.agent.md",
         [
             ".github/agents/myparent.agent.md",
@@ -119,7 +119,7 @@ def test_sub_agents_missing_child_returns_error(
     parent_path.write_text(parent_body, encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    errors = linter._validate_agent(  # noqa: SLF001
+    errors = linter._validate_agent(
         ".github/agents/myparent.agent.md",
         [".github/agents/myparent.agent.md"],
     )
@@ -140,7 +140,7 @@ def test_sub_agents_on_child_file_is_rejected(
     child_path.write_text(child_body, encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    errors = linter._validate_agent(  # noqa: SLF001
+    errors = linter._validate_agent(
         ".github/agents/myparent/mychild.agent.md",
         [".github/agents/myparent/mychild.agent.md"],
     )
@@ -153,10 +153,7 @@ def test_sub_agents_on_child_file_is_rejected(
 
 def test_protected_path_check_unprotected_returns_ok() -> None:
     """An unprotected path always returns EXIT_OK."""
-    assert (
-        linter._check_protected_path(_arbitrary_unprotected_path())  # noqa: SLF001
-        == linter.EXIT_OK
-    )
+    assert linter._check_protected_path(_arbitrary_unprotected_path()) == linter.EXIT_OK
 
 
 def test_protected_path_without_marker_returns_blocked(
@@ -168,10 +165,7 @@ def test_protected_path_without_marker_returns_blocked(
         return "no marker here, just code changes\n"
 
     monkeypatch.setattr(linter, "_staged_diff", fake_diff)
-    assert (
-        linter._check_protected_path(_arbitrary_protected_path())  # noqa: SLF001
-        == linter.EXIT_PROTECTED
-    )
+    assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_PROTECTED
 
 
 def test_protected_path_with_marker_returns_ok(
@@ -183,10 +177,7 @@ def test_protected_path_with_marker_returns_ok(
         return f"some diff\n{linter.BREAKING_CHANGE_MARKER}\n"
 
     monkeypatch.setattr(linter, "_staged_diff", fake_diff)
-    assert (
-        linter._check_protected_path(_arbitrary_protected_path())  # noqa: SLF001
-        == linter.EXIT_OK
-    )
+    assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_OK
 
 
 def test_staged_diff_returns_empty_on_git_failure(
@@ -204,7 +195,7 @@ def test_staged_diff_returns_empty_on_git_failure(
         return _FakeCompleted()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    assert linter._staged_diff("nonexistent.py") == ""  # noqa: SLF001
+    assert linter._staged_diff("nonexistent.py") == ""
 
 
 # ── main() integration ────────────────────────────────────────────────────────
