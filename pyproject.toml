@@ -100,7 +100,7 @@ disallow_incomplete_defs = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=90"
+addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=95"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]

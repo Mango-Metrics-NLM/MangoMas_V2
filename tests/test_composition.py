@@ -168,3 +168,16 @@ def test_build_orchestrator_wires_all_agents() -> None:
         assert orch.context.memory is None
     finally:
         _close_repo(orch)
+
+
+def test_build_orchestrator_wires_memory_when_enabled(tmp_path: Any) -> None:
+    """Exercise ``_file_memory_factory`` + the memory-enabled branch."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    settings.memory.enabled = True
+    settings.memory.memory_dir = str(tmp_path / "memory")
+    orch = build_orchestrator(settings)
+    try:
+        assert orch.context.memory is not None
+    finally:
+        _close_repo(orch)

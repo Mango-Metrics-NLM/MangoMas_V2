@@ -103,6 +103,30 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Vertex AI LLM provider** (`vertex` extra). New `VertexClient` in
+  `src/mangomas/adapters/llm/vertex.py` satisfies `LLMClient`,
+  `PingableLLMClient`, and `StreamingLLMClient` via
+  `vertexai.generative_models.GenerativeModel`. SDK imports are deferred
+  to `VertexClient.__init__` so the module is always importable; install
+  the extra to activate. Registered by `_vertex_factory` in
+  `composition.py` and selected via `MANGOMAS_LLM__PROVIDER=vertex`.
+  Qualname-based error translation maps `google.api_core.exceptions.*`
+  and `google.auth.exceptions.*` to typed `LLMTimeout` /
+  `LLMUnavailable` / `VertexError(LLMBadResponse)`. New `LLMSettings`
+  fields: `project_id`, `location`, `credentials_path`. `secret_ref`
+  resolution unchanged — the resolved value is forwarded to the factory
+  as `credentials_json`. `vertex` pytest marker + `RUN_VERTEX=1` gating
+  in `tests/vertex/` (smoke / chat invoke / chat stream / unknown model).
+  See `docs/adapters/vertex.md`.
+- **Offline evaluation harness** (`src/mangomas/eval/`). New
+  `Scorer` protocol, `scorer_registry`, JSONL `load_jsonl`, `EvalRunner`
+  that reuses the existing `Orchestrator`, `EvalReport` aggregator, and
+  three built-in scorers: `ExactMatchScorer`, `LLMJudgeScorer`,
+  `EmbeddingScorer` (latter raises `NotImplementedError` until a provider
+  exposes `.embed()`). `EvalSettings` block (env prefix
+  `MANGOMAS_EVAL__`). `mangomas eval` CLI subcommand reads defaults from
+  `EvalSettings`; `--output-json` writes a structured report. See
+  `docs/eval/harness.md`.
 - **LM Studio E2E scenarios 2–6** under `tests/lmstudio/`: chat invoke happy path,
   chat stream SSE (token + done frames), buffered-fallback warning via
   `Registry.scoped()`, summarize agent through the public API, and the
@@ -151,6 +175,19 @@ Versioning: [Semantic Versioning](https://semver.org/).
   text is a module-level constant so log-grep filters survive future edits.
 - `ruff` pinned to `>=0.11,<1.0` in dev deps; `respx`/`tests.*` mypy
   overrides added so the CI scope (`src tests scripts`) passes `--strict`.
+- **Per-package coverage floors raised** in `scripts/check_coverage.py`
+  to match the post-v0.3.0 actuals: `composition` 90 → 95, `api` 90 → 95,
+  `cli` 90 → 95, global 90 → 95. New `eval` floor at 95 %. `agents`
+  (95 %) and `adapters` (85 %) unchanged. `pyproject.toml` global
+  `--cov-fail-under=90` → `95`.
+
+### Removed
+
+- **`mangomas.api.correlation` shim** deleted. The canonical home is and
+  has always been `mangomas.correlation`. The shim shipped in v0.2.0 as a
+  short-term migration aid; with no external consumers (project is pre-1.0)
+  the duplicate import path is now retired. Update imports to
+  `from mangomas.correlation import ...`.
 
 ### Fixed
 

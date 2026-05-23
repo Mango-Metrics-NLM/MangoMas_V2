@@ -30,16 +30,17 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/errors.py", 100, "errors"),
     Floor("src/mangomas/registry.py", 100, "registry"),
     Floor("src/mangomas/core/*.py", 100, "core"),
-    Floor("src/mangomas/composition.py", 90, "composition"),
+    Floor("src/mangomas/composition.py", 95, "composition"),
     Floor("src/mangomas/agents/*.py", 95, "agents"),
-    Floor("src/mangomas/api/*.py", 90, "api"),
-    Floor("src/mangomas/cli/*.py", 90, "cli"),
+    Floor("src/mangomas/api/*.py", 95, "api"),
+    Floor("src/mangomas/cli/*.py", 95, "cli"),
     Floor("src/mangomas/adapters/**/*.py", 85, "adapters"),
     Floor("src/mangomas/secrets/*.py", 100, "secrets"),
     Floor("src/mangomas/correlation.py", 100, "correlation"),
+    Floor("src/mangomas/eval/**/*.py", 95, "eval"),
 ]
 
-GLOBAL_FLOOR = Floor("src/mangomas/**/*.py", 90, "global")
+GLOBAL_FLOOR = Floor("src/mangomas/**/*.py", 95, "global")
 
 
 def _check(floor: Floor) -> bool:

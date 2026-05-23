@@ -10,8 +10,44 @@ extension, backwards-compatible contracts.
 
 ## Near term
 
-_(All near-term workstreams from v0.1.0 landed in v0.2.0 — see "Done in v0.2.0"
-below. Next near-term item is the Vertex AI provider — see "Mid term".)_
+_(All near-term workstreams from v0.1.0 landed in v0.2.0, and the first
+mid-term GCP-swap item plus the long-term evaluation harness landed in
+v0.3.0 — see "Done in v0.3.0" and "Done in v0.2.0" below. Next near-term
+item is the Postgres / Cloud SQL storage adapter — see "Mid term".)_
+
+---
+
+## Done in v0.3.0
+
+### Vertex AI LLM provider
+
+`VertexClient` in `src/mangomas/adapters/llm/vertex.py` satisfies
+`LLMClient`, `PingableLLMClient`, and `StreamingLLMClient` via
+`vertexai.generative_models`. Registered through the existing
+`llm_registry`; activate with `MANGOMAS_LLM__PROVIDER=vertex` and the
+`vertex` optional extra (`pip install 'mangomas[vertex]'`). New
+`LLMSettings` fields: `project_id`, `location`, `credentials_path`. The
+existing `secret_ref` flow is reused — the resolved value becomes the
+service-account JSON body. See `docs/adapters/vertex.md`.
+
+### Evaluation harness
+
+`src/mangomas/eval/` ships the `Scorer` protocol, `scorer_registry`, a
+JSONL dataset loader, `EvalRunner` (reuses the existing
+`Orchestrator`), `EvalReport`, three built-in scorers (`exact_match`,
+`llm_judge`, `embedding`), an `EvalSettings` block (`MANGOMAS_EVAL__*`),
+and a `mangomas eval` CLI subcommand. The embedding scorer raises
+`NotImplementedError` against providers that don't expose `.embed()`
+(none do yet — documented gap). See `docs/eval/harness.md`.
+
+### Coverage / hygiene tightening
+
+Per-package floors in `scripts/check_coverage.py` raised to match
+post-v0.3.0 actuals: `composition` / `api` / `cli` / `global` all
+90 → 95. New `eval` floor at 95 %. `pyproject.toml`
+`--cov-fail-under=90` → `95`. The backwards-compat
+`mangomas.api.correlation` re-export shim was removed; imports must use
+the canonical `mangomas.correlation` path.
 
 ---
 
@@ -61,12 +97,7 @@ and echoes it on the outgoing response.
 These items implement the cloud-target swap matrix from
 [ADR-001](docs/adr/0001-cloud-targets.md).  Each boundary is swapped
 independently through the existing registry mechanism; no core changes.
-
-### Vertex AI LLM provider
-
-Implement `VertexLLMClient` satisfying `LLMClient` + `StreamingLLMClient`.
-Register as `llm_registry.register("vertex", ...)`.
-Activate via `MANGOMAS_LLM__PROVIDER=vertex`.
+The Vertex AI provider shipped in v0.3.0 — see "Done in v0.3.0" above.
 
 ### Cloud SQL / Postgres storage provider
 
@@ -97,11 +128,17 @@ Add a `deploy/` directory with:
 
 ## Long term
 
-### Evaluation harness
+_(The first long-term capability — the evaluation harness — landed in
+v0.3.0; see "Done in v0.3.0" above. Follow-ups below.)_
 
-Offline evaluation of agent responses against a dataset of expected
-input/output pairs.  Pluggable scorer (exact match, LLM-as-judge, embedding
-similarity) behind a `Scorer` protocol.
+### Embedding-capable LLM provider
+
+The evaluation harness ships an `EmbeddingScorer` that requires an
+`LLMClient` exposing `.embed()`. None of today's providers do. Add an
+embedding surface to either the Vertex adapter (`text-embedding-004` via
+`TextEmbeddingModel.get_embeddings_async`) or a new dedicated provider.
+Once the surface is present, the scorer becomes operational with no
+harness changes.
 
 ### Multi-agent workflows
 
