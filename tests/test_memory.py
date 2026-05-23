@@ -135,4 +135,4 @@ async def test_file_memory_creates_parent_dirs(tmp_path: object) -> None:
 def test_file_memory_close_sets_flag(tmp_path: object) -> None:
     repo = FileMemoryRepository(_settings(tmp_path))
     repo.close()
-    assert repo._closed  # noqa: SLF001
+    assert repo._closed

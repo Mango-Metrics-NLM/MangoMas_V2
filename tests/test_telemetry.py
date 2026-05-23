@@ -13,16 +13,16 @@ from mangomas.telemetry import JsonFormatter
 
 def _reset() -> None:
     """Force the telemetry singleton back to unconfigured."""
-    telemetry._state.configured = False  # noqa: SLF001
+    telemetry._state.configured = False
 
 
 def test_configure_telemetry_idempotent() -> None:
     _reset()
     telemetry.configure_telemetry(service_name="test", log_level="DEBUG")
-    first = telemetry._state.configured  # noqa: SLF001
+    first = telemetry._state.configured
     telemetry.configure_telemetry()
     assert first is True
-    assert telemetry._state.configured is True  # noqa: SLF001
+    assert telemetry._state.configured is True
 
 
 def test_configure_telemetry_json_format() -> None:
@@ -47,7 +47,7 @@ def test_get_tracer_cold_start() -> None:
     _reset()
     tracer = telemetry.get_tracer("cold-start-test")
     assert tracer is not None
-    assert telemetry._state.configured is True  # noqa: SLF001
+    assert telemetry._state.configured is True
 
 
 # ── JsonFormatter ─────────────────────────────────────────────────────────────

@@ -37,18 +37,18 @@ def test_summarize_agent_name() -> None:
 def test_summarize_agent_default_system_prompt() -> None:
     agent = SummarizeAgent()
     # System prompt is not None and not empty
-    assert agent._system_prompt  # noqa: SLF001
+    assert agent._system_prompt
 
 
 def test_summarize_agent_custom_system_prompt() -> None:
     agent = SummarizeAgent(system_prompt="Be brief.")
-    assert agent._system_prompt == "Be brief."  # noqa: SLF001
+    assert agent._system_prompt == "Be brief."
 
 
 def test_summarize_agent_settings_override() -> None:
     s = AgentSettings(system_prompt="From settings.")
     agent = SummarizeAgent(system_prompt="Original.", settings=s)
-    assert agent._system_prompt == "From settings."  # noqa: SLF001
+    assert agent._system_prompt == "From settings."
 
 
 # ── _format_turns ─────────────────────────────────────────────────────────────

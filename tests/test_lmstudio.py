@@ -183,25 +183,25 @@ async def test_stream_raises_unavailable_on_connect_error() -> None:
 
 
 def test_parse_sse_line_skips_non_data_lines() -> None:
-    assert LMStudioClient._parse_sse_line("event: ping") is None  # noqa: SLF001
+    assert LMStudioClient._parse_sse_line("event: ping") is None
 
 
 def test_parse_sse_line_returns_done_sentinel() -> None:
-    assert LMStudioClient._parse_sse_line("data: [DONE]") == ""  # noqa: SLF001
+    assert LMStudioClient._parse_sse_line("data: [DONE]") == ""
 
 
 def test_parse_sse_line_skips_unparseable_chunk() -> None:
-    assert LMStudioClient._parse_sse_line("data: not-json") is None  # noqa: SLF001
+    assert LMStudioClient._parse_sse_line("data: not-json") is None
 
 
 def test_parse_sse_line_extracts_content() -> None:
     line = 'data: {"choices":[{"delta":{"content":"x"}}]}'
-    assert LMStudioClient._parse_sse_line(line) == "x"  # noqa: SLF001
+    assert LMStudioClient._parse_sse_line(line) == "x"
 
 
 def test_parse_sse_line_skips_empty_content() -> None:
     line = 'data: {"choices":[{"delta":{"content":""}}]}'
-    assert LMStudioClient._parse_sse_line(line) is None  # noqa: SLF001
+    assert LMStudioClient._parse_sse_line(line) is None
 
 
 # ── timeout translation ───────────────────────────────────────────────────────
