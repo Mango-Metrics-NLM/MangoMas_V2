@@ -121,7 +121,11 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
     cfg = settings or get_settings()
     logger.info(
         "Building orchestrator",
-        extra={"llm_provider": cfg.llm.provider, "db_provider": cfg.db.provider},
+        extra={
+            "llm_provider": cfg.llm.provider,
+            "db_provider": cfg.db.provider,
+            "secrets_provider": cfg.secrets.provider,
+        },
     )
 
     llm_cfg = _resolve_llm_secrets(cfg.llm, cfg.secrets.provider)

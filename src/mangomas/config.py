@@ -24,8 +24,18 @@ DEFAULT_LLM_API_KEY: str = "lm-studio"
 DEFAULT_LLM_TIMEOUT_SECONDS: float = 60.0
 DEFAULT_LLM_TEMPERATURE: float = 0.2
 
+# Vertex AI defaults — consumed when MANGOMAS_LLM__PROVIDER=vertex.
+DEFAULT_VERTEX_LOCATION: str = "us-central1"
+DEFAULT_VERTEX_MODEL: str = "gemini-1.5-flash"
+DEFAULT_VERTEX_MAX_OUTPUT_TOKENS: int | None = None
+
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"
+# asyncpg pool + connection knobs — consumed when MANGOMAS_DB__PROVIDER=postgres.
+DEFAULT_DB_POOL_MIN: int = 1
+DEFAULT_DB_POOL_MAX: int = 10
+DEFAULT_DB_CONNECT_TIMEOUT_SECONDS: float = 10.0
+DEFAULT_DB_STATEMENT_TIMEOUT_SECONDS: float | None = None
 
 DEFAULT_API_HOST: str = "0.0.0.0"  # noqa: S104
 DEFAULT_API_PORT: int = 8000
@@ -44,6 +54,9 @@ DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
 DEFAULT_MEMORY_ENABLED: bool = False
 
 DEFAULT_SECRETS_PROVIDER: str = "env"
+# GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
+DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS: float = 5.0
+DEFAULT_GCP_SECRET_VERSION: str = "latest"  # noqa: S105  not a secret value
 
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
@@ -62,12 +75,22 @@ class LLMSettings(BaseModel):
     # the resolved value overrides ``api_key`` at orchestrator-build time.
     # See ``mangomas.secrets`` and ``composition._lmstudio_factory``.
     secret_ref: str | None = None
+    # Vertex AI fields (required only when provider="vertex"; validated at
+    # factory-build time in composition.py so the lmstudio path is untouched).
+    project: str | None = None
+    location: str = DEFAULT_VERTEX_LOCATION
+    max_output_tokens: int | None = DEFAULT_VERTEX_MAX_OUTPUT_TOKENS
 
 
 class SecretsSettings(BaseModel):
     """Configuration for the SecretsProvider seam."""
 
     provider: str = DEFAULT_SECRETS_PROVIDER
+    # GCP Secret Manager fields (required only when provider="gcp"; validated
+    # at factory-build time in composition.py).
+    project_id: str | None = None
+    timeout_seconds: float = DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS
+    default_version: str = DEFAULT_GCP_SECRET_VERSION
 
 
 class DBSettings(BaseModel):
@@ -75,6 +98,11 @@ class DBSettings(BaseModel):
 
     provider: str = DEFAULT_DB_PROVIDER
     url: str = DEFAULT_DB_URL
+    # asyncpg pool + connection knobs — used only by the postgres provider.
+    pool_min: int = DEFAULT_DB_POOL_MIN
+    pool_max: int = DEFAULT_DB_POOL_MAX
+    connect_timeout_seconds: float = DEFAULT_DB_CONNECT_TIMEOUT_SECONDS
+    statement_timeout_seconds: float | None = DEFAULT_DB_STATEMENT_TIMEOUT_SECONDS
 
 
 class APISettings(BaseModel):

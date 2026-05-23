@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mangomas"
-version = "0.1.0"
+version = "0.3.0"
 description = "Mango-Mas V2 — modular, local-first agent platform (LM Studio now, GCP later)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -84,6 +84,9 @@ pythonpath = ["src"]
 markers = [
     "integration: tests that exercise the application through public boundaries",
     "lmstudio: tests that require a reachable LM Studio server",
+    "postgres: tests that require a Postgres instance (testcontainers or live)",
+    "vertex: tests that require Vertex AI access (ADC + project)",
+    "gcp_secrets: tests that require GCP Secret Manager access (ADC + project)",
 ]
 
 [tool.coverage.run]

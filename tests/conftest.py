@@ -30,11 +30,19 @@ __all__ = ["FakeLLM", "FakeMemoryRepository", "FakeRepository", "FakeTool", "Non
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip integration/LM Studio tests unless explicitly enabled."""
+    """Skip integration / cloud-provider tests unless explicitly enabled."""
     run_integration = os.getenv("RUN_INTEGRATION") == "1"
     run_lmstudio = os.getenv("RUN_LMSTUDIO") == "1"
+    run_postgres = os.getenv("RUN_POSTGRES") == "1"
+    run_vertex = os.getenv("RUN_VERTEX") == "1"
+    run_gcp_secrets = os.getenv("RUN_GCP_SECRETS") == "1"
     integration_skip = pytest.mark.skip(reason="set RUN_INTEGRATION=1 to run integration tests")
     lmstudio_skip = pytest.mark.skip(reason="set RUN_LMSTUDIO=1 to run LM Studio tests")
+    postgres_skip = pytest.mark.skip(reason="set RUN_POSTGRES=1 to run Postgres tests")
+    vertex_skip = pytest.mark.skip(reason="set RUN_VERTEX=1 to run Vertex AI tests")
+    gcp_secrets_skip = pytest.mark.skip(
+        reason="set RUN_GCP_SECRETS=1 to run GCP Secret Manager tests"
+    )
 
     for item in items:
         path_parts = set(Path(str(item.fspath)).parts)
@@ -42,6 +50,12 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(integration_skip)
         if "lmstudio" in item.keywords and not run_lmstudio:
             item.add_marker(lmstudio_skip)
+        if ("postgres" in path_parts or "postgres" in item.keywords) and not run_postgres:
+            item.add_marker(postgres_skip)
+        if ("vertex" in path_parts or "vertex" in item.keywords) and not run_vertex:
+            item.add_marker(vertex_skip)
+        if "gcp_secrets" in item.keywords and not run_gcp_secrets:
+            item.add_marker(gcp_secrets_skip)
 
 
 # ── Settings fixture ──────────────────────────────────────────────────────────
