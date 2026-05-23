@@ -55,7 +55,8 @@ C4Component
   Rel(health_routes, health_svc, "check_ready(orchestrator)")
   Rel(health_svc, llm_client, "ping()")
   Rel(orchestrator, registry, "looks up Agent by name")
-  Rel(orchestrator, sqlite_repo, "persists turn via TurnRepository")
+  Rel(orchestrator, sqlite_repo, "persists turn via TurnRepository (when provider=sqlite)")
+  Rel(orchestrator, postgres_repo, "persists turn via TurnRepository (when provider=postgres)")
   Rel(registry, chat_agent, "resolves 'chat'")
   Rel(registry, summarize_agent, "resolves 'summarize'")
   Rel(registry, tool_agent, "resolves 'tool_agent'")
@@ -68,6 +69,7 @@ C4Component
   Rel(reviewer_agent, llm_client, "complete() / stream()")
   Rel(app_factory, secrets_provider, "resolves api_key / credentials_json via LLMSettings.secret_ref")
   Rel(secrets_provider, env_secrets, "default impl (provider='env')")
+  Rel(secrets_provider, gcp_secrets, "cloud impl (provider='gcp')")
 ```
 
 ## Notes
@@ -89,8 +91,9 @@ C4Component
 - The **SecretsProvider seam** (`src/mangomas/secrets/`) is consulted at
   orchestrator-build time when `LLMSettings.secret_ref` is set. For LM Studio
   the resolved value becomes `api_key`; for Vertex it becomes the
-  service-account JSON body (`credentials_json`). Cloud backends (GCP Secret
-  Manager, Vault) plug in via `secrets_registry.register()` with no changes
+  service-account JSON body (`credentials_json`). The GCP Secret Manager
+  backend shipped in v0.3.1 and is E2E verified; additional cloud backends
+  (e.g. Vault) plug in via `secrets_registry.register()` with no changes
   to agents or adapters.
 - `check_ready()` is in `src/mangomas/api/health.py` and is called by the
   `/readyz` route handler. Both `LMStudioClient.ping()` and

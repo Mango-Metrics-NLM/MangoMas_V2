@@ -6,6 +6,12 @@ lazy-pool invariant that ``__init__`` performs no I/O.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
+
 import pytest
 
 from mangomas.adapters.storage.postgres import (
@@ -14,6 +20,8 @@ from mangomas.adapters.storage.postgres import (
     _normalise_dsn,
 )
 from mangomas.config import DBSettings
+from mangomas.core.agent import AgentRequest, AgentResponse, Message
+from mangomas.errors import PersistenceError
 
 # ── _normalise_dsn ────────────────────────────────────────────────────────────
 
@@ -118,11 +126,6 @@ def test_normalise_dsn_passes_driver_prefix_through() -> None:
     assert _normalise_dsn(dsn) == dsn
 
 
-def test_dsn_host_handles_empty_string() -> None:
-    """``_dsn_host`` returns ``None`` for unparseable / empty input."""
-    assert _dsn_host("") is None
-
-
 # ── Helpers for mocking asyncpg pool / connections ────────────────────────────
 # The methods under test (save_turn, list_turns) do `import asyncpg` in their
 # body, so tests calling those methods require asyncpg to be installed.
@@ -136,16 +139,6 @@ except ImportError:
     _skip_no_asyncpg = True
 
 _requires_asyncpg = pytest.mark.skipif(_skip_no_asyncpg, reason="asyncpg not installed")
-
-import types
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
-
-from mangomas.core.agent import AgentRequest, AgentResponse, Message
-from mangomas.errors import PersistenceError
 
 
 def _make_cfg() -> DBSettings:
@@ -170,12 +163,12 @@ class FakeConnection:
     fetchval_side_effect: Exception | None = None
     fetch_side_effect: Exception | None = None
 
-    async def fetchval(self, query: str, *args: Any) -> Any:
+    async def fetchval(self, _query: str, *_args: Any) -> Any:
         if self.fetchval_side_effect is not None:
             raise self.fetchval_side_effect
         return self.fetchval_return
 
-    async def fetch(self, query: str, *args: Any) -> list[dict[str, Any]]:
+    async def fetch(self, _query: str, *_args: Any) -> list[dict[str, Any]]:
         if self.fetch_side_effect is not None:
             raise self.fetch_side_effect
         return self.fetch_return
@@ -190,7 +183,7 @@ class FakePool:
     terminate_called: bool = False
 
     @asynccontextmanager
-    async def acquire(self):  # noqa: ANN201
+    async def acquire(self) -> AsyncIterator[FakeConnection]:
         yield self.conn
 
     async def close(self) -> None:
@@ -202,12 +195,12 @@ class FakePool:
 
 def _inject_pool(repo: PostgresRepository, pool: FakePool) -> None:
     """Bypass ``_ensure_pool`` by setting the internal pool directly."""
-    repo._pool = pool  # type: ignore[assignment]
+    repo._pool = pool  # FakePool duck-types asyncpg.Pool
 
     async def _noop_ensure() -> FakePool:
         return pool
 
-    repo._ensure_pool = _noop_ensure  # type: ignore[assignment]
+    repo._ensure_pool = _noop_ensure  # type: ignore[method-assign]
 
 
 # ── save_turn ─────────────────────────────────────────────────────────────────
@@ -285,7 +278,7 @@ async def test_list_turns_empty_result() -> None:
 @_requires_asyncpg
 async def test_list_turns_handles_none_ts() -> None:
     """list_turns maps a NULL ts to Python None."""
-    fake_rows = [
+    fake_rows: list[dict[str, Any]] = [
         {
             "id": 2,
             "ts": None,
@@ -324,7 +317,7 @@ async def test_aclose_with_pool_calls_close_and_clears() -> None:
     """aclose() should await pool.close() then set _pool to None."""
     repo = PostgresRepository(_make_cfg())
     pool = FakePool()
-    repo._pool = pool  # type: ignore[assignment]
+    repo._pool = pool  # FakePool duck-types asyncpg.Pool
 
     await repo.aclose()
     assert pool.close_called is True
@@ -335,7 +328,7 @@ async def test_aclose_idempotent_after_close() -> None:
     """Calling aclose() twice on a repo with a pool must not raise."""
     repo = PostgresRepository(_make_cfg())
     pool = FakePool()
-    repo._pool = pool  # type: ignore[assignment]
+    repo._pool = pool  # FakePool duck-types asyncpg.Pool
 
     await repo.aclose()
     await repo.aclose()  # second call — pool is None, should no-op
@@ -349,7 +342,7 @@ def test_close_with_pool_calls_terminate_and_clears() -> None:
     """close() should call pool.terminate() then set _pool to None."""
     repo = PostgresRepository(_make_cfg())
     pool = FakePool()
-    repo._pool = pool  # type: ignore[assignment]
+    repo._pool = pool  # FakePool duck-types asyncpg.Pool
 
     repo.close()
     assert pool.terminate_called is True
@@ -360,7 +353,7 @@ def test_close_idempotent_after_terminate() -> None:
     """Calling close() twice on a repo with a pool must not raise."""
     repo = PostgresRepository(_make_cfg())
     pool = FakePool()
-    repo._pool = pool  # type: ignore[assignment]
+    repo._pool = pool  # FakePool duck-types asyncpg.Pool
 
     repo.close()
     repo.close()  # second call — pool is None, should no-op

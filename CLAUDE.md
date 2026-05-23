@@ -19,7 +19,7 @@ uvicorn mangomas.api.app:create_app --factory --reload
 # Run CLI
 mangomas chat "hello"
 
-# Tests (unit + coverage gate at 85 %)
+# Tests (unit + coverage gate at 95 %)
 python -m pytest --tb=short -q
 
 # Integration tests (requires LM Studio running)
@@ -128,7 +128,7 @@ HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
 ## Testing Conventions
 
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
-- **Coverage gate**: 85 % minimum — enforced by `pytest --cov`
+- **Coverage gate**: 95 % minimum — enforced by `pytest --cov` (515 tests, 98.16 % current coverage)
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
 - **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`

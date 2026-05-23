@@ -10,15 +10,13 @@ extension, backwards-compatible contracts.
 
 ## Near term
 
-_(The Vertex AI LLM provider, Postgres `TurnRepository`, GCP Secret
-Manager backend, and the offline evaluation harness all landed in
-v0.3.0; the Claude Code enterprise harness — skills, sub-agents,
-`HarnessSettings`, `_HarnessOrchestrator`, frontmatter linter,
-SessionStart hook, PR template, secret-scan job — landed in the
-current Unreleased band on the `claude/agent-md-enterprise-harness-*`
-branch. Next near-term items are the Cloud Logging / Cloud Trace
-exporter swap, the Cloud Run deployment pipeline, and the harness
-metrics-exporter selection switch.)_
+_(All cloud adapters (Vertex AI, Postgres, GCP Secret Manager) and the
+offline evaluation harness landed in v0.3.0. The Claude Code enterprise
+harness landed in Unreleased. v0.3.1 cherry-picked the 7-milestone GCP
+swap-in plan from PR #6 (rejecting the destructive code rollback),
+fixed lint/type issues, and raised test coverage to 98.16 % / 515 tests.
+See `docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md` for the
+full plan. Next near-term items:)_
 
 ### Harness metrics-exporter selection
 

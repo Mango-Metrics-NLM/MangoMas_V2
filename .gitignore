@@ -53,3 +53,11 @@ coverage.xml
 
 # Defensive (JS tooling not in project but gitignore is inherited)
 node_modules/
+
+# Antigravity / Gemini agent workspace
+.gemini/
+docs/antigravity_reference.md
+
+# Dev scratch (one-off scripts, not shipped)
+scratch/
+TESTING_WORKFLOW.md

@@ -128,7 +128,7 @@ class Orchestrator:
             if acceptance_fn is not None and not accepted:
                 raise MaxStepsExceeded(effective_max)
 
-            assert response is not None  # noqa: S101  # guaranteed: effective_max >= 1
+            assert response is not None  # noqa: S101 — guaranteed: effective_max >= 1
 
             # Embed loop telemetry into the response metadata.
             response = AgentResponse(
@@ -179,7 +179,7 @@ class Orchestrator:
                         metadata=response.metadata,
                     )
 
-        assert response is not None  # noqa: S101  # guaranteed: at least one step ran
+        assert response is not None  # noqa: S101 — guaranteed: at least one step ran
         return response
 
     async def dispatch_fan_out(

@@ -70,9 +70,13 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             log_dict["exception"] = self.formatException(record.exc_info)
         # Forward extra fields added via ``logger.info(..., extra={...})``.
-        for key, value in record.__dict__.items():
-            if key not in _STANDARD_LOG_RECORD_ATTRS:
-                log_dict[key] = value
+        log_dict.update(
+            {
+                key: value
+                for key, value in record.__dict__.items()
+                if key not in _STANDARD_LOG_RECORD_ATTRS
+            }
+        )
         return json.dumps(log_dict, ensure_ascii=False, default=str)
 
 
