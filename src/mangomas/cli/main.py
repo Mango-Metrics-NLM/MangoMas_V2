@@ -6,6 +6,7 @@ import asyncio
 import dataclasses
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,10 +17,19 @@ from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
 from mangomas.errors import MangomasError
-from mangomas.eval import EvalRunner, load_jsonl, scorer_registry
+from mangomas.eval import EvalReport, EvalRunner, load_jsonl, scorer_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
+
+# Windows default console codec is cp1252; LLM replies routinely contain
+# em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
+# typer.echo. Reconfigure to UTF-8 with replacement so output never crashes.
+if sys.platform == "win32":  # pragma: no cover — platform-gated
+    for _stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(_stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer(help="Mango-Mas V2 CLI", no_args_is_help=True)
 
@@ -32,34 +42,29 @@ def _build() -> Orchestrator:
 
 
 async def _close_orchestrator(orch: Orchestrator) -> None:
-    """Release adapter resources cleanly.
+    """Release adapter resources cleanly via :meth:`Orchestrator.aclose`.
 
-    Dispatches on ``hasattr(repo, "aclose")`` to support async-pool
-    backends (PostgresRepository) without breaking the sync ``close()``
-    contract used by SQLite. Mirrors the FastAPI lifespan close path so
-    CLI invocations don't leak asyncpg connections on exit.
+    Retained as a thin wrapper so existing tests can monkeypatch the CLI's
+    close path without reaching into core. The real teardown logic lives on
+    :class:`~mangomas.core.Orchestrator` so every entry point (CLI, FastAPI
+    lifespan, demo scripts) shares one tested code path.
     """
-    ctx = orch.context
-    if hasattr(ctx.llm, "aclose"):
-        await ctx.llm.aclose()
-    if ctx.repo is not None:
-        if hasattr(ctx.repo, "aclose"):
-            await ctx.repo.aclose()
-        else:
-            ctx.repo.close()
-    if ctx.memory is not None:
-        ctx.memory.close()
+    await orch.aclose()
 
 
 @app.command()
 def agents() -> None:
     """List registered agents."""
     orch = _build()
-    try:
-        for name in orch.list_agents():
-            typer.echo(name)
-    finally:
-        asyncio.run(_close_orchestrator(orch))
+
+    async def _run() -> list[str]:
+        try:
+            return list(orch.list_agents())
+        finally:
+            await _close_orchestrator(orch)
+
+    for name in asyncio.run(_run()):
+        typer.echo(name)
 
 
 @app.command()
@@ -80,11 +85,15 @@ def chat(
     messages.append(Message(role="user", content=message))
 
     request = AgentRequest(messages=messages)
-    try:
-        response = asyncio.run(orch.dispatch(agent, request))
-        typer.echo(response.content)
-    finally:
-        asyncio.run(_close_orchestrator(orch))
+
+    async def _run() -> str:
+        try:
+            response = await orch.dispatch(agent, request)
+            return response.content
+        finally:
+            await _close_orchestrator(orch)
+
+    typer.echo(asyncio.run(_run()))
 
 
 @app.command()
@@ -97,16 +106,24 @@ def history(
         logging.basicConfig(level=logging.DEBUG)
 
     orch = _build()
-    try:
-        repo = orch.context.repo
-        if repo is None:
-            typer.echo("No repository configured.", err=True)
-            raise typer.Exit(code=1)
-        rows = asyncio.run(repo.list_turns(limit=limit))
-        for row in rows:
-            typer.echo(json.dumps(row, ensure_ascii=False))
-    finally:
-        asyncio.run(_close_orchestrator(orch))
+
+    async def _run() -> list[dict[str, object]] | None:
+        """Return rows, or ``None`` to signal "no repository configured"."""
+        try:
+            repo = orch.context.repo
+            if repo is None:
+                return None
+            return await repo.list_turns(limit=limit)
+        finally:
+            await _close_orchestrator(orch)
+
+    rows = asyncio.run(_run())
+    if rows is None:
+        typer.echo("No repository configured.", err=True)
+        raise typer.Exit(code=1)
+
+    for row in rows:
+        typer.echo(json.dumps(row, ensure_ascii=False))
 
 
 @app.command(name="eval")
@@ -181,9 +198,15 @@ def eval_cmd(
         fail_fast=effective_fail_fast,
     )
 
+    async def _run_scoring() -> EvalReport:
+        try:
+            dataset = await load_jsonl(effective_dataset)
+            return await runner.run(dataset, agent_name)
+        finally:
+            await _close_orchestrator(orch)
+
     try:
-        dataset = asyncio.run(load_jsonl(effective_dataset))
-        report = asyncio.run(runner.run(dataset, agent_name))
+        report = asyncio.run(_run_scoring())
     except MangomasError as exc:
         typer.echo(f"Eval run failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
