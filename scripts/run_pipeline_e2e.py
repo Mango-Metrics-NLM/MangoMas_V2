@@ -1,11 +1,13 @@
 """End-to-end pipeline (planner → tool → reviewer) against LM Studio.
 
-Run with the venv active and LM Studio listening on localhost:1234.
-
-Usage::
+Run with the venv active and LM Studio listening on the host/port configured
+via ``MANGOMAS_LLM__BASE_URL``::
 
     MANGOMAS_LLM__MODEL='google/gemma-4-e4b' \
         python scripts/run_pipeline_e2e.py
+
+Every tunable (model, base URL, db path, tool list, demo numbers) is
+env- or constant-driven; no values are hard-coded into the call sites.
 """
 
 from __future__ import annotations
@@ -13,196 +15,203 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import operator
+from collections.abc import Callable
 from typing import Any
-
-from pydantic import ValidationError
 
 from mangomas.agents.planner import ExecutionPlan
 from mangomas.agents.reviewer import ReviewResult
 from mangomas.composition import build_orchestrator
+from mangomas.core import Orchestrator
 from mangomas.core.agent import AgentRequest, Message
-from mangomas.core.tools import ToolSpec
+from mangomas.core.tools import Tool, ToolSpec, parse_or_recover
 from mangomas.registry import Registry
 
 logger = logging.getLogger("pipeline_e2e")
+
+# ── Demo configuration constants ─────────────────────────────────────────────
+# Pulling these out of the call sites keeps the script reusable: future demos
+# can swap the rectangle, the expected answer, or the tool set without
+# touching control flow.
+
+_RECTANGLE_WIDTH: float = 7.0
+_RECTANGLE_HEIGHT: float = 4.0
+_RECTANGLE_AREA: float = _RECTANGLE_WIDTH * _RECTANGLE_HEIGHT  # 28.0
+_HR_WIDTH: int = 78
+_TOOL_REGISTRY_NAME: str = "tools"
+
+_GOAL_TEMPLATE: str = (
+    "Compute the area of a rectangle with width {w:g} and height {h:g} by "
+    "calling the multiply tool, then report the numeric result and a "
+    "one-sentence definition of area."
+)
+_TOOL_INPUT_TEMPLATE: str = (
+    "You have tools available. Execute the following plan and return only "
+    "the final numeric answer:\n\n{plan}\n\nGoal: {goal}"
+)
+_REVIEW_INPUT_TEMPLATE: str = (
+    "Goal: {goal}\n\nCandidate answer:\n{candidate}\n\n"
+    "Evaluate whether the candidate answer correctly satisfies the goal. "
+    "The correct numeric area is {expected:g}."
+)
+
+_NUMERIC_BINARY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "a": {"type": "number"},
+        "b": {"type": "number"},
+    },
+    "required": ["a", "b"],
+}
 
 
 # ── Tiny deterministic tools the ToolAgent can call ──────────────────────────
 
 
-class AddTool:
-    name = "add"
-    spec = ToolSpec(
-        name="add",
-        description="Return the sum of two numbers a and b.",
-        parameters_schema={
-            "type": "object",
-            "properties": {
-                "a": {"type": "number"},
-                "b": {"type": "number"},
-            },
-            "required": ["a", "b"],
-        },
-    )
+class BinaryNumericTool:
+    """A two-argument numeric tool parametrised by name + operator.
+
+    Replaces the previous ``AddTool``/``MultiplyTool`` duplicates. New
+    arithmetic demos just need ``BinaryNumericTool(name, description, op)``.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        op: Callable[[float, float], float],
+    ) -> None:
+        self._name = name
+        self._op = op
+        self._spec = ToolSpec(
+            name=name,
+            description=description,
+            parameters_schema=_NUMERIC_BINARY_SCHEMA,
+        )
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def spec(self) -> ToolSpec:
+        return self._spec
 
     async def execute(self, arguments: dict[str, Any]) -> str:
-        return json.dumps({"result": float(arguments["a"]) + float(arguments["b"])})
+        a = float(arguments["a"])
+        b = float(arguments["b"])
+        return json.dumps({"result": self._op(a, b)})
 
 
-class MultiplyTool:
-    name = "multiply"
-    spec = ToolSpec(
-        name="multiply",
-        description="Return the product of two numbers a and b.",
-        parameters_schema={
-            "type": "object",
-            "properties": {
-                "a": {"type": "number"},
-                "b": {"type": "number"},
-            },
-            "required": ["a", "b"],
-        },
-    )
+def build_demo_tools() -> Registry[Tool]:
+    """Build the tool registry used by the demo pipeline.
 
-    async def execute(self, arguments: dict[str, Any]) -> str:
-        return json.dumps({"result": float(arguments["a"]) * float(arguments["b"])})
+    Exposed as a top-level builder (not a closure) so unit tests can
+    construct + exercise the registry without invoking ``build_orchestrator``.
+    """
+    registry: Registry[Tool] = Registry(_TOOL_REGISTRY_NAME)
+    registry.register("add", BinaryNumericTool("add", "Return a + b.", operator.add))
+    registry.register("multiply", BinaryNumericTool("multiply", "Return a * b.", operator.mul))
+    return registry
+
+
+# ── Pretty output helpers ────────────────────────────────────────────────────
 
 
 def _hr(title: str) -> None:
     print()
-    print("=" * 78)
+    print("=" * _HR_WIDTH)
     print(title)
-    print("=" * 78)
+    print("=" * _HR_WIDTH)
 
 
-def _try_parse_plan(content: str) -> ExecutionPlan | None:
-    try:
-        return ExecutionPlan.model_validate_json(content)
-    except ValidationError:
-        # Some local models wrap JSON in markdown fences — try to recover.
-        start = content.find("{")
-        end = content.rfind("}")
-        if start != -1 and end != -1:
-            try:
-                return ExecutionPlan.model_validate_json(content[start : end + 1])
-            except ValidationError:
-                return None
+def _emit_plan(plan_resp_content: str) -> ExecutionPlan | None:
+    print(plan_resp_content)
+    plan = parse_or_recover(plan_resp_content, ExecutionPlan)
+    if plan is None:
+        print("[plan parse] FAILED — model did not produce valid ExecutionPlan JSON")
         return None
+    print(f"[plan parse] OK — goal={plan.goal!r}, {len(plan.steps)} step(s):")
+    for step in plan.steps:
+        print(f"  - step {step.step}: {step.description} (agent={step.agent})")
+    return plan
 
 
-def _try_parse_review(content: str) -> ReviewResult | None:
-    try:
-        return ReviewResult.model_validate_json(content)
-    except ValidationError:
-        start = content.find("{")
-        end = content.rfind("}")
-        if start != -1 and end != -1:
-            try:
-                return ReviewResult.model_validate_json(content[start : end + 1])
-            except ValidationError:
-                return None
+def _emit_review(review_resp_content: str) -> ReviewResult | None:
+    print(review_resp_content)
+    review = parse_or_recover(review_resp_content, ReviewResult)
+    if review is None:
+        print("[review parse] FAILED — model did not produce valid ReviewResult JSON")
         return None
+    print(f"[review parse] OK — passed={review.passed} score={review.score:.2f}")
+    print(f"  feedback: {review.feedback}")
+    for suggestion in review.suggestions:
+        print(f"  suggestion: {suggestion}")
+    return review
 
 
-async def _run() -> int:
-    orch = build_orchestrator()
+# ── Pipeline stages ──────────────────────────────────────────────────────────
 
-    # Wire a tool registry into the live context so ToolAgent has something to call.
-    tools: Registry = Registry("tools")
-    tools.register("add", AddTool())
-    tools.register("multiply", MultiplyTool())
-    orch.context.tools = tools
 
-    goal = (
-        "Compute the area of a rectangle with width 7 and height 4 by calling "
-        "the multiply tool, then report the numeric result and a one-sentence "
-        "definition of area."
+async def run_pipeline(orch: Orchestrator, goal: str) -> dict[str, Any]:
+    """Drive planner → tool → reviewer end-to-end and return a summary dict."""
+    # ── Step 1: Planner ──────────────────────────────────────────────────────
+    _hr("Step 1/3 — planner")
+    plan_resp = await orch.dispatch(
+        "planner",
+        AgentRequest(messages=[Message(role="user", content=goal)]),
     )
+    plan = _emit_plan(plan_resp.content)
 
+    # ── Step 2: Tool agent ──────────────────────────────────────────────────
+    _hr("Step 2/3 — tool agent")
+    tool_input = _TOOL_INPUT_TEMPLATE.format(plan=plan_resp.content, goal=goal)
+    tool_resp = await orch.dispatch(
+        "tool",
+        AgentRequest(messages=[Message(role="user", content=tool_input)]),
+    )
+    print(tool_resp.content)
+    steps_used = tool_resp.metadata.get("tool_steps")
+    print(f"[tool steps used] {steps_used}")
+
+    # ── Step 3: Reviewer ────────────────────────────────────────────────────
+    _hr("Step 3/3 — reviewer")
+    review_input = _REVIEW_INPUT_TEMPLATE.format(
+        goal=goal,
+        candidate=tool_resp.content,
+        expected=_RECTANGLE_AREA,
+    )
+    review_resp = await orch.dispatch(
+        "reviewer",
+        AgentRequest(messages=[Message(role="user", content=review_input)]),
+    )
+    review = _emit_review(review_resp.content)
+
+    return {
+        "planner_parsed": plan is not None,
+        "tool_steps_used": steps_used,
+        "tool_final_chars": len(tool_resp.content),
+        "reviewer_parsed": review is not None,
+        "reviewer_passed": review.passed if review else None,
+        "reviewer_score": review.score if review else None,
+    }
+
+
+async def _main() -> int:
+    orch = build_orchestrator()
+    orch.context.tools = build_demo_tools()
+
+    goal = _GOAL_TEMPLATE.format(w=_RECTANGLE_WIDTH, h=_RECTANGLE_HEIGHT)
     _hr(f"Goal: {goal}")
 
     try:
-        # ── Step 1: Planner ──────────────────────────────────────────────────
-        _hr("Step 1/3 — planner")
-        plan_resp = await orch.dispatch(
-            "planner",
-            AgentRequest(messages=[Message(role="user", content=goal)]),
-        )
-        print(plan_resp.content)
-        plan = _try_parse_plan(plan_resp.content)
-        if plan is None:
-            print("[plan parse] FAILED — model did not produce valid ExecutionPlan JSON")
-        else:
-            print(
-                f"[plan parse] OK — goal={plan.goal!r}, {len(plan.steps)} step(s):"
-            )
-            for s in plan.steps:
-                print(f"  - step {s.step}: {s.description} (agent={s.agent})")
-
-        # ── Step 2: Tool agent (pipeline-style: plan -> tool input) ──────────
-        _hr("Step 2/3 — tool agent")
-        tool_input = (
-            f"You have tools available. Execute the following plan and return "
-            f"only the final numeric answer:\n\n{plan_resp.content}\n\nGoal: {goal}"
-        )
-        tool_resp = await orch.dispatch(
-            "tool",
-            AgentRequest(messages=[Message(role="user", content=tool_input)]),
-        )
-        print(tool_resp.content)
-        steps_used = tool_resp.metadata.get("tool_steps")
-        print(f"[tool steps used] {steps_used}")
-
-        # ── Step 3: Reviewer ─────────────────────────────────────────────────
-        _hr("Step 3/3 — reviewer")
-        review_input = (
-            f"Goal: {goal}\n\n"
-            f"Candidate answer:\n{tool_resp.content}\n\n"
-            "Evaluate whether the candidate answer correctly satisfies the goal. "
-            "The correct numeric area is 28."
-        )
-        review_resp = await orch.dispatch(
-            "reviewer",
-            AgentRequest(messages=[Message(role="user", content=review_input)]),
-        )
-        print(review_resp.content)
-        review = _try_parse_review(review_resp.content)
-        if review is None:
-            print("[review parse] FAILED — model did not produce valid ReviewResult JSON")
-        else:
-            print(
-                f"[review parse] OK — passed={review.passed} score={review.score:.2f}"
-            )
-            print(f"  feedback: {review.feedback}")
-            for s in review.suggestions:
-                print(f"  suggestion: {s}")
-
+        summary = await run_pipeline(orch, goal)
         _hr("Summary")
-        print(
-            json.dumps(
-                {
-                    "planner_parsed": plan is not None,
-                    "tool_steps_used": steps_used,
-                    "tool_final_chars": len(tool_resp.content),
-                    "reviewer_parsed": review is not None,
-                    "reviewer_passed": review.passed if review else None,
-                    "reviewer_score": review.score if review else None,
-                },
-                indent=2,
-            )
-        )
+        print(json.dumps(summary, indent=2))
         return 0
     finally:
-        # Mirror the CLI close path so we don't leak the LM Studio httpx pool.
-        ctx = orch.context
-        if hasattr(ctx.llm, "aclose"):
-            await ctx.llm.aclose()
-        if ctx.repo is not None:
-            if hasattr(ctx.repo, "aclose"):
-                await ctx.repo.aclose()
-            else:
-                ctx.repo.close()
+        await orch.aclose()
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(_run()))
+    raise SystemExit(asyncio.run(_main()))

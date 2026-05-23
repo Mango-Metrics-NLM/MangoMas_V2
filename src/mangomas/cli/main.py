@@ -42,23 +42,14 @@ def _build() -> Orchestrator:
 
 
 async def _close_orchestrator(orch: Orchestrator) -> None:
-    """Release adapter resources cleanly.
+    """Release adapter resources cleanly via :meth:`Orchestrator.aclose`.
 
-    Dispatches on ``hasattr(repo, "aclose")`` to support async-pool
-    backends (PostgresRepository) without breaking the sync ``close()``
-    contract used by SQLite. Mirrors the FastAPI lifespan close path so
-    CLI invocations don't leak asyncpg connections on exit.
+    Retained as a thin wrapper so existing tests can monkeypatch the CLI's
+    close path without reaching into core. The real teardown logic lives on
+    :class:`~mangomas.core.Orchestrator` so every entry point (CLI, FastAPI
+    lifespan, demo scripts) shares one tested code path.
     """
-    ctx = orch.context
-    if hasattr(ctx.llm, "aclose"):
-        await ctx.llm.aclose()
-    if ctx.repo is not None:
-        if hasattr(ctx.repo, "aclose"):
-            await ctx.repo.aclose()
-        else:
-            ctx.repo.close()
-    if ctx.memory is not None:
-        ctx.memory.close()
+    await orch.aclose()
 
 
 @app.command()

@@ -29,11 +29,40 @@ class Orchestrator:
     def __init__(self, ctx: AgentContext) -> None:
         self._ctx = ctx
         self._agents: dict[str, Agent] = {}
+        self._closed: bool = False
 
     @property
     def context(self) -> AgentContext:
         """The shared runtime context (LLM client, repository, extras)."""
         return self._ctx
+
+    async def aclose(self) -> None:
+        """Release adapter resources cleanly. Idempotent.
+
+        Dispatches on ``hasattr(component, "aclose")`` to support async-pool
+        backends (PostgresRepository, LMStudioClient) while still respecting
+        the sync ``close()`` contract used by SQLite. The same teardown rules
+        previously lived in the CLI and demo scripts — centralising them here
+        means every entry point (CLI, FastAPI lifespan, scripts) shares a
+        single tested code path and cannot diverge.
+
+        Subsequent calls are no-ops, so callers can invoke this defensively
+        from nested ``finally`` blocks without risking double-close errors.
+        """
+        if self._closed:
+            logger.debug("Orchestrator.aclose: already closed, skipping")
+            return
+        self._closed = True
+
+        if hasattr(self._ctx.llm, "aclose"):
+            await self._ctx.llm.aclose()
+        if self._ctx.repo is not None:
+            if hasattr(self._ctx.repo, "aclose"):
+                await self._ctx.repo.aclose()
+            else:
+                self._ctx.repo.close()
+        if self._ctx.memory is not None:
+            self._ctx.memory.close()
 
     def register(self, agent: Agent) -> None:
         """Register an agent. Last registration wins for a given name."""

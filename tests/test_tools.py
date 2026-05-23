@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 
 from mangomas.core.tools import (
     ToolCall,
@@ -13,11 +14,19 @@ from mangomas.core.tools import (
     ToolSpec,
     build_structured_prompt,
     build_tool_system_prompt,
+    parse_or_recover,
     parse_tool_call,
 )
 from mangomas.errors import LLMBadResponse
 from tests.constants import DEFAULT_TOOL_NAME
 from tests.fakes import FakeTool
+
+
+class _DemoModel(BaseModel):
+    """Tiny model used to exercise ``parse_or_recover`` without coupling to real agents."""
+
+    name: str
+    value: int
 
 _HypothesisDecorator = Callable[[Callable[..., Any]], Callable[..., Any]]
 _hypothesis = pytest.importorskip("hypothesis")
@@ -180,3 +189,50 @@ def test_tool_spec_json_roundtrip() -> None:
     )
     restored = ToolSpec.model_validate_json(original.model_dump_json())
     assert restored == original
+
+
+# ── parse_or_recover: structured-output recovery ──────────────────────────────
+
+
+def test_parse_or_recover_clean_json() -> None:
+    """Well-formed JSON validates directly against the model."""
+    parsed = parse_or_recover('{"name": "x", "value": 1}', _DemoModel)
+    assert parsed is not None
+    assert parsed.name == "x"
+    assert parsed.value == 1
+
+
+def test_parse_or_recover_with_markdown_fence() -> None:
+    """Strips chatter outside the first ``{`` and last ``}`` then re-parses."""
+    wrapped = '```json\n{"name": "y", "value": 2}\n```'
+    parsed = parse_or_recover(wrapped, _DemoModel)
+    assert parsed is not None
+    assert parsed.value == 2
+
+
+def test_parse_or_recover_with_leading_chatter() -> None:
+    """LLM prose preamble before JSON is tolerated."""
+    raw = 'Sure, here is the result: {"name": "z", "value": 3} hope that helps.'
+    parsed = parse_or_recover(raw, _DemoModel)
+    assert parsed is not None
+    assert parsed.name == "z"
+
+
+def test_parse_or_recover_no_braces_returns_none() -> None:
+    """Plain prose with no JSON object returns None."""
+    assert parse_or_recover("no json here", _DemoModel) is None
+
+
+def test_parse_or_recover_malformed_json_returns_none() -> None:
+    """Salvage path also fails for syntactically invalid JSON."""
+    assert parse_or_recover("{not valid json}", _DemoModel) is None
+
+
+def test_parse_or_recover_schema_mismatch_returns_none() -> None:
+    """JSON parses but does not satisfy the model schema."""
+    assert parse_or_recover('{"wrong": "field"}', _DemoModel) is None
+
+
+def test_parse_or_recover_inverted_braces_returns_none() -> None:
+    """``}`` appearing before ``{`` is not a valid recovery target."""
+    assert parse_or_recover("} oops {", _DemoModel) is None
