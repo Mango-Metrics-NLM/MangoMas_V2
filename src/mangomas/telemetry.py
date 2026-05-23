@@ -22,6 +22,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from mangomas.correlation import CorrelationFilter
+
 # Standard LogRecord attributes that we do NOT forward into the JSON envelope.
 _STANDARD_LOG_RECORD_ATTRS: frozenset[str] = frozenset(
     {
@@ -127,6 +129,7 @@ def configure_telemetry(
         # filters attached to the root logger do NOT run for records emitted
         # by child loggers, so trace_id/span_id must be injected here.
         handler.addFilter(TraceContextFilter())
+        handler.addFilter(CorrelationFilter())
 
         logging.basicConfig(
             level=getattr(logging, log_level.upper(), logging.INFO),

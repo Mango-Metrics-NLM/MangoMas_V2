@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING
 
-from mangomas.adapters.llm.base import StreamingLLMClient
+from mangomas.agents._streaming import stream_with_buffered_fallback
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -62,15 +62,5 @@ class ChatAgent:
     ) -> AsyncGenerator[str, None]:
         messages = self._build_messages(request)
         logger.debug("ChatAgent streaming %d messages", len(messages))
-        if isinstance(ctx.llm, StreamingLLMClient):
-            async for chunk in await ctx.llm.stream(messages):
-                yield chunk
-        else:
-            # Fallback for non-streaming LLM clients: complete and yield as one chunk.
-            logger.warning(
-                "Streaming requested but LLM client does not support streaming; "
-                "using complete() fallback",
-                extra={"agent": self.name},
-            )
-            content = await ctx.llm.complete(messages)
-            yield content
+        async for chunk in stream_with_buffered_fallback(self.name, messages, ctx):
+            yield chunk

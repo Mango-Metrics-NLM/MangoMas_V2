@@ -21,6 +21,7 @@ from mangomas.errors import (
     MangomasError,
     PersistenceError,
 )
+from tests.constants import STUB_REPLY
 from tests.fakes import FakeLLM, FakeRepository
 
 
@@ -50,7 +51,7 @@ def test_invoke_ok(orchestrator: Orchestrator) -> None:
         assert r.status_code == 200
         body = r.json()
         assert body["agent"] == "chat"
-        assert body["content"] == "stub-reply"
+        assert body["content"] == STUB_REPLY
 
 
 def test_invoke_unknown_agent(

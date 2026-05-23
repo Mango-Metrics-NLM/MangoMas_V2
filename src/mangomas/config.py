@@ -24,6 +24,11 @@ DEFAULT_LLM_API_KEY: str = "lm-studio"
 DEFAULT_LLM_TIMEOUT_SECONDS: float = 60.0
 DEFAULT_LLM_TEMPERATURE: float = 0.2
 
+# Vertex AI provider defaults. ``project_id``/``credentials_path`` have no
+# safe defaults — they must be supplied explicitly via env vars when using
+# the ``vertex`` provider.
+DEFAULT_VERTEX_LOCATION: str = "us-central1"
+
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"
 
@@ -43,12 +48,27 @@ DEFAULT_MEMORY_DIR: str = "memory"
 DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
 DEFAULT_MEMORY_ENABLED: bool = False
 
+DEFAULT_SECRETS_PROVIDER: str = "env"
+
+# Evaluation harness defaults.
+DEFAULT_EVAL_SCORER: str = "exact_match"
+DEFAULT_EVAL_AGENT: str = "chat"
+DEFAULT_EVAL_OUTPUT_DIR: str = "eval-output"
+DEFAULT_EVAL_PARALLELISM: int = 1
+DEFAULT_EVAL_FAIL_FAST: bool = False
+
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
 
 
 class LLMSettings(BaseModel):
-    """LLM endpoint configuration (LM Studio by default; OpenAI-compatible)."""
+    """LLM endpoint configuration (LM Studio by default; OpenAI-compatible).
+
+    Vertex-specific fields (``project_id``, ``location``, ``credentials_path``)
+    are optional and only consulted when ``provider == "vertex"``. They default
+    to ``None``/``DEFAULT_VERTEX_LOCATION`` so existing LM Studio deployments
+    see no behaviour change.
+    """
 
     provider: str = DEFAULT_LLM_PROVIDER
     base_url: str = DEFAULT_LLM_BASE_URL
@@ -56,6 +76,21 @@ class LLMSettings(BaseModel):
     api_key: str = DEFAULT_LLM_API_KEY
     timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
     temperature: float = DEFAULT_LLM_TEMPERATURE
+    # Optional reference resolved via the SecretsProvider seam. When set,
+    # the resolved value overrides ``api_key`` at orchestrator-build time.
+    # For Vertex this resolved value is treated as a service-account JSON body.
+    # See ``mangomas.secrets`` and ``composition._lmstudio_factory``.
+    secret_ref: str | None = None
+    # Vertex-specific fields.
+    project_id: str | None = None
+    location: str = DEFAULT_VERTEX_LOCATION
+    credentials_path: str | None = None
+
+
+class SecretsSettings(BaseModel):
+    """Configuration for the SecretsProvider seam."""
+
+    provider: str = DEFAULT_SECRETS_PROVIDER
 
 
 class DBSettings(BaseModel):
@@ -105,6 +140,26 @@ class MemorySettings(BaseModel):
     index_file: str = DEFAULT_MEMORY_INDEX
 
 
+class EvalSettings(BaseModel):
+    """Evaluation harness configuration.
+
+    ``dataset_path`` has no safe default — the CLI requires it explicitly so
+    that ``mangomas eval`` never runs against an unintended dataset. The
+    rest of the fields ship safe defaults so most invocations can rely on
+    ``MANGOMAS_EVAL__DATASET_PATH=...`` alone.
+    """
+
+    dataset_path: str | None = None
+    scorer: str = DEFAULT_EVAL_SCORER
+    agent: str = DEFAULT_EVAL_AGENT
+    output_dir: str = DEFAULT_EVAL_OUTPUT_DIR
+    parallelism: int = DEFAULT_EVAL_PARALLELISM
+    fail_fast: bool = DEFAULT_EVAL_FAIL_FAST
+    # Free-form per-scorer options (e.g. ``{"threshold": 0.8}``). Forwarded
+    # verbatim to the scorer's factory.
+    scorer_options: dict[str, object] = Field(default_factory=dict)
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -129,9 +184,8 @@ class Settings(BaseSettings):
 
     loop: LoopSettings = Field(default_factory=LoopSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
-
-    # Set to True to enable entry-point-based agent discovery (Phase C).
-    discovery_enabled: bool = False
+    secrets: SecretsSettings = Field(default_factory=SecretsSettings)
+    eval: EvalSettings = Field(default_factory=EvalSettings)
 
 
 @lru_cache(maxsize=1)

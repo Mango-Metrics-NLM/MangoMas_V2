@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from mangomas.agents._streaming import stream_with_buffered_fallback
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import build_structured_prompt
 
@@ -54,12 +56,34 @@ class PlannerAgent:
         else:
             self._system_prompt = base_prompt
 
-    async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
-        """Return a structured JSON plan for the given request."""
+    def _build_messages(self, request: AgentRequest) -> list[Message]:
+        """Prepend the schema-aware system prompt when absent from the request."""
         messages = list(request.messages)
         if not any(m.role == "system" for m in messages):
             messages.insert(0, Message(role="system", content=self._system_prompt))
+        return messages
 
+    async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
+        """Return a structured JSON plan for the given request."""
+        messages = self._build_messages(request)
         logger.debug("PlannerAgent: calling LLM for plan")
         content = await ctx.llm.complete(messages)
         return AgentResponse(content=content, agent=self.name)
+
+    async def stream(
+        self,
+        request: AgentRequest,
+        ctx: AgentContext,
+    ) -> AsyncIterator[str]:
+        """Return an async iterator that yields plan tokens from the LLM."""
+        return self._do_stream(request, ctx)
+
+    async def _do_stream(
+        self,
+        request: AgentRequest,
+        ctx: AgentContext,
+    ) -> AsyncGenerator[str, None]:
+        messages = self._build_messages(request)
+        logger.debug("PlannerAgent streaming %d messages", len(messages))
+        async for chunk in stream_with_buffered_fallback(self.name, messages, ctx):
+            yield chunk

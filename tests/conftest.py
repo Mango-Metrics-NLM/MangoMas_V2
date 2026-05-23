@@ -12,29 +12,24 @@ from mangomas.adapters.storage import SQLiteRepository
 from mangomas.agents import ChatAgent
 from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
-
-# Re-export fakes so existing ``from tests.conftest import FakeLLM`` imports
-# continue to work during the one-cycle migration window.
 from tests.fakes import (
     FakeLLM,
     FakeMemoryRepository,
     FakeRepository,
     FakeTool,
-    NonPingableFakeLLM,
 )
-
-__all__ = ["FakeLLM", "FakeMemoryRepository", "FakeRepository", "FakeTool", "NonPingableFakeLLM"]
-
 
 # ── Collection gates ────────────────────────────────────────────────────────
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip integration/LM Studio tests unless explicitly enabled."""
+    """Skip integration / LM Studio / Vertex tests unless explicitly enabled."""
     run_integration = os.getenv("RUN_INTEGRATION") == "1"
     run_lmstudio = os.getenv("RUN_LMSTUDIO") == "1"
+    run_vertex = os.getenv("RUN_VERTEX") == "1"
     integration_skip = pytest.mark.skip(reason="set RUN_INTEGRATION=1 to run integration tests")
     lmstudio_skip = pytest.mark.skip(reason="set RUN_LMSTUDIO=1 to run LM Studio tests")
+    vertex_skip = pytest.mark.skip(reason="set RUN_VERTEX=1 to run Vertex AI tests")
 
     for item in items:
         path_parts = set(Path(str(item.fspath)).parts)
@@ -42,6 +37,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(integration_skip)
         if "lmstudio" in item.keywords and not run_lmstudio:
             item.add_marker(lmstudio_skip)
+        if "vertex" in item.keywords and not run_vertex:
+            item.add_marker(vertex_skip)
 
 
 # ── Settings fixture ──────────────────────────────────────────────────────────

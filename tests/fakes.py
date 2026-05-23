@@ -8,7 +8,12 @@ from typing import Any
 
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolSpec
-from tests.constants import DEFAULT_TOOL_NAME, DEFAULT_TOOL_RESULT, STUB_REPLY
+from tests.constants import (
+    DEFAULT_TOOL_NAME,
+    DEFAULT_TOOL_RESULT,
+    STUB_REPLY,
+    STUB_VERTEX_REPLY,
+)
 
 
 @dataclass
@@ -129,6 +134,82 @@ class FakeTool:
     async def execute(self, arguments: dict[str, Any]) -> str:
         self.calls.append(dict(arguments))
         return self.result
+
+
+@dataclass
+class _FakeGenerationResponse:
+    """Mimics ``vertexai.generative_models.GenerationResponse`` for tests."""
+
+    text: str
+
+
+@dataclass
+class FakeVertexGenerativeModel:
+    """Test double for ``vertexai.generative_models.GenerativeModel``.
+
+    Injected into :class:`mangomas.adapters.llm.vertex.VertexClient` via its
+    ``client`` constructor argument so unit tests can drive the adapter without
+    importing the real Vertex SDK.
+
+    Behaviour:
+        * ``reply`` / ``replies`` mirror :class:`FakeLLM` semantics.
+        * ``chunks`` drives streaming responses; defaults to ``[reply]``.
+        * Setting ``raise_on_call`` causes the *next* call (regardless of
+          method) to raise the given exception — used to exercise the
+          ``_translate_vertex_error`` matrix.
+    """
+
+    reply: str = STUB_VERTEX_REPLY
+    replies: list[str] = field(default_factory=list)
+    chunks: list[str] = field(default_factory=list)
+    raise_on_call: BaseException | None = None
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    closed: bool = False
+
+    async def generate_content_async(
+        self,
+        contents: Any,
+        *,
+        generation_config: dict[str, Any] | None = None,
+        stream: bool = False,
+        **_: Any,
+    ) -> Any:
+        self.calls.append(
+            {
+                "contents": contents,
+                "generation_config": generation_config,
+                "stream": stream,
+            }
+        )
+        if self.raise_on_call is not None:
+            exc = self.raise_on_call
+            self.raise_on_call = None
+            raise exc
+        if stream:
+            return self._stream_chunks()
+        idx = len(self.calls) - 1
+        text = self.replies[idx] if self.replies and idx < len(self.replies) else self.reply
+        return _FakeGenerationResponse(text=text)
+
+    async def _stream_chunks(self) -> AsyncGenerator[_FakeGenerationResponse, None]:
+        chunks = self.chunks if self.chunks else [self.reply]
+        for chunk in chunks:
+            yield _FakeGenerationResponse(text=chunk)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@dataclass
+class FakeSecretsProvider:
+    """In-memory stub satisfying :class:`mangomas.secrets.SecretsProvider`."""
+
+    values: dict[str, str] = field(default_factory=dict)
+    calls: list[str] = field(default_factory=list)
+
+    def get(self, name: str) -> str | None:
+        self.calls.append(name)
+        return self.values.get(name)
 
 
 @dataclass

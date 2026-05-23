@@ -14,6 +14,44 @@ DEFAULT_API_KEY: str = "lm-studio"
 DEFAULT_TIMEOUT_SECONDS: float = 60.0
 DEFAULT_TEMPERATURE: float = 0.2
 
+# ── LM Studio E2E env-var names (single source of truth) ──────────────────────
+LMSTUDIO_BASE_URL_ENV: str = "LMSTUDIO_BASE_URL"
+LMSTUDIO_MODEL_ENV: str = "LMSTUDIO_MODEL"
+
+# ── Vertex AI E2E env-var names (single source of truth) ──────────────────────
+VERTEX_PROJECT_ENV: str = "VERTEX_PROJECT_ID"
+VERTEX_LOCATION_ENV: str = "VERTEX_LOCATION"
+VERTEX_MODEL_ENV: str = "VERTEX_MODEL"
+VERTEX_CREDENTIALS_PATH_ENV: str = "VERTEX_CREDENTIALS_PATH"
+RUN_VERTEX_ENV: str = "RUN_VERTEX"
+# Default Vertex model used by E2E tests when ``VERTEX_MODEL`` is unset.
+DEFAULT_VERTEX_TEST_MODEL: str = "gemini-1.5-flash"
+STUB_VERTEX_REPLY: str = "stub-vertex-reply"
+
+# ── HTTP client timeouts (test-scoped) ────────────────────────────────────────
+# Per-request timeout for httpx.AsyncClient calls in E2E tests. The underlying
+# LMStudioClient timeout is configured separately via
+# ``LMSTUDIO_E2E_TIMEOUT_SECONDS`` in ``tests/lmstudio/conftest.py``; this
+# value bounds how long the test itself waits for the ASGI roundtrip to
+# return (which for LM Studio scenarios is effectively bounded by the LLM
+# client's timeout anyway).
+HTTPX_REQUEST_TIMEOUT_SECONDS: float = 60.0
+# Tighter timeout for tests that *expect* a fast failure response and should
+# not be patient about hanging requests.
+HTTPX_ERROR_PATH_TIMEOUT_SECONDS: float = 30.0
+
+# ── ASGI test transport base URL ──────────────────────────────────────────────
+# httpx idiom for in-process ASGI testing — not a real server.
+ASGI_TEST_BASE_URL: str = "http://testserver"
+
+# ── In-process mock LM Studio base URL ───────────────────────────────────────
+# Used by respx-mocked unit tests in ``tests/test_lmstudio.py`` — the value
+# does not need to resolve; respx intercepts on hostname match. Kept distinct
+# from ``ASGI_TEST_BASE_URL`` so a future refactor that shares the ASGI URL
+# does not accidentally redirect mocked LLM traffic.
+TEST_LMSTUDIO_MOCK_BASE_URL: str = "http://lm/v1"
+TEST_LMSTUDIO_MOCK_MODEL: str = "m"
+
 # ── DB defaults ───────────────────────────────────────────────────────────────
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"

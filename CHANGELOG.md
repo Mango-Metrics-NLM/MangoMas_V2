@@ -99,5 +99,142 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Vertex AI LLM provider** (`vertex` extra). New `VertexClient` in
+  `src/mangomas/adapters/llm/vertex.py` satisfies `LLMClient`,
+  `PingableLLMClient`, and `StreamingLLMClient` via
+  `vertexai.generative_models.GenerativeModel`. SDK imports are deferred
+  to `VertexClient.__init__` so the module is always importable; install
+  the extra to activate. Registered by `_vertex_factory` in
+  `composition.py` and selected via `MANGOMAS_LLM__PROVIDER=vertex`.
+  Qualname-based error translation maps `google.api_core.exceptions.*`
+  and `google.auth.exceptions.*` to typed `LLMTimeout` /
+  `LLMUnavailable` / `VertexError(LLMBadResponse)`. New `LLMSettings`
+  fields: `project_id`, `location`, `credentials_path`. `secret_ref`
+  resolution unchanged — the resolved value is forwarded to the factory
+  as `credentials_json`. `vertex` pytest marker + `RUN_VERTEX=1` gating
+  in `tests/vertex/` (smoke / chat invoke / chat stream / unknown model).
+  See `docs/adapters/vertex.md`.
+- **Offline evaluation harness** (`src/mangomas/eval/`). New
+  `Scorer` protocol, `scorer_registry`, JSONL `load_jsonl`, `EvalRunner`
+  that reuses the existing `Orchestrator`, `EvalReport` aggregator, and
+  three built-in scorers: `ExactMatchScorer`, `LLMJudgeScorer`,
+  `EmbeddingScorer` (latter raises `NotImplementedError` until a provider
+  exposes `.embed()`). `EvalSettings` block (env prefix
+  `MANGOMAS_EVAL__`). `mangomas eval` CLI subcommand reads defaults from
+  `EvalSettings`; `--output-json` writes a structured report. See
+  `docs/eval/harness.md`.
+- **LM Studio E2E scenarios 2–6** under `tests/lmstudio/`: chat invoke happy path,
+  chat stream SSE (token + done frames), buffered-fallback warning via
+  `Registry.scoped()`, summarize agent through the public API, and the
+  unknown-model 502 error envelope. All are `@pytest.mark.lmstudio` and gated
+  on `RUN_LMSTUDIO=1`.
+- **Streaming support on `PlannerAgent` and `ReviewerAgent`** via an async
+  `stream()` method that mirrors `ChatAgent._do_stream`'s buffered-fallback
+  pattern. Both now satisfy the `StreamingAgent` protocol so
+  `/agents/{name}/stream` delivers tokens incrementally with no orchestrator
+  changes.
+- **Per-request correlation IDs** end-to-end. New
+  `src/mangomas/api/correlation.py` exposes a `ContextVar` and a
+  `CorrelationFilter` for log records. `AccessLogMiddleware` reads
+  `X-Request-ID` from inbound headers (falling back to a fresh 8-hex-char
+  token), pushes the value into OpenTelemetry baggage as
+  `mangomas.correlation_id`, and echoes it on the outgoing response.
+- **SecretsProvider seam** (`src/mangomas/secrets/`): `SecretsProvider`
+  protocol, `EnvSecretsProvider` env-var backend, and module-level
+  `secrets_registry`. `LLMSettings.secret_ref` (new optional field) is
+  resolved at orchestrator-build time and used to replace `api_key` when
+  set. Cloud backends are deferred to Phase 3.
+- **`Registry.scoped()`** context manager for test-scoped provider
+  substitution. Restores the prior binding (or removes the entry if absent)
+  on block exit, even when the wrapped block raises.
+- **Shared LM Studio E2E fixtures** in `tests/lmstudio/conftest.py`:
+  `lmstudio_base_url`, `lmstudio_model`, `lmstudio_orchestrator`,
+  `lmstudio_app` (ASGITransport over the real `create_app`).
+
+### Changed
+
+- `_llm_registry` renamed to `llm_registry` (public) so tests can swap LLM
+  factories via `Registry.scoped()` without poking module internals.
+- `AccessLogMiddleware` now emits both `request_id` and `correlation_id`
+  fields on every access-log line (today they always carry the same value).
+- `scripts/check_coverage.py` adds 100 % floors for `src/mangomas/secrets/*.py`
+  and `src/mangomas/correlation.py`.
+- **Correlation primitives moved to `src/mangomas/correlation.py`** (top-level)
+  to break the `mangomas.api → mangomas.telemetry` import cycle without a
+  lazy import. `mangomas.api.correlation` remains as a backwards-compatible
+  re-export shim — existing imports continue to work.
+- **Streaming buffered-fallback extracted** into
+  `mangomas.agents._streaming.stream_with_buffered_fallback`. The three
+  agents (`ChatAgent`, `PlannerAgent`, `ReviewerAgent`) now delegate to a
+  single helper after building their respective message lists, replacing
+  three near-identical 18-line `_do_stream` bodies. The fallback warning
+  text is a module-level constant so log-grep filters survive future edits.
+- `ruff` pinned to `>=0.11,<1.0` in dev deps; `respx`/`tests.*` mypy
+  overrides added so the CI scope (`src tests scripts`) passes `--strict`.
+- **Per-package coverage floors raised** in `scripts/check_coverage.py`
+  to match the post-v0.3.0 actuals: `composition` 90 → 95, `api` 90 → 95,
+  `cli` 90 → 95, global 90 → 95. New `eval` floor at 95 %. `agents`
+  (95 %) and `adapters` (85 %) unchanged. `pyproject.toml` global
+  `--cov-fail-under=90` → `95`.
+- **Magic-number cleanup in LLM adapters**: `LMStudioClient` and
+  `VertexClient` constructors now reference `DEFAULT_LLM_TIMEOUT_SECONDS`
+  and `DEFAULT_LLM_TEMPERATURE` from `mangomas.config` instead of inline
+  literals. The SSE `[DONE]` sentinel and the Vertex ping prompt are
+  named module-level `Final` constants.
+- **Test-side magic literal cleanup**: `tests/test_lmstudio.py` consumes
+  new `TEST_LMSTUDIO_MOCK_BASE_URL` / `TEST_LMSTUDIO_MOCK_MODEL`
+  constants; `tests/test_correlation.py`, `tests/integration/test_api_flow.py`
+  consume `ASGI_TEST_BASE_URL`; `tests/test_api.py`, `tests/test_cli.py`,
+  `tests/eval/test_dataset.py` consume `STUB_REPLY`; `tests/test_sqlite.py`
+  consumes `DEFAULT_AGENT_NAME`.
+- **`tests/conftest.py`** no longer re-exports `Fake*` from
+  `tests.fakes`. The one remaining importer (`tests/test_agent.py`) now
+  imports from the canonical `tests.fakes` path. Mirrors the
+  `mangomas.api.correlation` shim removal earlier in this release.
+- **Stale docstring** in `secrets/provider.py` referring to v0.2.0
+  updated to a version-agnostic statement.
+
+### Removed
+
+- **`mangomas.api.correlation` shim** deleted. The canonical home is and
+  has always been `mangomas.correlation`. The shim shipped in v0.2.0 as a
+  short-term migration aid; with no external consumers (project is pre-1.0)
+  the duplicate import path is now retired. Update imports to
+  `from mangomas.correlation import ...`.
+- **`Settings.discovery_enabled`** field removed. Defined in v0.1.0 as a
+  placeholder for entry-point-based agent discovery; no factory ever read
+  it. The feature itself remains tracked under `NEXT_STEPS.md` "Long term"
+  and will re-introduce a field alongside the real implementation if and
+  when it lands.
+
+### Fixed
+
+- **CI lint job (PLC0415)**: Local ruff 0.8.0 and CI's newer ruff disagreed on
+  whether `PLC0415` (lazy import) was enabled, causing CI to fail with errors
+  local couldn't reproduce. Root cause addressed structurally: the lazy import
+  in `telemetry.py` was removed (the cycle is gone now that correlation lives
+  at top level) and `cli/main.py`'s lazy `build_orchestrator` import was
+  promoted to module-level.
+- **Inbound `X-Request-ID` sanitisation**: Inbound values are now passed
+  through `mangomas.correlation.sanitize_inbound_correlation_id`, which strips
+  characters outside `[A-Za-z0-9_\-./:]` (blocking CR/LF log-injection) and
+  truncates at `MAX_CORRELATION_ID_LENGTH = 64` characters. Falls back to a
+  fresh generated id when the inbound value is empty, whitespace-only, or
+  entirely composed of disallowed characters.
+- **`X-Request-ID` echoed on error responses**: The middleware now sets the
+  header in its `finally` block (so handled `MangomasError` JSONResponses and
+  any 4xx/5xx produced by FastAPI exception handlers carry it) and
+  synthesises its own `PlainTextResponse` with the header attached when an
+  unhandled exception escapes `call_next`, instead of re-raising and losing
+  the correlation handle inside Starlette's default `ServerErrorMiddleware`.
+- **`Registry` thread-safety**: All mutations and reads now acquire an
+  internal `threading.RLock`, matching the thread-safety guarantee documented
+  in `docs/architecture/c3-component.md`. `RLock` (not `Lock`) so `scoped()`
+  can call `get`/`register` under the same lock without deadlocking.
+
 <!-- next release goes above this line -->
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0
