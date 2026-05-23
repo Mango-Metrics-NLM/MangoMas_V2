@@ -103,6 +103,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Claude Code sub-agents (12 new files)** under `.github/agents/<parent>/`:
+  architect → `protocol-auditor`, `layering-auditor`, `adr-author`; backend →
+  `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`,
+  `error-taxonomy-dev`; test-engineer → `fake-builder`, `hypothesis-fuzz`,
+  `integration-runner`; api-dev → `sse-streamer`, `schema-evolution`. Parent
+  agents declare children via a new optional `sub_agents:` frontmatter list;
+  the four existing parents (`api-dev`, `architect`, `backend`,
+  `test-engineer`) gained this list and remain backward-compatible. `CLAUDE.md`
+  and `.github/copilot-instructions.md` document the convention.
 - **Claude Code skill library (7 new skills)** under `.github/skills/`:
   `mango-adapter`, `mango-agent-add`, `mango-error`, `mango-observability`,
   `mango-config`, `mango-topology`, `mango-release`. Each codifies an

@@ -70,6 +70,21 @@ tests/                   # Mirrors src/ structure; fakes.py + constants.py are s
 
 ---
 
+## Claude Code Agents & Skills
+
+- Parent agents live at `.github/agents/<parent>.agent.md` (architect, backend,
+  test-engineer, api-dev).
+- Sub-agents are declared via the optional `sub_agents:` frontmatter key on a
+  parent and live at `.github/agents/<parent>/<name>.agent.md`. Parents without
+  the key remain valid.
+- Skills live at `.github/skills/<name>/SKILL.md`. See `mango-testing` for the
+  canonical layout; others cover adapter / agent-add / error / observability /
+  config / topology / release workflows.
+- Use the most specific sub-agent when working in its domain; defer to the
+  parent for cross-cutting reviews.
+
+---
+
 ## Commit & PR Standards
 
 - Conventional commits: `feat:`, `fix:`, `test:`, `refactor:`, `chore:`

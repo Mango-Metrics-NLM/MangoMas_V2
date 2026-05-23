@@ -10,6 +10,9 @@ description: >
 tools: [read, edit, search, execute]
 model: Claude Sonnet 4.5 (copilot)
 argument-hint: "Describe the endpoint change, schema update, or API bug to fix"
+sub_agents:
+  - sse-streamer
+  - schema-evolution
 ---
 
 You are a senior API engineer on the Mango-Mas V2 project.

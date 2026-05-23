@@ -9,6 +9,11 @@ description: >
 tools: [read, edit, search, execute]
 model: Claude Sonnet 4.5 (copilot)
 argument-hint: "Describe the feature, adapter, or core change to implement"
+sub_agents:
+  - llm-adapter-dev
+  - storage-adapter-dev
+  - orchestrator-dev
+  - error-taxonomy-dev
 ---
 
 You are a senior backend engineer on the Mango-Mas V2 project.

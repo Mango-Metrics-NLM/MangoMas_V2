@@ -138,6 +138,39 @@ To add a new agent:
 
 ---
 
+## Claude Code Sub-Agents
+
+Each parent agent in `.github/agents/<parent>.agent.md` may declare specialised
+sub-agents via the optional `sub_agents:` frontmatter list. Sub-agent files
+live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
+
+| Parent | Sub-agents |
+|--------|-----------|
+| `architect` | `protocol-auditor`, `layering-auditor`, `adr-author` (`pr-watcher` added in PR-automation phase) |
+| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev` |
+| `test-engineer` | `fake-builder`, `hypothesis-fuzz`, `integration-runner` |
+| `api-dev` | `sse-streamer`, `schema-evolution` |
+
+The `sub_agents:` key is optional and backward-compatible — parents without it
+remain valid. Slugs are resolved to `<parent>/<slug>.agent.md`.
+
+## Claude Code Skills
+
+Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
+
+| Skill | Use when |
+|-------|----------|
+| `mango-testing` | Writing/running tests, extending fakes, coverage |
+| `mango-adapter` | Adding a new LLM/storage/memory/secrets adapter |
+| `mango-agent-add` | Adding a new agent following the 4-step pattern |
+| `mango-error` | Adding a new error type with HTTP mapping |
+| `mango-observability` | Instrumenting with spans + structured logging |
+| `mango-config` | Adding a new tunable to `Settings` |
+| `mango-topology` | Composing pipelines, fan-outs, acceptance loops |
+| `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
+
+---
+
 ## Multi-Agent Topologies
 
 ```python
