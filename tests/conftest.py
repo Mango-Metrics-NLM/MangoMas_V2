@@ -15,7 +15,6 @@ from mangomas.core import AgentContext, Orchestrator
 from mangomas.secrets import secrets_registry
 from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository, FakeTool
 
-
 # ── Cross-test isolation for lazy-registered cloud providers ──────────────────
 
 

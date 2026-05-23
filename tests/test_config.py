@@ -85,19 +85,19 @@ def test_memory_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_llm_vertex_defaults_do_not_disturb_lmstudio() -> None:
     s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
-    assert s.llm.project is None
+    assert s.llm.project_id is None
     assert s.llm.location == config_module.DEFAULT_VERTEX_LOCATION
-    assert s.llm.max_output_tokens is config_module.DEFAULT_VERTEX_MAX_OUTPUT_TOKENS
+    assert s.llm.credentials_path is None
 
 
 def test_llm_vertex_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MANGOMAS_LLM__PROJECT", "my-gcp-project")
+    monkeypatch.setenv("MANGOMAS_LLM__PROJECT_ID", "my-gcp-project")
     monkeypatch.setenv("MANGOMAS_LLM__LOCATION", "europe-west4")
-    monkeypatch.setenv("MANGOMAS_LLM__MAX_OUTPUT_TOKENS", "256")
+    monkeypatch.setenv("MANGOMAS_LLM__CREDENTIALS_PATH", "/keys/sa.json")
     s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
-    assert s.llm.project == "my-gcp-project"
+    assert s.llm.project_id == "my-gcp-project"
     assert s.llm.location == "europe-west4"
-    assert s.llm.max_output_tokens == 256
+    assert s.llm.credentials_path == "/keys/sa.json"
 
 
 # ── DBSettings — Postgres pool fields ─────────────────────────────────────────

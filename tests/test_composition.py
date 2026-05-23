@@ -22,6 +22,7 @@ from mangomas.config import (
     DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS,
     DBSettings,
     LLMSettings,
+    MemorySettings,
     SecretsSettings,
     Settings,
 )
@@ -258,11 +259,7 @@ def test_gcp_secrets_lazy_register_raises_when_project_id_missing() -> None:
 
 def test_file_memory_factory_constructs_without_io(tmp_path: Any) -> None:
     """Direct exercise of _file_memory_factory."""
-    from mangomas.config import MemorySettings
-
-    cfg = MemorySettings(
-        enabled=True, provider="file", memory_dir=str(tmp_path / "memory_test")
-    )
+    cfg = MemorySettings(enabled=True, provider="file", memory_dir=str(tmp_path / "memory_test"))
     repo = _file_memory_factory(cfg)
     assert repo is not None
     repo.close()

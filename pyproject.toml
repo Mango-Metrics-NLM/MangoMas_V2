@@ -40,25 +40,24 @@ dev = [
     # testcontainers 4.x ships the postgres helper inline (no extras needed).
     "testcontainers>=4.7",
 ]
-vertex = [
-    "google-cloud-aiplatform>=1.60",
-    "google-auth>=2.30",
-]
-postgres = [
-    "asyncpg>=0.29",
-]
-gcp = [
-    "google-cloud-secret-manager>=2.20",
-    "google-auth>=2.30",
-]
-cloud = [
-    "mangomas[vertex,postgres,gcp]",
-]
 # Vertex AI provider — install with `pip install 'mangomas[vertex]'`.
 # Required runtime SDK; the adapter lazy-imports it so it remains optional.
 vertex = [
     "google-cloud-aiplatform>=1.71",
     "google-auth>=2.30",
+]
+# Cloud SQL Postgres provider — install with `pip install 'mangomas[postgres]'`.
+postgres = [
+    "asyncpg>=0.29",
+]
+# GCP Secret Manager provider — install with `pip install 'mangomas[gcp]'`.
+gcp = [
+    "google-cloud-secret-manager>=2.20",
+    "google-auth>=2.30",
+]
+# Convenience meta-extra: install all cloud adapters.
+cloud = [
+    "mangomas[vertex,postgres,gcp]",
 ]
 
 [project.scripts]

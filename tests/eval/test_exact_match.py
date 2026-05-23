@@ -54,5 +54,5 @@ def test_exact_match_factory_forwards_options() -> None:
     scorer = scorer_registry.get("exact_match")({"case_sensitive": True, "strip_whitespace": False})
     assert isinstance(scorer, ExactMatchScorer)
     # Confirm the options stuck (private fields; SLF is allowed in tests).
-    assert scorer._case_sensitive is True  # noqa: SLF001
-    assert scorer._strip_whitespace is False  # noqa: SLF001
+    assert scorer._case_sensitive is True
+    assert scorer._strip_whitespace is False
