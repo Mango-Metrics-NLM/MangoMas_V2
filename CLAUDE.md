@@ -146,7 +146,7 @@ live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
 
 | Parent | Sub-agents |
 |--------|-----------|
-| `architect` | `protocol-auditor`, `layering-auditor`, `adr-author` (`pr-watcher` added in PR-automation phase) |
+| `architect` | `protocol-auditor`, `layering-auditor`, `adr-author`, `pr-watcher` |
 | `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev` |
 | `test-engineer` | `fake-builder`, `hypothesis-fuzz`, `integration-runner` |
 | `api-dev` | `sse-streamer`, `schema-evolution` |

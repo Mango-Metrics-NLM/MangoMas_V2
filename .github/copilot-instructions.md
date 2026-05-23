@@ -83,6 +83,15 @@ tests/                   # Mirrors src/ structure; fakes.py + constants.py are s
 - Use the most specific sub-agent when working in its domain; defer to the
   parent for cross-cutting reviews.
 
+## PR Workflow
+
+- Open PRs as draft and fill the `.github/PULL_REQUEST_TEMPLATE.md` sections
+  (Summary, Changes, Test plan, ADR, CHANGELOG, Sub-agent reviews).
+- Architectural changes (new boundaries, provider swaps, composition-root edits,
+  breaking contracts) require an ADR copied from `docs/adr/_template.md`.
+- The `pr-watcher` sub-agent (under architect) drives the documented
+  `subscribe_pr_activity` flow for follow-up events.
+
 ---
 
 ## Commit & PR Standards

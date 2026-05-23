@@ -103,6 +103,26 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Claude Code PR automation** (Phase 4):
+  - `.github/PULL_REQUEST_TEMPLATE.md` with Summary, Changes, Test-plan
+    checklist (ruff/mypy/pytest/coverage/frontmatter-lint/manual-smoke),
+    ADR link, CHANGELOG link, and per-parent sub-agent review boxes.
+  - `docs/adr/_template.md` — copyable ADR skeleton (Status / Context /
+    Decision / Consequences / Alternatives / References). The previous
+    inline copy in `.github/agents/architect.agent.md` is trimmed to a
+    one-line pointer at the template.
+  - `pr-watcher` sub-agent under architect — documents the canonical
+    `subscribe_pr_activity` lifecycle (subscribe on open, triage events
+    by type, push only when confident, escalate via `AskUserQuestion`
+    when ambiguous, unsubscribe on close/merge). Declared in the
+    `architect.agent.md` `sub_agents:` list, bringing the total to
+    13 sub-agents.
+  - `CLAUDE.md` sub-agent table updated to include `pr-watcher`;
+    `.github/copilot-instructions.md` gains a "PR Workflow" subsection.
+- **CI secret-scan fix**: switched the `secret-scan` job from
+  `gitleaks/gitleaks-action@v2` (which requires a paid license for org
+  accounts) to a direct `curl`+`tar` install of the open-source
+  `gitleaks` v8.21.2 binary. Same scan, no license requirement.
 - **Claude Code harness enforcement layer** (Phase 3):
   - `.claude/settings.json` with a permissions allowlist for the standard
     test / lint / type-check / coverage / git read-only / gh read-only

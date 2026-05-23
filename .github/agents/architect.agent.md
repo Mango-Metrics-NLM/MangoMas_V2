@@ -13,6 +13,7 @@ sub_agents:
   - protocol-auditor
   - layering-auditor
   - adr-author
+  - pr-watcher
 ---
 
 You are the architecture lead for Mango-Mas V2.
@@ -61,30 +62,10 @@ identify structural risks, and produce concise, actionable recommendations.
 
 ## ADR Format
 
-When proposing or documenting an architectural decision:
-
-```markdown
-# ADR-NNN: <title>
-
-## Status
-Proposed | Accepted | Deprecated | Superseded by ADR-NNN
-
-## Context
-<Why this decision was needed>
-
-## Decision
-<What was decided>
-
-## Consequences
-### Positive
-- ...
-### Negative / Trade-offs
-- ...
-### Neutral
-- ...
-```
-
-Place ADRs in `docs/adr/`.
+When proposing or documenting an architectural decision, copy
+`docs/adr/_template.md` to `docs/adr/NNNN-<slug>.md` (next free integer,
+zero-padded to 4 digits; slug ≤ 6 words, kebab-case). Delegate ADR authoring
+to the `adr-author` sub-agent when the decision is non-trivial.
 
 ## Output Format
 
