@@ -103,6 +103,18 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Claude Code skill library (7 new skills)** under `.github/skills/`:
+  `mango-adapter`, `mango-agent-add`, `mango-error`, `mango-observability`,
+  `mango-config`, `mango-topology`, `mango-release`. Each codifies an
+  existing convention in `CLAUDE.md` (Protocol-first adapters, the 4-step
+  agent extension pattern, the `errors.py`/`_ERROR_STATUS`/`test_errors.py`
+  lock-step, the `get_tracer` + structured-logging contract, the
+  `MANGOMAS_*` env prefix + `DEFAULT_*` constants pattern, the
+  `dispatch_pipeline`/`dispatch_fan_out`/`stream_dispatch` topology
+  surface, and the conventional-commit + CHANGELOG release flow).
+  Modelled exactly on the existing `mango-testing/SKILL.md` frontmatter
+  schema (`name`, multiline `description`, `argument-hint`). No source
+  changes; documentation only.
 - **LM Studio E2E scenarios 2–6** under `tests/lmstudio/`: chat invoke happy path,
   chat stream SSE (token + done frames), buffered-fallback warning via
   `Registry.scoped()`, summarize agent through the public API, and the
