@@ -24,10 +24,12 @@ from mangomas.config import (
     DBSettings,
     LLMSettings,
     MemorySettings,
+    SecretsSettings,
     Settings,
     get_settings,
 )
 from mangomas.core import Agent, AgentContext, Orchestrator
+from mangomas.errors import ConfigError
 from mangomas.registry import Registry
 from mangomas.secrets import secrets_registry
 
@@ -92,9 +94,58 @@ def _file_memory_factory(cfg: MemorySettings) -> FileMemoryRepository:
     return FileMemoryRepository(cfg)
 
 
+# ── Cloud factories ───────────────────────────────────────────────────────────
+# Each factory lazy-imports its SDK so the optional extras (`vertex`,
+# `postgres`, `gcp`) genuinely stay optional: the import only fires when the
+# corresponding provider is actually selected via Settings.
+
+
+def _vertex_factory(cfg: LLMSettings) -> Any:
+    """Build a VertexLLMClient from LLMSettings; requires ``project``."""
+    if not cfg.project:
+        raise ConfigError(
+            "MANGOMAS_LLM__PROJECT is required when MANGOMAS_LLM__PROVIDER='vertex'."
+        )
+    from mangomas.adapters.llm.vertex import VertexLLMClient  # noqa: PLC0415
+
+    return VertexLLMClient(
+        project=cfg.project,
+        location=cfg.location,
+        model=cfg.model,
+        request_timeout_seconds=cfg.timeout_seconds,
+        default_temperature=cfg.temperature,
+        max_output_tokens=cfg.max_output_tokens,
+    )
+
+
+def _postgres_factory(cfg: DBSettings) -> Any:
+    """Build a PostgresRepository from DBSettings (asyncpg-backed)."""
+    from mangomas.adapters.storage.postgres import PostgresRepository  # noqa: PLC0415
+
+    return PostgresRepository(cfg)
+
+
+def _build_gcp_secrets_provider(cfg: SecretsSettings) -> Any:
+    """Build a GCPSecretManagerProvider from SecretsSettings; requires ``project_id``."""
+    if not cfg.project_id:
+        raise ConfigError(
+            "MANGOMAS_SECRETS__PROJECT_ID is required when "
+            "MANGOMAS_SECRETS__PROVIDER='gcp'."
+        )
+    from mangomas.secrets.gcp import GCPSecretManagerProvider  # noqa: PLC0415
+
+    return GCPSecretManagerProvider(
+        project_id=cfg.project_id,
+        timeout_seconds=cfg.timeout_seconds,
+        default_version=cfg.default_version,
+    )
+
+
 # Seed registries — add more providers here when needed.
 llm_registry.register("lmstudio", _lmstudio_factory)
+llm_registry.register("vertex", _vertex_factory)
 _storage_registry.register("sqlite", _sqlite_factory)
+_storage_registry.register("postgres", _postgres_factory)
 _memory_registry.register("file", _file_memory_factory)
 
 # Seed the default in-process agents.  Optional entry-point discovery can add to
@@ -127,6 +178,11 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
             "secrets_provider": cfg.secrets.provider,
         },
     )
+
+    # Lazy-register the GCP secrets provider if selected. Idempotent — keeps
+    # the env backend's "stored as instance, not factory" registry contract.
+    if cfg.secrets.provider == "gcp" and "gcp" not in secrets_registry.available():
+        secrets_registry.register("gcp", _build_gcp_secrets_provider(cfg.secrets))
 
     llm_cfg = _resolve_llm_secrets(cfg.llm, cfg.secrets.provider)
     llm = llm_registry.get(llm_cfg.provider)(llm_cfg)
