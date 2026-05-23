@@ -6,6 +6,7 @@ import asyncio
 import dataclasses
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,10 +17,19 @@ from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
 from mangomas.errors import MangomasError
-from mangomas.eval import EvalRunner, load_jsonl, scorer_registry
+from mangomas.eval import EvalReport, EvalRunner, load_jsonl, scorer_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
+
+# Windows default console codec is cp1252; LLM replies routinely contain
+# em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
+# typer.echo. Reconfigure to UTF-8 with replacement so output never crashes.
+if sys.platform == "win32":  # pragma: no cover — platform-gated
+    for _stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(_stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer(help="Mango-Mas V2 CLI", no_args_is_help=True)
 
@@ -55,11 +65,15 @@ async def _close_orchestrator(orch: Orchestrator) -> None:
 def agents() -> None:
     """List registered agents."""
     orch = _build()
-    try:
-        for name in orch.list_agents():
-            typer.echo(name)
-    finally:
-        asyncio.run(_close_orchestrator(orch))
+
+    async def _run() -> list[str]:
+        try:
+            return list(orch.list_agents())
+        finally:
+            await _close_orchestrator(orch)
+
+    for name in asyncio.run(_run()):
+        typer.echo(name)
 
 
 @app.command()
@@ -80,11 +94,15 @@ def chat(
     messages.append(Message(role="user", content=message))
 
     request = AgentRequest(messages=messages)
-    try:
-        response = asyncio.run(orch.dispatch(agent, request))
-        typer.echo(response.content)
-    finally:
-        asyncio.run(_close_orchestrator(orch))
+
+    async def _run() -> str:
+        try:
+            response = await orch.dispatch(agent, request)
+            return response.content
+        finally:
+            await _close_orchestrator(orch)
+
+    typer.echo(asyncio.run(_run()))
 
 
 @app.command()
@@ -97,16 +115,24 @@ def history(
         logging.basicConfig(level=logging.DEBUG)
 
     orch = _build()
-    try:
-        repo = orch.context.repo
-        if repo is None:
-            typer.echo("No repository configured.", err=True)
-            raise typer.Exit(code=1)
-        rows = asyncio.run(repo.list_turns(limit=limit))
-        for row in rows:
-            typer.echo(json.dumps(row, ensure_ascii=False))
-    finally:
+    repo = orch.context.repo
+
+    async def _run() -> list[dict[str, object]]:
+        try:
+            if repo is None:
+                return []
+            return await repo.list_turns(limit=limit)
+        finally:
+            await _close_orchestrator(orch)
+
+    if repo is None:
+        # Still close adapters before exiting so we don't leak resources.
         asyncio.run(_close_orchestrator(orch))
+        typer.echo("No repository configured.", err=True)
+        raise typer.Exit(code=1)
+
+    for row in asyncio.run(_run()):
+        typer.echo(json.dumps(row, ensure_ascii=False))
 
 
 @app.command(name="eval")
@@ -181,9 +207,15 @@ def eval_cmd(
         fail_fast=effective_fail_fast,
     )
 
+    async def _run_scoring() -> EvalReport:
+        try:
+            dataset = await load_jsonl(effective_dataset)
+            return await runner.run(dataset, agent_name)
+        finally:
+            await _close_orchestrator(orch)
+
     try:
-        dataset = asyncio.run(load_jsonl(effective_dataset))
-        report = asyncio.run(runner.run(dataset, agent_name))
+        report = asyncio.run(_run_scoring())
     except MangomasError as exc:
         typer.echo(f"Eval run failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
