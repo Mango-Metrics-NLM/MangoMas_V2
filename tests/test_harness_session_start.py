@@ -2,28 +2,15 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import httpx
 import pytest
 
-_SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "harness_session_start.py"
+from tests import constants
+from tests._script_loader import load_script_module
 
-
-def _load_hook() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("_hook_under_test", _SCRIPT_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-hook = _load_hook()
+hook = load_script_module("harness_session_start.py")
 
 
 def test_check_venv_returns_true_when_present(tmp_path: Path) -> None:
@@ -54,7 +41,7 @@ async def test_probe_lmstudio_returns_false_on_connection_error(
         return _RaisingClient()
 
     monkeypatch.setattr(hook.httpx, "AsyncClient", fake_ctor)
-    result = await hook._probe_lmstudio("http://localhost:1234/v1")  # noqa: SLF001
+    result = await hook._probe_lmstudio(constants.DEFAULT_LLM_BASE_URL)  # noqa: SLF001
     assert result is False
 
 
@@ -79,7 +66,7 @@ async def test_probe_lmstudio_returns_true_on_success(
         return _OkClient()
 
     monkeypatch.setattr(hook.httpx, "AsyncClient", fake_ctor)
-    assert await hook._probe_lmstudio("http://localhost:1234/v1") is True  # noqa: SLF001
+    assert await hook._probe_lmstudio(constants.DEFAULT_LLM_BASE_URL) is True  # noqa: SLF001
 
 
 async def _make_false_coroutine(*_args: object, **_kwargs: object) -> bool:

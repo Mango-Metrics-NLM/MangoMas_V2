@@ -2,32 +2,26 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
 from tests import constants
+from tests._script_loader import load_script_module
 
-# ── Module loader (scripts/ is not a package) ─────────────────────────────────
-
-_SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "lint_agent_frontmatter.py"
-
-
-def _load_linter() -> ModuleType:
-    """Load the linter module by file path so tests don't depend on PYTHONPATH."""
-    spec = importlib.util.spec_from_file_location("_linter_under_test", _SCRIPT_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+linter = load_script_module("lint_agent_frontmatter.py")
 
 
-linter = _load_linter()
+def _arbitrary_protected_path() -> str:
+    """Return any one path the linter considers protected (order-independent)."""
+    # Picking deterministically from the frozenset keeps tests stable across runs.
+    paths: frozenset[str] = linter.PROTECTED_PATHS
+    return sorted(paths)[0]
+
+
+def _arbitrary_unprotected_path() -> str:
+    """Return a path the linter is guaranteed to consider unprotected."""
+    return "src/mangomas/agents/chat.py"
 
 
 # ── Schema validation (skills) ────────────────────────────────────────────────
@@ -160,7 +154,7 @@ def test_sub_agents_on_child_file_is_rejected(
 def test_protected_path_check_unprotected_returns_ok() -> None:
     """An unprotected path always returns EXIT_OK."""
     assert (
-        linter._check_protected_path("src/mangomas/agents/chat.py")  # noqa: SLF001
+        linter._check_protected_path(_arbitrary_unprotected_path())  # noqa: SLF001
         == linter.EXIT_OK
     )
 
@@ -175,7 +169,7 @@ def test_protected_path_without_marker_returns_blocked(
 
     monkeypatch.setattr(linter, "_staged_diff", fake_diff)
     assert (
-        linter._check_protected_path("src/mangomas/core/agent.py")  # noqa: SLF001
+        linter._check_protected_path(_arbitrary_protected_path())  # noqa: SLF001
         == linter.EXIT_PROTECTED
     )
 
@@ -190,9 +184,27 @@ def test_protected_path_with_marker_returns_ok(
 
     monkeypatch.setattr(linter, "_staged_diff", fake_diff)
     assert (
-        linter._check_protected_path("src/mangomas/core/agent.py")  # noqa: SLF001
+        linter._check_protected_path(_arbitrary_protected_path())  # noqa: SLF001
         == linter.EXIT_OK
     )
+
+
+def test_staged_diff_returns_empty_on_git_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_staged_diff`` swallows git failures and returns an empty string."""
+    import subprocess  # noqa: PLC0415 -- local import keeps top-of-file lean
+
+    class _FakeCompleted:
+        returncode = 1
+        stdout = ""
+        stderr = "fatal: not a git repository"
+
+    def fake_run(*_args: object, **_kwargs: object) -> _FakeCompleted:
+        return _FakeCompleted()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert linter._staged_diff("nonexistent.py") == ""  # noqa: SLF001
 
 
 # ── main() integration ────────────────────────────────────────────────────────
@@ -205,4 +217,22 @@ def test_main_returns_ok_on_clean_repo() -> None:
 
 def test_main_protected_mode_unprotected_path() -> None:
     """``--check-protected-paths`` against an unprotected path returns EXIT_OK."""
-    assert linter.main(["--check-protected-paths", "src/mangomas/agents/chat.py"]) == linter.EXIT_OK
+    assert linter.main(["--check-protected-paths", _arbitrary_unprotected_path()]) == linter.EXIT_OK
+
+
+def test_main_schema_failure_returns_exit_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed agent file makes ``main()`` exit with ``EXIT_SCHEMA``."""
+    agents_dir = tmp_path / ".github" / "agents"
+    agents_dir.mkdir(parents=True)
+    skills_dir = tmp_path / ".github" / "skills" / "broken"
+    skills_dir.mkdir(parents=True)
+
+    (skills_dir / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
+    (agents_dir / "broken.agent.md").write_text(
+        constants.MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS, encoding="utf-8"
+    )
+
+    monkeypatch.chdir(tmp_path)
+    assert linter.main([]) == linter.EXIT_SCHEMA

@@ -53,7 +53,9 @@ BREAKING_CHANGE_MARKER: Final[str] = "# approved-breaking-change"
 FRONTMATTER_DELIMITER: Final[str] = "---"
 FRONTMATTER_SPLIT_PARTS: Final[int] = 3  # [pre, frontmatter, body]
 DESCRIPTION_MIN_LENGTH: Final[int] = 30
-ALLOWED_TOOLS: Final[frozenset[str]] = frozenset({"read", "edit", "search", "execute"})
+# Allowed tool tokens are enforced by the ``Literal`` annotation on
+# ``AgentFrontmatter.tools`` — the Pydantic model is the live source of truth,
+# no parallel constant required.
 
 EXIT_OK: Final[int] = 0
 EXIT_SCHEMA: Final[int] = 1

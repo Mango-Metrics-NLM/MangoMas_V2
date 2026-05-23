@@ -103,6 +103,34 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Harness gap-analysis sweep**:
+  - `_HarnessOrchestrator` now also wraps `stream_dispatch` so streaming
+    invocations get the same `harness.agent_invoke` parent span as
+    non-streaming dispatch. Adds `messages.count` and `harness.topology`
+    span attributes on both wraps. New `_HARNESS_SPAN_NAME`,
+    `_HARNESS_TOPOLOGY_DISPATCH`, `_HARNESS_TOPOLOGY_STREAM` module
+    constants — no inline literals.
+  - `_HarnessOrchestrator.__init__` and both dispatch wraps emit
+    `logger.debug` lines so the wrap is observable without enabling DEBUG
+    everywhere.
+  - Removed the unused `ALLOWED_TOOLS` constant from
+    `scripts/lint_agent_frontmatter.py` — the `Literal` annotation on
+    `AgentFrontmatter.tools` is the live source of truth, no parallel
+    constant needed.
+  - New `tests/_script_loader.py` shared helper centralises the
+    `importlib.util.spec_from_file_location` boilerplate that the two
+    script-under-test files previously duplicated. Both test files now
+    import from it.
+  - `tests/test_lint_agent_frontmatter.py` and
+    `tests/test_harness_session_start.py` now reference symbolic constants
+    (`linter.PROTECTED_PATHS`, `constants.DEFAULT_LLM_BASE_URL`) instead
+    of inline strings — easier to refactor.
+  - Coverage backfill: `_HarnessOrchestrator.dispatch` /
+    `stream_dispatch`, `_file_memory_factory`, the
+    `memory.enabled=True` branch in `build_orchestrator`, and the git-
+    failure branch in `_staged_diff` are now covered. Composition
+    coverage 90 % → 100 %; global 98.55 % → 99.11 %. Total tests
+    354 → 360.
 - **Claude Code PR automation** (Phase 4):
   - `.github/PULL_REQUEST_TEMPLATE.md` with Summary, Changes, Test-plan
     checklist (ruff/mypy/pytest/coverage/frontmatter-lint/manual-smoke),
