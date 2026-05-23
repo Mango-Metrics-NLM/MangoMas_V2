@@ -5,14 +5,20 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Any
+from typing import Any, Final
 
 import httpx
 
+from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 
 logger = logging.getLogger(__name__)
+
+# SSE sentinel that marks the end of a streaming completion. The literal is
+# defined by the OpenAI-compatible streaming spec — promoted to a module-level
+# constant so it is named at every reference site.
+_SSE_DONE_SENTINEL: Final[str] = "[DONE]"
 
 
 class LMStudioError(LLMBadResponse):
@@ -45,8 +51,8 @@ class LMStudioClient:
         base_url: str,
         model: str,
         api_key: str = "lm-studio",
-        timeout_seconds: float = 60.0,
-        default_temperature: float = 0.2,
+        timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS,
+        default_temperature: float = DEFAULT_LLM_TEMPERATURE,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
@@ -155,7 +161,7 @@ class LMStudioClient:
         if not line.startswith("data: "):
             return None
         chunk_data = line[len("data: ") :]
-        if chunk_data.strip() == "[DONE]":
+        if chunk_data.strip() == _SSE_DONE_SENTINEL:
             return ""
         try:
             data = json.loads(chunk_data)

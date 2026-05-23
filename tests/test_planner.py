@@ -42,13 +42,13 @@ def test_execution_plan_json_roundtrip() -> None:
 def test_planner_agent_system_prompt_contains_schema_fields() -> None:
     agent = PlannerAgent()
     # The system prompt is built from the ExecutionPlan schema — must mention key fields.
-    assert "goal" in agent._system_prompt  # noqa: SLF001
-    assert "steps" in agent._system_prompt  # noqa: SLF001
+    assert "goal" in agent._system_prompt
+    assert "steps" in agent._system_prompt
 
 
 def test_planner_agent_custom_prefix_prepended() -> None:
     agent = PlannerAgent(system_prompt="You are a planner.")
-    assert agent._system_prompt.startswith("You are a planner.")  # noqa: SLF001
+    assert agent._system_prompt.startswith("You are a planner.")
 
 
 # ── PlannerAgent.handle ───────────────────────────────────────────────────────

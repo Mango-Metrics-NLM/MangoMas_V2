@@ -99,10 +99,428 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [0.3.1] — 2026-05-23
 
 ### Added
 
+- **GCP swap-in implementation plan** (`docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md`):
+  Cherry-picked from PR #6 — 7-milestone roadmap covering Cloud Logging/Trace
+  exporter, Vertex AI provider hardening, Postgres parity, Cloud Run deployment,
+  and evaluation harness enhancements. Destructive code deletions in PR #6 were
+  rejected; only the plan document was merged.
+- **10 new mocked asyncpg unit tests** in `tests/test_postgres.py`:
+  `save_turn` / `list_turns` happy path + error translation, `aclose` / `close`
+  with injected pool, empty results, null timestamp handling. Postgres module
+  coverage 51 % → 80 %.
+
+### Fixed
+
+- **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
+  number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
+- **mypy `no-any-return`** in `src/mangomas/secrets/gcp.py`: replaced raw
+  `return self._client` with `cast("secretmanager.SecretManagerServiceClient",
+  self._client)` so the return type annotation is satisfied without a blanket
+  `type: ignore`.
+
+### Changed
+
+- Global test count 505 → 515; global coverage 96.95 % → 98.16 %.
+- `.gitignore` now excludes `.gemini/` workspace artifacts and stale
+  `docs/antigravity_reference.md`.
+
+### Removed
+
+- Stale `docs/antigravity_reference.md` (Antigravity workspace config that
+  should never have been committed).
+
+## [Unreleased]
+
+### Added — Claude Code enterprise harness
+
+The first end-to-end Claude Code harness lands as a non-breaking,
+opt-in layer on top of v0.3.0. Production callers behave identically
+unless `MANGOMAS_HARNESS__ENABLED=true` is set; every artifact obeys
+the project's no-hard-coded-values and protocol-first rules.
+
+- **Skill files** (`.github/skills/<name>/SKILL.md`): seven workflow
+  skills — `mango-adapter`, `mango-agent-add`, `mango-config`,
+  `mango-error`, `mango-observability`, `mango-release`,
+  `mango-topology`, plus the pre-existing `mango-testing`. Each ships
+  the canonical step-by-step workflow for the area it covers.
+- **Sub-agents** (`.github/agents/<parent>/<slug>.agent.md`): twelve
+  specialised sub-agents grouped under the four parent agents
+  (`architect`, `backend`, `test-engineer`, `api-dev`). The parent
+  agents now declare an optional `sub_agents:` frontmatter list. The
+  key is backwards-compatible — parents without it remain valid.
+- **`HarnessSettings`** in `src/mangomas/config.py` (env prefix
+  `MANGOMAS_HARNESS__`): `enabled` (bool, default `False`),
+  `metrics_namespace` (str, default `"mangomas.harness"`),
+  `hook_log_level` (Literal `DEBUG|INFO|WARNING`, default `"INFO"`).
+  Defaults are inert so existing wiring is unchanged.
+- **`_HarnessOrchestrator`** in `composition.py`: `Orchestrator`
+  subclass engaged only when `harness.enabled=True`. Wraps `dispatch`
+  *and* `stream_dispatch` in a single `harness.agent_invoke` parent
+  span tagged with `agent.name`, `harness.topology`
+  (`dispatch`/`stream`), and `messages.count`. `dispatch_pipeline` and
+  `dispatch_fan_out` inherit the wrap automatically because they
+  delegate through `dispatch`.
+- **`scripts/lint_agent_frontmatter.py`**: Pydantic-driven validator
+  for `*.agent.md` / `SKILL.md` frontmatter. Validates required keys,
+  description length, allowed `tools` values, and resolves the new
+  `sub_agents:` slugs against `<parent>/<slug>.agent.md`. Also
+  enforces a "BREAKING-CHANGE" marker on staged diffs that touch a
+  protected core path (`src/mangomas/core/agent.py`,
+  `src/mangomas/registry.py`, `src/mangomas/core/orchestrator.py`,
+  `src/mangomas/core/tools.py`). Exits `0/1/2` for ok/schema/protected.
+  Wired into CI via a new `frontmatter-lint` job in
+  `.github/workflows/ci.yml`.
+- **`scripts/harness_session_start.py`**: `SessionStart` hook for
+  Claude Code on the web. Emits a single-line JSON probe report
+  covering venv presence and LM Studio reachability so a fresh session
+  knows immediately what's available. Honours
+  `MANGOMAS_HARNESS__HOOK_LOG_LEVEL`. Always returns `EXIT_OK` so a
+  failed probe never blocks a session.
+- **`tests/_script_loader.py`**: shared helper for importing
+  `scripts/*.py` modules in tests via `load_script_module(name)`.
+  Centralises the `importlib.util.spec_from_file_location`
+  boilerplate that the two script-under-test files previously
+  duplicated.
+- **`.claude/settings.json`**: project-scoped harness configuration —
+  pinned `allow`/`deny` permissions, `MANGOMAS_LOG__FORMAT=json` env,
+  and three hooks: `SessionStart`, `PreToolUse` (Bash gating),
+  `PostToolUse` (`ruff --fix` on Edit/Write), `Stop` (silent coverage
+  re-run).
+- **PR automation**: `.github/PULL_REQUEST_TEMPLATE.md` enforces
+  CHANGELOG entry, ADR linkage, and the breaking-change marker;
+  `docs/adr/_template.md` for new ADRs; `secret-scan` Gitleaks job
+  added to `.github/workflows/ci.yml`.
+- **C4 diagrams**: `docs/architecture/c2-container.md` and
+  `c3-component.md` now describe the harness layer (skills,
+  sub-agents, `_HarnessOrchestrator`, frontmatter linter,
+  SessionStart hook) and indicate which boxes are dormant when
+  `harness.enabled=False`.
+- **Regression suite**: composition coverage rises 90 % → 100 % via
+  six new cases (`_HarnessOrchestrator.dispatch` /
+  `stream_dispatch`, `_file_memory_factory`,
+  `memory.enabled=True` branch, frontmatter linter
+  `EXIT_SCHEMA` branch, `_staged_diff` git-failure branch). Total
+  global coverage 96.95 %, 505 unit tests pass after the v0.3.0
+  reconciliation (up from 354 pre-merge).
+- **`.gitignore` / `.dockerignore`** now exclude harness scratch
+  state (`.claude/settings.local.json`, `.claude/cache/`,
+  `.claude/state/`, `.claude/logs/`) and the harness scripts from
+  the runtime container image (they are development tooling).
+
+### Changed
+
+- `CLAUDE.md` documents the harness model: skills table, sub-agents
+  table, the `sub_agents:` key, and how `HarnessSettings` engages
+  `_HarnessOrchestrator`.
+- `NEXT_STEPS.md` graduates the harness milestone and frames the
+  next iteration (entry-point agent discovery, harness-level metrics
+  exporter selection).
+- `README.md` adds a short "Claude Code harness" section pointing at
+  `.github/agents/` + `.github/skills/` and explaining the opt-in
+  switch.
+
+### Backwards-compatibility
+
+- `HarnessSettings.enabled` defaults to `False`. With the default,
+  `build_orchestrator` returns a vanilla `Orchestrator`, the
+  composition tests for the old shape still pass, and the unmodified
+  CLI/API surface is unchanged.
+- The optional `sub_agents:` frontmatter key is rejected on child
+  files (hierarchy is two-deep only) but absent-or-empty on parent
+  files is valid.
+
+## [0.3.0] — 2026-05-23
+
+The full GCP swap matrix from ADR-001 closes in v0.3.0: Vertex AI LLM,
+Cloud SQL Postgres storage, and GCP Secret Manager all ship behind the
+existing registry + protocol seams alongside the long-term offline
+evaluation harness. No core changes; every provider is selectable via
+`Settings`. Identity throughout is Application Default Credentials /
+Workload Identity Federation only — service-account JSON keys are never
+accepted by code or configuration.
+
+### Added
+
+- **Vertex AI LLM provider** (`vertex` extra,
+  `src/mangomas/adapters/llm/vertex.py`). `VertexClient` satisfies
+  `LLMClient`, `PingableLLMClient`, and `StreamingLLMClient` via
+  `vertexai.generative_models.GenerativeModel`. SDK imports are
+  deferred to `VertexClient.__init__` so the module is always importable
+  even without the extra installed; the class then raises a clear
+  `ImportError` pointing at `pip install 'mangomas[vertex]'`.
+  Registered by `_vertex_factory` in `composition.py` and selected via
+  `MANGOMAS_LLM__PROVIDER=vertex`. Qualname-based error translation maps
+  `google.api_core.exceptions.*` and `google.auth.exceptions.*` to typed
+  `LLMTimeout` / `LLMUnavailable` / `VertexError(LLMBadResponse)`. New
+  `LLMSettings` fields: `project_id`, `location`, `credentials_path`.
+  The existing `secret_ref` flow is reused — the resolved value is
+  forwarded to the factory as `credentials_json` (service-account JSON
+  body). `vertex` pytest marker + `RUN_VERTEX=1` gating in
+  `tests/vertex/` (smoke / chat invoke / chat stream / unknown model).
+  See `docs/adapters/vertex.md`.
+- **Cloud SQL / Postgres storage provider** (`postgres` extra,
+  `src/mangomas/adapters/storage/postgres.py`). `PostgresRepository`
+  satisfies `TurnRepository` and the new `AsyncCloseableRepository`
+  extension. Backed by `asyncpg` with a connection pool — no
+  `threading.Lock` (native async). Lazy pool creation preserves the
+  existing `_sqlite_factory(cfg: DBSettings) -> SQLiteRepository`
+  factory shape. A JSONB codec is registered on every connection so
+  `list_turns` returns dicts (matching SQLite's row shape). Activate
+  via `MANGOMAS_DB__PROVIDER=postgres` +
+  `MANGOMAS_DB__URL=postgresql://...`. testcontainers-driven
+  integration suite under `tests/postgres/` gated on `RUN_POSTGRES=1`
+  (`smoke`, `persistence`, 50-way fan-out `concurrency`). See
+  `docs/testing/postgres-integration.md`.
+- **GCP Secret Manager provider** (`gcp` extra,
+  `src/mangomas/secrets/gcp.py`). `GCPSecretManagerProvider` satisfies
+  `SecretsProvider`. Supports both short ids (resolved against
+  `MANGOMAS_SECRETS__PROJECT_ID` + `MANGOMAS_SECRETS__DEFAULT_VERSION`)
+  and full `projects/.../secrets/.../versions/...` resource paths. All
+  failure modes collapse to `None` per ADR-002 so
+  `_resolve_llm_secrets` continues to fall back to the inline `api_key`
+  in local dev. Activate via `MANGOMAS_SECRETS__PROVIDER=gcp` +
+  `MANGOMAS_SECRETS__PROJECT_ID=...`. Lazily registered inside
+  `build_orchestrator` (the secrets registry stores instances, not
+  factories, so config-bound construction has to happen there).
+- **Offline evaluation harness** (`src/mangomas/eval/`). New
+  `Scorer` protocol, `scorer_registry`, JSONL `load_jsonl`, `EvalRunner`
+  that reuses the existing `Orchestrator`, `EvalReport` aggregator, and
+  three built-in scorers: `ExactMatchScorer`, `LLMJudgeScorer`,
+  `EmbeddingScorer` (latter raises `NotImplementedError` until a
+  provider exposes `.embed()`). `EvalSettings` block (env prefix
+  `MANGOMAS_EVAL__`). `mangomas eval` CLI subcommand reads defaults
+  from `EvalSettings`; `--output-json` writes a structured report. See
+  `docs/eval/harness.md`.
+- **`AsyncCloseableRepository` extension protocol**
+  (`src/mangomas/adapters/storage/base.py`): adapters with async-pool
+  teardown expose `aclose()`; the FastAPI lifespan and CLI close path
+  dispatch on its presence. SQLite continues to satisfy the bare
+  `TurnRepository` protocol unchanged.
+- **CLI close path**: `agents`, `chat`, and `history` commands now
+  wrap their work in `try/finally: asyncio.run(_close_orchestrator(orch))`
+  so asyncpg pools don't leak at CLI process exit.
+- **`tests/test_sqlite_concurrency.py`**: 50-way `asyncio.gather`
+  fan-out of `save_turn` against in-memory SQLite. Closes the gap
+  from the v0.1.0 `threading.Lock` fix that previously had no direct
+  regression test. Runs in the default suite.
+- **`tests/postgres/test_concurrency.py`**: symmetric 50-way fan-out
+  test against `PostgresRepository` — pins the asyncpg pool's
+  concurrent-write contract. Gated on `RUN_POSTGRES=1`.
+- **ADR-002** (`docs/adr/0002-secrets-provider-error-semantics.md`):
+  records the choice to collapse cloud-secrets backend failures into
+  `None` rather than raise, with a v0.4.0 follow-up for a
+  `SecretsSettings.strict` opt-in.
+- **`docs/architecture/cloud-providers.md`**: single combined page
+  covering Vertex / Postgres / GCP Secret Manager — env-var contracts,
+  registration cites, ambient-identity guidance, and the rule-of-three
+  rationale for not extracting a shared lazy-SDK base class yet.
+- **`docs/adapters/vertex.md`** and **`docs/eval/harness.md`**: dedicated
+  per-feature usage docs for the Vertex adapter and the evaluation
+  harness.
+- **New optional extras** in `pyproject.toml`: `vertex`, `postgres`,
+  `gcp`, and meta-extra `cloud`. `dev` adds `asyncpg` and
+  `testcontainers` so Postgres unit tests and the testcontainer suite
+  collect cleanly; the Vertex and GCP SDKs stay out of `dev` because
+  unit tests mock at the constructor boundary.
+- **New pytest markers**: `postgres`, `vertex`, `gcp_secrets` and
+  corresponding `RUN_*` env-var gates in
+  `tests/conftest.py::pytest_collection_modifyitems`.
+- **Postgres compose profile** in `docker-compose.yml`: opt-in via
+  `docker compose --profile postgres up -d postgres`; credentials
+  local-only.
+- **`DEFAULT_ERROR_DETAIL_TRUNCATE`** constant in `mangomas.config`
+  replaces inline `[:200]` literals across the cloud adapters.
+
+### Changed
+
+- `LLMSettings` gains optional `project_id`, `location`,
+  `credentials_path` for Vertex (defaults preserve LM Studio behaviour).
+- `DBSettings` gains optional `pool_min`, `pool_max`,
+  `connect_timeout_seconds`, `statement_timeout_seconds` for Postgres
+  (defaults preserve SQLite behaviour).
+- `SecretsSettings` gains optional `project_id`, `timeout_seconds`,
+  `default_version` for GCP (defaults preserve env-backend behaviour).
+- FastAPI lifespan and CLI close path dispatch on
+  `hasattr(repo, "aclose")` — backwards-compatible with
+  `SQLiteRepository`'s sync `close()`.
+- `build_orchestrator` log line gains a `secrets_provider` field.
+- **Per-package coverage floors raised** in `scripts/check_coverage.py`
+  to match the post-v0.3.0 actuals: `composition` 90 → 95, `api`
+  90 → 95, `cli` 90 → 95, global 90 → 95. New `eval` floor at 95 %.
+  `agents` (95 %) and `adapters` (85 %) unchanged. `pyproject.toml`
+  global `--cov-fail-under=90` → `95`.
+- **Magic-number cleanup in LLM adapters**: `LMStudioClient` and
+  `VertexClient` constructors now reference `DEFAULT_LLM_TIMEOUT_SECONDS`
+  and `DEFAULT_LLM_TEMPERATURE` from `mangomas.config` instead of inline
+  literals. The SSE `[DONE]` sentinel and the Vertex ping prompt are
+  named module-level `Final` constants.
+- **Test-side magic literal cleanup**: `tests/test_lmstudio.py` consumes
+  new `TEST_LMSTUDIO_MOCK_BASE_URL` / `TEST_LMSTUDIO_MOCK_MODEL`
+  constants; `tests/test_correlation.py`, `tests/integration/test_api_flow.py`
+  consume `ASGI_TEST_BASE_URL`; `tests/test_api.py`, `tests/test_cli.py`,
+  `tests/eval/test_dataset.py` consume `STUB_REPLY`; `tests/test_sqlite.py`
+  consumes `DEFAULT_AGENT_NAME`.
+- **`tests/conftest.py`** no longer re-exports `Fake*` from
+  `tests.fakes`. The remaining importer (`tests/test_agent.py`) now
+  imports from the canonical `tests.fakes` path. Mirrors the
+  `mangomas.api.correlation` shim removal.
+- **Stale docstring** in `secrets/provider.py` referring to v0.2.0
+  updated to a version-agnostic statement.
+- `pyproject.toml`: version bumped to `0.3.0`; mypy
+  `ignore_missing_imports` extended to cover `google.*`, `vertexai.*`,
+  `asyncpg.*`, `testcontainers.*`. `tests/*` per-file ruff ignore
+  extends to `SLF001` so tests can introspect adapter internals.
+
+### Removed
+
+- **`mangomas.api.correlation` shim** deleted. The canonical home is
+  and has always been `mangomas.correlation`. The shim shipped in v0.2.0
+  as a short-term migration aid; with no external consumers (project is
+  pre-1.0) the duplicate import path is now retired. Update imports to
+  `from mangomas.correlation import ...`.
+- **`Settings.discovery_enabled`** field removed. Defined in v0.1.0 as
+  a placeholder for entry-point-based agent discovery; no factory ever
+  read it. The feature itself remains tracked under `NEXT_STEPS.md`
+  "Long term" and will re-introduce a field alongside the real
+  implementation if and when it lands.
+
+### Security / Operations
+
+- All cloud adapters consume **ambient identity only** (ADC / Workload
+  Identity Federation). Service-account JSON keys are not accepted by
+  configuration, env, or code (the Vertex provider's `credentials_json`
+  is sourced exclusively from the `SecretsProvider` seam — never from a
+  direct env variable).
+- Secret values are **never** logged. Cloud secret resource paths are
+  truncated to the short id in `extra={}` log fields. Postgres DSNs
+  are **never** logged in full; only the parsed host appears.
+- ADR-002 documents that rotated GCP secrets can silently degrade to
+  an inline `api_key`; operators MUST alert on
+  `logger=mangomas.secrets.gcp severity=ERROR`.
+
+## [0.2.0] — 2026-05-13
+
+### Added
+
+- **Harness gap-analysis sweep**:
+  - `_HarnessOrchestrator` now also wraps `stream_dispatch` so streaming
+    invocations get the same `harness.agent_invoke` parent span as
+    non-streaming dispatch. Adds `messages.count` and `harness.topology`
+    span attributes on both wraps. New `_HARNESS_SPAN_NAME`,
+    `_HARNESS_TOPOLOGY_DISPATCH`, `_HARNESS_TOPOLOGY_STREAM` module
+    constants — no inline literals.
+  - `_HarnessOrchestrator.__init__` and both dispatch wraps emit
+    `logger.debug` lines so the wrap is observable without enabling DEBUG
+    everywhere.
+  - Removed the unused `ALLOWED_TOOLS` constant from
+    `scripts/lint_agent_frontmatter.py` — the `Literal` annotation on
+    `AgentFrontmatter.tools` is the live source of truth, no parallel
+    constant needed.
+  - New `tests/_script_loader.py` shared helper centralises the
+    `importlib.util.spec_from_file_location` boilerplate that the two
+    script-under-test files previously duplicated. Both test files now
+    import from it.
+  - `tests/test_lint_agent_frontmatter.py` and
+    `tests/test_harness_session_start.py` now reference symbolic constants
+    (`linter.PROTECTED_PATHS`, `constants.DEFAULT_LLM_BASE_URL`) instead
+    of inline strings — easier to refactor.
+  - Coverage backfill: `_HarnessOrchestrator.dispatch` /
+    `stream_dispatch`, `_file_memory_factory`, the
+    `memory.enabled=True` branch in `build_orchestrator`, and the git-
+    failure branch in `_staged_diff` are now covered. Composition
+    coverage 90 % → 100 %; global 98.55 % → 99.11 %. Total tests
+    354 → 360.
+- **Claude Code PR automation** (Phase 4):
+  - `.github/PULL_REQUEST_TEMPLATE.md` with Summary, Changes, Test-plan
+    checklist (ruff/mypy/pytest/coverage/frontmatter-lint/manual-smoke),
+    ADR link, CHANGELOG link, and per-parent sub-agent review boxes.
+  - `docs/adr/_template.md` — copyable ADR skeleton (Status / Context /
+    Decision / Consequences / Alternatives / References). The previous
+    inline copy in `.github/agents/architect.agent.md` is trimmed to a
+    one-line pointer at the template.
+  - `pr-watcher` sub-agent under architect — documents the canonical
+    `subscribe_pr_activity` lifecycle (subscribe on open, triage events
+    by type, push only when confident, escalate via `AskUserQuestion`
+    when ambiguous, unsubscribe on close/merge). Declared in the
+    `architect.agent.md` `sub_agents:` list, bringing the total to
+    13 sub-agents.
+  - `CLAUDE.md` sub-agent table updated to include `pr-watcher`;
+    `.github/copilot-instructions.md` gains a "PR Workflow" subsection.
+- **CI secret-scan fix**: switched the `secret-scan` job from
+  `gitleaks/gitleaks-action@v2` (which requires a paid license for org
+  accounts) to a direct `curl`+`tar` install of the open-source
+  `gitleaks` v8.21.2 binary. Same scan, no license requirement.
+- **Claude Code harness enforcement layer** (Phase 3):
+  - `.claude/settings.json` with a permissions allowlist for the standard
+    test / lint / type-check / coverage / git read-only / gh read-only
+    commands; explicit deny for `rm -rf` and `git push --force`. Hooks:
+    SessionStart runs `scripts/harness_session_start.py` (warns on missing
+    `.venv` and unreachable LM Studio, never fails); PreToolUse on
+    Edit/Write runs `scripts/lint_agent_frontmatter.py
+    --check-protected-paths` against `src/mangomas/core/agent.py`,
+    `errors.py`, and `registry.py`, blocking edits that lack the
+    `# approved-breaking-change` marker; PostToolUse runs `ruff
+    check --fix` on the touched file; Stop runs `pytest --cov-fail-under=85
+    -q` before declaring done. All hook commands are best-effort
+    (`|| true`) so a failure never strands a session.
+  - `scripts/lint_agent_frontmatter.py` — Pydantic v2-validated linter for
+    every `.github/agents/**/*.agent.md` and `.github/skills/**/SKILL.md`.
+    Resolves `sub_agents:` slugs against on-disk child files; supports
+    `--check-protected-paths` mode for the PreToolUse hook. Module
+    constants (`AGENTS_GLOB`, `SKILLS_GLOB`, `PROTECTED_PATHS`,
+    `BREAKING_CHANGE_MARKER`, `EXIT_OK`/`EXIT_SCHEMA`/`EXIT_PROTECTED`)
+    keep magic literals out of the body.
+  - `scripts/harness_session_start.py` — SessionStart hook. Reuses
+    `mangomas.telemetry.configure_telemetry` and the existing httpx
+    dependency; emits structured logs in the
+    `MANGOMAS_HARNESS__METRICS_NAMESPACE` namespace.
+  - `HarnessSettings` group in `mangomas.config` (Pydantic v2 `BaseModel`
+    + module-level `DEFAULT_HARNESS_*` constants) with `enabled`,
+    `metrics_namespace`, `hook_log_level` fields. Defaults are
+    backward-compatible (`enabled=False`); env overrides via
+    `MANGOMAS_HARNESS__*`.
+  - `_HarnessOrchestrator` in `mangomas.composition` — additive
+    `Orchestrator` subclass that wraps `dispatch` in a
+    `harness.agent_invoke` parent span. Engaged only when
+    `cfg.harness.enabled` is `True`; zero overhead and zero behaviour
+    change otherwise (existing `orchestrator.dispatch` spans nest
+    underneath).
+  - CI: new `Frontmatter lint` step in the `lint` job and a new
+    `secret-scan` job using `gitleaks/gitleaks-action@v2`.
+  - Dev deps: `pyyaml>=6.0`, `types-PyYAML>=6.0` (consumed by the
+    frontmatter linter).
+  - Tests: `tests/test_lint_agent_frontmatter.py` (15 cases covering
+    schema, `sub_agents` resolution, and the protected-path hook),
+    `tests/test_harness_settings.py` (defaults + env overrides),
+    `tests/test_harness_session_start.py` (venv detection + LM Studio
+    probe success/failure paths), and 2 new `test_composition.py` cases
+    that confirm the wrapper engages only under `harness.enabled=True`.
+    Total +30 cases; per-package coverage floors all hold.
+- **Claude Code sub-agents (12 new files)** under `.github/agents/<parent>/`:
+  architect → `protocol-auditor`, `layering-auditor`, `adr-author`; backend →
+  `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`,
+  `error-taxonomy-dev`; test-engineer → `fake-builder`, `hypothesis-fuzz`,
+  `integration-runner`; api-dev → `sse-streamer`, `schema-evolution`. Parent
+  agents declare children via a new optional `sub_agents:` frontmatter list;
+  the four existing parents (`api-dev`, `architect`, `backend`,
+  `test-engineer`) gained this list and remain backward-compatible. `CLAUDE.md`
+  and `.github/copilot-instructions.md` document the convention.
+- **Claude Code skill library (7 new skills)** under `.github/skills/`:
+  `mango-adapter`, `mango-agent-add`, `mango-error`, `mango-observability`,
+  `mango-config`, `mango-topology`, `mango-release`. Each codifies an
+  existing convention in `CLAUDE.md` (Protocol-first adapters, the 4-step
+  agent extension pattern, the `errors.py`/`_ERROR_STATUS`/`test_errors.py`
+  lock-step, the `get_tracer` + structured-logging contract, the
+  `MANGOMAS_*` env prefix + `DEFAULT_*` constants pattern, the
+  `dispatch_pipeline`/`dispatch_fan_out`/`stream_dispatch` topology
+  surface, and the conventional-commit + CHANGELOG release flow).
+  Modelled exactly on the existing `mango-testing/SKILL.md` frontmatter
+  schema (`name`, multiline `description`, `argument-hint`). No source
+  changes; documentation only.
 - **LM Studio E2E scenarios 2–6** under `tests/lmstudio/`: chat invoke happy path,
   chat stream SSE (token + done frames), buffered-fallback warning via
   `Registry.scoped()`, summarize agent through the public API, and the
@@ -142,7 +560,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - **Correlation primitives moved to `src/mangomas/correlation.py`** (top-level)
   to break the `mangomas.api → mangomas.telemetry` import cycle without a
   lazy import. `mangomas.api.correlation` remains as a backwards-compatible
-  re-export shim — existing imports continue to work.
+  re-export shim — existing imports continue to work. (Shim removed in v0.3.0.)
 - **Streaming buffered-fallback extracted** into
   `mangomas.agents._streaming.stream_with_buffered_fallback`. The three
   agents (`ChatAgent`, `PlannerAgent`, `ReviewerAgent`) now delegate to a
@@ -178,4 +596,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   can call `get`/`register` under the same lock without deadlocking.
 
 <!-- next release goes above this line -->
+[0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1
+[0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
+[0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0

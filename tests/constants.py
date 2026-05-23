@@ -18,6 +18,16 @@ DEFAULT_TEMPERATURE: float = 0.2
 LMSTUDIO_BASE_URL_ENV: str = "LMSTUDIO_BASE_URL"
 LMSTUDIO_MODEL_ENV: str = "LMSTUDIO_MODEL"
 
+# ── Vertex AI E2E env-var names (single source of truth) ──────────────────────
+VERTEX_PROJECT_ENV: str = "VERTEX_PROJECT_ID"
+VERTEX_LOCATION_ENV: str = "VERTEX_LOCATION"
+VERTEX_MODEL_ENV: str = "VERTEX_MODEL"
+VERTEX_CREDENTIALS_PATH_ENV: str = "VERTEX_CREDENTIALS_PATH"
+RUN_VERTEX_ENV: str = "RUN_VERTEX"
+# Default Vertex model used by E2E tests when ``VERTEX_MODEL`` is unset.
+DEFAULT_VERTEX_TEST_MODEL: str = "gemini-1.5-flash"
+STUB_VERTEX_REPLY: str = "stub-vertex-reply"
+
 # ── HTTP client timeouts (test-scoped) ────────────────────────────────────────
 # Per-request timeout for httpx.AsyncClient calls in E2E tests. The underlying
 # LMStudioClient timeout is configured separately via
@@ -33,6 +43,14 @@ HTTPX_ERROR_PATH_TIMEOUT_SECONDS: float = 30.0
 # ── ASGI test transport base URL ──────────────────────────────────────────────
 # httpx idiom for in-process ASGI testing — not a real server.
 ASGI_TEST_BASE_URL: str = "http://testserver"
+
+# ── In-process mock LM Studio base URL ───────────────────────────────────────
+# Used by respx-mocked unit tests in ``tests/test_lmstudio.py`` — the value
+# does not need to resolve; respx intercepts on hostname match. Kept distinct
+# from ``ASGI_TEST_BASE_URL`` so a future refactor that shares the ASGI URL
+# does not accidentally redirect mocked LLM traffic.
+TEST_LMSTUDIO_MOCK_BASE_URL: str = "http://lm/v1"
+TEST_LMSTUDIO_MOCK_MODEL: str = "m"
 
 # ── DB defaults ───────────────────────────────────────────────────────────────
 DEFAULT_DB_PROVIDER: str = "sqlite"
@@ -52,3 +70,57 @@ DEFAULT_LOOP_MAX_STEPS: int = 1
 # ── Tool stubs ────────────────────────────────────────────────────────────────
 DEFAULT_TOOL_NAME: str = "echo"
 DEFAULT_TOOL_RESULT: str = "echo-result"
+
+# ── Harness frontmatter linter fixtures ───────────────────────────────────────
+VALID_AGENT_FRONTMATTER: str = """\
+---
+name: Example
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+tools: [read, search]
+model: Claude Sonnet 4.5 (copilot)
+argument-hint: "Pass an example argument"
+---
+
+Body content.
+"""
+
+VALID_SKILL_FRONTMATTER: str = """\
+---
+name: example-skill
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+argument-hint: "Describe what to do"
+---
+
+Body content.
+"""
+
+MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS: str = """\
+---
+name: BadExample
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+model: Claude Sonnet 4.5 (copilot)
+argument-hint: "Pass an example argument"
+---
+
+Body content.
+"""
+
+MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION: str = """\
+---
+name: bad-skill
+description: tooshort
+argument-hint: "Pass an example argument"
+---
+
+Body content.
+"""
+
+# ── Postgres testcontainer parameters ─────────────────────────────────────────
+POSTGRES_TEST_IMAGE: str = "postgres:16-alpine"
+POSTGRES_TEST_DB: str = "mangomas_test"
+POSTGRES_TEST_USER: str = "mangomas"
+POSTGRES_TEST_PASSWORD: str = "mangomas_test"  # noqa: S105  test-only
+
+# ── GCP Secret Manager E2E env-var names ──────────────────────────────────────
+GCP_SECRETS_PROJECT_ENV: str = "GCP_SECRETS_PROJECT"
+GCP_SECRETS_SECRET_NAME_ENV: str = "GCP_SECRETS_SECRET_NAME"  # noqa: S105  env-var name

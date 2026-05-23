@@ -9,6 +9,10 @@ description: >
 tools: [read, edit, search, execute]
 model: Claude Sonnet 4.5 (copilot)
 argument-hint: "Describe the module or feature to test, or paste a failing test"
+sub_agents:
+  - fake-builder
+  - hypothesis-fuzz
+  - integration-runner
 ---
 
 You are a senior test engineer on the Mango-Mas V2 project.

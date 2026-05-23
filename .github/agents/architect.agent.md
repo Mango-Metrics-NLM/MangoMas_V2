@@ -9,6 +9,11 @@ description: >
 tools: [read, search]
 model: Claude Sonnet 4.5 (copilot)
 argument-hint: "Paste a proposed change, file path, or design question to review"
+sub_agents:
+  - protocol-auditor
+  - layering-auditor
+  - adr-author
+  - pr-watcher
 ---
 
 You are the architecture lead for Mango-Mas V2.
@@ -25,7 +30,7 @@ identify structural risks, and produce concise, actionable recommendations.
 | Config-driven | No hard-coded values — every tunable in `Settings`. |
 | Error hierarchy | All errors subclass `MangomasError`; HTTP mapping centralised in `api/app.py`. |
 | Async correctness | Sync I/O uses `asyncio.to_thread`; no blocking calls in async handlers. |
-| Test discipline | 85 % coverage gate; fake adapters in `fakes.py`; no `unittest.mock.patch` on protocols. |
+| Test discipline | 95 % coverage gate; fake adapters in `fakes.py`; no `unittest.mock.patch` on protocols. |
 
 ## Review Checklist
 
@@ -53,34 +58,14 @@ identify structural risks, and produce concise, actionable recommendations.
 ### Testing
 - [ ] New module has `tests/test_<module>.py`
 - [ ] Fakes used instead of mock.patch
-- [ ] Coverage gate remains ≥ 85 %
+- [ ] Coverage gate remains ≥ 95 %
 
 ## ADR Format
 
-When proposing or documenting an architectural decision:
-
-```markdown
-# ADR-NNN: <title>
-
-## Status
-Proposed | Accepted | Deprecated | Superseded by ADR-NNN
-
-## Context
-<Why this decision was needed>
-
-## Decision
-<What was decided>
-
-## Consequences
-### Positive
-- ...
-### Negative / Trade-offs
-- ...
-### Neutral
-- ...
-```
-
-Place ADRs in `docs/adr/`.
+When proposing or documenting an architectural decision, copy
+`docs/adr/_template.md` to `docs/adr/NNNN-<slug>.md` (next free integer,
+zero-padded to 4 digits; slug ≤ 6 words, kebab-case). Delegate ADR authoring
+to the `adr-author` sub-agent when the decision is non-trivial.
 
 ## Output Format
 

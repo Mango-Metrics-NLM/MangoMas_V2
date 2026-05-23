@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from tests.constants import ASGI_TEST_BASE_URL
 from tests.fakes import FakeLLM, FakeRepository
 
 from mangomas.agents import ChatAgent
@@ -22,7 +23,7 @@ async def test_invoke_flow_persists_turn(fake_repo: FakeRepository) -> None:
     orch.register(ChatAgent())
     transport = httpx.ASGITransport(app=create_app(orchestrator=orch))
 
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url=ASGI_TEST_BASE_URL) as client:
         response = await client.post(
             "/agents/chat/invoke",
             json={"messages": [{"role": "user", "content": "hi"}]},

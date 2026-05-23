@@ -14,5 +14,27 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Local-only Postgres for the postgres TurnRepository. Opt-in:
+  #   docker compose --profile postgres up -d postgres
+  # Credentials are local-only; production deployments use Cloud SQL +
+  # Workload Identity Federation per docs/adr/0001-cloud-targets.md.
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: mangomas
+      POSTGRES_USER: mangomas
+      POSTGRES_PASSWORD: mangomas_local
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mangomas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mangomas-pg-data:/var/lib/postgresql/data
+
 volumes:
   mangomas-data:
+  mangomas-pg-data:

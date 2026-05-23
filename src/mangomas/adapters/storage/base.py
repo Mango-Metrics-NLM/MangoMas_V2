@@ -35,6 +35,22 @@ class TurnRepository(Protocol):
 
 
 @runtime_checkable
+class AsyncCloseableRepository(TurnRepository, Protocol):
+    """TurnRepository whose resources require async teardown (e.g. asyncpg pools).
+
+    The FastAPI lifespan and CLI close paths dispatch on ``hasattr(repo,
+    "aclose")`` and prefer this method when present, falling back to the
+    synchronous :meth:`TurnRepository.close` otherwise. Strict extension —
+    existing :class:`SQLiteRepository` continues to satisfy the bare
+    :class:`TurnRepository` protocol without change.
+    """
+
+    async def aclose(self) -> None:
+        """Asynchronously release held resources (e.g. close a connection pool)."""
+        ...
+
+
+@runtime_checkable
 class MemoryRepository(Protocol):
     """Persistent episodic memory and index for an agent."""
 

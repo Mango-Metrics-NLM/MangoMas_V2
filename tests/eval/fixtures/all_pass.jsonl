@@ -1,0 +1,2 @@
+{"id": "p1", "messages": [{"role": "user", "content": "say stub"}], "expected": "stub-reply"}
+{"id": "p2", "messages": [{"role": "user", "content": "again"}], "expected": "STUB-REPLY"}

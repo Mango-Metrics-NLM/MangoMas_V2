@@ -10,8 +10,7 @@ The module lives at :mod:`mangomas.correlation` (top-level, alongside
 :mod:`mangomas.telemetry`) so that :mod:`mangomas.telemetry` can import
 the filter at module load without triggering the
 ``mangomas.api.__init__`` → :func:`create_app` → :mod:`telemetry` import
-cycle. A backwards-compatible re-export remains at
-:mod:`mangomas.api.correlation`.
+cycle.
 
 Layering
 --------
