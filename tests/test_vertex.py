@@ -18,6 +18,7 @@ from mangomas.adapters.llm.base import LLMClient, PingableLLMClient, StreamingLL
 from mangomas.adapters.llm.vertex import (
     VertexError,
     VertexLLMClient,
+    _extract_text,
     _to_vertex_messages,
 )
 from mangomas.core.agent import Message
@@ -336,3 +337,60 @@ async def test_ping_translates_unavailable() -> None:
 async def test_aclose_is_noop() -> None:
     c = _client(_FakeModel(response=_response("x")))
     await c.aclose()  # no exception, no return value
+
+
+# ── _extract_text() direct branch coverage ────────────────────────────────────
+
+
+def test_extract_text_prefers_text_property() -> None:
+    """When both ``.text`` and ``.candidates`` are populated, ``.text`` wins."""
+    resp = _FakeResponse(
+        text="from-text-property",
+        candidates=[_FakeCandidate(content=_FakeContent(parts=[_FakePart(text="ignored")]))],
+    )
+    assert _extract_text(resp) == "from-text-property"
+
+
+def test_extract_text_falls_back_to_candidates_when_text_empty() -> None:
+    resp = _FakeResponse(
+        text="",
+        candidates=[_FakeCandidate(content=_FakeContent(parts=[_FakePart(text="fallback")]))],
+    )
+    assert _extract_text(resp) == "fallback"
+
+
+def test_extract_text_concatenates_multiple_parts() -> None:
+    resp = _FakeResponse(
+        text="",
+        candidates=[
+            _FakeCandidate(
+                content=_FakeContent(parts=[_FakePart(text="hello"), _FakePart(text=" world")])
+            )
+        ],
+    )
+    assert _extract_text(resp) == "hello world"
+
+
+def test_extract_text_returns_empty_on_no_candidates() -> None:
+    assert _extract_text(_FakeResponse(text="", candidates=[])) == ""
+
+
+def test_extract_text_handles_missing_attrs() -> None:
+    """Tolerates objects without ``text``/``candidates`` — common in SDK chunks."""
+
+    class _Bare:
+        pass
+
+    assert _extract_text(_Bare()) == ""
+
+
+# ── stream() edge cases ───────────────────────────────────────────────────────
+
+
+async def test_stream_with_zero_chunks_completes_cleanly() -> None:
+    """An empty stream must terminate without yielding (and without error)."""
+    c = _client(_FakeModel(stream_chunks=[]))
+    tokens: list[str] = []
+    async for tok in await c.stream([Message(role="user", content="q")]):
+        tokens.append(tok)
+    assert tokens == []

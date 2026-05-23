@@ -7,14 +7,20 @@ from typing import Any
 import pytest
 
 from mangomas.composition import (
+    _build_gcp_secrets_provider,
+    _file_memory_factory,
     _storage_registry,
+    _vertex_factory,
     agent_registry,
     build_orchestrator,
     llm_registry,
 )
 from mangomas.config import (
+    DEFAULT_GCP_SECRET_VERSION,
+    DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS,
     DBSettings,
     LLMSettings,
+    MemorySettings,
     SecretsSettings,
     Settings,
 )
@@ -146,3 +152,64 @@ def test_gcp_secrets_lazy_register_raises_when_project_id_missing() -> None:
         secrets_registry._store.pop("gcp", None)
     with pytest.raises(ConfigError, match="MANGOMAS_SECRETS__PROJECT_ID"):
         build_orchestrator(settings)
+
+
+# ── Direct factory coverage ──────────────────────────────────────────────────
+
+
+def test_vertex_factory_constructs_client_when_project_set() -> None:
+    """Success branch of _vertex_factory (closes composition.py:107-109 gap).
+
+    The factory still lazy-imports the SDK at the boundary — we can't reach
+    the SDK import without the optional ``vertex`` extra installed. Instead
+    we assert ConfigError is NOT raised and the import-time failure surfaces
+    as ImportError (proving control flow advanced past the validation
+    check). Equally valid: success when SDK is present.
+    """
+    cfg = LLMSettings(provider="vertex", project="my-proj", location="us-central1")
+    try:
+        client = _vertex_factory(cfg)
+    except ImportError:
+        # SDK not installed in dev — proves we cleared the ConfigError
+        # check on line 105 and reached the lazy import on line 107.
+        return
+    # If the SDK IS installed, the client must be constructable.
+    assert client is not None
+
+
+def test_file_memory_factory_constructs_without_io() -> None:
+    """Direct exercise of _file_memory_factory (closes composition.py:94 gap)."""
+    cfg = MemorySettings(enabled=True, provider="file", memory_dir="memory_test")
+    repo = _file_memory_factory(cfg)
+    assert repo is not None
+    # Smoke-check: the constructed repo satisfies the close() contract.
+    repo.close()
+
+
+def test_build_gcp_secrets_provider_returns_provider_when_valid() -> None:
+    """Success branch of _build_gcp_secrets_provider — config valid, no SDK call."""
+    cfg = SecretsSettings(
+        provider="gcp",
+        project_id="my-proj",
+        timeout_seconds=DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS,
+        default_version=DEFAULT_GCP_SECRET_VERSION,
+    )
+    provider = _build_gcp_secrets_provider(cfg)
+    assert provider is not None
+    assert provider._project_id == "my-proj"
+
+
+def test_build_orchestrator_with_memory_enabled() -> None:
+    """Exercise the memory-enabled branch in build_orchestrator
+    (closes composition.py:190-191 gap)."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    settings.memory.enabled = True
+    settings.memory.memory_dir = "memory_test"
+    orch = build_orchestrator(settings)
+    try:
+        assert orch.context.memory is not None
+    finally:
+        _close_repo(orch)
+        if orch.context.memory is not None:
+            orch.context.memory.close()

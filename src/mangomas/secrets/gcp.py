@@ -174,4 +174,14 @@ class GCPSecretManagerProvider:
             return None
 
         payload: bytes = response.payload.data
+        # Trace successful resolutions for operability. The secret
+        # value is never logged — only the short id + payload size.
+        logger.debug(
+            "GCP secret resolved",
+            extra={
+                "project_id": self._project_id,
+                "secret_name": short,
+                "bytes": len(payload),
+            },
+        )
         return payload.decode("utf-8")

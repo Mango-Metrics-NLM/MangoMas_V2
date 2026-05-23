@@ -95,3 +95,29 @@ async def test_aclose_on_unused_repo_is_noop() -> None:
     repo = PostgresRepository(cfg)
     await repo.aclose()  # no-op
     assert repo._pool is None
+
+
+async def test_aclose_is_idempotent_without_pool() -> None:
+    """Two back-to-back aclose() calls on a never-opened repo must not raise."""
+    cfg = DBSettings(provider="postgres", url="postgresql://h/db")
+    repo = PostgresRepository(cfg)
+    await repo.aclose()
+    await repo.aclose()
+    assert repo._pool is None
+
+
+def test_normalise_dsn_passes_driver_prefix_through() -> None:
+    """asyncpg-driver suffixes like ``postgresql+asyncpg://`` aren't rewritten.
+
+    The current adapter only normalises the legacy ``postgres://`` scheme. A
+    SQLAlchemy-style driver prefix is preserved verbatim — operators using
+    asyncpg directly never pass this form, but if they do (e.g. lifted from
+    a SQLAlchemy URL) we don't silently mangle it.
+    """
+    dsn = "postgresql+asyncpg://u:p@h/db"
+    assert _normalise_dsn(dsn) == dsn
+
+
+def test_dsn_host_handles_empty_string() -> None:
+    """``_dsn_host`` returns ``None`` for unparseable / empty input."""
+    assert _dsn_host("") is None

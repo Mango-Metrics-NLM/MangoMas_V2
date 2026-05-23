@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from mangomas.config import DBSettings
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DBSettings
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 
@@ -159,14 +159,24 @@ class PostgresRepository:
                     request.model_dump_json(),
                     response.model_dump_json(),
                 )
-            return int(row_id)
+            int_id = int(row_id)
+            logger.debug(
+                "Postgres save_turn persisted",
+                extra={
+                    "row_id": int_id,
+                    "agent": agent,
+                    "dsn_host": _dsn_host(self._dsn),
+                },
+            )
+            return int_id
         except asyncpg.PostgresError as exc:
             logger.error(
                 "Postgres save_turn failed",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
             raise PersistenceError(
-                "Failed to persist turn", detail=f"{type(exc).__name__}: {exc}"[:200]
+                "Failed to persist turn",
+                detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
 
     async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -186,7 +196,8 @@ class PostgresRepository:
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
             raise PersistenceError(
-                "Failed to list turns", detail=f"{type(exc).__name__}: {exc}"[:200]
+                "Failed to list turns",
+                detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
         return [
             {
@@ -220,5 +231,12 @@ class PostgresRepository:
         try:
             self._pool.terminate()
         except Exception as exc:  # pragma: no cover  -- defensive
-            logger.warning("Postgres pool terminate raised: %s", exc)
+            # Log only the exception *type* — never the body. asyncpg
+            # exceptions can in some failure modes embed connection-URL
+            # text in the message; ``dsn_host`` is the only DSN-derived
+            # field we ever emit.
+            logger.warning(
+                "Postgres pool terminate raised",
+                extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
+            )
         self._pool = None

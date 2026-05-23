@@ -37,6 +37,7 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING, Any
 
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 
@@ -77,21 +78,21 @@ def _translate_vertex_error(
     if isinstance(exc, gax.DeadlineExceeded | gax.RetryError):
         return LLMTimeout(
             f"Vertex AI request timed out ({detail_ctx})",
-            detail=str(exc)[:200],
+            detail=str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
         )
     if isinstance(exc, gax.ServiceUnavailable | gax.Aborted):
         return LLMUnavailable(
             f"Vertex AI unavailable ({detail_ctx})",
-            detail=str(exc)[:200],
+            detail=str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
         )
     if isinstance(exc, gax.GoogleAPIError):
         return VertexError(
             f"Vertex AI returned an error ({detail_ctx})",
-            detail=f"{type(exc).__name__}: {exc}"[:200],
+            detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
         )
     return LLMUnavailable(
         f"Vertex AI unreachable ({detail_ctx})",
-        detail=f"{type(exc).__name__}: {exc}"[:200],
+        detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
     )
 
 
@@ -236,6 +237,12 @@ class VertexLLMClient:
                 extra=self._log_context(),
             )
             raise VertexError("Vertex AI returned no candidate text")
+        # Trace successful completions for operability — payload bodies
+        # are deliberately omitted (only character count + model context).
+        logger.debug(
+            "Vertex complete succeeded",
+            extra={**self._log_context(), "chars": len(text)},
+        )
         return text
 
     async def stream(
@@ -279,6 +286,7 @@ class VertexLLMClient:
 
         # Pull each chunk on a worker thread; ``StopIteration`` signals end.
         _sentinel = object()
+        logger.debug("Vertex stream started", extra=self._log_context())
 
         def _next_chunk(it: Any) -> Any:
             try:
@@ -286,6 +294,7 @@ class VertexLLMClient:
             except StopIteration:
                 return _sentinel
 
+        chunk_count = 0
         while True:
             try:
                 chunk = await asyncio.to_thread(_next_chunk, iterator)
@@ -301,9 +310,14 @@ class VertexLLMClient:
                     model=self._model_id,
                 ) from exc
             if chunk is _sentinel:
+                logger.debug(
+                    "Vertex stream completed",
+                    extra={**self._log_context(), "chunks": chunk_count},
+                )
                 return
             text = _extract_text(chunk)
             if text:
+                chunk_count += 1
                 yield text
 
     async def ping(self) -> None:

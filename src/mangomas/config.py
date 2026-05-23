@@ -58,6 +58,12 @@ DEFAULT_SECRETS_PROVIDER: str = "env"
 DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS: float = 5.0
 DEFAULT_GCP_SECRET_VERSION: str = "latest"  # noqa: S105  not a secret value
 
+# Maximum length of the ``detail`` field on structured error envelopes /
+# log records. Bounds untrusted exception text so that adapter exception
+# bodies (which can include URLs, payload fragments, or remote stack
+# traces) can never blow out a log line or an HTTP response body.
+DEFAULT_ERROR_DETAIL_TRUNCATE: int = 200
+
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
 

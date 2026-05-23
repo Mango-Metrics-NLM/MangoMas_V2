@@ -157,6 +157,30 @@ def test_short_name_for_full_path() -> None:
     assert _short_name("projects/p/secrets/k/versions/3") == "k"
 
 
+def test_build_resource_path_with_empty_short_name_produces_malformed_path() -> None:
+    """Document current behaviour: empty short ids produce a malformed path.
+
+    We do not pre-validate at this layer — the SDK will return
+    ``InvalidArgument``/``NotFound`` which the ``get()`` error-handling
+    branches collapse to ``None``. This test pins the behaviour so any
+    future ``_build_resource_path`` validation change is intentional.
+    """
+    out = _build_resource_path("", project_id="proj", default_version="latest")
+    assert out == "projects/proj/secrets//versions/latest"
+
+
+def test_build_resource_path_with_slashed_default_version_pins_behaviour() -> None:
+    """Document current behaviour: slashes in ``default_version`` flow through.
+
+    ``default_version`` is a trusted config field (``SecretsSettings``),
+    not user input. We pass it verbatim into the resource path; the SDK
+    rejects invalid forms with ``InvalidArgument`` which the
+    error-handling branches collapse to ``None``.
+    """
+    out = _build_resource_path("k", project_id="proj", default_version="bad/version")
+    assert out == "projects/proj/secrets/k/versions/bad/version"
+
+
 # ── happy path ────────────────────────────────────────────────────────────────
 
 

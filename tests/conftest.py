@@ -12,7 +12,24 @@ from mangomas.adapters.storage import SQLiteRepository
 from mangomas.agents import ChatAgent
 from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
+from mangomas.secrets import secrets_registry
 from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository, FakeTool
+
+# ── Cross-test isolation for lazy-registered cloud providers ──────────────────
+
+
+@pytest.fixture(autouse=True)
+def _teardown_lazy_gcp_secrets() -> Iterator[None]:
+    """Pop any GCP secrets provider lazy-registered by build_orchestrator.
+
+    The provider is registered inside ``build_orchestrator`` when
+    ``secrets.provider == "gcp"`` and lives on the module-level
+    ``secrets_registry`` instance. Without this teardown, a test that
+    exercises the gcp path would leak a (project-id-bound) provider
+    into the next test's ``secrets_registry.available()`` view.
+    """
+    yield
+    secrets_registry._store.pop("gcp", None)
 
 # ── Collection gates ────────────────────────────────────────────────────────
 
