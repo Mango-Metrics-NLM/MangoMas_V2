@@ -19,7 +19,9 @@ C4Container
 
   System_Ext(lmstudio, "LM Studio", ":1234 — OpenAI-compatible LLM server (default)")
   System_Ext(vertex, "Vertex AI (optional extra)", "Google Cloud Gemini endpoints via vertexai.generative_models. Selected by MANGOMAS_LLM__PROVIDER=vertex.")
-  System_Ext(sqlite_file, "SQLite file", "data/mangomas.db — conversation turn store")
+  System_Ext(sqlite_file, "SQLite file", "data/mangomas.db — conversation turn store (default)")
+  System_Ext(postgres_db, "PostgreSQL (Cloud SQL)", "Cloud SQL via asyncpg connection pool. Activated by MANGOMAS_DB__PROVIDER=postgres.")
+  System_Ext(secret_mgr, "GCP Secret Manager", "Resolves API keys / SA JSON at build time. Activated by MANGOMAS_SECRETS__PROVIDER=gcp.")
   System_Ext(mem_file, "File memory", "memory/ — agent memory index")
   System_Ext(eval_output, "Eval output", "eval-output/ — optional JSON reports from `mangomas eval --output-json`")
   System_Ext(otel_out, "OTel / stdout", "Traces and structured logs")
@@ -32,7 +34,9 @@ C4Container
   Rel(cli, eval_harness, "mangomas eval — loads dataset, runs scorer, writes report")
   Rel(composition, lmstudio, "LMStudioClient → /v1/chat/completions, /v1/models (when provider=lmstudio)", "HTTP")
   Rel(composition, vertex, "VertexClient → generate_content_async (when provider=vertex)", "Vertex SDK / HTTPS")
-  Rel(composition, sqlite_file, "SQLiteRepository — reads/writes turns", "SQLite driver")
+  Rel(composition, sqlite_file, "SQLiteRepository — reads/writes turns (when provider=sqlite)", "SQLite driver")
+  Rel(composition, postgres_db, "PostgresRepository — reads/writes turns (when provider=postgres)", "asyncpg / TLS")
+  Rel(composition, secret_mgr, "GCPSecretManagerProvider — resolves secret refs (when provider=gcp)", "Secret Manager API / IAM")
   Rel(composition, mem_file, "file memory provider — reads/writes index (when memory enabled)", "filesystem")
   Rel(eval_harness, eval_output, "writes JSON report when --output-json is set", "filesystem")
   Rel(api, otel_out, "TraceMiddleware emits spans; structured logs via logging", "OTLP / stdout")
@@ -50,6 +54,10 @@ C4Container
   Today's built-in choices are `lmstudio` (the default) and `vertex` (an
   optional extra). Adding a new provider is a registry registration in
   `composition.py` — no other container changes required.
+- The storage provider is chosen via `MANGOMAS_DB__PROVIDER`: `sqlite`
+  (default) or `postgres` (asyncpg pool, requires `mangomas[postgres]`).
+- The secrets provider is chosen via `MANGOMAS_SECRETS__PROVIDER`: `env`
+  (default) or `gcp` (GCP Secret Manager, E2E verified in v0.3.1).
 - The evaluation harness ships its own Scorer registry
   (`mangomas.eval.scorer_registry`) parallel to the agent/LLM/storage
   registries. Built-in scorers: `exact_match`, `llm_judge`, `embedding`.

@@ -99,6 +99,40 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.1] — 2026-05-23
+
+### Added
+
+- **GCP swap-in implementation plan** (`docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md`):
+  Cherry-picked from PR #6 — 7-milestone roadmap covering Cloud Logging/Trace
+  exporter, Vertex AI provider hardening, Postgres parity, Cloud Run deployment,
+  and evaluation harness enhancements. Destructive code deletions in PR #6 were
+  rejected; only the plan document was merged.
+- **10 new mocked asyncpg unit tests** in `tests/test_postgres.py`:
+  `save_turn` / `list_turns` happy path + error translation, `aclose` / `close`
+  with injected pool, empty results, null timestamp handling. Postgres module
+  coverage 51 % → 80 %.
+
+### Fixed
+
+- **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
+  number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
+- **mypy `no-any-return`** in `src/mangomas/secrets/gcp.py`: replaced raw
+  `return self._client` with `cast("secretmanager.SecretManagerServiceClient",
+  self._client)` so the return type annotation is satisfied without a blanket
+  `type: ignore`.
+
+### Changed
+
+- Global test count 505 → 515; global coverage 96.95 % → 98.16 %.
+- `.gitignore` now excludes `.gemini/` workspace artifacts and stale
+  `docs/antigravity_reference.md`.
+
+### Removed
+
+- Stale `docs/antigravity_reference.md` (Antigravity workspace config that
+  should never have been committed).
+
 ## [Unreleased]
 
 ### Added — Claude Code enterprise harness
@@ -562,6 +596,7 @@ accepted by code or configuration.
   can call `get`/`register` under the same lock without deadlocking.
 
 <!-- next release goes above this line -->
+[0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0

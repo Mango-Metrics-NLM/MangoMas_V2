@@ -251,7 +251,11 @@ python scripts/check_coverage.py
 Per-package floors (`scripts/check_coverage.py`): `errors`, `registry`,
 `core`, `secrets`, `correlation` at **100 %**; `composition`, `agents`,
 `api`, `cli`, `eval` at **95 %**; `adapters` at **85 %**; global at
-**95 %**. Coverage today sits comfortably above each floor — never lower a
+**95 %**.
+
+> **v0.3.1 baseline:** 515 tests, **98.16 %** global coverage.
+
+Coverage today sits comfortably above each floor — never lower a
 floor to land a change, fix the test coverage in the same commit.
 
 ### Integration tests

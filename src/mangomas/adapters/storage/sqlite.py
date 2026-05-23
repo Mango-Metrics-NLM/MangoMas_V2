@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from mangomas.core.agent import AgentRequest, AgentResponse
+from mangomas.errors import PersistenceError
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class SQLiteRepository:
         with self._lock:
             self._conn.execute(self._SCHEMA)
             self._conn.commit()
+        logger.debug("SQLiteRepository initialised", extra={"db_path": self._path})
 
     async def save_turn(
         self,
@@ -80,17 +82,29 @@ class SQLiteRepository:
 
         def _write() -> int:
             with self._lock:
-                cur = self._conn.execute(
-                    "INSERT INTO turns (ts, agent, request, response) VALUES (?, ?, ?, ?)",
-                    (
-                        datetime.now(UTC).isoformat(),
-                        agent,
-                        request.model_dump_json(),
-                        response.model_dump_json(),
-                    ),
-                )
-                self._conn.commit()
-                return int(cur.lastrowid or 0)
+                try:
+                    cur = self._conn.execute(
+                        "INSERT INTO turns (ts, agent, request, response) VALUES (?, ?, ?, ?)",
+                        (
+                            datetime.now(UTC).isoformat(),
+                            agent,
+                            request.model_dump_json(),
+                            response.model_dump_json(),
+                        ),
+                    )
+                    self._conn.commit()
+                    row_id = int(cur.lastrowid or 0)
+                except sqlite3.Error as exc:
+                    logger.exception(
+                        "save_turn failed",
+                        extra={"agent": agent, "db_path": self._path},
+                    )
+                    raise PersistenceError(str(exc)) from exc
+            logger.debug(
+                "save_turn ok",
+                extra={"row_id": row_id, "agent": agent, "db_path": self._path},
+            )
+            return row_id
 
         return await asyncio.to_thread(_write)
 
@@ -99,11 +113,23 @@ class SQLiteRepository:
 
         def _read() -> list[dict[str, Any]]:
             with self._lock:
-                cur = self._conn.execute(
-                    "SELECT id, ts, agent, request, response FROM turns ORDER BY id DESC LIMIT ?",
-                    (limit,),
-                )
-                rows = cur.fetchall()
+                try:
+                    cur = self._conn.execute(
+                        "SELECT id, ts, agent, request, response "
+                        "FROM turns ORDER BY id DESC LIMIT ?",
+                        (limit,),
+                    )
+                    rows = cur.fetchall()
+                except sqlite3.Error as exc:
+                    logger.exception(
+                        "list_turns failed",
+                        extra={"db_path": self._path},
+                    )
+                    raise PersistenceError(str(exc)) from exc
+            logger.debug(
+                "list_turns ok",
+                extra={"count": len(rows), "db_path": self._path},
+            )
             return [
                 {
                     "id": row[0],
@@ -121,3 +147,4 @@ class SQLiteRepository:
         """Close the underlying connection."""
         with self._lock:
             self._conn.close()
+        logger.debug("SQLiteRepository closed", extra={"db_path": self._path})

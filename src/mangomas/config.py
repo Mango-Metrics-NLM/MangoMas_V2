@@ -56,7 +56,7 @@ DEFAULT_MEMORY_ENABLED: bool = False
 DEFAULT_SECRETS_PROVIDER: str = "env"
 # GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
 DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS: float = 5.0
-DEFAULT_GCP_SECRET_VERSION: str = "latest"  # noqa: S105  not a secret value
+DEFAULT_GCP_SECRET_VERSION: str = "latest"  # noqa: S105 — not a secret value
 
 # Maximum length of the ``detail`` field on structured error envelopes /
 # log records. Bounds untrusted exception text so that adapter exception

@@ -91,17 +91,15 @@ class ToolAgent:
             try:
                 result_output = await tool.execute(tool_call.arguments)
             except ToolExecutionError:
-                logger.error(
+                logger.exception(
                     "Tool raised ToolExecutionError",
                     extra={"tool_name": tool_call.tool},
-                    exc_info=True,
                 )
                 raise
             except Exception as exc:
-                logger.error(
+                logger.exception(
                     "Tool execution failed",
                     extra={"tool_name": tool_call.tool},
-                    exc_info=True,
                 )
                 raise ToolExecutionError(
                     f"Tool {tool_call.tool!r} raised: {exc}",

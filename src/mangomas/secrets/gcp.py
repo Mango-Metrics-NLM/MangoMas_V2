@@ -22,7 +22,7 @@ remains importable even when the optional ``gcp`` extra is absent.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:  # pragma: no cover
     from google.cloud import secretmanager
@@ -102,7 +102,7 @@ class GCPSecretManagerProvider:
             from google.cloud import secretmanager  # noqa: PLC0415
 
             self._client = secretmanager.SecretManagerServiceClient()
-        return self._client
+        return cast("secretmanager.SecretManagerServiceClient", self._client)
 
     def get(self, name: str) -> str | None:
         """Return the plaintext secret, or ``None`` on any failure.

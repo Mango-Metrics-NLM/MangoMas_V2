@@ -104,7 +104,7 @@ class PostgresRepository:
         async with self._init_lock:
             if self._pool is not None:  # pragma: no cover  -- race coverage
                 return self._pool
-            import asyncpg  # noqa: PLC0415  lazy import keeps optional extra optional
+            import asyncpg  # noqa: PLC0415
 
             async def _init_codecs(conn: asyncpg.Connection) -> None:
                 # Decode jsonb columns into dicts to match SQLiteRepository's
@@ -146,7 +146,7 @@ class PostgresRepository:
         response: AgentResponse,
     ) -> int:
         """Persist a single turn; returns the new row id."""
-        import asyncpg  # noqa: PLC0415  lazy import — see _ensure_pool
+        import asyncpg  # noqa: PLC0415
 
         pool = await self._ensure_pool()
         try:
@@ -181,7 +181,7 @@ class PostgresRepository:
 
     async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
         """Return the most recent turns, newest first."""
-        import asyncpg  # noqa: PLC0415  lazy import — see _ensure_pool
+        import asyncpg  # noqa: PLC0415
 
         pool = await self._ensure_pool()
         try:
