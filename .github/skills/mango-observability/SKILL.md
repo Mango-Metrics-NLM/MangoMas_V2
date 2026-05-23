@@ -94,6 +94,8 @@ from __future__ import annotations
 
 import logging
 
+from opentelemetry import trace
+
 from mangomas.telemetry import get_tracer
 
 logger = logging.getLogger(__name__)

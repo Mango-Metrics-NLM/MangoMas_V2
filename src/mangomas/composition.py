@@ -22,14 +22,18 @@ from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, SummarizeAge
 from mangomas.config import (
     AgentSettings,
     DBSettings,
+    HarnessSettings,
     LLMSettings,
     MemorySettings,
     Settings,
     get_settings,
 )
 from mangomas.core import Agent, AgentContext, Orchestrator
+from mangomas.core.agent import AgentRequest, AgentResponse
+from mangomas.core.loop import AcceptanceFn
 from mangomas.registry import Registry
 from mangomas.secrets import secrets_registry
+from mangomas.telemetry import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +113,39 @@ agent_registry.register("reviewer", lambda settings: ReviewerAgent(settings=sett
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+class _HarnessOrchestrator(Orchestrator):
+    """Orchestrator subclass that wraps dispatch paths in a harness-level span.
+
+    Engaged only when ``Settings.harness.enabled`` is ``True``. The parent
+    span sits above the existing ``orchestrator.*`` spans so operators can
+    filter or alert on agent invocations at the harness layer without
+    disturbing the in-orchestrator instrumentation.
+    """
+
+    def __init__(self, ctx: AgentContext, harness_cfg: HarnessSettings) -> None:
+        super().__init__(ctx)
+        self._harness_tracer = get_tracer(harness_cfg.metrics_namespace)
+        self._harness_cfg = harness_cfg
+
+    async def dispatch(
+        self,
+        agent_name: str,
+        request: AgentRequest,
+        *,
+        acceptance_fn: AcceptanceFn | None = None,
+        max_steps: int | None = None,
+    ) -> AgentResponse:
+        with self._harness_tracer.start_as_current_span("harness.agent_invoke") as span:
+            span.set_attribute("agent.name", agent_name)
+            span.set_attribute("harness.topology", "dispatch")
+            return await super().dispatch(
+                agent_name,
+                request,
+                acceptance_fn=acceptance_fn,
+                max_steps=max_steps,
+            )
+
+
 def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
     """Wire adapters → context → orchestrator → agents.
 
@@ -134,7 +171,14 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         logger.info("Memory enabled (provider=%s)", cfg.memory.provider)
 
     ctx = AgentContext(llm=llm, repo=repo, memory=memory)
-    orch = Orchestrator(ctx)
+    if cfg.harness.enabled:
+        orch: Orchestrator = _HarnessOrchestrator(ctx, cfg.harness)
+        logger.info(
+            "Harness telemetry enabled",
+            extra={"metrics_namespace": cfg.harness.metrics_namespace},
+        )
+    else:
+        orch = Orchestrator(ctx)
 
     for agent_name in agent_registry.available():
         factory = agent_registry.get(agent_name)

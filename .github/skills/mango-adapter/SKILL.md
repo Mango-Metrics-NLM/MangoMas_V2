@@ -87,8 +87,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from opentelemetry import trace
-
 from mangomas.adapters.llm.base import LLMClient
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 from mangomas.telemetry import get_tracer

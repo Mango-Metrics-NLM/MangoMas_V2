@@ -103,6 +103,52 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Claude Code harness enforcement layer** (Phase 3):
+  - `.claude/settings.json` with a permissions allowlist for the standard
+    test / lint / type-check / coverage / git read-only / gh read-only
+    commands; explicit deny for `rm -rf` and `git push --force`. Hooks:
+    SessionStart runs `scripts/harness_session_start.py` (warns on missing
+    `.venv` and unreachable LM Studio, never fails); PreToolUse on
+    Edit/Write runs `scripts/lint_agent_frontmatter.py
+    --check-protected-paths` against `src/mangomas/core/agent.py`,
+    `errors.py`, and `registry.py`, blocking edits that lack the
+    `# approved-breaking-change` marker; PostToolUse runs `ruff
+    check --fix` on the touched file; Stop runs `pytest --cov-fail-under=85
+    -q` before declaring done. All hook commands are best-effort
+    (`|| true`) so a failure never strands a session.
+  - `scripts/lint_agent_frontmatter.py` — Pydantic v2-validated linter for
+    every `.github/agents/**/*.agent.md` and `.github/skills/**/SKILL.md`.
+    Resolves `sub_agents:` slugs against on-disk child files; supports
+    `--check-protected-paths` mode for the PreToolUse hook. Module
+    constants (`AGENTS_GLOB`, `SKILLS_GLOB`, `PROTECTED_PATHS`,
+    `BREAKING_CHANGE_MARKER`, `EXIT_OK`/`EXIT_SCHEMA`/`EXIT_PROTECTED`)
+    keep magic literals out of the body.
+  - `scripts/harness_session_start.py` — SessionStart hook. Reuses
+    `mangomas.telemetry.configure_telemetry` and the existing httpx
+    dependency; emits structured logs in the
+    `MANGOMAS_HARNESS__METRICS_NAMESPACE` namespace.
+  - `HarnessSettings` group in `mangomas.config` (Pydantic v2 `BaseModel`
+    + module-level `DEFAULT_HARNESS_*` constants) with `enabled`,
+    `metrics_namespace`, `hook_log_level` fields. Defaults are
+    backward-compatible (`enabled=False`); env overrides via
+    `MANGOMAS_HARNESS__*`.
+  - `_HarnessOrchestrator` in `mangomas.composition` — additive
+    `Orchestrator` subclass that wraps `dispatch` in a
+    `harness.agent_invoke` parent span. Engaged only when
+    `cfg.harness.enabled` is `True`; zero overhead and zero behaviour
+    change otherwise (existing `orchestrator.dispatch` spans nest
+    underneath).
+  - CI: new `Frontmatter lint` step in the `lint` job and a new
+    `secret-scan` job using `gitleaks/gitleaks-action@v2`.
+  - Dev deps: `pyyaml>=6.0`, `types-PyYAML>=6.0` (consumed by the
+    frontmatter linter).
+  - Tests: `tests/test_lint_agent_frontmatter.py` (15 cases covering
+    schema, `sub_agents` resolution, and the protected-path hook),
+    `tests/test_harness_settings.py` (defaults + env overrides),
+    `tests/test_harness_session_start.py` (venv detection + LM Studio
+    probe success/failure paths), and 2 new `test_composition.py` cases
+    that confirm the wrapper engages only under `harness.enabled=True`.
+    Total +30 cases; per-package coverage floors all hold.
 - **Claude Code sub-agents (12 new files)** under `.github/agents/<parent>/`:
   architect → `protocol-auditor`, `layering-auditor`, `adr-author`; backend →
   `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`,

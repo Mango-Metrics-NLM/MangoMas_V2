@@ -52,3 +52,47 @@ DEFAULT_LOOP_MAX_STEPS: int = 1
 # ── Tool stubs ────────────────────────────────────────────────────────────────
 DEFAULT_TOOL_NAME: str = "echo"
 DEFAULT_TOOL_RESULT: str = "echo-result"
+
+# ── Harness frontmatter linter fixtures ───────────────────────────────────────
+VALID_AGENT_FRONTMATTER: str = """\
+---
+name: Example
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+tools: [read, search]
+model: Claude Sonnet 4.5 (copilot)
+argument-hint: "Pass an example argument"
+---
+
+Body content.
+"""
+
+VALID_SKILL_FRONTMATTER: str = """\
+---
+name: example-skill
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+argument-hint: "Describe what to do"
+---
+
+Body content.
+"""
+
+MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS: str = """\
+---
+name: BadExample
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+model: Claude Sonnet 4.5 (copilot)
+argument-hint: "Pass an example argument"
+---
+
+Body content.
+"""
+
+MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION: str = """\
+---
+name: bad-skill
+description: tooshort
+argument-hint: "Pass an example argument"
+---
+
+Body content.
+"""

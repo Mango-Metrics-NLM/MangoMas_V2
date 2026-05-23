@@ -45,6 +45,10 @@ DEFAULT_MEMORY_ENABLED: bool = False
 
 DEFAULT_SECRETS_PROVIDER: str = "env"
 
+DEFAULT_HARNESS_ENABLED: bool = False
+DEFAULT_HARNESS_METRICS_NAMESPACE: str = "mangomas.harness"
+DEFAULT_HARNESS_HOOK_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING"] = "INFO"
+
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
 
@@ -117,6 +121,18 @@ class MemorySettings(BaseModel):
     index_file: str = DEFAULT_MEMORY_INDEX
 
 
+class HarnessSettings(BaseModel):
+    """Claude Code harness telemetry and hook configuration.
+
+    All fields default to safe no-op values so existing callers behave
+    identically when this group is absent from the environment.
+    """
+
+    enabled: bool = DEFAULT_HARNESS_ENABLED
+    metrics_namespace: str = DEFAULT_HARNESS_METRICS_NAMESPACE
+    hook_log_level: Literal["DEBUG", "INFO", "WARNING"] = DEFAULT_HARNESS_HOOK_LOG_LEVEL
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -142,6 +158,7 @@ class Settings(BaseSettings):
     loop: LoopSettings = Field(default_factory=LoopSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
+    harness: HarnessSettings = Field(default_factory=HarnessSettings)
 
     # Set to True to enable entry-point-based agent discovery (Phase C).
     discovery_enabled: bool = False

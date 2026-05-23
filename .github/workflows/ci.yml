@@ -28,6 +28,9 @@ jobs:
       - name: Ruff format (check only)
         run: python -m ruff format --check src tests scripts
 
+      - name: Frontmatter lint
+        run: python scripts/lint_agent_frontmatter.py
+
       - name: mypy strict
         run: python -m mypy --strict src tests scripts
 
@@ -68,3 +71,16 @@ jobs:
         with:
           file: coverage.xml
           fail_ci_if_error: false
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
