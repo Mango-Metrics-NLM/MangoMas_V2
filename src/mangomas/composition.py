@@ -103,9 +103,7 @@ def _file_memory_factory(cfg: MemorySettings) -> FileMemoryRepository:
 def _vertex_factory(cfg: LLMSettings) -> Any:
     """Build a VertexLLMClient from LLMSettings; requires ``project``."""
     if not cfg.project:
-        raise ConfigError(
-            "MANGOMAS_LLM__PROJECT is required when MANGOMAS_LLM__PROVIDER='vertex'."
-        )
+        raise ConfigError("MANGOMAS_LLM__PROJECT is required when MANGOMAS_LLM__PROVIDER='vertex'.")
     from mangomas.adapters.llm.vertex import VertexLLMClient  # noqa: PLC0415
 
     return VertexLLMClient(
@@ -129,8 +127,7 @@ def _build_gcp_secrets_provider(cfg: SecretsSettings) -> Any:
     """Build a GCPSecretManagerProvider from SecretsSettings; requires ``project_id``."""
     if not cfg.project_id:
         raise ConfigError(
-            "MANGOMAS_SECRETS__PROJECT_ID is required when "
-            "MANGOMAS_SECRETS__PROVIDER='gcp'."
+            "MANGOMAS_SECRETS__PROJECT_ID is required when MANGOMAS_SECRETS__PROVIDER='gcp'."
         )
     from mangomas.secrets.gcp import GCPSecretManagerProvider  # noqa: PLC0415
 

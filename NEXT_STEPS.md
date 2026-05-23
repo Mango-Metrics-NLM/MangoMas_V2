@@ -10,8 +10,31 @@ extension, backwards-compatible contracts.
 
 ## Near term
 
-_(All near-term workstreams from v0.1.0 landed in v0.2.0 — see "Done in v0.2.0"
-below. Next near-term item is the Vertex AI provider — see "Mid term".)_
+_(The three GCP-target items from "Mid term" landed in v0.3.0 — see
+"Done in v0.3.0" below. Next near-term items are the Cloud Logging /
+Cloud Trace exporter swap and the Cloud Run deployment pipeline,
+promoted from "Mid term".)_
+
+### Cloud Logging + Cloud Trace exporter swap
+
+Add a Cloud Trace OTLP exporter behind the existing
+`configure_telemetry()` entry point. Activate via a new
+`MANGOMAS_TELEMETRY__EXPORTER=gcp` option. `MANGOMAS_LOG__FORMAT=json`
+is already supported.
+
+### Cloud Run deployment pipeline
+
+Add a `deploy/` directory with:
+- Cloud Run service YAML (or Terraform module).
+- GitHub Actions workflow step for image push to Artifact Registry.
+- Environment-variable contract documented for Cloud Run service configuration.
+
+### SecretsSettings.strict mode (ADR-002 follow-up)
+
+Add `SecretsSettings.strict: bool = False`; when set, cloud secrets
+backends raise a new `SecretsResolutionError` instead of returning
+`None` on auth/permission/timeout failures. Preserves the local-dev
+contract by default; gives operators an opt-in "fail loud" mode.
 
 ---
 
@@ -56,42 +79,49 @@ and echoes it on the outgoing response.
 
 ---
 
-## Mid term (GCP swap-in — see ADR-001)
+## Done in v0.3.0 (GCP swap-in — see ADR-001)
 
-These items implement the cloud-target swap matrix from
-[ADR-001](docs/adr/0001-cloud-targets.md).  Each boundary is swapped
-independently through the existing registry mechanism; no core changes.
+The three remaining GCP swap-matrix entries from ADR-001 shipped
+together. Each is selectable via Settings; no core changes were
+required.
 
 ### Vertex AI LLM provider
 
-Implement `VertexLLMClient` satisfying `LLMClient` + `StreamingLLMClient`.
-Register as `llm_registry.register("vertex", ...)`.
-Activate via `MANGOMAS_LLM__PROVIDER=vertex`.
+- [x] `VertexLLMClient` (`src/mangomas/adapters/llm/vertex.py`)
+      satisfies `LLMClient`, `StreamingLLMClient`, `PingableLLMClient`.
+      Registered as `llm_registry.register("vertex", _vertex_factory)`.
+      Activate via `MANGOMAS_LLM__PROVIDER=vertex` +
+      `MANGOMAS_LLM__PROJECT=...`. Identity via ADC / Workload Identity
+      Federation. 6-scenario E2E suite under `tests/vertex/` mirrors
+      `tests/lmstudio/` exactly. See `docs/testing/vertex-e2e.md`.
 
 ### Cloud SQL / Postgres storage provider
 
-Implement `PostgresRepository` satisfying `TurnRepository`.
-Register as `_storage_registry.register("postgres", ...)`.
-Activate via `MANGOMAS_DB__PROVIDER=postgres`.
+- [x] `PostgresRepository`
+      (`src/mangomas/adapters/storage/postgres.py`) satisfies
+      `TurnRepository` and the new `AsyncCloseableRepository` extension
+      protocol. Backed by `asyncpg` with a connection pool — no
+      `threading.Lock`. Registered as
+      `_storage_registry.register("postgres", _postgres_factory)`.
+      Activate via `MANGOMAS_DB__PROVIDER=postgres` +
+      `MANGOMAS_DB__URL=postgresql://...`. testcontainers-backed
+      integration suite under `tests/postgres/` gated by
+      `RUN_POSTGRES=1`. See `docs/testing/postgres-integration.md`.
 
 ### Cloud Secret Manager provider
 
-Implement the `SecretsProvider` abstraction above backed by Google Secret
-Manager.  Add `MANGOMAS_SECRETS__PROVIDER=gcp` activation path.
+- [x] `GCPSecretManagerProvider` (`src/mangomas/secrets/gcp.py`)
+      satisfies `SecretsProvider`. Lazily registered in
+      `secrets_registry` at orchestrator-build time. Activate via
+      `MANGOMAS_SECRETS__PROVIDER=gcp` +
+      `MANGOMAS_SECRETS__PROJECT_ID=...`. Collapses all failure modes
+      into `None` per [ADR-002](docs/adr/0002-secrets-provider-error-semantics.md);
+      operators MUST alert on
+      `logger=mangomas.secrets.gcp severity=ERROR`.
 
-### Cloud Logging + Cloud Trace exporter swap
-
-Add a structured JSON log formatter and a Cloud Trace OTLP exporter behind the
-existing `configure_telemetry()` entry point.  Swap via
-`MANGOMAS_LOG__FORMAT=json` (already supported) and a new
-`MANGOMAS_TELEMETRY__EXPORTER=gcp` option.
-
-### Cloud Run deployment pipeline
-
-Add a `deploy/` directory with:
-- Cloud Run service YAML (or Terraform module).
-- GitHub Actions workflow step for image push to Artifact Registry.
-- Environment-variable contract documented for Cloud Run service configuration.
+See [`docs/architecture/cloud-providers.md`](docs/architecture/cloud-providers.md)
+for the full configuration matrix and the lazy-import / ambient-identity
+pattern shared across all three.
 
 ---
 

@@ -21,6 +21,7 @@ def runner() -> CliRunner:
 @pytest.fixture(autouse=True)
 def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) -> None:
     monkeypatch.setattr(cli_main, "_build", lambda: orchestrator)
+
     # In production each CLI invocation spawns a fresh process; the test
     # scaffold shares ONE orchestrator across multiple ``runner.invoke``
     # calls (so ``history`` can see the row ``chat`` persisted). Disable

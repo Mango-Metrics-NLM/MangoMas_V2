@@ -101,6 +101,123 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-23
+
+Closes the GCP swap-matrix entries from ADR-001: Vertex AI LLM,
+Cloud SQL Postgres storage, and GCP Secret Manager all ship together
+behind the existing registry + protocol seams. No core changes; every
+provider is selectable via `Settings`. Identity throughout is
+Application Default Credentials / Workload Identity Federation only —
+service-account JSON keys are not accepted by code or configuration.
+
+### Added
+
+- **Vertex AI LLM provider** (`src/mangomas/adapters/llm/vertex.py`):
+  `VertexLLMClient` satisfies `LLMClient`, `StreamingLLMClient`, and
+  `PingableLLMClient`. Backed by `google-cloud-aiplatform` + Gemini.
+  The sync SDK is wrapped in `asyncio.to_thread`; all SDK imports
+  live inside function bodies so the module stays importable without
+  the optional `vertex` extra. Activate via
+  `MANGOMAS_LLM__PROVIDER=vertex` + `MANGOMAS_LLM__PROJECT=...`.
+  6-scenario E2E suite under `tests/vertex/` mirrors the LM Studio
+  scenario plan; gated on `RUN_VERTEX=1`. See
+  `docs/testing/vertex-e2e.md`.
+- **Cloud SQL / Postgres storage provider**
+  (`src/mangomas/adapters/storage/postgres.py`): `PostgresRepository`
+  satisfies `TurnRepository` and the new `AsyncCloseableRepository`
+  extension. Backed by `asyncpg` with a connection pool — no
+  `threading.Lock` (native async). Lazy pool creation preserves the
+  existing `_sqlite_factory(cfg: DBSettings) -> SQLiteRepository`
+  factory shape. A JSONB codec is registered on every connection so
+  `list_turns` returns dicts (matching SQLite's row shape). Activate
+  via `MANGOMAS_DB__PROVIDER=postgres` +
+  `MANGOMAS_DB__URL=postgresql://...`. testcontainers-driven
+  integration suite under `tests/postgres/` gated on `RUN_POSTGRES=1`.
+  See `docs/testing/postgres-integration.md`.
+- **GCP Secret Manager provider** (`src/mangomas/secrets/gcp.py`):
+  `GCPSecretManagerProvider` satisfies `SecretsProvider`. Supports
+  both short ids (resolved against
+  `MANGOMAS_SECRETS__PROJECT_ID` + `MANGOMAS_SECRETS__DEFAULT_VERSION`)
+  and full `projects/.../secrets/.../versions/...` resource paths. All
+  failure modes collapse to `None` per ADR-002 so
+  `_resolve_llm_secrets` continues to fall back to the inline `api_key`
+  in local dev. Activate via `MANGOMAS_SECRETS__PROVIDER=gcp`.
+- **`AsyncCloseableRepository` extension protocol**
+  (`src/mangomas/adapters/storage/base.py`): adapters with async-pool
+  teardown expose `aclose()`; the FastAPI lifespan and CLI close path
+  dispatch on its presence. SQLite continues to satisfy the bare
+  `TurnRepository` protocol unchanged.
+- **CLI close path**: `agents`, `chat`, and `history` commands now
+  wrap their work in `try/finally: asyncio.run(_close_orchestrator(orch))`
+  so asyncpg pools don't leak at CLI process exit.
+- **`tests/test_sqlite_concurrency.py`**: 50-way `asyncio.gather`
+  fan-out of `save_turn` against in-memory SQLite. Locks the v0.1.0
+  `threading.Lock` fix that previously had no direct regression test.
+  Runs in the default suite.
+- **`tests/postgres/test_concurrency.py`**: symmetric 50-way fan-out
+  test against `PostgresRepository` — pins the asyncpg pool's
+  concurrent-write contract. Gated on `RUN_POSTGRES=1`.
+- **ADR-002** (`docs/adr/0002-secrets-provider-error-semantics.md`):
+  records the choice to collapse cloud secrets backend failures into
+  `None` rather than raise, with a v0.4.0 follow-up for a
+  `SecretsSettings.strict` opt-in.
+- **`docs/architecture/cloud-providers.md`**: single combined page
+  covering Vertex / Postgres / GCP Secret Manager — env-var contracts,
+  registration cites, ambient-identity guidance, the rule-of-three
+  rationale for not extracting a shared lazy-SDK base class yet.
+- **New optional extras** in `pyproject.toml`: `vertex`, `postgres`,
+  `gcp`, and meta-extra `cloud`. `dev` adds `asyncpg` and
+  `testcontainers` so postgres unit tests and the testcontainer suite
+  collect cleanly; vertex and gcp SDKs stay out of `dev` because unit
+  tests mock at the constructor boundary.
+- **New pytest markers**: `postgres`, `vertex`, `gcp_secrets` and
+  corresponding `RUN_*` env-var gates in
+  `tests/conftest.py::pytest_collection_modifyitems`.
+- **Postgres compose profile** in `docker-compose.yml`: opt-in via
+  `docker compose --profile postgres up -d postgres`; credentials
+  local-only.
+
+### Changed
+
+- `LLMSettings` gains optional `project`, `location`,
+  `max_output_tokens` for Vertex (defaults preserve LM Studio behaviour).
+- `DBSettings` gains optional `pool_min`, `pool_max`,
+  `connect_timeout_seconds`, `statement_timeout_seconds` for Postgres
+  (defaults preserve SQLite behaviour).
+- `SecretsSettings` gains optional `project_id`, `timeout_seconds`,
+  `default_version` for GCP (defaults preserve env-backend behaviour).
+- FastAPI lifespan and CLI close path dispatch on
+  `hasattr(repo, "aclose")` — backwards-compatible with
+  `SQLiteRepository`'s sync `close()`.
+- `build_orchestrator` log line gains a `secrets_provider` field.
+- `pyproject.toml`: version bumped to `0.3.0`; mypy
+  `ignore_missing_imports` extended to cover `google.*`, `vertexai.*`,
+  `asyncpg.*`, `testcontainers.*`. `tests/*` per-file ruff ignore
+  extends to `SLF001` so tests can introspect adapter internals.
+
+### Removed
+
+- `src/mangomas/api/correlation.py` re-export shim (the
+  backwards-compat shim from v0.2.0; the single internal consumer
+  migrated to `mangomas.correlation` direct imports).
+- `tests/conftest.py` fakes re-export (the one-cycle migration window
+  from v0.2.0; `tests/test_agent.py` migrated to direct
+  `tests.fakes` imports).
+
+### Security / Operations
+
+- All cloud adapters consume **ambient identity only** (ADC /
+  Workload Identity Federation). Service-account JSON keys are not
+  accepted by configuration, env, or code.
+- Secret values are **never** logged. Cloud secret resource paths are
+  truncated to the short id in `extra={}` log fields. Postgres DSNs
+  are **never** logged in full; only the parsed host appears.
+- ADR-002 documents that rotated secrets can silently degrade to an
+  inline `api_key`; operators MUST alert on
+  `logger=mangomas.secrets.gcp severity=ERROR`.
+
+## [0.2.0] — 2026-05-13
+
 ### Added
 
 - **LM Studio E2E scenarios 2–6** under `tests/lmstudio/`: chat invoke happy path,
@@ -178,4 +295,6 @@ Versioning: [Semantic Versioning](https://semver.org/).
   can call `get`/`register` under the same lock without deadlocking.
 
 <!-- next release goes above this line -->
+[0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
+[0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0
