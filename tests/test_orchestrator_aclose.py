@@ -218,3 +218,99 @@ async def test_aclose_latches_closed_flag_after_failure() -> None:
     repo.closed = False
     await orch.aclose()  # must not raise
     assert repo.closed is False, "second aclose() must skip all hooks after a failed first call"
+
+
+# ── Per-hook exception isolation: repo and memory branches ───────────────────
+
+
+@dataclass
+class _FailingSyncCloseRepo:
+    """Repo stub whose sync ``close`` raises — exercises repo except branch."""
+
+    closed_attempted: bool = False
+
+    async def save_turn(self, *_args: object, **_kw: object) -> int:
+        return 0
+
+    async def list_turns(self, limit: int = 50) -> list[dict[str, object]]:  # noqa: ARG002
+        return []
+
+    def close(self) -> None:
+        self.closed_attempted = True
+        raise _AcloseBoom("simulated sync repo close failure")
+
+
+@dataclass
+class _FailingAsyncCloseRepo:
+    """Repo stub whose async ``aclose`` raises — exercises repo except branch."""
+
+    closed_attempted: bool = False
+
+    async def save_turn(self, *_args: object, **_kw: object) -> int:
+        return 0
+
+    async def list_turns(self, limit: int = 50) -> list[dict[str, object]]:  # noqa: ARG002
+        return []
+
+    async def aclose(self) -> None:
+        self.closed_attempted = True
+        raise _AcloseBoom("simulated async repo close failure")
+
+
+@dataclass
+class _FailingMemory:
+    """Memory stub whose ``close`` raises — exercises memory except branch."""
+
+    closed_attempted: bool = False
+
+    async def write_episodic(self, content: str, *, prefix: str = "") -> str:  # noqa: ARG002
+        return ""
+
+    async def read_index(self) -> str:
+        return ""
+
+    async def append_index(self, entry: str) -> None:  # noqa: ARG002
+        return None
+
+    def close(self) -> None:
+        self.closed_attempted = True
+        raise _AcloseBoom("simulated memory close failure")
+
+
+async def test_aclose_continues_when_repo_sync_close_raises() -> None:
+    """Repo sync close failure must not block memory close, and must re-raise."""
+    repo = _FailingSyncCloseRepo()
+    memory = FakeMemoryRepository()
+    orch = _orch_with(repo=repo, memory=memory)
+
+    with pytest.raises(_AcloseBoom):
+        await orch.aclose()
+
+    assert repo.closed_attempted is True
+    assert memory.closed is True, "memory must close even when repo close failed"
+
+
+async def test_aclose_continues_when_repo_aclose_raises() -> None:
+    """Repo async aclose failure must not block memory close, and must re-raise."""
+    repo = _FailingAsyncCloseRepo()
+    memory = FakeMemoryRepository()
+    orch = _orch_with(repo=repo, memory=memory)
+
+    with pytest.raises(_AcloseBoom):
+        await orch.aclose()
+
+    assert repo.closed_attempted is True
+    assert memory.closed is True, "memory must close even when repo aclose failed"
+
+
+async def test_aclose_captures_memory_close_failure() -> None:
+    """Memory close failure is captured and re-raised after every hook ran."""
+    llm = FakeLLM()
+    memory = _FailingMemory()
+    orch = _orch_with(llm=llm, memory=memory)
+
+    with pytest.raises(_AcloseBoom):
+        await orch.aclose()
+
+    assert llm.closed is True, "LLM must close before memory close failure"
+    assert memory.closed_attempted is True
