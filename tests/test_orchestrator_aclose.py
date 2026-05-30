@@ -16,12 +16,19 @@ point shares one tested path. These tests pin down each branch:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import Message
-from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository
+from tests.fakes import (
+    FakeEmbeddingClient,
+    FakeLLM,
+    FakeMemoryRepository,
+    FakeRepository,
+    FakeVectorStore,
+)
 
 
 class _AcloseBoom(Exception):
@@ -85,14 +92,22 @@ class _LLMWithoutAclose:
 
 def _orch_with(
     *,
-    llm: object | None = None,
-    repo: object | None = None,
-    memory: object | None = None,
+    llm: Any = None,
+    repo: Any = None,
+    memory: Any = None,
+    embeddings: Any = None,
+    vector_store: Any = None,
 ) -> Orchestrator:
     """Build an Orchestrator with the given context shape; defaults use a fresh FakeLLM."""
     effective_llm = llm if llm is not None else FakeLLM()
     return Orchestrator(
-        AgentContext(llm=effective_llm, repo=repo, memory=memory)  # type: ignore[arg-type]
+        AgentContext(
+            llm=effective_llm,
+            repo=repo,
+            memory=memory,
+            embeddings=embeddings,
+            vector_store=vector_store,
+        )
     )
 
 
@@ -148,6 +163,132 @@ async def test_aclose_closes_memory_when_present() -> None:
     await orch.aclose()
 
     assert memory.closed is True
+
+
+# ── Embeddings branch ────────────────────────────────────────────────────────
+
+
+@dataclass
+class _EmbeddingsWithoutAclose:
+    """Embeddings stub that does NOT expose ``aclose`` — tests the skip branch."""
+
+    async def embed(self, text: str) -> list[float]:  # noqa: ARG002
+        return [0.0]
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0] for _ in texts]
+
+
+@dataclass
+class _FailingAcloseEmbeddings:
+    """Embeddings stub whose ``aclose`` raises — exercises the embeddings except branch."""
+
+    closed_attempted: bool = False
+
+    async def embed(self, text: str) -> list[float]:  # noqa: ARG002
+        return [0.0]
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0] for _ in texts]
+
+    async def aclose(self) -> None:
+        self.closed_attempted = True
+        raise _AcloseBoom("simulated embeddings teardown failure")
+
+
+async def test_aclose_closes_embeddings_when_present() -> None:
+    embeddings = FakeEmbeddingClient()
+    orch = _orch_with(embeddings=embeddings)
+
+    await orch.aclose()
+
+    assert embeddings.closed is True
+
+
+async def test_aclose_skips_embeddings_without_aclose_attribute() -> None:
+    orch = _orch_with(embeddings=_EmbeddingsWithoutAclose())
+
+    await orch.aclose()  # must not raise
+
+
+async def test_aclose_captures_embeddings_close_failure() -> None:
+    """Embeddings close failure is captured; memory still closes; error re-raised."""
+    llm = FakeLLM()
+    embeddings = _FailingAcloseEmbeddings()
+    memory = FakeMemoryRepository()
+    orch = _orch_with(llm=llm, memory=memory, embeddings=embeddings)
+
+    with pytest.raises(_AcloseBoom):
+        await orch.aclose()
+
+    assert llm.closed is True
+    assert memory.closed is True, "memory must close before the embeddings failure re-raises"
+    assert embeddings.closed_attempted is True
+
+
+# ── Vector store branch ──────────────────────────────────────────────────────
+
+
+@dataclass
+class _VectorStoreWithoutAclose:
+    """Vector store stub that does NOT expose ``aclose`` — tests the skip branch."""
+
+    async def upsert(self, **_kw: object) -> None:
+        return None
+
+    async def query(self, **_kw: object) -> list[object]:
+        return []
+
+    async def delete_by_source(self, source: str) -> None:  # noqa: ARG002
+        return None
+
+
+@dataclass
+class _FailingAcloseVectorStore:
+    """Vector store stub whose ``aclose`` raises — exercises the except branch."""
+
+    closed_attempted: bool = False
+
+    async def upsert(self, **_kw: object) -> None:
+        return None
+
+    async def query(self, **_kw: object) -> list[object]:
+        return []
+
+    async def delete_by_source(self, source: str) -> None:  # noqa: ARG002
+        return None
+
+    async def aclose(self) -> None:
+        self.closed_attempted = True
+        raise _AcloseBoom("simulated vector store teardown failure")
+
+
+async def test_aclose_closes_vector_store_when_present() -> None:
+    vector_store = FakeVectorStore()
+    orch = _orch_with(vector_store=vector_store)
+
+    await orch.aclose()
+
+    assert vector_store.closed is True
+
+
+async def test_aclose_skips_vector_store_without_aclose_attribute() -> None:
+    orch = _orch_with(vector_store=_VectorStoreWithoutAclose())
+
+    await orch.aclose()  # must not raise
+
+
+async def test_aclose_captures_vector_store_close_failure() -> None:
+    """Vector store close failure is captured; LLM still closes; error re-raised."""
+    llm = FakeLLM()
+    vector_store = _FailingAcloseVectorStore()
+    orch = _orch_with(llm=llm, vector_store=vector_store)
+
+    with pytest.raises(_AcloseBoom):
+        await orch.aclose()
+
+    assert llm.closed is True
+    assert vector_store.closed_attempted is True
 
 
 # ── No-op branches ───────────────────────────────────────────────────────────

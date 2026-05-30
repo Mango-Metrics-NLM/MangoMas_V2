@@ -52,6 +52,17 @@ class EmbeddingScorer:
             raise ValueError(f"threshold must be in [0.0, 1.0]; got {threshold}")
         self._threshold = threshold
 
+    @staticmethod
+    def _resolve_embedder(context: ScorerContext | None) -> _Embeddable | None:
+        """Prefer the dedicated embeddings client; fall back to an embed-capable LLM."""
+        if context is None:
+            return None
+        if isinstance(context.embeddings, _Embeddable):
+            return context.embeddings
+        if isinstance(context.llm, _Embeddable):
+            return context.llm
+        return None
+
     async def score(
         self,
         prediction: str,
@@ -59,22 +70,23 @@ class EmbeddingScorer:
         *,
         context: ScorerContext | None = None,
     ) -> ScoreResult:
-        if context is None or context.llm is None or not isinstance(context.llm, _Embeddable):
+        embedder = self._resolve_embedder(context)
+        if embedder is None:
             logger.warning(
                 "Embedding scorer unavailable",
                 extra={
                     "event": "embedding_scorer_unavailable",
                     "scorer": self.name,
-                    "reason": "configured LLMClient does not expose .embed()",
+                    "reason": "no embeddings client and configured LLMClient lacks .embed()",
                 },
             )
             raise NotImplementedError(
-                "EmbeddingScorer requires an LLM with .embed(); none of the "
-                "current providers expose this surface — see "
-                "docs/eval/harness.md#known-gaps."
+                "EmbeddingScorer requires an embeddings client (or an LLM with "
+                ".embed()); none is configured — enable MANGOMAS_EMBEDDINGS__ENABLED "
+                "or see docs/eval/harness.md#known-gaps."
             )
-        pred_vec = await context.llm.embed(prediction)
-        exp_vec = await context.llm.embed(expected)
+        pred_vec = await embedder.embed(prediction)
+        exp_vec = await embedder.embed(expected)
         # Map cosine [-1, 1] to [0, 1] so it fits the ScoreResult contract.
         cosine = _cosine_similarity(pred_vec, exp_vec)
         score = (cosine + 1.0) / 2.0

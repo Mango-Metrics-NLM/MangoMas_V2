@@ -53,6 +53,16 @@ vertex = [
 postgres = [
     "asyncpg>=0.29",
 ]
+# In-process embeddings — install with `pip install 'mangomas[embeddings-local]'`.
+# The sentence-transformers backend lazy-imports the SDK so it stays optional.
+embeddings-local = [
+    "sentence-transformers>=2.7",
+]
+# Retrieval-augmented generation — install with `pip install 'mangomas[rag]'`.
+# The Chroma vector store lazy-imports chromadb so it stays optional.
+rag = [
+    "chromadb>=0.5",
+]
 # GCP Secret Manager provider — install with `pip install 'mangomas[gcp]'`.
 gcp = [
     "google-cloud-secret-manager>=2.20",
@@ -109,6 +119,8 @@ module = [
     "google.auth.*",
     "vertexai",
     "vertexai.*",
+    "chromadb",
+    "chromadb.*",
 ]
 ignore_missing_imports = true
 
@@ -150,6 +162,8 @@ markers = [
     "postgres: tests that require a Postgres instance (testcontainers or live)",
     "vertex: tests that require a reachable Vertex AI project (ADC + project_id)",
     "gcp_secrets: tests that require GCP Secret Manager access (ADC + project)",
+    "embeddings_local: tests that require the sentence-transformers extra installed",
+    "rag: tests that require the chromadb extra installed",
 ]
 
 [tool.coverage.run]

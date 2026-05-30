@@ -135,6 +135,64 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Retrieval-augmented generation (RAG)
+
+The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the
+vector store are both gated `enabled=False` by default, so existing
+deployments and the test suite see no behaviour change. This completes the
+shipped-but-stubbed `EmbeddingScorer` (it raised `NotImplementedError` because
+no provider exposed `.embed()`) and gives agents retrieval context via a
+`RetrievalTool` auto-discovered through the existing `ToolAgent`.
+
+- **`EmbeddingClient` seam** (`adapters/embeddings/base.py`,
+  `@runtime_checkable`): `embed` / `embed_batch` / `aclose`. Three backends —
+  `LMStudioEmbeddingClient` (httpx POST `{base_url}/embeddings`),
+  `SentenceTransformersEmbeddingClient` (in-process, lazy SDK, off-thread
+  `encode`), and `VertexEmbeddingClient` (`text-embedding-004`, **ADC only —
+  no service-account-JSON path**). All three delegate `embed` to
+  `embed_batch([text])[0]`; `list[float]` everywhere (no numpy).
+- **`VectorStoreRepository` seam** (`adapters/vector/base.py`): primitives only
+  (`upsert` / `query` / `delete_by_source` / `aclose` + `VectorMatch`), so the
+  vector layer never imports `rag/`. `ChromaVectorStore` forces
+  `metadata={"hnsw:space": "cosine"}` and maps cosine distance → similarity as
+  `1 - distance / 2` (`_MAX_COSINE_DISTANCE`), keeping scores in `[0, 1]` — a
+  plain `1 - distance` would go negative in Chroma's default L2 space.
+- **`rag/` domain package**: `chunk_text` word-window chunker (pure fn),
+  `load_documents` (`*.md`/`*.txt`, off-thread), `IngestionPipeline`
+  (`delete_by_source` → chunk → `embed_batch` in `batch_size` slices →
+  `upsert`, with stable `{source}#{index}` ids so re-ingest leaves no orphan
+  chunks), and `Retriever` + `RetrievalTool` (satisfies the `Tool` protocol).
+- **Shared adapter error helpers** (`adapters/_http_errors.py`,
+  `adapters/_vertex_errors.py`): the httpx → typed-error translation and the
+  Vertex qualname error matrix are now single reusable modules consumed by both
+  the chat and embedding adapters, removing cross-adapter private imports and a
+  duplicated `[:200]` literal (now `DEFAULT_ERROR_DETAIL_TRUNCATE`).
+- **Config**: `EmbeddingSettings` (`MANGOMAS_EMBEDDINGS__*`), `VectorSettings`
+  (`MANGOMAS_VECTOR__*`), `RagSettings` (`MANGOMAS_RAG__*`) with `DEFAULT_*`
+  constants. `RagSettings` validates `1 <= chunk_words`,
+  `0 <= chunk_overlap < chunk_words`, `0 <= min_chunk_words` at construction so
+  a bad env value fails fast rather than deep in the pipeline.
+- **Wiring**: `AgentContext.embeddings` / `AgentContext.vector_store` fields
+  (default `None`, TYPE_CHECKING imports); `embedding_registry` +
+  `_vector_registry` in `composition.py`; `Orchestrator.aclose()` closes both
+  new components (fault-tolerant, idempotent) so the LM Studio httpx client and
+  Chroma client never leak per CLI run. When both are present, a `Retriever` +
+  `RetrievalTool` is registered into `ctx.tools` for `ToolAgent` auto-discovery.
+- **CLI**: `mangomas rag ingest <path>` and `mangomas rag query <text>` (both
+  exit `2` with a clear message when RAG is disabled).
+- **Eval**: `ScorerContext.embeddings`; `EmbeddingScorer` now resolves a real
+  provider (falls back to `context.llm` when it exposes `.embed()`), only
+  raising `NotImplementedError` when neither is available.
+- **Packaging / tests**: `embeddings-local` (sentence-transformers) and `rag`
+  (chromadb) optional extras; Vertex embeddings reuse the `vertex` extra.
+  `embeddings_local` / `rag` pytest markers + `RUN_EMBEDDINGS_LOCAL` / `RUN_RAG`
+  gates. New unit suites under `tests/adapters/` and `tests/rag/`, CLI tests in
+  `tests/test_cli_rag.py`, and a new **95 %** `rag` per-package coverage floor in
+  `scripts/check_coverage.py` (adapters caught by the existing 85 % floor).
+- **Docs**: `mango-rag` skill (`.github/skills/mango-rag/SKILL.md`); CLAUDE.md,
+  README, and C4 component/container diagrams document the embeddings/vector/rag
+  seams; NEXT_STEPS graduates the "embedding-capable provider" long-term item.
+
 ### Added — Claude Code enterprise harness
 
 The first end-to-end Claude Code harness lands as a non-breaking,

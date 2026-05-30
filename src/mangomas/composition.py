@@ -16,22 +16,26 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeAlias
 
+from mangomas.adapters.embeddings import LMStudioEmbeddingClient
 from mangomas.adapters.llm import LMStudioClient, VertexClient
 from mangomas.adapters.storage import FileMemoryRepository, SQLiteRepository
 from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, SummarizeAgent, ToolAgent
 from mangomas.config import (
     AgentSettings,
     DBSettings,
+    EmbeddingSettings,
     HarnessSettings,
     LLMSettings,
     MemorySettings,
     SecretsSettings,
     Settings,
+    VectorSettings,
     get_settings,
 )
 from mangomas.core import Agent, AgentContext, Orchestrator
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.core.loop import AcceptanceFn
+from mangomas.core.tools import ToolRegistry
 from mangomas.errors import ConfigError
 from mangomas.registry import Registry
 from mangomas.secrets import secrets_registry
@@ -51,6 +55,12 @@ logger = logging.getLogger(__name__)
 llm_registry: Registry[Callable[[LLMSettings], Any]] = Registry("llm")
 _storage_registry: Registry[Callable[[DBSettings], Any]] = Registry("storage")
 _memory_registry: Registry[Callable[[MemorySettings], Any]] = Registry("memory")
+# Exported (like ``llm_registry``) so tests can swap an embedding factory via
+# ``Registry.scoped`` for the duration of a block.
+embedding_registry: Registry[Callable[[EmbeddingSettings], Any]] = Registry("embeddings")
+# Private — the only backend (chroma) lazy-imports its SDK, so tests swap the
+# factory via ``_vector_registry.scoped`` rather than installing the extra.
+_vector_registry: Registry[Callable[[VectorSettings], Any]] = Registry("vector")
 AgentFactory: TypeAlias = Callable[[AgentSettings | None], Agent]
 agent_registry: Registry[AgentFactory] = Registry("agent")
 
@@ -111,6 +121,65 @@ def _vertex_factory(cfg: LLMSettings) -> VertexClient:
     )
 
 
+def _lmstudio_embedding_factory(cfg: EmbeddingSettings) -> LMStudioEmbeddingClient:
+    return LMStudioEmbeddingClient(
+        base_url=cfg.base_url,
+        model=cfg.model,
+        api_key=cfg.api_key,
+        timeout_seconds=cfg.timeout_seconds,
+    )
+
+
+def _sentence_transformers_embedding_factory(cfg: EmbeddingSettings) -> Any:
+    """Build a SentenceTransformersEmbeddingClient (lazy heavy import inside)."""
+    from mangomas.adapters.embeddings.sentence_transformers import (  # noqa: PLC0415
+        SentenceTransformersEmbeddingClient,
+    )
+
+    return SentenceTransformersEmbeddingClient(model=cfg.model)
+
+
+def _vertex_embedding_factory(cfg: EmbeddingSettings) -> Any:
+    """Build a VertexEmbeddingClient (ADC auth; SDK deferred inside the client)."""
+    from mangomas.adapters.embeddings.vertex import VertexEmbeddingClient  # noqa: PLC0415
+
+    return VertexEmbeddingClient(
+        project_id=cfg.project_id,
+        location=cfg.location,
+        model=cfg.model,
+    )
+
+
+def _chroma_vector_factory(cfg: VectorSettings) -> Any:
+    """Build a ChromaVectorStore (lazy chromadb import inside the client)."""
+    from mangomas.adapters.vector.chroma import ChromaVectorStore  # noqa: PLC0415
+
+    return ChromaVectorStore(persist_dir=cfg.persist_dir, collection_name=cfg.collection)
+
+
+def _build_rag_tools(
+    embeddings: Any | None,
+    vector_store: Any | None,
+    top_k: int,
+) -> ToolRegistry | None:
+    """Return a ToolRegistry holding a RetrievalTool, or ``None`` if RAG is off.
+
+    Requires *both* an embedding client and a vector store — retrieval needs to
+    embed the query and search the index. When either is absent, no tools are
+    wired and ``ctx.tools`` stays ``None`` (unchanged default behaviour).
+    """
+    if embeddings is None or vector_store is None:
+        return None
+    from mangomas.rag import RetrievalTool, Retriever  # noqa: PLC0415
+
+    retriever = Retriever(embeddings=embeddings, vector_store=vector_store, top_k=top_k)
+    tool = RetrievalTool(retriever)
+    registry: ToolRegistry = Registry("tool")
+    registry.register(tool.name, tool)
+    logger.info("RAG retrieval tool registered (top_k=%d)", top_k)
+    return registry
+
+
 def _sqlite_factory(cfg: DBSettings) -> SQLiteRepository:
     return SQLiteRepository(cfg.url)
 
@@ -154,6 +223,10 @@ llm_registry.register("vertex", _vertex_factory)
 _storage_registry.register("sqlite", _sqlite_factory)
 _storage_registry.register("postgres", _postgres_factory)
 _memory_registry.register("file", _file_memory_factory)
+embedding_registry.register("lmstudio", _lmstudio_embedding_factory)
+embedding_registry.register("sentence_transformers", _sentence_transformers_embedding_factory)
+embedding_registry.register("vertex", _vertex_embedding_factory)
+_vector_registry.register("chroma", _chroma_vector_factory)
 
 # Seed the default in-process agents.  Optional entry-point discovery can add to
 # this registry later without changing build_orchestrator().
@@ -269,7 +342,28 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         memory = _memory_registry.get(cfg.memory.provider)(cfg.memory)
         logger.info("Memory enabled (provider=%s)", cfg.memory.provider)
 
-    ctx = AgentContext(llm=llm, repo=repo, memory=memory)
+    embeddings = None
+    if cfg.embeddings.enabled:
+        embeddings = embedding_registry.get(cfg.embeddings.provider)(cfg.embeddings)
+        logger.info("Embeddings enabled (provider=%s)", cfg.embeddings.provider)
+
+    vector_store = None
+    if cfg.vector.enabled:
+        vector_store = _vector_registry.get(cfg.vector.provider)(cfg.vector)
+        logger.info("Vector store enabled (provider=%s)", cfg.vector.provider)
+
+    # When both retrieval seams are present, expose a RetrievalTool so the
+    # ToolAgent auto-discovers it via ctx.tools. RAG disabled → tools stays None.
+    tools = _build_rag_tools(embeddings, vector_store, cfg.vector.top_k)
+
+    ctx = AgentContext(
+        llm=llm,
+        repo=repo,
+        memory=memory,
+        embeddings=embeddings,
+        vector_store=vector_store,
+        tools=tools,
+    )
     if cfg.harness.enabled:
         orch: Orchestrator = _HarnessOrchestrator(ctx, cfg.harness)
         logger.info(

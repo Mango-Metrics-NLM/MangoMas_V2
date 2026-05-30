@@ -52,6 +52,23 @@ ASGI_TEST_BASE_URL: str = "http://testserver"
 TEST_LMSTUDIO_MOCK_BASE_URL: str = "http://lm/v1"
 TEST_LMSTUDIO_MOCK_MODEL: str = "m"
 
+# ── Embeddings defaults / mock ────────────────────────────────────────────────
+DEFAULT_EMBEDDINGS_PROVIDER: str = "lmstudio"
+DEFAULT_EMBEDDINGS_MODEL: str = "local-model"
+DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
+TEST_EMBEDDINGS_MOCK_MODEL: str = "embed-m"
+
+# ── Vector store / RAG defaults ───────────────────────────────────────────────
+DEFAULT_VECTOR_PROVIDER: str = "chroma"
+DEFAULT_VECTOR_PERSIST_DIR: str = "./data/chroma"
+DEFAULT_VECTOR_COLLECTION: str = "mangomas"
+DEFAULT_VECTOR_TOP_K: int = 5
+DEFAULT_RAG_CHUNK_WORDS: int = 800
+DEFAULT_RAG_CHUNK_OVERLAP: int = 120
+DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
+TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
+TEST_VECTOR_COLLECTION: str = "test-col"
+
 # ── DB defaults ───────────────────────────────────────────────────────────────
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"

@@ -205,19 +205,41 @@ and echoes it on the outgoing response.
 
 ---
 
+## Done on the RAG branch (Unreleased)
+
+### Retrieval-augmented generation
+
+The full RAG port landed as a non-breaking opt-in layer
+(`embeddings.enabled` / `vector.enabled` default `False`):
+
+- **`EmbeddingClient` seam** (`adapters/embeddings/`) with three backends:
+  `LMStudioEmbeddingClient`, `SentenceTransformersEmbeddingClient`
+  (`embeddings-local` extra), and `VertexEmbeddingClient`
+  (`text-embedding-004`, ADC-only, `vertex` extra). This closes the
+  long-term "embedding-capable provider" gap — the `EmbeddingScorer` is
+  now operational against a real provider via `ScorerContext.embeddings`.
+- **`VectorStoreRepository` seam** (`adapters/vector/`) with
+  `ChromaVectorStore` (`rag` extra). Cosine space + `1 - distance/2`
+  similarity keeps scores in `[0, 1]`.
+- **`rag/` package** — word-window chunker, document loader,
+  `IngestionPipeline` (idempotent re-ingest via `delete_by_source`), and
+  `Retriever` + `RetrievalTool` (auto-discovered by `ToolAgent`).
+- **CLI** — `mangomas rag ingest` / `mangomas rag query`.
+- **Shared adapter error helpers** (`adapters/_http_errors.py`,
+  `adapters/_vertex_errors.py`) de-duplicate the httpx + Vertex error
+  translation across the chat and embedding adapters.
+- New `rag` 95 % coverage floor; 639 tests, 97.95 % global coverage.
+
+See the `mango-rag` skill (`.github/skills/mango-rag/SKILL.md`) and the
+C4 diagrams in `docs/architecture/`.
+
+---
+
 ## Long term
 
 _(The first long-term capability — the evaluation harness — landed in
-v0.3.0; see "Done in v0.3.0" above. Follow-ups below.)_
-
-### Embedding-capable LLM provider
-
-The evaluation harness ships an `EmbeddingScorer` that requires an
-`LLMClient` exposing `.embed()`. None of today's providers do. Add an
-embedding surface to either the Vertex adapter (`text-embedding-004` via
-`TextEmbeddingModel.get_embeddings_async`) or a new dedicated provider.
-Once the surface is present, the scorer becomes operational with no
-harness changes.
+v0.3.0; the embedding-capable provider that unblocked its `EmbeddingScorer`
+landed on the RAG branch above. Follow-ups below.)_
 
 ### Multi-agent workflows
 

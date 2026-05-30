@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import cast
 
 from opentelemetry import trace
@@ -64,28 +64,11 @@ class Orchestrator:
 
         first_exc: BaseException | None = None
         try:
-            if hasattr(self._ctx.llm, "aclose"):
+            for label, closer in self._close_hooks():
                 try:
-                    await self._ctx.llm.aclose()
+                    await closer()
                 except Exception as exc:
-                    logger.exception("Orchestrator.aclose: LLM close failed")
-                    first_exc = first_exc or exc
-
-            if self._ctx.repo is not None:
-                try:
-                    if hasattr(self._ctx.repo, "aclose"):
-                        await self._ctx.repo.aclose()
-                    else:
-                        self._ctx.repo.close()
-                except Exception as exc:
-                    logger.exception("Orchestrator.aclose: repo close failed")
-                    first_exc = first_exc or exc
-
-            if self._ctx.memory is not None:
-                try:
-                    self._ctx.memory.close()
-                except Exception as exc:
-                    logger.exception("Orchestrator.aclose: memory close failed")
+                    logger.exception("Orchestrator.aclose: %s close failed", label)
                     first_exc = first_exc or exc
         finally:
             self._closed = True
@@ -93,6 +76,38 @@ class Orchestrator:
 
         if first_exc is not None:
             raise first_exc
+
+    def _close_hooks(self) -> list[tuple[str, Callable[[], Awaitable[None]]]]:
+        """Build the ordered list of (label, async close hook) for present components.
+
+        Each hook dispatches on the component's own teardown contract — async
+        ``aclose`` where available, sync ``close`` otherwise — so :meth:`aclose`
+        can run them uniformly under per-hook fault isolation.
+        """
+        ctx = self._ctx
+        hooks: list[tuple[str, Callable[[], Awaitable[None]]]] = []
+        if hasattr(ctx.llm, "aclose"):
+            hooks.append(("LLM", ctx.llm.aclose))
+        if (repo := ctx.repo) is not None:
+
+            async def _close_repo() -> None:
+                if hasattr(repo, "aclose"):
+                    await repo.aclose()
+                else:
+                    repo.close()
+
+            hooks.append(("repo", _close_repo))
+        if (memory := ctx.memory) is not None:
+
+            async def _close_memory() -> None:
+                memory.close()
+
+            hooks.append(("memory", _close_memory))
+        if ctx.embeddings is not None and hasattr(ctx.embeddings, "aclose"):
+            hooks.append(("embeddings", ctx.embeddings.aclose))
+        if ctx.vector_store is not None and hasattr(ctx.vector_store, "aclose"):
+            hooks.append(("vector_store", ctx.vector_store.aclose))
+        return hooks
 
     def register(self, agent: Agent) -> None:
         """Register an agent. Last registration wins for a given name."""

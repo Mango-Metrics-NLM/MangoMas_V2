@@ -42,6 +42,14 @@ C4Component
     Component(llm_client, "LLMClient (resolved by llm_registry)", "Protocol — at runtime LMStudioClient or VertexClient", "Provider selected by MANGOMAS_LLM__PROVIDER. Both implementations satisfy LLMClient, StreamingLLMClient, and PingableLLMClient. Vertex requires the `mangomas[vertex]` optional extra; the SDK is lazy-imported so importing the module is always safe.")
     Component(sqlite_repo, "SQLiteRepository", "TurnRepository", "Persists conversation turns to a local SQLite database.")
     Component(postgres_repo, "PostgresRepository", "TurnRepository + AsyncCloseableRepository", "Persists conversation turns to Postgres via asyncpg with a connection pool. Activated by MANGOMAS_DB__PROVIDER=postgres; requires the `mangomas[postgres]` optional extra.")
+    Component(embedding_client, "EmbeddingClient (resolved by embedding_registry)", "Protocol — LMStudioEmbeddingClient | SentenceTransformersEmbeddingClient | VertexEmbeddingClient", "Attached to ctx.embeddings when MANGOMAS_EMBEDDINGS__ENABLED=true. embed()/embed_batch()/aclose(). lmstudio uses httpx POST /v1/embeddings; sentence_transformers runs encode() in asyncio.to_thread (mangomas[embeddings-local]); vertex uses text-embedding-004 via ADC (mangomas[vertex]). Heavy SDKs lazy-imported.")
+    Component(vector_store, "ChromaVectorStore (resolved by vector_registry)", "VectorStoreRepository", "Attached to ctx.vector_store when MANGOMAS_VECTOR__ENABLED=true. upsert/query/delete_by_source/aclose over a persistent Chroma collection created with hnsw:space=cosine; VectorMatch.score = 1 - distance/2. chromadb lazy-imported (mangomas[rag]).")
+  }
+
+  Container_Boundary(rag_boundary, "RAG (src/mangomas/rag/) — opt-in") {
+    Component(retrieval_tool, "RetrievalTool", "Tool", "name='retrieve'. Registered into a ToolRegistry and set on ctx.tools only when BOTH ctx.embeddings and ctx.vector_store are present, so ToolAgent auto-discovers it. execute() returns formatted top-k context.")
+    Component(retriever, "Retriever", "Domain service", "search(query): embed query → vector_store.query → map VectorMatch → SearchResult. top_k from MANGOMAS_VECTOR__TOP_K.")
+    Component(ingestion, "IngestionPipeline", "Domain service", "ingest(path): load → delete_by_source (idempotent re-ingest) → chunk_text → embed_batch in batch_size slices → upsert with stable {source}#{index} ids. CLI-only (mangomas rag ingest).")
   }
 
   Rel(app_factory, access_log, "adds middleware")
@@ -70,6 +78,12 @@ C4Component
   Rel(app_factory, secrets_provider, "resolves api_key / credentials_json via LLMSettings.secret_ref")
   Rel(secrets_provider, env_secrets, "default impl (provider='env')")
   Rel(secrets_provider, gcp_secrets, "cloud impl (provider='gcp')")
+  Rel(tool_agent, retrieval_tool, "execute('retrieve') when RAG enabled (resolved from ctx.tools)")
+  Rel(retrieval_tool, retriever, "search(query)")
+  Rel(retriever, embedding_client, "embed(query)")
+  Rel(retriever, vector_store, "query(embedding, top_k)")
+  Rel(ingestion, embedding_client, "embed_batch(chunks)")
+  Rel(ingestion, vector_store, "delete_by_source() then upsert()")
 ```
 
 ## Notes
@@ -111,5 +125,17 @@ C4Component
   transparent — every existing `dispatch` / `stream_dispatch` call works
   unchanged; the only observable difference is a `harness.agent_invoke`
   parent span and three extra debug-level log lines per invocation.
+- The **RAG seam** (`src/mangomas/adapters/embeddings/`,
+  `src/mangomas/adapters/vector/`, `src/mangomas/rag/`) follows the same
+  protocol-first discipline as the LLM/storage seams. `EmbeddingClient` and
+  `VectorStoreRepository` are `@runtime_checkable` Protocols resolved by
+  `embedding_registry` / `vector_registry` in `composition.py`. The `rag/`
+  package imports only those protocol surfaces (plus its own `models` and
+  `core`), so the vector layer never imports `rag/` — no cycle. The
+  `RetrievalTool` is attached to `ctx.tools` only when both seams are
+  enabled, so `ToolAgent` needs no new plumbing. `IngestionPipeline` runs
+  only from the CLI (`mangomas rag ingest`) and is not part of the request
+  path. `Orchestrator.aclose()` closes `ctx.embeddings` and
+  `ctx.vector_store` (fault-tolerant, idempotent) so neither leaks per run.
 - All components that accept external input are configurable via
   `mangomas.config.Settings`; no hardcoded endpoints or model ids.

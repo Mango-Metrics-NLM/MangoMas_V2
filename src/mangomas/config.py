@@ -12,7 +12,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ── Module-level defaults (single source of truth) ────────────────────────────
@@ -52,6 +52,29 @@ DEFAULT_MEMORY_PROVIDER: str = "file"
 DEFAULT_MEMORY_DIR: str = "memory"
 DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
 DEFAULT_MEMORY_ENABLED: bool = False
+
+DEFAULT_EMBEDDINGS_ENABLED: bool = False
+DEFAULT_EMBEDDINGS_PROVIDER: str = "lmstudio"
+# Neutral placeholder mirroring DEFAULT_LLM_MODEL — set explicitly per provider:
+# e.g. ``all-MiniLM-L6-v2`` (sentence-transformers), ``text-embedding-004``
+# (Vertex), or the loaded LM Studio embedding model id.
+DEFAULT_EMBEDDINGS_MODEL: str = "local-model"
+DEFAULT_EMBEDDINGS_BASE_URL: str = "http://localhost:1234/v1"
+DEFAULT_EMBEDDINGS_API_KEY: str = "lm-studio"
+DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
+DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS: float = 60.0
+
+# Vector store defaults — consumed when MANGOMAS_VECTOR__ENABLED=true.
+DEFAULT_VECTOR_ENABLED: bool = False
+DEFAULT_VECTOR_PROVIDER: str = "chroma"
+DEFAULT_VECTOR_PERSIST_DIR: str = "./data/chroma"
+DEFAULT_VECTOR_COLLECTION: str = "mangomas"
+DEFAULT_VECTOR_TOP_K: int = 5
+
+# RAG ingestion/chunking defaults.
+DEFAULT_RAG_CHUNK_WORDS: int = 800
+DEFAULT_RAG_CHUNK_OVERLAP: int = 120
+DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
 
 DEFAULT_SECRETS_PROVIDER: str = "env"
 # GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
@@ -103,6 +126,72 @@ class LLMSettings(BaseModel):
     project_id: str | None = None
     location: str = DEFAULT_VERTEX_LOCATION
     credentials_path: str | None = None
+
+
+class EmbeddingSettings(BaseModel):
+    """Embedding-provider configuration.
+
+    Gated by ``enabled`` (default ``False``) exactly like
+    :class:`MemorySettings`, so default behaviour is unchanged. ``provider``
+    selects the backend: ``lmstudio`` | ``sentence_transformers`` | ``vertex``.
+    The LM Studio fields (``base_url``/``api_key``) and the Vertex fields
+    (``project_id``/``location``) are only consulted by their respective
+    factories.
+    """
+
+    enabled: bool = DEFAULT_EMBEDDINGS_ENABLED
+    provider: str = DEFAULT_EMBEDDINGS_PROVIDER
+    model: str = DEFAULT_EMBEDDINGS_MODEL
+    base_url: str = DEFAULT_EMBEDDINGS_BASE_URL
+    api_key: str = DEFAULT_EMBEDDINGS_API_KEY
+    batch_size: int = DEFAULT_EMBEDDINGS_BATCH_SIZE
+    timeout_seconds: float = DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS
+    # Vertex-specific (required only when provider="vertex"; ADC auth).
+    project_id: str | None = None
+    location: str = DEFAULT_VERTEX_LOCATION
+
+
+class VectorSettings(BaseModel):
+    """Vector store configuration.
+
+    Gated by ``enabled`` (default ``False``) like :class:`MemorySettings`, so
+    default behaviour is unchanged. ``provider`` selects the backend (``chroma``);
+    ``persist_dir`` / ``collection`` configure on-disk storage and ``top_k`` is
+    the default retrieval depth.
+    """
+
+    enabled: bool = DEFAULT_VECTOR_ENABLED
+    provider: str = DEFAULT_VECTOR_PROVIDER
+    persist_dir: str = DEFAULT_VECTOR_PERSIST_DIR
+    collection: str = DEFAULT_VECTOR_COLLECTION
+    top_k: int = DEFAULT_VECTOR_TOP_K
+
+
+class RagSettings(BaseModel):
+    """RAG ingestion + chunking parameters (word-window chunker).
+
+    Invariants are validated at construction so a bad ``MANGOMAS_RAG__*`` value
+    (e.g. an overlap that meets or exceeds the window) fails fast at settings
+    load rather than surfacing deep inside the ingestion pipeline.
+    """
+
+    chunk_words: int = DEFAULT_RAG_CHUNK_WORDS
+    chunk_overlap: int = DEFAULT_RAG_CHUNK_OVERLAP
+    min_chunk_words: int = DEFAULT_RAG_MIN_CHUNK_WORDS
+
+    @model_validator(mode="after")
+    def _check_window(self) -> RagSettings:
+        if self.chunk_words < 1:
+            raise ValueError(f"chunk_words must be >= 1 (got {self.chunk_words})")
+        if self.min_chunk_words < 0:
+            raise ValueError(f"min_chunk_words must be >= 0 (got {self.min_chunk_words})")
+        if self.chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be >= 0 (got {self.chunk_overlap})")
+        if self.chunk_overlap >= self.chunk_words:
+            raise ValueError(
+                f"chunk_overlap ({self.chunk_overlap}) must be < chunk_words ({self.chunk_words})"
+            )
+        return self
 
 
 class SecretsSettings(BaseModel):
@@ -224,6 +313,9 @@ class Settings(BaseSettings):
 
     loop: LoopSettings = Field(default_factory=LoopSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    embeddings: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
+    vector: VectorSettings = Field(default_factory=VectorSettings)
+    rag: RagSettings = Field(default_factory=RagSettings)
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)

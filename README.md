@@ -175,6 +175,62 @@ Built-in scorers (registered through `mangomas.eval.scorer_registry`):
 
 ---
 
+## Retrieval-augmented generation (opt-in)
+
+RAG adds two protocol seams (`EmbeddingClient`, `VectorStoreRepository`) and a
+pure-domain `rag/` package. It is **off by default** — both
+`MANGOMAS_EMBEDDINGS__ENABLED` and `MANGOMAS_VECTOR__ENABLED` are `false`, so
+existing deployments behave identically. Enabling it makes the previously
+stubbed `embedding` scorer operational and gives agents a `retrieve` tool.
+
+### Local backend (no server required)
+
+```bash
+pip install -e ".[dev,embeddings-local,rag]"
+```
+
+```env
+MANGOMAS_EMBEDDINGS__ENABLED=true
+MANGOMAS_EMBEDDINGS__PROVIDER=sentence_transformers
+MANGOMAS_EMBEDDINGS__MODEL=all-MiniLM-L6-v2
+MANGOMAS_VECTOR__ENABLED=true
+```
+
+```bash
+mangomas rag ingest ./docs                       # *.md/*.txt → chunk → embed → upsert
+mangomas rag query "how does the harness work?"  # prints top-k ranked context
+mangomas eval --scorer embedding -d data.jsonl   # real cosine scores
+```
+
+### Embedding providers
+
+| `MANGOMAS_EMBEDDINGS__PROVIDER` | Extra | Notes |
+|---|---|---|
+| `lmstudio` (default) | _(built-in)_ | POST `{base_url}/embeddings`; reuses the LM Studio endpoint |
+| `sentence_transformers` | `embeddings-local` | In-process; lazy SDK, runs `encode` off-thread |
+| `vertex` | `vertex` | `text-embedding-004`; **ADC auth only** (no service-account JSON) |
+
+| Variable | Default | Description |
+|---|---|---|
+| `MANGOMAS_EMBEDDINGS__MODEL` | `local-model` | Embedding model id (set per provider) |
+| `MANGOMAS_EMBEDDINGS__BATCH_SIZE` | `32` | Pipeline embed-batch size |
+| `MANGOMAS_EMBEDDINGS__TIMEOUT_SECONDS` | `60.0` | httpx timeout (LM Studio) |
+| `MANGOMAS_VECTOR__PROVIDER` | `chroma` | Vector backend |
+| `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent directory |
+| `MANGOMAS_VECTOR__COLLECTION` | `mangomas` | Collection name |
+| `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
+| `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
+| `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
+| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+
+The Chroma collection is created in cosine space (`hnsw:space=cosine`) and
+similarity is reported as `1 - distance / 2`, so `VectorMatch.score` stays in
+`[0, 1]`. Re-ingesting a document first deletes its prior chunks by source, so a
+shortened document never leaves orphaned chunks behind. SDKs are lazy-imported,
+so `mangomas.adapters.embeddings` / `.vector` stay importable without the extras.
+
+---
+
 ## Claude Code harness (opt-in)
 
 The repository ships an enterprise Claude Code harness configured under
@@ -250,10 +306,10 @@ python scripts/check_coverage.py
 
 Per-package floors (`scripts/check_coverage.py`): `errors`, `registry`,
 `core`, `secrets`, `correlation` at **100 %**; `composition`, `agents`,
-`api`, `cli`, `eval` at **95 %**; `adapters` at **85 %**; global at
+`api`, `cli`, `eval`, `rag` at **95 %**; `adapters` at **85 %**; global at
 **95 %**.
 
-> **v0.3.1 baseline:** 515 tests, **98.16 %** global coverage.
+> **Current baseline:** 639 tests, **97.95 %** global coverage (RAG port + hardening).
 
 Coverage today sits comfortably above each floor — never lower a
 floor to land a change, fix the test coverage in the same commit.
@@ -294,10 +350,11 @@ python -m pytest tests/vertex --no-cov
 ```
 src/mangomas/
   core/         Domain: agent protocol, orchestrator, tool models
-  adapters/     llm/ (lmstudio, vertex), storage/ — swappable for GCP (see ADR-001)
+  adapters/     llm/ (lmstudio, vertex), embeddings/, vector/, storage/ — swappable for GCP (see ADR-001)
   agents/       Concrete agents: chat, summarize, tool_agent, planner, reviewer
+  rag/          Opt-in RAG layer — chunker, loader, ingestion pipeline, retriever + RetrievalTool
   api/          FastAPI app factory, routes, middleware, health checks
-  cli/          Typer CLI (chat, history, eval subcommands)
+  cli/          Typer CLI (chat, history, eval, rag ingest|query subcommands)
   eval/         Offline evaluation harness — Scorer protocol, registry, runner, scorers
   secrets/      SecretsProvider seam (env-var backend; cloud backends pluggable)
   config.py     Pydantic-settings — all config is env-driven (MANGOMAS_*)

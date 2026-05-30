@@ -119,3 +119,30 @@ async def test_runner_records_scorer_error(eval_orchestrator: Orchestrator) -> N
 def test_runner_rejects_invalid_parallelism(eval_orchestrator: Orchestrator) -> None:
     with pytest.raises(ValueError):
         EvalRunner(eval_orchestrator, ExactMatchScorer(), parallelism=0)
+
+
+async def test_runner_forwards_embeddings_to_scorer_context(
+    eval_orchestrator: Orchestrator,
+) -> None:
+    """The runner must hand the orchestrator's embeddings client to the scorer."""
+    from mangomas.core.agent import Message  # noqa: PLC0415
+    from mangomas.eval.dataset import DatasetRow  # noqa: PLC0415
+    from mangomas.eval.protocol import ScoreResult  # noqa: PLC0415
+    from tests.fakes import FakeEmbeddingClient  # noqa: PLC0415
+
+    embeddings = FakeEmbeddingClient()
+    eval_orchestrator.context.embeddings = embeddings
+
+    captured: dict[str, object] = {}
+
+    class _CapturingScorer:
+        name = "capture"
+
+        async def score(self, *_: object, context: object = None, **__: object) -> ScoreResult:
+            captured["embeddings"] = getattr(context, "embeddings", None)
+            return ScoreResult(score=1.0, passed=True)
+
+    runner = EvalRunner(eval_orchestrator, _CapturingScorer())
+    rows = [DatasetRow(id="x", messages=[Message(role="user", content="x")], expected="y")]
+    await runner.run(rows, agent_name="chat")
+    assert captured["embeddings"] is embeddings

@@ -54,13 +54,24 @@ src/mangomas/
 │   ├── planner.py      PlannerAgent (ExecutionPlan structured output)
 │   └── reviewer.py     ReviewerAgent (ReviewResult structured output)
 ├── adapters/
-│   ├── llm/            LLMClient protocol + LMStudioAdapter
+│   ├── _http_errors.py  Shared httpx → typed-error translator (llm + embeddings)
+│   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
+│   ├── llm/            LLMClient protocol + LMStudioAdapter + VertexClient
+│   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
+│   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
 │   └── storage/        TurnRepository + MemoryRepository protocols + impls
+├── rag/            Pure-domain RAG layer (opt-in; imports only protocols + models)
+│   ├── models.py       Chunk, SearchResult (frozen dataclasses)
+│   ├── chunker.py      Word-window chunker (pure fn)
+│   ├── loader.py       file/dir → raw docs (asyncio.to_thread)
+│   ├── pipeline.py     IngestionPipeline: load→chunk→embed_batch→upsert
+│   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
 ├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
-├── cli/main.py     Typer CLI (chat, history commands)
+├── cli/main.py     Typer CLI (chat, history, eval, rag ingest|query commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
 ├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
-│                   LoopSettings, MemorySettings
+│                   LoopSettings, MemorySettings, EmbeddingSettings,
+│                   VectorSettings, RagSettings
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
 └── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
@@ -106,6 +117,50 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
 | `MANGOMAS_MEMORY__PROVIDER` | `file` | Memory backend provider |
 | `MANGOMAS_MEMORY__MEMORY_DIR` | `memory` | Memory root directory |
+| `MANGOMAS_EMBEDDINGS__ENABLED` | `false` | Construct + attach `ctx.embeddings` |
+| `MANGOMAS_EMBEDDINGS__PROVIDER` | `lmstudio` | `lmstudio` \| `sentence_transformers` \| `vertex` |
+| `MANGOMAS_EMBEDDINGS__MODEL` | `local-model` | Embedding model id (set per provider) |
+| `MANGOMAS_EMBEDDINGS__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
+| `MANGOMAS_EMBEDDINGS__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
+| `MANGOMAS_EMBEDDINGS__BATCH_SIZE` | `32` | Pipeline embed-batch size |
+| `MANGOMAS_EMBEDDINGS__TIMEOUT_SECONDS` | `60.0` | httpx timeout (LM Studio) |
+| `MANGOMAS_EMBEDDINGS__PROJECT_ID` / `__LOCATION` | _(none)_ / `us-central1` | Vertex only (ADC auth) |
+| `MANGOMAS_VECTOR__ENABLED` | `false` | Construct + attach `ctx.vector_store` |
+| `MANGOMAS_VECTOR__PROVIDER` | `chroma` | Vector backend |
+| `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent dir |
+| `MANGOMAS_VECTOR__COLLECTION` | `mangomas` | Collection name |
+| `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
+| `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
+| `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
+| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+
+---
+
+## Retrieval-Augmented Generation (opt-in)
+
+RAG is fully opt-in and off by default (`embeddings.enabled` / `vector.enabled`
+both `false`), so existing deployments see no behaviour change. Three seams:
+
+- **`EmbeddingClient`** (`adapters/embeddings/base.py`) — `embed` / `embed_batch`
+  / `aclose`. Backends: `LMStudioEmbeddingClient` (httpx POST `{base_url}/embeddings`),
+  `SentenceTransformersEmbeddingClient` (in-process, lazy SDK), `VertexEmbeddingClient`
+  (`text-embedding-004`, **ADC only**).
+- **`VectorStoreRepository`** (`adapters/vector/base.py`) — primitives only
+  (`ids`/`embeddings`/`documents`/`metadatas` + `VectorMatch`), so the vector
+  layer never imports `rag/`. `ChromaVectorStore` forces `hnsw:space=cosine` and
+  maps distance→similarity as `1 - d/2` (keeps scores in `[0, 1]`).
+- **`rag/`** — pure domain: `chunk_text` word-window chunker, `load_documents`,
+  `IngestionPipeline` (delete_by_source → chunk → embed_batch → upsert),
+  `Retriever` + `RetrievalTool` (satisfies the `Tool` protocol; auto-discovered
+  by `ToolAgent` via `ctx.tools` when both embeddings + vector store are present).
+
+CLI: `mangomas rag ingest <path>` and `mangomas rag query <text>`. When RAG is
+disabled both exit `2` with a clear "not enabled" message. The stubbed
+`EmbeddingScorer` now resolves a real provider via `ScorerContext.embeddings`.
+
+Extras: `pip install 'mangomas[embeddings-local]'` (sentence-transformers),
+`pip install 'mangomas[rag]'` (chromadb); Vertex embeddings reuse the `vertex`
+extra. Gated tests: `RUN_EMBEDDINGS_LOCAL=1`, `RUN_RAG=1`.
 
 ---
 
@@ -207,6 +262,7 @@ Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
 | `mango-observability` | Instrumenting with spans + structured logging |
 | `mango-config` | Adding a new tunable to `Settings` |
 | `mango-topology` | Composing pipelines, fan-outs, acceptance loops |
+| `mango-rag` | Embeddings/vector/RAG: ingestion, retrieval, RetrievalTool wiring |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
 
 ---

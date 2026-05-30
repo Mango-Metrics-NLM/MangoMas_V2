@@ -107,6 +107,7 @@ class EvalRunner:
             response = await self._orch.dispatch(agent_name, request)
             ctx = ScorerContext(
                 llm=self._orch.context.llm,
+                embeddings=self._orch.context.embeddings,
                 row_metadata=dict(row.metadata),
                 correlation_id=correlation_id,
             )

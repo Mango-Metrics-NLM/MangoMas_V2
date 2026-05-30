@@ -10,20 +10,21 @@ coverage floors that must pass before any merge.
 The existing test suite (`tests/`) constitutes the regression baseline.
 It covers unit, API, and integration boundaries with all external services
 replaced by deterministic test doubles (`FakeLLM`, `FakeRepository`,
-`FakeMemoryRepository`, `FakeTool`).
+`FakeMemoryRepository`, `FakeTool`, `FakeEmbeddingClient`, `FakeVectorStore`).
 
-### Current baseline (as of v0.3.1)
+### Current baseline (RAG branch — Unreleased)
 
 | Metric | Value |
 |---|---|
-| Tests collected | 533 |
-| Tests passed | 515 |
-| Tests skipped | 18 (integration/LM Studio/Vertex/Postgres — gated) |
-| Global coverage | 98.16% |
+| Tests collected | 658 |
+| Tests passed | 639 |
+| Tests skipped | 19 (integration/LM Studio/Vertex/Postgres/RAG-local — gated) |
+| Global coverage | 97.95% |
 | Coverage floor | 95% (enforced by `pyproject.toml --cov-fail-under`) |
-| All 11 coverage floors | ✅ Met |
-| Mypy (strict, 127 files) | 0 errors |
+| All coverage floors | ✅ Met (incl. new `rag` 95% floor) |
+| Mypy (strict) | 0 errors |
 | Ruff lint + format | Clean |
+| Frontmatter lint (`lint_agent_frontmatter.py`) | Clean |
 
 ### Running the baseline
 
@@ -32,7 +33,22 @@ replaced by deterministic test doubles (`FakeLLM`, `FakeRepository`,
 python -m pytest -q
 ```
 
-Expected output: `515 passed, 18 skipped`.
+Expected output: `639 passed, 19 skipped`.
+
+### New suites on the RAG branch
+
+| Suite | Path | Covers |
+|---|---|---|
+| Embedding adapters | `tests/adapters/embeddings/` | LM Studio (respx), sentence-transformers + Vertex (injected fakes) |
+| Shared error helpers | `tests/adapters/test_shared_errors.py` | `_http_errors` / `_vertex_errors` translation + detail truncation |
+| Vector adapter | `tests/adapters/vector/` | `ChromaVectorStore` via injected fake collection; cosine scoring |
+| RAG domain | `tests/rag/` | chunker (+ Hypothesis fuzz), models, loader, pipeline, retrieval, ToolAgent-invokes-RetrievalTool, gated end-to-end |
+| CLI RAG | `tests/test_cli_rag.py` | `mangomas rag ingest|query` (Typer `CliRunner`, fakes injected) |
+| Orchestrator teardown | `tests/test_orchestrator_aclose.py` | `aclose()` closes embeddings + vector store, fault-tolerant + idempotent |
+
+The previous v0.3.1 baseline was **533 collected / 515 passed / 18 skipped /
+98.16%**. The RAG port adds the opt-in embeddings + vector + `rag/` layers
+(all `enabled=False` by default), so no prior behaviour changed.
 
 ---
 
@@ -40,20 +56,21 @@ Expected output: `515 passed, 18 skipped`.
 
 Enforced by `scripts/check_coverage.py` in CI and locally:
 
-| Package | Floor | Actual (v0.3.1) |
+| Package | Floor | Status |
 |---|---|---|
-| `errors` | 100% | 100% |
-| `registry` | 100% | 100% |
-| `core` | 100% | 100% |
-| `secrets` | 100% | 100% |
-| `correlation` | 100% | 100% |
-| `composition` | 95% | 100% |
-| `agents` | 95% | 97% |
-| `api` | 95% | 94–98% |
-| `cli` | 95% | 96% |
-| `eval` | 95% | 100% |
-| `adapters` | 85% | varies (80–100% per module) |
-| **Global** | **95%** | **98.16%** |
+| `errors` | 100% | ✅ Met |
+| `registry` | 100% | ✅ Met |
+| `core` | 100% | ✅ Met |
+| `secrets` | 100% | ✅ Met |
+| `correlation` | 100% | ✅ Met |
+| `composition` | 95% | ✅ Met |
+| `agents` | 95% | ✅ Met |
+| `api` | 95% | ✅ Met |
+| `cli` | 95% | ✅ Met |
+| `eval` | 95% | ✅ Met |
+| `rag` | 95% | ✅ Met |
+| `adapters` | 85% | ✅ Met (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
+| **Global** | **95%** | **97.95%** |
 
 ```powershell
 python scripts/check_coverage.py
@@ -138,6 +155,21 @@ python -m pytest tests/postgres --no-cov -q
 
 ---
 
+## RAG local end-to-end (opt-in)
+
+Gated on `RUN_EMBEDDINGS_LOCAL=1` (and `RUN_RAG=1` for the Chroma path).
+Exercises ingest → query through real sentence-transformers + an ephemeral
+Chroma store; no server required.
+
+```powershell
+pip install -e ".[dev,embeddings-local,rag]"
+$env:RUN_EMBEDDINGS_LOCAL = '1'
+$env:RUN_RAG = '1'
+python -m pytest tests/rag -q
+```
+
+---
+
 ## Full gate (matches CI)
 
 ```powershell
@@ -146,4 +178,5 @@ python -m ruff format --check src tests scripts
 python -m mypy --strict src tests scripts
 python -m pytest -q
 python scripts/check_coverage.py
+python scripts/lint_agent_frontmatter.py
 ```
