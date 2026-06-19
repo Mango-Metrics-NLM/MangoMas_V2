@@ -52,8 +52,13 @@ class LangfuseSink:
         # misconfiguration (missing extra, bad options) surfaces immediately
         # (exit 2) rather than after a full eval run.
         langfuse = _import_langfuse()
+        opts = dict(options or {})
+        # ``per_row`` is our own option — pop it so it isn't forwarded to the
+        # SDK ctor as an unknown kwarg. Default False preserves the aggregate-
+        # only behaviour (one trace + one mean_score).
+        self._per_row = bool(opts.pop("per_row", False))
         try:
-            self._client = langfuse.Langfuse(**dict(options or {}))
+            self._client = langfuse.Langfuse(**opts)
         except Exception as exc:
             raise ConfigError(f"invalid Langfuse configuration: {exc}") from exc
 
@@ -88,6 +93,18 @@ class LangfuseSink:
                 metadata["gate_reasons"] = gate_result.reasons
             trace = client.trace(name="mangomas-eval", metadata=metadata)
             client.score(trace_id=trace.id, name="mean_score", value=report.mean_score)
+            if self._per_row:
+                for row in report.rows:
+                    row_trace = client.trace(
+                        name="mangomas-eval-row",
+                        metadata={
+                            "row_id": row.row_id,
+                            "passed": row.passed,
+                            "expected": row.expected,
+                            "prediction": row.prediction,
+                        },
+                    )
+                    client.score(trace_id=row_trace.id, name="row_score", value=row.score)
         finally:
             # Mandatory for short-lived CLI processes — otherwise batched
             # events are dropped on interpreter exit.

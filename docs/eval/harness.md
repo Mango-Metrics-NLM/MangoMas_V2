@@ -166,7 +166,9 @@ fault isolation — one failing sink never costs the others their output.
 |---|---|---|
 | `ConsoleSink` | `console` | Human-readable stdout summary (+ a `gate=` line when gating). |
 | `JsonFileSink` | `json_file` | Pretty JSON report to `path` (+ a `gate` key when gating). |
-| `LangfuseSink` | `langfuse` | Publishes a trace + `mean_score` to Langfuse. **Optional extra**: `pip install 'mangomas[langfuse]'`; credentials from `LANGFUSE_*` env/ADC. |
+| `SqliteResultsSink` | `sqlite_results` | Append the report + per-row results to two SQLite tables (`eval_reports`, `eval_rows`) at `db_path`. A queryable history; the gate verdict is stored as `gate_json`. |
+| `WebhookSink` | `webhook` | POST the `json_file`-shaped payload to `url` (httpx; core dep, no extra). Option `timeout_seconds` (default 10). A non-2xx response fails the sink. |
+| `LangfuseSink` | `langfuse` | Publishes a trace + `mean_score` to Langfuse. With option `per_row: true`, also emits one trace + `row_score` per row (default `false` = aggregate only). **Optional extra**: `pip install 'mangomas[langfuse]'`; credentials from `LANGFUSE_*` env/ADC. |
 
 ```bash
 # Console + JSON file

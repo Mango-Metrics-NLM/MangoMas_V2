@@ -142,7 +142,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
-| `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`langfuse`) |
+| `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 
@@ -200,9 +200,11 @@ gates the run for CI. Everything is additive and default-OFF. See
   only after sinks emit. Off unless a threshold / `gate_enabled` / `fail_on_error`
   is set.
 - **Sinks** (`eval/sink.py` + `eval/sinks/`, registered in `sink_registry`):
-  `console`, `json_file`, and the optional `langfuse` sink (extra
-  `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC). Multiple sinks
-  compose under per-sink fault isolation. `--output-json` injects `json_file`.
+  `console`, `json_file`, `sqlite_results` (append report + rows to SQLite),
+  `webhook` (httpx POST), and the optional `langfuse` sink (extra
+  `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC; `per_row` option
+  emits one trace/score per row). Multiple sinks compose under per-sink fault
+  isolation. `--output-json` injects `json_file`.
 - **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
   `mangomas.eval.sinks` / `mangomas.eval.targets` / `mangomas.eval.dataset_sources`;
   discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`.

@@ -21,7 +21,7 @@ import pytest
 import mangomas.eval.sinks  # noqa: F401
 from mangomas.errors import ConfigError
 from mangomas.eval import evaluate_gate
-from mangomas.eval.runner import EvalReport
+from mangomas.eval.runner import EvalReport, EvalRowResult
 from mangomas.eval.sinks.langfuse import LangfuseSink, _langfuse_factory
 
 
@@ -119,6 +119,50 @@ async def test_langfuse_sink_includes_gate_metadata(
     metadata = captured["client"].traces[0]["metadata"]
     assert metadata["gate_passed"] is True
     assert "gate_reasons" in metadata
+
+
+async def test_langfuse_sink_default_is_aggregate_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without per_row, exactly one trace + one mean_score are emitted."""
+    captured = _install_fake_langfuse(monkeypatch)
+    await LangfuseSink().emit(_report())
+    client = captured["client"]
+    assert len(client.traces) == 1
+    assert [s["name"] for s in client.scores] == ["mean_score"]
+
+
+async def test_langfuse_sink_per_row_emits_row_traces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _install_fake_langfuse(monkeypatch)
+    report = EvalReport(
+        scorer="exact_match",
+        agent_name="chat",
+        dataset_size=2,
+        passed=1,
+        failed=1,
+        errored=0,
+        mean_score=0.5,
+        duration_ms=1.0,
+        rows=[
+            EvalRowResult(
+                row_id="r1", score=1.0, passed=True, duration_ms=1.0, prediction="a", expected="a"
+            ),
+            EvalRowResult(
+                row_id="r2", score=0.0, passed=False, duration_ms=1.0, prediction="b", expected="c"
+            ),
+        ],
+    )
+    await LangfuseSink(options={"per_row": True}).emit(report)
+    client = captured["client"]
+    # 1 aggregate trace + 1 per row; per_row must not leak to the SDK ctor.
+    assert client.kwargs == {}
+    assert len(client.traces) == 3
+    assert client.traces[0]["name"] == "mangomas-eval"
+    assert all(t["name"] == "mangomas-eval-row" for t in client.traces[1:])
+    row_scores = [s for s in client.scores if s["name"] == "row_score"]
+    assert [s["value"] for s in row_scores] == [1.0, 0.0]
 
 
 async def test_langfuse_sink_flushes_even_on_publish_error(

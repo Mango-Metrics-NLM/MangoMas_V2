@@ -193,6 +193,21 @@ runs are byte-for-byte unchanged.
   `dataset_source_options`.
 - **Plugin discovery**: new entry-point group `mangomas.eval.dataset_sources`.
 
+### Added — Evaluation harness: SQLite + webhook sinks, per-row Langfuse
+
+More result destinations, all additive and default-OFF (sinks default to
+`["console"]`).
+
+- **`SqliteResultsSink`** (`sqlite_results`): append the report + per-row
+  results to `eval_reports` / `eval_rows` tables at `db_path` (queryable
+  history; gate verdict stored as `gate_json`).
+- **`WebhookSink`** (`webhook`): POST the `json_file`-shaped payload to `url`
+  via httpx (core dep — no extra). Option `timeout_seconds`
+  (`MANGOMAS_EVAL__WEBHOOK...` default 10s); non-2xx fails the sink.
+- **Per-row Langfuse**: `LangfuseSink` gains a `per_row` option (default
+  `false`) — when `true` it also emits one trace + `row_score` per row in
+  addition to the aggregate trace + `mean_score`.
+
 ### Added — Retrieval-augmented generation (RAG)
 
 The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the

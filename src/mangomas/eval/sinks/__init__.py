@@ -10,5 +10,13 @@ from __future__ import annotations
 from mangomas.eval.sinks.console import ConsoleSink
 from mangomas.eval.sinks.json_file import JsonFileSink
 from mangomas.eval.sinks.langfuse import LangfuseSink
+from mangomas.eval.sinks.sqlite_results import SqliteResultsSink
+from mangomas.eval.sinks.webhook import WebhookSink
 
-__all__ = ["ConsoleSink", "JsonFileSink", "LangfuseSink"]
+__all__ = [
+    "ConsoleSink",
+    "JsonFileSink",
+    "LangfuseSink",
+    "SqliteResultsSink",
+    "WebhookSink",
+]

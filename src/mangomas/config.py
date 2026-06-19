@@ -119,6 +119,10 @@ DEFAULT_EVAL_FAIL_ON_ERROR: bool = False
 # constant); the field builds a fresh list from it via ``default_factory``.
 DEFAULT_EVAL_SINKS: tuple[str, ...] = ("console",)
 
+# Default per-request timeout (seconds) for the optional ``webhook`` sink's
+# httpx POST. Overridable per-sink via ``sink_options["webhook"]["timeout_seconds"]``.
+DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS: float = 10.0
+
 # Forward-compatible config version marker. Bump when EvalSettings grows a
 # field that needs migration; a config declaring a *higher* version than the
 # code supports logs a warning rather than crashing.
