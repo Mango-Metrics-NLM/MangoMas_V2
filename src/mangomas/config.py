@@ -9,11 +9,15 @@ tests can import them instead of repeating magic literals.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
 
 # ── Module-level defaults (single source of truth) ────────────────────────────
 
@@ -93,6 +97,24 @@ DEFAULT_EVAL_AGENT: str = "chat"
 DEFAULT_EVAL_OUTPUT_DIR: str = "eval-output"
 DEFAULT_EVAL_PARALLELISM: int = 1
 DEFAULT_EVAL_FAIL_FAST: bool = False
+
+# Quality-gate defaults — all OFF so existing runs keep exit code 0 on success.
+# ``min_mean_score`` / ``min_pass_rate`` stay ``None`` (no threshold). When a
+# threshold is set the CLI exits 3 if the report falls below it.
+DEFAULT_EVAL_GATE_ENABLED: bool = False
+DEFAULT_EVAL_MIN_MEAN_SCORE: float | None = None
+DEFAULT_EVAL_MIN_PASS_RATE: float | None = None
+DEFAULT_EVAL_FAIL_ON_ERROR: bool = False
+
+# Result sinks — ``console`` reproduces today's inline stdout summary exactly,
+# so the default is behaviour-preserving. Held as a tuple (immutable module
+# constant); the field builds a fresh list from it via ``default_factory``.
+DEFAULT_EVAL_SINKS: tuple[str, ...] = ("console",)
+
+# Forward-compatible config version marker. Bump when EvalSettings grows a
+# field that needs migration; a config declaring a *higher* version than the
+# code supports logs a warning rather than crashing.
+DEFAULT_EVAL_SCHEMA_VERSION: int = 1
 
 DEFAULT_HARNESS_ENABLED: bool = False
 DEFAULT_HARNESS_METRICS_NAMESPACE: str = "mangomas.harness"
@@ -287,6 +309,48 @@ class EvalSettings(BaseModel):
     # Free-form per-scorer options (e.g. ``{"threshold": 0.8}``). Forwarded
     # verbatim to the scorer's factory.
     scorer_options: dict[str, object] = Field(default_factory=dict)
+
+    # ── Quality gate (CI) — default OFF ───────────────────────────────────────
+    gate_enabled: bool = DEFAULT_EVAL_GATE_ENABLED
+    min_mean_score: float | None = DEFAULT_EVAL_MIN_MEAN_SCORE
+    min_pass_rate: float | None = DEFAULT_EVAL_MIN_PASS_RATE
+    fail_on_error: bool = DEFAULT_EVAL_FAIL_ON_ERROR
+
+    # ── Result sinks ──────────────────────────────────────────────────────────
+    # Ordered list of sink names resolved through ``sink_registry``. Defaults to
+    # ``["console"]`` (== today's inline output). ``sink_options`` carries
+    # per-sink kwargs keyed by sink name, e.g. ``{"json_file": {"path": "..."}}``.
+    sinks: list[str] = Field(default_factory=lambda: list(DEFAULT_EVAL_SINKS))
+    sink_options: dict[str, dict[str, object]] = Field(default_factory=dict)
+
+    # ── Forward-compatible schema version ─────────────────────────────────────
+    schema_version: int = DEFAULT_EVAL_SCHEMA_VERSION
+
+    @model_validator(mode="after")
+    def _validate_eval(self) -> EvalSettings:
+        """Bound gate thresholds to ``[0, 1]`` and tolerate future schema versions.
+
+        Thresholds are normalised scores, so a value outside ``[0, 1]`` is a
+        configuration error (fail fast at construction). A ``schema_version``
+        ahead of what this build supports is *not* fatal — it is logged so a
+        newer config can be read by older code without crashing (forward-compat).
+        """
+        for label, value in (
+            ("min_mean_score", self.min_mean_score),
+            ("min_pass_rate", self.min_pass_rate),
+        ):
+            if value is not None and not 0.0 <= value <= 1.0:
+                raise ValueError(f"eval.{label} must be in [0.0, 1.0]; got {value}")
+        if self.schema_version > DEFAULT_EVAL_SCHEMA_VERSION:
+            logger.warning(
+                "Eval config declares a future schema_version; reading with current code",
+                extra={
+                    "event": "eval_config_future_version",
+                    "declared": self.schema_version,
+                    "supported": DEFAULT_EVAL_SCHEMA_VERSION,
+                },
+            )
+        return self
 
 
 class Settings(BaseSettings):

@@ -135,6 +135,29 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Evaluation harness: gating, sinks, scorers, plugins
+
+Adopts eval-harness patterns natively (see ADR-0003). All additions are
+opt-in and default-OFF, so existing `mangomas eval` runs are unchanged.
+
+- **Quality gate** (`eval/gate.py`): `evaluate_gate(report, ...) -> GateResult`.
+  New `EvalSettings` fields `gate_enabled` / `min_mean_score` / `min_pass_rate` /
+  `fail_on_error`. The CLI exits **3** when the gate fails (after sinks emit),
+  distinct from 1 (runtime) and 2 (config).
+- **Result sinks** (`eval/sink.py`, `eval/sink_registry.py`, `eval/sinks/`):
+  `Sink` protocol + `sink_registry`. Built-ins `console` and `json_file` refactor
+  the former inline CLI output; optional `langfuse` sink behind the new
+  `mangomas[langfuse]` extra (lazy import, `LANGFUSE_*` env/ADC, mandatory
+  `flush()`). Multiple sinks compose under per-sink fault isolation. `--output-json`
+  is preserved by injecting `json_file`. New `sinks` / `sink_options` settings.
+- **Scorers** (`eval/scorers/`): `regex_match`, `contains`, and `json_keys`
+  (schema-conformance grading for structured agent output).
+- **Plugin discovery** (`eval/discovery.py`): entry-point groups
+  `mangomas.eval.scorers` / `mangomas.eval.sinks`, gated by
+  `MANGOMAS_DISCOVERY_ENABLED`; failing plugins are logged and skipped.
+- **Config version marker**: `EvalSettings.schema_version` (forward-compatible;
+  a future version warns instead of crashing).
+
 ### Added — Retrieval-augmented generation (RAG)
 
 The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the

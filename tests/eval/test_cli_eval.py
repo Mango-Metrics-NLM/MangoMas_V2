@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,6 +15,9 @@ import mangomas.cli.main as cli_main
 from mangomas.cli.main import app
 from mangomas.config import get_settings
 from mangomas.core import Orchestrator
+from mangomas.eval.runner import EvalReport
+from tests.constants import EVAL_GATE_EXIT_CODE, EVAL_THRESHOLD_LENIENT, EVAL_THRESHOLD_STRICT
+from tests.fakes import FakeSink
 
 
 @pytest.fixture(autouse=True)
@@ -110,3 +114,127 @@ def test_eval_cli_propagates_dataset_error(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "Eval run failed" in result.stdout + result.stderr
+
+
+# ── Gating ────────────────────────────────────────────────────────────────────
+
+
+def test_eval_cli_gate_fail_exits_3(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "mixed.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--min-mean-score",
+            str(EVAL_THRESHOLD_STRICT),
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE, result.stdout
+    assert "gate=FAIL" in result.stdout
+
+
+def test_eval_cli_gate_pass_exits_0(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--min-mean-score",
+            str(EVAL_THRESHOLD_LENIENT),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "gate=PASS" in result.stdout
+
+
+def test_eval_cli_min_pass_rate_fail_exits_3(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "mixed.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--min-pass-rate",
+            "0.9",
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE
+
+
+def test_eval_cli_gate_failure_still_writes_artifacts(fixtures_dir: Path, tmp_path: Path) -> None:
+    """A failing gate must not prevent sink output (exit 3 comes after emit)."""
+    out = tmp_path / "report.json"
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "mixed.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--min-mean-score",
+            str(EVAL_THRESHOLD_STRICT),
+            "--output-json",
+            str(out),
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["gate"]["passed"] is False
+
+
+# ── Sinks ─────────────────────────────────────────────────────────────────────
+
+
+def test_eval_cli_unknown_sink_exits_2(fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_EVAL__SINKS", '["console", "does-not-exist"]')
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["eval", "--dataset", str(fixtures_dir / "all_pass.jsonl"), "--scorer", "exact_match"],
+    )
+    assert result.exit_code == 2
+    assert "configuration error" in (result.stdout + result.stderr).lower()
+
+
+def _report() -> EvalReport:
+    return EvalReport(
+        scorer="exact_match",
+        agent_name="chat",
+        dataset_size=1,
+        passed=1,
+        failed=0,
+        errored=0,
+        mean_score=1.0,
+        duration_ms=1.0,
+        rows=[],
+    )
+
+
+def test_emit_sinks_isolates_failures() -> None:
+    good_a = FakeSink(name="a")
+    boom = FakeSink(name="boom", raise_on_emit=RuntimeError("sink down"))
+    good_b = FakeSink(name="b")
+    exc = asyncio.run(cli_main._emit_sinks([good_a, boom, good_b], _report(), None))
+    assert isinstance(exc, RuntimeError)
+    # Both healthy sinks still emitted despite the failure in between.
+    assert len(good_a.emitted) == 1
+    assert len(good_b.emitted) == 1
+
+
+def test_emit_sinks_returns_none_when_all_succeed() -> None:
+    sinks = [FakeSink(name="a"), FakeSink(name="b")]
+    exc = asyncio.run(cli_main._emit_sinks(sinks, _report(), None))
+    assert exc is None

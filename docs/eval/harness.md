@@ -36,6 +36,13 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Max concurrent rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Cancel after first non-pass |
 | `MANGOMAS_EVAL__SCORER_OPTIONS` | `{}` | Free-form scorer options |
+| `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the quality gate (exit 3 on fail) |
+| `MANGOMAS_EVAL__MIN_MEAN_SCORE` | (unset) | Fail the gate if `mean_score` below this `[0,1]` |
+| `MANGOMAS_EVAL__MIN_PASS_RATE` | (unset) | Fail the gate if `passed/size` below this `[0,1]` |
+| `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Fail the gate if any row errored |
+| `MANGOMAS_EVAL__SINKS` | `["console"]` | Ordered list of result sinks |
+| `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible config version marker |
 
 ## Dataset format
 
@@ -86,6 +93,58 @@ thresholds without callers re-implementing the rule).
 | `ExactMatchScorer` | `exact_match` | Strict string match, with optional case-folding (`case_sensitive`) and whitespace normalisation (`strip_whitespace`). Default options: case-insensitive, whitespace-collapsing. |
 | `LLMJudgeScorer` | `llm_judge` | Routes a structured prompt through the orchestrator's LLM client. Expects a one-line JSON response `{"score": <float>, "rationale": "..."}`. `passed = score >= threshold` (default `0.7`). Malformed responses raise `LLMBadResponse`. |
 | `EmbeddingScorer` | `embedding` | Cosine similarity of embeddings of `prediction` and `expected`. **Requires an LLM with `.embed()`**. |
+| `RegexMatchScorer` | `regex_match` | `expected` is a **regex** (per row); pass iff it matches `prediction`. Options: `flags` (`ignorecase`/`multiline`/`dotall`), `fullmatch`. |
+| `ContainsScorer` | `contains` | `expected` is a **substring** (per row); pass iff contained in `prediction`. Option: `case_sensitive`. |
+| `JsonKeysScorer` | `json_keys` | Parses `prediction` as a JSON object and grades by required-key coverage (great for `planner`/`reviewer` structured output). Keys come from `required_keys` option, else from `expected` parsed as a JSON object. Option: `strict` (extra keys → score 0). Malformed prediction → failing row (`score=0`), not an error. |
+
+> Note: `regex_match` and `contains` reinterpret the per-row `expected` field
+> (as a pattern / needle) rather than a gold answer — keep their datasets
+> separate from `exact_match` / `llm_judge` datasets.
+
+## Quality gate (CI)
+
+The gate turns an `EvalReport` into a pass/fail verdict. It is **off by default**
+— configuring no thresholds keeps the historical exit codes (0 success,
+1 runtime error, 2 config error). When engaged it adds **exit code 3** on
+failure, raised only *after* every sink has emitted so CI artifacts always land.
+
+```bash
+# Fail CI (exit 3) if the mean score regresses below 0.8
+mangomas eval -d data.jsonl -s exact_match --min-mean-score 0.8
+```
+
+`pass_rate = passed / dataset_size` (errored rows count against it), while
+`mean_score` excludes errored rows. Use `--fail-on-error` to fail the gate when
+any row errored regardless of thresholds.
+
+## Result sinks
+
+Sinks decouple producing a report from emitting it. The default is `["console"]`
+(identical to the historical inline output). Sinks compose, and each emits under
+fault isolation — one failing sink never costs the others their output.
+
+| Sink | Registry name | Behaviour |
+|---|---|---|
+| `ConsoleSink` | `console` | Human-readable stdout summary (+ a `gate=` line when gating). |
+| `JsonFileSink` | `json_file` | Pretty JSON report to `path` (+ a `gate` key when gating). |
+| `LangfuseSink` | `langfuse` | Publishes a trace + `mean_score` to Langfuse. **Optional extra**: `pip install 'mangomas[langfuse]'`; credentials from `LANGFUSE_*` env/ADC. |
+
+```bash
+# Console + JSON file
+MANGOMAS_EVAL__SINKS='["console","json_file"]' \
+  mangomas eval -d data.jsonl -s exact_match -o report.json
+```
+
+The legacy `--output-json PATH` flag is preserved: it injects (or overrides the
+path of) the `json_file` sink.
+
+## Plugin discovery (entry points)
+
+Third-party packages can register scorers/sinks without editing this repo by
+declaring entry points under the `mangomas.eval.scorers` / `mangomas.eval.sinks`
+groups, each pointing at a factory `Callable[[dict], Scorer|Sink]`. Discovery is
+additive (built-ins still register in-process) and runs only when
+`MANGOMAS_DISCOVERY_ENABLED=true`. A failing plugin is logged and skipped.
 
 ## Logging events
 
@@ -101,6 +160,11 @@ Every event carries `extra={"event": ..., ...}` for structured-log filters:
 | `eval_summary` | INFO | `dataset_size`, `passed`, `failed`, `errored`, `mean_score`, `duration_ms` |
 | `eval_llm_judge_request` | DEBUG | `scorer`, `threshold` |
 | `embedding_scorer_unavailable` | WARNING | `scorer`, `reason` |
+| `eval_gate` | INFO | `passed`, `mean_score`, `pass_rate`, `errored`, `reasons` |
+| `eval_sink_json_file` | DEBUG | `path` |
+| `eval_sink_langfuse` | INFO | `scorer` |
+| `eval_plugin_load_failed` | WARNING | `group`, `plugin`, `error` |
+| `eval_plugin_override` | INFO | `group`, `plugin` |
 
 Correlation ids propagate automatically: the runner sets a fresh
 `mangomas.correlation.correlation_id_var` per row, so every orchestrator /

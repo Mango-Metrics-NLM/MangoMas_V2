@@ -133,6 +133,14 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
 | `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
+| `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the CI quality gate (exit 3 on fail) |
+| `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
+| `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
+| `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
+| `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`langfuse`) |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
+| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink plugins |
 
 ---
 
@@ -161,6 +169,32 @@ disabled both exit `2` with a clear "not enabled" message. The stubbed
 Extras: `pip install 'mangomas[embeddings-local]'` (sentence-transformers),
 `pip install 'mangomas[rag]'` (chromadb); Vertex embeddings reuse the `vertex`
 extra. Gated tests: `RUN_EMBEDDINGS_LOCAL=1`, `RUN_RAG=1`.
+
+---
+
+## Evaluation Harness (opt-in)
+
+`mangomas.eval` runs a JSONL dataset through any agent, scores each row with a
+pluggable `Scorer`, emits an `EvalReport` to one or more `Sink`s, and optionally
+gates the run for CI. Everything is additive and default-OFF. See
+`docs/eval/harness.md` and ADR-0003.
+
+- **Scorers** (`eval/scorers/`, registered in `scorer_registry`): `exact_match`,
+  `regex_match`, `contains`, `json_keys` (schema-conformance for `planner`/
+  `reviewer` JSON output), `llm_judge`, `embedding`.
+- **Gate** (`eval/gate.py`): pure `evaluate_gate(report, ...) -> GateResult`.
+  CLI adds **exit code 3** on failure (distinct from 1=runtime, 2=config), raised
+  only after sinks emit. Off unless a threshold / `gate_enabled` / `fail_on_error`
+  is set.
+- **Sinks** (`eval/sink.py` + `eval/sinks/`, registered in `sink_registry`):
+  `console`, `json_file`, and the optional `langfuse` sink (extra
+  `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC). Multiple sinks
+  compose under per-sink fault isolation. `--output-json` injects `json_file`.
+- **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
+  `mangomas.eval.sinks`; discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`.
+
+CLI: `mangomas eval -d <dataset> -s <scorer> [--min-mean-score X] [-o report.json]`.
+Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
 
 ---
 

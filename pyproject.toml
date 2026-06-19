@@ -63,6 +63,12 @@ embeddings-local = [
 rag = [
     "chromadb>=0.5",
 ]
+# Langfuse eval sink — install with `pip install 'mangomas[langfuse]'`.
+# The sink lazy-imports the SDK so it stays optional. Pinned below the v3 API
+# rewrite to keep the trace/score surface stable.
+langfuse = [
+    "langfuse>=2,<3",
+]
 # GCP Secret Manager provider — install with `pip install 'mangomas[gcp]'`.
 gcp = [
     "google-cloud-secret-manager>=2.20",
@@ -75,6 +81,15 @@ cloud = [
 
 [project.scripts]
 mangomas = "mangomas.cli.main:app"
+
+# Plugin contract: third-party packages register eval scorers/sinks by adding
+# entries to these groups, each pointing at a factory `Callable[[dict], Scorer|Sink]`.
+# Discovery runs only when MANGOMAS_DISCOVERY_ENABLED=true (see eval/discovery.py).
+# Built-ins register in-process, so these groups stay empty here.
+#   [project.entry-points."mangomas.eval.scorers"]
+#   my_scorer = "mypkg.module:factory"
+#   [project.entry-points."mangomas.eval.sinks"]
+#   my_sink = "mypkg.module:factory"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mangomas"]
@@ -121,6 +136,8 @@ module = [
     "vertexai.*",
     "chromadb",
     "chromadb.*",
+    "langfuse",
+    "langfuse.*",
 ]
 ignore_missing_imports = true
 
@@ -164,6 +181,7 @@ markers = [
     "gcp_secrets: tests that require GCP Secret Manager access (ADC + project)",
     "embeddings_local: tests that require the sentence-transformers extra installed",
     "rag: tests that require the chromadb extra installed",
+    "langfuse: tests that require the langfuse extra installed (RUN_LANGFUSE=1)",
 ]
 
 [tool.coverage.run]

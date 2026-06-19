@@ -6,8 +6,18 @@ External plugins follow the same pattern.
 
 from __future__ import annotations
 
+from mangomas.eval.scorers.contains import ContainsScorer
 from mangomas.eval.scorers.embedding import EmbeddingScorer
 from mangomas.eval.scorers.exact_match import ExactMatchScorer
+from mangomas.eval.scorers.json_keys import JsonKeysScorer
 from mangomas.eval.scorers.llm_judge import LLMJudgeScorer
+from mangomas.eval.scorers.regex_match import RegexMatchScorer
 
-__all__ = ["EmbeddingScorer", "ExactMatchScorer", "LLMJudgeScorer"]
+__all__ = [
+    "ContainsScorer",
+    "EmbeddingScorer",
+    "ExactMatchScorer",
+    "JsonKeysScorer",
+    "LLMJudgeScorer",
+    "RegexMatchScorer",
+]

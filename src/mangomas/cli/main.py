@@ -3,25 +3,33 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import json
 import logging
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
 
-import mangomas.eval.scorers  # noqa: F401 — registers built-in scorers
+import mangomas.eval.scorers
+import mangomas.eval.sinks  # noqa: F401 — registers built-in sinks
 from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
 from mangomas.errors import MangomasError
-from mangomas.eval import EvalReport, EvalRunner, load_jsonl, scorer_registry
+from mangomas.eval import (
+    EvalReport,
+    EvalRunner,
+    ensure_eval_plugins,
+    evaluate_gate,
+    load_jsonl,
+    scorer_registry,
+    sink_registry,
+)
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
+    from mangomas.eval import GateResult, Sink
 
 # Windows default console codec is cp1252; LLM replies routinely contain
 # em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
@@ -127,6 +135,55 @@ def history(
         typer.echo(json.dumps(row, ensure_ascii=False))
 
 
+# Exit code raised when the quality gate fails — distinct from 1 (runtime) and
+# 2 (config) so CI can react specifically to a quality regression.
+EVAL_GATE_EXIT_CODE = 3
+
+
+def _build_sinks(
+    sink_names: list[str],
+    sink_options: dict[str, dict[str, object]],
+    output_json: str | None,
+) -> list[Sink]:
+    """Resolve sink names to instances, honouring the legacy ``--output-json``.
+
+    ``--output-json`` injects (or overrides the ``path`` of) the ``json_file``
+    sink so pre-existing invocations keep producing the same file. CLI flag
+    precedence: ``--output-json`` > ``sink_options["json_file"]["path"]``.
+    Raises :class:`~mangomas.errors.MangomasError` (→ exit 2) on an unknown sink
+    or a misconfigured option.
+    """
+    names = list(sink_names)
+    options: dict[str, dict[str, object]] = {n: dict(sink_options.get(n, {})) for n in names}
+    if output_json:
+        if "json_file" not in names:
+            names.append("json_file")
+        options.setdefault("json_file", {})
+        options["json_file"]["path"] = output_json
+    return [sink_registry.get(name)(options.get(name, {})) for name in names]
+
+
+async def _emit_sinks(
+    sinks: list[Sink],
+    report: EvalReport,
+    gate_result: GateResult | None,
+) -> BaseException | None:
+    """Emit *report* to every sink under per-sink fault isolation.
+
+    A failure in one sink is logged and does not prevent the others; the first
+    exception is returned so the caller can surface a non-zero exit *after*
+    every sink has been attempted (so partial artifacts still land).
+    """
+    first_exc: BaseException | None = None
+    for sink in sinks:
+        try:
+            await sink.emit(report, gate_result=gate_result)
+        except Exception as exc:
+            logger.exception("Eval sink %r failed", sink.name)
+            first_exc = first_exc or exc
+    return first_exc
+
+
 @app.command(name="eval")
 def eval_cmd(
     dataset_path: str | None = typer.Option(
@@ -162,15 +219,39 @@ def eval_cmd(
         None,
         "--output-json",
         "-o",
-        help="If set, write a JSON report to this path.",
+        help="If set, write a JSON report to this path (injects the json_file sink).",
+    ),
+    gate: bool | None = typer.Option(
+        None,
+        "--gate/--no-gate",
+        help="Enable/disable the quality gate (default from MANGOMAS_EVAL__GATE_ENABLED).",
+    ),
+    min_mean_score: float | None = typer.Option(
+        None,
+        "--min-mean-score",
+        help="Fail (exit 3) if mean_score < this threshold.",
+    ),
+    min_pass_rate: float | None = typer.Option(
+        None,
+        "--min-pass-rate",
+        help="Fail (exit 3) if pass_rate < this threshold.",
+    ),
+    fail_on_error: bool | None = typer.Option(
+        None,
+        "--fail-on-error/--no-fail-on-error",
+        help="Fail the gate (exit 3) if any row errored.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
-    """Run the configured scorer over a JSONL dataset and print a summary."""
+    """Run the configured scorer over a JSONL dataset, emit to sinks, and gate."""
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
 
-    cfg = get_settings().eval
+    settings = get_settings()
+    cfg = settings.eval
+    # Layer in any entry-point scorer/sink plugins (no-op unless enabled).
+    ensure_eval_plugins(settings)
+
     effective_dataset = dataset_path or cfg.dataset_path
     if not effective_dataset:
         typer.echo(
@@ -184,12 +265,25 @@ def eval_cmd(
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
     effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
 
+    # Resolve gate config (CLI overrides settings). The gate is "engaged" when
+    # explicitly enabled, when any threshold is set, or when fail_on_error is on.
+    eff_min_mean = min_mean_score if min_mean_score is not None else cfg.min_mean_score
+    eff_min_pass = min_pass_rate if min_pass_rate is not None else cfg.min_pass_rate
+    eff_fail_on_error = fail_on_error if fail_on_error is not None else cfg.fail_on_error
+    gate_enabled = gate if gate is not None else cfg.gate_enabled
+    gating_engaged = (
+        gate_enabled or eff_min_mean is not None or eff_min_pass is not None or eff_fail_on_error
+    )
+
+    # Build scorer + sinks up front so misconfiguration fails fast (exit 2)
+    # before a (potentially long) eval run.
     try:
         scorer_factory = scorer_registry.get(scorer_name)
+        scorer_instance = scorer_factory(dict(cfg.scorer_options))
+        sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
     except MangomasError as exc:
-        typer.echo(f"Unknown scorer {scorer_name!r}: {exc}", err=True)
+        typer.echo(f"Eval configuration error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
-    scorer_instance = scorer_factory(dict(cfg.scorer_options))
 
     orch = _build()
     runner = EvalRunner(
@@ -199,35 +293,36 @@ def eval_cmd(
         fail_fast=effective_fail_fast,
     )
 
-    async def _run_scoring() -> EvalReport:
+    async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:
         try:
             dataset = await load_jsonl(effective_dataset)
-            return await runner.run(dataset, agent_name)
+            report = await runner.run(dataset, agent_name)
         finally:
             await _close_orchestrator(orch)
+        gate_result = (
+            evaluate_gate(
+                report,
+                min_mean_score=eff_min_mean,
+                min_pass_rate=eff_min_pass,
+                fail_on_error=eff_fail_on_error,
+            )
+            if gating_engaged
+            else None
+        )
+        sink_error = await _emit_sinks(sinks, report, gate_result)
+        return report, gate_result, sink_error
 
     try:
-        report = asyncio.run(_run_scoring())
+        _report, gate_result, sink_error = asyncio.run(_run_eval())
     except MangomasError as exc:
         typer.echo(f"Eval run failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(
-        f"scorer={report.scorer} agent={report.agent_name} "
-        f"size={report.dataset_size} passed={report.passed} "
-        f"failed={report.failed} errored={report.errored} "
-        f"mean_score={report.mean_score:.3f}"
-    )
-    for row in report.rows:
-        flag = "PASS" if row.passed else "FAIL"
-        typer.echo(f"  [{flag}] {row.row_id} score={row.score:.3f}")
-
-    if output_json:
-        out_path = Path(output_json)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = dataclasses.asdict(report)
-        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
-        typer.echo(f"Report written to {out_path}")
+    if sink_error is not None:
+        typer.echo(f"Eval sink error: {sink_error}", err=True)
+        raise typer.Exit(code=1)
+    if gate_result is not None and not gate_result.passed:
+        raise typer.Exit(code=EVAL_GATE_EXIT_CODE)
 
 
 rag_app = typer.Typer(help="Retrieval-augmented generation commands", no_args_is_help=True)
