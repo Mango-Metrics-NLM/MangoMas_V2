@@ -150,7 +150,9 @@ def _build_sinks(
 
     ``--output-json`` injects (or overrides the ``path`` of) the ``json_file``
     sink so pre-existing invocations keep producing the same file. CLI flag
-    precedence: ``--output-json`` > ``sink_options["json_file"]["path"]``.
+    precedence: ``--output-json`` > ``sink_options["json_file"]["path"]``. Any
+    *other* configured ``sink_options["json_file"]`` keys are preserved even
+    when the sink is injected solely by ``--output-json``.
     Raises :class:`~mangomas.errors.MangomasError` (→ exit 2) on an unknown sink
     or a misconfigured option.
     """
@@ -159,7 +161,9 @@ def _build_sinks(
     if output_json:
         if "json_file" not in names:
             names.append("json_file")
-        options.setdefault("json_file", {})
+        # Seed from any configured json_file options so injecting the sink via
+        # --output-json never silently drops them; only ``path`` is overridden.
+        options.setdefault("json_file", dict(sink_options.get("json_file", {})))
         options["json_file"]["path"] = output_json
     return [sink_registry.get(name)(options.get(name, {})) for name in names]
 
@@ -322,7 +326,8 @@ def eval_cmd(
         scorer_instance = scorer_factory(dict(cfg.scorer_options))
         sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
     except MangomasError as exc:
-        typer.echo(f"Eval configuration error: {exc}", err=True)
+        detail = f" ({exc.detail})" if exc.detail else ""
+        typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
         raise typer.Exit(code=2) from exc
 
     orch = _build()
@@ -361,6 +366,10 @@ def eval_cmd(
     if sink_error is not None:
         typer.echo(f"Eval sink error: {sink_error}", err=True)
         raise typer.Exit(code=1)
+    # Preserve the pre-sink-refactor confirmation line so existing
+    # ``--output-json`` scripts still see "Report written to ...".
+    if output_json:
+        typer.echo(f"Report written to {output_json}")
     if gate_result is not None and not gate_result.passed:
         raise typer.Exit(code=EVAL_GATE_EXIT_CODE)
 

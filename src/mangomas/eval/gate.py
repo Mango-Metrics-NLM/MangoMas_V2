@@ -1,6 +1,8 @@
 """Quality gate — turns an :class:`EvalReport` into a pass/fail CI verdict.
 
-The gate is a pure, side-effect-free function over the aggregate report. It is
+The gate is a deterministic function over the aggregate report — its only
+side effect is emitting a telemetry span plus one structured log line (it never
+mutates the report or touches external state). It is
 *off by default*: when no thresholds are configured and ``fail_on_error`` is
 ``False`` it returns ``passed=True`` so existing ``mangomas eval`` runs keep
 exit code 0. When engaged, the CLI maps a failing gate to exit code 3 (distinct
@@ -35,8 +37,10 @@ _tracer = get_tracer(__name__)
 class GateResult:
     """Outcome of evaluating a quality gate against an :class:`EvalReport`.
 
-    ``reasons`` is empty when the gate passes and otherwise lists each failed
-    criterion in human-readable form. ``actual_mean_score`` / ``actual_pass_rate``
+    ``reasons`` lists each failed criterion in human-readable form. It is empty
+    on a clean pass, but a *passing* result may still carry a single
+    informational note (e.g. an empty dataset has nothing to gate).
+    ``actual_mean_score`` / ``actual_pass_rate``
     are surfaced (alongside the configured thresholds) so a sink can emit the
     full gate context without recomputing it.
     """
