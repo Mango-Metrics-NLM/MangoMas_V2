@@ -93,6 +93,8 @@ mangomas = "mangomas.cli.main:app"
 #   my_sink = "mypkg.module:factory"
 #   [project.entry-points."mangomas.eval.targets"]
 #   my_target = "mypkg.module:factory"
+#   [project.entry-points."mangomas.eval.dataset_sources"]
+#   my_source = "mypkg.module:factory"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mangomas"]

@@ -177,6 +177,22 @@ unchanged.
 - **Plugin discovery**: new entry-point group `mangomas.eval.targets`
   (gated by `MANGOMAS_DISCOVERY_ENABLED`).
 
+### Added — Evaluation harness: dataset source abstraction
+
+Lets a dataset come from more than a local JSONL file (see ADR-0004). Additive
+and default-OFF — `dataset_source` defaults to `jsonl`, so existing `--dataset`
+runs are byte-for-byte unchanged.
+
+- **`DatasetSource` protocol + `dataset_source_registry`**
+  (`eval/dataset_source.py`, `eval/sources/`): `async load() -> list[DatasetRow]`.
+  Built-ins `jsonl` (wraps `load_jsonl`), `inline` (rows via options, validated
+  through the shared `_parse_row`), and optional `langfuse` (fetch a named
+  dataset; `mangomas[langfuse]` extra, lazy import).
+- **CLI**: `mangomas eval --dataset-source <name>`; `--dataset` feeds the
+  `jsonl` source's `path`. New `EvalSettings.dataset_source` /
+  `dataset_source_options`.
+- **Plugin discovery**: new entry-point group `mangomas.eval.dataset_sources`.
+
 ### Added — Retrieval-augmented generation (RAG)
 
 The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the

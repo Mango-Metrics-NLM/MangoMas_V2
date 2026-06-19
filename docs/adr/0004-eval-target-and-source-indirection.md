@@ -23,6 +23,14 @@ positional and gains an optional keyword `target`; an explicit target wins,
 otherwise `agent_name` is wrapped in the default `agent` target. `EvalReport`
 gains an additive `target_name` field defaulting to `""`.
 
+Symmetrically, introduce a `DatasetSource` protocol (`async load(self) ->
+list[DatasetRow]`) resolved through a `dataset_source_registry`, with built-ins
+`jsonl` (default — wraps the existing `load_jsonl`), `inline`, and the optional
+`langfuse` source. The `--dataset` flag keeps working by feeding the `jsonl`
+source's `path` option. Both seams reuse the same `Registry[T]` + entry-point
+discovery machinery (groups `mangomas.eval.targets` /
+`mangomas.eval.dataset_sources`).
+
 ## Consequences
 
 ### Positive
@@ -59,5 +67,7 @@ gains an additive `target_name` field defaulting to `""`.
 ## References
 
 - Code: `src/mangomas/eval/target.py`, `eval/target_registry.py`,
-  `eval/targets/`, `eval/runner.py` (`EvalRunner.run`, `_resolve_target`).
+  `eval/targets/`, `eval/runner.py` (`EvalRunner.run`, `_resolve_target`);
+  `eval/dataset_source.py`, `eval/sources/`, `cli/main.py`
+  (`_build_target`, `_build_dataset_source`).
 - Related ADRs: ADR-0003 (eval harness adopt-vs-build).

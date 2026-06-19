@@ -124,6 +124,22 @@ in the `agent` target); pass `target=` to use any other target. The report's
 Third-party targets register via the `mangomas.eval.targets` entry-point group
 (gated by `MANGOMAS_DISCOVERY_ENABLED`).
 
+## Dataset sources
+
+A **dataset source** is where rows come from, resolved by name through
+`dataset_source_registry` (default `jsonl`). Select one with `--dataset-source` /
+`MANGOMAS_EVAL__DATASET_SOURCE`; configure it via `dataset_source_options`. Every
+source yields the same validated `DatasetRow` list (via the shared `_parse_row`).
+
+| Source | Registry name | Behaviour |
+|---|---|---|
+| `JsonlSource` | `jsonl` | Read a local JSONL file (default). Path precedence: `--dataset` > `dataset_source_options["jsonl"]["path"]` > `MANGOMAS_EVAL__DATASET_PATH`. Wraps the existing `load_jsonl`. |
+| `InlineSource` | `inline` | Rows supplied directly via `dataset_source_options["inline"]["rows"]` (list of raw row dicts). Validated through `_parse_row`. Handy for tests / small embedded datasets. |
+| `LangfuseDatasetSource` | `langfuse` | Fetch a named Langfuse dataset (`dataset_source_options["langfuse"]["dataset"]`). Requires the `mangomas[langfuse]` extra (lazy-imported); creds via `LANGFUSE_*` env. Items map `input`→messages and `expected_output`→`expected`. |
+
+Third-party sources register via the `mangomas.eval.dataset_sources` entry-point
+group (gated by `MANGOMAS_DISCOVERY_ENABLED`).
+
 ## Quality gate (CI)
 
 The gate turns an `EvalReport` into a pass/fail verdict. It is **off by default**

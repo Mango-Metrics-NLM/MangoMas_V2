@@ -18,6 +18,7 @@ import logging
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Any
 
+from mangomas.eval.dataset_source import dataset_source_registry
 from mangomas.eval.registry import scorer_registry
 from mangomas.eval.sink_registry import sink_registry
 from mangomas.eval.target_registry import target_registry
@@ -33,6 +34,7 @@ _tracer = get_tracer(__name__)
 SCORER_ENTRY_POINT_GROUP = "mangomas.eval.scorers"
 SINK_ENTRY_POINT_GROUP = "mangomas.eval.sinks"
 TARGET_ENTRY_POINT_GROUP = "mangomas.eval.targets"
+DATASET_SOURCE_ENTRY_POINT_GROUP = "mangomas.eval.dataset_sources"
 
 # Idempotency latch so repeated CLI invocations in one process scan once.
 _discovered = False
@@ -101,6 +103,15 @@ def discover_targets(
     return _discover(group, registry, "target")
 
 
+def discover_dataset_sources(
+    *,
+    registry: Registry[Any] = dataset_source_registry,
+    group: str = DATASET_SOURCE_ENTRY_POINT_GROUP,
+) -> list[str]:
+    """Discover and register third-party dataset sources. Returns names registered."""
+    return _discover(group, registry, "dataset_source")
+
+
 def ensure_eval_plugins(settings: Settings) -> None:
     """Run discovery once per process when ``settings.discovery_enabled``.
 
@@ -114,4 +125,5 @@ def ensure_eval_plugins(settings: Settings) -> None:
     discover_scorers()
     discover_sinks()
     discover_targets()
+    discover_dataset_sources()
     _discovered = True

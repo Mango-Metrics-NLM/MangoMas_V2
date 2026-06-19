@@ -98,6 +98,10 @@ DEFAULT_EVAL_AGENT: str = "chat"
 # pre-target-indirection behaviour); other built-ins are ``pipeline`` /
 # ``fan_out`` / ``echo``. Resolved through ``target_registry``.
 DEFAULT_EVAL_TARGET: str = "agent"
+# Default dataset source. ``jsonl`` reads a local file (the historical loader);
+# other built-ins are ``inline`` / ``langfuse``. Resolved through
+# ``dataset_source_registry``.
+DEFAULT_EVAL_DATASET_SOURCE: str = "jsonl"
 DEFAULT_EVAL_OUTPUT_DIR: str = "eval-output"
 DEFAULT_EVAL_PARALLELISM: int = 1
 DEFAULT_EVAL_FAIL_FAST: bool = False
@@ -321,6 +325,15 @@ class EvalSettings(BaseModel):
     # ``{"pipeline": {"agents": ["planner", "reviewer"]}}``.
     target: str = DEFAULT_EVAL_TARGET
     target_options: dict[str, dict[str, object]] = Field(default_factory=dict)
+
+    # ── Dataset source ────────────────────────────────────────────────────────
+    # ``dataset_source`` selects where rows come from, resolved through
+    # ``dataset_source_registry`` (default ``jsonl`` == today's file loader).
+    # ``dataset_source_options`` carries per-source kwargs keyed by source name,
+    # e.g. ``{"inline": {"rows": [...]}}``. For ``jsonl`` the ``--dataset`` flag /
+    # ``dataset_path`` still supplies the path.
+    dataset_source: str = DEFAULT_EVAL_DATASET_SOURCE
+    dataset_source_options: dict[str, dict[str, object]] = Field(default_factory=dict)
 
     # ── Quality gate (CI) — default OFF ───────────────────────────────────────
     gate_enabled: bool = DEFAULT_EVAL_GATE_ENABLED

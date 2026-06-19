@@ -136,13 +136,15 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
 | `MANGOMAS_EVAL__TARGET` | `agent` | Eval target (`agent`/`pipeline`/`fan_out`/`echo`) resolved via `target_registry` |
 | `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name (e.g. `{"pipeline": {"agents": [...]}}`) |
+| `MANGOMAS_EVAL__DATASET_SOURCE` | `jsonl` | Dataset source (`jsonl`/`inline`/`langfuse`) resolved via `dataset_source_registry` |
+| `MANGOMAS_EVAL__DATASET_SOURCE_OPTIONS` | `{}` | Per-source options keyed by source name (e.g. `{"inline": {"rows": [...]}}`) |
 | `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the CI quality gate (exit 3 on fail) |
 | `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`langfuse`) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
-| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target plugins |
+| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 
 ---
 
@@ -189,6 +191,10 @@ gates the run for CI. Everything is additive and default-OFF. See
   (deterministic baseline). `EvalRunner.run` takes an optional `target=`; the
   legacy `agent_name` positional is wrapped in the `agent` target. `EvalReport`
   gains an additive `target_name`. See ADR-0004.
+- **Dataset sources** (`eval/dataset_source.py` + `eval/sources/`, registered in
+  `dataset_source_registry`): `jsonl` (default — wraps `load_jsonl`), `inline`
+  (rows via options), and the optional `langfuse` source (extra
+  `mangomas[langfuse]`). Selected via `--dataset-source`. See ADR-0004.
 - **Gate** (`eval/gate.py`): pure `evaluate_gate(report, ...) -> GateResult`.
   CLI adds **exit code 3** on failure (distinct from 1=runtime, 2=config), raised
   only after sinks emit. Off unless a threshold / `gate_enabled` / `fail_on_error`
@@ -198,10 +204,10 @@ gates the run for CI. Everything is additive and default-OFF. See
   `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC). Multiple sinks
   compose under per-sink fault isolation. `--output-json` injects `json_file`.
 - **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
-  `mangomas.eval.sinks` / `mangomas.eval.targets`; discovered only when
-  `MANGOMAS_DISCOVERY_ENABLED=true`.
+  `mangomas.eval.sinks` / `mangomas.eval.targets` / `mangomas.eval.dataset_sources`;
+  discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`.
 
-CLI: `mangomas eval -d <dataset> -s <scorer> [-t <target>] [--min-mean-score X] [-o report.json]`.
+CLI: `mangomas eval -d <dataset> -s <scorer> [-t <target>] [--dataset-source <src>] [-o report.json]`.
 Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
 
 ---

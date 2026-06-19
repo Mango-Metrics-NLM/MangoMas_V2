@@ -133,4 +133,5 @@ def test_ensure_eval_plugins_runs_once_when_enabled(monkeypatch: pytest.MonkeyPa
         discovery.SCORER_ENTRY_POINT_GROUP,
         discovery.SINK_ENTRY_POINT_GROUP,
         discovery.TARGET_ENTRY_POINT_GROUP,
+        discovery.DATASET_SOURCE_ENTRY_POINT_GROUP,
     ]

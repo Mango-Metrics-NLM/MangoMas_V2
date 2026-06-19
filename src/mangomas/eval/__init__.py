@@ -6,7 +6,13 @@ Public surface — keep stable; downstream consumers may import from here.
 from __future__ import annotations
 
 from mangomas.eval.dataset import DatasetRow, load_jsonl
+from mangomas.eval.dataset_source import (
+    DatasetSource,
+    DatasetSourceFactory,
+    dataset_source_registry,
+)
 from mangomas.eval.discovery import (
+    discover_dataset_sources,
     discover_scorers,
     discover_sinks,
     discover_targets,
@@ -27,6 +33,8 @@ from mangomas.eval.target_registry import TargetFactory, target_registry
 
 __all__ = [
     "DatasetRow",
+    "DatasetSource",
+    "DatasetSourceFactory",
     "EvalReport",
     "EvalRowResult",
     "EvalRunner",
@@ -39,6 +47,8 @@ __all__ = [
     "SinkFactory",
     "Target",
     "TargetFactory",
+    "dataset_source_registry",
+    "discover_dataset_sources",
     "discover_scorers",
     "discover_sinks",
     "discover_targets",

@@ -129,6 +129,41 @@ def test_eval_cli_missing_dataset_exits_2() -> None:
     assert "No dataset path provided" in result.stdout + result.stderr
 
 
+def test_eval_cli_inline_dataset_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--dataset-source inline reads rows from MANGOMAS_EVAL__DATASET_SOURCE_OPTIONS."""
+    rows = [{"id": "i1", "messages": [{"role": "user", "content": "x"}], "expected": "stub-reply"}]
+    monkeypatch.setenv(
+        "MANGOMAS_EVAL__DATASET_SOURCE_OPTIONS",
+        json.dumps({"inline": {"rows": rows}}),
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["eval", "--dataset-source", "inline", "--scorer", "exact_match"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "size=1" in result.stdout
+    assert "passed=1" in result.stdout
+
+
+def test_eval_cli_unknown_dataset_source_exits_2(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--dataset-source",
+            "definitely-not-a-source",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "definitely-not-a-source" in result.stdout + result.stderr
+
+
 def test_eval_cli_unknown_scorer_exits_2(fixtures_dir: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(

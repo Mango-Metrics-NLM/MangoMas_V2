@@ -12,17 +12,18 @@ import typer
 
 import mangomas.eval.scorers  # registers built-in scorers (side-effect import)
 import mangomas.eval.sinks
+import mangomas.eval.sources
 import mangomas.eval.targets  # noqa: F401 — registers built-in targets
 from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
-from mangomas.errors import MangomasError
+from mangomas.errors import ConfigError, MangomasError
 from mangomas.eval import (
     EvalReport,
     EvalRunner,
+    dataset_source_registry,
     ensure_eval_plugins,
     evaluate_gate,
-    load_jsonl,
     scorer_registry,
     sink_registry,
     target_registry,
@@ -32,7 +33,7 @@ from mangomas.rag import IngestionPipeline, IngestReport, Retriever
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import EvalSettings
     from mangomas.core import Orchestrator
-    from mangomas.eval import GateResult, Sink, Target
+    from mangomas.eval import DatasetSource, GateResult, Sink, Target
 
 # Windows default console codec is cp1252; LLM replies routinely contain
 # em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
@@ -194,6 +195,32 @@ def _build_target(
     return target_registry.get(target_name)(options)
 
 
+def _build_dataset_source(
+    source_name: str,
+    source_options: dict[str, dict[str, object]],
+    dataset_flag: str | None,
+    default_path: str | None,
+) -> DatasetSource:
+    """Resolve a dataset source name to an instance, folding in the JSONL path.
+
+    For the ``jsonl`` source the path is sourced with precedence ``--dataset``
+    flag > ``dataset_source_options["jsonl"]["path"]`` > settings ``dataset_path``,
+    so existing ``--dataset`` invocations keep working. Other sources read their
+    config straight from ``dataset_source_options``. Raises
+    :class:`~mangomas.errors.MangomasError` (→ exit 2) on an unknown source or a
+    missing/misconfigured option (e.g. no JSONL path).
+    """
+    options = dict(source_options.get(source_name, {}))
+    if source_name == "jsonl":
+        path = dataset_flag or options.get("path") or default_path
+        if not path:
+            raise ConfigError(
+                "No dataset path provided. Pass --dataset or set MANGOMAS_EVAL__DATASET_PATH."
+            )
+        options["path"] = path
+    return dataset_source_registry.get(source_name)(options)
+
+
 async def _emit_sinks(
     sinks: list[Sink],
     report: EvalReport,
@@ -262,7 +289,12 @@ def eval_cmd(
         None,
         "--dataset",
         "-d",
-        help="JSONL dataset path; falls back to MANGOMAS_EVAL__DATASET_PATH.",
+        help="JSONL dataset path (jsonl source); falls back to MANGOMAS_EVAL__DATASET_PATH.",
+    ),
+    dataset_source: str | None = typer.Option(
+        None,
+        "--dataset-source",
+        help="Dataset source: jsonl|inline|langfuse (default from MANGOMAS_EVAL__DATASET_SOURCE).",
     ),
     scorer: str | None = typer.Option(
         None,
@@ -327,19 +359,12 @@ def eval_cmd(
 
     settings = get_settings()
     cfg = settings.eval
-    # Layer in any entry-point scorer/sink plugins (no-op unless enabled).
+    # Layer in any entry-point scorer/sink/target/source plugins (no-op unless enabled).
     ensure_eval_plugins(settings)
-
-    effective_dataset = dataset_path or cfg.dataset_path
-    if not effective_dataset:
-        typer.echo(
-            "No dataset path provided. Pass --dataset or set MANGOMAS_EVAL__DATASET_PATH.",
-            err=True,
-        )
-        raise typer.Exit(code=2)
 
     scorer_name = scorer or cfg.scorer
     target_name = target or cfg.target
+    source_name = dataset_source or cfg.dataset_source
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
     effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
 
@@ -358,6 +383,9 @@ def eval_cmd(
         scorer_instance = scorer_factory(dict(cfg.scorer_options))
         sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
         target_instance = _build_target(target_name, cfg.target_options, agent, cfg.agent)
+        source_instance = _build_dataset_source(
+            source_name, cfg.dataset_source_options, dataset_path, cfg.dataset_path
+        )
     except MangomasError as exc:
         detail = f" ({exc.detail})" if exc.detail else ""
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
@@ -373,7 +401,7 @@ def eval_cmd(
 
     async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:
         try:
-            dataset = await load_jsonl(effective_dataset)
+            dataset = await source_instance.load()
             report = await runner.run(dataset, target=target_instance)
         finally:
             await _close_orchestrator(orch)
