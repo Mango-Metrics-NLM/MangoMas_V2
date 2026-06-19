@@ -82,7 +82,7 @@ def test_langfuse_source_filters_dataset_from_client_options(
 ) -> None:
     _install_fake_langfuse(monkeypatch)
     source = LangfuseDatasetSource(dataset="d", options={"dataset": "d", "public_key": "pk"})
-    assert source._client.kwargs == {"public_key": "pk"}  # type: ignore[attr-defined]
+    assert source._client.kwargs == {"public_key": "pk"}
 
 
 @pytest.mark.langfuse
