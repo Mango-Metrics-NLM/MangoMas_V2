@@ -44,6 +44,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     run_gcp_secrets = os.getenv("RUN_GCP_SECRETS") == "1"
     run_embeddings_local = os.getenv("RUN_EMBEDDINGS_LOCAL") == "1"
     run_rag = os.getenv("RUN_RAG") == "1"
+    run_langfuse = os.getenv("RUN_LANGFUSE") == "1"
     integration_skip = pytest.mark.skip(reason="set RUN_INTEGRATION=1 to run integration tests")
     lmstudio_skip = pytest.mark.skip(reason="set RUN_LMSTUDIO=1 to run LM Studio tests")
     postgres_skip = pytest.mark.skip(reason="set RUN_POSTGRES=1 to run Postgres tests")
@@ -55,6 +56,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         reason="set RUN_EMBEDDINGS_LOCAL=1 to run sentence-transformers tests"
     )
     rag_skip = pytest.mark.skip(reason="set RUN_RAG=1 to run chromadb-backed RAG tests")
+    langfuse_skip = pytest.mark.skip(reason="set RUN_LANGFUSE=1 to run Langfuse sink tests")
 
     for item in items:
         path_parts = set(Path(str(item.fspath)).parts)
@@ -75,6 +77,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         # and wrongly skip the pure-domain chunker/models unit tests.
         if item.get_closest_marker("rag") is not None and not run_rag:
             item.add_marker(rag_skip)
+        if "langfuse" in item.keywords and not run_langfuse:
+            item.add_marker(langfuse_skip)
 
 
 # ── Settings fixture ──────────────────────────────────────────────────────────

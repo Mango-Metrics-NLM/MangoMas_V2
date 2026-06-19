@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mangomas.adapters.vector.base import VectorMatch
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
@@ -12,9 +12,13 @@ from mangomas.core.tools import ToolSpec
 from tests.constants import (
     DEFAULT_TOOL_NAME,
     DEFAULT_TOOL_RESULT,
+    FAKE_SINK_NAME,
     STUB_REPLY,
     STUB_VERTEX_REPLY,
 )
+
+if TYPE_CHECKING:
+    from mangomas.eval import EvalReport, GateResult
 
 
 @dataclass
@@ -334,3 +338,26 @@ class FakeMemoryRepository:
 
     def close(self) -> None:
         self.closed = True
+
+
+@dataclass
+class FakeSink:
+    """In-memory stub satisfying :class:`mangomas.eval.Sink`.
+
+    Records every ``(report, gate_result)`` pair it receives. Set
+    ``raise_on_emit`` to exercise the CLI's per-sink fault isolation.
+    """
+
+    name: str = FAKE_SINK_NAME
+    emitted: list[tuple[EvalReport, GateResult | None]] = field(default_factory=list)
+    raise_on_emit: BaseException | None = None
+
+    async def emit(
+        self,
+        report: EvalReport,
+        *,
+        gate_result: GateResult | None = None,
+    ) -> None:
+        if self.raise_on_emit is not None:
+            raise self.raise_on_emit
+        self.emitted.append((report, gate_result))

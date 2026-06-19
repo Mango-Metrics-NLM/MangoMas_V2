@@ -133,6 +133,22 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
 | `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
+| `MANGOMAS_EVAL__TARGET` | `agent` | Eval target (`agent`/`pipeline`/`fan_out`/`echo`) resolved via `target_registry` |
+| `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name (e.g. `{"pipeline": {"agents": [...]}}`) |
+| `MANGOMAS_EVAL__DATASET_SOURCE` | `jsonl` | Dataset source (`jsonl`/`inline`/`langfuse`) resolved via `dataset_source_registry` |
+| `MANGOMAS_EVAL__DATASET_SOURCE_OPTIONS` | `{}` | Per-source options keyed by source name (e.g. `{"inline": {"rows": [...]}}`) |
+| `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the CI quality gate (exit 3 on fail) |
+| `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
+| `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
+| `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
+| `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
+| `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
+| `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
+| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 
 ---
 
@@ -161,6 +177,50 @@ disabled both exit `2` with a clear "not enabled" message. The stubbed
 Extras: `pip install 'mangomas[embeddings-local]'` (sentence-transformers),
 `pip install 'mangomas[rag]'` (chromadb); Vertex embeddings reuse the `vertex`
 extra. Gated tests: `RUN_EMBEDDINGS_LOCAL=1`, `RUN_RAG=1`.
+
+---
+
+## Evaluation Harness (opt-in)
+
+`mangomas.eval` runs a JSONL dataset through any agent, scores each row with a
+pluggable `Scorer`, emits an `EvalReport` to one or more `Sink`s, and optionally
+gates the run for CI. Everything is additive and default-OFF. See
+`docs/eval/harness.md` and ADR-0003.
+
+- **Scorers** (`eval/scorers/`, registered in `scorer_registry`): `exact_match`,
+  `regex_match`, `contains`, `json_keys` (schema-conformance for `planner`/
+  `reviewer` JSON output), `llm_judge`, `embedding`.
+- **Targets** (`eval/target.py` + `eval/targets/`, registered in `target_registry`):
+  `agent` (default — dispatch one agent), `pipeline`, `fan_out`, and `echo`
+  (deterministic baseline). `EvalRunner.run` takes an optional `target=`; the
+  legacy `agent_name` positional is wrapped in the `agent` target. `EvalReport`
+  gains an additive `target_name`. See ADR-0004.
+- **Dataset sources** (`eval/dataset_source.py` + `eval/sources/`, registered in
+  `dataset_source_registry`): `jsonl` (default — wraps `load_jsonl`), `inline`
+  (rows via options), and the optional `langfuse` source (extra
+  `mangomas[langfuse]`). Selected via `--dataset-source`. See ADR-0004.
+- **Gate** (`eval/gate.py`): pure `evaluate_gate(report, ...) -> GateResult`.
+  CLI adds **exit code 3** on failure (distinct from 1=runtime, 2=config), raised
+  only after sinks emit. Off unless a threshold / `gate_enabled` / `fail_on_error`
+  is set.
+- **Regression gate** (`eval/baseline.py` + `eval/gate.py`): `load_baseline` reads
+  a prior `json_file` report; pure `diff_reports` → `ReportDiff`;
+  `evaluate_regression_gate(diff, ...)` fails (exit 3) on a `mean_score`/`pass_rate`
+  drop beyond tolerance or new row failures. `--baseline` + `--max-*-drop` /
+  `--no-allow-new-failures`; threshold + regression verdicts combine via
+  `merge_gate_results`. See ADR-0005.
+- **Sinks** (`eval/sink.py` + `eval/sinks/`, registered in `sink_registry`):
+  `console`, `json_file`, `sqlite_results` (append report + rows to SQLite),
+  `webhook` (httpx POST), and the optional `langfuse` sink (extra
+  `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC; `per_row` option
+  emits one trace/score per row). Multiple sinks compose under per-sink fault
+  isolation. `--output-json` injects `json_file`.
+- **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
+  `mangomas.eval.sinks` / `mangomas.eval.targets` / `mangomas.eval.dataset_sources`;
+  discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`.
+
+CLI: `mangomas eval -d <dataset> -s <scorer> [-t <target>] [--dataset-source <src>] [-o report.json]`.
+Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
 
 ---
 

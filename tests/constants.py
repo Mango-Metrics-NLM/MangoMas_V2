@@ -141,3 +141,18 @@ POSTGRES_TEST_PASSWORD: str = "mangomas_test"  # noqa: S105  test-only
 # ── GCP Secret Manager E2E env-var names ──────────────────────────────────────
 GCP_SECRETS_PROJECT_ENV: str = "GCP_SECRETS_PROJECT"
 GCP_SECRETS_SECRET_NAME_ENV: str = "GCP_SECRETS_SECRET_NAME"  # noqa: S105  env-var name
+
+# ── Eval harness (gate / sinks / scorers / discovery) ─────────────────────────
+RUN_LANGFUSE_ENV: str = "RUN_LANGFUSE"
+FAKE_SINK_NAME: str = "fake"
+EVAL_SINK_CONSOLE: str = "console"
+EVAL_SINK_JSON_FILE: str = "json_file"
+EVAL_SINK_LANGFUSE: str = "langfuse"
+# Exit code the CLI raises when the quality gate fails (mirrors
+# mangomas.cli.main.EVAL_GATE_EXIT_CODE).
+EVAL_GATE_EXIT_CODE: int = 3
+EVAL_THRESHOLD_STRICT: float = 0.99
+EVAL_THRESHOLD_LENIENT: float = 0.0
+EVAL_SCHEMA_VERSION_CURRENT: int = 1
+FAKE_PLUGIN_SCORER_NAME: str = "fake_plugin_scorer"
+FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"

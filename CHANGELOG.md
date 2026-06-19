@@ -135,6 +135,97 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Evaluation harness: gating, sinks, scorers, plugins
+
+Adopts eval-harness patterns natively (see ADR-0003). All additions are
+opt-in and default-OFF, so existing `mangomas eval` runs are unchanged.
+
+- **Quality gate** (`eval/gate.py`): `evaluate_gate(report, ...) -> GateResult`.
+  New `EvalSettings` fields `gate_enabled` / `min_mean_score` / `min_pass_rate` /
+  `fail_on_error`. The CLI exits **3** when the gate fails (after sinks emit),
+  distinct from 1 (runtime) and 2 (config).
+- **Result sinks** (`eval/sink.py`, `eval/sink_registry.py`, `eval/sinks/`):
+  `Sink` protocol + `sink_registry`. Built-ins `console` and `json_file` refactor
+  the former inline CLI output; optional `langfuse` sink behind the new
+  `mangomas[langfuse]` extra (lazy import, `LANGFUSE_*` env/ADC, mandatory
+  `flush()`). Multiple sinks compose under per-sink fault isolation. `--output-json`
+  is preserved by injecting `json_file`. New `sinks` / `sink_options` settings.
+- **Scorers** (`eval/scorers/`): `regex_match`, `contains`, and `json_keys`
+  (schema-conformance grading for structured agent output).
+- **Plugin discovery** (`eval/discovery.py`): entry-point groups
+  `mangomas.eval.scorers` / `mangomas.eval.sinks`, gated by
+  `MANGOMAS_DISCOVERY_ENABLED`; failing plugins are logged and skipped.
+- **Config version marker**: `EvalSettings.schema_version` (forward-compatible;
+  a future version warns instead of crashing).
+
+### Added — Evaluation harness: target indirection
+
+Lets a run evaluate something other than a single registered agent (see
+ADR-0004). Additive and default-OFF — `target` defaults to `agent`, so existing
+`mangomas eval` / `EvalRunner.run(dataset, agent_name=...)` behaviour is
+unchanged.
+
+- **`Target` protocol + `target_registry`** (`eval/target.py`,
+  `eval/target_registry.py`, `eval/targets/`): `async run(request, *, orch) -> str`.
+  Built-ins `agent` (default, dispatches one agent), `pipeline`, `fan_out`
+  (`join=first|concat`), and `echo` (deterministic baseline / test fixture).
+- **`EvalRunner.run`** gains an optional keyword `target`; `agent_name` stays a
+  positional and is wrapped in the default `agent` target. New additive
+  `EvalReport.target_name` field (defaults to `""` for old artifacts).
+- **CLI**: `mangomas eval --target <name>`; `--agent` folds into the `agent`
+  target. New `EvalSettings.target` / `target_options`.
+- **Plugin discovery**: new entry-point group `mangomas.eval.targets`
+  (gated by `MANGOMAS_DISCOVERY_ENABLED`).
+
+### Added — Evaluation harness: dataset source abstraction
+
+Lets a dataset come from more than a local JSONL file (see ADR-0004). Additive
+and default-OFF — `dataset_source` defaults to `jsonl`, so existing `--dataset`
+runs are byte-for-byte unchanged.
+
+- **`DatasetSource` protocol + `dataset_source_registry`**
+  (`eval/dataset_source.py`, `eval/sources/`): `async load() -> list[DatasetRow]`.
+  Built-ins `jsonl` (wraps `load_jsonl`), `inline` (rows via options, validated
+  through the shared `_parse_row`), and optional `langfuse` (fetch a named
+  dataset; `mangomas[langfuse]` extra, lazy import).
+- **CLI**: `mangomas eval --dataset-source <name>`; `--dataset` feeds the
+  `jsonl` source's `path`. New `EvalSettings.dataset_source` /
+  `dataset_source_options`.
+- **Plugin discovery**: new entry-point group `mangomas.eval.dataset_sources`.
+
+### Added — Evaluation harness: SQLite + webhook sinks, per-row Langfuse
+
+More result destinations, all additive and default-OFF (sinks default to
+`["console"]`).
+
+- **`SqliteResultsSink`** (`sqlite_results`): append the report + per-row
+  results to `eval_reports` / `eval_rows` tables at `db_path` (queryable
+  history; gate verdict stored as `gate_json`).
+- **`WebhookSink`** (`webhook`): POST the `json_file`-shaped payload to `url`
+  via httpx (core dep — no extra). Option `timeout_seconds`
+  (`MANGOMAS_EVAL__WEBHOOK...` default 10s); non-2xx fails the sink.
+- **Per-row Langfuse**: `LangfuseSink` gains a `per_row` option (default
+  `false`) — when `true` it also emits one trace + `row_score` per row in
+  addition to the aggregate trace + `mean_score`.
+
+### Added — Evaluation harness: regression / baseline gating
+
+Fail CI when a run regresses against a saved baseline (see ADR-0005). Additive
+and default-OFF — engaged only when `--baseline` / `MANGOMAS_EVAL__BASELINE_PATH`
+is set.
+
+- **`eval/baseline.py`**: `load_baseline` (reconstructs an `EvalReport` from a
+  `json_file` artifact, ignoring the `"gate"` key and tolerating a missing
+  `target_name`); pure `diff_reports(baseline, current) -> ReportDiff`
+  (per-metric deltas + regressed/new/dropped row partition).
+- **`eval/gate.py`**: `evaluate_regression_gate(diff, *, max_mean_score_drop,
+  max_pass_rate_drop, allow_new_failures) -> GateResult` (reuses `GateResult`);
+  `merge_gate_results` combines threshold + regression verdicts (AND).
+- **CLI**: `--baseline`, `--max-mean-score-drop`, `--max-pass-rate-drop`,
+  `--allow-new-failures/--no-allow-new-failures`; a missing baseline is exit 2.
+  New `EvalSettings.baseline_path` / `max_mean_score_drop` / `max_pass_rate_drop`
+  / `allow_new_failures`.
+
 ### Added — Retrieval-augmented generation (RAG)
 
 The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the
