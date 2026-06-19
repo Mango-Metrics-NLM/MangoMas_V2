@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -45,6 +46,16 @@ class _PluginScorer:
 
 def _scorer_factory(options: dict[str, Any]) -> _PluginScorer:  # noqa: ARG001
     return _PluginScorer()
+
+
+def _recording_entry_points(calls: list[str]) -> Callable[..., list[Any]]:
+    """Return an ``entry_points`` stub that records the requested group."""
+
+    def _inner(*, group: str) -> list[Any]:
+        calls.append(group)
+        return []
+
+    return _inner
 
 
 def test_discover_scorers_registers_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,11 +117,7 @@ def test_discover_override_logs_info(
 def test_ensure_eval_plugins_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(discovery, "_discovered", False)
     calls: list[str] = []
-    monkeypatch.setattr(
-        discovery,
-        "entry_points",
-        lambda group: calls.append(group) or [],
-    )
+    monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     discovery.ensure_eval_plugins(Settings(discovery_enabled=False))
     assert calls == []
 
@@ -118,11 +125,7 @@ def test_ensure_eval_plugins_noop_when_disabled(monkeypatch: pytest.MonkeyPatch)
 def test_ensure_eval_plugins_runs_once_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(discovery, "_discovered", False)
     calls: list[str] = []
-    monkeypatch.setattr(
-        discovery,
-        "entry_points",
-        lambda group: calls.append(group) or [],
-    )
+    monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     settings = Settings(discovery_enabled=True)
     discovery.ensure_eval_plugins(settings)
     discovery.ensure_eval_plugins(settings)  # idempotent — no second scan

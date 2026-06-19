@@ -45,9 +45,19 @@ def _discover(group: str, registry: Registry[Any], label: str) -> list[str]:
         for ep in entry_points(group=group):
             try:
                 factory = ep.load()
+                if ep.name in existing:
+                    logger.info(
+                        "Eval plugin overrides built-in %s %r",
+                        label,
+                        ep.name,
+                        extra={"event": "eval_plugin_override", "group": group, "plugin": ep.name},
+                    )
+                registry.register(ep.name, factory)
             except Exception as exc:
+                # Loading *or* registering a plugin must never break discovery
+                # for everyone else — log and skip the offending entry point.
                 logger.warning(
-                    "Eval plugin failed to load; skipping",
+                    "Eval plugin failed to load or register; skipping",
                     extra={
                         "event": "eval_plugin_load_failed",
                         "group": group,
@@ -57,14 +67,6 @@ def _discover(group: str, registry: Registry[Any], label: str) -> list[str]:
                     },
                 )
                 continue
-            if ep.name in existing:
-                logger.info(
-                    "Eval plugin overrides built-in %s %r",
-                    label,
-                    ep.name,
-                    extra={"event": "eval_plugin_override", "group": group, "plugin": ep.name},
-                )
-            registry.register(ep.name, factory)
             discovered.append(ep.name)
         span.set_attribute("discovery.count", len(discovered))
     return discovered

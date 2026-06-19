@@ -48,10 +48,14 @@ class LangfuseSink:
     name = "langfuse"
 
     def __init__(self, *, options: dict[str, Any] | None = None) -> None:
-        # Resolve the SDK at construction so misconfiguration surfaces
-        # immediately (exit 2) rather than after a full eval run.
-        self._langfuse = _import_langfuse()
-        self._options = dict(options or {})
+        # Resolve the SDK *and* construct the client at init so any
+        # misconfiguration (missing extra, bad options) surfaces immediately
+        # (exit 2) rather than after a full eval run.
+        langfuse = _import_langfuse()
+        try:
+            self._client = langfuse.Langfuse(**dict(options or {}))
+        except Exception as exc:
+            raise ConfigError(f"invalid Langfuse configuration: {exc}") from exc
 
     async def emit(
         self,
@@ -69,7 +73,7 @@ class LangfuseSink:
         report: EvalReport,
         gate_result: GateResult | None,
     ) -> None:
-        client = self._langfuse.Langfuse(**self._options)
+        client = self._client
         try:
             metadata: dict[str, Any] = {
                 "scorer": report.scorer,

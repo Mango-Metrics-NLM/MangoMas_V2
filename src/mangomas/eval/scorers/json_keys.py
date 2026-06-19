@@ -100,7 +100,9 @@ class JsonKeysScorer:
 
 def _json_keys_factory(options: dict[str, Any]) -> Scorer:
     raw = options.get("required_keys")
-    required = [str(k) for k in raw] if isinstance(raw, (list, tuple)) else None
+    if raw is not None and not isinstance(raw, (list, tuple)):
+        raise ConfigError("json_keys: 'required_keys' option must be a list or tuple")
+    required = [str(k) for k in raw] if raw is not None else None
     return JsonKeysScorer(required_keys=required, strict=bool(options.get("strict", False)))
 
 

@@ -275,6 +275,16 @@ def eval_cmd(
         gate_enabled or eff_min_mean is not None or eff_min_pass is not None or eff_fail_on_error
     )
 
+    # Validate CLI-supplied thresholds (these bypass the EvalSettings validator,
+    # which only guards env/file config) so a bad value fails fast at exit 2.
+    for label, val in (("min-mean-score", eff_min_mean), ("min-pass-rate", eff_min_pass)):
+        if val is not None and not 0.0 <= val <= 1.0:
+            typer.echo(
+                f"Eval configuration error: {label} must be in [0.0, 1.0]; got {val}",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+
     # Build scorer + sinks up front so misconfiguration fails fast (exit 2)
     # before a (potentially long) eval run.
     try:

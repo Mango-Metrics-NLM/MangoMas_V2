@@ -15,6 +15,7 @@ import mangomas.cli.main as cli_main
 from mangomas.cli.main import app
 from mangomas.config import get_settings
 from mangomas.core import Orchestrator
+from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
 from tests.constants import EVAL_GATE_EXIT_CODE, EVAL_THRESHOLD_LENIENT, EVAL_THRESHOLD_STRICT
 from tests.fakes import FakeSink
@@ -195,6 +196,24 @@ def test_eval_cli_gate_failure_still_writes_artifacts(fixtures_dir: Path, tmp_pa
     assert payload["gate"]["passed"] is False
 
 
+def test_eval_cli_invalid_threshold_exits_2(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--min-mean-score",
+            "1.5",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "must be in [0.0, 1.0]" in (result.stdout + result.stderr)
+
+
 # ── Sinks ─────────────────────────────────────────────────────────────────────
 
 
@@ -227,7 +246,8 @@ def test_emit_sinks_isolates_failures() -> None:
     good_a = FakeSink(name="a")
     boom = FakeSink(name="boom", raise_on_emit=RuntimeError("sink down"))
     good_b = FakeSink(name="b")
-    exc = asyncio.run(cli_main._emit_sinks([good_a, boom, good_b], _report(), None))
+    sinks: list[Sink] = [good_a, boom, good_b]
+    exc = asyncio.run(cli_main._emit_sinks(sinks, _report(), None))
     assert isinstance(exc, RuntimeError)
     # Both healthy sinks still emitted despite the failure in between.
     assert len(good_a.emitted) == 1
@@ -235,6 +255,6 @@ def test_emit_sinks_isolates_failures() -> None:
 
 
 def test_emit_sinks_returns_none_when_all_succeed() -> None:
-    sinks = [FakeSink(name="a"), FakeSink(name="b")]
+    sinks: list[Sink] = [FakeSink(name="a"), FakeSink(name="b")]
     exc = asyncio.run(cli_main._emit_sinks(sinks, _report(), None))
     assert exc is None

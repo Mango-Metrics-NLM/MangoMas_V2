@@ -82,6 +82,21 @@ def test_langfuse_sink_missing_sdk_raises_config_error(
         _langfuse_factory({})
 
 
+def test_langfuse_sink_bad_options_raise_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A client that fails to construct surfaces as ConfigError at init."""
+
+    def _boom(**_: Any) -> Any:
+        raise ValueError("bad credentials")
+
+    module = types.ModuleType("langfuse")
+    module.Langfuse = _boom  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "langfuse", module)
+    with pytest.raises(ConfigError):
+        _langfuse_factory({"public_key": "x"})
+
+
 async def test_langfuse_sink_publishes_with_fake_sdk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

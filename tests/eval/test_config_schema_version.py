@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -49,8 +50,9 @@ def test_sinks_default_to_console_only() -> None:
 
 @pytest.mark.parametrize("field", ["min_mean_score", "min_pass_rate"])
 def test_threshold_out_of_range_rejected(field: str) -> None:
+    kwargs: dict[str, Any] = {field: 1.5}
     with pytest.raises(ValidationError):
-        EvalSettings(**{field: 1.5})
+        EvalSettings(**kwargs)
 
 
 @pytest.mark.parametrize("value", [0.0, 0.5, 1.0])

@@ -74,6 +74,11 @@ def test_json_keys_registered() -> None:
     assert scorer.name == "json_keys"
 
 
+def test_json_keys_factory_rejects_non_list_required_keys() -> None:
+    with pytest.raises(ConfigError):
+        scorer_registry.get("json_keys")({"required_keys": "a,b"})
+
+
 # ── Hypothesis fuzz ───────────────────────────────────────────────────────────
 _hypothesis = pytest.importorskip("hypothesis")
 given = cast(Callable[..., Callable[..., Any]], _hypothesis.given)
