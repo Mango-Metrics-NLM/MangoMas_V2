@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -22,8 +23,12 @@ from mangomas.eval import (
     EvalReport,
     EvalRunner,
     dataset_source_registry,
+    diff_reports,
     ensure_eval_plugins,
     evaluate_gate,
+    evaluate_regression_gate,
+    load_baseline,
+    merge_gate_results,
     scorer_registry,
     sink_registry,
     target_registry,
@@ -242,6 +247,45 @@ async def _emit_sinks(
     return first_exc
 
 
+async def _evaluate_run_gates(
+    report: EvalReport,
+    *,
+    gating_engaged: bool,
+    min_mean_score: float | None,
+    min_pass_rate: float | None,
+    fail_on_error: bool,
+    baseline_path: str | None,
+    max_mean_score_drop: float | None,
+    max_pass_rate_drop: float | None,
+    allow_new_failures: bool,
+) -> GateResult | None:
+    """Compute the merged threshold + regression gate verdict for *report*.
+
+    Returns ``None`` when neither gate is engaged. The baseline is loaded and
+    diffed here (its existence was validated up front for exit-2 semantics).
+    """
+    threshold_gate = (
+        evaluate_gate(
+            report,
+            min_mean_score=min_mean_score,
+            min_pass_rate=min_pass_rate,
+            fail_on_error=fail_on_error,
+        )
+        if gating_engaged
+        else None
+    )
+    regression_gate = None
+    if baseline_path:
+        diff = diff_reports(await load_baseline(baseline_path), report)
+        regression_gate = evaluate_regression_gate(
+            diff,
+            max_mean_score_drop=max_mean_score_drop,
+            max_pass_rate_drop=max_pass_rate_drop,
+            allow_new_failures=allow_new_failures,
+        )
+    return merge_gate_results([threshold_gate, regression_gate])
+
+
 def _resolve_gating(
     *,
     gate: bool | None,
@@ -281,6 +325,41 @@ def _resolve_gating(
                 )
                 raise typer.Exit(code=2)
     return gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error
+
+
+def _resolve_regression(
+    *,
+    baseline: str | None,
+    max_mean_score_drop: float | None,
+    max_pass_rate_drop: float | None,
+    allow_new_failures: bool | None,
+    cfg: EvalSettings,
+) -> tuple[str | None, float | None, float | None, bool]:
+    """Resolve effective regression-gate config (CLI flag over settings)."""
+    return (
+        baseline or cfg.baseline_path,
+        max_mean_score_drop if max_mean_score_drop is not None else cfg.max_mean_score_drop,
+        max_pass_rate_drop if max_pass_rate_drop is not None else cfg.max_pass_rate_drop,
+        allow_new_failures if allow_new_failures is not None else cfg.allow_new_failures,
+    )
+
+
+def _finish_eval(
+    *,
+    output_json: str | None,
+    sink_error: BaseException | None,
+    gate_result: GateResult | None,
+) -> None:
+    """Surface the run outcome: sink error (exit 1), confirmation, gate (exit 3)."""
+    if sink_error is not None:
+        typer.echo(f"Eval sink error: {sink_error}", err=True)
+        raise typer.Exit(code=1)
+    # Preserve the pre-sink-refactor confirmation line so existing
+    # ``--output-json`` scripts still see "Report written to ...".
+    if output_json:
+        typer.echo(f"Report written to {output_json}")
+    if gate_result is not None and not gate_result.passed:
+        raise typer.Exit(code=EVAL_GATE_EXIT_CODE)
 
 
 @app.command(name="eval")
@@ -351,6 +430,26 @@ def eval_cmd(
         "--fail-on-error/--no-fail-on-error",
         help="Fail the gate (exit 3) if any row errored.",
     ),
+    baseline: str | None = typer.Option(
+        None,
+        "--baseline",
+        help="Baseline report JSON to diff against (default from MANGOMAS_EVAL__BASELINE_PATH).",
+    ),
+    max_mean_score_drop: float | None = typer.Option(
+        None,
+        "--max-mean-score-drop",
+        help="Fail (exit 3) if mean_score drops more than this vs the baseline.",
+    ),
+    max_pass_rate_drop: float | None = typer.Option(
+        None,
+        "--max-pass-rate-drop",
+        help="Fail (exit 3) if pass_rate drops more than this vs the baseline.",
+    ),
+    allow_new_failures: bool | None = typer.Option(
+        None,
+        "--allow-new-failures/--no-allow-new-failures",
+        help="Fail the gate (exit 3) on rows that passed in the baseline but fail now.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Run the configured scorer over a JSONL dataset, emit to sinks, and gate."""
@@ -376,6 +475,14 @@ def eval_cmd(
         cfg=cfg,
     )
 
+    effective_baseline, eff_max_mean_drop, eff_max_pass_drop, eff_allow_new = _resolve_regression(
+        baseline=baseline,
+        max_mean_score_drop=max_mean_score_drop,
+        max_pass_rate_drop=max_pass_rate_drop,
+        allow_new_failures=allow_new_failures,
+        cfg=cfg,
+    )
+
     # Build scorer + sinks up front so misconfiguration fails fast (exit 2)
     # before a (potentially long) eval run.
     try:
@@ -386,6 +493,10 @@ def eval_cmd(
         source_instance = _build_dataset_source(
             source_name, cfg.dataset_source_options, dataset_path, cfg.dataset_path
         )
+        # Validate the baseline exists up front so a missing file is exit 2
+        # (config), not exit 1 (runtime). Parsing happens during the run.
+        if effective_baseline and not Path(effective_baseline).is_file():
+            raise ConfigError(f"Baseline report not found: {effective_baseline}")
     except MangomasError as exc:
         detail = f" ({exc.detail})" if exc.detail else ""
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
@@ -405,15 +516,16 @@ def eval_cmd(
             report = await runner.run(dataset, target=target_instance)
         finally:
             await _close_orchestrator(orch)
-        gate_result = (
-            evaluate_gate(
-                report,
-                min_mean_score=eff_min_mean,
-                min_pass_rate=eff_min_pass,
-                fail_on_error=eff_fail_on_error,
-            )
-            if gating_engaged
-            else None
+        gate_result = await _evaluate_run_gates(
+            report,
+            gating_engaged=gating_engaged,
+            min_mean_score=eff_min_mean,
+            min_pass_rate=eff_min_pass,
+            fail_on_error=eff_fail_on_error,
+            baseline_path=effective_baseline,
+            max_mean_score_drop=eff_max_mean_drop,
+            max_pass_rate_drop=eff_max_pass_drop,
+            allow_new_failures=eff_allow_new,
         )
         sink_error = await _emit_sinks(sinks, report, gate_result)
         return report, gate_result, sink_error
@@ -424,15 +536,7 @@ def eval_cmd(
         typer.echo(f"Eval run failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    if sink_error is not None:
-        typer.echo(f"Eval sink error: {sink_error}", err=True)
-        raise typer.Exit(code=1)
-    # Preserve the pre-sink-refactor confirmation line so existing
-    # ``--output-json`` scripts still see "Report written to ...".
-    if output_json:
-        typer.echo(f"Report written to {output_json}")
-    if gate_result is not None and not gate_result.passed:
-        raise typer.Exit(code=EVAL_GATE_EXIT_CODE)
+    _finish_eval(output_json=output_json, sink_error=sink_error, gate_result=gate_result)
 
 
 rag_app = typer.Typer(help="Retrieval-augmented generation commands", no_args_is_help=True)

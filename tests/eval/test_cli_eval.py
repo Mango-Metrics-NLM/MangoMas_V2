@@ -146,6 +146,63 @@ def test_eval_cli_inline_dataset_source(monkeypatch: pytest.MonkeyPatch) -> None
     assert "passed=1" in result.stdout
 
 
+def test_eval_cli_regression_gate_fails_exit_3(fixtures_dir: Path, tmp_path: Path) -> None:
+    """A passing baseline + a regressing echo target trips the regression gate."""
+    runner = CliRunner()
+    baseline = tmp_path / "baseline.json"
+    # 1. Passing baseline via the agent target (FakeLLM echoes STUB_REPLY).
+    first = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--output-json",
+            str(baseline),
+        ],
+    )
+    assert first.exit_code == 0, first.stdout
+    # 2. Re-run with a regressing echo target gated against the baseline.
+    second = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--target",
+            "echo",
+            "--baseline",
+            str(baseline),
+            "--max-mean-score-drop",
+            "0.0",
+        ],
+    )
+    assert second.exit_code == EVAL_GATE_EXIT_CODE, second.stdout
+    assert "mean_score dropped" in second.stdout
+
+
+def test_eval_cli_missing_baseline_exits_2(fixtures_dir: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--baseline",
+            str(tmp_path / "does-not-exist.json"),
+        ],
+    )
+    assert result.exit_code == 2
+    assert "Baseline report not found" in result.stdout + result.stderr
+
+
 def test_eval_cli_unknown_dataset_source_exits_2(fixtures_dir: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(

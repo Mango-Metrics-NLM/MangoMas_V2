@@ -142,6 +142,10 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
+| `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
+| `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
@@ -199,6 +203,12 @@ gates the run for CI. Everything is additive and default-OFF. See
   CLI adds **exit code 3** on failure (distinct from 1=runtime, 2=config), raised
   only after sinks emit. Off unless a threshold / `gate_enabled` / `fail_on_error`
   is set.
+- **Regression gate** (`eval/baseline.py` + `eval/gate.py`): `load_baseline` reads
+  a prior `json_file` report; pure `diff_reports` → `ReportDiff`;
+  `evaluate_regression_gate(diff, ...)` fails (exit 3) on a `mean_score`/`pass_rate`
+  drop beyond tolerance or new row failures. `--baseline` + `--max-*-drop` /
+  `--no-allow-new-failures`; threshold + regression verdicts combine via
+  `merge_gate_results`. See ADR-0005.
 - **Sinks** (`eval/sink.py` + `eval/sinks/`, registered in `sink_registry`):
   `console`, `json_file`, `sqlite_results` (append report + rows to SQLite),
   `webhook` (httpx POST), and the optional `langfuse` sink (extra

@@ -42,6 +42,10 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__MIN_MEAN_SCORE` | (unset) | Fail the gate if `mean_score` below this `[0,1]` |
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | (unset) | Fail the gate if `passed/size` below this `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Fail the gate if any row errored |
+| `MANGOMAS_EVAL__BASELINE_PATH` | (unset) | Baseline report JSON to diff against (regression gating) |
+| `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | (unset) | Max allowed `mean_score` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | (unset) | Max allowed `pass_rate` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | When `false`, fail on rows that passed in baseline but fail now |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Ordered list of result sinks |
 | `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible config version marker |
@@ -155,6 +159,30 @@ mangomas eval -d data.jsonl -s exact_match --min-mean-score 0.8
 `pass_rate = passed / dataset_size` (errored rows count against it), while
 `mean_score` excludes errored rows. Use `--fail-on-error` to fail the gate when
 any row errored regardless of thresholds.
+
+### Regression gating (baseline diff)
+
+Beyond absolute thresholds, the gate can compare a run against a **baseline** — a
+previously-saved `json_file` report. `diff_reports` produces a `ReportDiff`
+(per-metric deltas + per-row regressed/new/dropped partition) and
+`evaluate_regression_gate` fails (exit 3) when `mean_score` / `pass_rate` drops
+beyond tolerance or new row failures appear. The threshold and regression
+verdicts combine (logical AND, reasons concatenated) into one verdict, so a
+single exit-3 path covers either. See ADR-0005.
+
+```bash
+# 1. Save a baseline report
+mangomas eval -d data.jsonl -s exact_match -o baseline.json
+
+# 2. Later: fail CI if mean_score drops > 0.02, or any baseline pass now fails
+mangomas eval -d data.jsonl -s exact_match \
+  --baseline baseline.json --max-mean-score-drop 0.02 --no-allow-new-failures
+```
+
+A drop is `baseline - current` (current run worse). A missing baseline file is
+exit 2 (config); a malformed one surfaces during the run as exit 1. Row
+regression keys on `row_id` stability — rows whose ids change show up as dropped
++ new rather than regressed.
 
 ## Result sinks
 

@@ -114,6 +114,14 @@ DEFAULT_EVAL_MIN_MEAN_SCORE: float | None = None
 DEFAULT_EVAL_MIN_PASS_RATE: float | None = None
 DEFAULT_EVAL_FAIL_ON_ERROR: bool = False
 
+# Regression / baseline gating — default OFF. A baseline is a prior json_file
+# report artifact; the gate fails (exit 3) when the current run drops below it
+# by more than the configured tolerance, or introduces new row failures.
+DEFAULT_EVAL_BASELINE_PATH: str | None = None
+DEFAULT_EVAL_MAX_MEAN_SCORE_DROP: float | None = None
+DEFAULT_EVAL_MAX_PASS_RATE_DROP: float | None = None
+DEFAULT_EVAL_ALLOW_NEW_FAILURES: bool = True
+
 # Result sinks — ``console`` reproduces today's inline stdout summary exactly,
 # so the default is behaviour-preserving. Held as a tuple (immutable module
 # constant); the field builds a fresh list from it via ``default_factory``.
@@ -345,6 +353,12 @@ class EvalSettings(BaseModel):
     min_pass_rate: float | None = DEFAULT_EVAL_MIN_PASS_RATE
     fail_on_error: bool = DEFAULT_EVAL_FAIL_ON_ERROR
 
+    # ── Regression / baseline gating (CI) — default OFF ───────────────────────
+    baseline_path: str | None = DEFAULT_EVAL_BASELINE_PATH
+    max_mean_score_drop: float | None = DEFAULT_EVAL_MAX_MEAN_SCORE_DROP
+    max_pass_rate_drop: float | None = DEFAULT_EVAL_MAX_PASS_RATE_DROP
+    allow_new_failures: bool = DEFAULT_EVAL_ALLOW_NEW_FAILURES
+
     # ── Result sinks ──────────────────────────────────────────────────────────
     # Ordered list of sink names resolved through ``sink_registry``. Defaults to
     # ``["console"]`` (== today's inline output). ``sink_options`` carries
@@ -367,6 +381,8 @@ class EvalSettings(BaseModel):
         for label, value in (
             ("min_mean_score", self.min_mean_score),
             ("min_pass_rate", self.min_pass_rate),
+            ("max_mean_score_drop", self.max_mean_score_drop),
+            ("max_pass_rate_drop", self.max_pass_rate_drop),
         ):
             if value is not None and not 0.0 <= value <= 1.0:
                 raise ValueError(f"eval.{label} must be in [0.0, 1.0]; got {value}")

@@ -5,6 +5,7 @@ Public surface — keep stable; downstream consumers may import from here.
 
 from __future__ import annotations
 
+from mangomas.eval.baseline import ReportDiff, diff_reports, load_baseline
 from mangomas.eval.dataset import DatasetRow, load_jsonl
 from mangomas.eval.dataset_source import (
     DatasetSource,
@@ -18,7 +19,12 @@ from mangomas.eval.discovery import (
     discover_targets,
     ensure_eval_plugins,
 )
-from mangomas.eval.gate import GateResult, evaluate_gate
+from mangomas.eval.gate import (
+    GateResult,
+    evaluate_gate,
+    evaluate_regression_gate,
+    merge_gate_results,
+)
 from mangomas.eval.protocol import (
     Scorer,
     ScorerContext,
@@ -39,6 +45,7 @@ __all__ = [
     "EvalRowResult",
     "EvalRunner",
     "GateResult",
+    "ReportDiff",
     "ScoreResult",
     "Scorer",
     "ScorerContext",
@@ -48,13 +55,17 @@ __all__ = [
     "Target",
     "TargetFactory",
     "dataset_source_registry",
+    "diff_reports",
     "discover_dataset_sources",
     "discover_scorers",
     "discover_sinks",
     "discover_targets",
     "ensure_eval_plugins",
     "evaluate_gate",
+    "evaluate_regression_gate",
+    "load_baseline",
     "load_jsonl",
+    "merge_gate_results",
     "scorer_registry",
     "sink_registry",
     "target_registry",

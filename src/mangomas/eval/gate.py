@@ -21,12 +21,14 @@ Metric semantics (must stay aligned with :class:`~mangomas.eval.runner.EvalRunne
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from mangomas.telemetry import get_tracer
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.eval.baseline import ReportDiff
     from mangomas.eval.runner import EvalReport
 
 logger = logging.getLogger(__name__)
@@ -105,6 +107,86 @@ def evaluate_gate(
     )
     _log(result)
     return result
+
+
+def evaluate_regression_gate(
+    diff: ReportDiff,
+    *,
+    max_mean_score_drop: float | None = None,
+    max_pass_rate_drop: float | None = None,
+    allow_new_failures: bool = True,
+) -> GateResult:
+    """Return a :class:`GateResult` for a baseline *diff* (regression gating).
+
+    Reuses :class:`GateResult` (so existing sinks render it unchanged): the
+    ``actual_*`` fields carry the *current* run's metrics. A "drop" is
+    ``baseline - current`` (positive = regression). A no-op gate
+    (``max_*_drop=None`` and ``allow_new_failures=True``) always passes.
+    """
+    reasons: list[str] = []
+    mean_drop = -diff.mean_score_delta
+    pass_drop = -diff.pass_rate_delta
+    if max_mean_score_drop is not None and mean_drop > max_mean_score_drop:
+        reasons.append(f"mean_score dropped {mean_drop:.3f} > max {max_mean_score_drop:.3f}")
+    if max_pass_rate_drop is not None and pass_drop > max_pass_rate_drop:
+        reasons.append(f"pass_rate dropped {pass_drop:.3f} > max {max_pass_rate_drop:.3f}")
+    if not allow_new_failures and diff.regressed_rows:
+        shown = ", ".join(diff.regressed_rows[:5])
+        reasons.append(f"{len(diff.regressed_rows)} row regression(s): {shown}")
+    result = GateResult(
+        passed=not reasons,
+        actual_mean_score=diff.current_mean_score,
+        actual_pass_rate=diff.current_pass_rate,
+        reasons=reasons,
+    )
+    _log_regression(result, diff)
+    return result
+
+
+def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | None:
+    """Combine multiple gate verdicts into one (logical AND of ``passed``).
+
+    Returns ``None`` when no verdict is present, the sole verdict unchanged when
+    only one is present (byte-compatible with single-gate runs), or a merged
+    verdict carrying every reason when both a threshold and a regression gate
+    are engaged.
+    """
+    present = [r for r in results if r is not None]
+    if not present:
+        return None
+    if len(present) == 1:
+        return present[0]
+    first = present[0]
+    reasons: list[str] = [reason for r in present for reason in r.reasons]
+    return GateResult(
+        passed=all(r.passed for r in present),
+        actual_mean_score=first.actual_mean_score,
+        actual_pass_rate=first.actual_pass_rate,
+        min_mean_score=first.min_mean_score,
+        min_pass_rate=first.min_pass_rate,
+        fail_on_error=first.fail_on_error,
+        errored=first.errored,
+        reasons=reasons,
+    )
+
+
+def _log_regression(result: GateResult, diff: ReportDiff) -> None:
+    with _tracer.start_as_current_span("eval.regression_gate") as span:
+        span.set_attribute("gate.passed", result.passed)
+        span.set_attribute("gate.mean_score_delta", diff.mean_score_delta)
+        span.set_attribute("gate.pass_rate_delta", diff.pass_rate_delta)
+        span.set_attribute("gate.regressed_count", len(diff.regressed_rows))
+    logger.info(
+        "Eval regression gate evaluated",
+        extra={
+            "event": "eval_regression_gate",
+            "passed": result.passed,
+            "mean_score_delta": diff.mean_score_delta,
+            "pass_rate_delta": diff.pass_rate_delta,
+            "regressed": len(diff.regressed_rows),
+            "reasons": result.reasons,
+        },
+    )
 
 
 def _log(result: GateResult) -> None:

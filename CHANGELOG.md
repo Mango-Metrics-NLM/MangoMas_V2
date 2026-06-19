@@ -208,6 +208,24 @@ More result destinations, all additive and default-OFF (sinks default to
   `false`) — when `true` it also emits one trace + `row_score` per row in
   addition to the aggregate trace + `mean_score`.
 
+### Added — Evaluation harness: regression / baseline gating
+
+Fail CI when a run regresses against a saved baseline (see ADR-0005). Additive
+and default-OFF — engaged only when `--baseline` / `MANGOMAS_EVAL__BASELINE_PATH`
+is set.
+
+- **`eval/baseline.py`**: `load_baseline` (reconstructs an `EvalReport` from a
+  `json_file` artifact, ignoring the `"gate"` key and tolerating a missing
+  `target_name`); pure `diff_reports(baseline, current) -> ReportDiff`
+  (per-metric deltas + regressed/new/dropped row partition).
+- **`eval/gate.py`**: `evaluate_regression_gate(diff, *, max_mean_score_drop,
+  max_pass_rate_drop, allow_new_failures) -> GateResult` (reuses `GateResult`);
+  `merge_gate_results` combines threshold + regression verdicts (AND).
+- **CLI**: `--baseline`, `--max-mean-score-drop`, `--max-pass-rate-drop`,
+  `--allow-new-failures/--no-allow-new-failures`; a missing baseline is exit 2.
+  New `EvalSettings.baseline_path` / `max_mean_score_drop` / `max_pass_rate_drop`
+  / `allow_new_failures`.
+
 ### Added — Retrieval-augmented generation (RAG)
 
 The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the
