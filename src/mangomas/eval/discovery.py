@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from mangomas.eval.registry import scorer_registry
 from mangomas.eval.sink_registry import sink_registry
+from mangomas.eval.target_registry import target_registry
 from mangomas.telemetry import get_tracer
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -31,6 +32,7 @@ _tracer = get_tracer(__name__)
 
 SCORER_ENTRY_POINT_GROUP = "mangomas.eval.scorers"
 SINK_ENTRY_POINT_GROUP = "mangomas.eval.sinks"
+TARGET_ENTRY_POINT_GROUP = "mangomas.eval.targets"
 
 # Idempotency latch so repeated CLI invocations in one process scan once.
 _discovered = False
@@ -90,6 +92,15 @@ def discover_sinks(
     return _discover(group, registry, "sink")
 
 
+def discover_targets(
+    *,
+    registry: Registry[Any] = target_registry,
+    group: str = TARGET_ENTRY_POINT_GROUP,
+) -> list[str]:
+    """Discover and register third-party targets. Returns the names registered."""
+    return _discover(group, registry, "target")
+
+
 def ensure_eval_plugins(settings: Settings) -> None:
     """Run discovery once per process when ``settings.discovery_enabled``.
 
@@ -102,4 +113,5 @@ def ensure_eval_plugins(settings: Settings) -> None:
         return
     discover_scorers()
     discover_sinks()
+    discover_targets()
     _discovered = True

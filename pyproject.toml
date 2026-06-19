@@ -82,14 +82,17 @@ cloud = [
 [project.scripts]
 mangomas = "mangomas.cli.main:app"
 
-# Plugin contract: third-party packages register eval scorers/sinks by adding
-# entries to these groups, each pointing at a factory `Callable[[dict], Scorer|Sink]`.
+# Plugin contract: third-party packages register eval scorers/sinks/targets by
+# adding entries to these groups, each pointing at a factory
+# `Callable[[dict], Scorer|Sink|Target]`.
 # Discovery runs only when MANGOMAS_DISCOVERY_ENABLED=true (see eval/discovery.py).
 # Built-ins register in-process, so these groups stay empty here.
 #   [project.entry-points."mangomas.eval.scorers"]
 #   my_scorer = "mypkg.module:factory"
 #   [project.entry-points."mangomas.eval.sinks"]
 #   my_sink = "mypkg.module:factory"
+#   [project.entry-points."mangomas.eval.targets"]
+#   my_target = "mypkg.module:factory"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mangomas"]

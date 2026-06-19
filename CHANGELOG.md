@@ -158,6 +158,25 @@ opt-in and default-OFF, so existing `mangomas eval` runs are unchanged.
 - **Config version marker**: `EvalSettings.schema_version` (forward-compatible;
   a future version warns instead of crashing).
 
+### Added — Evaluation harness: target indirection
+
+Lets a run evaluate something other than a single registered agent (see
+ADR-0004). Additive and default-OFF — `target` defaults to `agent`, so existing
+`mangomas eval` / `EvalRunner.run(dataset, agent_name=...)` behaviour is
+unchanged.
+
+- **`Target` protocol + `target_registry`** (`eval/target.py`,
+  `eval/target_registry.py`, `eval/targets/`): `async run(request, *, orch) -> str`.
+  Built-ins `agent` (default, dispatches one agent), `pipeline`, `fan_out`
+  (`join=first|concat`), and `echo` (deterministic baseline / test fixture).
+- **`EvalRunner.run`** gains an optional keyword `target`; `agent_name` stays a
+  positional and is wrapped in the default `agent` target. New additive
+  `EvalReport.target_name` field (defaults to `""` for old artifacts).
+- **CLI**: `mangomas eval --target <name>`; `--agent` folds into the `agent`
+  target. New `EvalSettings.target` / `target_options`.
+- **Plugin discovery**: new entry-point group `mangomas.eval.targets`
+  (gated by `MANGOMAS_DISCOVERY_ENABLED`).
+
 ### Added — Retrieval-augmented generation (RAG)
 
 The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the

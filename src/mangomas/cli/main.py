@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 import typer
 
 import mangomas.eval.scorers  # registers built-in scorers (side-effect import)
-import mangomas.eval.sinks  # noqa: F401 — registers built-in sinks
+import mangomas.eval.sinks
+import mangomas.eval.targets  # noqa: F401 — registers built-in targets
 from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
@@ -24,13 +25,14 @@ from mangomas.eval import (
     load_jsonl,
     scorer_registry,
     sink_registry,
+    target_registry,
 )
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import EvalSettings
     from mangomas.core import Orchestrator
-    from mangomas.eval import GateResult, Sink
+    from mangomas.eval import GateResult, Sink, Target
 
 # Windows default console codec is cp1252; LLM replies routinely contain
 # em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
@@ -168,6 +170,30 @@ def _build_sinks(
     return [sink_registry.get(name)(options.get(name, {})) for name in names]
 
 
+def _build_target(
+    target_name: str,
+    target_options: dict[str, dict[str, object]],
+    agent_flag: str | None,
+    default_agent: str,
+) -> Target:
+    """Resolve a target name to an instance, folding in the agent selection.
+
+    For the ``agent`` target the agent name is sourced with precedence
+    ``--agent`` flag > ``target_options["agent"]["agent"]`` > settings default,
+    so existing ``--agent X`` invocations keep selecting the agent. Other
+    targets read their config straight from ``target_options``. Raises
+    :class:`~mangomas.errors.MangomasError` (→ exit 2) on an unknown target or a
+    misconfigured option.
+    """
+    options = dict(target_options.get(target_name, {}))
+    if target_name == "agent":
+        if agent_flag is not None:
+            options["agent"] = agent_flag
+        else:
+            options.setdefault("agent", default_agent)
+    return target_registry.get(target_name)(options)
+
+
 async def _emit_sinks(
     sinks: list[Sink],
     report: EvalReport,
@@ -248,7 +274,13 @@ def eval_cmd(
         None,
         "--agent",
         "-a",
-        help="Agent name (default from MANGOMAS_EVAL__AGENT).",
+        help="Agent name for the 'agent' target (default from MANGOMAS_EVAL__AGENT).",
+    ),
+    target: str | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="Target name: agent|pipeline|fan_out|echo (default from MANGOMAS_EVAL__TARGET).",
     ),
     parallelism: int | None = typer.Option(
         None,
@@ -307,7 +339,7 @@ def eval_cmd(
         raise typer.Exit(code=2)
 
     scorer_name = scorer or cfg.scorer
-    agent_name = agent or cfg.agent
+    target_name = target or cfg.target
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
     effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
 
@@ -325,6 +357,7 @@ def eval_cmd(
         scorer_factory = scorer_registry.get(scorer_name)
         scorer_instance = scorer_factory(dict(cfg.scorer_options))
         sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
+        target_instance = _build_target(target_name, cfg.target_options, agent, cfg.agent)
     except MangomasError as exc:
         detail = f" ({exc.detail})" if exc.detail else ""
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
@@ -341,7 +374,7 @@ def eval_cmd(
     async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:
         try:
             dataset = await load_jsonl(effective_dataset)
-            report = await runner.run(dataset, agent_name)
+            report = await runner.run(dataset, target=target_instance)
         finally:
             await _close_orchestrator(orch)
         gate_result = (

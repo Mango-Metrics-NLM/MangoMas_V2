@@ -34,6 +34,29 @@ async def test_runner_all_pass(eval_orchestrator: Orchestrator, fixtures_dir: Pa
     assert report.passed == 2
     assert report.failed == 0
     assert report.mean_score == pytest.approx(1.0)
+    # The legacy agent_name path keeps populating agent_name AND mirrors it into
+    # the new target_name field (default 'agent' target named after the agent).
+    assert report.agent_name == "chat"
+    assert report.target_name == "chat"
+
+
+async def test_runner_explicit_target(eval_orchestrator: Orchestrator, fixtures_dir: Path) -> None:
+    """An explicit Target wins over agent_name and is reflected in the report."""
+    from mangomas.eval.targets import EchoTarget  # noqa: PLC0415
+
+    rows = await load_jsonl(fixtures_dir / "all_pass.jsonl")
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer())
+    # EchoTarget(text=STUB_REPLY) makes every prediction match the expected.
+    report = await runner.run(rows, target=EchoTarget(text=STUB_REPLY))
+    assert report.passed == 2
+    assert report.agent_name == "echo"
+    assert report.target_name == "echo"
+
+
+async def test_runner_requires_agent_or_target(eval_orchestrator: Orchestrator) -> None:
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer())
+    with pytest.raises(ValueError, match="agent_name or a target"):
+        await runner.run([])
 
 
 async def test_runner_all_fail(eval_orchestrator: Orchestrator, fixtures_dir: Path) -> None:

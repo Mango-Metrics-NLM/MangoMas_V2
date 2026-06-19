@@ -60,6 +60,68 @@ def test_eval_cli_runs_against_fixture(fixtures_dir: Path) -> None:
     assert "passed=2" in result.stdout
 
 
+def test_eval_cli_target_echo(fixtures_dir: Path) -> None:
+    """--target echo dispatches the deterministic baseline (no agent needed)."""
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--target",
+            "echo",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    # echo returns the user message ("say stub"/"again"), which never matches
+    # the expected "stub-reply", so the baseline fails every row.
+    assert "agent=echo" in result.stdout
+    assert "passed=0" in result.stdout
+
+
+def test_eval_cli_target_agent_with_agent_flag(fixtures_dir: Path) -> None:
+    """--target agent --agent chat preserves the legacy single-agent behaviour."""
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--target",
+            "agent",
+            "--agent",
+            "chat",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "agent=chat" in result.stdout
+    assert "passed=2" in result.stdout
+
+
+def test_eval_cli_unknown_target_exits_2(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--target",
+            "definitely-not-a-target",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "definitely-not-a-target" in result.stdout + result.stderr
+
+
 def test_eval_cli_missing_dataset_exits_2() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["eval"])

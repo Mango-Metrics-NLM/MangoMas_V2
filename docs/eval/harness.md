@@ -31,7 +31,9 @@ env-driven via `MANGOMAS_EVAL__*`:
 |---|---|---|
 | `MANGOMAS_EVAL__DATASET_PATH` | (unset) | JSONL dataset path |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name |
-| `MANGOMAS_EVAL__AGENT` | `chat` | Agent name |
+| `MANGOMAS_EVAL__AGENT` | `chat` | Agent name (used by the `agent` target) |
+| `MANGOMAS_EVAL__TARGET` | `agent` | Target name (`agent`/`pipeline`/`fan_out`/`echo`) |
+| `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name |
 | `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Default report directory |
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Max concurrent rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Cancel after first non-pass |
@@ -100,6 +102,27 @@ thresholds without callers re-implementing the rule).
 > Note: `regex_match` and `contains` reinterpret the per-row `expected` field
 > (as a pattern / needle) rather than a gold answer — keep their datasets
 > separate from `exact_match` / `llm_judge` datasets.
+
+## Targets
+
+A **target** is what each row is dispatched against. It is resolved by name
+through `target_registry` (default `agent`), so a run can evaluate a single
+agent, a multi-agent topology, or a deterministic baseline. Select one with
+`--target` / `MANGOMAS_EVAL__TARGET`; configure it via `target_options`. See
+ADR-0004.
+
+| Target | Registry name | Behaviour |
+|---|---|---|
+| `AgentTarget` | `agent` | Dispatch one registered agent (default). The agent name comes from `--agent` / `MANGOMAS_EVAL__AGENT`, else `target_options["agent"]["agent"]`. Preserves pre-target-indirection behaviour. |
+| `PipelineTarget` | `pipeline` | Run a sequential pipeline (`orch.dispatch_pipeline`); grade the final agent's output. Option: `agents` (non-empty list). |
+| `FanOutTarget` | `fan_out` | Dispatch all agents in parallel (`orch.dispatch_fan_out`). Option: `agents` (list) and `join` (`first` → first agent's content, default; `concat` → newline-joined). |
+| `EchoTarget` | `echo` | Deterministic, no-LLM baseline. Returns a fixed `text` option if set, else the last user message. Useful for regression baselines and tests. |
+
+`EvalRunner.run(dataset, agent_name=...)` still works (the agent name is wrapped
+in the `agent` target); pass `target=` to use any other target. The report's
+`agent_name` reflects the target name, and a new `target_name` field is added.
+Third-party targets register via the `mangomas.eval.targets` entry-point group
+(gated by `MANGOMAS_DISCOVERY_ENABLED`).
 
 ## Quality gate (CI)
 

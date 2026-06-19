@@ -94,6 +94,10 @@ DEFAULT_ERROR_DETAIL_TRUNCATE: int = 200
 # Evaluation harness defaults.
 DEFAULT_EVAL_SCORER: str = "exact_match"
 DEFAULT_EVAL_AGENT: str = "chat"
+# Default eval target. ``agent`` dispatches a single registered agent (the
+# pre-target-indirection behaviour); other built-ins are ``pipeline`` /
+# ``fan_out`` / ``echo``. Resolved through ``target_registry``.
+DEFAULT_EVAL_TARGET: str = "agent"
 DEFAULT_EVAL_OUTPUT_DIR: str = "eval-output"
 DEFAULT_EVAL_PARALLELISM: int = 1
 DEFAULT_EVAL_FAIL_FAST: bool = False
@@ -309,6 +313,14 @@ class EvalSettings(BaseModel):
     # Free-form per-scorer options (e.g. ``{"threshold": 0.8}``). Forwarded
     # verbatim to the scorer's factory.
     scorer_options: dict[str, object] = Field(default_factory=dict)
+
+    # ── Target indirection ────────────────────────────────────────────────────
+    # ``target`` selects what each row dispatches against, resolved through
+    # ``target_registry`` (default ``agent`` == today's single-agent dispatch).
+    # ``target_options`` carries per-target kwargs keyed by target name, e.g.
+    # ``{"pipeline": {"agents": ["planner", "reviewer"]}}``.
+    target: str = DEFAULT_EVAL_TARGET
+    target_options: dict[str, dict[str, object]] = Field(default_factory=dict)
 
     # ── Quality gate (CI) — default OFF ───────────────────────────────────────
     gate_enabled: bool = DEFAULT_EVAL_GATE_ENABLED
