@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-import mangomas.eval.scorers
+import mangomas.eval.scorers  # registers built-in scorers (side-effect import)
 import mangomas.eval.sinks  # noqa: F401 — registers built-in sinks
 from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
@@ -28,6 +28,7 @@ from mangomas.eval import (
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.config import EvalSettings
     from mangomas.core import Orchestrator
     from mangomas.eval import GateResult, Sink
 
@@ -184,6 +185,47 @@ async def _emit_sinks(
     return first_exc
 
 
+def _resolve_gating(
+    *,
+    gate: bool | None,
+    min_mean_score: float | None,
+    min_pass_rate: float | None,
+    fail_on_error: bool | None,
+    cfg: EvalSettings,
+) -> tuple[bool, float | None, float | None, bool]:
+    """Resolve effective gate config (CLI over settings) and validate thresholds.
+
+    Returns ``(gating_engaged, min_mean, min_pass, fail_on_error)``. An explicit
+    ``--no-gate`` disables gating even when thresholds / ``fail_on_error`` are
+    configured via settings/env. Raises ``typer.Exit(2)`` on an out-of-range
+    threshold (these bypass the ``EvalSettings`` validator) — but only when
+    gating is engaged, since an unused threshold should not block a run.
+    """
+    eff_min_mean = min_mean_score if min_mean_score is not None else cfg.min_mean_score
+    eff_min_pass = min_pass_rate if min_pass_rate is not None else cfg.min_pass_rate
+    eff_fail_on_error = fail_on_error if fail_on_error is not None else cfg.fail_on_error
+    gate_enabled = gate if gate is not None else cfg.gate_enabled
+    if gate is False:
+        gating_engaged = False
+    else:
+        gating_engaged = (
+            gate_enabled
+            or eff_min_mean is not None
+            or eff_min_pass is not None
+            or eff_fail_on_error
+        )
+
+    if gating_engaged:
+        for label, val in (("min-mean-score", eff_min_mean), ("min-pass-rate", eff_min_pass)):
+            if val is not None and not 0.0 <= val <= 1.0:
+                typer.echo(
+                    f"Eval configuration error: {label} must be in [0.0, 1.0]; got {val}",
+                    err=True,
+                )
+                raise typer.Exit(code=2)
+    return gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error
+
+
 @app.command(name="eval")
 def eval_cmd(
     dataset_path: str | None = typer.Option(
@@ -265,25 +307,13 @@ def eval_cmd(
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
     effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
 
-    # Resolve gate config (CLI overrides settings). The gate is "engaged" when
-    # explicitly enabled, when any threshold is set, or when fail_on_error is on.
-    eff_min_mean = min_mean_score if min_mean_score is not None else cfg.min_mean_score
-    eff_min_pass = min_pass_rate if min_pass_rate is not None else cfg.min_pass_rate
-    eff_fail_on_error = fail_on_error if fail_on_error is not None else cfg.fail_on_error
-    gate_enabled = gate if gate is not None else cfg.gate_enabled
-    gating_engaged = (
-        gate_enabled or eff_min_mean is not None or eff_min_pass is not None or eff_fail_on_error
+    gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error = _resolve_gating(
+        gate=gate,
+        min_mean_score=min_mean_score,
+        min_pass_rate=min_pass_rate,
+        fail_on_error=fail_on_error,
+        cfg=cfg,
     )
-
-    # Validate CLI-supplied thresholds (these bypass the EvalSettings validator,
-    # which only guards env/file config) so a bad value fails fast at exit 2.
-    for label, val in (("min-mean-score", eff_min_mean), ("min-pass-rate", eff_min_pass)):
-        if val is not None and not 0.0 <= val <= 1.0:
-            typer.echo(
-                f"Eval configuration error: {label} must be in [0.0, 1.0]; got {val}",
-                err=True,
-            )
-            raise typer.Exit(code=2)
 
     # Build scorer + sinks up front so misconfiguration fails fast (exit 2)
     # before a (potentially long) eval run.

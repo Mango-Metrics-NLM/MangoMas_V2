@@ -196,6 +196,27 @@ def test_eval_cli_gate_failure_still_writes_artifacts(fixtures_dir: Path, tmp_pa
     assert payload["gate"]["passed"] is False
 
 
+def test_eval_cli_no_gate_overrides_configured_threshold(
+    fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--no-gate` must disable gating even when a threshold is set via env."""
+    monkeypatch.setenv("MANGOMAS_EVAL__MIN_MEAN_SCORE", "0.99")
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "mixed.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--no-gate",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "gate=" not in result.stdout
+
+
 def test_eval_cli_invalid_threshold_exits_2(fixtures_dir: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
