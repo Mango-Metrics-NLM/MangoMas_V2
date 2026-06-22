@@ -59,6 +59,39 @@ client ──► X-Request-ID: abc12345 ──► │ AccessLogMiddleware       
   so every log record across the codebase carries all three identifiers.
 - **`src/mangomas/api/tracing.py`** — separate `TraceMiddleware` opens a
   per-request span and propagates `traceparent` / `tracestate` headers.
+- **`src/mangomas/telemetry_exporters.py`** — `exporter_registry`
+  (a generic `Registry[SpanExporterFactory]`), `resolve_exporter()`, and
+  `build_harness_provider()`. Selects the span exporter and span processor.
+
+## Span exporters
+
+The span exporter is selected at startup via `TelemetrySettings`
+(`MANGOMAS_TELEMETRY__*`) and resolved through `exporter_registry` —
+the same `Registry[T]` pattern used for LLM/storage/secrets providers.
+Optional exporter SDKs are imported lazily, so the default install never
+pulls a cloud dependency.
+
+| `MANGOMAS_TELEMETRY__EXPORTER` | Backend | Processor | Extra |
+|---|---|---|---|
+| `console` *(default)* | `ConsoleSpanExporter` (stdout) | `SimpleSpanProcessor` | — |
+| `otlp` | OTLP/gRPC → `MANGOMAS_TELEMETRY__OTLP_ENDPOINT` | `BatchSpanProcessor` | `mangomas[otlp]` |
+| `gcp` | Cloud Trace → `MANGOMAS_TELEMETRY__GCP_PROJECT_ID` (ADC) | `BatchSpanProcessor` | `mangomas[gcp-trace]` |
+
+`console` keeps the synchronous `SimpleSpanProcessor` (deterministic for
+local runs and tests); network backends use `BatchSpanProcessor`. The
+default (`console`) is byte-identical to the historical behaviour — when
+`configure_telemetry` is called without a `TelemetrySettings`, the legacy
+console path runs unchanged.
+
+### Harness span routing
+
+`HarnessSettings.metrics_exporter` (`MANGOMAS_HARNESS__METRICS_EXPORTER`)
+optionally routes `harness.agent_invoke` spans to a **separate** backend
+than application spans. When unset (`None`, the default) the harness shares
+the global application tracer. When set, `build_harness_provider` constructs a
+*dedicated, isolated* `TracerProvider` that is **never** promoted globally —
+so harness telemetry can target a different endpoint without mutating global
+trace state. See [ADR-0006](../adr/0006-span-exporter-selection.md).
 
 ## JSON log envelope
 
@@ -94,10 +127,11 @@ To disable the inbound-header pathway entirely (e.g. to force regeneration
 for security reasons), strip the header at the edge — there is no
 runtime flag for this today.
 
-## What ships in v0.2.0 vs Phase 3
+## What ships in v0.2.0 vs later
 
 - **v0.2.0:** ContextVar, filter, middleware integration, OTel baggage push,
   W3C trace propagation via `TraceContextTextMapPropagator`.
-- **Phase 3 (deferred):** Cloud Trace OTLP exporter swap (replacing
-  `ConsoleSpanExporter`), Cloud Logging structured-log sink, per-tenant
-  correlation id partitioning.
+- **Shipped since:** configurable span exporter (`console`/`otlp`/`gcp`) and
+  optional dedicated harness span routing — see "Span exporters" above.
+- **Deferred:** Cloud Logging structured-log sink, per-tenant correlation id
+  partitioning.

@@ -6,8 +6,10 @@ import json
 import logging
 
 import pytest
+from opentelemetry import trace
 
 from mangomas import telemetry
+from mangomas.config import TelemetrySettings
 from mangomas.telemetry import JsonFormatter
 
 
@@ -22,6 +24,25 @@ def test_configure_telemetry_idempotent() -> None:
     first = telemetry._state.configured
     telemetry.configure_telemetry()
     assert first is True
+    assert telemetry._state.configured is True
+
+
+def test_configure_telemetry_none_preserves_console_default() -> None:
+    """``telemetry=None`` keeps the historical console-only behaviour."""
+    _reset()
+    telemetry.configure_telemetry(service_name="test")
+    assert telemetry._state.configured is True
+
+
+def test_configure_telemetry_with_console_settings() -> None:
+    """Passing a console ``TelemetrySettings`` configures without error."""
+    _reset()
+    telemetry.configure_telemetry(
+        service_name="test", telemetry=TelemetrySettings(exporter="console")
+    )
+    tracer = telemetry.get_tracer("settings-console")
+    with tracer.start_as_current_span("span") as span:
+        span.set_attribute("k", "v")
     assert telemetry._state.configured is True
 
 
@@ -42,12 +63,35 @@ def test_get_tracer_returns_tracer() -> None:
     assert tracer is not None
 
 
-def test_get_tracer_cold_start() -> None:
-    """get_tracer() auto-configures telemetry when not yet configured."""
+def test_get_tracer_does_not_auto_configure() -> None:
+    """get_tracer() must NOT auto-configure (would lock in the console default).
+
+    OTel's ProxyTracer delegates to the real provider once registered, so a
+    module-level ``get_tracer(__name__)`` is safe before ``configure_telemetry``.
+    """
     _reset()
     tracer = telemetry.get_tracer("cold-start-test")
     assert tracer is not None
-    assert telemetry._state.configured is True
+    assert telemetry._state.configured is False
+
+
+def test_flush_telemetry_calls_force_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    """flush_telemetry() force-flushes a provider that supports it."""
+    calls: list[str] = []
+
+    class _Provider:
+        def force_flush(self) -> None:
+            calls.append("flushed")
+
+    monkeypatch.setattr(trace, "get_tracer_provider", _Provider)
+    telemetry.flush_telemetry()
+    assert calls == ["flushed"]
+
+
+def test_flush_telemetry_noop_without_force_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A provider lacking force_flush (e.g. ProxyTracerProvider) is a safe no-op."""
+    monkeypatch.setattr(trace, "get_tracer_provider", object)
+    telemetry.flush_telemetry()  # must not raise
 
 
 # ── JsonFormatter ─────────────────────────────────────────────────────────────

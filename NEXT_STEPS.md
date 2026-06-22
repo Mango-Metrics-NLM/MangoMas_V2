@@ -18,23 +18,11 @@ fixed lint/type issues, and raised test coverage to 98.16 % / 515 tests.
 See `docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md` for the
 full plan. Next near-term items:)_
 
-### Harness metrics-exporter selection
+### Cloud Logging structured-log sink
 
-Wire `HarnessSettings.metrics_namespace` into a configurable OTel
-exporter so the `harness.agent_invoke` parent spans can be routed to a
-different OTLP endpoint than the application spans. Today the
-namespace is honoured by the tracer but exporter selection is
-shared. Activate via a new `MANGOMAS_HARNESS__METRICS_EXPORTER` env;
-default falls through to the application-wide exporter to preserve
-the existing behaviour. Pairs naturally with the Cloud Trace work
-below.
-
-### Cloud Logging + Cloud Trace exporter swap
-
-Add a Cloud Trace OTLP exporter behind the existing
-`configure_telemetry()` entry point. Activate via a new
-`MANGOMAS_TELEMETRY__EXPORTER=gcp` option. `MANGOMAS_LOG__FORMAT=json`
-is already supported.
+`MANGOMAS_LOG__FORMAT=json` already emits Cloud Logging-compatible
+records. A remaining follow-up is an explicit Cloud Logging handler
+(vs. relying on stdout scraping) for richer severity/resource mapping.
 
 ### Cloud Run deployment pipeline
 
@@ -50,6 +38,25 @@ backends raise a new `SecretsResolutionError` instead of returning
 `None` on auth/permission/timeout failures. Preserves the local-dev
 contract by default; gives operators an opt-in "fail loud" mode for
 production.
+
+---
+
+## Done (Unreleased)
+
+### Configurable span exporter + harness span routing
+
+The hard-wired `ConsoleSpanExporter` is now a config selection. New
+`TelemetrySettings` (`MANGOMAS_TELEMETRY__*`) chooses `console`
+(default) / `otlp` / `gcp` (Cloud Trace), resolved through a generic
+`exporter_registry: Registry[SpanExporterFactory]`; optional SDKs are
+lazy-imported behind the `otlp` / `gcp-trace` extras.
+`HarnessSettings.metrics_exporter` optionally routes
+`harness.agent_invoke` spans to a dedicated, isolated `TracerProvider`
+(never promoted globally) so harness telemetry can target a separate
+backend. All default-OFF; `configure_telemetry(telemetry=None)` keeps
+the legacy console path byte-identical. See
+[ADR-0006](docs/adr/0006-span-exporter-selection.md) and
+`docs/architecture/observability.md`.
 
 ---
 

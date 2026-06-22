@@ -32,7 +32,7 @@ from mangomas.errors import (
     ToolNotFound,
     UnknownProvider,
 )
-from mangomas.telemetry import configure_telemetry
+from mangomas.telemetry import configure_telemetry, flush_telemetry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -73,8 +73,10 @@ def _error_status(exc: MangomasError) -> int:
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_telemetry(
+        service_name=settings.telemetry.service_name,
         log_level=settings.log_level,
         log_format=settings.log.format,
+        telemetry=settings.telemetry,
     )
     app.state.orchestrator = build_orchestrator(settings)
     logger.info("Application started")
@@ -85,6 +87,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # FastAPI lifespan, the CLI, and the demo scripts cannot diverge on
         # close ordering or async/sync dispatch rules.
         await app.state.orchestrator.aclose()
+        # Flush any spans still buffered in a BatchSpanProcessor so a graceful
+        # shutdown / scale-down does not drop telemetry.
+        flush_telemetry()
         logger.info("Application shut down")
 
 
