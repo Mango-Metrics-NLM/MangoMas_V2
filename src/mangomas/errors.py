@@ -16,6 +16,7 @@ __all__ = [
     "MangomasError",
     "MaxStepsExceeded",
     "PersistenceError",
+    "SecretsResolutionError",
     "ToolExecutionError",
     "ToolNotFound",
     "UnknownProvider",
@@ -97,6 +98,28 @@ class AgentNotFound(MangomasError, KeyError):
     def __init__(self, name: str) -> None:
         super().__init__(f"Unknown agent: {name!r}", detail=f"agent_name={name!r}")
         self.agent_name = name
+
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+
+
+class SecretsResolutionError(MangomasError):
+    """Raised when a secrets provider fails to resolve a reference in strict mode.
+
+    Only raised by cloud backends (e.g. GCP Secret Manager) when
+    ``SecretsSettings.strict`` is enabled. A *missing* secret (not found) is
+    never an error — only auth / permission / timeout / API failures are.
+    """
+
+    code = "secrets_resolution_error"
+
+    def __init__(self, name: str, *, provider: str, detail: str = "") -> None:
+        super().__init__(
+            f"Failed to resolve secret {name!r} via provider {provider!r}.",
+            detail=detail,
+        )
+        self.secret_name = name
+        self.provider = provider
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────

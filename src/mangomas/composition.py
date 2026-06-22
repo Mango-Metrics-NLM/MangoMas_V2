@@ -214,6 +214,7 @@ def _build_gcp_secrets_provider(cfg: SecretsSettings) -> Any:
         project_id=cfg.project_id,
         timeout_seconds=cfg.timeout_seconds,
         default_version=cfg.default_version,
+        strict=cfg.strict,
     )
 
 

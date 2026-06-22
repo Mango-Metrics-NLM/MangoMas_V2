@@ -15,6 +15,7 @@ from mangomas.errors import (
     MangomasError,
     MaxStepsExceeded,
     PersistenceError,
+    SecretsResolutionError,
     ToolExecutionError,
     ToolNotFound,
     UnknownProvider,
@@ -49,6 +50,7 @@ def test_mangomas_error_default_detail_is_empty() -> None:
         LLMBadResponse,
         AgentNotFound,
         PersistenceError,
+        SecretsResolutionError,
         MaxStepsExceeded,
         ToolNotFound,
         ToolExecutionError,
@@ -130,6 +132,7 @@ def test_lmstudio_error_is_llm_bad_response() -> None:
         (LLMBadResponse, "llm_bad_response"),
         (AgentNotFound, "agent_not_found"),
         (PersistenceError, "persistence_error"),
+        (SecretsResolutionError, "secrets_resolution_error"),
         (MaxStepsExceeded, "max_steps_exceeded"),
         (ToolNotFound, "tool_not_found"),
         (ToolExecutionError, "tool_execution_error"),
@@ -137,6 +140,18 @@ def test_lmstudio_error_is_llm_bad_response() -> None:
 )
 def test_error_codes(cls: type[MangomasError], expected_code: str) -> None:
     assert cls.code == expected_code
+
+
+# ── SecretsResolutionError ────────────────────────────────────────────────────
+
+
+def test_secrets_resolution_error_stores_attrs() -> None:
+    exc = SecretsResolutionError("api-key", provider="gcp", detail="PermissionDenied")
+    assert exc.secret_name == "api-key"  # noqa: S105 -- test sentinel, not a secret
+    assert exc.provider == "gcp"
+    assert exc.detail == "PermissionDenied"
+    assert "api-key" in str(exc)
+    assert "gcp" in str(exc)
 
 
 # ── MaxStepsExceeded ─────────────────────────────────────────────────────────────

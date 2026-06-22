@@ -84,6 +84,10 @@ DEFAULT_SECRETS_PROVIDER: str = "env"
 # GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
 DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS: float = 5.0
 DEFAULT_GCP_SECRET_VERSION: str = "latest"  # noqa: S105 — not a secret value
+# Fail-loud toggle. When False (default), cloud secrets backends preserve the
+# ADR-0002 contract (collapse failures to None). When True, they raise
+# SecretsResolutionError on auth/permission/timeout/API failures.
+DEFAULT_SECRETS_STRICT: bool = False
 
 # Maximum length of the ``detail`` field on structured error envelopes /
 # log records. Bounds untrusted exception text so that adapter exception
@@ -245,6 +249,8 @@ class SecretsSettings(BaseModel):
     project_id: str | None = None
     timeout_seconds: float = DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS
     default_version: str = DEFAULT_GCP_SECRET_VERSION
+    # Fail-loud toggle for cloud backends (default OFF preserves ADR-0002).
+    strict: bool = DEFAULT_SECRETS_STRICT
 
 
 class DBSettings(BaseModel):

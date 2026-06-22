@@ -72,10 +72,12 @@ failures, IAM regressions, and outages.
 3. **Two protocol methods** (`get_or_raise` + `get`). Rejected: same
    cascade as (2) plus protocol bloat.
 
-## Follow-up (deferred to v0.4.0)
+## Follow-up (delivered)
 
-Add `SecretsSettings.strict: bool = False`; when set, raise a new
-`SecretsResolutionError` from the cloud backends (not env) instead of
-returning `None`. This gives operators an opt-in "fail loud" mode for
-production while preserving the local-dev contract by default. Tracked
-under NEXT_STEPS.md mid-term alongside the Cloud Logging exporter.
+`SecretsSettings.strict: bool = False` (`MANGOMAS_SECRETS__STRICT`) is now
+implemented. When set, the cloud backends (not env) raise
+`SecretsResolutionError` (HTTP 503) from their *failure* branches
+(auth / permission / timeout / API error) instead of returning `None`. A
+missing secret (NotFound) is still not an error and returns `None`. The
+default (`False`) preserves the None-collapsing contract above exactly.
+See `src/mangomas/secrets/gcp.py::GCPSecretManagerProvider._raise_if_strict`.

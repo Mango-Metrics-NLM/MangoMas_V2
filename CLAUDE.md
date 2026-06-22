@@ -112,6 +112,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
 | `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
 | `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
+| `MANGOMAS_SECRETS__STRICT` | `false` | Fail-loud: raise `SecretsResolutionError` on cloud secret failures instead of `None` |
 | `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap |
 | `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout |
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
@@ -233,7 +234,8 @@ MangomasError           # base; has .code str
 ├── LLMError            # code="llm_error"
 ├── MaxStepsExceeded    # code="max_steps_exceeded"; .steps int
 ├── ToolNotFound        # code="tool_not_found"; .name, .available
-└── ToolExecutionError  # code="tool_execution_error"; .tool_name
+├── ToolExecutionError  # code="tool_execution_error"; .tool_name
+└── SecretsResolutionError  # code="secrets_resolution_error"; .secret_name, .provider (HTTP 503; strict mode only)
 ```
 
 HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
