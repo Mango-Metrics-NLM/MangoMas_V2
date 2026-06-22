@@ -7,13 +7,18 @@ ADR-001 — service-account JSON keys are NEVER accepted by this module.
 
 Error semantics
 ---------------
-All failure modes — NotFound, PermissionDenied, Unauthenticated,
+By default all failure modes — NotFound, PermissionDenied, Unauthenticated,
 DeadlineExceeded, missing ADC, network errors — collapse to ``None`` so
 that ``mangomas.composition._resolve_llm_secrets`` falls back to the
 inline ``api_key`` (preserving local-dev ergonomics). Auth failures and
 unexpected errors emit ERROR-level structured logs; missing secrets emit
 a debug log only. **The secret value, the full resource path (with
 version), and credential payloads are never logged.** See ADR-002.
+
+When ``strict=True`` (``MANGOMAS_SECRETS__STRICT``), the *failure* branches
+raise :class:`~mangomas.errors.SecretsResolutionError` instead of returning
+``None`` — an opt-in "fail loud" mode for production. A missing secret
+(NotFound) is still not an error and always returns ``None``.
 
 The Google SDK is imported lazily inside method bodies so this module
 remains importable even when the optional ``gcp`` extra is absent.
@@ -23,6 +28,8 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, cast
+
+from mangomas.errors import SecretsResolutionError
 
 if TYPE_CHECKING:  # pragma: no cover
     from google.cloud import secretmanager
@@ -87,11 +94,22 @@ class GCPSecretManagerProvider:
         timeout_seconds: float,
         default_version: str,
         client: Any | None = None,
+        strict: bool = False,
     ) -> None:
         self._project_id = project_id
         self._timeout_seconds = timeout_seconds
         self._default_version = default_version
         self._client = client
+        self._strict = strict
+
+    def _raise_if_strict(self, short: str, exc: Exception) -> None:
+        """Raise :class:`SecretsResolutionError` when strict mode is on.
+
+        Called from the *failure* branches only (not NotFound). A no-op when
+        ``strict`` is disabled so the ADR-0002 None-fallback contract holds.
+        """
+        if self._strict:
+            raise SecretsResolutionError(short, provider="gcp", detail=type(exc).__name__) from exc
 
     def _ensure_client(self) -> secretmanager.SecretManagerServiceClient:
         # The SDK-construction branch is exercised only when the optional
@@ -140,6 +158,7 @@ class GCPSecretManagerProvider:
                     "secret_name": short,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
         except (gax.PermissionDenied, gax.Unauthenticated) as exc:
             logger.error(
@@ -150,6 +169,7 @@ class GCPSecretManagerProvider:
                     "secret_name": short,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
         except gax.DeadlineExceeded as exc:
             logger.error(
@@ -161,6 +181,7 @@ class GCPSecretManagerProvider:
                     "timeout_seconds": self._timeout_seconds,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
         except gax.GoogleAPIError as exc:
             logger.error(
@@ -171,6 +192,7 @@ class GCPSecretManagerProvider:
                     "secret_name": short,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
 
         payload: bytes = response.payload.data

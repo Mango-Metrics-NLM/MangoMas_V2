@@ -499,3 +499,12 @@ def test_build_gcp_secrets_provider_returns_provider_when_valid() -> None:
     provider = _build_gcp_secrets_provider(cfg)
     assert provider is not None
     assert provider._project_id == "my-proj"
+    # strict defaults to False (ADR-0002 contract preserved).
+    assert provider._strict is False
+
+
+def test_build_gcp_secrets_provider_forwards_strict() -> None:
+    """``SecretsSettings.strict`` is forwarded to the provider."""
+    cfg = SecretsSettings(provider="gcp", project_id="my-proj", strict=True)
+    provider = _build_gcp_secrets_provider(cfg)
+    assert provider._strict is True

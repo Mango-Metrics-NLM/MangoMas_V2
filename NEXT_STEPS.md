@@ -31,13 +31,17 @@ Add a `deploy/` directory with:
 - GitHub Actions workflow step for image push to Artifact Registry.
 - Environment-variable contract documented for Cloud Run service configuration.
 
+---
+
+## Done (Unreleased)
+
 ### SecretsSettings.strict mode (ADR-002 follow-up)
 
-Add `SecretsSettings.strict: bool = False`; when set, cloud secrets
-backends raise a new `SecretsResolutionError` instead of returning
-`None` on auth/permission/timeout failures. Preserves the local-dev
-contract by default; gives operators an opt-in "fail loud" mode for
-production.
+`SecretsSettings.strict` (`MANGOMAS_SECRETS__STRICT`, default `False`) is
+implemented. When set, cloud secrets backends raise the new
+`SecretsResolutionError` (HTTP 503) on auth/permission/timeout/API
+failures instead of returning `None`; a missing secret (NotFound) still
+returns `None`. The default preserves the ADR-0002 contract exactly.
 
 ---
 

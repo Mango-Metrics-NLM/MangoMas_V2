@@ -22,6 +22,7 @@ import pytest
 
 from mangomas.composition import _resolve_llm_secrets
 from mangomas.config import LLMSettings
+from mangomas.errors import SecretsResolutionError
 from mangomas.secrets import GCPSecretManagerProvider, SecretsProvider, secrets_registry
 from mangomas.secrets.gcp import _build_resource_path, _short_name
 
@@ -120,12 +121,14 @@ def _provider(
     timeout: float = 5.0,
     default_version: str = "latest",
     client: Any | None = None,
+    strict: bool = False,
 ) -> GCPSecretManagerProvider:
     return GCPSecretManagerProvider(
         project_id=project_id,
         timeout_seconds=timeout,
         default_version=default_version,
         client=client,
+        strict=strict,
     )
 
 
@@ -262,6 +265,49 @@ def test_get_returns_none_on_unknown_api_error(
     with caplog.at_level(logging.ERROR, logger="mangomas.secrets.gcp"):
         assert provider.get(SHORT_NAME) is None
     assert any("request failed" in r.getMessage() for r in caplog.records)
+
+
+# ── strict mode (fail-loud) ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        _DefaultCredentialsError("no ADC"),
+        _PermissionDenied("denied"),
+        _Unauthenticated("noauth"),
+        _DeadlineExceeded("slow"),
+        _OtherAPIError("boom"),
+    ],
+)
+def test_get_raises_in_strict_mode_on_failure(exc: Exception) -> None:
+    """Every failure branch raises SecretsResolutionError when strict=True."""
+    client = _FakeSecretClient(raises=exc)
+    provider = _provider(client=client, strict=True)
+
+    with pytest.raises(SecretsResolutionError) as exc_info:
+        provider.get(SHORT_NAME)
+    assert exc_info.value.provider == "gcp"
+    assert exc_info.value.secret_name == SHORT_NAME
+    # The original SDK exception type is preserved as the cause + detail.
+    assert exc_info.value.detail == type(exc).__name__
+    assert exc_info.value.__cause__ is exc
+
+
+def test_get_strict_mode_still_returns_none_on_not_found() -> None:
+    """NotFound is *missing*, not a failure — strict mode still returns None."""
+    client = _FakeSecretClient(raises=_NotFound("missing"))
+    provider = _provider(client=client, strict=True)
+
+    assert provider.get(SHORT_NAME) is None
+
+
+def test_get_strict_mode_returns_value_on_success() -> None:
+    """Strict mode does not affect the happy path."""
+    client = _FakeSecretClient(payloads={FULL_PATH: SECRET_VALUE.encode("utf-8")})
+    provider = _provider(client=client, strict=True)
+
+    assert provider.get(SHORT_NAME) == SECRET_VALUE
 
 
 # ── safety: secret value never appears in logs ────────────────────────────────

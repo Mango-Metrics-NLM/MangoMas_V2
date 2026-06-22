@@ -21,6 +21,22 @@ def test_env_provider_satisfies_protocol() -> None:
     assert isinstance(EnvSecretsProvider(), SecretsProvider)
 
 
+def test_secrets_settings_strict_defaults_off() -> None:
+    """The fail-loud toggle is OFF by default (ADR-0002 contract preserved)."""
+    assert SecretsSettings().strict is False
+
+
+def test_secrets_settings_strict_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mangomas.config import get_settings  # noqa: PLC0415
+
+    monkeypatch.setenv("MANGOMAS_SECRETS__STRICT", "true")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().secrets.strict is True
+    finally:
+        get_settings.cache_clear()
+
+
 def test_env_provider_reads_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MANGOMAS_TEST_SECRET", "top-secret-value")
     assert EnvSecretsProvider().get("MANGOMAS_TEST_SECRET") == "top-secret-value"

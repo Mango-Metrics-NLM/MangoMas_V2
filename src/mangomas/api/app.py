@@ -28,6 +28,7 @@ from mangomas.errors import (
     MangomasError,
     MaxStepsExceeded,
     PersistenceError,
+    SecretsResolutionError,
     ToolExecutionError,
     ToolNotFound,
     UnknownProvider,
@@ -54,6 +55,9 @@ _ERROR_STATUS: dict[type[MangomasError], int] = {
     ToolExecutionError: HTTPStatus.BAD_GATEWAY,
     MaxStepsExceeded: HTTPStatus.UNPROCESSABLE_ENTITY,
     PersistenceError: HTTPStatus.INTERNAL_SERVER_ERROR,
+    # A strict secrets backend that is unreachable/denied is an upstream
+    # availability problem (parallel to LLMUnavailable); retryable.
+    SecretsResolutionError: HTTPStatus.SERVICE_UNAVAILABLE,
     MangomasError: HTTPStatus.INTERNAL_SERVER_ERROR,
 }
 
