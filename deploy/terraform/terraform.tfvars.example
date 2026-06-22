@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars and fill in. Do NOT commit a real terraform.tfvars.
+project_id  = "my-gcp-project"
+region      = "us-central1"
+github_repo = "Mango-Metrics-NLM/MangoMas_V2"
+
+# Image is normally supplied by the deploy workflow via -var; set a placeholder
+# for a first bootstrap apply.
+image = "us-central1-docker.pkg.dev/my-gcp-project/mangomas/mangomas:bootstrap"
+
+# Plain (non-secret) runtime config. Secrets resolve via Secret Manager.
+env = {
+  MANGOMAS_ENV                       = "prod"
+  MANGOMAS_LOG__FORMAT               = "json"
+  MANGOMAS_TELEMETRY__EXPORTER       = "gcp"
+  MANGOMAS_TELEMETRY__GCP_PROJECT_ID = "my-gcp-project"
+  MANGOMAS_SECRETS__PROVIDER         = "gcp"
+  MANGOMAS_SECRETS__PROJECT_ID       = "my-gcp-project"
+}
