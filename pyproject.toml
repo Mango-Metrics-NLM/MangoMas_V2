@@ -74,9 +74,19 @@ gcp = [
     "google-cloud-secret-manager>=2.20",
     "google-auth>=2.30",
 ]
-# Convenience meta-extra: install all cloud adapters.
+# OTLP/gRPC span exporter — install with `pip install 'mangomas[otlp]'`.
+# The exporter is lazy-imported so it stays optional.
+otlp = [
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25",
+]
+# GCP Cloud Trace span exporter — install with `pip install 'mangomas[gcp-trace]'`.
+# The exporter is lazy-imported so it stays optional.
+gcp-trace = [
+    "opentelemetry-exporter-gcp-trace>=1.6",
+]
+# Convenience meta-extra: install all cloud adapters + exporters.
 cloud = [
-    "mangomas[vertex,postgres,gcp]",
+    "mangomas[vertex,postgres,gcp,gcp-trace,otlp]",
 ]
 
 [project.scripts]

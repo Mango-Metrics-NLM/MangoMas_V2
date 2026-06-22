@@ -73,8 +73,10 @@ def _error_status(exc: MangomasError) -> int:
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_telemetry(
+        service_name=settings.telemetry.service_name,
         log_level=settings.log_level,
         log_format=settings.log.format,
+        telemetry=settings.telemetry,
     )
     app.state.orchestrator = build_orchestrator(settings)
     logger.info("Application started")

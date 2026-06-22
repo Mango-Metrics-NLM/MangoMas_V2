@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from threading import Lock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
 from opentelemetry.propagate import set_global_textmap
@@ -23,6 +23,11 @@ from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProces
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from mangomas.correlation import CorrelationFilter
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.config import TelemetrySettings
+
+logger = logging.getLogger(__name__)
 
 # Standard LogRecord attributes that we do NOT forward into the JSON envelope.
 _STANDARD_LOG_RECORD_ATTRS: frozenset[str] = frozenset(
@@ -113,8 +118,14 @@ def configure_telemetry(
     service_name: str = "mangomas",
     log_level: str = "INFO",
     log_format: str = "text",
+    telemetry: TelemetrySettings | None = None,
 ) -> None:
-    """Idempotently configure logging + tracing to stdout.
+    """Idempotently configure logging + tracing.
+
+    When *telemetry* is ``None`` the span exporter defaults to the in-process
+    console exporter — byte-identical to the historical behaviour. When a
+    :class:`~mangomas.config.TelemetrySettings` is supplied, the configured
+    exporter (``console``/``otlp``/``gcp``) is resolved and attached instead.
 
     Subsequent calls are no-ops; safe to call from tests.
     """
@@ -145,7 +156,24 @@ def configure_telemetry(
         set_global_textmap(TraceContextTextMapPropagator())
 
         provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+        if telemetry is None:
+            # Default-OFF: identical to the historical console-only behaviour.
+            provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+        else:
+            # Local import avoids a config import cycle at module load.
+            from mangomas.telemetry_exporters import (  # noqa: PLC0415
+                make_span_processor,
+                resolve_exporter,
+            )
+
+            exporter = resolve_exporter(telemetry)
+            provider.add_span_processor(
+                make_span_processor(exporter, exporter_name=telemetry.exporter)
+            )
+            logger.info(
+                "Span exporter configured",
+                extra={"exporter": telemetry.exporter, "service_name": service_name},
+            )
         trace.set_tracer_provider(provider)
 
         _state.configured = True

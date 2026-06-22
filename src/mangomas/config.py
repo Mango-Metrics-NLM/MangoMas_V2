@@ -48,6 +48,16 @@ DEFAULT_API_READY_TIMEOUT: float = 2.0
 DEFAULT_LOG_FORMAT: Literal["text", "json"] = "text"
 DEFAULT_LOG_BODY_TRUNCATE: int = 512
 
+# Span-exporter selection. ``console`` is the default so existing deployments
+# see no behaviour change; ``otlp``/``gcp`` are opt-in and require the matching
+# optional extra (``mangomas[otlp]`` / ``mangomas[gcp-trace]``). ``otlp_endpoint``
+# and ``gcp_project_id`` have no safe defaults — they are validated at
+# exporter-build time only when the corresponding exporter is selected.
+DEFAULT_TELEMETRY_EXPORTER: Literal["console", "otlp", "gcp"] = "console"
+DEFAULT_TELEMETRY_OTLP_ENDPOINT: str | None = None
+DEFAULT_TELEMETRY_GCP_PROJECT_ID: str | None = None
+DEFAULT_TELEMETRY_SERVICE_NAME: str = "mangomas"
+
 DEFAULT_LOOP_MAX_STEPS: int = 1
 DEFAULT_LOOP_STEP_TIMEOUT: float = 30.0
 DEFAULT_TOOL_MAX_STEPS: int = 5
@@ -139,6 +149,13 @@ DEFAULT_EVAL_SCHEMA_VERSION: int = 1
 DEFAULT_HARNESS_ENABLED: bool = False
 DEFAULT_HARNESS_METRICS_NAMESPACE: str = "mangomas.harness"
 DEFAULT_HARNESS_HOOK_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING"] = "INFO"
+# Harness span routing. ``None`` (default) routes harness spans through the
+# global application tracer — identical to pre-existing behaviour. Setting an
+# exporter builds a dedicated, isolated provider so harness spans can target a
+# different backend than application spans.
+DEFAULT_HARNESS_METRICS_EXPORTER: Literal["console", "otlp", "gcp"] | None = None
+DEFAULT_HARNESS_OTLP_ENDPOINT: str | None = None
+DEFAULT_HARNESS_GCP_PROJECT_ID: str | None = None
 
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
@@ -274,6 +291,20 @@ class LogSettings(BaseModel):
     body_truncate: int = DEFAULT_LOG_BODY_TRUNCATE
 
 
+class TelemetrySettings(BaseModel):
+    """OpenTelemetry span-exporter configuration.
+
+    Defaults select the in-process ``console`` exporter so existing
+    deployments behave identically. ``otlp``/``gcp`` are opt-in and resolved
+    lazily (requiring the matching optional extra) at exporter-build time.
+    """
+
+    exporter: Literal["console", "otlp", "gcp"] = DEFAULT_TELEMETRY_EXPORTER
+    otlp_endpoint: str | None = DEFAULT_TELEMETRY_OTLP_ENDPOINT
+    gcp_project_id: str | None = DEFAULT_TELEMETRY_GCP_PROJECT_ID
+    service_name: str = DEFAULT_TELEMETRY_SERVICE_NAME
+
+
 class AgentSettings(BaseModel):
     """Per-agent overrides loaded from ``MANGOMAS_AGENTS__<NAME>__*`` env vars."""
 
@@ -309,6 +340,11 @@ class HarnessSettings(BaseModel):
     enabled: bool = DEFAULT_HARNESS_ENABLED
     metrics_namespace: str = DEFAULT_HARNESS_METRICS_NAMESPACE
     hook_log_level: Literal["DEBUG", "INFO", "WARNING"] = DEFAULT_HARNESS_HOOK_LOG_LEVEL
+    # Optional dedicated span routing for ``harness.agent_invoke`` spans.
+    # ``None`` keeps the current behaviour (global application tracer).
+    metrics_exporter: Literal["console", "otlp", "gcp"] | None = DEFAULT_HARNESS_METRICS_EXPORTER
+    otlp_endpoint: str | None = DEFAULT_HARNESS_OTLP_ENDPOINT
+    gcp_project_id: str | None = DEFAULT_HARNESS_GCP_PROJECT_ID
 
 
 class EvalSettings(BaseModel):
@@ -416,6 +452,7 @@ class Settings(BaseSettings):
     db: DBSettings = Field(default_factory=DBSettings)
     api: APISettings = Field(default_factory=APISettings)
     log: LogSettings = Field(default_factory=LogSettings)
+    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 
     # Per-agent overrides keyed by agent name.
     agents: dict[str, AgentSettings] = Field(default_factory=dict)

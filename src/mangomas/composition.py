@@ -259,12 +259,20 @@ class _HarnessOrchestrator(Orchestrator):
 
     def __init__(self, ctx: AgentContext, harness_cfg: HarnessSettings) -> None:
         super().__init__(ctx)
-        self._harness_tracer = get_tracer(harness_cfg.metrics_namespace)
+        if harness_cfg.metrics_exporter is None:
+            # Default path: harness spans share the global application tracer.
+            self._harness_tracer = get_tracer(harness_cfg.metrics_namespace)
+        else:
+            # Route harness spans to a dedicated, isolated exporter.
+            from mangomas.telemetry_exporters import build_harness_tracer  # noqa: PLC0415
+
+            self._harness_tracer = build_harness_tracer(harness_cfg)
         self._harness_cfg = harness_cfg
         logger.debug(
             "Harness orchestrator engaged",
             extra={
                 "metrics_namespace": harness_cfg.metrics_namespace,
+                "metrics_exporter": harness_cfg.metrics_exporter,
                 "hook_log_level": harness_cfg.hook_log_level,
             },
         )

@@ -8,6 +8,7 @@ import logging
 import pytest
 
 from mangomas import telemetry
+from mangomas.config import TelemetrySettings
 from mangomas.telemetry import JsonFormatter
 
 
@@ -22,6 +23,25 @@ def test_configure_telemetry_idempotent() -> None:
     first = telemetry._state.configured
     telemetry.configure_telemetry()
     assert first is True
+    assert telemetry._state.configured is True
+
+
+def test_configure_telemetry_none_preserves_console_default() -> None:
+    """``telemetry=None`` keeps the historical console-only behaviour."""
+    _reset()
+    telemetry.configure_telemetry(service_name="test")
+    assert telemetry._state.configured is True
+
+
+def test_configure_telemetry_with_console_settings() -> None:
+    """Passing a console ``TelemetrySettings`` configures without error."""
+    _reset()
+    telemetry.configure_telemetry(
+        service_name="test", telemetry=TelemetrySettings(exporter="console")
+    )
+    tracer = telemetry.get_tracer("settings-console")
+    with tracer.start_as_current_span("span") as span:
+        span.set_attribute("k", "v")
     assert telemetry._state.configured is True
 
 
