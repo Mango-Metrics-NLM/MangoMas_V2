@@ -57,7 +57,7 @@ Secret Manager via the app's secrets seam (`MANGOMAS_SECRETS__PROVIDER=gcp`).
 | `MANGOMAS_TELEMETRY__EXPORTER` | `gcp` | Cloud Trace span export (requires the `gcp-trace` extra in the image) |
 | `MANGOMAS_TELEMETRY__GCP_PROJECT_ID` | _project id_ | |
 | `MANGOMAS_LLM__PROVIDER` | `vertex` | Optional — Vertex AI LLM via ADC |
-| `MANGOMAS_LLM__PROJECT` / `__LOCATION` | _project_ / _region_ | When `PROVIDER=vertex` |
+| `MANGOMAS_LLM__PROJECT_ID` / `__LOCATION` | _project_ / _region_ | When `PROVIDER=vertex` |
 | `MANGOMAS_DB__PROVIDER` | `postgres` | Optional — Cloud SQL |
 | `MANGOMAS_DB__URL` | _DSN_ | Cloud SQL connection string |
 | `MANGOMAS_SECRETS__PROVIDER` | `gcp` | Secret Manager backend |

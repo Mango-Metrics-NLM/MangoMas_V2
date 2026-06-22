@@ -15,11 +15,13 @@ locals {
     "roles/aiplatform.user",              # Vertex AI LLM / embeddings
   ])
 
-  # Roles the CI deployer needs to build, push, and roll out a revision.
+  # Project-level roles the CI deployer needs to build, push, and roll out a
+  # revision. ``iam.serviceAccountUser`` is deliberately NOT here — it is granted
+  # on the runtime SA only (below) so the deployer can impersonate that one
+  # account, not every service account in the project.
   deployer_roles = toset([
     "roles/run.admin",               # deploy Cloud Run revisions
     "roles/artifactregistry.writer", # push images
-    "roles/iam.serviceAccountUser",  # act as the runtime SA
   ])
 }
 
@@ -131,6 +133,14 @@ resource "google_project_iam_member" "deployer_roles" {
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# Least-privilege: let the deployer act as the runtime SA only (scoped to that
+# one account) rather than at the project level.
+resource "google_service_account_iam_member" "deployer_act_as_runtime" {
+  service_account_id = google_service_account.runtime.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.deployer.email}"
 }
 
 resource "google_iam_workload_identity_pool" "github" {
