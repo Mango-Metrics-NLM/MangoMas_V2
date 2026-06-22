@@ -180,7 +180,29 @@ def configure_telemetry(
 
 
 def get_tracer(name: str = "mangomas") -> trace.Tracer:
-    """Return a tracer; configures telemetry with defaults on first use."""
-    if not _state.configured:
-        configure_telemetry()
+    """Return a tracer for *name*.
+
+    Does **not** auto-configure telemetry. OpenTelemetry's ``get_tracer``
+    returns a ``ProxyTracer`` that transparently delegates to the real provider
+    once it is registered, so module-level ``get_tracer(__name__)`` calls are
+    safe before :func:`configure_telemetry` runs. Auto-configuring here would
+    lock in the default (console) exporter and silently ignore the real
+    configuration applied later at the application entry point (the lifespan /
+    CLI), because :func:`configure_telemetry` is idempotent.
+    """
     return trace.get_tracer(name)
+
+
+def flush_telemetry() -> None:
+    """Force-flush buffered spans on the global provider.
+
+    Call from an application entry point's shutdown path (e.g. the FastAPI
+    lifespan ``finally``) so spans queued in a ``BatchSpanProcessor`` are
+    exported before the process exits a graceful shutdown / scale-down. Unlike
+    a full ``shutdown``, this leaves the provider usable, so it is safe to call
+    repeatedly and does not tear down a process-global singleton.
+    """
+    provider = trace.get_tracer_provider()
+    force_flush = getattr(provider, "force_flush", None)
+    if callable(force_flush):
+        force_flush()

@@ -291,18 +291,47 @@ class LogSettings(BaseModel):
     body_truncate: int = DEFAULT_LOG_BODY_TRUNCATE
 
 
+def _validate_exporter_requirements(
+    exporter: str | None,
+    otlp_endpoint: str | None,
+    gcp_project_id: str | None,
+    *,
+    exporter_field: str,
+) -> None:
+    """Raise ``ValueError`` if a selected span exporter lacks its required field.
+
+    Shared by :class:`TelemetrySettings` and :class:`HarnessSettings` so the
+    fail-fast rule lives in one place. ``exporter_field`` names the offending
+    field for a clear message (``exporter`` vs ``metrics_exporter``).
+    """
+    if exporter == "otlp" and not otlp_endpoint:
+        raise ValueError(f"otlp_endpoint is required when {exporter_field}='otlp'")
+    if exporter == "gcp" and not gcp_project_id:
+        raise ValueError(f"gcp_project_id is required when {exporter_field}='gcp'")
+
+
 class TelemetrySettings(BaseModel):
     """OpenTelemetry span-exporter configuration.
 
     Defaults select the in-process ``console`` exporter so existing
-    deployments behave identically. ``otlp``/``gcp`` are opt-in and resolved
-    lazily (requiring the matching optional extra) at exporter-build time.
+    deployments behave identically. ``otlp``/``gcp`` are opt-in and validated
+    at load time so misconfiguration fails fast at startup.
     """
 
     exporter: Literal["console", "otlp", "gcp"] = DEFAULT_TELEMETRY_EXPORTER
     otlp_endpoint: str | None = DEFAULT_TELEMETRY_OTLP_ENDPOINT
     gcp_project_id: str | None = DEFAULT_TELEMETRY_GCP_PROJECT_ID
     service_name: str = DEFAULT_TELEMETRY_SERVICE_NAME
+
+    @model_validator(mode="after")
+    def _check_exporter_requirements(self) -> TelemetrySettings:
+        _validate_exporter_requirements(
+            self.exporter,
+            self.otlp_endpoint,
+            self.gcp_project_id,
+            exporter_field="exporter",
+        )
+        return self
 
 
 class AgentSettings(BaseModel):
@@ -345,6 +374,16 @@ class HarnessSettings(BaseModel):
     metrics_exporter: Literal["console", "otlp", "gcp"] | None = DEFAULT_HARNESS_METRICS_EXPORTER
     otlp_endpoint: str | None = DEFAULT_HARNESS_OTLP_ENDPOINT
     gcp_project_id: str | None = DEFAULT_HARNESS_GCP_PROJECT_ID
+
+    @model_validator(mode="after")
+    def _check_metrics_exporter_requirements(self) -> HarnessSettings:
+        _validate_exporter_requirements(
+            self.metrics_exporter,
+            self.otlp_endpoint,
+            self.gcp_project_id,
+            exporter_field="metrics_exporter",
+        )
+        return self
 
 
 class EvalSettings(BaseModel):

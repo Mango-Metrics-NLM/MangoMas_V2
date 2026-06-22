@@ -11,11 +11,12 @@ Two public entry points:
 ``resolve_exporter(cfg)``
     Return a configured :class:`SpanExporter` for the application-wide provider.
 
-``build_harness_tracer(harness_cfg)``
-    Return a tracer backed by a *dedicated, isolated* provider so harness spans
-    can be routed to a different backend than application spans. The provider is
-    never promoted via ``trace.set_tracer_provider`` — this is what keeps the
-    harness exporter from leaking into global state (and keeps tests isolated).
+``build_harness_provider(harness_cfg)``
+    Return a *dedicated, isolated* ``TracerProvider`` so harness spans can be
+    routed to a different backend than application spans. The provider is never
+    promoted via ``trace.set_tracer_provider`` — this keeps the harness exporter
+    from leaking into global state (and keeps tests isolated). The caller owns
+    its lifecycle and shuts it down on teardown.
 """
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeAlias, cast
 
-from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import (
@@ -64,11 +64,10 @@ def _console_exporter_factory(cfg: TelemetrySettings) -> SpanExporter:  # noqa: 
 def _otlp_exporter_factory(cfg: TelemetrySettings) -> SpanExporter:
     """Return an OTLP/gRPC exporter targeting ``cfg.otlp_endpoint``.
 
-    The OTLP SDK is imported lazily so this module is importable without the
-    ``otlp`` extra.
+    ``cfg.otlp_endpoint`` is guaranteed present by ``TelemetrySettings``
+    load-time validation. The OTLP SDK is imported lazily so this module is
+    importable without the ``otlp`` extra.
     """
-    if not cfg.otlp_endpoint:
-        raise ConfigError("MANGOMAS_TELEMETRY__OTLP_ENDPOINT is required when exporter='otlp'.")
     try:
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: PLC0415
             OTLPSpanExporter,
@@ -82,11 +81,10 @@ def _otlp_exporter_factory(cfg: TelemetrySettings) -> SpanExporter:
 def _gcp_trace_exporter_factory(cfg: TelemetrySettings) -> SpanExporter:
     """Return a Cloud Trace exporter for ``cfg.gcp_project_id`` (ADC auth).
 
-    The Cloud Trace SDK is imported lazily so this module is importable without
-    the ``gcp-trace`` extra.
+    ``cfg.gcp_project_id`` is guaranteed present by ``TelemetrySettings``
+    load-time validation. The Cloud Trace SDK is imported lazily so this module
+    is importable without the ``gcp-trace`` extra.
     """
-    if not cfg.gcp_project_id:
-        raise ConfigError("MANGOMAS_TELEMETRY__GCP_PROJECT_ID is required when exporter='gcp'.")
     try:
         from opentelemetry.exporter.cloud_trace import (  # noqa: PLC0415
             CloudTraceSpanExporter,
@@ -117,8 +115,9 @@ def resolve_exporter(cfg: TelemetrySettings) -> SpanExporter:
     """Build the :class:`SpanExporter` selected by ``cfg.exporter``.
 
     Registers the ``otlp``/``gcp`` factory on first use so optional SDKs stay
-    unimported until actually selected. Raises :class:`ConfigError` for a
-    selected-but-misconfigured exporter (e.g. missing endpoint/project).
+    unimported until actually selected. ``cfg`` is expected to be a validated
+    :class:`~mangomas.config.TelemetrySettings` (endpoint/project presence is
+    enforced at load time).
     """
     name = cfg.exporter
     if name in _LAZY_FACTORIES and name not in exporter_registry.available():
@@ -142,16 +141,20 @@ def make_span_processor(exporter: SpanExporter, *, exporter_name: str) -> SpanPr
     return BatchSpanProcessor(exporter)
 
 
-def build_harness_tracer(harness_cfg: HarnessSettings) -> trace.Tracer:
-    """Return a tracer on a dedicated provider routed to a separate exporter.
+def build_harness_provider(harness_cfg: HarnessSettings) -> TracerProvider:
+    """Return a dedicated :class:`TracerProvider` routed to a separate exporter.
 
     Only called when ``harness_cfg.metrics_exporter`` is set. The provider is
     *local* — it is never passed to ``trace.set_tracer_provider`` — so harness
     spans reach an isolated backend without mutating the global provider or
     leaking state across tests/processes.
+
+    The caller owns the returned provider's lifecycle and must call
+    ``provider.shutdown()`` on teardown (see ``_HarnessOrchestrator.aclose``)
+    so a ``BatchSpanProcessor`` worker thread is not leaked.
     """
     if harness_cfg.metrics_exporter is None:  # pragma: no cover -- guarded by caller
-        raise ConfigError("build_harness_tracer requires harness.metrics_exporter to be set.")
+        raise ConfigError("build_harness_provider requires harness.metrics_exporter to be set.")
     tele = TelemetrySettings(
         exporter=harness_cfg.metrics_exporter,
         otlp_endpoint=harness_cfg.otlp_endpoint,
@@ -164,10 +167,10 @@ def build_harness_tracer(harness_cfg: HarnessSettings) -> trace.Tracer:
     )
     provider.add_span_processor(make_span_processor(exporter, exporter_name=tele.exporter))
     logger.debug(
-        "Built dedicated harness tracer",
+        "Built dedicated harness tracer provider",
         extra={
             "exporter": tele.exporter,
             "metrics_namespace": harness_cfg.metrics_namespace,
         },
     )
-    return provider.get_tracer(harness_cfg.metrics_namespace)
+    return provider

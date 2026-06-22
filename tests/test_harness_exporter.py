@@ -79,3 +79,25 @@ def test_dedicated_provider_uses_simple_processor_for_console() -> None:
     dedicated = InMemorySpanExporter()
     proc = SimpleSpanProcessor(dedicated)
     assert isinstance(proc, SimpleSpanProcessor)
+
+
+async def test_aclose_shuts_down_dedicated_provider() -> None:
+    """aclose() shuts down and releases the dedicated harness provider."""
+    dedicated = InMemorySpanExporter()
+    with exporter_registry.scoped("console", lambda _cfg: dedicated):
+        wrapper = _HarnessOrchestrator(
+            _ctx(), HarnessSettings(enabled=True, metrics_exporter="console")
+        )
+
+    assert wrapper._harness_provider is not None
+    await wrapper.aclose()
+    # The provider reference is dropped after shutdown so it cannot be reused
+    # or double-shut-down.
+    assert wrapper._harness_provider is None
+
+
+async def test_aclose_default_path_has_no_dedicated_provider() -> None:
+    """The default (shared-tracer) path holds no provider to shut down."""
+    wrapper = _HarnessOrchestrator(_ctx(), HarnessSettings(enabled=True))
+    assert wrapper._harness_provider is None
+    await wrapper.aclose()  # must not raise

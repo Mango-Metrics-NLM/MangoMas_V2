@@ -61,7 +61,7 @@ client ──► X-Request-ID: abc12345 ──► │ AccessLogMiddleware       
   per-request span and propagates `traceparent` / `tracestate` headers.
 - **`src/mangomas/telemetry_exporters.py`** — `exporter_registry`
   (a generic `Registry[SpanExporterFactory]`), `resolve_exporter()`, and
-  `build_harness_tracer()`. Selects the span exporter and span processor.
+  `build_harness_provider()`. Selects the span exporter and span processor.
 
 ## Span exporters
 
@@ -88,7 +88,7 @@ console path runs unchanged.
 `HarnessSettings.metrics_exporter` (`MANGOMAS_HARNESS__METRICS_EXPORTER`)
 optionally routes `harness.agent_invoke` spans to a **separate** backend
 than application spans. When unset (`None`, the default) the harness shares
-the global application tracer. When set, `build_harness_tracer` constructs a
+the global application tracer. When set, `build_harness_provider` constructs a
 *dedicated, isolated* `TracerProvider` that is **never** promoted globally —
 so harness telemetry can target a different endpoint without mutating global
 trace state. See [ADR-0006](../adr/0006-span-exporter-selection.md).

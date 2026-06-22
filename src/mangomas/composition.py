@@ -12,9 +12,10 @@ Adding a new LLM or storage provider requires only:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
-from typing import Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from mangomas.adapters.embeddings import LMStudioEmbeddingClient
 from mangomas.adapters.llm import LMStudioClient, VertexClient
@@ -40,6 +41,9 @@ from mangomas.errors import ConfigError
 from mangomas.registry import Registry
 from mangomas.secrets import secrets_registry
 from mangomas.telemetry import get_tracer
+
+if TYPE_CHECKING:  # pragma: no cover
+    from opentelemetry.sdk.trace import TracerProvider
 
 logger = logging.getLogger(__name__)
 
@@ -259,14 +263,19 @@ class _HarnessOrchestrator(Orchestrator):
 
     def __init__(self, ctx: AgentContext, harness_cfg: HarnessSettings) -> None:
         super().__init__(ctx)
+        # The dedicated provider (when routing is enabled) is owned by this
+        # orchestrator and shut down in ``aclose`` to avoid leaking a
+        # BatchSpanProcessor worker thread.
+        self._harness_provider: TracerProvider | None = None
         if harness_cfg.metrics_exporter is None:
             # Default path: harness spans share the global application tracer.
             self._harness_tracer = get_tracer(harness_cfg.metrics_namespace)
         else:
-            # Route harness spans to a dedicated, isolated exporter.
-            from mangomas.telemetry_exporters import build_harness_tracer  # noqa: PLC0415
+            # Route harness spans to a dedicated, isolated provider.
+            from mangomas.telemetry_exporters import build_harness_provider  # noqa: PLC0415
 
-            self._harness_tracer = build_harness_tracer(harness_cfg)
+            self._harness_provider = build_harness_provider(harness_cfg)
+            self._harness_tracer = self._harness_provider.get_tracer(harness_cfg.metrics_namespace)
         self._harness_cfg = harness_cfg
         logger.debug(
             "Harness orchestrator engaged",
@@ -276,6 +285,22 @@ class _HarnessOrchestrator(Orchestrator):
                 "hook_log_level": harness_cfg.hook_log_level,
             },
         )
+
+    async def aclose(self) -> None:
+        """Close inner resources, then shut down the dedicated harness provider.
+
+        ``super().aclose()`` runs first (and may re-raise); the harness provider
+        shutdown runs in a ``finally`` so the worker thread is always released.
+        Shutdown is offloaded to a thread because ``BatchSpanProcessor.shutdown``
+        flushes and joins synchronously.
+        """
+        try:
+            await super().aclose()
+        finally:
+            provider = self._harness_provider
+            if provider is not None:
+                self._harness_provider = None
+                await asyncio.to_thread(provider.shutdown)
 
     async def dispatch(
         self,

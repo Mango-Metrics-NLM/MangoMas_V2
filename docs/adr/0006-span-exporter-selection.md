@@ -21,7 +21,7 @@ Add `TelemetrySettings` (`MANGOMAS_TELEMETRY__*`) with an `exporter` selector
 `exporter_registry: Registry[SpanExporterFactory]`. `otlp`/`gcp` factories
 lazy-import their SDKs (optional extras `mangomas[otlp]` / `mangomas[gcp-trace]`)
 and are registered on first selection. Harness routing uses
-`HarnessSettings.metrics_exporter`; when set, `build_harness_tracer` builds a
+`HarnessSettings.metrics_exporter`; when set, `build_harness_provider` builds a
 dedicated `TracerProvider` that is **never** promoted via
 `trace.set_tracer_provider`.
 

@@ -22,9 +22,8 @@ from opentelemetry.sdk.trace.export import (
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from mangomas.config import HarnessSettings, TelemetrySettings
-from mangomas.errors import ConfigError
 from mangomas.telemetry_exporters import (
-    build_harness_tracer,
+    build_harness_provider,
     exporter_registry,
     make_span_processor,
     resolve_exporter,
@@ -113,11 +112,6 @@ def test_resolve_otlp_lazy_registers_and_builds(_stub_otlp_sdk: None) -> None:
     assert "otlp" in exporter_registry.available()
 
 
-def test_resolve_otlp_without_endpoint_raises() -> None:
-    with pytest.raises(ConfigError, match="OTLP_ENDPOINT"):
-        resolve_exporter(TelemetrySettings(exporter="otlp"))
-
-
 # ── gcp (lazy) ────────────────────────────────────────────────────────────────
 
 
@@ -127,11 +121,6 @@ def test_resolve_gcp_lazy_registers_and_builds(_stub_gcp_trace_sdk: None) -> Non
     assert isinstance(exporter, _FakeCloudTraceSpanExporter)
     assert exporter.project_id == "proj-123"
     assert "gcp" in exporter_registry.available()
-
-
-def test_resolve_gcp_without_project_raises() -> None:
-    with pytest.raises(ConfigError, match="GCP_PROJECT_ID"):
-        resolve_exporter(TelemetrySettings(exporter="gcp"))
 
 
 # ── processor selection ───────────────────────────────────────────────────────
@@ -147,20 +136,17 @@ def test_non_console_uses_batch_processor() -> None:
     assert isinstance(proc, BatchSpanProcessor)
 
 
-# ── build_harness_tracer ──────────────────────────────────────────────────────
+# ── build_harness_provider ────────────────────────────────────────────────────
 
 
-def test_build_harness_tracer_returns_tracer_on_local_provider() -> None:
-    """A console harness exporter yields a working tracer on an isolated provider."""
+def test_build_harness_provider_returns_isolated_provider() -> None:
+    """A console harness exporter yields a usable, isolated provider."""
     cfg = HarnessSettings(enabled=True, metrics_exporter="console")
-    tracer = build_harness_tracer(cfg)
-    with tracer.start_as_current_span("harness-span") as span:
-        span.set_attribute("k", "v")
-    assert tracer is not None
-
-
-def test_build_harness_tracer_propagates_config_error() -> None:
-    """A misconfigured selected exporter surfaces ``ConfigError``."""
-    cfg = HarnessSettings(enabled=True, metrics_exporter="otlp", otlp_endpoint=None)
-    with pytest.raises(ConfigError, match="OTLP_ENDPOINT"):
-        build_harness_tracer(cfg)
+    provider = build_harness_provider(cfg)
+    try:
+        tracer = provider.get_tracer(cfg.metrics_namespace)
+        with tracer.start_as_current_span("harness-span") as span:
+            span.set_attribute("k", "v")
+        assert provider is not None
+    finally:
+        provider.shutdown()

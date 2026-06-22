@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from mangomas.config import (
     DEFAULT_TELEMETRY_EXPORTER,
     DEFAULT_TELEMETRY_GCP_PROJECT_ID,
     DEFAULT_TELEMETRY_OTLP_ENDPOINT,
     DEFAULT_TELEMETRY_SERVICE_NAME,
+    HarnessSettings,
     Settings,
     TelemetrySettings,
     get_settings,
@@ -52,3 +54,36 @@ def test_telemetry_env_override_gcp(monkeypatch: pytest.MonkeyPatch) -> None:
         assert s.telemetry.gcp_project_id == "proj-xyz"
     finally:
         get_settings.cache_clear()
+
+
+# ── Load-time validation (fail-fast) ──────────────────────────────────────────
+
+
+def test_telemetry_otlp_requires_endpoint() -> None:
+    with pytest.raises(ValidationError, match="otlp_endpoint is required"):
+        TelemetrySettings(exporter="otlp")
+
+
+def test_telemetry_gcp_requires_project() -> None:
+    with pytest.raises(ValidationError, match="gcp_project_id is required"):
+        TelemetrySettings(exporter="gcp")
+
+
+def test_telemetry_console_needs_no_extra_fields() -> None:
+    # The console default must validate cleanly with no endpoint/project.
+    assert TelemetrySettings(exporter="console").exporter == "console"
+
+
+def test_harness_metrics_exporter_otlp_requires_endpoint() -> None:
+    with pytest.raises(ValidationError, match="otlp_endpoint is required"):
+        HarnessSettings(enabled=True, metrics_exporter="otlp")
+
+
+def test_harness_metrics_exporter_gcp_requires_project() -> None:
+    with pytest.raises(ValidationError, match="gcp_project_id is required"):
+        HarnessSettings(enabled=True, metrics_exporter="gcp")
+
+
+def test_harness_metrics_exporter_none_is_valid() -> None:
+    # The default (no routing) needs no endpoint/project.
+    assert HarnessSettings(enabled=True).metrics_exporter is None
