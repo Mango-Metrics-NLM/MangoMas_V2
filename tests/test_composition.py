@@ -9,6 +9,7 @@ import pytest
 
 import mangomas.composition as composition_module
 from mangomas.adapters.llm import VertexClient
+from mangomas.agents import discovery as agent_discovery
 from mangomas.composition import (
     _build_gcp_secrets_provider,
     _file_memory_factory,
@@ -33,10 +34,10 @@ from mangomas.config import (
     Settings,
 )
 from mangomas.core import Orchestrator
-from mangomas.core.agent import AgentContext, AgentRequest, Message
+from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.errors import ConfigError
 from mangomas.secrets import secrets_registry
-from tests.constants import DEFAULT_AGENT_NAME, STUB_REPLY
+from tests.constants import DEFAULT_AGENT_NAME, FAKE_PLUGIN_AGENT_NAME, STUB_REPLY
 from tests.fakes import (
     FakeEmbeddingClient,
     FakeLLM,
@@ -80,6 +81,67 @@ def test_default_agents_are_registered_in_agent_registry() -> None:
     assert "tool" in agent_registry.available()
     assert "planner" in agent_registry.available()
     assert "reviewer" in agent_registry.available()
+
+
+class _PluginAgent:
+    """A discovered third-party agent double."""
+
+    name = FAKE_PLUGIN_AGENT_NAME
+
+    async def handle(self, request: AgentRequest, _ctx: AgentContext) -> AgentResponse:
+        return AgentResponse(content=f"got:{len(request.messages)}", agent=self.name)
+
+
+class _PluginEntryPoint:
+    """Minimal ``importlib.metadata.EntryPoint`` stand-in yielding an agent factory."""
+
+    name = FAKE_PLUGIN_AGENT_NAME
+
+    def load(self) -> Any:
+        return lambda _settings: _PluginAgent()
+
+
+@pytest.fixture
+def _restore_agent_registry() -> Any:
+    """Snapshot and restore the global agent registry around a discovery test."""
+    before = dict(agent_registry._store)
+    try:
+        yield
+    finally:
+        agent_registry._store.clear()
+        agent_registry._store.update(before)
+
+
+def test_build_orchestrator_discovers_plugin_agents_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    _restore_agent_registry: Any,
+) -> None:
+    monkeypatch.setattr(agent_discovery, "_discovered", False)
+    monkeypatch.setattr(agent_discovery, "entry_points", lambda **_: [_PluginEntryPoint()])
+
+    settings = Settings(_env_file=None, discovery_enabled=True)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    orch = build_orchestrator(settings)
+    try:
+        assert FAKE_PLUGIN_AGENT_NAME in orch.list_agents()
+    finally:
+        _close_repo(orch)
+
+
+def test_build_orchestrator_skips_discovery_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    _restore_agent_registry: Any,
+) -> None:
+    monkeypatch.setattr(agent_discovery, "_discovered", False)
+    monkeypatch.setattr(agent_discovery, "entry_points", lambda **_: [_PluginEntryPoint()])
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]  # discovery_enabled defaults False
+    settings.db.url = "sqlite:///:memory:"
+    orch = build_orchestrator(settings)
+    try:
+        assert FAKE_PLUGIN_AGENT_NAME not in orch.list_agents()
+    finally:
+        _close_repo(orch)
 
 
 def test_build_orchestrator_disabled_harness_returns_plain_orchestrator() -> None:

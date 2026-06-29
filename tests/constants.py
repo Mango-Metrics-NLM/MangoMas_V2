@@ -156,3 +156,4 @@ EVAL_THRESHOLD_LENIENT: float = 0.0
 EVAL_SCHEMA_VERSION_CURRENT: int = 1
 FAKE_PLUGIN_SCORER_NAME: str = "fake_plugin_scorer"
 FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"
+FAKE_PLUGIN_AGENT_NAME: str = "fake_plugin_agent"

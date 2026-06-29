@@ -95,7 +95,8 @@ mangomas = "mangomas.cli.main:app"
 # Plugin contract: third-party packages register eval scorers/sinks/targets by
 # adding entries to these groups, each pointing at a factory
 # `Callable[[dict], Scorer|Sink|Target]`.
-# Discovery runs only when MANGOMAS_DISCOVERY_ENABLED=true (see eval/discovery.py).
+# Discovery runs only when MANGOMAS_DISCOVERY_ENABLED=true (see eval/discovery.py
+# for eval plugins and agents/discovery.py for agents).
 # Built-ins register in-process, so these groups stay empty here.
 #   [project.entry-points."mangomas.eval.scorers"]
 #   my_scorer = "mypkg.module:factory"
@@ -105,6 +106,8 @@ mangomas = "mangomas.cli.main:app"
 #   my_target = "mypkg.module:factory"
 #   [project.entry-points."mangomas.eval.dataset_sources"]
 #   my_source = "mypkg.module:factory"
+#   [project.entry-points."mangomas.agents"]
+#   my_agent = "mypkg.module:agent_factory"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mangomas"]

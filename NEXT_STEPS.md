@@ -263,11 +263,17 @@ compatible: existing single-agent dispatch is unchanged.
 Tenant-scoped conversation storage and agent configuration (per-tenant
 `AgentSettings` registry) without leaking state across tenants.
 
-### Agent marketplace / dynamic loading
+### Agent marketplace / dynamic loading — **delivered**
 
 `agent_registry` loading from external packages via entry-point discovery
 (`importlib.metadata.entry_points`) so that third-party agents can be
 installed and registered without modifying `composition.py`.
+
+Delivered in `agents/discovery.py` (`discover_agents` / `ensure_agent_plugins`
+over the `mangomas.agents` entry-point group), wired into `build_orchestrator`
+and gated by `MANGOMAS_DISCOVERY_ENABLED` (default off). Mirrors the eval-plugin
+discovery: fault-isolated, last-call-wins override, once-per-process. See
+ADR-0007.
 
 ---
 
