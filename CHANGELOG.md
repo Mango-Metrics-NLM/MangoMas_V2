@@ -135,6 +135,22 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Dynamic agent loading (entry-point discovery)
+
+Third-party packages can register agents without editing this repo (see the
+"Agent marketplace / dynamic loading" roadmap item). Additive and default-OFF —
+zero behaviour change unless `MANGOMAS_DISCOVERY_ENABLED=true`.
+
+- **`agents/discovery.py`**: `discover_agents` + `ensure_agent_plugins` over the
+  new `mangomas.agents` entry-point group, each pointing at an agent factory
+  (`Callable[[AgentSettings | None], Agent]`). Mirrors `eval/discovery.py`:
+  once-per-process latch, fault-isolated per-plugin load (a failing or
+  non-callable plugin is logged and skipped), and last-call-wins override of a
+  built-in (logged at INFO).
+- **Wiring**: `build_orchestrator` runs discovery once before wiring agents, so
+  both the CLI and the API lifespan pick up plugins through the single chokepoint.
+  Reuses the existing `MANGOMAS_DISCOVERY_ENABLED` flag.
+
 ### Added — Evaluation harness: gating, sinks, scorers, plugins
 
 Adopts eval-harness patterns natively (see ADR-0003). All additions are

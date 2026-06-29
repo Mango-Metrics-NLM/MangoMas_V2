@@ -153,7 +153,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
-| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
+| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source **and agent** plugins |
 
 ---
 
@@ -265,6 +265,22 @@ To add a new agent:
 2. Register in `src/mangomas/agents/__init__.py`
 3. Register factory in `composition.py` via `agent_registry.register("<name>", ...)`
 4. Write `tests/test_<name>.py`
+
+### Dynamic agent loading (out-of-tree, opt-in)
+
+Third-party packages can register agents **without editing this repo** by declaring
+an entry point under the `mangomas.agents` group pointing at an agent factory
+(`Callable[[AgentSettings | None], Agent]`):
+
+```toml
+[project.entry-points."mangomas.agents"]
+my-agent = "mypkg.module:agent_factory"
+```
+
+Discovery (`agents/discovery.py`) runs once inside `build_orchestrator` and **only**
+when `MANGOMAS_DISCOVERY_ENABLED=true` (default off → byte-identical to today). It
+mirrors the eval-plugin discovery: a failing plugin is logged and skipped; a plugin
+named like a built-in overrides it (last-call-wins, logged at INFO).
 
 ---
 

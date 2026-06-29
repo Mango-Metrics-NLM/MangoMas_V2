@@ -144,6 +144,20 @@ agent_registry.register("my-agent", lambda settings: MyAgent(settings=settings))
 
 No changes to `Orchestrator`, `app.py`, or any existing agent are needed.
 
+### Out-of-tree agents (entry-point discovery)
+
+A separate package can register an agent **without modifying this repo** by
+declaring an entry point under the `mangomas.agents` group:
+
+```toml
+[project.entry-points."mangomas.agents"]
+my-agent = "mypkg.module:agent_factory"   # Callable[[AgentSettings | None], Agent]
+```
+
+Set `MANGOMAS_DISCOVERY_ENABLED=true` and the agent is discovered and wired at
+orchestrator-build time. Discovery is off by default and fault-isolated — a broken
+plugin is logged and skipped, never breaking startup.
+
 ---
 
 ## Evaluation harness
