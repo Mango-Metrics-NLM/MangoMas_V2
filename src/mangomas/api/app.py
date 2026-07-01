@@ -28,6 +28,7 @@ from mangomas.errors import (
     MangomasError,
     MaxStepsExceeded,
     PersistenceError,
+    SecretsResolutionError,
     ToolExecutionError,
     ToolNotFound,
     UnknownProvider,
@@ -53,6 +54,7 @@ _ERROR_STATUS: dict[type[MangomasError], int] = {
     LLMError: HTTPStatus.BAD_GATEWAY,
     ToolExecutionError: HTTPStatus.BAD_GATEWAY,
     MaxStepsExceeded: HTTPStatus.UNPROCESSABLE_ENTITY,
+    SecretsResolutionError: HTTPStatus.SERVICE_UNAVAILABLE,
     PersistenceError: HTTPStatus.INTERNAL_SERVER_ERROR,
     MangomasError: HTTPStatus.INTERNAL_SERVER_ERROR,
 }
@@ -75,6 +77,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_telemetry(
         log_level=settings.log_level,
         log_format=settings.log.format,
+        exporter=settings.telemetry.exporter,
     )
     app.state.orchestrator = build_orchestrator(settings)
     logger.info("Application started")

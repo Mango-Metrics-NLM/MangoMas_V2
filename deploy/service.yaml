@@ -1,0 +1,73 @@
+# Cloud Run service manifest (Knative serving v1).
+#
+# Author-only artifact — this repository provisions no GCP resources (ADR-0001).
+# Replace REGION / PROJECT_ID / the image tag at deploy time (the deploy.yml
+# workflow renders the image reference). Secrets are injected from Secret
+# Manager via `valueFrom.secretKeyRef` — never as literal values.
+#
+# Compute contract (ADR-0001): non-root container (baked into the image),
+# $PORT-aware, liveness /healthz + readiness /readyz.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: mangomas
+  labels:
+    app: mangomas
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/mangomas/mangomas:latest
+          ports:
+            - name: http1
+              containerPort: 8000
+          env:
+            # Non-secret runtime configuration (see deploy/README.md for the
+            # full MANGOMAS_* contract). Cloud Run injects PORT automatically.
+            - name: MANGOMAS_ENV
+              value: "prod"
+            - name: MANGOMAS_LOG__FORMAT
+              value: "json"
+            - name: MANGOMAS_TELEMETRY__EXPORTER
+              value: "gcp"
+            - name: MANGOMAS_LLM__PROVIDER
+              value: "vertex"
+            - name: MANGOMAS_DB__PROVIDER
+              value: "postgres"
+            - name: MANGOMAS_SECRETS__PROVIDER
+              value: "gcp"
+            - name: MANGOMAS_SECRETS__STRICT
+              value: "true"
+            # Secret material comes from Secret Manager, not literals. Prefer
+            # LLMSettings.secret_ref resolved by the gcp secrets provider; this
+            # secretKeyRef form is shown for parity with other MANGOMAS_* vars.
+            - name: MANGOMAS_LLM__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mangomas-llm-api-key
+                  key: latest
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"

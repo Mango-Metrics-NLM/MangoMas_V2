@@ -135,6 +135,71 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Cloud Run deploy pipeline (Milestone E)
+
+Author-only deploy artifacts (ADR-0001, spec 0004). No GCP resources are
+provisioned by this repo and no live deploy is validated by tests.
+
+- **`deploy/service.yaml`**: Cloud Run (Knative serving v1) manifest — non-root,
+  `$PORT`, liveness `/healthz` + readiness `/readyz`, secrets via
+  `secretKeyRef` (never literals).
+- **`.github/workflows/deploy.yml`**: on published release, build → Artifact
+  Registry push → `gcloud run deploy`, authenticated via Workload Identity
+  Federation (`id-token: write`; no service-account JSON keys).
+- **`deploy/README.md`**: the full `MANGOMAS_*` runtime env-var contract.
+- **`tests/deploy/`**: contract tests — manifest/workflow YAML validity, probe
+  presence, WIF usage, and README doc-sync against `Settings.model_fields`.
+
+### Added — Secrets strict mode (Milestone D)
+
+Opt-in "fail loud" secret resolution (ADR-0010, amends ADR-002; spec 0003).
+Additive and default-OFF.
+
+- **`MANGOMAS_SECRETS__STRICT`** (default `false`): when `true`, cloud secrets
+  backends raise the new **`SecretsResolutionError`** (HTTP 503) on
+  auth/permission/timeout/API failures instead of returning `None`. `NotFound`
+  still returns `None` — an absent secret is not a failure.
+- `errors.py` gains `SecretsResolutionError` (`code="secrets_resolution_error"`,
+  `.ref`/`.provider`); mapped to 503 in `api/app.py::_ERROR_STATUS`. The error
+  carries only the short id + provider — never the value, path, or version.
+- `secrets/gcp.py` honours `strict` via a single `_raise_if_strict` helper;
+  `SecretsSettings.strict` wired through `composition.py`.
+
+### Added — Telemetry exporter selection + harness routing (Milestone C)
+
+Cloud Trace export and separate harness-span routing, both additive and
+default-OFF (see ADR-0009, specs 0001/0002).
+
+- **`MANGOMAS_TELEMETRY__EXPORTER`** (`console` default | `gcp`): new
+  `TelemetrySettings` group selects the application span exporter behind the
+  existing `configure_telemetry()`. `gcp` lazily imports the Cloud Trace
+  exporter from the new `opentelemetry-exporter-gcp-trace` dependency under the
+  `gcp` extra.
+- **`MANGOMAS_HARNESS__METRICS_EXPORTER`** (`inherit` default | `console` |
+  `gcp`): routes `harness.agent_invoke` spans to a dedicated `TracerProvider`
+  when non-`inherit`; `inherit` reuses the global exporter (no change).
+- `telemetry.py` gains `_build_span_exporter` (shared selector) and
+  `build_scoped_tracer`; `_HarnessOrchestrator` uses the latter.
+- New gated test marker `gcp_trace` (`RUN_GCP_TRACE=1`).
+
+### Added — Dynamic agent loading via entry points (Milestone B)
+
+Third-party packages can register agents into `agent_registry` without editing
+`composition.py`. Additive and default-OFF (see ADR-0008, spec 0006).
+
+- **`agents/discovery.py`**: `discover_agents` / `ensure_agent_plugins`,
+  mirroring `eval/discovery.py` — entry-point group `mangomas.agents`, factory
+  `Callable[[AgentSettings | None], Agent]`, once-per-process latch, log-and-skip
+  on plugin failure. Gated by the existing `MANGOMAS_DISCOVERY_ENABLED` (no new
+  env var).
+- **`composition.py`**: `build_orchestrator` calls `ensure_agent_plugins` before
+  the registration loop, so discovered agents are dispatchable with no wiring
+  change.
+- **Collision policy**: a discovered agent whose name collides with a **built-in**
+  is skipped with a WARNING (never silently overrides `chat`/`planner`/etc.);
+  third-party↔third-party keeps last-call-wins.
+- `pyproject.toml` documents the `mangomas.agents` entry-point group.
+
 ### Added — Spec-driven workflow + Claude Code ecosystem refresh
 
 Groundwork for the next-steps roadmap (see `specs/README.md`). Additive; no

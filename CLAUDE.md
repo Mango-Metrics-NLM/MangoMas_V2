@@ -112,6 +112,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
 | `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
 | `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
+| `MANGOMAS_SECRETS__STRICT` | `false` | Raise `SecretsResolutionError` on cloud secret failures instead of returning `None` |
 | `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap |
 | `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout |
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
@@ -232,6 +233,7 @@ MangomasError           # base; has .code str
 ├── LLMBadResponse      # code="llm_bad_response"
 ├── LLMError            # code="llm_error"
 ├── MaxStepsExceeded    # code="max_steps_exceeded"; .steps int
+├── SecretsResolutionError  # code="secrets_resolution_error"; .ref, .provider (503; strict mode)
 ├── ToolNotFound        # code="tool_not_found"; .name, .available
 └── ToolExecutionError  # code="tool_execution_error"; .tool_name
 ```
@@ -299,7 +301,9 @@ The enterprise harness layer is configured by `HarnessSettings` (env prefix
 |---|---|---|
 | `MANGOMAS_HARNESS__ENABLED` | `false` | Wrap dispatch + stream_dispatch in `harness.agent_invoke` |
 | `MANGOMAS_HARNESS__METRICS_NAMESPACE` | `mangomas.harness` | OTel tracer namespace for harness spans |
+| `MANGOMAS_HARNESS__METRICS_EXPORTER` | `inherit` | Harness span exporter (`inherit`/`console`/`gcp`); `inherit` reuses the app exporter |
 | `MANGOMAS_HARNESS__HOOK_LOG_LEVEL` | `INFO` | Level for SessionStart-hook log records |
+| `MANGOMAS_TELEMETRY__EXPORTER` | `console` | Application span exporter (`console`/`gcp` Cloud Trace) |
 
 When enabled, `composition.py::build_orchestrator` returns
 `_HarnessOrchestrator` instead of the bare `Orchestrator`. The subclass

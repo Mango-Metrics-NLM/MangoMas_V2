@@ -20,6 +20,7 @@ from mangomas.adapters.embeddings import LMStudioEmbeddingClient
 from mangomas.adapters.llm import LMStudioClient, VertexClient
 from mangomas.adapters.storage import FileMemoryRepository, SQLiteRepository
 from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, SummarizeAgent, ToolAgent
+from mangomas.agents.discovery import ensure_agent_plugins
 from mangomas.config import (
     AgentSettings,
     DBSettings,
@@ -39,7 +40,7 @@ from mangomas.core.tools import ToolRegistry
 from mangomas.errors import ConfigError
 from mangomas.registry import Registry
 from mangomas.secrets import secrets_registry
-from mangomas.telemetry import get_tracer
+from mangomas.telemetry import build_scoped_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +215,7 @@ def _build_gcp_secrets_provider(cfg: SecretsSettings) -> Any:
         project_id=cfg.project_id,
         timeout_seconds=cfg.timeout_seconds,
         default_version=cfg.default_version,
+        strict=cfg.strict,
     )
 
 
@@ -259,7 +261,9 @@ class _HarnessOrchestrator(Orchestrator):
 
     def __init__(self, ctx: AgentContext, harness_cfg: HarnessSettings) -> None:
         super().__init__(ctx)
-        self._harness_tracer = get_tracer(harness_cfg.metrics_namespace)
+        self._harness_tracer = build_scoped_tracer(
+            harness_cfg.metrics_namespace, exporter=harness_cfg.metrics_exporter
+        )
         self._harness_cfg = harness_cfg
         logger.debug(
             "Harness orchestrator engaged",
@@ -372,6 +376,10 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         )
     else:
         orch = Orchestrator(ctx)
+
+    # Layer in any entry-point agent plugins (no-op unless discovery_enabled).
+    # Built-ins are already registered above and form the protected set.
+    ensure_agent_plugins(cfg, agent_registry)
 
     for agent_name in agent_registry.available():
         factory = agent_registry.get(agent_name)

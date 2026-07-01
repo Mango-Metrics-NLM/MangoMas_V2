@@ -84,6 +84,8 @@ DEFAULT_SECRETS_PROVIDER: str = "env"
 # GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
 DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS: float = 5.0
 DEFAULT_GCP_SECRET_VERSION: str = "latest"  # noqa: S105 — not a secret value
+# Opt-in "fail loud" mode (ADR-0010). Default False preserves ADR-002 (None).
+DEFAULT_SECRETS_STRICT: bool = False
 
 # Maximum length of the ``detail`` field on structured error envelopes /
 # log records. Bounds untrusted exception text so that adapter exception
@@ -139,6 +141,10 @@ DEFAULT_EVAL_SCHEMA_VERSION: int = 1
 DEFAULT_HARNESS_ENABLED: bool = False
 DEFAULT_HARNESS_METRICS_NAMESPACE: str = "mangomas.harness"
 DEFAULT_HARNESS_HOOK_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING"] = "INFO"
+# "inherit" reuses the global application exporter (no behaviour change).
+DEFAULT_HARNESS_METRICS_EXPORTER: Literal["inherit", "console", "gcp"] = "inherit"
+
+DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"
 
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
@@ -245,6 +251,10 @@ class SecretsSettings(BaseModel):
     project_id: str | None = None
     timeout_seconds: float = DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS
     default_version: str = DEFAULT_GCP_SECRET_VERSION
+    # When True, cloud backends raise SecretsResolutionError on auth/permission/
+    # timeout failures instead of returning None (ADR-0010). Default preserves
+    # the ADR-002 "collapse to None" local-dev contract.
+    strict: bool = DEFAULT_SECRETS_STRICT
 
 
 class DBSettings(BaseModel):
@@ -272,6 +282,17 @@ class LogSettings(BaseModel):
 
     format: Literal["text", "json"] = DEFAULT_LOG_FORMAT
     body_truncate: int = DEFAULT_LOG_BODY_TRUNCATE
+
+
+class TelemetrySettings(BaseModel):
+    """OpenTelemetry exporter selection.
+
+    ``exporter`` chooses the application span exporter: ``console`` (default,
+    built-in) or ``gcp`` (Cloud Trace via the optional ``gcp`` extra). Absent
+    from the environment → ``console``, identical to prior behaviour.
+    """
+
+    exporter: Literal["console", "gcp"] = DEFAULT_TELEMETRY_EXPORTER
 
 
 class AgentSettings(BaseModel):
@@ -309,6 +330,9 @@ class HarnessSettings(BaseModel):
     enabled: bool = DEFAULT_HARNESS_ENABLED
     metrics_namespace: str = DEFAULT_HARNESS_METRICS_NAMESPACE
     hook_log_level: Literal["DEBUG", "INFO", "WARNING"] = DEFAULT_HARNESS_HOOK_LOG_LEVEL
+    # Route harness.agent_invoke spans to a dedicated exporter, or "inherit" the
+    # global application exporter (default → no behaviour change).
+    metrics_exporter: Literal["inherit", "console", "gcp"] = DEFAULT_HARNESS_METRICS_EXPORTER
 
 
 class EvalSettings(BaseModel):
@@ -416,6 +440,7 @@ class Settings(BaseSettings):
     db: DBSettings = Field(default_factory=DBSettings)
     api: APISettings = Field(default_factory=APISettings)
     log: LogSettings = Field(default_factory=LogSettings)
+    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 
     # Per-agent overrides keyed by agent name.
     agents: dict[str, AgentSettings] = Field(default_factory=dict)
@@ -429,7 +454,9 @@ class Settings(BaseSettings):
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
 
-    # Set to True to enable entry-point-based agent discovery (Phase C).
+    # Set to True (MANGOMAS_DISCOVERY_ENABLED=true) to enable entry-point-based
+    # plugin discovery for eval components (mangomas.eval.*) and agents
+    # (mangomas.agents). Default False keeps only built-in providers registered.
     discovery_enabled: bool = False
 
 

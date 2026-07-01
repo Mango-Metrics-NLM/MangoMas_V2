@@ -75,6 +75,7 @@ def _configure_logging() -> None:
         service_name=cfg.harness.metrics_namespace,
         log_level=cfg.harness.hook_log_level,
         log_format=cfg.log.format,
+        exporter=cfg.telemetry.exporter,
     )
 
 

@@ -74,6 +74,26 @@ def test_build_orchestrator_wires_summarize_agent() -> None:
         _close_repo(orch)
 
 
+def test_build_orchestrator_invokes_agent_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """build_orchestrator layers in entry-point agents via ensure_agent_plugins."""
+    seen: list[tuple[Any, Any]] = []
+
+    def _spy(settings: Any, registry: Any) -> None:
+        seen.append((settings, registry))
+
+    monkeypatch.setattr(composition_module, "ensure_agent_plugins", _spy)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    orch = build_orchestrator(settings)
+    try:
+        assert len(seen) == 1
+        called_settings, called_registry = seen[0]
+        assert called_settings is settings
+        assert called_registry is agent_registry
+    finally:
+        _close_repo(orch)
+
+
 def test_default_agents_are_registered_in_agent_registry() -> None:
     assert "chat" in agent_registry.available()
     assert "summarize" in agent_registry.available()

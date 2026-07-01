@@ -16,6 +16,7 @@ __all__ = [
     "MangomasError",
     "MaxStepsExceeded",
     "PersistenceError",
+    "SecretsResolutionError",
     "ToolExecutionError",
     "ToolNotFound",
     "UnknownProvider",
@@ -53,6 +54,29 @@ class UnknownProvider(ConfigError):
         )
         self.name = name
         self.available = available
+
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+
+
+class SecretsResolutionError(MangomasError):
+    """Raised when a cloud secrets backend fails in strict mode.
+
+    Only raised when ``SecretsSettings.strict`` is ``True``; by default (ADR-002)
+    backends collapse auth/permission/timeout failures to ``None``. See ADR-0010.
+    The *detail* carries only the exception class name — never the secret value,
+    resource path, or version.
+    """
+
+    code = "secrets_resolution_error"
+
+    def __init__(self, ref: str, provider: str, *, detail: str = "") -> None:
+        super().__init__(
+            f"Failed to resolve secret {ref!r} from provider {provider!r}.",
+            detail=detail,
+        )
+        self.ref = ref
+        self.provider = provider
 
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
