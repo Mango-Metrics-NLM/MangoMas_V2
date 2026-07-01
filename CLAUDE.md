@@ -262,6 +262,18 @@ To add a new agent:
 
 ---
 
+## Spec-Driven Development
+
+Non-trivial features get a **spec before code** under `specs/`. Copy
+`specs/TEMPLATE.md` to `specs/NNNN-kebab-slug.md` (next free integer, mirroring
+the `docs/adr/` numbering), fill in Problem / Requirements / Config-env /
+Protocol-contract impact / Backwards-compat / Test plan / Acceptance criteria,
+and link an ADR when a boundary changes. Specs are thin and **not**
+CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
+`docs/plans/` records multi-milestone sequencing.
+
+---
+
 ## Claude Code Sub-Agents
 
 Each parent agent in `.github/agents/<parent>.agent.md` may declare specialised
@@ -271,7 +283,7 @@ live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
 | Parent | Sub-agents |
 |--------|-----------|
 | `architect` | `protocol-auditor`, `layering-auditor`, `adr-author`, `pr-watcher` |
-| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev` |
+| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev`, `telemetry-exporter-dev` |
 | `test-engineer` | `fake-builder`, `hypothesis-fuzz`, `integration-runner` |
 | `api-dev` | `sse-streamer`, `schema-evolution` |
 
@@ -302,9 +314,11 @@ Two scripts in `scripts/` complete the harness:
 - `lint_agent_frontmatter.py` — Pydantic-validated lint of `*.agent.md`
   / `SKILL.md` frontmatter and `sub_agents:` resolution. Also gates
   protected core paths (`src/mangomas/core/agent.py`,
-  `src/mangomas/registry.py`, `src/mangomas/core/orchestrator.py`,
-  `src/mangomas/core/tools.py`) with a required `BREAKING-CHANGE`
-  marker on staged diffs. Wired into CI as `frontmatter-lint`.
+  `src/mangomas/core/orchestrator.py`, `src/mangomas/core/tools.py`,
+  `src/mangomas/errors.py`, `src/mangomas/registry.py`) with a required
+  `BREAKING-CHANGE` marker on staged diffs (the legacy
+  `# approved-breaking-change` marker is still accepted). Wired into CI
+  as `frontmatter-lint`.
 - `harness_session_start.py` — SessionStart hook for Claude Code on
   the web. Emits a single-line JSON probe report (venv + LM Studio)
   so a fresh session knows what's available. Always returns `EXIT_OK`.
@@ -323,6 +337,8 @@ Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
 | `mango-config` | Adding a new tunable to `Settings` |
 | `mango-topology` | Composing pipelines, fan-outs, acceptance loops |
 | `mango-rag` | Embeddings/vector/RAG: ingestion, retrieval, RetrievalTool wiring |
+| `mango-eval` | Evaluation harness: scorers, sinks, targets, sources, gate/baseline |
+| `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
 
 ---
@@ -348,7 +364,13 @@ response = await orchestrator.dispatch("chat", request, acceptance_fn=accept, ma
 
 | Path | Change with care |
 |------|-----------------|
-| `src/mangomas/core/agent.py` | Stable public contract — backward-compat required |
-| `src/mangomas/registry.py` | Generic, no project-specific logic |
+| `src/mangomas/core/agent.py` | Stable public contract — backward-compat required (protected path) |
+| `src/mangomas/core/orchestrator.py` | Dispatch surface — backward-compat required (protected path) |
+| `src/mangomas/core/tools.py` | Tool contracts + parser — backward-compat required (protected path) |
+| `src/mangomas/errors.py` | Typed error hierarchy + HTTP mapping (protected path) |
+| `src/mangomas/registry.py` | Generic, no project-specific logic (protected path) |
 | `src/mangomas/composition.py` | Single wiring point — all new adapters registered here |
 | `tests/fakes.py` | Shared test doubles — keep minimal and protocol-accurate |
+
+Paths marked _(protected path)_ are gated by the `lint_agent_frontmatter.py`
+hook: a staged edit requires a `BREAKING-CHANGE` marker in the diff.

@@ -57,14 +57,19 @@ production.
 
 ### Claude Code enterprise harness
 
-End-to-end Claude Code harness landed as a non-breaking opt-in layer:
+End-to-end Claude Code harness landed as a non-breaking opt-in layer.
+Counts below are as-of the harness branch; the suite has since grown —
+see the skill and sub-agent tables in `CLAUDE.md` for the current set.
 
 - **8 skills** under `.github/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
-  observability, config, release, and topology.
-- **12 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
-  grouped under the 4 parent agents. The new `sub_agents:`
-  frontmatter key is optional and backwards-compatible.
+  observability, config, release, and topology. _(Since grown to 11:
+  `mango-rag` on the RAG branch, plus `mango-eval` and `mango-deploy`.)_
+- **13 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
+  grouped under the 4 parent agents (including `pr-watcher` under
+  `architect`). The new `sub_agents:` frontmatter key is optional and
+  backwards-compatible. _(Since grown to 14 with `telemetry-exporter-dev`
+  under `backend`.)_
 - **`HarnessSettings`** (env prefix `MANGOMAS_HARNESS__`,
   `enabled=False` default) drives whether `build_orchestrator`
   returns a `_HarnessOrchestrator` wrapper that adds a

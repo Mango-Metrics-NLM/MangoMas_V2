@@ -1,14 +1,16 @@
 """Embedding-similarity scorer.
 
-This scorer requires the configured LLM provider to expose an ``embed()``
-method returning a list of floats. None of the providers shipped today
-(LM Studio, Vertex) do — when invoked against such a provider, the scorer
-logs a clear warning and raises :class:`NotImplementedError` so callers
-see this as a missing capability, not a runtime LLM failure.
+Scores a prediction against the expected text by cosine similarity of their
+embeddings. The embedder is resolved from :class:`ScorerContext` — preferring
+the dedicated ``ScorerContext.embeddings`` client (any ``EmbeddingClient``
+backend: LM Studio, sentence-transformers, or Vertex), and falling back to a
+configured LLM that happens to expose an ``embed()`` method.
 
-The full implementation will arrive alongside the first embedding-capable
-provider; the protocol shape is reserved here so external scorers can be
-written against it now.
+Enable a real embedder via ``MANGOMAS_EMBEDDINGS__ENABLED=true`` so
+``ctx.embeddings`` is attached. When **no** embedder is configured (embeddings
+disabled and the LLM lacks ``.embed()``), the scorer logs a clear warning and
+raises :class:`NotImplementedError` so callers see a missing capability rather
+than a runtime LLM failure.
 """
 
 from __future__ import annotations

@@ -41,14 +41,25 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
 SKILLS_GLOB: Final[str] = ".github/skills/**/SKILL.md"
 
+# Stable core contracts gated by the protected-path hook. Kept in lock-step with
+# the "File Ownership" / protected-paths documentation in CLAUDE.md.
 PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
     {
         "src/mangomas/core/agent.py",
+        "src/mangomas/core/orchestrator.py",
+        "src/mangomas/core/tools.py",
         "src/mangomas/errors.py",
         "src/mangomas/registry.py",
     }
 )
-BREAKING_CHANGE_MARKER: Final[str] = "# approved-breaking-change"
+# Marker a committer adds to the staged diff to approve a breaking change to a
+# protected path. ``BREAKING_CHANGE_MARKER`` is the documented (CLAUDE.md)
+# string; the legacy ``# approved-breaking-change`` form is kept as an accepted
+# alias so any in-flight staged diffs are not retroactively blocked.
+BREAKING_CHANGE_MARKER: Final[str] = "BREAKING-CHANGE"
+BREAKING_CHANGE_MARKER_ALIASES: Final[frozenset[str]] = frozenset(
+    {BREAKING_CHANGE_MARKER, "# approved-breaking-change"}
+)
 
 FRONTMATTER_DELIMITER: Final[str] = "---"
 FRONTMATTER_SPLIT_PARTS: Final[int] = 3  # [pre, frontmatter, body]
@@ -201,15 +212,25 @@ def _staged_diff(path: str) -> str:
 
 
 def _check_protected_path(path: str) -> int:
-    """Return ``EXIT_PROTECTED`` if *path* is protected and unmarked, else ``EXIT_OK``."""
-    normalised = path.lstrip("./")
+    """Return ``EXIT_PROTECTED`` if *path* is protected and unmarked, else ``EXIT_OK``.
+
+    Uses :func:`_normalize_path` (not ``str.lstrip``) so Windows backslash paths
+    and a leading ``./`` are matched against the forward-slash ``PROTECTED_PATHS``
+    set — otherwise a ``src\\mangomas\\core\\agent.py`` edit would silently bypass
+    the hook. ``lstrip`` is also avoided because it strips individual leading
+    characters rather than a fixed prefix.
+    """
+    normalised = _normalize_path(path)
     if normalised not in PROTECTED_PATHS:
         return EXIT_OK
     diff = _staged_diff(normalised)
-    if BREAKING_CHANGE_MARKER in diff:
+    matched_marker = next(
+        (marker for marker in BREAKING_CHANGE_MARKER_ALIASES if marker in diff), None
+    )
+    if matched_marker is not None:
         logger.info(
             "Protected path has approved breaking-change marker",
-            extra={"path": normalised, "marker": BREAKING_CHANGE_MARKER},
+            extra={"path": normalised, "marker": matched_marker},
         )
         return EXIT_OK
     logger.error(
