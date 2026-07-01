@@ -10,12 +10,14 @@ from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from mangomas import telemetry
+from mangomas.errors import ConfigError
 from mangomas.telemetry import JsonFormatter
 
 
 def _reset() -> None:
-    """Force the telemetry singleton back to unconfigured."""
+    """Force the telemetry singleton back to unconfigured and clear scoped caches."""
     telemetry._state.configured = False
+    telemetry._scoped_tracers.clear()
 
 
 def test_configure_telemetry_idempotent() -> None:
@@ -68,6 +70,12 @@ def test_build_span_exporter_gcp_uses_lazy_helper(monkeypatch: pytest.MonkeyPatc
     assert telemetry._build_span_exporter(telemetry.EXPORTER_GCP) is sentinel
 
 
+def test_build_span_exporter_unknown_token_raises() -> None:
+    """An unknown exporter token fails loud rather than silently using console."""
+    with pytest.raises(ConfigError):
+        telemetry._build_span_exporter("bogus")
+
+
 def test_configure_telemetry_gcp_exporter_builds_exporter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -104,6 +112,14 @@ def test_build_scoped_tracer_routes_to_dedicated_exporter(
     with tracer.start_as_current_span("harness.span"):
         pass
     assert [span.name for span in exporter.get_finished_spans()] == ["harness.span"]
+
+
+def test_build_scoped_tracer_caches_by_namespace_and_exporter() -> None:
+    """Repeated calls reuse one provider/tracer instead of leaking a new one."""
+    _reset()
+    first = telemetry.build_scoped_tracer("harness.cache", exporter=telemetry.EXPORTER_CONSOLE)
+    second = telemetry.build_scoped_tracer("harness.cache", exporter=telemetry.EXPORTER_CONSOLE)
+    assert first is second
 
 
 @pytest.mark.gcp_trace

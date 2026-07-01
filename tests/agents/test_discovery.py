@@ -113,7 +113,7 @@ def test_discover_agents_skips_builtin_collision(
 
 
 def test_ensure_agent_plugins_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(discovery, "_discovered", False)
+    monkeypatch.setattr(discovery, "_discovered_registries", set())
     calls: list[str] = []
     monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     registry: Registry[Any] = Registry("agent-test")
@@ -123,7 +123,7 @@ def test_ensure_agent_plugins_noop_when_disabled(monkeypatch: pytest.MonkeyPatch
 
 
 def test_ensure_agent_plugins_runs_once_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(discovery, "_discovered", False)
+    monkeypatch.setattr(discovery, "_discovered_registries", set())
     calls: list[str] = []
     monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     registry: Registry[Any] = Registry("agent-test")
@@ -137,7 +137,7 @@ def test_ensure_agent_plugins_protects_seeded_builtins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Names present before discovery are protected from override."""
-    monkeypatch.setattr(discovery, "_discovered", False)
+    monkeypatch.setattr(discovery, "_discovered_registries", set())
     sentinel = object()
     registry: Registry[Any] = Registry("agent-test")
     registry.register(FAKE_PLUGIN_AGENT_NAME, sentinel)

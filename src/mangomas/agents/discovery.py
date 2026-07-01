@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from importlib.metadata import entry_points
+from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 from mangomas.telemetry import get_tracer
@@ -36,8 +37,12 @@ _tracer = get_tracer(__name__)
 
 AGENT_ENTRY_POINT_GROUP = "mangomas.agents"
 
-# Idempotency latch so repeated build_orchestrator calls in one process scan once.
-_discovered = False
+# Idempotency latch, tracked *per registry instance* (by id) rather than a single
+# global boolean: ``ensure_agent_plugins`` takes the registry as a parameter, so
+# a per-registry latch is both thread-safe (guarded by the lock) and keeps a scan
+# of one registry from suppressing discovery on another (e.g. across tests).
+_discovered_registries: set[int] = set()
+_discovery_lock = Lock()
 
 
 def discover_agents(
@@ -96,13 +101,20 @@ def discover_agents(
 def ensure_agent_plugins(settings: Settings, registry: Registry[Any]) -> None:
     """Run agent discovery once per process when ``settings.discovery_enabled``.
 
-    Idempotent and a no-op when discovery is disabled, so it is safe to call on
-    every ``build_orchestrator``. The built-in agents already registered in
-    *registry* form the protected set; discovery only layers plugins on top.
+    Idempotent per registry and a no-op when discovery is disabled, so it is
+    safe to call on every ``build_orchestrator``. The built-in agents already
+    registered in *registry* form the protected set; discovery only layers
+    plugins on top.
     """
-    global _discovered  # noqa: PLW0603 — deliberate once-per-process latch
-    if not settings.discovery_enabled or _discovered:
+    if not settings.discovery_enabled:
         return
-    protected = frozenset(registry.available())
-    discover_agents(registry, protected)
-    _discovered = True
+    registry_id = id(registry)
+    if registry_id in _discovered_registries:
+        return
+    with _discovery_lock:
+        # Double-checked under the lock so concurrent builds scan exactly once.
+        if registry_id in _discovered_registries:
+            return
+        protected = frozenset(registry.available())
+        discover_agents(registry, protected)
+        _discovered_registries.add(registry_id)

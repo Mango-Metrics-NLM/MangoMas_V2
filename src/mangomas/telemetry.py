@@ -23,6 +23,7 @@ from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProces
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from mangomas.correlation import CorrelationFilter
+from mangomas.errors import ConfigError
 
 # Standard LogRecord attributes that we do NOT forward into the JSON envelope.
 _STANDARD_LOG_RECORD_ATTRS: frozenset[str] = frozenset(
@@ -107,6 +108,11 @@ class _TelemetryState:
 
 _state = _TelemetryState()
 _lock = Lock()
+# Cache of dedicated scoped tracers keyed by (namespace, exporter) so repeated
+# build_orchestrator calls reuse one TracerProvider/SpanProcessor instead of
+# leaking a new one each time (matters most for the gcp Cloud Trace exporter).
+_scoped_tracers: dict[tuple[str, str], trace.Tracer] = {}
+_scoped_lock = Lock()
 logger = logging.getLogger(__name__)
 
 
@@ -138,16 +144,26 @@ def _lazy_cloud_trace_exporter() -> Any:  # pragma: no cover - requires gcp extr
     return CloudTraceSpanExporter()
 
 
+_VALID_APP_EXPORTERS: frozenset[str] = frozenset({EXPORTER_CONSOLE, EXPORTER_GCP})
+
+
 def _build_span_exporter(exporter: str) -> Any:
     """Return a span exporter for the selected *exporter* token.
 
     Shared by :func:`configure_telemetry` (application spans) and
     :func:`build_scoped_tracer` (harness spans) so exporter selection lives in
-    one place.
+    one place. An unknown token raises :class:`ConfigError` rather than silently
+    falling back to console — consistent with the registry ``UnknownProvider``
+    contract. (``inherit`` is resolved in :func:`build_scoped_tracer` and never
+    reaches here.)
     """
     if exporter == EXPORTER_GCP:
         return _lazy_cloud_trace_exporter()
-    return ConsoleSpanExporter()
+    if exporter == EXPORTER_CONSOLE:
+        return ConsoleSpanExporter()
+    raise ConfigError(
+        f"Unknown telemetry exporter {exporter!r}; expected one of {sorted(_VALID_APP_EXPORTERS)}."
+    )
 
 
 def configure_telemetry(
@@ -219,13 +235,20 @@ def build_scoped_tracer(namespace: str, *, exporter: str = EXPORTER_INHERIT) -> 
     """
     if exporter == EXPORTER_INHERIT:
         return get_tracer(namespace)
-    # Ensure logging + the global provider exist first (idempotent).
-    if not _state.configured:
-        configure_telemetry()
-    provider = TracerProvider(resource=Resource.create({"service.name": namespace}))
-    provider.add_span_processor(SimpleSpanProcessor(_build_span_exporter(exporter)))
-    logger.debug(
-        "Scoped tracer built",
-        extra={"event": "scoped_tracer_built", "namespace": namespace, "exporter": exporter},
-    )
-    return provider.get_tracer(namespace)
+    key = (namespace, exporter)
+    with _scoped_lock:
+        cached = _scoped_tracers.get(key)
+        if cached is not None:
+            return cached
+        # Ensure logging + the global provider exist first (idempotent).
+        if not _state.configured:
+            configure_telemetry()
+        provider = TracerProvider(resource=Resource.create({"service.name": namespace}))
+        provider.add_span_processor(SimpleSpanProcessor(_build_span_exporter(exporter)))
+        logger.debug(
+            "Scoped tracer built",
+            extra={"event": "scoped_tracer_built", "namespace": namespace, "exporter": exporter},
+        )
+        tracer = provider.get_tracer(namespace)
+        _scoped_tracers[key] = tracer
+        return tracer
