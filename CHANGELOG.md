@@ -135,6 +135,23 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Telemetry exporter selection + harness routing (Milestone C)
+
+Cloud Trace export and separate harness-span routing, both additive and
+default-OFF (see ADR-0009, specs 0001/0002).
+
+- **`MANGOMAS_TELEMETRY__EXPORTER`** (`console` default | `gcp`): new
+  `TelemetrySettings` group selects the application span exporter behind the
+  existing `configure_telemetry()`. `gcp` lazily imports the Cloud Trace
+  exporter from the new `opentelemetry-exporter-gcp-trace` dependency under the
+  `gcp` extra.
+- **`MANGOMAS_HARNESS__METRICS_EXPORTER`** (`inherit` default | `console` |
+  `gcp`): routes `harness.agent_invoke` spans to a dedicated `TracerProvider`
+  when non-`inherit`; `inherit` reuses the global exporter (no change).
+- `telemetry.py` gains `_build_span_exporter` (shared selector) and
+  `build_scoped_tracer`; `_HarnessOrchestrator` uses the latter.
+- New gated test marker `gcp_trace` (`RUN_GCP_TRACE=1`).
+
 ### Added — Dynamic agent loading via entry points (Milestone B)
 
 Third-party packages can register agents into `agent_registry` without editing

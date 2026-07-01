@@ -85,9 +85,7 @@ def test_discover_agents_skips_failing_plugin(
         registered = discovery.discover_agents(registry, frozenset(), group="x")
     assert registered == []
     assert "broken" not in registry.available()
-    assert any(
-        getattr(rec, "event", None) == "agent_plugin_load_failed" for rec in caplog.records
-    )
+    assert any(getattr(rec, "event", None) == "agent_plugin_load_failed" for rec in caplog.records)
 
 
 def test_discover_agents_skips_builtin_collision(
@@ -104,15 +102,11 @@ def test_discover_agents_skips_builtin_collision(
         lambda **_: [_FakeEntryPoint(DEFAULT_AGENT_NAME, _agent_factory)],
     )
     with caplog.at_level(logging.WARNING, logger="mangomas.agents.discovery"):
-        registered = discovery.discover_agents(
-            registry, frozenset({DEFAULT_AGENT_NAME}), group="x"
-        )
+        registered = discovery.discover_agents(registry, frozenset({DEFAULT_AGENT_NAME}), group="x")
     assert registered == []
     # The built-in binding is untouched — the plugin did not override it.
     assert registry.get(DEFAULT_AGENT_NAME) is sentinel
-    assert any(
-        getattr(rec, "event", None) == "agent_plugin_collision" for rec in caplog.records
-    )
+    assert any(getattr(rec, "event", None) == "agent_plugin_collision" for rec in caplog.records)
 
 
 # ── ensure_agent_plugins ──────────────────────────────────────────────────────

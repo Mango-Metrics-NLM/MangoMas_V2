@@ -42,6 +42,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     run_postgres = os.getenv("RUN_POSTGRES") == "1"
     run_vertex = os.getenv("RUN_VERTEX") == "1"
     run_gcp_secrets = os.getenv("RUN_GCP_SECRETS") == "1"
+    run_gcp_trace = os.getenv("RUN_GCP_TRACE") == "1"
     run_embeddings_local = os.getenv("RUN_EMBEDDINGS_LOCAL") == "1"
     run_rag = os.getenv("RUN_RAG") == "1"
     run_langfuse = os.getenv("RUN_LANGFUSE") == "1"
@@ -51,6 +52,9 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     vertex_skip = pytest.mark.skip(reason="set RUN_VERTEX=1 to run Vertex AI tests")
     gcp_secrets_skip = pytest.mark.skip(
         reason="set RUN_GCP_SECRETS=1 to run GCP Secret Manager tests"
+    )
+    gcp_trace_skip = pytest.mark.skip(
+        reason="set RUN_GCP_TRACE=1 to run Cloud Trace exporter tests"
     )
     embeddings_local_skip = pytest.mark.skip(
         reason="set RUN_EMBEDDINGS_LOCAL=1 to run sentence-transformers tests"
@@ -70,6 +74,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(vertex_skip)
         if "gcp_secrets" in item.keywords and not run_gcp_secrets:
             item.add_marker(gcp_secrets_skip)
+        if "gcp_trace" in item.keywords and not run_gcp_trace:
+            item.add_marker(gcp_trace_skip)
         if "embeddings_local" in item.keywords and not run_embeddings_local:
             item.add_marker(embeddings_local_skip)
         # Gate on the explicit ``@pytest.mark.rag`` marker only — the

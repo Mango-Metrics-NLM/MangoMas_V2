@@ -40,7 +40,7 @@ from mangomas.core.tools import ToolRegistry
 from mangomas.errors import ConfigError
 from mangomas.registry import Registry
 from mangomas.secrets import secrets_registry
-from mangomas.telemetry import get_tracer
+from mangomas.telemetry import build_scoped_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +260,9 @@ class _HarnessOrchestrator(Orchestrator):
 
     def __init__(self, ctx: AgentContext, harness_cfg: HarnessSettings) -> None:
         super().__init__(ctx)
-        self._harness_tracer = get_tracer(harness_cfg.metrics_namespace)
+        self._harness_tracer = build_scoped_tracer(
+            harness_cfg.metrics_namespace, exporter=harness_cfg.metrics_exporter
+        )
         self._harness_cfg = harness_cfg
         logger.debug(
             "Harness orchestrator engaged",

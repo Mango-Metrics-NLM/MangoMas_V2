@@ -139,6 +139,10 @@ DEFAULT_EVAL_SCHEMA_VERSION: int = 1
 DEFAULT_HARNESS_ENABLED: bool = False
 DEFAULT_HARNESS_METRICS_NAMESPACE: str = "mangomas.harness"
 DEFAULT_HARNESS_HOOK_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING"] = "INFO"
+# "inherit" reuses the global application exporter (no behaviour change).
+DEFAULT_HARNESS_METRICS_EXPORTER: Literal["inherit", "console", "gcp"] = "inherit"
+
+DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"
 
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
@@ -274,6 +278,17 @@ class LogSettings(BaseModel):
     body_truncate: int = DEFAULT_LOG_BODY_TRUNCATE
 
 
+class TelemetrySettings(BaseModel):
+    """OpenTelemetry exporter selection.
+
+    ``exporter`` chooses the application span exporter: ``console`` (default,
+    built-in) or ``gcp`` (Cloud Trace via the optional ``gcp`` extra). Absent
+    from the environment → ``console``, identical to prior behaviour.
+    """
+
+    exporter: Literal["console", "gcp"] = DEFAULT_TELEMETRY_EXPORTER
+
+
 class AgentSettings(BaseModel):
     """Per-agent overrides loaded from ``MANGOMAS_AGENTS__<NAME>__*`` env vars."""
 
@@ -309,6 +324,9 @@ class HarnessSettings(BaseModel):
     enabled: bool = DEFAULT_HARNESS_ENABLED
     metrics_namespace: str = DEFAULT_HARNESS_METRICS_NAMESPACE
     hook_log_level: Literal["DEBUG", "INFO", "WARNING"] = DEFAULT_HARNESS_HOOK_LOG_LEVEL
+    # Route harness.agent_invoke spans to a dedicated exporter, or "inherit" the
+    # global application exporter (default → no behaviour change).
+    metrics_exporter: Literal["inherit", "console", "gcp"] = DEFAULT_HARNESS_METRICS_EXPORTER
 
 
 class EvalSettings(BaseModel):
@@ -416,6 +434,7 @@ class Settings(BaseSettings):
     db: DBSettings = Field(default_factory=DBSettings)
     api: APISettings = Field(default_factory=APISettings)
     log: LogSettings = Field(default_factory=LogSettings)
+    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 
     # Per-agent overrides keyed by agent name.
     agents: dict[str, AgentSettings] = Field(default_factory=dict)

@@ -69,10 +69,11 @@ rag = [
 langfuse = [
     "langfuse>=2,<3",
 ]
-# GCP Secret Manager provider — install with `pip install 'mangomas[gcp]'`.
+# GCP Secret Manager provider + Cloud Trace exporter — `pip install 'mangomas[gcp]'`.
 gcp = [
     "google-cloud-secret-manager>=2.20",
     "google-auth>=2.30",
+    "opentelemetry-exporter-gcp-trace>=1.6",
 ]
 # Convenience meta-extra: install all cloud adapters.
 cloud = [
@@ -193,6 +194,7 @@ markers = [
     "postgres: tests that require a Postgres instance (testcontainers or live)",
     "vertex: tests that require a reachable Vertex AI project (ADC + project_id)",
     "gcp_secrets: tests that require GCP Secret Manager access (ADC + project)",
+    "gcp_trace: tests that require the Cloud Trace exporter extra installed (RUN_GCP_TRACE=1)",
     "embeddings_local: tests that require the sentence-transformers extra installed",
     "rag: tests that require the chromadb extra installed",
     "langfuse: tests that require the langfuse extra installed (RUN_LANGFUSE=1)",

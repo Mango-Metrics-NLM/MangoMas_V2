@@ -75,6 +75,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_telemetry(
         log_level=settings.log_level,
         log_format=settings.log.format,
+        exporter=settings.telemetry.exporter,
     )
     app.state.orchestrator = build_orchestrator(settings)
     logger.info("Application started")
