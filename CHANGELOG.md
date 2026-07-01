@@ -135,6 +135,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Secrets strict mode (Milestone D)
+
+Opt-in "fail loud" secret resolution (ADR-0010, amends ADR-002; spec 0003).
+Additive and default-OFF.
+
+- **`MANGOMAS_SECRETS__STRICT`** (default `false`): when `true`, cloud secrets
+  backends raise the new **`SecretsResolutionError`** (HTTP 503) on
+  auth/permission/timeout/API failures instead of returning `None`. `NotFound`
+  still returns `None` — an absent secret is not a failure.
+- `errors.py` gains `SecretsResolutionError` (`code="secrets_resolution_error"`,
+  `.ref`/`.provider`); mapped to 503 in `api/app.py::_ERROR_STATUS`. The error
+  carries only the short id + provider — never the value, path, or version.
+- `secrets/gcp.py` honours `strict` via a single `_raise_if_strict` helper;
+  `SecretsSettings.strict` wired through `composition.py`.
+
 ### Added — Telemetry exporter selection + harness routing (Milestone C)
 
 Cloud Trace export and separate harness-span routing, both additive and

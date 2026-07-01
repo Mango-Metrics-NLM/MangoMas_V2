@@ -15,6 +15,7 @@ from mangomas.errors import (
     MangomasError,
     MaxStepsExceeded,
     PersistenceError,
+    SecretsResolutionError,
     ToolExecutionError,
     ToolNotFound,
     UnknownProvider,
@@ -52,6 +53,7 @@ def test_mangomas_error_default_detail_is_empty() -> None:
         MaxStepsExceeded,
         ToolNotFound,
         ToolExecutionError,
+        SecretsResolutionError,
     ],
 )
 def test_all_errors_are_mangomas_errors(cls: type[MangomasError]) -> None:
@@ -133,10 +135,23 @@ def test_lmstudio_error_is_llm_bad_response() -> None:
         (MaxStepsExceeded, "max_steps_exceeded"),
         (ToolNotFound, "tool_not_found"),
         (ToolExecutionError, "tool_execution_error"),
+        (SecretsResolutionError, "secrets_resolution_error"),
     ],
 )
 def test_error_codes(cls: type[MangomasError], expected_code: str) -> None:
     assert cls.code == expected_code
+
+
+# ── SecretsResolutionError ────────────────────────────────────────────────────
+
+
+def test_secrets_resolution_error_stores_ref_and_provider() -> None:
+    exc = SecretsResolutionError("api-key", "gcp", detail="PermissionDenied")
+    assert exc.ref == "api-key"
+    assert exc.provider == "gcp"
+    assert exc.detail == "PermissionDenied"
+    assert "api-key" in str(exc)
+    assert "gcp" in str(exc)
 
 
 # ── MaxStepsExceeded ─────────────────────────────────────────────────────────────
