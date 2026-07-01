@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
+import sys
 
 import pytest
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter
@@ -120,6 +122,28 @@ def test_build_scoped_tracer_caches_by_namespace_and_exporter() -> None:
     first = telemetry.build_scoped_tracer("harness.cache", exporter=telemetry.EXPORTER_CONSOLE)
     second = telemetry.build_scoped_tracer("harness.cache", exporter=telemetry.EXPORTER_CONSOLE)
     assert first is second
+
+
+def test_importing_app_does_not_configure_telemetry_at_import() -> None:
+    """Regression: importing the app must NOT configure telemetry at import time.
+
+    A module-level ``get_tracer()`` in an import-chain module would auto-call
+    ``configure_telemetry()`` with defaults, making the FastAPI lifespan's
+    configured exporter / log format a silent no-op. Run in a fresh interpreter
+    so an already-configured in-process singleton can't mask the regression.
+    """
+    code = (
+        "import mangomas.telemetry as t;"
+        "import mangomas.api.app;"
+        "assert t._state.configured is False, 'telemetry configured at import time'"
+    )
+    result = subprocess.run(  # noqa: S603 -- trusted: fixed code string + sys.executable
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.gcp_trace

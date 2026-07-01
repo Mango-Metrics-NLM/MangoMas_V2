@@ -26,14 +26,20 @@ from importlib.metadata import entry_points
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
-from mangomas.telemetry import get_tracer
+from opentelemetry import trace
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import Settings
     from mangomas.registry import Registry
 
 logger = logging.getLogger(__name__)
-_tracer = get_tracer(__name__)
+
+# The tracer is acquired lazily inside ``discover_agents`` via the raw
+# ``trace.get_tracer`` (matching core/orchestrator.py) — never the auto-
+# configuring ``mangomas.telemetry.get_tracer`` at import time. This module is
+# imported by ``composition.py`` (and therefore by ``api/app.py``); configuring
+# telemetry at import would make the FastAPI lifespan's ``configure_telemetry``
+# a no-op and silently ignore the configured exporter / log format.
 
 AGENT_ENTRY_POINT_GROUP = "mangomas.agents"
 
@@ -57,7 +63,7 @@ def discover_agents(
     list of names actually registered.
     """
     discovered: list[str] = []
-    with _tracer.start_as_current_span("agents.discovery") as span:
+    with trace.get_tracer(__name__).start_as_current_span("agents.discovery") as span:
         span.set_attribute("discovery.group", group)
         for ep in entry_points(group=group):
             try:
