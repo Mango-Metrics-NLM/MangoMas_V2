@@ -207,6 +207,36 @@ def test_protected_path_accepts_legacy_alias_marker(
     assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_OK
 
 
+def test_protected_path_windows_backslash_without_marker_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Windows backslash path must normalize to a protected path and be gated.
+
+    Regression guard: ``str.lstrip('./')`` left backslash paths unrecognised, so
+    a ``.\\src\\...\\agent.py`` edit bypassed the hook entirely.
+    """
+
+    def fake_diff(_path: str) -> str:
+        return "no marker here, just code changes\n"
+
+    monkeypatch.setattr(linter, "_staged_diff", fake_diff)
+    windows_path = r".\src\mangomas\core\agent.py"
+    assert linter._check_protected_path(windows_path) == linter.EXIT_PROTECTED
+
+
+def test_protected_path_windows_backslash_with_marker_returns_ok(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A normalized Windows path with the marker in its diff is approved."""
+
+    def fake_diff(_path: str) -> str:
+        return f"some diff\n{linter.BREAKING_CHANGE_MARKER}\n"
+
+    monkeypatch.setattr(linter, "_staged_diff", fake_diff)
+    windows_path = r".\src\mangomas\core\agent.py"
+    assert linter._check_protected_path(windows_path) == linter.EXIT_OK
+
+
 def test_staged_diff_returns_empty_on_git_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

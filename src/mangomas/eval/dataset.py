@@ -25,10 +25,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import Message
 from mangomas.errors import MangomasError
 
 logger = logging.getLogger(__name__)
+
+# Preview length for the malformed-``messages`` value echoed in error detail —
+# shorter than a full error detail because the raw list can be large.
+_MALFORMED_PREVIEW_TRUNCATE: int = 120
 
 
 class DatasetError(MangomasError):
@@ -59,14 +64,14 @@ def _parse_row(raw: dict[str, Any], *, index: int, source: str) -> DatasetRow:
     if not isinstance(raw_messages, list) or not raw_messages:
         raise DatasetError(
             f"{source} row {index}: 'messages' must be a non-empty list",
-            detail=str(raw_messages)[:120],
+            detail=str(raw_messages)[:_MALFORMED_PREVIEW_TRUNCATE],
         )
     try:
         messages = [Message(**m) for m in raw_messages]
     except Exception as exc:
         raise DatasetError(
             f"{source} row {index}: invalid message entry",
-            detail=str(exc)[:200],
+            detail=str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
         ) from exc
     expected = raw.get("expected")
     if not isinstance(expected, str):
@@ -104,7 +109,7 @@ def _read_jsonl(path: Path) -> list[DatasetRow]:
         except json.JSONDecodeError as exc:
             raise DatasetError(
                 f"{path} line {index}: malformed JSON",
-                detail=str(exc)[:200],
+                detail=str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
         rows.append(_parse_row(raw, index=index, source=str(path)))
     return rows

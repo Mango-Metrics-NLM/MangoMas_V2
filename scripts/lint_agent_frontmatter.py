@@ -212,15 +212,25 @@ def _staged_diff(path: str) -> str:
 
 
 def _check_protected_path(path: str) -> int:
-    """Return ``EXIT_PROTECTED`` if *path* is protected and unmarked, else ``EXIT_OK``."""
-    normalised = path.lstrip("./")
+    """Return ``EXIT_PROTECTED`` if *path* is protected and unmarked, else ``EXIT_OK``.
+
+    Uses :func:`_normalize_path` (not ``str.lstrip``) so Windows backslash paths
+    and a leading ``./`` are matched against the forward-slash ``PROTECTED_PATHS``
+    set — otherwise a ``src\\mangomas\\core\\agent.py`` edit would silently bypass
+    the hook. ``lstrip`` is also avoided because it strips individual leading
+    characters rather than a fixed prefix.
+    """
+    normalised = _normalize_path(path)
     if normalised not in PROTECTED_PATHS:
         return EXIT_OK
     diff = _staged_diff(normalised)
-    if any(marker in diff for marker in BREAKING_CHANGE_MARKER_ALIASES):
+    matched_marker = next(
+        (marker for marker in BREAKING_CHANGE_MARKER_ALIASES if marker in diff), None
+    )
+    if matched_marker is not None:
         logger.info(
             "Protected path has approved breaking-change marker",
-            extra={"path": normalised, "marker": BREAKING_CHANGE_MARKER},
+            extra={"path": normalised, "marker": matched_marker},
         )
         return EXIT_OK
     logger.error(

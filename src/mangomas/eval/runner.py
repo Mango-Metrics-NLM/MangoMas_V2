@@ -27,6 +27,10 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+# Truncation for the persisted per-row ``error`` field. Longer than a transient
+# log-detail truncation because this value is surfaced in the report artifact.
+_ROW_ERROR_TRUNCATE: int = 500
+
 
 @dataclass(frozen=True)
 class EvalRowResult:
@@ -136,7 +140,7 @@ class EvalRunner:
                 prediction="",
                 expected=row.expected,
                 metadata={"error_type": type(exc).__name__},
-                error=str(exc)[:500],
+                error=str(exc)[:_ROW_ERROR_TRUNCATE],
             )
         duration_ms = (time.monotonic() - started) * 1000
         logger.debug(

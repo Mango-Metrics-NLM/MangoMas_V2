@@ -149,6 +149,16 @@ runtime behaviour change.
 - **New sub-agent**: `telemetry-exporter-dev` under `backend`
   (`.github/agents/backend/`), owning the OTel exporter seam.
 
+### Fixed — protected-path hook Windows bypass
+
+- **`scripts/lint_agent_frontmatter.py`**: `_check_protected_path` now normalises
+  the candidate path via the existing `_normalize_path` helper instead of
+  `str.lstrip("./")`. Backslash paths (e.g. `src\mangomas\core\agent.py`)
+  previously failed to match `PROTECTED_PATHS` and silently bypassed the hook on
+  Windows; `lstrip` also stripped individual leading characters rather than a
+  fixed prefix. The approval log now reports the marker actually matched (primary
+  vs. legacy alias). Regression tests cover the backslash-normalisation path.
+
 ### Changed — protected-path hook + doc reconciliation
 
 - **`scripts/lint_agent_frontmatter.py`**: `PROTECTED_PATHS` now covers all five
@@ -157,6 +167,11 @@ runtime behaviour change.
   `BREAKING-CHANGE` marker is now the primary marker; the legacy
   `# approved-breaking-change` form is kept as an accepted alias. **This widens
   hook enforcement.**
+- **Truncation constants**: the eval layer now reuses
+  `config.DEFAULT_ERROR_DETAIL_TRUNCATE` for error-detail truncation instead of
+  inline `[:200]` literals (`eval/dataset.py`, `eval/scorers/llm_judge.py`), and
+  the two distinct-length truncations are named
+  (`_MALFORMED_PREVIEW_TRUNCATE`, `_ROW_ERROR_TRUNCATE`). No behaviour change.
 - **Docs**: `CLAUDE.md` protected-path list + File-Ownership table reconciled to
   the linter; `test-engineer` agent coverage-gate text corrected 85% → 95%;
   `NEXT_STEPS.md` sub-agent count corrected 12 → 13.
