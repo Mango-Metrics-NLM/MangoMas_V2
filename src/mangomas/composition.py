@@ -20,6 +20,7 @@ from mangomas.adapters.embeddings import LMStudioEmbeddingClient
 from mangomas.adapters.llm import LMStudioClient, VertexClient
 from mangomas.adapters.storage import FileMemoryRepository, SQLiteRepository
 from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, SummarizeAgent, ToolAgent
+from mangomas.agents.discovery import ensure_agent_plugins
 from mangomas.config import (
     AgentSettings,
     DBSettings,
@@ -372,6 +373,10 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         )
     else:
         orch = Orchestrator(ctx)
+
+    # Layer in any entry-point agent plugins (no-op unless discovery_enabled).
+    # Built-ins are already registered above and form the protected set.
+    ensure_agent_plugins(cfg, agent_registry)
 
     for agent_name in agent_registry.available():
         factory = agent_registry.get(agent_name)

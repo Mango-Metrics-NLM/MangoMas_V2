@@ -429,7 +429,9 @@ class Settings(BaseSettings):
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
 
-    # Set to True to enable entry-point-based agent discovery (Phase C).
+    # Set to True (MANGOMAS_DISCOVERY_ENABLED=true) to enable entry-point-based
+    # plugin discovery for eval components (mangomas.eval.*) and agents
+    # (mangomas.agents). Default False keeps only built-in providers registered.
     discovery_enabled: bool = False
 
 

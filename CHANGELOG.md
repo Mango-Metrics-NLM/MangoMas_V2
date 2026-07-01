@@ -135,6 +135,24 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Dynamic agent loading via entry points (Milestone B)
+
+Third-party packages can register agents into `agent_registry` without editing
+`composition.py`. Additive and default-OFF (see ADR-0008, spec 0006).
+
+- **`agents/discovery.py`**: `discover_agents` / `ensure_agent_plugins`,
+  mirroring `eval/discovery.py` — entry-point group `mangomas.agents`, factory
+  `Callable[[AgentSettings | None], Agent]`, once-per-process latch, log-and-skip
+  on plugin failure. Gated by the existing `MANGOMAS_DISCOVERY_ENABLED` (no new
+  env var).
+- **`composition.py`**: `build_orchestrator` calls `ensure_agent_plugins` before
+  the registration loop, so discovered agents are dispatchable with no wiring
+  change.
+- **Collision policy**: a discovered agent whose name collides with a **built-in**
+  is skipped with a WARNING (never silently overrides `chat`/`planner`/etc.);
+  third-party↔third-party keeps last-call-wins.
+- `pyproject.toml` documents the `mangomas.agents` entry-point group.
+
 ### Added — Spec-driven workflow + Claude Code ecosystem refresh
 
 Groundwork for the next-steps roadmap (see `specs/README.md`). Additive; no

@@ -1,7 +1,7 @@
 # Spec-0006: Dynamic agent loading via entry points
 
-- **Status:** Draft (implemented in Milestone B)
-- **Linked ADR:** ADR-0008 (to be authored with the implementation)
+- **Status:** Implemented (Milestone B)
+- **Linked ADR:** ADR-0008
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added`
 
 ## Problem

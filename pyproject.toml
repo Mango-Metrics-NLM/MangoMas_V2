@@ -95,6 +95,13 @@ mangomas = "mangomas.cli.main:app"
 #   my_target = "mypkg.module:factory"
 #   [project.entry-points."mangomas.eval.dataset_sources"]
 #   my_source = "mypkg.module:factory"
+#
+# Third-party agents register under the `mangomas.agents` group, each pointing
+# at an agent factory `Callable[[AgentSettings | None], Agent]` (see
+# agents/discovery.py). A discovered name that collides with a built-in agent is
+# skipped with a warning.
+#   [project.entry-points."mangomas.agents"]
+#   my_agent = "mypkg.module:factory"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mangomas"]
