@@ -180,6 +180,33 @@ def test_protected_path_with_marker_returns_ok(
     assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_OK
 
 
+@pytest.mark.parametrize(
+    "protected",
+    [
+        "src/mangomas/core/agent.py",
+        "src/mangomas/core/orchestrator.py",
+        "src/mangomas/core/tools.py",
+        "src/mangomas/errors.py",
+        "src/mangomas/registry.py",
+    ],
+)
+def test_protected_paths_cover_documented_core_contracts(protected: str) -> None:
+    """Every core contract documented in CLAUDE.md is gated by the linter."""
+    assert protected in linter.PROTECTED_PATHS
+
+
+def test_protected_path_accepts_legacy_alias_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The legacy ``# approved-breaking-change`` marker is still accepted."""
+
+    def fake_diff(_path: str) -> str:
+        return "some diff\n# approved-breaking-change\n"
+
+    monkeypatch.setattr(linter, "_staged_diff", fake_diff)
+    assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_OK
+
+
 def test_staged_diff_returns_empty_on_git_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

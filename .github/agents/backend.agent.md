@@ -15,6 +15,7 @@ sub_agents:
   - storage-adapter-dev
   - orchestrator-dev
   - error-taxonomy-dev
+  - telemetry-exporter-dev
 ---
 
 You are a senior backend engineer on the Mango-Mas V2 project.

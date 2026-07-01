@@ -135,6 +135,35 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Spec-driven workflow + Claude Code ecosystem refresh
+
+Groundwork for the next-steps roadmap (see `specs/README.md`). Additive; no
+runtime behaviour change.
+
+- **`specs/` directory**: thin, non-CI-enforced spec-before-code convention with
+  `specs/TEMPLATE.md`, `specs/README.md`, and long-term stubs
+  `0005-declarative-agent-workflows`, `0006-dynamic-agent-loading`,
+  `0007-multi-tenancy`.
+- **New skills**: `mango-eval` (evaluation harness workflow) and `mango-deploy`
+  (Cloud Run + telemetry-exporter workflow) under `.github/skills/`.
+- **New sub-agent**: `telemetry-exporter-dev` under `backend`
+  (`.github/agents/backend/`), owning the OTel exporter seam.
+
+### Changed — protected-path hook + doc reconciliation
+
+- **`scripts/lint_agent_frontmatter.py`**: `PROTECTED_PATHS` now covers all five
+  documented core contracts — adds `core/orchestrator.py` and `core/tools.py`
+  (alongside `core/agent.py`, `errors.py`, `registry.py`). The documented
+  `BREAKING-CHANGE` marker is now the primary marker; the legacy
+  `# approved-breaking-change` form is kept as an accepted alias. **This widens
+  hook enforcement.**
+- **Docs**: `CLAUDE.md` protected-path list + File-Ownership table reconciled to
+  the linter; `test-engineer` agent coverage-gate text corrected 85% → 95%;
+  `NEXT_STEPS.md` sub-agent count corrected 12 → 13.
+- **`EmbeddingScorer`** module docstring corrected — the scorer is operational
+  against any `EmbeddingClient` via `ScorerContext.embeddings`; the
+  `NotImplementedError` guard applies only when no embedder is configured.
+
 ### Added — Evaluation harness: gating, sinks, scorers, plugins
 
 Adopts eval-harness patterns natively (see ADR-0003). All additions are

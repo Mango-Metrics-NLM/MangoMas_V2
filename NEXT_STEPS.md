@@ -62,9 +62,10 @@ End-to-end Claude Code harness landed as a non-breaking opt-in layer:
 - **8 skills** under `.github/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
   observability, config, release, and topology.
-- **12 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
-  grouped under the 4 parent agents. The new `sub_agents:`
-  frontmatter key is optional and backwards-compatible.
+- **13 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
+  grouped under the 4 parent agents (including `pr-watcher` under
+  `architect`). The new `sub_agents:` frontmatter key is optional and
+  backwards-compatible.
 - **`HarnessSettings`** (env prefix `MANGOMAS_HARNESS__`,
   `enabled=False` default) drives whether `build_orchestrator`
   returns a `_HarnessOrchestrator` wrapper that adds a
