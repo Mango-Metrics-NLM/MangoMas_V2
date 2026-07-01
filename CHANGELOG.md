@@ -135,6 +135,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Cloud Run deploy pipeline (Milestone E)
+
+Author-only deploy artifacts (ADR-0001, spec 0004). No GCP resources are
+provisioned by this repo and no live deploy is validated by tests.
+
+- **`deploy/service.yaml`**: Cloud Run (Knative serving v1) manifest — non-root,
+  `$PORT`, liveness `/healthz` + readiness `/readyz`, secrets via
+  `secretKeyRef` (never literals).
+- **`.github/workflows/deploy.yml`**: on published release, build → Artifact
+  Registry push → `gcloud run deploy`, authenticated via Workload Identity
+  Federation (`id-token: write`; no service-account JSON keys).
+- **`deploy/README.md`**: the full `MANGOMAS_*` runtime env-var contract.
+- **`tests/deploy/`**: contract tests — manifest/workflow YAML validity, probe
+  presence, WIF usage, and README doc-sync against `Settings.model_fields`.
+
 ### Added — Secrets strict mode (Milestone D)
 
 Opt-in "fail loud" secret resolution (ADR-0010, amends ADR-002; spec 0003).

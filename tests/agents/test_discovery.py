@@ -117,7 +117,7 @@ def test_ensure_agent_plugins_noop_when_disabled(monkeypatch: pytest.MonkeyPatch
     calls: list[str] = []
     monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     registry: Registry[Any] = Registry("agent-test")
-    settings = Settings(discovery_enabled=False)  # type: ignore[call-arg]
+    settings = Settings(discovery_enabled=False)
     discovery.ensure_agent_plugins(settings, registry)
     assert calls == []  # discovery never scanned
 
@@ -127,7 +127,7 @@ def test_ensure_agent_plugins_runs_once_when_enabled(monkeypatch: pytest.MonkeyP
     calls: list[str] = []
     monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     registry: Registry[Any] = Registry("agent-test")
-    settings = Settings(discovery_enabled=True)  # type: ignore[call-arg]
+    settings = Settings(discovery_enabled=True)
     discovery.ensure_agent_plugins(settings, registry)
     discovery.ensure_agent_plugins(settings, registry)  # idempotent — no second scan
     assert calls == [discovery.AGENT_ENTRY_POINT_GROUP]
@@ -146,6 +146,6 @@ def test_ensure_agent_plugins_protects_seeded_builtins(
         "entry_points",
         lambda **_: [_FakeEntryPoint(FAKE_PLUGIN_AGENT_NAME, _agent_factory)],
     )
-    settings = Settings(discovery_enabled=True)  # type: ignore[call-arg]
+    settings = Settings(discovery_enabled=True)
     discovery.ensure_agent_plugins(settings, registry)
     assert registry.get(FAKE_PLUGIN_AGENT_NAME) is sentinel
