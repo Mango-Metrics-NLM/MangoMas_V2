@@ -241,11 +241,15 @@ class EvalRunner:
 
     @staticmethod
     def _resolve_target(agent_name: str | None, target: Target | None) -> Target:
-        """Pick the effective target: an explicit *target* wins over *agent_name*.
+        """Pick the effective target from exactly one of *target* or *agent_name*.
 
         ``agent_name`` is wrapped in the default ``agent`` target so the legacy
         ``run(dataset, agent_name=...)`` signature keeps working unchanged.
+        Supplying both is a misconfiguration (one would be silently ignored) and
+        raises ``ValueError``.
         """
+        if agent_name is not None and target is not None:
+            raise ValueError("run accepts either agent_name or target, not both")
         if target is not None:
             return target
         if agent_name is None:

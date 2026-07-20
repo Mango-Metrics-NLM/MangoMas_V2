@@ -237,6 +237,11 @@ class RagSettings(BaseModel):
             raise ValueError(f"chunk_words must be >= 1 (got {self.chunk_words})")
         if self.min_chunk_words < 0:
             raise ValueError(f"min_chunk_words must be >= 0 (got {self.min_chunk_words})")
+        if self.min_chunk_words > self.chunk_words:
+            raise ValueError(
+                f"min_chunk_words ({self.min_chunk_words}) must be "
+                f"<= chunk_words ({self.chunk_words})"
+            )
         if self.chunk_overlap < 0:
             raise ValueError(f"chunk_overlap must be >= 0 (got {self.chunk_overlap})")
         if self.chunk_overlap >= self.chunk_words:

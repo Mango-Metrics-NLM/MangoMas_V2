@@ -7,6 +7,8 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
@@ -37,6 +39,19 @@ from mangomas.telemetry import configure_telemetry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
+
+
+def _resolve_version() -> str:
+    """Return the installed package version so the API version can't drift.
+
+    Sourced from package metadata (``pyproject.toml``) rather than a literal, so
+    ``FastAPI(version=...)`` always matches the released version. Falls back to
+    ``"0.0.0"`` only when the package is not installed (never in a normal run).
+    """
+    try:
+        return _package_version("mangomas")
+    except PackageNotFoundError:  # pragma: no cover — package is always installed
+        return "0.0.0"
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +113,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     """Application factory. Pass *orchestrator* to inject a stub for tests."""
     app = FastAPI(
         title="Mango-Mas V2",
-        version="0.1.0",
+        version=_resolve_version(),
         lifespan=None if orchestrator is not None else _lifespan,
     )
 

@@ -157,6 +157,7 @@ def test_rag_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
         (10, 12, 1),  # overlap above window
         (10, -1, 1),  # negative overlap
         (10, 2, -1),  # negative min_chunk_words
+        (10, 2, 20),  # min_chunk_words exceeds the window
     ],
 )
 def test_rag_settings_rejects_invalid_window(

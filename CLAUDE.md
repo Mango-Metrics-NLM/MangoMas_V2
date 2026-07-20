@@ -251,7 +251,7 @@ HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
 ## Testing Conventions
 
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
-- **Coverage gate**: 95 % minimum — enforced by `pytest --cov` (515 tests, 98.16 % current coverage)
+- **Coverage gate**: 95 % minimum (global + per-package floors) — enforced by `pytest --cov` and `scripts/check_coverage.py`; the suite currently runs 800+ unit tests at ~98 % coverage
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
 - **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`

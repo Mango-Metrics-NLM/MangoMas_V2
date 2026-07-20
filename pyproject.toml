@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mangomas"
-version = "0.3.1"
+version = "0.4.0"
 description = "Mango-Mas V2 — modular, local-first agent platform (LM Studio now, GCP later)."
 readme = "README.md"
 requires-python = ">=3.11"

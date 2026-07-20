@@ -107,6 +107,23 @@ async def test_fan_out_concat_join() -> None:
     }
 
 
+async def test_fan_out_with_acceptance_loop_uses_per_node_fallback() -> None:
+    """A fan-out level containing an acceptance-loop node falls back off dispatch_fan_out."""
+    looper = _ScriptedAgent("loop", ["no", "DONE"])
+    plain = _ScriptedAgent("plain", ["p"])
+    orch = _orch(looper, plain)
+    graph = WorkflowGraph(
+        join="concat",
+        nodes=(
+            WorkflowNode(id="a", agent="loop", until="DONE", max_steps=3),
+            WorkflowNode(id="b", agent="plain"),
+        ),
+    )
+    resp = await WorkflowRunner(graph).run(_req(), orch=orch)
+    assert resp.content == "DONE\np"
+    assert len(looper.seen) == 2  # looped until the marker appeared
+
+
 async def test_fan_out_first_join() -> None:
     orch = _orch(_ScriptedAgent("a", ["alpha"]), _ScriptedAgent("b", ["beta"]))
     graph = WorkflowGraph(

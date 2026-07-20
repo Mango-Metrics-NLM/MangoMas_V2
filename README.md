@@ -309,7 +309,7 @@ Per-package floors (`scripts/check_coverage.py`): `errors`, `registry`,
 `api`, `cli`, `eval`, `rag` at **95 %**; `adapters` at **85 %**; global at
 **95 %**.
 
-> **Current baseline:** 639 tests, **97.95 %** global coverage (RAG port + hardening).
+> **Current baseline (v0.4.0):** 882 tests, **~98 %** global coverage.
 
 Coverage today sits comfortably above each floor — never lower a
 floor to land a change, fix the test coverage in the same commit.

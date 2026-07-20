@@ -59,6 +59,15 @@ async def test_runner_requires_agent_or_target(eval_orchestrator: Orchestrator) 
         await runner.run([])
 
 
+async def test_runner_rejects_both_agent_and_target(eval_orchestrator: Orchestrator) -> None:
+    """Supplying both agent_name and target is a misconfiguration, not silently ignored."""
+    from mangomas.eval.targets import EchoTarget  # noqa: PLC0415
+
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer())
+    with pytest.raises(ValueError, match="not both"):
+        await runner.run([], agent_name="chat", target=EchoTarget(text=STUB_REPLY))
+
+
 async def test_runner_all_fail(eval_orchestrator: Orchestrator, fixtures_dir: Path) -> None:
     rows = await load_jsonl(fixtures_dir / "all_fail.jsonl")
     runner = EvalRunner(eval_orchestrator, ExactMatchScorer())

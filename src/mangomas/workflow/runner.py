@@ -132,6 +132,9 @@ class WorkflowRunner:
     ) -> AgentResponse:
         if len(level) == 1:
             return await self._run_node(level[0], request, orch)
+        # A node with an acceptance loop (until/max_steps) cannot go through
+        # dispatch_fan_out — that primitive dispatches each agent exactly once.
+        looping = any(node.until is not None or node.max_steps is not None for node in level)
         logger.debug(
             "Workflow fan-out level",
             extra={
@@ -139,12 +142,18 @@ class WorkflowRunner:
                 "workflow": self._graph.name,
                 "depth": depth,
                 "nodes": [node.id for node in level],
+                "delegated": not looping,
             },
         )
-        responses = cast(
-            "list[AgentResponse]",
-            await asyncio.gather(*(self._run_node(node, request, orch) for node in level)),
-        )
+        if looping:
+            responses = cast(
+                "list[AgentResponse]",
+                await asyncio.gather(*(self._run_node(node, request, orch) for node in level)),
+            )
+        else:
+            # Delegate to the orchestrator primitive so the fan-out inherits its
+            # dedicated span; results return in level (agent-name) order.
+            responses = await orch.dispatch_fan_out([node.agent for node in level], request)
         return self._join_level(level, responses)
 
     async def _run_node(
