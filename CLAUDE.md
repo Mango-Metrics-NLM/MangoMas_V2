@@ -66,6 +66,10 @@ src/mangomas/
 │   ├── loader.py       file/dir → raw docs (asyncio.to_thread)
 │   ├── pipeline.py     IngestionPipeline: load→chunk→embed_batch→upsert
 │   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
+├── workflow/       Declarative multi-agent graphs (opt-in; composes dispatch_*)
+│   ├── models.py       WorkflowGraph, WorkflowNode (frozen; Kahn level compile)
+│   ├── runner.py       WorkflowRunner (levels → dispatch/fan_out/acceptance loop)
+│   └── loader.py       parse_graph / graph_from_settings (JSON | file → graph)
 ├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
 ├── cli/main.py     Typer CLI (chat, history, eval, rag ingest|query commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
@@ -150,6 +154,8 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
+| `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative multi-agent workflow graphs (spec 0005) |
+| `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Graph as inline JSON (starts `{`) or a `.json` file path |
 
 ---
 
@@ -360,7 +366,24 @@ responses = await orchestrator.dispatch_fan_out(["reviewer", "summarize"], reque
 from mangomas.core import AcceptanceFn
 accept: AcceptanceFn = lambda r: "DONE" in r.content
 response = await orchestrator.dispatch("chat", request, acceptance_fn=accept, max_steps=5)
+
+# Declarative graph (opt-in) — the same topologies from JSON, no imperative calls.
+# A linear graph reproduces dispatch_pipeline exactly; a level with >1 node fans
+# out and joins (first|concat); a node with until/max_steps is an acceptance loop.
+from mangomas.workflow import WorkflowRunner, parse_graph
+graph = parse_graph({
+    "nodes": [
+        {"id": "plan", "agent": "planner"},
+        {"id": "act", "agent": "tool", "depends_on": ["plan"]},
+        {"id": "review", "agent": "reviewer", "depends_on": ["act"]},
+    ]
+})
+response = await WorkflowRunner(graph).run(request, orch=orchestrator)
 ```
+
+Enable via `MANGOMAS_WORKFLOW__ENABLED=true` + `MANGOMAS_WORKFLOW__DEFINITION`
+(inline JSON or a `.json` path), or run `mangomas workflow "<message>"`. Default
+OFF; see ADR-0007 / spec 0005.
 
 ---
 

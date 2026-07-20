@@ -34,11 +34,18 @@ from mangomas.eval import (
     target_registry,
 )
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
+from mangomas.workflow import (
+    WorkflowRunner,
+    graph_from_settings,
+    load_graph_file,
+    load_graph_json,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
-    from mangomas.config import EvalSettings
+    from mangomas.config import EvalSettings, Settings
     from mangomas.core import Orchestrator
     from mangomas.eval import DatasetSource, GateResult, Sink, Target
+    from mangomas.workflow import WorkflowGraph
 
 # Windows default console codec is cp1252; LLM replies routinely contain
 # em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
@@ -623,6 +630,75 @@ def rag_query(
         return
     for line in lines:
         typer.echo(line)
+
+
+def _resolve_workflow_graph(settings: Settings, definition: str | None) -> WorkflowGraph:
+    """Resolve the workflow graph from an explicit ``--definition`` or settings.
+
+    Precedence: ``--definition`` (inline JSON when it starts with ``{``, else a
+    file path) over ``MANGOMAS_WORKFLOW__*``. Raises
+    :class:`~mangomas.errors.ConfigError` when neither yields a graph.
+    """
+    if definition is not None:
+        stripped = definition.strip()
+        if not stripped:
+            raise ConfigError("Empty --definition (pass inline JSON or a .json file path)")
+        return load_graph_json(stripped) if stripped.startswith("{") else load_graph_file(stripped)
+    graph = graph_from_settings(settings.workflow)
+    if graph is None:
+        raise ConfigError(
+            "No workflow configured. Pass --definition, or set "
+            "MANGOMAS_WORKFLOW__ENABLED=true and MANGOMAS_WORKFLOW__DEFINITION."
+        )
+    return graph
+
+
+@app.command(name="workflow")
+def workflow_cmd(
+    message: str = typer.Argument(..., help="User message seeding the workflow"),
+    definition: str | None = typer.Option(
+        None,
+        "--definition",
+        "-f",
+        help="Inline JSON graph or path to a .json file "
+        "(default from MANGOMAS_WORKFLOW__DEFINITION).",
+    ),
+    system: str | None = typer.Option(None, "--system", "-s", help="Optional system prompt"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
+) -> None:
+    """Run a declarative multi-agent workflow graph and print the final output."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    settings = get_settings()
+    try:
+        graph = _resolve_workflow_graph(settings, definition)
+    except MangomasError as exc:
+        detail = f" ({exc.detail})" if exc.detail else ""
+        typer.echo(f"Workflow configuration error: {exc}{detail}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    orch = _build()
+    messages: list[Message] = []
+    if system:
+        messages.append(Message(role="system", content=system))
+    messages.append(Message(role="user", content=message))
+    request = AgentRequest(messages=messages)
+
+    async def _run() -> str:
+        try:
+            response = await WorkflowRunner(graph).run(request, orch=orch)
+            return response.content
+        finally:
+            await _close_orchestrator(orch)
+
+    try:
+        result = asyncio.run(_run())
+    except MangomasError as exc:
+        typer.echo(f"Workflow run failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(result)
 
 
 if __name__ == "__main__":  # pragma: no cover

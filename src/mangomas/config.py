@@ -146,6 +146,10 @@ DEFAULT_HARNESS_METRICS_EXPORTER: Literal["inherit", "console", "gcp"] = "inheri
 
 DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"
 
+# Declarative multi-agent workflows (spec 0005, ADR-0007). Default OFF so the
+# orchestrator behaves identically and no graph is loaded unless enabled.
+DEFAULT_WORKFLOW_ENABLED: bool = False
+
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
 
@@ -422,6 +426,20 @@ class EvalSettings(BaseModel):
         return self
 
 
+class WorkflowSettings(BaseModel):
+    """Declarative multi-agent workflow configuration (spec 0005, ADR-0007).
+
+    Additive and default-OFF: when ``enabled`` is ``False`` (the default) the
+    orchestrator behaves exactly as before and no graph is loaded. When enabled,
+    ``definition`` supplies the graph as either an inline JSON object or a path
+    to a ``.json`` file — resolved by
+    :func:`mangomas.workflow.graph_from_settings`.
+    """
+
+    enabled: bool = DEFAULT_WORKFLOW_ENABLED
+    definition: str | None = None
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -453,6 +471,7 @@ class Settings(BaseSettings):
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
+    workflow: WorkflowSettings = Field(default_factory=WorkflowSettings)
 
     # Set to True (MANGOMAS_DISCOVERY_ENABLED=true) to enable entry-point-based
     # plugin discovery for eval components (mangomas.eval.*) and agents

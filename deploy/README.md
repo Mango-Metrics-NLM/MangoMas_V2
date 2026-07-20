@@ -51,6 +51,7 @@ configuration table; this is the deploy-time contract by settings group.
 | `MANGOMAS_MEMORY__` | File-memory backend |
 | `MANGOMAS_HARNESS__` | Claude Code harness spans + metrics exporter |
 | `MANGOMAS_EVAL__` | Evaluation harness config |
+| `MANGOMAS_WORKFLOW__` | Declarative multi-agent workflow graph (opt-in) |
 | `MANGOMAS_SECRETS__` | Secrets provider (`gcp`) + `STRICT` fail-loud mode |
 | `MANGOMAS_EMBEDDINGS__` | Embedding provider (RAG, opt-in) |
 | `MANGOMAS_VECTOR__` | Vector store (RAG, opt-in) |

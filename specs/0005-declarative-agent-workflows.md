@@ -1,8 +1,8 @@
 # Spec-0005: Declarative multi-agent workflow graph
 
-- **Status:** Draft (stub — no code this pass)
-- **Linked ADR:** ADR-0007 (to be authored when implementation begins)
-- **Linked CHANGELOG entry:** _pending_
+- **Status:** Implemented
+- **Linked ADR:** [ADR-0007](../docs/adr/0007-declarative-agent-workflows.md)
+- **Linked CHANGELOG entry:** `[Unreleased]` › `Added — Declarative multi-agent workflow graph`
 
 ## Problem
 
@@ -49,12 +49,20 @@ Operators want to compose planner → executor → reviewer graphs **declarative
 
 ## Acceptance criteria
 
-- [ ] A JSON graph of `planner → tool → reviewer` produces the same result as
-      the imperative `dispatch_pipeline` call.
-- [ ] Unknown agent in a graph raises `AgentNotFound` (no new error type needed).
-- [ ] Off by default; 95% coverage maintained.
+- [x] A JSON graph of `planner → tool → reviewer` produces the same result as
+      the imperative `dispatch_pipeline` call
+      (`tests/test_workflow_runner.py::test_linear_graph_matches_dispatch_pipeline`).
+- [x] Unknown agent in a graph raises `AgentNotFound` (no new error type needed) —
+      validated fail-fast before any dispatch.
+- [x] Off by default (`MANGOMAS_WORKFLOW__ENABLED=false`); 95% coverage maintained
+      (workflow package at 100%).
 
-## Open questions
+## Open questions — resolved
 
-- Graph format: JSON vs. a small DSL vs. existing eval `target` config reuse?
-- Do conditional edges (branch on acceptance) belong in v1 or a follow-up?
+- **Graph format:** JSON object of `nodes` (id, agent, `depends_on` edges,
+  optional `until`/`max_steps`). The eval `target` config was *not* reused (it
+  models one topology per run and returns a string); the `first`/`concat` join
+  vocabulary is shared. See ADR-0007.
+- **Conditional edges & per-edge data routing:** deferred. v1 uses
+  level-synchronized execution (a node reads the previous level's joined
+  output). Conditional/branch edges are a follow-up.

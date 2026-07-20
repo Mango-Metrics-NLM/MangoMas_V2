@@ -135,6 +135,39 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Declarative multi-agent workflow graph
+
+Compose planner → tool → reviewer graphs from config/JSON instead of imperative
+`dispatch_*` calls (spec 0005, ADR-0007). Additive and default-OFF — the
+orchestrator is unchanged and no graph is loaded unless
+`MANGOMAS_WORKFLOW__ENABLED=true`.
+
+- **`mangomas.workflow` package** (new top-level, like `eval`/`rag` — no core or
+  protocol changes). `WorkflowGraph` / `WorkflowNode` are pure, frozen pydantic
+  models validated at construction (unique ids, dangling/self edges, cycles via
+  Kahn's algorithm). `WorkflowRunner` is a thin planner-of-topologies that
+  compiles the graph's topological **levels** onto the existing primitives: a
+  single-node level → `dispatch` (with an optional `until`/`max_steps` acceptance
+  loop), a multi-node level → `dispatch_fan_out` joined by `first`/`concat`, and
+  levels thread output→input exactly as `dispatch_pipeline`. A linear graph
+  therefore reproduces `dispatch_pipeline` byte-for-byte (asserted by test).
+- **Fail-fast validation**: an unknown agent raises `AgentNotFound` *before* any
+  dispatch (no new error type); malformed definitions surface as `ConfigError`
+  (HTTP 400) via `parse_graph` / `load_graph_json` / `load_graph_file`, never a
+  raw pydantic error.
+- **`WorkflowSettings`** (`MANGOMAS_WORKFLOW__ENABLED` / `__DEFINITION`) on
+  `Settings`; `graph_from_settings` treats `definition` as inline JSON when it
+  starts with `{`, else as a `.json` file path. Documented in the deploy
+  env-var contract (`deploy/README.md`).
+- **CLI**: `mangomas workflow "<message>" [--definition <json|path>]` runs a
+  graph and prints the final output (exit 2 on config error, 1 on runtime).
+- **Observability**: a `workflow.run` span (name / node / level / join / final
+  agent attributes) plus structured `workflow_start` / `workflow_node` /
+  `workflow_fan_out` / `workflow_complete` / `workflow_unknown_agent` log events.
+- **Tests**: `tests/test_workflow_models.py`, `test_workflow_runner.py`,
+  `test_workflow_loader.py`, `test_cli_workflow.py` (46 cases); new `workflow`
+  95% per-package coverage floor in `scripts/check_coverage.py` (module at 100%).
+
 ### Added — Cloud Run deploy pipeline (Milestone E)
 
 Author-only deploy artifacts (ADR-0001, spec 0004). No GCP resources are
