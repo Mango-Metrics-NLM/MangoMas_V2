@@ -107,4 +107,4 @@ def test_fan_out_branch_must_be_agent() -> None:
 def test_graph_is_frozen() -> None:
     node = AgentNode(agent="chat")
     with pytest.raises(ValidationError):
-        node.agent = "other"  # type: ignore[misc]
+        node.agent = "other"

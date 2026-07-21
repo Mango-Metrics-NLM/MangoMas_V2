@@ -26,7 +26,7 @@ def test_scoped_swaps_a_kind() -> None:
         return sentinel
 
     with node_registry.scoped("agent", _fake_factory):  # type: ignore[arg-type]
-        assert node_registry.get("agent")(AgentNode(agent="chat")) is sentinel  # type: ignore[call-arg]
+        assert node_registry.get("agent")(AgentNode(agent="chat")) is sentinel
     # Restored after the context exits.
     assert node_registry.get("agent")(AgentNode(agent="chat")) is not sentinel
 
