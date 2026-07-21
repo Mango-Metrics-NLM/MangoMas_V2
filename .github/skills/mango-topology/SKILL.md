@@ -21,6 +21,9 @@ argument-hint: "Describe the topology (e.g. 'planner → executor → critic loo
 - Diagnose `MaxStepsExceeded` or unexpected loop behaviour
 - Add a new topology test under `tests/test_topologies.py`
 
+> For the **declarative** equivalent — composing these same primitives from a
+> JSON graph — use the `mango-workflow` skill (`src/mangomas/workflow/`).
+
 ---
 
 ## Quick Commands
@@ -59,7 +62,7 @@ python -m pytest --tb=short -q
 
 | File | Role |
 |------|------|
-| `src/mangomas/core/orchestrator.py` | `dispatch`, `dispatch_pipeline` (line 153), `dispatch_fan_out` (line 185), `stream_dispatch` (line 212) |
+| `src/mangomas/core/orchestrator.py` | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out`, `stream_dispatch` |
 | `src/mangomas/core/loop.py` | `AcceptanceFn` type alias |
 | `src/mangomas/agents/_streaming.py` | Shared streaming-fallback helper |
 | `src/mangomas/agents/planner.py` | Structured output for use in pipelines |
@@ -80,7 +83,7 @@ final = await orchestrator.dispatch_pipeline(
     ["planner", "tool", "reviewer"],
     request,
 )
-# final.content == reviewer's response; intermediate outputs are in final.metadata["pipeline"]
+# final.content == reviewer's response; final.metadata carries the last hop's metadata
 ```
 
 ## Template — Parallel Fan-out
@@ -129,7 +132,7 @@ async for token in orchestrator.stream_dispatch("chat", request):
 
 ## Constraints
 
-- DO NOT call `agent.execute(ctx, request)` directly — go through `Orchestrator`.
+- DO NOT call `agent.handle(request, ctx)` directly — go through `Orchestrator`.
 - DO NOT make `AcceptanceFn` async — it must be a sync callable.
 - DO NOT exceed `LoopSettings.max_steps` by design — handle `MaxStepsExceeded` explicitly if the caller expects a "best effort" answer.
 - DO NOT mutate `request.messages` in place between pipeline stages — the orchestrator threads a new request.

@@ -41,7 +41,7 @@ thinking tool, not a gate.
 
 | Spec | Title | Status |
 |------|-------|--------|
-| 0005 | Declarative multi-agent workflow graph | Draft (stub) |
+| 0005 | Declarative multi-agent workflow graph | In progress |
 | 0006 | Dynamic agent loading via entry points | Draft (stub) |
 | 0007 | Multi-tenancy | Draft (stub) |
 

@@ -18,11 +18,14 @@ dispatch or any existing topology.
 ## Surface You Own
 
 - `src/mangomas/core/orchestrator.py`:
-  - `dispatch` (line 49) — single-agent, with optional acceptance loop
-  - `dispatch_pipeline` (line 153)
-  - `dispatch_fan_out` (line 185)
-  - `stream_dispatch` (line 212)
+  - `dispatch` — single-agent, with optional acceptance loop
+  - `dispatch_pipeline`
+  - `dispatch_fan_out`
+  - `stream_dispatch`
 - `src/mangomas/core/loop.py`: `AcceptanceFn` type alias
+
+The declarative graph layer (`src/mangomas/workflow/`, owned by
+`workflow-graph-dev`) consumes these methods — it never edits the orchestrator.
 
 ## Invariants
 

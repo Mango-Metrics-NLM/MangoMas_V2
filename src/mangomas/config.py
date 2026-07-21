@@ -146,6 +146,16 @@ DEFAULT_HARNESS_METRICS_EXPORTER: Literal["inherit", "console", "gcp"] = "inheri
 
 DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"
 
+# Declarative multi-agent workflow-graph defaults (spec 0005 / ADR-0011).
+# All OFF/None so an environment without ``MANGOMAS_WORKFLOW__*`` behaves
+# byte-identically to today. ``definition`` is a path to a JSON graph file OR
+# an inline JSON string; ``schema_version`` is the currently supported graph
+# schema (the graph declares its own ``schema_version``, validated at load).
+DEFAULT_WORKFLOW_ENABLED: bool = False
+DEFAULT_WORKFLOW_DEFINITION: str | None = None
+DEFAULT_WORKFLOW_SCHEMA_VERSION: int = 1
+DEFAULT_WORKFLOW_LOOP_MAX_STEPS: int = 5
+
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
 
@@ -422,6 +432,31 @@ class EvalSettings(BaseModel):
         return self
 
 
+class WorkflowSettings(BaseModel):
+    """Declarative multi-agent workflow-graph configuration (spec 0005).
+
+    Gated by ``enabled`` (default ``False``) exactly like :class:`MemorySettings`
+    / :class:`EmbeddingSettings`, so an environment without ``MANGOMAS_WORKFLOW__*``
+    sees no behaviour change. ``definition`` is either a filesystem path to a JSON
+    graph or an inline JSON string; it is only consulted when ``enabled`` (or when
+    the CLI ``--definition`` flag overrides it). The graph itself declares its
+    ``schema_version``, validated by :func:`mangomas.workflow.load_workflow`.
+    """
+
+    enabled: bool = DEFAULT_WORKFLOW_ENABLED
+    definition: str | None = DEFAULT_WORKFLOW_DEFINITION
+
+    @model_validator(mode="after")
+    def _validate_workflow(self) -> WorkflowSettings:
+        """Require a definition when enabled so an enabled run always has a graph."""
+        if self.enabled and not self.definition:
+            raise ValueError(
+                "workflow.enabled requires workflow.definition "
+                "(set MANGOMAS_WORKFLOW__DEFINITION to a path or inline JSON)"
+            )
+        return self
+
+
 class Settings(BaseSettings):
     """Top-level application settings."""
 
@@ -453,6 +488,7 @@ class Settings(BaseSettings):
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
+    workflow: WorkflowSettings = Field(default_factory=WorkflowSettings)
 
     # Set to True (MANGOMAS_DISCOVERY_ENABLED=true) to enable entry-point-based
     # plugin discovery for eval components (mangomas.eval.*) and agents

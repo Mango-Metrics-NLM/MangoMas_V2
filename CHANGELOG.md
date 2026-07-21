@@ -135,6 +135,28 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Declarative multi-agent workflow graphs
+
+Compose agents through a declarative JSON graph consumed by the `Orchestrator`,
+additive and default-OFF (`MANGOMAS_WORKFLOW__ENABLED=false`). See spec 0005 and
+ADR-0011.
+
+- **`src/mangomas/workflow/`**: a pure-domain package (sibling of `rag/`/`eval/`)
+  — a frozen-Pydantic `WorkflowGraph` (bounded tree: `sequence` of `agent` /
+  `fan_out` / `loop`), a `node_registry` (mirrors `eval.target_registry`), a
+  `PredicateSpec` → sync `AcceptanceFn` compiler, and `execute_workflow`. Every
+  leaf is one public dispatch call; executors are metadata-transparent, so an
+  all-agent `sequence` equals `dispatch_pipeline`.
+- **`WorkflowSettings`** (`MANGOMAS_WORKFLOW__ENABLED` / `__DEFINITION`) and a
+  `load_workflow` (path or inline JSON) loader; the graph's `schema_version` is
+  validated at load. No new error types — reuses `ConfigError` (400) /
+  `AgentNotFound` (404) / `MaxStepsExceeded` (422); `errors.py`,
+  `core/*`, and `composition.py` are unchanged.
+- **CLI**: `mangomas workflow run|validate` (off-by-default → exit 2).
+- **Docs/harness**: `docs/workflow/graphs.md`, the `mango-workflow` skill, the
+  `backend/workflow-graph-dev` sub-agent, a `workflow` per-package coverage floor,
+  and `scripts/run_workflow_e2e.py`.
+
 ### Added — Cloud Run deploy pipeline (Milestone E)
 
 Author-only deploy artifacts (ADR-0001, spec 0004). No GCP resources are

@@ -231,6 +231,34 @@ so `mangomas.adapters.embeddings` / `.vector` stay importable without the extras
 
 ---
 
+## Declarative workflow graphs (opt-in)
+
+Compose agents through a declarative JSON graph consumed by the `Orchestrator`,
+default-OFF so existing deployments see no change. A `WorkflowGraph` is a bounded
+tree — a `sequence` of `agent` / `fan_out` / `loop` steps — compiled down to the
+existing `dispatch_pipeline` / `dispatch_fan_out` / acceptance-loop primitives.
+Every leaf is one public dispatch call, so an all-agent `sequence` is identical to
+the imperative `dispatch_pipeline`. See `docs/workflow/graphs.md`, spec 0005, and
+ADR-0011.
+
+```bash
+export MANGOMAS_WORKFLOW__ENABLED=true
+export MANGOMAS_WORKFLOW__DEFINITION=./graph.json   # a path, or inline JSON
+mangomas workflow validate                          # parse-only, no LLM I/O
+mangomas workflow run "ship the feature"            # prints the final node's reply
+```
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative graph dispatch |
+| `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
+
+The feature adds no new error types: a malformed graph is a `ConfigError` (400),
+an unknown agent is `AgentNotFound` (404), and loop exhaustion is
+`MaxStepsExceeded` (422). `errors.py` and `composition.py` are unchanged.
+
+---
+
 ## Claude Code harness (opt-in)
 
 The repository ships an enterprise Claude Code harness configured under
