@@ -8,6 +8,8 @@
       "Bash(python scripts/check_coverage.py)",
       "Bash(python scripts/lint_agent_frontmatter.py:*)",
       "Bash(python scripts/harness_session_start.py)",
+      "Bash(python scripts/harness_stop_gate.py)",
+      "Bash(python scripts/harness_config_audit.py)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -20,7 +22,11 @@
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
-      "Bash(git push -f:*)"
+      "Bash(git push -f:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Bash(curl *:*)"
     ]
   },
   "env": {
@@ -67,7 +73,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m pytest --cov=mangomas --cov-fail-under=85 -q 2>/dev/null || true"
+            "command": "python scripts/harness_stop_gate.py"
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "project_settings|local_settings",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/harness_config_audit.py"
           }
         ]
       }

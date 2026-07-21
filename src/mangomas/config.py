@@ -143,6 +143,14 @@ DEFAULT_HARNESS_METRICS_NAMESPACE: str = "mangomas.harness"
 DEFAULT_HARNESS_HOOK_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING"] = "INFO"
 # "inherit" reuses the global application exporter (no behaviour change).
 DEFAULT_HARNESS_METRICS_EXPORTER: Literal["inherit", "console", "gcp"] = "inherit"
+# "advisory" reproduces today's exact Stop-hook behavior: it always exits ok,
+# a coverage failure is visible in the transcript but never blocks the stop.
+# "enforced" (opt-in) actually gates on mangomas.harness.coverage's floor.
+DEFAULT_HARNESS_STOP_GATE_MODE: Literal["advisory", "enforced"] = "advisory"
+# "off" reproduces today's exact behavior (no ConfigChange hook existed
+# before ADR-0011). "audit" logs governed-source changes without blocking;
+# "block" additionally blocks unmarked ones.
+DEFAULT_HARNESS_CONFIG_AUDIT_MODE: Literal["off", "audit", "block"] = "off"
 
 DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"
 
@@ -342,6 +350,10 @@ class HarnessSettings(BaseModel):
     # Route harness.agent_invoke spans to a dedicated exporter, or "inherit" the
     # global application exporter (default → no behaviour change).
     metrics_exporter: Literal["inherit", "console", "gcp"] = DEFAULT_HARNESS_METRICS_EXPORTER
+    # ADR-0011: scripts/harness_stop_gate.py and scripts/harness_config_audit.py.
+    # Both new hooks; both default to today's exact observable behavior.
+    stop_gate_mode: Literal["advisory", "enforced"] = DEFAULT_HARNESS_STOP_GATE_MODE
+    config_audit_mode: Literal["off", "audit", "block"] = DEFAULT_HARNESS_CONFIG_AUDIT_MODE
 
 
 class EvalSettings(BaseModel):

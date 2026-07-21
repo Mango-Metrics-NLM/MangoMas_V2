@@ -9,6 +9,35 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Claude Code harness hook hardening
+
+Coverage-floor single source of truth, shared `BREAKING-CHANGE` governance,
+and two new opt-in hooks (ADR-0011). Additive and default-identical to prior
+behavior (`MANGOMAS_HARNESS__STOP_GATE_MODE=advisory`,
+`MANGOMAS_HARNESS__CONFIG_AUDIT_MODE=off`).
+
+- **`src/mangomas/harness/`**: a pure-domain package (sibling of `rag`/`eval`/
+  `workflow`) — `read_coverage_floor` (parses `pyproject.toml`'s
+  `[tool.pytest.ini_options].addopts` via `tomllib`, fixing a historical
+  85/90/95 drift across the `Stop` hook, `pyproject.toml`, and `ci.yml`), the
+  relocated `PROTECTED_PATHS`/`BREAKING-CHANGE` marker governance (now shared
+  with `scripts/lint_agent_frontmatter.py` instead of duplicated), and the
+  `Stop`/`ConfigChange` hook decision functions.
+- **`scripts/harness_stop_gate.py`**: replaces the inline `Stop` hook command;
+  reads the real coverage floor at runtime and respects `stop_hook_active` to
+  avoid Claude Code's 8-consecutive-block override.
+- **`scripts/harness_config_audit.py`**: new `ConfigChange` hook, matcher-scoped
+  to `project_settings|local_settings` — off by default; opt-in `audit`/`block`
+  on ungoverned edits to `.claude/settings.json` / `.claude/settings.local.json`.
+- **`HarnessSettings`**: `stop_gate_mode` (`advisory` default) and
+  `config_audit_mode` (`off` default).
+- **`permissions.deny`**: `.env`/`.env.*`/`secrets/**` reads and `curl` denied
+  in `.claude/settings.json`.
+- **Tests**: `tests/harness/` (unit coverage for the new package, including a
+  `test_coverage_consistency.py` drift guard) plus flat script tests for both
+  new hooks; new `harness` 95% per-package coverage floor in
+  `scripts/check_coverage.py`.
+
 <!-- next release goes above this line -->
 
 ## [0.4.0] — 2026-07-20

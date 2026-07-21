@@ -157,3 +157,28 @@ EVAL_SCHEMA_VERSION_CURRENT: int = 1
 FAKE_PLUGIN_SCORER_NAME: str = "fake_plugin_scorer"
 FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"
 FAKE_PLUGIN_AGENT_NAME: str = "fake_plugin_agent"
+
+# ── Claude Code harness (Stop / ConfigChange hooks) ───────────────────────────
+# Minimal fixture mirroring pyproject.toml's [tool.pytest.ini_options] shape,
+# used to test mangomas.harness.coverage.read_coverage_floor in isolation.
+FAKE_PYPROJECT_TOML: str = """
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --cov=mangomas --cov-fail-under=95"
+"""
+FAKE_PYPROJECT_TOML_COVERAGE_FLOOR: int = 95
+FAKE_PYPROJECT_TOML_MISSING_ADDOPTS: str = """
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+"""
+FAKE_PYPROJECT_TOML_MISSING_TOKEN: str = """
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+"""  # noqa: S105  addopts text, not a credential
+FAKE_PYPROJECT_TOML_MALFORMED: str = "[tool.pytest.ini_options\naddopts = broken"
+
+# Sample stdin payloads for the Stop / ConfigChange hook scripts.
+STOP_HOOK_ACTIVE_PAYLOAD: dict[str, object] = {"stop_hook_active": True}
+STOP_HOOK_INACTIVE_PAYLOAD: dict[str, object] = {"stop_hook_active": False}
+CONFIG_CHANGE_PROJECT_SETTINGS_SOURCE: str = "project_settings"
+CONFIG_CHANGE_LOCAL_SETTINGS_SOURCE: str = "local_settings"
+CONFIG_CHANGE_POLICY_SETTINGS_SOURCE: str = "policy_settings"
