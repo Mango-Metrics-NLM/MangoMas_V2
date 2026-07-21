@@ -60,6 +60,9 @@ def read_coverage_floor(pyproject_path: Path | None = None) -> int:
     except KeyError as exc:
         raise ConfigError(f"{path} has no [tool.pytest.ini_options].addopts key") from exc
 
+    if not isinstance(addopts, str):
+        raise ConfigError(f"{path}'s addopts key must be a string, got {type(addopts).__name__}")
+
     match = _COV_FAIL_UNDER_PATTERN.search(addopts)
     if match is None:
         raise ConfigError(f"{path}'s addopts has no --cov-fail-under=N token")

@@ -122,6 +122,23 @@ def test_main_degrades_to_exit_ok_when_floor_unreadable(
         get_settings.cache_clear()
 
 
+def test_main_degrades_to_advisory_when_settings_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A settings-load failure (e.g. an invalid env var) must never crash the hook."""
+    monkeypatch.setattr(hook, "_read_stdin_payload", lambda: constants.STOP_HOOK_INACTIVE_PAYLOAD)
+    monkeypatch.setattr(hook, "read_coverage_floor", lambda: 95)
+    monkeypatch.setattr(hook, "_run_pytest", lambda floor: 1)  # noqa: ARG005 — fixed test double
+
+    def _raise_settings_error() -> object:
+        raise RuntimeError("invalid MANGOMAS_HARNESS__STOP_GATE_MODE")
+
+    monkeypatch.setattr(hook, "get_settings", _raise_settings_error)
+    # Degrades to DEFAULT_HARNESS_STOP_GATE_MODE ("advisory"), which always
+    # exits ok even though the (mocked) pytest run "failed".
+    assert hook.main() == hook.EXIT_OK
+
+
 def test_main_degrades_to_exit_ok_when_pytest_invocation_raises_oserror(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

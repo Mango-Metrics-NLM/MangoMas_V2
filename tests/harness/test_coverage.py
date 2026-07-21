@@ -46,6 +46,15 @@ def test_read_coverage_floor_missing_token_raises_config_error(tmp_path: Path) -
         coverage.read_coverage_floor(pyproject)
 
 
+def test_read_coverage_floor_non_string_addopts_raises_config_error(tmp_path: Path) -> None:
+    """A malformed ``addopts`` (e.g. a TOML array) must fail closed with ConfigError,
+    not raise a raw TypeError from the regex search."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(constants.FAKE_PYPROJECT_TOML_NON_STRING_ADDOPTS, encoding="utf-8")
+    with pytest.raises(ConfigError, match="must be a string"):
+        coverage.read_coverage_floor(pyproject)
+
+
 def test_read_coverage_floor_defaults_to_repo_pyproject() -> None:
     """Omitting the path argument reads ``./pyproject.toml`` (the real gate)."""
     assert coverage.read_coverage_floor() > 0

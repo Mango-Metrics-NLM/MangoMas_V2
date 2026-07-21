@@ -38,7 +38,7 @@ import subprocess
 import sys
 from typing import Final
 
-from mangomas.config import get_settings
+from mangomas.config import DEFAULT_HARNESS_STOP_GATE_MODE, get_settings
 from mangomas.errors import ConfigError
 from mangomas.harness.coverage import (
     build_pytest_args,
@@ -95,12 +95,14 @@ def _run_pytest(floor: int) -> int:
 
 def main() -> int:
     """Run the Stop-hook coverage gate; return ``EXIT_OK`` or ``EXIT_BLOCK``."""
+    settings = None
     try:
+        settings = get_settings()
         _configure_logging()
-    except Exception as exc:  # never fail the session over telemetry setup
+    except Exception as exc:  # never fail the session over settings/telemetry setup
         logging.basicConfig(level=logging.INFO)
         logger.warning(
-            "Harness logging not configured; falling back to basicConfig",
+            "Harness settings/logging not configured; falling back to advisory mode",
             extra={"error": str(exc)},
         )
 
@@ -109,7 +111,11 @@ def main() -> int:
         logger.info("Stop hook already active; skipping to avoid the 8-block override")
         return EXIT_OK
 
-    mode = get_settings().harness.stop_gate_mode
+    # A settings-load failure (e.g. an invalid MANGOMAS_HARNESS__* env var)
+    # must never crash the hook — degrade to today's exact default behavior.
+    mode = (
+        settings.harness.stop_gate_mode if settings is not None else DEFAULT_HARNESS_STOP_GATE_MODE
+    )
 
     try:
         floor = read_coverage_floor()

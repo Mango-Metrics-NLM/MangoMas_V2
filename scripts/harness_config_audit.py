@@ -45,7 +45,7 @@ import logging
 import sys
 from typing import Final
 
-from mangomas.config import get_settings
+from mangomas.config import DEFAULT_HARNESS_CONFIG_AUDIT_MODE, get_settings
 from mangomas.harness.config_audit import evaluate_config_change
 from mangomas.telemetry import configure_telemetry
 
@@ -106,18 +106,26 @@ def _extract_source(payload: dict[str, object]) -> str | None:
 
 def main() -> int:
     """Evaluate a ``ConfigChange`` firing; return ``EXIT_OK`` or ``EXIT_BLOCK``."""
+    settings = None
     try:
+        settings = get_settings()
         _configure_logging()
-    except Exception as exc:  # never fail the session over telemetry setup
+    except Exception as exc:  # never fail the session over settings/telemetry setup
         logging.basicConfig(level=logging.INFO)
         logger.warning(
-            "Harness logging not configured; falling back to basicConfig",
+            "Harness settings/logging not configured; falling back to off mode",
             extra={"error": str(exc)},
         )
 
     payload = _read_stdin_payload()
     source = _extract_source(payload)
-    mode = get_settings().harness.config_audit_mode
+    # A settings-load failure (e.g. an invalid MANGOMAS_HARNESS__* env var)
+    # must never crash the hook — degrade to today's exact default behavior.
+    mode = (
+        settings.harness.config_audit_mode
+        if settings is not None
+        else DEFAULT_HARNESS_CONFIG_AUDIT_MODE
+    )
 
     decision = evaluate_config_change(source, mode)
     log_extra = {"source": decision.source, "reason": decision.reason}

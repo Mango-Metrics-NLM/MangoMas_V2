@@ -114,6 +114,24 @@ def test_main_block_mode_exit_ok_for_policy_settings(monkeypatch: pytest.MonkeyP
         get_settings.cache_clear()
 
 
+def test_main_degrades_to_off_mode_when_settings_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A settings-load failure (e.g. an invalid env var) must never crash the hook."""
+    monkeypatch.setattr(
+        hook,
+        "_read_stdin_payload",
+        lambda: {"source": constants.CONFIG_CHANGE_PROJECT_SETTINGS_SOURCE},
+    )
+
+    def _raise_settings_error() -> object:
+        raise RuntimeError("invalid MANGOMAS_HARNESS__CONFIG_AUDIT_MODE")
+
+    monkeypatch.setattr(hook, "get_settings", _raise_settings_error)
+    # Degrades to DEFAULT_HARNESS_CONFIG_AUDIT_MODE ("off"), which always allows.
+    assert hook.main() == hook.EXIT_OK
+
+
 def test_main_block_mode_exit_ok_when_source_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unrecognized/missing source must fail open, never escalate to a block."""
     monkeypatch.setattr(hook, "_read_stdin_payload", dict)

@@ -175,6 +175,10 @@ FAKE_PYPROJECT_TOML_MISSING_TOKEN: str = """
 addopts = "-ra --strict-markers"
 """  # noqa: S105  addopts text, not a credential
 FAKE_PYPROJECT_TOML_MALFORMED: str = "[tool.pytest.ini_options\naddopts = broken"
+FAKE_PYPROJECT_TOML_NON_STRING_ADDOPTS: str = """
+[tool.pytest.ini_options]
+addopts = ["-ra", "--cov-fail-under=95"]
+"""
 
 # Sample stdin payloads for the Stop / ConfigChange hook scripts.
 STOP_HOOK_ACTIVE_PAYLOAD: dict[str, object] = {"stop_hook_active": True}

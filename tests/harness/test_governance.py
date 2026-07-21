@@ -98,3 +98,15 @@ def test_read_staged_diff_returns_empty_on_git_failure(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert governance.read_staged_diff("nonexistent.py") == ""
+
+
+def test_read_staged_diff_returns_empty_when_git_executable_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing ``git`` executable (``OSError``/``FileNotFoundError``) fails closed."""
+
+    def fake_run(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("git: command not found")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert governance.read_staged_diff("some/path.py") == ""

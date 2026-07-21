@@ -67,12 +67,19 @@ def read_staged_diff(path: str) -> str:
     import run``) so a test that monkeypatches the global ``subprocess.run``
     still observes the patch regardless of which module calls this function.
     """
-    result = subprocess.run(  # noqa: S603 — fixed argv, no shell, not attacker-controlled
-        ["git", "diff", "--staged", "--", path],  # noqa: S607 — "git" resolved via PATH by design
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv, no shell, not attacker-controlled
+            ["git", "diff", "--staged", "--", path],  # noqa: S607 — "git" resolved via PATH
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        logger.warning(
+            "git executable unavailable for staged-diff read",
+            extra={"path": path, "error": str(exc)},
+        )
+        return ""
     if result.returncode != 0:
         logger.warning(
             "git diff failed for staged-diff read",
