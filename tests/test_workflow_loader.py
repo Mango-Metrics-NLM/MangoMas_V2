@@ -36,6 +36,14 @@ def test_file_path(tmp_path: Path) -> None:
     assert graph.root.kind == "agent"
 
 
+def test_file_path_with_trailing_whitespace(tmp_path: Path) -> None:
+    """A path with a trailing newline (common from env vars/CLI) must still load."""
+    path = tmp_path / "graph.json"
+    path.write_text(json.dumps(_VALID_GRAPH), encoding="utf-8")
+    graph = load_workflow(str(path) + "\n")
+    assert graph.name == "demo"
+
+
 def test_malformed_json_raises_config_error() -> None:
     with pytest.raises(ConfigError, match="not valid JSON"):
         load_workflow("{not json")

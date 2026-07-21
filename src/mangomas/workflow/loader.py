@@ -42,12 +42,15 @@ def load_workflow(source: str) -> WorkflowGraph:
         data = _parse_json(stripped)
     else:
         try:
-            text = Path(source).read_text(encoding="utf-8")
+            # Use the stripped source (not the raw one) so a path arriving with a
+            # trailing newline — common from env vars / CLI args — does not fail
+            # spuriously; the inline-vs-path branch above already used ``stripped``.
+            text = Path(stripped).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             # UnicodeDecodeError subclasses ValueError (not OSError), so a binary
             # or non-UTF-8 file must be caught explicitly to reach the ConfigError
             # normalization boundary rather than crashing.
-            raise ConfigError(f"cannot read workflow definition {source!r}: {exc}") from exc
+            raise ConfigError(f"cannot read workflow definition {stripped!r}: {exc}") from exc
         data = _parse_json(text)
 
     try:
