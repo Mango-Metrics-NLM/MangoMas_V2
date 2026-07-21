@@ -1,0 +1,108 @@
+# Opt-in integration gate: evaluate Mango-Mas through the ianshank/Agents
+# harness (eval-harness) and fail the run on the harness's threshold gate.
+#
+# This is a live, manual workflow — it needs a reachable OpenAI-compatible LLM
+# endpoint (LM Studio or hosted) for Mango-Mas to answer, which vanilla GitHub
+# runners do not provide. The bridge/converter logic itself is covered offline
+# by the unit suite in the main CI workflow (tests/eval_harness_bridge/).
+#
+# To engage: set repo variable EVAL_GATE_ENABLED=true, secret
+# MANGO_LLM_BASE_URL (OpenAI-compatible base URL), and optionally variables
+# MANGO_LLM_MODEL / MANGO_AGENT / AGENTS_HARNESS_REF. Then run this workflow
+# from the Actions tab (or point it at a self-hosted runner with LM Studio).
+name: Eval Gate (Agents harness)
+
+on:
+  workflow_dispatch:
+    inputs:
+      agents_ref:
+        description: "Override git ref of ianshank/Agents (blank = use AGENTS_HARNESS_REF pin)"
+        default: ""
+
+# Least-privilege token: this job installs and runs non-first-party code
+# (the external Agents harness) and holds a secret, so it only reads the repo.
+permissions:
+  contents: read
+
+jobs:
+  eval-gate:
+    name: eval-harness threshold gate
+    runs-on: ubuntu-latest
+    if: ${{ vars.EVAL_GATE_ENABLED == 'true' }}
+    env:
+      MANGO_BASE_URL: http://localhost:8000
+      MANGO_AGENT: ${{ vars.MANGO_AGENT || 'chat' }}
+      DATA_ROOT: eval_harness_bridge/datasets
+      PYTHONPATH: eval_harness_bridge/src
+      # Drive Mango-Mas's LLM at the provided endpoint; persist turns to a
+      # throwaway DB so repeated runs stay idempotent.
+      MANGOMAS_LLM__BASE_URL: ${{ secrets.MANGO_LLM_BASE_URL }}
+      MANGOMAS_LLM__MODEL: ${{ vars.MANGO_LLM_MODEL || 'local-model' }}
+      MANGOMAS_DB__URL: sqlite:///./ci-eval.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Mango-Mas + Agents harness
+        # An explicit dispatch input wins; otherwise the AGENTS_HARNESS_REF pin;
+        # else 'main'. Pin AGENTS_HARNESS_REF to a commit SHA for reproducible
+        # gating — the callable-target contract and exit codes are part of the
+        # record. Bound to an env var (never inlined into the shell) to avoid
+        # ${{ }} expression injection into the command line.
+        env:
+          AGENTS_REF: ${{ github.event.inputs.agents_ref || vars.AGENTS_HARNESS_REF || 'main' }}
+        run: |
+          pip install -e ".[dev]"
+          pip install "git+https://github.com/ianshank/Agents@${AGENTS_REF}"
+
+      - name: Convert sample dataset to Agents shape
+        run: |
+          python eval_harness_bridge/src/convert_dataset.py \
+            eval_harness_bridge/datasets/mango_suite.source.jsonl \
+            eval_harness_bridge/datasets/mango_suite.jsonl \
+            --agent "${MANGO_AGENT}"
+
+      - name: Start Mango-Mas API
+        run: |
+          uvicorn mangomas.api.app:create_app --factory --port 8000 > uvicorn.log 2>&1 &
+          echo $! > uvicorn.pid
+
+      - name: Wait for readiness
+        # Poll /readyz (LLM+DB probe) so the eval does not start before the SUT
+        # can actually answer; dump the server log on timeout for post-mortem.
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/readyz >/dev/null 2>&1; then
+              echo "ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "Mango-Mas did not become ready"; cat uvicorn.log || true; exit 1
+
+      - name: Run eval-harness gate
+        # Non-zero exit (threshold gate FAIL) fails the job.
+        run: eval-harness run --config eval_harness_bridge/config/mangomas.eval.yaml
+
+      - name: Upload RunResult report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mangomas-runresult
+          path: out/mangomas-runresult.json
+          if-no-files-found: ignore
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uvicorn-log
+          path: uvicorn.log
+          if-no-files-found: ignore
+
+      - name: Stop Mango-Mas API
+        if: always()
+        run: '[ -f uvicorn.pid ] && kill "$(cat uvicorn.pid)" || true'

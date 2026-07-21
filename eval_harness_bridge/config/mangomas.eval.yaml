@@ -1,0 +1,63 @@
+# EvalConfig for driving Mango-Mas through the ianshank/Agents harness.
+#
+# Run:
+#   PYTHONPATH=eval_harness_bridge/src DATA_ROOT=eval_harness_bridge/datasets \
+#     eval-harness run --config eval_harness_bridge/config/mangomas.eval.yaml
+#
+# Prerequisites:
+#   - A running Mango-Mas API reachable at $MANGO_BASE_URL
+#     (uvicorn mangomas.api.app:create_app --factory --port 8000).
+#   - mango_bridge on PYTHONPATH (PYTHONPATH=eval_harness_bridge/src).
+#   - Dataset already converted to the Agents `inputs` shape
+#     (python eval_harness_bridge/src/convert_dataset.py SRC DST).
+#
+# Type strings (jsonl / callable / exact_match / console / json_file) follow the
+# harness's built-in registrations; confirm them for your pinned revision with
+# `eval-harness list-plugins` before trusting the gate in CI.
+schema_version: "1.0"
+
+dataset:
+  type: jsonl
+  params:
+    # Resolved under $DATA_ROOT (the harness confines dataset paths).
+    path: ${MANGOMAS_DATASET:-mango_suite.jsonl}
+
+target:
+  type: callable
+  params:
+    path: "mango_bridge:predict"
+    pass_item: false
+
+scorers:
+  - type: exact_match
+    params:
+      name: exact
+  # Optional: substring check (per-scorer substring, not per-row).
+  # - type: contains
+  #   params:
+  #     name: mentions_expected
+  #     substring: "mango"
+  # Optional: semantic judge. Enable together with the `judge:` block below and
+  # point $JUDGE_BASE_URL at an OpenAI-compatible endpoint (e.g. LM Studio).
+  # - type: llm_judge
+  #   params:
+  #     name: helpfulness
+  #     threshold: 0.6
+
+# judge:
+#   type: openai
+#   params:
+#     model: ${JUDGE_MODEL:-local-model}
+#     base_url: ${JUDGE_BASE_URL:-http://localhost:1234/v1}
+
+sinks:
+  - type: console
+  - type: json_file
+    params:
+      path: ${MANGOMAS_REPORT:-out/mangomas-runresult.json}
+
+gate:
+  rules:
+    # Deterministic gate — does not depend on a judge being configured.
+    # A misnamed `score` fails the gate loudly (fail-closed), it does not skip.
+    - { score: exact, metric: pass_rate, min: 0.5 }
