@@ -5,9 +5,11 @@ from __future__ import annotations
 import pytest
 
 from mangomas.config import (
+    DEFAULT_HARNESS_CONFIG_AUDIT_MODE,
     DEFAULT_HARNESS_ENABLED,
     DEFAULT_HARNESS_HOOK_LOG_LEVEL,
     DEFAULT_HARNESS_METRICS_NAMESPACE,
+    DEFAULT_HARNESS_STOP_GATE_MODE,
     HarnessSettings,
     Settings,
     get_settings,
@@ -20,6 +22,35 @@ def test_harness_defaults_match_constants() -> None:
     assert s.enabled == DEFAULT_HARNESS_ENABLED
     assert s.metrics_namespace == DEFAULT_HARNESS_METRICS_NAMESPACE
     assert s.hook_log_level == DEFAULT_HARNESS_HOOK_LOG_LEVEL
+    assert s.stop_gate_mode == DEFAULT_HARNESS_STOP_GATE_MODE
+    assert s.config_audit_mode == DEFAULT_HARNESS_CONFIG_AUDIT_MODE
+
+
+def test_harness_stop_gate_and_config_audit_default_to_backwards_compatible_values() -> None:
+    """ADR-0011: both new modes must default to today's exact observable behavior."""
+    s = HarnessSettings()
+    assert s.stop_gate_mode == "advisory"
+    assert s.config_audit_mode == "off"
+
+
+def test_harness_env_override_stop_gate_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_HARNESS__STOP_GATE_MODE", "enforced")
+    get_settings.cache_clear()
+    try:
+        s = get_settings()
+        assert s.harness.stop_gate_mode == "enforced"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_harness_env_override_config_audit_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_HARNESS__CONFIG_AUDIT_MODE", "audit")
+    get_settings.cache_clear()
+    try:
+        s = get_settings()
+        assert s.harness.config_audit_mode == "audit"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_settings_includes_harness_with_safe_default() -> None:

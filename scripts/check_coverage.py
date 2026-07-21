@@ -40,6 +40,7 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/eval/**/*.py", 95, "eval"),
     Floor("src/mangomas/rag/**/*.py", 95, "rag"),
     Floor("src/mangomas/workflow/**/*.py", 95, "workflow"),
+    Floor("src/mangomas/harness/**/*.py", 95, "harness"),
 ]
 
 GLOBAL_FLOOR = Floor("src/mangomas/**/*.py", 95, "global")

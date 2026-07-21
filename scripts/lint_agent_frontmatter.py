@@ -29,37 +29,33 @@ import argparse
 import glob
 import logging
 import os
-import subprocess
 import sys
 from typing import Final, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from mangomas.harness.governance import (
+    BREAKING_CHANGE_MARKER,
+    PROTECTED_PATHS,
+    has_breaking_change_marker,
+)
+from mangomas.harness.governance import normalize_path as _normalize_path
+from mangomas.harness.governance import read_staged_diff as _staged_diff
+
 # ── Module-level constants (single source of truth, no magic literals) ────────
+#
+# ``PROTECTED_PATHS`` / ``BREAKING_CHANGE_MARKER(_ALIASES)`` / path-normalize /
+# staged-diff reading live in ``mangomas.harness.governance`` (ADR-0011) so the
+# same governance primitives are shared with the ``ConfigChange`` audit hook
+# and get real coverage-gate credit — ``pyproject.toml`` scopes coverage to
+# ``source = ["mangomas"]``, so logic left only in ``scripts/`` is invisible to
+# the 95% floor. Re-exported above for backwards compatibility: this module's
+# own tests and the ``PreToolUse`` hook still reference ``linter.PROTECTED_PATHS``
+# / ``linter._staged_diff`` etc. by their historical names.
 
 AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
 SKILLS_GLOB: Final[str] = ".github/skills/**/SKILL.md"
-
-# Stable core contracts gated by the protected-path hook. Kept in lock-step with
-# the "File Ownership" / protected-paths documentation in CLAUDE.md.
-PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
-    {
-        "src/mangomas/core/agent.py",
-        "src/mangomas/core/orchestrator.py",
-        "src/mangomas/core/tools.py",
-        "src/mangomas/errors.py",
-        "src/mangomas/registry.py",
-    }
-)
-# Marker a committer adds to the staged diff to approve a breaking change to a
-# protected path. ``BREAKING_CHANGE_MARKER`` is the documented (CLAUDE.md)
-# string; the legacy ``# approved-breaking-change`` form is kept as an accepted
-# alias so any in-flight staged diffs are not retroactively blocked.
-BREAKING_CHANGE_MARKER: Final[str] = "BREAKING-CHANGE"
-BREAKING_CHANGE_MARKER_ALIASES: Final[frozenset[str]] = frozenset(
-    {BREAKING_CHANGE_MARKER, "# approved-breaking-change"}
-)
 
 FRONTMATTER_DELIMITER: Final[str] = "---"
 FRONTMATTER_SPLIT_PARTS: Final[int] = 3  # [pre, frontmatter, body]
@@ -118,14 +114,6 @@ def _split_frontmatter(text: str) -> dict[str, object]:
     if not isinstance(loaded, dict):
         raise ValueError("frontmatter is not a YAML mapping")
     return loaded
-
-
-def _normalize_path(p: str) -> str:
-    """Normalize path separators and strip leading './' without destroying '.github'."""
-    normalized = p.replace("\\", "/")
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
-    return normalized
 
 
 _MIN_SUBAGENT_PATH_DEPTH = 3  # .github/agents/<parent>/<child>.agent.md
@@ -192,23 +180,9 @@ def _validate_agent(path: str, all_agent_paths: list[str]) -> list[str]:
 
 
 # ── Protected-path enforcement (hook mode) ────────────────────────────────────
-
-
-def _staged_diff(path: str) -> str:
-    """Return ``git diff --staged -- <path>`` output (empty on git failure)."""
-    result = subprocess.run(
-        ["git", "diff", "--staged", "--", path],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        logger.warning(
-            "git diff failed for protected-path check",
-            extra={"path": path, "stderr": result.stderr.strip()},
-        )
-        return ""
-    return result.stdout
+#
+# ``_staged_diff`` is ``mangomas.harness.governance.read_staged_diff`` imported
+# under its historical name (see module-level imports above).
 
 
 def _check_protected_path(path: str) -> int:
@@ -224,9 +198,7 @@ def _check_protected_path(path: str) -> int:
     if normalised not in PROTECTED_PATHS:
         return EXIT_OK
     diff = _staged_diff(normalised)
-    matched_marker = next(
-        (marker for marker in BREAKING_CHANGE_MARKER_ALIASES if marker in diff), None
-    )
+    matched_marker = has_breaking_change_marker(diff)
     if matched_marker is not None:
         logger.info(
             "Protected path has approved breaking-change marker",
