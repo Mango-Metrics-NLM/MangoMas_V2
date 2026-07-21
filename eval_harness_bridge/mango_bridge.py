@@ -72,7 +72,12 @@ def to_messages(inputs: dict[str, Any]) -> list[dict[str, str]]:
     """
     raw = inputs.get("messages")
     if isinstance(raw, list) and raw:
-        return [{"role": str(m["role"]), "content": str(m["content"])} for m in raw]
+        turns: list[dict[str, str]] = []
+        for m in raw:
+            if not isinstance(m, dict) or "role" not in m or "content" not in m:
+                raise ValueError(f"malformed message in inputs.messages: {m!r}")
+            turns.append({"role": str(m["role"]), "content": str(m["content"])})
+        return turns
 
     messages: list[dict[str, str]] = []
     system = inputs.get("system")
@@ -98,4 +103,7 @@ def predict(inputs: dict[str, Any]) -> str:
     }
     response = _client().post(f"/agents/{agent}/invoke", json=payload)
     response.raise_for_status()
-    return str(response.json()["content"])
+    data = response.json()
+    if not isinstance(data, dict) or "content" not in data:
+        raise ValueError(f"unexpected Mango-Mas response (missing 'content'): {data!r}")
+    return str(data["content"])
