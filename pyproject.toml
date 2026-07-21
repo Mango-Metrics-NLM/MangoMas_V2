@@ -110,7 +110,7 @@ packages = ["src/mangomas"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests", "eval_harness_bridge"]
+src = ["src", "tests", "eval_harness_bridge/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG"]
@@ -124,7 +124,7 @@ ignore = ["PLR0913"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-mypy_path = "src:eval_harness_bridge"
+mypy_path = "src:eval_harness_bridge/src"
 packages = ["mangomas"]
 explicit_package_bases = true
 warn_unused_ignores = true
@@ -187,7 +187,7 @@ minversion = "8.0"
 addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=95"
 testpaths = ["tests"]
 asyncio_mode = "auto"
-pythonpath = ["src", "eval_harness_bridge"]
+pythonpath = ["src", "eval_harness_bridge/src"]
 markers = [
     "integration: tests that exercise the application through public boundaries",
     "lmstudio: tests that require a reachable LM Studio server",

@@ -33,14 +33,21 @@ what Agents' sync `callable` target gives you.)
 
 | Path | Purpose |
 |------|---------|
-| `mango_bridge.py` | Sync `callable` target: `predict(inputs) -> str`, plus the `inputs`→`messages` schema bridge. |
-| `convert_dataset.py` | Convert Mango-Mas JSONL → Agents `inputs`-shaped JSONL. |
+| `src/mango_bridge.py` | Sync `callable` target: `predict(inputs) -> str`, plus the `inputs`→`messages` schema bridge. |
+| `src/convert_dataset.py` | Convert Mango-Mas JSONL → Agents `inputs`-shaped JSONL. |
 | `config/mangomas.eval.yaml` | Example `EvalConfig`: `callable` target, `exact_match` scorer, threshold gate. |
 | `datasets/mango_suite.source.jsonl` | Sample Mango-shaped suite (illustrative `expected` values). |
 | `datasets/mango_suite.jsonl` | Generated Agents-shaped suite (`convert_dataset.py` output). |
 
+The two modules live under `src/` so only `mango_bridge` and `convert_dataset`
+land on `PYTHONPATH` — the sibling `config/` and `datasets/` dirs are kept out
+of the importable namespace.
+
 Offline unit tests live in `tests/eval_harness_bridge/` and run in the normal
-`pytest` CI — no model or server required.
+`pytest` CI — no model or server required. They are held to their **own 100%
+coverage floor**, enforced in isolation by the `bridge-coverage` CI job
+(`coverage run --source=eval_harness_bridge/src ... -o addopts=""`) so the gate
+is independent of the `--cov=mangomas` package gate.
 
 ## The schema bridge (the one real gap)
 
@@ -70,7 +77,7 @@ pip install "git+https://github.com/ianshank/Agents@<PINNED_SHA>"
 python -m pytest tests/eval_harness_bridge -q
 
 # 2. convert a dataset to the Agents inputs shape
-python eval_harness_bridge/convert_dataset.py \
+python eval_harness_bridge/src/convert_dataset.py \
   eval_harness_bridge/datasets/mango_suite.source.jsonl \
   eval_harness_bridge/datasets/mango_suite.jsonl --agent chat
 
@@ -78,7 +85,7 @@ python eval_harness_bridge/convert_dataset.py \
 uvicorn mangomas.api.app:create_app --factory --port 8000 &
 
 # 4. run the gate through the Agents harness
-PYTHONPATH=eval_harness_bridge DATA_ROOT=eval_harness_bridge/datasets \
+PYTHONPATH=eval_harness_bridge/src DATA_ROOT=eval_harness_bridge/datasets \
   MANGO_BASE_URL=http://localhost:8000 \
   eval-harness run --config eval_harness_bridge/config/mangomas.eval.yaml
 ```
@@ -93,6 +100,7 @@ The harness exits non-zero when the threshold gate fails, which the
 | `MANGO_BASE_URL` | `http://localhost:8000` | Mango-Mas API base URL |
 | `MANGO_AGENT` | `chat` | Default agent when a row omits `inputs.agent` |
 | `MANGO_TIMEOUT` | `60` | Per-request timeout (s) |
+| `MANGO_MAX_STEPS` | `1` | Default `max_steps` when a row omits it (mirrors `MANGOMAS_LOOP__MAX_STEPS`) |
 | `DATA_ROOT` | — | Directory the harness confines dataset paths to |
 | `MANGOMAS_LLM__BASE_URL` / `MANGOMAS_LLM__MODEL` | see project config | Point the SUT's LLM at your endpoint |
 
@@ -106,9 +114,17 @@ The harness exits non-zero when the threshold gate fails, which the
   switch to `llm_judge` (uncomment the `judge:` block and point
   `$JUDGE_BASE_URL` at an OpenAI-compatible endpoint such as LM Studio for a
   keyless local judge).
-- **Errored rows.** `predict` raises on non-2xx so a down sidecar is recorded as
-  *errored* (not a silent zero). The `pass_rate` gate already fails in that case;
-  assert `errored == 0` explicitly if you want a distinct signal.
+- **Errored rows.** `predict` raises on non-2xx (and on off-contract bodies /
+  malformed rows) so a down sidecar or bad data is recorded as *errored* (not a
+  silent zero). The `pass_rate` gate already fails in that case; assert
+  `errored == 0` explicitly if you want a distinct signal.
+- **Observability.** Both modules log via the stdlib `logging` module (no
+  `mangomas` import) with structured `extra={"event": ...}` records:
+  `bridge_client_configured` (resolved base URL/timeout, once per process),
+  `bridge_invoke` (agent/status/latency/message-count, DEBUG) and
+  `bridge_invoke_error` (agent/status/latency/truncated body, ERROR), and
+  `dataset_converted` on the converter. Set the root logger to `DEBUG`
+  (e.g. `logging.basicConfig(level=logging.DEBUG)`) to trace each row.
 - **The gate is fail-closed.** A `GateRule.score` that matches no emitted
   aggregate name produces a loud gate failure (exit 1), not a silent pass.
 - **Regression gating is intentionally not duplicated here.** Both projects

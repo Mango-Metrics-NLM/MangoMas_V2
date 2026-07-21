@@ -1,15 +1,15 @@
 # EvalConfig for driving Mango-Mas through the ianshank/Agents harness.
 #
 # Run:
-#   PYTHONPATH=eval_harness_bridge DATA_ROOT=eval_harness_bridge/datasets \
+#   PYTHONPATH=eval_harness_bridge/src DATA_ROOT=eval_harness_bridge/datasets \
 #     eval-harness run --config eval_harness_bridge/config/mangomas.eval.yaml
 #
 # Prerequisites:
 #   - A running Mango-Mas API reachable at $MANGO_BASE_URL
 #     (uvicorn mangomas.api.app:create_app --factory --port 8000).
-#   - mango_bridge on PYTHONPATH (PYTHONPATH=eval_harness_bridge).
+#   - mango_bridge on PYTHONPATH (PYTHONPATH=eval_harness_bridge/src).
 #   - Dataset already converted to the Agents `inputs` shape
-#     (python eval_harness_bridge/convert_dataset.py SRC DST).
+#     (python eval_harness_bridge/src/convert_dataset.py SRC DST).
 #
 # Type strings (jsonl / callable / exact_match / console / json_file) follow the
 # harness's built-in registrations; confirm them for your pinned revision with
