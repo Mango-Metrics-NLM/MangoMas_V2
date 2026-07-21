@@ -52,6 +52,23 @@ ASGI_TEST_BASE_URL: str = "http://testserver"
 TEST_LMSTUDIO_MOCK_BASE_URL: str = "http://lm/v1"
 TEST_LMSTUDIO_MOCK_MODEL: str = "m"
 
+# ── Embeddings defaults / mock ────────────────────────────────────────────────
+DEFAULT_EMBEDDINGS_PROVIDER: str = "lmstudio"
+DEFAULT_EMBEDDINGS_MODEL: str = "local-model"
+DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
+TEST_EMBEDDINGS_MOCK_MODEL: str = "embed-m"
+
+# ── Vector store / RAG defaults ───────────────────────────────────────────────
+DEFAULT_VECTOR_PROVIDER: str = "chroma"
+DEFAULT_VECTOR_PERSIST_DIR: str = "./data/chroma"
+DEFAULT_VECTOR_COLLECTION: str = "mangomas"
+DEFAULT_VECTOR_TOP_K: int = 5
+DEFAULT_RAG_CHUNK_WORDS: int = 800
+DEFAULT_RAG_CHUNK_OVERLAP: int = 120
+DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
+TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
+TEST_VECTOR_COLLECTION: str = "test-col"
+
 # ── DB defaults ───────────────────────────────────────────────────────────────
 DEFAULT_DB_PROVIDER: str = "sqlite"
 DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"
@@ -124,3 +141,19 @@ POSTGRES_TEST_PASSWORD: str = "mangomas_test"  # noqa: S105  test-only
 # ── GCP Secret Manager E2E env-var names ──────────────────────────────────────
 GCP_SECRETS_PROJECT_ENV: str = "GCP_SECRETS_PROJECT"
 GCP_SECRETS_SECRET_NAME_ENV: str = "GCP_SECRETS_SECRET_NAME"  # noqa: S105  env-var name
+
+# ── Eval harness (gate / sinks / scorers / discovery) ─────────────────────────
+RUN_LANGFUSE_ENV: str = "RUN_LANGFUSE"
+FAKE_SINK_NAME: str = "fake"
+EVAL_SINK_CONSOLE: str = "console"
+EVAL_SINK_JSON_FILE: str = "json_file"
+EVAL_SINK_LANGFUSE: str = "langfuse"
+# Exit code the CLI raises when the quality gate fails (mirrors
+# mangomas.cli.main.EVAL_GATE_EXIT_CODE).
+EVAL_GATE_EXIT_CODE: int = 3
+EVAL_THRESHOLD_STRICT: float = 0.99
+EVAL_THRESHOLD_LENIENT: float = 0.0
+EVAL_SCHEMA_VERSION_CURRENT: int = 1
+FAKE_PLUGIN_SCORER_NAME: str = "fake_plugin_scorer"
+FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"
+FAKE_PLUGIN_AGENT_NAME: str = "fake_plugin_agent"

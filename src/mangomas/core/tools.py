@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Protocol, TypeAlias, TypeVar, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from mangomas.errors import LLMBadResponse
 from mangomas.registry import Registry
+
+_StructuredModel = TypeVar("_StructuredModel", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
@@ -199,3 +201,33 @@ _default_parser = ToolCallParser()
 def parse_tool_call(text: str) -> ToolCall | None:
     """Module-level convenience wrapper around :class:`ToolCallParser`."""
     return _default_parser.parse(text)
+
+
+def parse_or_recover(
+    content: str,
+    model: type[_StructuredModel],
+) -> _StructuredModel | None:
+    """Validate *content* against *model*, recovering from wrapped JSON.
+
+    Returns the parsed model on success, ``None`` when no salvageable JSON
+    object is present. The recovery path strips everything outside the first
+    ``{`` and the last ``}`` — this covers the common case of local models
+    emitting JSON inside a markdown fence or surrounded by chatter.
+
+    Generic helper for any structured-output agent (planner, reviewer, future
+    agents). Kept in :mod:`mangomas.core.tools` alongside the existing JSON
+    fence parsing so structured-output handling lives in one place.
+    """
+    try:
+        return model.model_validate_json(content)
+    except ValidationError:
+        pass
+
+    start = content.find("{")
+    end = content.rfind("}")
+    if start == -1 or end == -1 or start >= end:
+        return None
+    try:
+        return model.model_validate_json(content[start : end + 1])
+    except ValidationError:
+        return None

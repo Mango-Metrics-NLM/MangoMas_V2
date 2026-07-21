@@ -3,7 +3,7 @@ name: Test Engineer
 description: >
   Testing specialist for Mango-Mas V2. Use when: writing unit tests, integration
   tests, or fuzz tests; updating fakes.py or constants.py; diagnosing coverage
-  gaps; or enforcing the 85% coverage gate. Knows pytest-asyncio auto mode,
+  gaps; or enforcing the 95% coverage gate. Knows pytest-asyncio auto mode,
   FakeLLM/FakeRepository/FakeTool/FakeMemoryRepository patterns, Hypothesis
   fuzz testing, and the project's no-mock-patch rule.
 tools: [read, edit, search, execute]
@@ -22,7 +22,7 @@ without coupling to implementation details.
 ## Project Test Conventions
 
 - **pytest-asyncio `asyncio_mode="auto"`** — `async def` test functions only; NO `@pytest.mark.asyncio`.
-- **Coverage gate**: 85 % minimum; run `python -m pytest --tb=short -q` to verify.
+- **Coverage gate**: 95 % minimum; run `python -m pytest --tb=short -q` to verify.
 - **Fake adapters**: always use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository` from `tests/fakes.py`. Never `unittest.mock.patch` on internal protocols.
 - **Constants**: magic strings/numbers go in `tests/constants.py`; update it when adding new domain values.
 - **Hypothesis**: property-based tests for parsers, validators, and pure functions.
@@ -54,7 +54,7 @@ tests/
 3. Add any new domain constants to `constants.py`.
 4. Write the test file mirroring the source module structure.
 5. Run `python -m pytest tests/test_<module>.py -v` to verify all pass.
-6. Run the full suite to confirm 85 % gate is maintained.
+6. Run the full suite to confirm 95 % gate is maintained.
 
 ## Constraints
 

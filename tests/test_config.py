@@ -80,6 +80,110 @@ def test_memory_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.memory.memory_dir == "custom_mem"
 
 
+# ── EmbeddingSettings ─────────────────────────────────────────────────────────
+
+
+def test_embeddings_settings_defaults() -> None:
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.embeddings.enabled is config_module.DEFAULT_EMBEDDINGS_ENABLED
+    assert s.embeddings.provider == config_module.DEFAULT_EMBEDDINGS_PROVIDER
+    assert s.embeddings.model == config_module.DEFAULT_EMBEDDINGS_MODEL
+    assert s.embeddings.base_url == config_module.DEFAULT_EMBEDDINGS_BASE_URL
+    assert s.embeddings.batch_size == config_module.DEFAULT_EMBEDDINGS_BATCH_SIZE
+    assert s.embeddings.location == config_module.DEFAULT_VERTEX_LOCATION
+
+
+def test_embeddings_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_EMBEDDINGS__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_EMBEDDINGS__PROVIDER", "sentence_transformers")
+    monkeypatch.setenv("MANGOMAS_EMBEDDINGS__MODEL", "all-MiniLM-L6-v2")
+    monkeypatch.setenv("MANGOMAS_EMBEDDINGS__BATCH_SIZE", "16")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.embeddings.enabled is True
+    assert s.embeddings.provider == "sentence_transformers"
+    assert s.embeddings.model == "all-MiniLM-L6-v2"
+    assert s.embeddings.batch_size == 16
+
+
+# ── VectorSettings ────────────────────────────────────────────────────────────
+
+
+def test_vector_settings_defaults() -> None:
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.vector.enabled is config_module.DEFAULT_VECTOR_ENABLED
+    assert s.vector.provider == config_module.DEFAULT_VECTOR_PROVIDER
+    assert s.vector.persist_dir == config_module.DEFAULT_VECTOR_PERSIST_DIR
+    assert s.vector.collection == config_module.DEFAULT_VECTOR_COLLECTION
+    assert s.vector.top_k == config_module.DEFAULT_VECTOR_TOP_K
+
+
+def test_vector_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_VECTOR__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_VECTOR__PERSIST_DIR", "custom_chroma")
+    monkeypatch.setenv("MANGOMAS_VECTOR__COLLECTION", "docs")
+    monkeypatch.setenv("MANGOMAS_VECTOR__TOP_K", "8")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.vector.enabled is True
+    assert s.vector.persist_dir == "custom_chroma"
+    assert s.vector.collection == "docs"
+    assert s.vector.top_k == 8
+
+
+# ── RagSettings ───────────────────────────────────────────────────────────────
+
+
+def test_rag_settings_defaults() -> None:
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.rag.chunk_words == config_module.DEFAULT_RAG_CHUNK_WORDS
+    assert s.rag.chunk_overlap == config_module.DEFAULT_RAG_CHUNK_OVERLAP
+    assert s.rag.min_chunk_words == config_module.DEFAULT_RAG_MIN_CHUNK_WORDS
+
+
+def test_rag_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_RAG__CHUNK_WORDS", "400")
+    monkeypatch.setenv("MANGOMAS_RAG__CHUNK_OVERLAP", "60")
+    monkeypatch.setenv("MANGOMAS_RAG__MIN_CHUNK_WORDS", "25")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.rag.chunk_words == 400
+    assert s.rag.chunk_overlap == 60
+    assert s.rag.min_chunk_words == 25
+
+
+@pytest.mark.parametrize(
+    ("chunk_words", "chunk_overlap", "min_chunk_words"),
+    [
+        (0, 0, 1),  # chunk_words below floor
+        (10, 10, 1),  # overlap == window
+        (10, 12, 1),  # overlap above window
+        (10, -1, 1),  # negative overlap
+        (10, 2, -1),  # negative min_chunk_words
+        (10, 2, 20),  # min_chunk_words exceeds the window
+    ],
+)
+def test_rag_settings_rejects_invalid_window(
+    chunk_words: int, chunk_overlap: int, min_chunk_words: int
+) -> None:
+    with pytest.raises(ValueError):
+        config_module.RagSettings(
+            chunk_words=chunk_words,
+            chunk_overlap=chunk_overlap,
+            min_chunk_words=min_chunk_words,
+        )
+
+
+def test_rag_settings_accepts_zero_overlap_and_min() -> None:
+    s = config_module.RagSettings(chunk_words=5, chunk_overlap=0, min_chunk_words=0)
+    assert s.chunk_overlap == 0
+    assert s.min_chunk_words == 0
+
+
+def test_rag_settings_invalid_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_RAG__CHUNK_WORDS", "10")
+    monkeypatch.setenv("MANGOMAS_RAG__CHUNK_OVERLAP", "10")
+    with pytest.raises(ValueError):
+        config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+
+
 # ── LLMSettings — Vertex AI fields ────────────────────────────────────────────
 
 

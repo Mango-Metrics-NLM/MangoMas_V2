@@ -22,6 +22,7 @@ import pytest
 
 from mangomas.composition import _resolve_llm_secrets
 from mangomas.config import LLMSettings
+from mangomas.errors import SecretsResolutionError
 from mangomas.secrets import GCPSecretManagerProvider, SecretsProvider, secrets_registry
 from mangomas.secrets.gcp import _build_resource_path, _short_name
 
@@ -119,12 +120,14 @@ def _provider(
     project_id: str = "proj",
     timeout: float = 5.0,
     default_version: str = "latest",
+    strict: bool = False,
     client: Any | None = None,
 ) -> GCPSecretManagerProvider:
     return GCPSecretManagerProvider(
         project_id=project_id,
         timeout_seconds=timeout,
         default_version=default_version,
+        strict=strict,
         client=client,
     )
 
@@ -299,3 +302,40 @@ def test_resolve_llm_secrets_uses_gcp_provider_via_registry() -> None:
         )
         resolved = _resolve_llm_secrets(cfg, "gcp")
     assert resolved.api_key == SECRET_VALUE
+
+
+# ── strict mode (ADR-0010) ────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        _DefaultCredentialsError("no ADC"),
+        _PermissionDenied("denied"),
+        _Unauthenticated("noauth"),
+        _DeadlineExceeded("slow"),
+        _OtherAPIError("boom"),
+    ],
+)
+def test_strict_mode_raises_on_failure(exc: BaseException) -> None:
+    """strict=True converts every auth/permission/timeout/API failure to a raise."""
+    provider = _provider(strict=True, client=_FakeSecretClient(raises=exc))
+    with pytest.raises(SecretsResolutionError) as caught:
+        provider.get(SHORT_NAME)
+    # The error carries the short id + provider, never the value/version.
+    assert caught.value.ref == SHORT_NAME
+    assert caught.value.provider == "gcp"
+    assert caught.value.detail == type(exc).__name__
+
+
+def test_strict_mode_still_returns_none_on_not_found() -> None:
+    """An absent secret is not a failure, even in strict mode."""
+    provider = _provider(strict=True, client=_FakeSecretClient(raises=_NotFound("missing")))
+    assert provider.get(SHORT_NAME) is None
+
+
+def test_strict_mode_propagates_through_resolve_llm_secrets() -> None:
+    """A strict provider makes orchestrator build fail loud instead of falling back."""
+    provider = _provider(strict=True, client=_FakeSecretClient(raises=_PermissionDenied("denied")))
+    with secrets_registry.scoped("gcp", provider), pytest.raises(SecretsResolutionError):
+        _resolve_llm_secrets(LLMSettings(api_key="inline", secret_ref=SHORT_NAME), "gcp")

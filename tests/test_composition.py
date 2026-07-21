@@ -13,16 +13,20 @@ from mangomas.composition import (
     _build_gcp_secrets_provider,
     _file_memory_factory,
     _HarnessOrchestrator,
+    _lmstudio_embedding_factory,
     _storage_registry,
+    _vector_registry,
     _vertex_factory,
     agent_registry,
     build_orchestrator,
+    embedding_registry,
     llm_registry,
 )
 from mangomas.config import (
     DEFAULT_GCP_SECRET_VERSION,
     DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS,
     DBSettings,
+    EmbeddingSettings,
     LLMSettings,
     MemorySettings,
     SecretsSettings,
@@ -33,7 +37,13 @@ from mangomas.core.agent import AgentContext, AgentRequest, Message
 from mangomas.errors import ConfigError
 from mangomas.secrets import secrets_registry
 from tests.constants import DEFAULT_AGENT_NAME, STUB_REPLY
-from tests.fakes import FakeLLM, FakeRepository, FakeVertexGenerativeModel
+from tests.fakes import (
+    FakeEmbeddingClient,
+    FakeLLM,
+    FakeRepository,
+    FakeVectorStore,
+    FakeVertexGenerativeModel,
+)
 
 
 def _close_repo(orch: Orchestrator) -> None:
@@ -60,6 +70,26 @@ def test_build_orchestrator_wires_summarize_agent() -> None:
     orch = build_orchestrator(settings)
     try:
         assert "summarize" in orch.list_agents()
+    finally:
+        _close_repo(orch)
+
+
+def test_build_orchestrator_invokes_agent_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """build_orchestrator layers in entry-point agents via ensure_agent_plugins."""
+    seen: list[tuple[Any, Any]] = []
+
+    def _spy(settings: Any, registry: Any) -> None:
+        seen.append((settings, registry))
+
+    monkeypatch.setattr(composition_module, "ensure_agent_plugins", _spy)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    orch = build_orchestrator(settings)
+    try:
+        assert len(seen) == 1
+        called_settings, called_registry = seen[0]
+        assert called_settings is settings
+        assert called_registry is agent_registry
     finally:
         _close_repo(orch)
 
@@ -285,6 +315,139 @@ async def test_harness_orchestrator_stream_dispatch_yields_tokens() -> None:
     received = [chunk async for chunk in stream]
 
     assert "".join(received)  # at least one non-empty token
+
+
+# ── Embeddings wiring ─────────────────────────────────────────────────────────
+
+
+def test_embedding_factories_registered() -> None:
+    available = embedding_registry.available()
+    assert "lmstudio" in available
+    assert "sentence_transformers" in available
+    assert "vertex" in available
+
+
+def test_build_orchestrator_embeddings_disabled_by_default() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    orch = build_orchestrator(settings)
+    try:
+        assert orch.context.embeddings is None
+    finally:
+        _close_repo(orch)
+
+
+def test_build_orchestrator_embeddings_enabled_attaches_client() -> None:
+    """When ``embeddings.enabled=True`` the factory result is attached to the context."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    settings.embeddings.enabled = True
+    settings.embeddings.provider = "lmstudio"
+
+    fake = FakeEmbeddingClient()
+    with embedding_registry.scoped("lmstudio", lambda _cfg: fake):
+        orch = build_orchestrator(settings)
+        try:
+            assert orch.context.embeddings is fake
+        finally:
+            _close_repo(orch)
+
+
+def test_lmstudio_embedding_factory_forwards_settings() -> None:
+    cfg = EmbeddingSettings(
+        enabled=True,
+        provider="lmstudio",
+        model="embed-x",
+        base_url="http://lm/v1",
+        timeout_seconds=42.0,
+    )
+    client = _lmstudio_embedding_factory(cfg)
+    assert client._model == "embed-x"
+    assert client._base_url == "http://lm/v1"
+
+
+# ── Vector store wiring ───────────────────────────────────────────────────────
+
+
+def test_vector_factory_registered() -> None:
+    assert "chroma" in _vector_registry.available()
+
+
+def test_build_orchestrator_vector_disabled_by_default() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    orch = build_orchestrator(settings)
+    try:
+        assert orch.context.vector_store is None
+    finally:
+        _close_repo(orch)
+
+
+def test_build_orchestrator_vector_enabled_attaches_store() -> None:
+    """When ``vector.enabled=True`` the factory result is attached to the context."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    settings.vector.enabled = True
+    settings.vector.provider = "chroma"
+
+    fake = FakeVectorStore()
+    with _vector_registry.scoped("chroma", lambda _cfg: fake):
+        orch = build_orchestrator(settings)
+        try:
+            assert orch.context.vector_store is fake
+        finally:
+            _close_repo(orch)
+
+
+# ── RAG retrieval tool wiring ─────────────────────────────────────────────────
+
+
+def _rag_enabled_settings() -> Settings:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    settings.embeddings.enabled = True
+    settings.embeddings.provider = "lmstudio"
+    settings.vector.enabled = True
+    settings.vector.provider = "chroma"
+    return settings
+
+
+def test_build_orchestrator_wires_retrieval_tool_when_both_enabled() -> None:
+    settings = _rag_enabled_settings()
+    with (
+        embedding_registry.scoped("lmstudio", lambda _cfg: FakeEmbeddingClient()),
+        _vector_registry.scoped("chroma", lambda _cfg: FakeVectorStore()),
+    ):
+        orch = build_orchestrator(settings)
+        try:
+            tools = orch.context.tools
+            assert tools is not None
+            assert "retrieve" in tools.available()
+        finally:
+            _close_repo(orch)
+
+
+def test_build_orchestrator_no_tools_when_only_embeddings_enabled() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    settings.embeddings.enabled = True
+    settings.embeddings.provider = "lmstudio"
+    with embedding_registry.scoped("lmstudio", lambda _cfg: FakeEmbeddingClient()):
+        orch = build_orchestrator(settings)
+        try:
+            assert orch.context.tools is None
+        finally:
+            _close_repo(orch)
+
+
+def test_build_orchestrator_no_tools_when_rag_disabled() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings.db.url = "sqlite:///:memory:"
+    orch = build_orchestrator(settings)
+    try:
+        assert orch.context.tools is None
+    finally:
+        _close_repo(orch)
 
 
 # ── Postgres + GCP Secret Manager registration (v0.3.0 cloud swap-in) ────────

@@ -4,16 +4,21 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from mangomas.adapters.vector.base import VectorMatch
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolSpec
 from tests.constants import (
     DEFAULT_TOOL_NAME,
     DEFAULT_TOOL_RESULT,
+    FAKE_SINK_NAME,
     STUB_REPLY,
     STUB_VERTEX_REPLY,
 )
+
+if TYPE_CHECKING:
+    from mangomas.eval import EvalReport, GateResult
 
 
 @dataclass
@@ -201,6 +206,105 @@ class FakeVertexGenerativeModel:
 
 
 @dataclass
+class FakeEmbeddingClient:
+    """In-memory stub satisfying the
+    :class:`~mangomas.adapters.embeddings.base.EmbeddingClient` protocol.
+
+    The deterministic embedding for a text is its character ordinals (padded to
+    nothing — variable length), which is finite and reproducible. Tests that need
+    fixed-dimension vectors should pass ``vectors`` keyed by text instead.
+    """
+
+    vectors: dict[str, list[float]] = field(default_factory=dict)
+    calls: list[list[str]] = field(default_factory=list)
+    closed: bool = False
+
+    async def embed(self, text: str) -> list[float]:
+        result = await self.embed_batch([text])
+        return result[0]
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        return [self._vector_for(t) for t in texts]
+
+    def _vector_for(self, text: str) -> list[float]:
+        if text in self.vectors:
+            return self.vectors[text]
+        return [float(ord(c)) for c in text] or [0.0]
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _fake_cosine(a: list[float], b: list[float]) -> float:
+    """Cosine similarity for the FakeVectorStore; 0.0 for empty/length-mismatch."""
+    if not a or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return float(dot / (na * nb))
+
+
+@dataclass
+class FakeVectorStore:
+    """In-memory stub satisfying
+    :class:`~mangomas.adapters.vector.base.VectorStoreRepository`.
+
+    Stores records in a dict keyed by id and brute-forces cosine similarity on
+    :meth:`query`, normalising ``cos ∈ [-1, 1]`` to a ``[0, 1]`` score via
+    ``(cos + 1) / 2`` — the same convention the real Chroma adapter targets.
+    """
+
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    upserts: list[list[str]] = field(default_factory=list)
+    deleted_sources: list[str] = field(default_factory=list)
+    closed: bool = False
+
+    async def upsert(
+        self,
+        *,
+        ids: list[str],
+        embeddings: list[list[float]],
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+    ) -> None:
+        self.upserts.append(list(ids))
+        for i, doc_id in enumerate(ids):
+            self.records[doc_id] = {
+                "embedding": list(embeddings[i]),
+                "document": documents[i],
+                "metadata": dict(metadatas[i]),
+            }
+
+    async def query(self, *, embedding: list[float], top_k: int) -> list[VectorMatch]:
+        scored = [
+            VectorMatch(
+                id=doc_id,
+                document=rec["document"],
+                score=(_fake_cosine(embedding, rec["embedding"]) + 1.0) / 2.0,
+                metadata=dict(rec["metadata"]),
+            )
+            for doc_id, rec in self.records.items()
+        ]
+        scored.sort(key=lambda m: m.score, reverse=True)
+        return scored[:top_k]
+
+    async def delete_by_source(self, source: str) -> None:
+        self.deleted_sources.append(source)
+        self.records = {
+            doc_id: rec
+            for doc_id, rec in self.records.items()
+            if rec["metadata"].get("source") != source
+        }
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@dataclass
 class FakeSecretsProvider:
     """In-memory stub satisfying :class:`mangomas.secrets.SecretsProvider`."""
 
@@ -234,3 +338,26 @@ class FakeMemoryRepository:
 
     def close(self) -> None:
         self.closed = True
+
+
+@dataclass
+class FakeSink:
+    """In-memory stub satisfying :class:`mangomas.eval.Sink`.
+
+    Records every ``(report, gate_result)`` pair it receives. Set
+    ``raise_on_emit`` to exercise the CLI's per-sink fault isolation.
+    """
+
+    name: str = FAKE_SINK_NAME
+    emitted: list[tuple[EvalReport, GateResult | None]] = field(default_factory=list)
+    raise_on_emit: BaseException | None = None
+
+    async def emit(
+        self,
+        report: EvalReport,
+        *,
+        gate_result: GateResult | None = None,
+    ) -> None:
+        if self.raise_on_emit is not None:
+            raise self.raise_on_emit
+        self.emitted.append((report, gate_result))

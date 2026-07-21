@@ -9,11 +9,15 @@ tests can import them instead of repeating magic literals.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
 
 # ── Module-level defaults (single source of truth) ────────────────────────────
 
@@ -53,10 +57,35 @@ DEFAULT_MEMORY_DIR: str = "memory"
 DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
 DEFAULT_MEMORY_ENABLED: bool = False
 
+DEFAULT_EMBEDDINGS_ENABLED: bool = False
+DEFAULT_EMBEDDINGS_PROVIDER: str = "lmstudio"
+# Neutral placeholder mirroring DEFAULT_LLM_MODEL — set explicitly per provider:
+# e.g. ``all-MiniLM-L6-v2`` (sentence-transformers), ``text-embedding-004``
+# (Vertex), or the loaded LM Studio embedding model id.
+DEFAULT_EMBEDDINGS_MODEL: str = "local-model"
+DEFAULT_EMBEDDINGS_BASE_URL: str = "http://localhost:1234/v1"
+DEFAULT_EMBEDDINGS_API_KEY: str = "lm-studio"
+DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
+DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS: float = 60.0
+
+# Vector store defaults — consumed when MANGOMAS_VECTOR__ENABLED=true.
+DEFAULT_VECTOR_ENABLED: bool = False
+DEFAULT_VECTOR_PROVIDER: str = "chroma"
+DEFAULT_VECTOR_PERSIST_DIR: str = "./data/chroma"
+DEFAULT_VECTOR_COLLECTION: str = "mangomas"
+DEFAULT_VECTOR_TOP_K: int = 5
+
+# RAG ingestion/chunking defaults.
+DEFAULT_RAG_CHUNK_WORDS: int = 800
+DEFAULT_RAG_CHUNK_OVERLAP: int = 120
+DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
+
 DEFAULT_SECRETS_PROVIDER: str = "env"
 # GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
 DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS: float = 5.0
 DEFAULT_GCP_SECRET_VERSION: str = "latest"  # noqa: S105 — not a secret value
+# Opt-in "fail loud" mode (ADR-0010). Default False preserves ADR-002 (None).
+DEFAULT_SECRETS_STRICT: bool = False
 
 # Maximum length of the ``detail`` field on structured error envelopes /
 # log records. Bounds untrusted exception text so that adapter exception
@@ -67,13 +96,59 @@ DEFAULT_ERROR_DETAIL_TRUNCATE: int = 200
 # Evaluation harness defaults.
 DEFAULT_EVAL_SCORER: str = "exact_match"
 DEFAULT_EVAL_AGENT: str = "chat"
+# Default eval target. ``agent`` dispatches a single registered agent (the
+# pre-target-indirection behaviour); other built-ins are ``pipeline`` /
+# ``fan_out`` / ``echo``. Resolved through ``target_registry``.
+DEFAULT_EVAL_TARGET: str = "agent"
+# Default dataset source. ``jsonl`` reads a local file (the historical loader);
+# other built-ins are ``inline`` / ``langfuse``. Resolved through
+# ``dataset_source_registry``.
+DEFAULT_EVAL_DATASET_SOURCE: str = "jsonl"
 DEFAULT_EVAL_OUTPUT_DIR: str = "eval-output"
 DEFAULT_EVAL_PARALLELISM: int = 1
 DEFAULT_EVAL_FAIL_FAST: bool = False
 
+# Quality-gate defaults — all OFF so existing runs keep exit code 0 on success.
+# ``min_mean_score`` / ``min_pass_rate`` stay ``None`` (no threshold). When a
+# threshold is set the CLI exits 3 if the report falls below it.
+DEFAULT_EVAL_GATE_ENABLED: bool = False
+DEFAULT_EVAL_MIN_MEAN_SCORE: float | None = None
+DEFAULT_EVAL_MIN_PASS_RATE: float | None = None
+DEFAULT_EVAL_FAIL_ON_ERROR: bool = False
+
+# Regression / baseline gating — default OFF. A baseline is a prior json_file
+# report artifact; the gate fails (exit 3) when the current run drops below it
+# by more than the configured tolerance, or introduces new row failures.
+DEFAULT_EVAL_BASELINE_PATH: str | None = None
+DEFAULT_EVAL_MAX_MEAN_SCORE_DROP: float | None = None
+DEFAULT_EVAL_MAX_PASS_RATE_DROP: float | None = None
+DEFAULT_EVAL_ALLOW_NEW_FAILURES: bool = True
+
+# Result sinks — ``console`` reproduces today's inline stdout summary exactly,
+# so the default is behaviour-preserving. Held as a tuple (immutable module
+# constant); the field builds a fresh list from it via ``default_factory``.
+DEFAULT_EVAL_SINKS: tuple[str, ...] = ("console",)
+
+# Default per-request timeout (seconds) for the optional ``webhook`` sink's
+# httpx POST. Overridable per-sink via ``sink_options["webhook"]["timeout_seconds"]``.
+DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS: float = 10.0
+
+# Forward-compatible config version marker. Bump when EvalSettings grows a
+# field that needs migration; a config declaring a *higher* version than the
+# code supports logs a warning rather than crashing.
+DEFAULT_EVAL_SCHEMA_VERSION: int = 1
+
 DEFAULT_HARNESS_ENABLED: bool = False
 DEFAULT_HARNESS_METRICS_NAMESPACE: str = "mangomas.harness"
 DEFAULT_HARNESS_HOOK_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING"] = "INFO"
+# "inherit" reuses the global application exporter (no behaviour change).
+DEFAULT_HARNESS_METRICS_EXPORTER: Literal["inherit", "console", "gcp"] = "inherit"
+
+DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"
+
+# Declarative multi-agent workflows (spec 0005, ADR-0007). Default OFF so the
+# orchestrator behaves identically and no graph is loaded unless enabled.
+DEFAULT_WORKFLOW_ENABLED: bool = False
 
 
 # ── Sub-settings models ────────────────────────────────────────────────────────
@@ -105,6 +180,77 @@ class LLMSettings(BaseModel):
     credentials_path: str | None = None
 
 
+class EmbeddingSettings(BaseModel):
+    """Embedding-provider configuration.
+
+    Gated by ``enabled`` (default ``False``) exactly like
+    :class:`MemorySettings`, so default behaviour is unchanged. ``provider``
+    selects the backend: ``lmstudio`` | ``sentence_transformers`` | ``vertex``.
+    The LM Studio fields (``base_url``/``api_key``) and the Vertex fields
+    (``project_id``/``location``) are only consulted by their respective
+    factories.
+    """
+
+    enabled: bool = DEFAULT_EMBEDDINGS_ENABLED
+    provider: str = DEFAULT_EMBEDDINGS_PROVIDER
+    model: str = DEFAULT_EMBEDDINGS_MODEL
+    base_url: str = DEFAULT_EMBEDDINGS_BASE_URL
+    api_key: str = DEFAULT_EMBEDDINGS_API_KEY
+    batch_size: int = DEFAULT_EMBEDDINGS_BATCH_SIZE
+    timeout_seconds: float = DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS
+    # Vertex-specific (required only when provider="vertex"; ADC auth).
+    project_id: str | None = None
+    location: str = DEFAULT_VERTEX_LOCATION
+
+
+class VectorSettings(BaseModel):
+    """Vector store configuration.
+
+    Gated by ``enabled`` (default ``False``) like :class:`MemorySettings`, so
+    default behaviour is unchanged. ``provider`` selects the backend (``chroma``);
+    ``persist_dir`` / ``collection`` configure on-disk storage and ``top_k`` is
+    the default retrieval depth.
+    """
+
+    enabled: bool = DEFAULT_VECTOR_ENABLED
+    provider: str = DEFAULT_VECTOR_PROVIDER
+    persist_dir: str = DEFAULT_VECTOR_PERSIST_DIR
+    collection: str = DEFAULT_VECTOR_COLLECTION
+    top_k: int = DEFAULT_VECTOR_TOP_K
+
+
+class RagSettings(BaseModel):
+    """RAG ingestion + chunking parameters (word-window chunker).
+
+    Invariants are validated at construction so a bad ``MANGOMAS_RAG__*`` value
+    (e.g. an overlap that meets or exceeds the window) fails fast at settings
+    load rather than surfacing deep inside the ingestion pipeline.
+    """
+
+    chunk_words: int = DEFAULT_RAG_CHUNK_WORDS
+    chunk_overlap: int = DEFAULT_RAG_CHUNK_OVERLAP
+    min_chunk_words: int = DEFAULT_RAG_MIN_CHUNK_WORDS
+
+    @model_validator(mode="after")
+    def _check_window(self) -> RagSettings:
+        if self.chunk_words < 1:
+            raise ValueError(f"chunk_words must be >= 1 (got {self.chunk_words})")
+        if self.min_chunk_words < 0:
+            raise ValueError(f"min_chunk_words must be >= 0 (got {self.min_chunk_words})")
+        if self.min_chunk_words > self.chunk_words:
+            raise ValueError(
+                f"min_chunk_words ({self.min_chunk_words}) must be "
+                f"<= chunk_words ({self.chunk_words})"
+            )
+        if self.chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be >= 0 (got {self.chunk_overlap})")
+        if self.chunk_overlap >= self.chunk_words:
+            raise ValueError(
+                f"chunk_overlap ({self.chunk_overlap}) must be < chunk_words ({self.chunk_words})"
+            )
+        return self
+
+
 class SecretsSettings(BaseModel):
     """Configuration for the SecretsProvider seam."""
 
@@ -114,6 +260,10 @@ class SecretsSettings(BaseModel):
     project_id: str | None = None
     timeout_seconds: float = DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS
     default_version: str = DEFAULT_GCP_SECRET_VERSION
+    # When True, cloud backends raise SecretsResolutionError on auth/permission/
+    # timeout failures instead of returning None (ADR-0010). Default preserves
+    # the ADR-002 "collapse to None" local-dev contract.
+    strict: bool = DEFAULT_SECRETS_STRICT
 
 
 class DBSettings(BaseModel):
@@ -141,6 +291,17 @@ class LogSettings(BaseModel):
 
     format: Literal["text", "json"] = DEFAULT_LOG_FORMAT
     body_truncate: int = DEFAULT_LOG_BODY_TRUNCATE
+
+
+class TelemetrySettings(BaseModel):
+    """OpenTelemetry exporter selection.
+
+    ``exporter`` chooses the application span exporter: ``console`` (default,
+    built-in) or ``gcp`` (Cloud Trace via the optional ``gcp`` extra). Absent
+    from the environment → ``console``, identical to prior behaviour.
+    """
+
+    exporter: Literal["console", "gcp"] = DEFAULT_TELEMETRY_EXPORTER
 
 
 class AgentSettings(BaseModel):
@@ -178,6 +339,9 @@ class HarnessSettings(BaseModel):
     enabled: bool = DEFAULT_HARNESS_ENABLED
     metrics_namespace: str = DEFAULT_HARNESS_METRICS_NAMESPACE
     hook_log_level: Literal["DEBUG", "INFO", "WARNING"] = DEFAULT_HARNESS_HOOK_LOG_LEVEL
+    # Route harness.agent_invoke spans to a dedicated exporter, or "inherit" the
+    # global application exporter (default → no behaviour change).
+    metrics_exporter: Literal["inherit", "console", "gcp"] = DEFAULT_HARNESS_METRICS_EXPORTER
 
 
 class EvalSettings(BaseModel):
@@ -199,6 +363,87 @@ class EvalSettings(BaseModel):
     # verbatim to the scorer's factory.
     scorer_options: dict[str, object] = Field(default_factory=dict)
 
+    # ── Target indirection ────────────────────────────────────────────────────
+    # ``target`` selects what each row dispatches against, resolved through
+    # ``target_registry`` (default ``agent`` == today's single-agent dispatch).
+    # ``target_options`` carries per-target kwargs keyed by target name, e.g.
+    # ``{"pipeline": {"agents": ["planner", "reviewer"]}}``.
+    target: str = DEFAULT_EVAL_TARGET
+    target_options: dict[str, dict[str, object]] = Field(default_factory=dict)
+
+    # ── Dataset source ────────────────────────────────────────────────────────
+    # ``dataset_source`` selects where rows come from, resolved through
+    # ``dataset_source_registry`` (default ``jsonl`` == today's file loader).
+    # ``dataset_source_options`` carries per-source kwargs keyed by source name,
+    # e.g. ``{"inline": {"rows": [...]}}``. For ``jsonl`` the ``--dataset`` flag /
+    # ``dataset_path`` still supplies the path.
+    dataset_source: str = DEFAULT_EVAL_DATASET_SOURCE
+    dataset_source_options: dict[str, dict[str, object]] = Field(default_factory=dict)
+
+    # ── Quality gate (CI) — default OFF ───────────────────────────────────────
+    gate_enabled: bool = DEFAULT_EVAL_GATE_ENABLED
+    min_mean_score: float | None = DEFAULT_EVAL_MIN_MEAN_SCORE
+    min_pass_rate: float | None = DEFAULT_EVAL_MIN_PASS_RATE
+    fail_on_error: bool = DEFAULT_EVAL_FAIL_ON_ERROR
+
+    # ── Regression / baseline gating (CI) — default OFF ───────────────────────
+    baseline_path: str | None = DEFAULT_EVAL_BASELINE_PATH
+    max_mean_score_drop: float | None = DEFAULT_EVAL_MAX_MEAN_SCORE_DROP
+    max_pass_rate_drop: float | None = DEFAULT_EVAL_MAX_PASS_RATE_DROP
+    allow_new_failures: bool = DEFAULT_EVAL_ALLOW_NEW_FAILURES
+
+    # ── Result sinks ──────────────────────────────────────────────────────────
+    # Ordered list of sink names resolved through ``sink_registry``. Defaults to
+    # ``["console"]`` (== today's inline output). ``sink_options`` carries
+    # per-sink kwargs keyed by sink name, e.g. ``{"json_file": {"path": "..."}}``.
+    sinks: list[str] = Field(default_factory=lambda: list(DEFAULT_EVAL_SINKS))
+    sink_options: dict[str, dict[str, object]] = Field(default_factory=dict)
+
+    # ── Forward-compatible schema version ─────────────────────────────────────
+    schema_version: int = DEFAULT_EVAL_SCHEMA_VERSION
+
+    @model_validator(mode="after")
+    def _validate_eval(self) -> EvalSettings:
+        """Bound gate thresholds to ``[0, 1]`` and tolerate future schema versions.
+
+        Thresholds are normalised scores, so a value outside ``[0, 1]`` is a
+        configuration error (fail fast at construction). A ``schema_version``
+        ahead of what this build supports is *not* fatal — it is logged so a
+        newer config can be read by older code without crashing (forward-compat).
+        """
+        for label, value in (
+            ("min_mean_score", self.min_mean_score),
+            ("min_pass_rate", self.min_pass_rate),
+            ("max_mean_score_drop", self.max_mean_score_drop),
+            ("max_pass_rate_drop", self.max_pass_rate_drop),
+        ):
+            if value is not None and not 0.0 <= value <= 1.0:
+                raise ValueError(f"eval.{label} must be in [0.0, 1.0]; got {value}")
+        if self.schema_version > DEFAULT_EVAL_SCHEMA_VERSION:
+            logger.warning(
+                "Eval config declares a future schema_version; reading with current code",
+                extra={
+                    "event": "eval_config_future_version",
+                    "declared": self.schema_version,
+                    "supported": DEFAULT_EVAL_SCHEMA_VERSION,
+                },
+            )
+        return self
+
+
+class WorkflowSettings(BaseModel):
+    """Declarative multi-agent workflow configuration (spec 0005, ADR-0007).
+
+    Additive and default-OFF: when ``enabled`` is ``False`` (the default) the
+    orchestrator behaves exactly as before and no graph is loaded. When enabled,
+    ``definition`` supplies the graph as either an inline JSON object or a path
+    to a ``.json`` file — resolved by
+    :func:`mangomas.workflow.graph_from_settings`.
+    """
+
+    enabled: bool = DEFAULT_WORKFLOW_ENABLED
+    definition: str | None = None
+
 
 class Settings(BaseSettings):
     """Top-level application settings."""
@@ -218,17 +463,24 @@ class Settings(BaseSettings):
     db: DBSettings = Field(default_factory=DBSettings)
     api: APISettings = Field(default_factory=APISettings)
     log: LogSettings = Field(default_factory=LogSettings)
+    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 
     # Per-agent overrides keyed by agent name.
     agents: dict[str, AgentSettings] = Field(default_factory=dict)
 
     loop: LoopSettings = Field(default_factory=LoopSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    embeddings: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
+    vector: VectorSettings = Field(default_factory=VectorSettings)
+    rag: RagSettings = Field(default_factory=RagSettings)
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
+    workflow: WorkflowSettings = Field(default_factory=WorkflowSettings)
 
-    # Set to True to enable entry-point-based agent discovery (Phase C).
+    # Set to True (MANGOMAS_DISCOVERY_ENABLED=true) to enable entry-point-based
+    # plugin discovery for eval components (mangomas.eval.*) and agents
+    # (mangomas.agents). Default False keeps only built-in providers registered.
     discovery_enabled: bool = False
 
 

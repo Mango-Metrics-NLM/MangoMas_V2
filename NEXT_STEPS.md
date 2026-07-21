@@ -12,44 +12,32 @@ extension, backwards-compatible contracts.
 
 _(All cloud adapters (Vertex AI, Postgres, GCP Secret Manager) and the
 offline evaluation harness landed in v0.3.0. The Claude Code enterprise
-harness landed in Unreleased. v0.3.1 cherry-picked the 7-milestone GCP
-swap-in plan from PR #6 (rejecting the destructive code rollback),
-fixed lint/type issues, and raised test coverage to 98.16 % / 515 tests.
-See `docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md` for the
-full plan. Next near-term items:)_
+harness landed in Unreleased. The four near-term items below all landed
+in the Unreleased Milestone A–E series — see `CHANGELOG.md` and
+`specs/0001`–`0004`. Remaining forward work is under "Long term".)_
 
-### Harness metrics-exporter selection
+### ✅ Harness metrics-exporter selection — done (Milestone C)
 
-Wire `HarnessSettings.metrics_namespace` into a configurable OTel
-exporter so the `harness.agent_invoke` parent spans can be routed to a
-different OTLP endpoint than the application spans. Today the
-namespace is honoured by the tracer but exporter selection is
-shared. Activate via a new `MANGOMAS_HARNESS__METRICS_EXPORTER` env;
-default falls through to the application-wide exporter to preserve
-the existing behaviour. Pairs naturally with the Cloud Trace work
-below.
+`MANGOMAS_HARNESS__METRICS_EXPORTER` (`inherit`/`console`/`gcp`) routes
+`harness.agent_invoke` spans via `build_scoped_tracer`; default `inherit`
+reuses the application exporter. See ADR-0009, spec 0002.
 
-### Cloud Logging + Cloud Trace exporter swap
+### ✅ Cloud Logging + Cloud Trace exporter swap — done (Milestone C)
 
-Add a Cloud Trace OTLP exporter behind the existing
-`configure_telemetry()` entry point. Activate via a new
-`MANGOMAS_TELEMETRY__EXPORTER=gcp` option. `MANGOMAS_LOG__FORMAT=json`
-is already supported.
+`MANGOMAS_TELEMETRY__EXPORTER=gcp` selects the Cloud Trace exporter behind
+`configure_telemetry()` (lazy, under the `gcp` extra). See ADR-0009, spec 0001.
 
-### Cloud Run deployment pipeline
+### ✅ Cloud Run deployment pipeline — done (Milestone E)
 
-Add a `deploy/` directory with:
-- Cloud Run service YAML (or Terraform module).
-- GitHub Actions workflow step for image push to Artifact Registry.
-- Environment-variable contract documented for Cloud Run service configuration.
+`deploy/` ships the Cloud Run manifest, the WIF-authenticated
+`.github/workflows/deploy.yml`, and the `MANGOMAS_*` env contract. Author-only;
+no GCP resources are provisioned here. See ADR-0001, spec 0004.
 
-### SecretsSettings.strict mode (ADR-002 follow-up)
+### ✅ SecretsSettings.strict mode — done (Milestone D)
 
-Add `SecretsSettings.strict: bool = False`; when set, cloud secrets
-backends raise a new `SecretsResolutionError` instead of returning
-`None` on auth/permission/timeout failures. Preserves the local-dev
-contract by default; gives operators an opt-in "fail loud" mode for
-production.
+`MANGOMAS_SECRETS__STRICT` makes cloud backends raise `SecretsResolutionError`
+(HTTP 503) instead of returning `None` on auth/permission/timeout failures;
+default preserves ADR-002. See ADR-0010, spec 0003.
 
 ---
 
@@ -57,14 +45,19 @@ production.
 
 ### Claude Code enterprise harness
 
-End-to-end Claude Code harness landed as a non-breaking opt-in layer:
+End-to-end Claude Code harness landed as a non-breaking opt-in layer.
+Counts below are as-of the harness branch; the suite has since grown —
+see the skill and sub-agent tables in `CLAUDE.md` for the current set.
 
 - **8 skills** under `.github/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
-  observability, config, release, and topology.
-- **12 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
-  grouped under the 4 parent agents. The new `sub_agents:`
-  frontmatter key is optional and backwards-compatible.
+  observability, config, release, and topology. _(Since grown to 11:
+  `mango-rag` on the RAG branch, plus `mango-eval` and `mango-deploy`.)_
+- **13 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
+  grouped under the 4 parent agents (including `pr-watcher` under
+  `architect`). The new `sub_agents:` frontmatter key is optional and
+  backwards-compatible. _(Since grown to 14 with `telemetry-exporter-dev`
+  under `backend`.)_
 - **`HarnessSettings`** (env prefix `MANGOMAS_HARNESS__`,
   `enabled=False` default) drives whether `build_orchestrator`
   returns a `_HarnessOrchestrator` wrapper that adds a
@@ -205,36 +198,68 @@ and echoes it on the outgoing response.
 
 ---
 
+## Done on the RAG branch (Unreleased)
+
+### Retrieval-augmented generation
+
+The full RAG port landed as a non-breaking opt-in layer
+(`embeddings.enabled` / `vector.enabled` default `False`):
+
+- **`EmbeddingClient` seam** (`adapters/embeddings/`) with three backends:
+  `LMStudioEmbeddingClient`, `SentenceTransformersEmbeddingClient`
+  (`embeddings-local` extra), and `VertexEmbeddingClient`
+  (`text-embedding-004`, ADC-only, `vertex` extra). This closes the
+  long-term "embedding-capable provider" gap — the `EmbeddingScorer` is
+  now operational against a real provider via `ScorerContext.embeddings`.
+- **`VectorStoreRepository` seam** (`adapters/vector/`) with
+  `ChromaVectorStore` (`rag` extra). Cosine space + `1 - distance/2`
+  similarity keeps scores in `[0, 1]`.
+- **`rag/` package** — word-window chunker, document loader,
+  `IngestionPipeline` (idempotent re-ingest via `delete_by_source`), and
+  `Retriever` + `RetrievalTool` (auto-discovered by `ToolAgent`).
+- **CLI** — `mangomas rag ingest` / `mangomas rag query`.
+- **Shared adapter error helpers** (`adapters/_http_errors.py`,
+  `adapters/_vertex_errors.py`) de-duplicate the httpx + Vertex error
+  translation across the chat and embedding adapters.
+- New `rag` 95 % coverage floor; 639 tests, 97.95 % global coverage.
+
+See the `mango-rag` skill (`.github/skills/mango-rag/SKILL.md`) and the
+C4 diagrams in `docs/architecture/`.
+
+---
+
 ## Long term
 
 _(The first long-term capability — the evaluation harness — landed in
-v0.3.0; see "Done in v0.3.0" above. Follow-ups below.)_
+v0.3.0; the embedding-capable provider that unblocked its `EmbeddingScorer`
+landed on the RAG branch above. Follow-ups below.)_
 
-### Embedding-capable LLM provider
+### ✅ Multi-agent workflows — done
 
-The evaluation harness ships an `EmbeddingScorer` that requires an
-`LLMClient` exposing `.embed()`. None of today's providers do. Add an
-embedding surface to either the Vertex adapter (`text-embedding-004` via
-`TextEmbeddingModel.get_embeddings_async`) or a new dedicated provider.
-Once the surface is present, the scorer becomes operational with no
-harness changes.
+Compose multiple agents (planner → tool → reviewer, fan-out, acceptance loops)
+through a declarative JSON graph, enabled via `MANGOMAS_WORKFLOW__*` and executed
+by `mangomas.workflow.WorkflowRunner` — which compiles the graph's topological
+levels onto the existing `dispatch` / `dispatch_fan_out` / acceptance-loop
+primitives (no new engine, no core changes). A linear graph reproduces
+`dispatch_pipeline` exactly. Default-OFF; single-agent dispatch is unchanged.
+CLI: `mangomas workflow`. See ADR-0007, spec 0005.
 
-### Multi-agent workflows
-
-Composition of multiple agents (e.g. planner → executor → reviewer) through a
-declarative graph definition consumed by `Orchestrator`.  Must remain backwards
-compatible: existing single-agent dispatch is unchanged.
+_Follow-ups:_ per-edge (rather than per-level) data routing and conditional /
+branch edges; an optional `workflow` eval target that scores a graph's output.
 
 ### Multi-tenancy
 
 Tenant-scoped conversation storage and agent configuration (per-tenant
-`AgentSettings` registry) without leaking state across tenants.
+`AgentSettings` registry) without leaking state across tenants. Design stub:
+`specs/0007-multi-tenancy.md`.
 
-### Agent marketplace / dynamic loading
+### ✅ Agent marketplace / dynamic loading — done (Milestone B)
 
-`agent_registry` loading from external packages via entry-point discovery
-(`importlib.metadata.entry_points`) so that third-party agents can be
-installed and registered without modifying `composition.py`.
+`agent_registry` now loads from external packages via entry-point discovery
+(group `mangomas.agents`) gated by `MANGOMAS_DISCOVERY_ENABLED`, so third-party
+agents install and register without modifying `composition.py`. A discovered
+name colliding with a built-in is skipped with a warning. See ADR-0008,
+spec 0006.
 
 ---
 

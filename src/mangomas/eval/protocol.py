@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.llm.base import LLMClient
 
 
@@ -49,6 +50,7 @@ class ScorerContext:
     """
 
     llm: LLMClient | None = None
+    embeddings: EmbeddingClient | None = None
     row_metadata: dict[str, Any] = field(default_factory=dict)
     correlation_id: str | None = None
 

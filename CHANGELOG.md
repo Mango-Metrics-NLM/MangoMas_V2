@@ -7,133 +7,302 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.1.0] — 2026-05-13
-
-### Fixed
-
-- `LMStudioClient`: wrap raw `httpx` exceptions into typed `LLMTimeout` /
-  `LLMUnavailable` / `LLMBadResponse` subclasses across `complete()`, `ping()`,
-  and `_stream_impl()` so API responses always carry the structured error
-  envelope and correct HTTP status mapping.
-- `SQLiteRepository`: serialise all access to the shared connection with a
-  `threading.Lock` to make concurrent writes from `dispatch_fan_out` safe.
-- `ToolCallParser`: bare `{...}` objects that fail JSON validation now return
-  `None` (treated as prose) instead of raising; only fenced ```json``` blocks
-  raise `LLMBadResponse` on malformed JSON.
-- `FileMemoryRepository`: use UTC for episodic file naming so filenames are
-  stable across timezones and cloud regions.
-- `SummarizeAgent`: include every message in each historical turn (not only
-  the first user message) so multi-message turns retain full context.
-- `AccessLogMiddleware`: wrap `call_next` in `try/except/finally` so failed
-  requests still emit an INFO access log with status `500` and latency.
-- `telemetry.configure_telemetry`: attach `TraceContextFilter` to the
-  configured handler (not the root logger) so `trace_id` / `span_id` are
-  injected into every log record from child loggers.
-- `api/app.py` lifespan: simplify shutdown checks; `ctx.repo.close()` is
-  protected by a `None` check rather than `hasattr`.
-- `Dockerfile`: create `/app/data` and `/data` and `chown` to the `mangomas`
-  user so the default SQLite path and compose volume are writable from the
-  non-root runtime user.
-
-### Added
-
-**Core platform**
-- `Agent` protocol with `handle(request, ctx)` contract; `StreamingAgent` extension protocol for token-level streaming.
-- `Orchestrator` with `dispatch` (buffered) and `stream_dispatch` (async-generator streaming) methods; lazy OpenTelemetry tracer (no module-level tracer capture).
-- `Registry[T]` — generic, reusable lookup store; drives both provider and agent wiring.
-- `AgentContext` — immutable context injected into every agent invocation (LLM client, turn repository, optional memory repository).
-
-**Agents**
-- `ChatAgent` — single-turn conversational agent with streaming fallback and warning log when the active LLM does not implement `StreamingLLMClient`.
-- `SummarizeAgent` — fetches recent conversation history and requests an LLM summary.
-- `ToolAgent` — multi-step control loop with tool-call parsing and execution.
-- `PlannerAgent` / `ReviewerAgent` — plan-then-review composition pattern.
-
-**Adapters**
-- `LMStudioClient` — OpenAI-compatible HTTP adapter targeting `/v1/chat/completions` and `/v1/models`; supports buffered completion, streaming, ping, and graceful close via `aclose()`.
-- `SQLiteRepository` — lightweight `TurnRepository` implementation backed by SQLite.
-- File-based memory provider.
-
-**API**
-- FastAPI application factory `create_app(orchestrator=None)` — lifespan manages startup/shutdown.
-- Routes: `GET /healthz`, `GET /health` (alias), `GET /readyz`, `GET /ready` (alias), `GET /agents`, `POST /agents/{name}/invoke`, `POST /agents/{name}/stream`.
-- JSON SSE envelope: `{"event": "token", "data": {"content": "..."}, "content": "..."}` with `{"event": "done"}` sentinel; top-level `content` field kept for backwards compatibility.
-- `AccessLogMiddleware` — per-request structured access log.
-- `TraceMiddleware` — OpenTelemetry span per request.
-- Structured error envelope `{"error": "...", "message": "...", "detail": "..."}` mapped from domain error classes via MRO-based `_error_status`.
-
-**CLI**
-- `mangomas chat` — interactive single-turn CLI backed by the full agent stack.
-
-**Composition**
-- `agent_registry: Registry[AgentFactory]` — seeded with `chat` and `summarize`; extensible without core changes.
-- `_llm_registry` and `_storage_registry` — provider registries for LLM and storage adapters.
-- `build_orchestrator(settings)` — assembles the full runtime from settings alone; no hardcoded class names outside `composition.py`.
-
-**Observability**
-- Structured logging throughout; `extra={}` fields on all error and warning paths.
-- OpenTelemetry tracing via `opentelemetry-sdk`; console exporter for local development.
-- `/readyz` aggregates LLM ping and DB connectivity into a `ReadinessReport`.
-
-**Infrastructure**
-- Multi-stage Dockerfile; runtime stage runs as non-root user `mangomas`, honours `$PORT`, and includes a `HEALTHCHECK` against `/healthz`.
-- `.github/workflows/ci.yml` — ruff check, ruff format --check, mypy --strict over `src tests scripts`, pytest with coverage, per-package coverage floors, codecov upload.
-- `pyproject.toml` — hatchling build, all dev tooling configured, `asyncio_mode = "auto"`, `lmstudio` and `integration` pytest markers registered.
-- `pyrightconfig.json` and minimal `typings/hypothesis` stubs for VS Code editor parity with CLI mypy.
-
-**Documentation**
-- `docs/adr/0001-cloud-targets.md` — cloud target swap matrix (ADR-001).
-
-### Changed
-
-- mypy strict gate widened from `src` only to `src tests scripts` (60 source files).
-- Provider wiring moved from ad-hoc class instantiation to registry-based composition; new providers require no changes to core or API layers.
-- `Orchestrator` tracer changed from module-level capture to lazy `trace.get_tracer(__name__)` call inside method bodies.
-
-### Security / Operations
-
-- Docker runtime uses a non-root user; no secrets or credentials in the image.
-- All configuration is env-driven via `MANGOMAS_*` prefix; no hardcoded endpoints, model ids, or credentials in source.
-- `.gitignore` excludes `.venv/`, `data/`, `memory/`, `.env`, coverage artefacts, caches, and generated files.
-- Request-scoped tracing without leaking spans across async contexts.
-
----
-
-## [0.3.1] — 2026-05-23
-
-### Added
-
-- **GCP swap-in implementation plan** (`docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md`):
-  Cherry-picked from PR #6 — 7-milestone roadmap covering Cloud Logging/Trace
-  exporter, Vertex AI provider hardening, Postgres parity, Cloud Run deployment,
-  and evaluation harness enhancements. Destructive code deletions in PR #6 were
-  rejected; only the plan document was merged.
-- **10 new mocked asyncpg unit tests** in `tests/test_postgres.py`:
-  `save_turn` / `list_turns` happy path + error translation, `aclose` / `close`
-  with injected pool, empty results, null timestamp handling. Postgres module
-  coverage 51 % → 80 %.
-
-### Fixed
-
-- **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
-  number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
-- **mypy `no-any-return`** in `src/mangomas/secrets/gcp.py`: replaced raw
-  `return self._client` with `cast("secretmanager.SecretManagerServiceClient",
-  self._client)` so the return type annotation is satisfied without a blanket
-  `type: ignore`.
-
-### Changed
-
-- Global test count 505 → 515; global coverage 96.95 % → 98.16 %.
-- `.gitignore` now excludes `.gemini/` workspace artifacts and stale
-  `docs/antigravity_reference.md`.
-
-### Removed
-
-- Stale `docs/antigravity_reference.md` (Antigravity workspace config that
-  should never have been committed).
-
 ## [Unreleased]
+
+<!-- next release goes above this line -->
+
+## [0.4.0] — 2026-07-20
+
+### Added — Declarative multi-agent workflow graph
+
+Compose planner → tool → reviewer graphs from config/JSON instead of imperative
+`dispatch_*` calls (spec 0005, ADR-0007). Additive and default-OFF — the
+orchestrator is unchanged and no graph is loaded unless
+`MANGOMAS_WORKFLOW__ENABLED=true`.
+
+- **`mangomas.workflow` package** (new top-level, like `eval`/`rag` — no core or
+  protocol changes). `WorkflowGraph` / `WorkflowNode` are pure, frozen pydantic
+  models validated at construction (unique ids, dangling/self edges, cycles via
+  Kahn's algorithm). `WorkflowRunner` is a thin planner-of-topologies that
+  compiles the graph's topological **levels** onto the existing primitives: a
+  single-node level → `dispatch` (with an optional `until`/`max_steps` acceptance
+  loop), a multi-node level → `dispatch_fan_out` joined by `first`/`concat`, and
+  levels thread output→input exactly as `dispatch_pipeline`. A linear graph
+  therefore reproduces `dispatch_pipeline` byte-for-byte (asserted by test).
+- **Fail-fast validation**: an unknown agent raises `AgentNotFound` *before* any
+  dispatch (no new error type); malformed definitions surface as `ConfigError`
+  (HTTP 400) via `parse_graph` / `load_graph_json` / `load_graph_file`, never a
+  raw pydantic error.
+- **`WorkflowSettings`** (`MANGOMAS_WORKFLOW__ENABLED` / `__DEFINITION`) on
+  `Settings`; `graph_from_settings` treats `definition` as inline JSON when it
+  starts with `{`, else as a `.json` file path. Documented in the deploy
+  env-var contract (`deploy/README.md`).
+- **CLI**: `mangomas workflow "<message>" [--definition <json|path>]` runs a
+  graph and prints the final output (exit 2 on config error, 1 on runtime).
+- **Observability**: a `workflow.run` span (name / node / level / join / final
+  agent attributes) plus structured `workflow_start` / `workflow_node` /
+  `workflow_fan_out` / `workflow_complete` / `workflow_unknown_agent` log events.
+- **Tests**: `tests/test_workflow_models.py`, `test_workflow_runner.py`,
+  `test_workflow_loader.py`, `test_cli_workflow.py` (46 cases); new `workflow`
+  95% per-package coverage floor in `scripts/check_coverage.py` (module at 100%).
+
+### Added — Cloud Run deploy pipeline (Milestone E)
+
+Author-only deploy artifacts (ADR-0001, spec 0004). No GCP resources are
+provisioned by this repo and no live deploy is validated by tests.
+
+- **`deploy/service.yaml`**: Cloud Run (Knative serving v1) manifest — non-root,
+  `$PORT`, liveness `/healthz` + readiness `/readyz`, secrets via
+  `secretKeyRef` (never literals).
+- **`.github/workflows/deploy.yml`**: on published release, build → Artifact
+  Registry push → `gcloud run deploy`, authenticated via Workload Identity
+  Federation (`id-token: write`; no service-account JSON keys).
+- **`deploy/README.md`**: the full `MANGOMAS_*` runtime env-var contract.
+- **`tests/deploy/`**: contract tests — manifest/workflow YAML validity, probe
+  presence, WIF usage, and README doc-sync against `Settings.model_fields`.
+
+### Added — Secrets strict mode (Milestone D)
+
+Opt-in "fail loud" secret resolution (ADR-0010, amends ADR-002; spec 0003).
+Additive and default-OFF.
+
+- **`MANGOMAS_SECRETS__STRICT`** (default `false`): when `true`, cloud secrets
+  backends raise the new **`SecretsResolutionError`** (HTTP 503) on
+  auth/permission/timeout/API failures instead of returning `None`. `NotFound`
+  still returns `None` — an absent secret is not a failure.
+- `errors.py` gains `SecretsResolutionError` (`code="secrets_resolution_error"`,
+  `.ref`/`.provider`); mapped to 503 in `api/app.py::_ERROR_STATUS`. The error
+  carries only the short id + provider — never the value, path, or version.
+- `secrets/gcp.py` honours `strict` via a single `_raise_if_strict` helper;
+  `SecretsSettings.strict` wired through `composition.py`.
+
+### Added — Telemetry exporter selection + harness routing (Milestone C)
+
+Cloud Trace export and separate harness-span routing, both additive and
+default-OFF (see ADR-0009, specs 0001/0002).
+
+- **`MANGOMAS_TELEMETRY__EXPORTER`** (`console` default | `gcp`): new
+  `TelemetrySettings` group selects the application span exporter behind the
+  existing `configure_telemetry()`. `gcp` lazily imports the Cloud Trace
+  exporter from the new `opentelemetry-exporter-gcp-trace` dependency under the
+  `gcp` extra.
+- **`MANGOMAS_HARNESS__METRICS_EXPORTER`** (`inherit` default | `console` |
+  `gcp`): routes `harness.agent_invoke` spans to a dedicated `TracerProvider`
+  when non-`inherit`; `inherit` reuses the global exporter (no change).
+- `telemetry.py` gains `_build_span_exporter` (shared selector) and
+  `build_scoped_tracer`; `_HarnessOrchestrator` uses the latter.
+- New gated test marker `gcp_trace` (`RUN_GCP_TRACE=1`).
+
+### Added — Dynamic agent loading via entry points (Milestone B)
+
+Third-party packages can register agents into `agent_registry` without editing
+`composition.py`. Additive and default-OFF (see ADR-0008, spec 0006).
+
+- **`agents/discovery.py`**: `discover_agents` / `ensure_agent_plugins`,
+  mirroring `eval/discovery.py` — entry-point group `mangomas.agents`, factory
+  `Callable[[AgentSettings | None], Agent]`, once-per-process latch, log-and-skip
+  on plugin failure. Gated by the existing `MANGOMAS_DISCOVERY_ENABLED` (no new
+  env var).
+- **`composition.py`**: `build_orchestrator` calls `ensure_agent_plugins` before
+  the registration loop, so discovered agents are dispatchable with no wiring
+  change.
+- **Collision policy**: a discovered agent whose name collides with a **built-in**
+  is skipped with a WARNING (never silently overrides `chat`/`planner`/etc.);
+  third-party↔third-party keeps last-call-wins.
+- `pyproject.toml` documents the `mangomas.agents` entry-point group.
+
+### Added — Spec-driven workflow + Claude Code ecosystem refresh
+
+Groundwork for the next-steps roadmap (see `specs/README.md`). Additive; no
+runtime behaviour change.
+
+- **`specs/` directory**: thin, non-CI-enforced spec-before-code convention with
+  `specs/TEMPLATE.md`, `specs/README.md`, and long-term stubs
+  `0005-declarative-agent-workflows`, `0006-dynamic-agent-loading`,
+  `0007-multi-tenancy`.
+- **New skills**: `mango-eval` (evaluation harness workflow) and `mango-deploy`
+  (Cloud Run + telemetry-exporter workflow) under `.github/skills/`.
+- **New sub-agent**: `telemetry-exporter-dev` under `backend`
+  (`.github/agents/backend/`), owning the OTel exporter seam.
+
+### Fixed — protected-path hook Windows bypass
+
+- **`scripts/lint_agent_frontmatter.py`**: `_check_protected_path` now normalises
+  the candidate path via the existing `_normalize_path` helper instead of
+  `str.lstrip("./")`. Backslash paths (e.g. `src\mangomas\core\agent.py`)
+  previously failed to match `PROTECTED_PATHS` and silently bypassed the hook on
+  Windows; `lstrip` also stripped individual leading characters rather than a
+  fixed prefix. The approval log now reports the marker actually matched (primary
+  vs. legacy alias). Regression tests cover the backslash-normalisation path.
+
+### Changed — protected-path hook + doc reconciliation
+
+- **`scripts/lint_agent_frontmatter.py`**: `PROTECTED_PATHS` now covers all five
+  documented core contracts — adds `core/orchestrator.py` and `core/tools.py`
+  (alongside `core/agent.py`, `errors.py`, `registry.py`). The documented
+  `BREAKING-CHANGE` marker is now the primary marker; the legacy
+  `# approved-breaking-change` form is kept as an accepted alias. **This widens
+  hook enforcement.**
+- **Truncation constants**: the eval layer now reuses
+  `config.DEFAULT_ERROR_DETAIL_TRUNCATE` for error-detail truncation instead of
+  inline `[:200]` literals (`eval/dataset.py`, `eval/scorers/llm_judge.py`), and
+  the two distinct-length truncations are named
+  (`_MALFORMED_PREVIEW_TRUNCATE`, `_ROW_ERROR_TRUNCATE`). No behaviour change.
+- **Docs**: `CLAUDE.md` protected-path list + File-Ownership table reconciled to
+  the linter; `test-engineer` agent coverage-gate text corrected 85% → 95%;
+  `NEXT_STEPS.md` sub-agent count corrected 12 → 13.
+- **`EmbeddingScorer`** module docstring corrected — the scorer is operational
+  against any `EmbeddingClient` via `ScorerContext.embeddings`; the
+  `NotImplementedError` guard applies only when no embedder is configured.
+
+### Added — Evaluation harness: gating, sinks, scorers, plugins
+
+Adopts eval-harness patterns natively (see ADR-0003). All additions are
+opt-in and default-OFF, so existing `mangomas eval` runs are unchanged.
+
+- **Quality gate** (`eval/gate.py`): `evaluate_gate(report, ...) -> GateResult`.
+  New `EvalSettings` fields `gate_enabled` / `min_mean_score` / `min_pass_rate` /
+  `fail_on_error`. The CLI exits **3** when the gate fails (after sinks emit),
+  distinct from 1 (runtime) and 2 (config).
+- **Result sinks** (`eval/sink.py`, `eval/sink_registry.py`, `eval/sinks/`):
+  `Sink` protocol + `sink_registry`. Built-ins `console` and `json_file` refactor
+  the former inline CLI output; optional `langfuse` sink behind the new
+  `mangomas[langfuse]` extra (lazy import, `LANGFUSE_*` env/ADC, mandatory
+  `flush()`). Multiple sinks compose under per-sink fault isolation. `--output-json`
+  is preserved by injecting `json_file`. New `sinks` / `sink_options` settings.
+- **Scorers** (`eval/scorers/`): `regex_match`, `contains`, and `json_keys`
+  (schema-conformance grading for structured agent output).
+- **Plugin discovery** (`eval/discovery.py`): entry-point groups
+  `mangomas.eval.scorers` / `mangomas.eval.sinks`, gated by
+  `MANGOMAS_DISCOVERY_ENABLED`; failing plugins are logged and skipped.
+- **Config version marker**: `EvalSettings.schema_version` (forward-compatible;
+  a future version warns instead of crashing).
+
+### Added — Evaluation harness: target indirection
+
+Lets a run evaluate something other than a single registered agent (see
+ADR-0004). Additive and default-OFF — `target` defaults to `agent`, so existing
+`mangomas eval` / `EvalRunner.run(dataset, agent_name=...)` behaviour is
+unchanged.
+
+- **`Target` protocol + `target_registry`** (`eval/target.py`,
+  `eval/target_registry.py`, `eval/targets/`): `async run(request, *, orch) -> str`.
+  Built-ins `agent` (default, dispatches one agent), `pipeline`, `fan_out`
+  (`join=first|concat`), and `echo` (deterministic baseline / test fixture).
+- **`EvalRunner.run`** gains an optional keyword `target`; `agent_name` stays a
+  positional and is wrapped in the default `agent` target. New additive
+  `EvalReport.target_name` field (defaults to `""` for old artifacts).
+- **CLI**: `mangomas eval --target <name>`; `--agent` folds into the `agent`
+  target. New `EvalSettings.target` / `target_options`.
+- **Plugin discovery**: new entry-point group `mangomas.eval.targets`
+  (gated by `MANGOMAS_DISCOVERY_ENABLED`).
+
+### Added — Evaluation harness: dataset source abstraction
+
+Lets a dataset come from more than a local JSONL file (see ADR-0004). Additive
+and default-OFF — `dataset_source` defaults to `jsonl`, so existing `--dataset`
+runs are byte-for-byte unchanged.
+
+- **`DatasetSource` protocol + `dataset_source_registry`**
+  (`eval/dataset_source.py`, `eval/sources/`): `async load() -> list[DatasetRow]`.
+  Built-ins `jsonl` (wraps `load_jsonl`), `inline` (rows via options, validated
+  through the shared `_parse_row`), and optional `langfuse` (fetch a named
+  dataset; `mangomas[langfuse]` extra, lazy import).
+- **CLI**: `mangomas eval --dataset-source <name>`; `--dataset` feeds the
+  `jsonl` source's `path`. New `EvalSettings.dataset_source` /
+  `dataset_source_options`.
+- **Plugin discovery**: new entry-point group `mangomas.eval.dataset_sources`.
+
+### Added — Evaluation harness: SQLite + webhook sinks, per-row Langfuse
+
+More result destinations, all additive and default-OFF (sinks default to
+`["console"]`).
+
+- **`SqliteResultsSink`** (`sqlite_results`): append the report + per-row
+  results to `eval_reports` / `eval_rows` tables at `db_path` (queryable
+  history; gate verdict stored as `gate_json`).
+- **`WebhookSink`** (`webhook`): POST the `json_file`-shaped payload to `url`
+  via httpx (core dep — no extra). Option `timeout_seconds`
+  (`MANGOMAS_EVAL__WEBHOOK...` default 10s); non-2xx fails the sink.
+- **Per-row Langfuse**: `LangfuseSink` gains a `per_row` option (default
+  `false`) — when `true` it also emits one trace + `row_score` per row in
+  addition to the aggregate trace + `mean_score`.
+
+### Added — Evaluation harness: regression / baseline gating
+
+Fail CI when a run regresses against a saved baseline (see ADR-0005). Additive
+and default-OFF — engaged only when `--baseline` / `MANGOMAS_EVAL__BASELINE_PATH`
+is set.
+
+- **`eval/baseline.py`**: `load_baseline` (reconstructs an `EvalReport` from a
+  `json_file` artifact, ignoring the `"gate"` key and tolerating a missing
+  `target_name`); pure `diff_reports(baseline, current) -> ReportDiff`
+  (per-metric deltas + regressed/new/dropped row partition).
+- **`eval/gate.py`**: `evaluate_regression_gate(diff, *, max_mean_score_drop,
+  max_pass_rate_drop, allow_new_failures) -> GateResult` (reuses `GateResult`);
+  `merge_gate_results` combines threshold + regression verdicts (AND).
+- **CLI**: `--baseline`, `--max-mean-score-drop`, `--max-pass-rate-drop`,
+  `--allow-new-failures/--no-allow-new-failures`; a missing baseline is exit 2.
+  New `EvalSettings.baseline_path` / `max_mean_score_drop` / `max_pass_rate_drop`
+  / `allow_new_failures`.
+
+### Added — Retrieval-augmented generation (RAG)
+
+The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the
+vector store are both gated `enabled=False` by default, so existing
+deployments and the test suite see no behaviour change. This completes the
+shipped-but-stubbed `EmbeddingScorer` (it raised `NotImplementedError` because
+no provider exposed `.embed()`) and gives agents retrieval context via a
+`RetrievalTool` auto-discovered through the existing `ToolAgent`.
+
+- **`EmbeddingClient` seam** (`adapters/embeddings/base.py`,
+  `@runtime_checkable`): `embed` / `embed_batch` / `aclose`. Three backends —
+  `LMStudioEmbeddingClient` (httpx POST `{base_url}/embeddings`),
+  `SentenceTransformersEmbeddingClient` (in-process, lazy SDK, off-thread
+  `encode`), and `VertexEmbeddingClient` (`text-embedding-004`, **ADC only —
+  no service-account-JSON path**). All three delegate `embed` to
+  `embed_batch([text])[0]`; `list[float]` everywhere (no numpy).
+- **`VectorStoreRepository` seam** (`adapters/vector/base.py`): primitives only
+  (`upsert` / `query` / `delete_by_source` / `aclose` + `VectorMatch`), so the
+  vector layer never imports `rag/`. `ChromaVectorStore` forces
+  `metadata={"hnsw:space": "cosine"}` and maps cosine distance → similarity as
+  `1 - distance / 2` (`_MAX_COSINE_DISTANCE`), keeping scores in `[0, 1]` — a
+  plain `1 - distance` would go negative in Chroma's default L2 space.
+- **`rag/` domain package**: `chunk_text` word-window chunker (pure fn),
+  `load_documents` (`*.md`/`*.txt`, off-thread), `IngestionPipeline`
+  (`delete_by_source` → chunk → `embed_batch` in `batch_size` slices →
+  `upsert`, with stable `{source}#{index}` ids so re-ingest leaves no orphan
+  chunks), and `Retriever` + `RetrievalTool` (satisfies the `Tool` protocol).
+- **Shared adapter error helpers** (`adapters/_http_errors.py`,
+  `adapters/_vertex_errors.py`): the httpx → typed-error translation and the
+  Vertex qualname error matrix are now single reusable modules consumed by both
+  the chat and embedding adapters, removing cross-adapter private imports and a
+  duplicated `[:200]` literal (now `DEFAULT_ERROR_DETAIL_TRUNCATE`).
+- **Config**: `EmbeddingSettings` (`MANGOMAS_EMBEDDINGS__*`), `VectorSettings`
+  (`MANGOMAS_VECTOR__*`), `RagSettings` (`MANGOMAS_RAG__*`) with `DEFAULT_*`
+  constants. `RagSettings` validates `1 <= chunk_words`,
+  `0 <= chunk_overlap < chunk_words`, `0 <= min_chunk_words` at construction so
+  a bad env value fails fast rather than deep in the pipeline.
+- **Wiring**: `AgentContext.embeddings` / `AgentContext.vector_store` fields
+  (default `None`, TYPE_CHECKING imports); `embedding_registry` +
+  `_vector_registry` in `composition.py`; `Orchestrator.aclose()` closes both
+  new components (fault-tolerant, idempotent) so the LM Studio httpx client and
+  Chroma client never leak per CLI run. When both are present, a `Retriever` +
+  `RetrievalTool` is registered into `ctx.tools` for `ToolAgent` auto-discovery.
+- **CLI**: `mangomas rag ingest <path>` and `mangomas rag query <text>` (both
+  exit `2` with a clear message when RAG is disabled).
+- **Eval**: `ScorerContext.embeddings`; `EmbeddingScorer` now resolves a real
+  provider (falls back to `context.llm` when it exposes `.embed()`), only
+  raising `NotImplementedError` when neither is available.
+- **Packaging / tests**: `embeddings-local` (sentence-transformers) and `rag`
+  (chromadb) optional extras; Vertex embeddings reuse the `vertex` extra.
+  `embeddings_local` / `rag` pytest markers + `RUN_EMBEDDINGS_LOCAL` / `RUN_RAG`
+  gates. New unit suites under `tests/adapters/` and `tests/rag/`, CLI tests in
+  `tests/test_cli_rag.py`, and a new **95 %** `rag` per-package coverage floor in
+  `scripts/check_coverage.py` (adapters caught by the existing 85 % floor).
+- **Docs**: `mango-rag` skill (`.github/skills/mango-rag/SKILL.md`); CLAUDE.md,
+  README, and C4 component/container diagrams document the embeddings/vector/rag
+  seams; NEXT_STEPS graduates the "embedding-capable provider" long-term item.
 
 ### Added — Claude Code enterprise harness
 
@@ -232,6 +401,40 @@ the project's no-hard-coded-values and protocol-first rules.
 - The optional `sub_agents:` frontmatter key is rejected on child
   files (hierarchy is two-deep only) but absent-or-empty on parent
   files is valid.
+
+## [0.3.1] — 2026-05-23
+
+### Added
+
+- **GCP swap-in implementation plan** (`docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md`):
+  Cherry-picked from PR #6 — 7-milestone roadmap covering Cloud Logging/Trace
+  exporter, Vertex AI provider hardening, Postgres parity, Cloud Run deployment,
+  and evaluation harness enhancements. Destructive code deletions in PR #6 were
+  rejected; only the plan document was merged.
+- **10 new mocked asyncpg unit tests** in `tests/test_postgres.py`:
+  `save_turn` / `list_turns` happy path + error translation, `aclose` / `close`
+  with injected pool, empty results, null timestamp handling. Postgres module
+  coverage 51 % → 80 %.
+
+### Fixed
+
+- **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
+  number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
+- **mypy `no-any-return`** in `src/mangomas/secrets/gcp.py`: replaced raw
+  `return self._client` with `cast("secretmanager.SecretManagerServiceClient",
+  self._client)` so the return type annotation is satisfied without a blanket
+  `type: ignore`.
+
+### Changed
+
+- Global test count 505 → 515; global coverage 96.95 % → 98.16 %.
+- `.gitignore` now excludes `.gemini/` workspace artifacts and stale
+  `docs/antigravity_reference.md`.
+
+### Removed
+
+- Stale `docs/antigravity_reference.md` (Antigravity workspace config that
+  should never have been committed).
 
 ## [0.3.0] — 2026-05-23
 
@@ -595,7 +798,100 @@ accepted by code or configuration.
   in `docs/architecture/c3-component.md`. `RLock` (not `Lock`) so `scoped()`
   can call `get`/`register` under the same lock without deadlocking.
 
-<!-- next release goes above this line -->
+## [0.1.0] — 2026-05-13
+
+### Fixed
+
+- `LMStudioClient`: wrap raw `httpx` exceptions into typed `LLMTimeout` /
+  `LLMUnavailable` / `LLMBadResponse` subclasses across `complete()`, `ping()`,
+  and `_stream_impl()` so API responses always carry the structured error
+  envelope and correct HTTP status mapping.
+- `SQLiteRepository`: serialise all access to the shared connection with a
+  `threading.Lock` to make concurrent writes from `dispatch_fan_out` safe.
+- `ToolCallParser`: bare `{...}` objects that fail JSON validation now return
+  `None` (treated as prose) instead of raising; only fenced ```json``` blocks
+  raise `LLMBadResponse` on malformed JSON.
+- `FileMemoryRepository`: use UTC for episodic file naming so filenames are
+  stable across timezones and cloud regions.
+- `SummarizeAgent`: include every message in each historical turn (not only
+  the first user message) so multi-message turns retain full context.
+- `AccessLogMiddleware`: wrap `call_next` in `try/except/finally` so failed
+  requests still emit an INFO access log with status `500` and latency.
+- `telemetry.configure_telemetry`: attach `TraceContextFilter` to the
+  configured handler (not the root logger) so `trace_id` / `span_id` are
+  injected into every log record from child loggers.
+- `api/app.py` lifespan: simplify shutdown checks; `ctx.repo.close()` is
+  protected by a `None` check rather than `hasattr`.
+- `Dockerfile`: create `/app/data` and `/data` and `chown` to the `mangomas`
+  user so the default SQLite path and compose volume are writable from the
+  non-root runtime user.
+
+### Added
+
+**Core platform**
+- `Agent` protocol with `handle(request, ctx)` contract; `StreamingAgent` extension protocol for token-level streaming.
+- `Orchestrator` with `dispatch` (buffered) and `stream_dispatch` (async-generator streaming) methods; lazy OpenTelemetry tracer (no module-level tracer capture).
+- `Registry[T]` — generic, reusable lookup store; drives both provider and agent wiring.
+- `AgentContext` — immutable context injected into every agent invocation (LLM client, turn repository, optional memory repository).
+
+**Agents**
+- `ChatAgent` — single-turn conversational agent with streaming fallback and warning log when the active LLM does not implement `StreamingLLMClient`.
+- `SummarizeAgent` — fetches recent conversation history and requests an LLM summary.
+- `ToolAgent` — multi-step control loop with tool-call parsing and execution.
+- `PlannerAgent` / `ReviewerAgent` — plan-then-review composition pattern.
+
+**Adapters**
+- `LMStudioClient` — OpenAI-compatible HTTP adapter targeting `/v1/chat/completions` and `/v1/models`; supports buffered completion, streaming, ping, and graceful close via `aclose()`.
+- `SQLiteRepository` — lightweight `TurnRepository` implementation backed by SQLite.
+- File-based memory provider.
+
+**API**
+- FastAPI application factory `create_app(orchestrator=None)` — lifespan manages startup/shutdown.
+- Routes: `GET /healthz`, `GET /health` (alias), `GET /readyz`, `GET /ready` (alias), `GET /agents`, `POST /agents/{name}/invoke`, `POST /agents/{name}/stream`.
+- JSON SSE envelope: `{"event": "token", "data": {"content": "..."}, "content": "..."}` with `{"event": "done"}` sentinel; top-level `content` field kept for backwards compatibility.
+- `AccessLogMiddleware` — per-request structured access log.
+- `TraceMiddleware` — OpenTelemetry span per request.
+- Structured error envelope `{"error": "...", "message": "...", "detail": "..."}` mapped from domain error classes via MRO-based `_error_status`.
+
+**CLI**
+- `mangomas chat` — interactive single-turn CLI backed by the full agent stack.
+
+**Composition**
+- `agent_registry: Registry[AgentFactory]` — seeded with `chat` and `summarize`; extensible without core changes.
+- `_llm_registry` and `_storage_registry` — provider registries for LLM and storage adapters.
+- `build_orchestrator(settings)` — assembles the full runtime from settings alone; no hardcoded class names outside `composition.py`.
+
+**Observability**
+- Structured logging throughout; `extra={}` fields on all error and warning paths.
+- OpenTelemetry tracing via `opentelemetry-sdk`; console exporter for local development.
+- `/readyz` aggregates LLM ping and DB connectivity into a `ReadinessReport`.
+
+**Infrastructure**
+- Multi-stage Dockerfile; runtime stage runs as non-root user `mangomas`, honours `$PORT`, and includes a `HEALTHCHECK` against `/healthz`.
+- `.github/workflows/ci.yml` — ruff check, ruff format --check, mypy --strict over `src tests scripts`, pytest with coverage, per-package coverage floors, codecov upload.
+- `pyproject.toml` — hatchling build, all dev tooling configured, `asyncio_mode = "auto"`, `lmstudio` and `integration` pytest markers registered.
+- `pyrightconfig.json` and minimal `typings/hypothesis` stubs for VS Code editor parity with CLI mypy.
+
+**Documentation**
+- `docs/adr/0001-cloud-targets.md` — cloud target swap matrix (ADR-001).
+
+### Changed
+
+- mypy strict gate widened from `src` only to `src tests scripts` (60 source files).
+- Provider wiring moved from ad-hoc class instantiation to registry-based composition; new providers require no changes to core or API layers.
+- `Orchestrator` tracer changed from module-level capture to lazy `trace.get_tracer(__name__)` call inside method bodies.
+
+### Security / Operations
+
+- Docker runtime uses a non-root user; no secrets or credentials in the image.
+- All configuration is env-driven via `MANGOMAS_*` prefix; no hardcoded endpoints, model ids, or credentials in source.
+- `.gitignore` excludes `.venv/`, `data/`, `memory/`, `.env`, coverage artefacts, caches, and generated files.
+- Request-scoped tracing without leaking spans across async contexts.
+
+---
+
+[Unreleased]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0

@@ -31,11 +31,24 @@ env-driven via `MANGOMAS_EVAL__*`:
 |---|---|---|
 | `MANGOMAS_EVAL__DATASET_PATH` | (unset) | JSONL dataset path |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name |
-| `MANGOMAS_EVAL__AGENT` | `chat` | Agent name |
+| `MANGOMAS_EVAL__AGENT` | `chat` | Agent name (used by the `agent` target) |
+| `MANGOMAS_EVAL__TARGET` | `agent` | Target name (`agent`/`pipeline`/`fan_out`/`echo`) |
+| `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name |
 | `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Default report directory |
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Max concurrent rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Cancel after first non-pass |
 | `MANGOMAS_EVAL__SCORER_OPTIONS` | `{}` | Free-form scorer options |
+| `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the quality gate (exit 3 on fail) |
+| `MANGOMAS_EVAL__MIN_MEAN_SCORE` | (unset) | Fail the gate if `mean_score` below this `[0,1]` |
+| `MANGOMAS_EVAL__MIN_PASS_RATE` | (unset) | Fail the gate if `passed/size` below this `[0,1]` |
+| `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Fail the gate if any row errored |
+| `MANGOMAS_EVAL__BASELINE_PATH` | (unset) | Baseline report JSON to diff against (regression gating) |
+| `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | (unset) | Max allowed `mean_score` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | (unset) | Max allowed `pass_rate` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | When `false`, fail on rows that passed in baseline but fail now |
+| `MANGOMAS_EVAL__SINKS` | `["console"]` | Ordered list of result sinks |
+| `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible config version marker |
 
 ## Dataset format
 
@@ -86,6 +99,121 @@ thresholds without callers re-implementing the rule).
 | `ExactMatchScorer` | `exact_match` | Strict string match, with optional case-folding (`case_sensitive`) and whitespace normalisation (`strip_whitespace`). Default options: case-insensitive, whitespace-collapsing. |
 | `LLMJudgeScorer` | `llm_judge` | Routes a structured prompt through the orchestrator's LLM client. Expects a one-line JSON response `{"score": <float>, "rationale": "..."}`. `passed = score >= threshold` (default `0.7`). Malformed responses raise `LLMBadResponse`. |
 | `EmbeddingScorer` | `embedding` | Cosine similarity of embeddings of `prediction` and `expected`. **Requires an LLM with `.embed()`**. |
+| `RegexMatchScorer` | `regex_match` | `expected` is a **regex** (per row); pass iff it matches `prediction`. Options: `flags` (`ignorecase`/`multiline`/`dotall`), `fullmatch`. |
+| `ContainsScorer` | `contains` | `expected` is a **substring** (per row); pass iff contained in `prediction`. Option: `case_sensitive`. |
+| `JsonKeysScorer` | `json_keys` | Parses `prediction` as a JSON object and grades by required-key coverage (great for `planner`/`reviewer` structured output). Keys come from `required_keys` option, else from `expected` parsed as a JSON object. Option: `strict` (extra keys → score 0). Malformed prediction → failing row (`score=0`), not an error. |
+
+> Note: `regex_match` and `contains` reinterpret the per-row `expected` field
+> (as a pattern / needle) rather than a gold answer — keep their datasets
+> separate from `exact_match` / `llm_judge` datasets.
+
+## Targets
+
+A **target** is what each row is dispatched against. It is resolved by name
+through `target_registry` (default `agent`), so a run can evaluate a single
+agent, a multi-agent topology, or a deterministic baseline. Select one with
+`--target` / `MANGOMAS_EVAL__TARGET`; configure it via `target_options`. See
+ADR-0004.
+
+| Target | Registry name | Behaviour |
+|---|---|---|
+| `AgentTarget` | `agent` | Dispatch one registered agent (default). The agent name comes from `--agent` / `MANGOMAS_EVAL__AGENT`, else `target_options["agent"]["agent"]`. Preserves pre-target-indirection behaviour. |
+| `PipelineTarget` | `pipeline` | Run a sequential pipeline (`orch.dispatch_pipeline`); grade the final agent's output. Option: `agents` (non-empty list). |
+| `FanOutTarget` | `fan_out` | Dispatch all agents in parallel (`orch.dispatch_fan_out`). Option: `agents` (list) and `join` (`first` → first agent's content, default; `concat` → newline-joined). |
+| `EchoTarget` | `echo` | Deterministic, no-LLM baseline. Returns a fixed `text` option if set, else the last user message. Useful for regression baselines and tests. |
+
+`EvalRunner.run(dataset, agent_name=...)` still works (the agent name is wrapped
+in the `agent` target); pass `target=` to use any other target. The report's
+`agent_name` reflects the target name, and a new `target_name` field is added.
+Third-party targets register via the `mangomas.eval.targets` entry-point group
+(gated by `MANGOMAS_DISCOVERY_ENABLED`).
+
+## Dataset sources
+
+A **dataset source** is where rows come from, resolved by name through
+`dataset_source_registry` (default `jsonl`). Select one with `--dataset-source` /
+`MANGOMAS_EVAL__DATASET_SOURCE`; configure it via `dataset_source_options`. Every
+source yields the same validated `DatasetRow` list (via the shared `_parse_row`).
+
+| Source | Registry name | Behaviour |
+|---|---|---|
+| `JsonlSource` | `jsonl` | Read a local JSONL file (default). Path precedence: `--dataset` > `dataset_source_options["jsonl"]["path"]` > `MANGOMAS_EVAL__DATASET_PATH`. Wraps the existing `load_jsonl`. |
+| `InlineSource` | `inline` | Rows supplied directly via `dataset_source_options["inline"]["rows"]` (list of raw row dicts). Validated through `_parse_row`. Handy for tests / small embedded datasets. |
+| `LangfuseDatasetSource` | `langfuse` | Fetch a named Langfuse dataset (`dataset_source_options["langfuse"]["dataset"]`). Requires the `mangomas[langfuse]` extra (lazy-imported); creds via `LANGFUSE_*` env. Items map `input`→messages and `expected_output`→`expected`. |
+
+Third-party sources register via the `mangomas.eval.dataset_sources` entry-point
+group (gated by `MANGOMAS_DISCOVERY_ENABLED`).
+
+## Quality gate (CI)
+
+The gate turns an `EvalReport` into a pass/fail verdict. It is **off by default**
+— configuring no thresholds keeps the historical exit codes (0 success,
+1 runtime error, 2 config error). When engaged it adds **exit code 3** on
+failure, raised only *after* every sink has emitted so CI artifacts always land.
+
+```bash
+# Fail CI (exit 3) if the mean score regresses below 0.8
+mangomas eval -d data.jsonl -s exact_match --min-mean-score 0.8
+```
+
+`pass_rate = passed / dataset_size` (errored rows count against it), while
+`mean_score` excludes errored rows. Use `--fail-on-error` to fail the gate when
+any row errored regardless of thresholds.
+
+### Regression gating (baseline diff)
+
+Beyond absolute thresholds, the gate can compare a run against a **baseline** — a
+previously-saved `json_file` report. `diff_reports` produces a `ReportDiff`
+(per-metric deltas + per-row regressed/new/dropped partition) and
+`evaluate_regression_gate` fails (exit 3) when `mean_score` / `pass_rate` drops
+beyond tolerance or new row failures appear. The threshold and regression
+verdicts combine (logical AND, reasons concatenated) into one verdict, so a
+single exit-3 path covers either. See ADR-0005.
+
+```bash
+# 1. Save a baseline report
+mangomas eval -d data.jsonl -s exact_match -o baseline.json
+
+# 2. Later: fail CI if mean_score drops > 0.02, or any baseline pass now fails
+mangomas eval -d data.jsonl -s exact_match \
+  --baseline baseline.json --max-mean-score-drop 0.02 --no-allow-new-failures
+```
+
+A drop is `baseline - current` (current run worse). A missing baseline file is
+exit 2 (config); a malformed one surfaces during the run as exit 1. Row
+regression keys on `row_id` stability — rows whose ids change show up as dropped
++ new rather than regressed.
+
+## Result sinks
+
+Sinks decouple producing a report from emitting it. The default is `["console"]`
+(identical to the historical inline output). Sinks compose, and each emits under
+fault isolation — one failing sink never costs the others their output.
+
+| Sink | Registry name | Behaviour |
+|---|---|---|
+| `ConsoleSink` | `console` | Human-readable stdout summary (+ a `gate=` line when gating). |
+| `JsonFileSink` | `json_file` | Pretty JSON report to `path` (+ a `gate` key when gating). |
+| `SqliteResultsSink` | `sqlite_results` | Append the report + per-row results to two SQLite tables (`eval_reports`, `eval_rows`) at `db_path`. A queryable history; the gate verdict is stored as `gate_json`. |
+| `WebhookSink` | `webhook` | POST the `json_file`-shaped payload to `url` (httpx; core dep, no extra). Option `timeout_seconds` (default 10). A non-2xx response fails the sink. |
+| `LangfuseSink` | `langfuse` | Publishes a trace + `mean_score` to Langfuse. With option `per_row: true`, also emits one trace + `row_score` per row (default `false` = aggregate only). **Optional extra**: `pip install 'mangomas[langfuse]'`; credentials from `LANGFUSE_*` env/ADC. |
+
+```bash
+# Console + JSON file
+MANGOMAS_EVAL__SINKS='["console","json_file"]' \
+  mangomas eval -d data.jsonl -s exact_match -o report.json
+```
+
+The legacy `--output-json PATH` flag is preserved: it injects (or overrides the
+path of) the `json_file` sink.
+
+## Plugin discovery (entry points)
+
+Third-party packages can register scorers/sinks without editing this repo by
+declaring entry points under the `mangomas.eval.scorers` / `mangomas.eval.sinks`
+groups, each pointing at a factory `Callable[[dict], Scorer|Sink]`. Discovery is
+additive (built-ins still register in-process) and runs only when
+`MANGOMAS_DISCOVERY_ENABLED=true`. A failing plugin is logged and skipped.
 
 ## Logging events
 
@@ -101,6 +229,11 @@ Every event carries `extra={"event": ..., ...}` for structured-log filters:
 | `eval_summary` | INFO | `dataset_size`, `passed`, `failed`, `errored`, `mean_score`, `duration_ms` |
 | `eval_llm_judge_request` | DEBUG | `scorer`, `threshold` |
 | `embedding_scorer_unavailable` | WARNING | `scorer`, `reason` |
+| `eval_gate` | INFO | `passed`, `mean_score`, `pass_rate`, `errored`, `reasons` |
+| `eval_sink_json_file` | DEBUG | `path` |
+| `eval_sink_langfuse` | INFO | `scorer` |
+| `eval_plugin_load_failed` | WARNING | `group`, `plugin`, `error` |
+| `eval_plugin_override` | INFO | `group`, `plugin` |
 
 Correlation ids propagate automatically: the runner sets a fresh
 `mangomas.correlation.correlation_id_var` per row, so every orchestrator /

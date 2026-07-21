@@ -45,14 +45,14 @@ tests/
 └── postgres/              # Requires RUN_POSTGRES=1; testcontainers
 ```
 
-## Current baseline (v0.3.1)
+## Current baseline (v0.4.0)
 
 | Metric | Value |
 |---|---|
-| Tests passed | 515 |
-| Tests skipped | 18 (integration/LM Studio/Vertex/Postgres — gated) |
-| Global coverage | 98.16% |
-| Coverage floor | 95% |
+| Tests passed | 882 |
+| Tests skipped | 22 (integration/LM Studio/Vertex/Postgres/RAG/Langfuse — gated) |
+| Global coverage | ~98% |
+| Coverage floor | 95% (global + per-package) |
 
 ## Configuration
 

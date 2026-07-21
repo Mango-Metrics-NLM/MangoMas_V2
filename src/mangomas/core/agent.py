@@ -14,8 +14,10 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # pragma: no cover
     # Imported only for type-checking; guards against circular imports at runtime.
+    from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.llm.base import LLMClient
     from mangomas.adapters.storage.base import MemoryRepository, TurnRepository
+    from mangomas.adapters.vector.base import VectorStoreRepository
     from mangomas.core.tools import ToolRegistry
 
 
@@ -59,6 +61,8 @@ class AgentContext:
     extras: dict[str, Any] = field(default_factory=dict)
     tools: ToolRegistry | None = None
     memory: MemoryRepository | None = None
+    embeddings: EmbeddingClient | None = None
+    vector_store: VectorStoreRepository | None = None
 
 
 @runtime_checkable

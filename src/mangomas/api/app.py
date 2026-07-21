@@ -7,6 +7,8 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
@@ -28,6 +30,7 @@ from mangomas.errors import (
     MangomasError,
     MaxStepsExceeded,
     PersistenceError,
+    SecretsResolutionError,
     ToolExecutionError,
     ToolNotFound,
     UnknownProvider,
@@ -36,6 +39,20 @@ from mangomas.telemetry import configure_telemetry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
+
+
+def _resolve_version() -> str:
+    """Return the installed package version so the API version can't drift.
+
+    Sourced from package metadata (``pyproject.toml``) rather than a literal, so
+    ``FastAPI(version=...)`` always matches the released version. Falls back to
+    ``"0.0.0"`` only when the package is not installed (never in a normal run).
+    """
+    try:
+        return _package_version("mangomas")
+    except PackageNotFoundError:  # pragma: no cover — package is always installed
+        return "0.0.0"
+
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +70,7 @@ _ERROR_STATUS: dict[type[MangomasError], int] = {
     LLMError: HTTPStatus.BAD_GATEWAY,
     ToolExecutionError: HTTPStatus.BAD_GATEWAY,
     MaxStepsExceeded: HTTPStatus.UNPROCESSABLE_ENTITY,
+    SecretsResolutionError: HTTPStatus.SERVICE_UNAVAILABLE,
     PersistenceError: HTTPStatus.INTERNAL_SERVER_ERROR,
     MangomasError: HTTPStatus.INTERNAL_SERVER_ERROR,
 }
@@ -75,24 +93,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_telemetry(
         log_level=settings.log_level,
         log_format=settings.log.format,
+        exporter=settings.telemetry.exporter,
     )
     app.state.orchestrator = build_orchestrator(settings)
     logger.info("Application started")
     try:
         yield
     finally:
-        ctx = app.state.orchestrator.context
-        if hasattr(ctx.llm, "aclose"):
-            await ctx.llm.aclose()
-        if ctx.repo is not None:
-            # Prefer async teardown when available (asyncpg pool); fall back
-            # to the sync ``close()`` for SQLite and other simple backends.
-            if hasattr(ctx.repo, "aclose"):
-                await ctx.repo.aclose()
-            else:
-                ctx.repo.close()
-        if ctx.memory is not None:
-            ctx.memory.close()
+        # Delegate to the orchestrator's single tested teardown path so the
+        # FastAPI lifespan, the CLI, and the demo scripts cannot diverge on
+        # close ordering or async/sync dispatch rules.
+        await app.state.orchestrator.aclose()
         logger.info("Application shut down")
 
 
@@ -103,7 +114,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     """Application factory. Pass *orchestrator* to inject a stub for tests."""
     app = FastAPI(
         title="Mango-Mas V2",
-        version="0.1.0",
+        version=_resolve_version(),
         lifespan=None if orchestrator is not None else _lifespan,
     )
 

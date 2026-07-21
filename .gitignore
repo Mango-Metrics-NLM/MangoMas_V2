@@ -30,6 +30,18 @@ data/
 *.sqlite
 *.sqlite3
 
+# RAG / vector store artefacts (default persist dir is ./data/chroma, already
+# covered by data/; these catch non-default persist dirs and local caches)
+chroma/
+*.chroma
+.chroma/
+
+# Local model / embedding caches (sentence-transformers downloads to HF cache;
+# only relevant if a contributor points the cache inside the repo)
+.cache/
+.sentence_transformers/
+.hf_cache/
+
 # IDE
 .vscode/
 .idea/

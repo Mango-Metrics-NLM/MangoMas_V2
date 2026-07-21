@@ -15,6 +15,7 @@ import json
 import logging
 from typing import Any
 
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
@@ -81,19 +82,19 @@ class LLMJudgeScorer:
         except json.JSONDecodeError as exc:
             raise LLMBadResponse(
                 f"{self.name}: judge response is not JSON",
-                detail=raw[:200],
+                detail=raw[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
         if not isinstance(payload, dict) or "score" not in payload:
             raise LLMBadResponse(
                 f"{self.name}: judge response missing 'score' field",
-                detail=str(payload)[:200],
+                detail=str(payload)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             )
         try:
             score = float(payload["score"])
         except (TypeError, ValueError) as exc:
             raise LLMBadResponse(
                 f"{self.name}: judge 'score' is not numeric",
-                detail=str(payload.get("score"))[:200],
+                detail=str(payload.get("score"))[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
         # Clamp into [0,1] so a sloppy judge response can still produce a valid
         # ScoreResult; record the unclamped value in metadata for auditability.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import cast
 
 from opentelemetry import trace
@@ -29,11 +29,85 @@ class Orchestrator:
     def __init__(self, ctx: AgentContext) -> None:
         self._ctx = ctx
         self._agents: dict[str, Agent] = {}
+        self._closed: bool = False
 
     @property
     def context(self) -> AgentContext:
         """The shared runtime context (LLM client, repository, extras)."""
         return self._ctx
+
+    async def aclose(self) -> None:
+        """Release adapter resources cleanly. Idempotent and fault-tolerant.
+
+        Dispatches on ``hasattr(component, "aclose")`` to support async-pool
+        backends (PostgresRepository, LMStudioClient) while still respecting
+        the sync ``close()`` contract used by SQLite. The same teardown rules
+        previously lived in the CLI, the FastAPI lifespan, and the demo
+        scripts — centralising them here means every entry point shares a
+        single tested code path and cannot diverge.
+
+        Fault tolerance: each component's close hook runs under its own
+        ``try/except``, so a failure in one (e.g. LLM aclose timing out)
+        does not prevent the others (repo, memory) from being closed.
+        The first encountered exception is re-raised after every other
+        hook has been attempted, preserving the original failure for the
+        caller while still releasing the remaining resources.
+
+        Idempotency: ``_closed`` is latched in a ``finally`` so a second
+        call is a safe no-op, but only after a complete teardown attempt.
+        Callers may invoke this defensively from nested ``finally`` blocks
+        without risking double-close errors.
+        """
+        if self._closed:
+            logger.debug("Orchestrator.aclose: already closed, skipping")
+            return
+
+        first_exc: BaseException | None = None
+        try:
+            for label, closer in self._close_hooks():
+                try:
+                    await closer()
+                except Exception as exc:
+                    logger.exception("Orchestrator.aclose: %s close failed", label)
+                    first_exc = first_exc or exc
+        finally:
+            self._closed = True
+            logger.debug("Orchestrator.aclose: complete")
+
+        if first_exc is not None:
+            raise first_exc
+
+    def _close_hooks(self) -> list[tuple[str, Callable[[], Awaitable[None]]]]:
+        """Build the ordered list of (label, async close hook) for present components.
+
+        Each hook dispatches on the component's own teardown contract — async
+        ``aclose`` where available, sync ``close`` otherwise — so :meth:`aclose`
+        can run them uniformly under per-hook fault isolation.
+        """
+        ctx = self._ctx
+        hooks: list[tuple[str, Callable[[], Awaitable[None]]]] = []
+        if hasattr(ctx.llm, "aclose"):
+            hooks.append(("LLM", ctx.llm.aclose))
+        if (repo := ctx.repo) is not None:
+
+            async def _close_repo() -> None:
+                if hasattr(repo, "aclose"):
+                    await repo.aclose()
+                else:
+                    repo.close()
+
+            hooks.append(("repo", _close_repo))
+        if (memory := ctx.memory) is not None:
+
+            async def _close_memory() -> None:
+                memory.close()
+
+            hooks.append(("memory", _close_memory))
+        if ctx.embeddings is not None and hasattr(ctx.embeddings, "aclose"):
+            hooks.append(("embeddings", ctx.embeddings.aclose))
+        if ctx.vector_store is not None and hasattr(ctx.vector_store, "aclose"):
+            hooks.append(("vector_store", ctx.vector_store.aclose))
+        return hooks
 
     def register(self, agent: Agent) -> None:
         """Register an agent. Last registration wins for a given name."""

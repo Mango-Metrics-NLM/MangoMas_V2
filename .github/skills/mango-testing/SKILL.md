@@ -5,7 +5,7 @@ description: >
   diagnosing failing tests, writing new tests for a module, extending fake
   adapters in fakes.py, updating constants.py, checking coverage, or adding
   integration tests. Covers the pytest-asyncio auto mode, Fake* patterns,
-  Hypothesis fuzz testing, and the 85% coverage gate.
+  Hypothesis fuzz testing, and the 95% coverage gate.
 argument-hint: "Describe the module to test, paste a failing test, or say 'run all tests'"
 ---
 
@@ -18,7 +18,7 @@ argument-hint: "Describe the module to test, paste a failing test, or say 'run a
 - Write a `tests/test_<module>.py` for a new or modified module
 - Extend `tests/fakes.py` with a new fake adapter
 - Add domain constants to `tests/constants.py`
-- Verify coverage gate (85 % minimum)
+- Verify coverage gate (95 % minimum)
 - Add or run integration tests gated by `RUN_INTEGRATION=1`
 
 ---

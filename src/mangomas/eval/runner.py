@@ -23,8 +23,13 @@ if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
     from mangomas.eval.dataset import DatasetRow
     from mangomas.eval.protocol import Scorer
+    from mangomas.eval.target import Target
 
 logger = logging.getLogger(__name__)
+
+# Truncation for the persisted per-row ``error`` field. Longer than a transient
+# log-detail truncation because this value is surfaced in the report artifact.
+_ROW_ERROR_TRUNCATE: int = 500
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,10 @@ class EvalReport:
     mean_score: float
     duration_ms: float
     rows: list[EvalRowResult] = field(default_factory=list)
+    # Name of the evaluated target. Defaults to "" so old constructions /
+    # baseline JSON artifacts (which predate target indirection) stay valid.
+    # For the default ``agent`` target this equals ``agent_name``.
+    target_name: str = ""
 
 
 class EvalRunner:
@@ -92,7 +101,7 @@ class EvalRunner:
         self,
         row: DatasetRow,
         *,
-        agent_name: str,
+        target: Target,
     ) -> EvalRowResult:
         from mangomas.eval.protocol import ScorerContext  # noqa: PLC0415
 
@@ -104,13 +113,14 @@ class EvalRunner:
                 messages=list(row.messages),
                 metadata=dict(row.metadata),
             )
-            response = await self._orch.dispatch(agent_name, request)
+            prediction = await target.run(request, orch=self._orch)
             ctx = ScorerContext(
                 llm=self._orch.context.llm,
+                embeddings=self._orch.context.embeddings,
                 row_metadata=dict(row.metadata),
                 correlation_id=correlation_id,
             )
-            result = await self._scorer.score(response.content, row.expected, context=ctx)
+            result = await self._scorer.score(prediction, row.expected, context=ctx)
         except Exception as exc:
             duration_ms = (time.monotonic() - started) * 1000
             logger.error(
@@ -130,7 +140,7 @@ class EvalRunner:
                 prediction="",
                 expected=row.expected,
                 metadata={"error_type": type(exc).__name__},
-                error=str(exc)[:500],
+                error=str(exc)[:_ROW_ERROR_TRUNCATE],
             )
         duration_ms = (time.monotonic() - started) * 1000
         logger.debug(
@@ -148,7 +158,7 @@ class EvalRunner:
             score=result.score,
             passed=result.passed,
             duration_ms=duration_ms,
-            prediction=response.content,
+            prediction=prediction,
             expected=row.expected,
             metadata=dict(result.metadata),
         )
@@ -156,13 +166,23 @@ class EvalRunner:
     async def run(
         self,
         dataset: list[DatasetRow],
-        agent_name: str,
+        agent_name: str | None = None,
+        *,
+        target: Target | None = None,
     ) -> EvalReport:
-        """Score every row in ``dataset`` against ``agent_name``."""
+        """Score every row in ``dataset`` against a target.
+
+        Backward compatible: callers that pass ``agent_name`` (the legacy
+        signature) keep working — it is wrapped in the default ``agent`` target.
+        Pass ``target`` to evaluate a pipeline / fan-out / echo baseline instead.
+        Exactly one of ``agent_name`` / ``target`` must be supplied.
+        """
+        eff_target = self._resolve_target(agent_name, target)
+        label = eff_target.name
         if not dataset:
             return EvalReport(
                 scorer=self._scorer.name,
-                agent_name=agent_name,
+                agent_name=label,
                 dataset_size=0,
                 passed=0,
                 failed=0,
@@ -170,6 +190,7 @@ class EvalRunner:
                 mean_score=0.0,
                 duration_ms=0.0,
                 rows=[],
+                target_name=label,
             )
         logger.info(
             "Eval run starting",
@@ -177,13 +198,14 @@ class EvalRunner:
                 "event": "eval_start",
                 "dataset_size": len(dataset),
                 "scorer": self._scorer.name,
-                "agent_name": agent_name,
+                "agent_name": label,
+                "target_name": label,
                 "parallelism": self._parallelism,
                 "fail_fast": self._fail_fast,
             },
         )
         started = time.monotonic()
-        rows = await self._dispatch_rows(dataset, agent_name)
+        rows = await self._dispatch_rows(dataset, eff_target)
         duration_ms = (time.monotonic() - started) * 1000
         passed = sum(1 for r in rows if r.passed and r.error is None)
         errored = sum(1 for r in rows if r.error is not None)
@@ -192,7 +214,7 @@ class EvalRunner:
         failed = len(rows) - passed - errored
         report = EvalReport(
             scorer=self._scorer.name,
-            agent_name=agent_name,
+            agent_name=label,
             dataset_size=len(dataset),
             passed=passed,
             failed=failed,
@@ -200,6 +222,7 @@ class EvalRunner:
             mean_score=mean_score,
             duration_ms=duration_ms,
             rows=rows,
+            target_name=label,
         )
         logger.info(
             "Eval run complete",
@@ -211,24 +234,44 @@ class EvalRunner:
                 "errored": errored,
                 "mean_score": mean_score,
                 "duration_ms": duration_ms,
+                "target_name": label,
             },
         )
         return report
 
+    @staticmethod
+    def _resolve_target(agent_name: str | None, target: Target | None) -> Target:
+        """Pick the effective target from exactly one of *target* or *agent_name*.
+
+        ``agent_name`` is wrapped in the default ``agent`` target so the legacy
+        ``run(dataset, agent_name=...)`` signature keeps working unchanged.
+        Supplying both is a misconfiguration (one would be silently ignored) and
+        raises ``ValueError``.
+        """
+        if agent_name is not None and target is not None:
+            raise ValueError("run accepts either agent_name or target, not both")
+        if target is not None:
+            return target
+        if agent_name is None:
+            raise ValueError("run requires either an agent_name or a target")
+        from mangomas.eval.targets.agent import AgentTarget  # noqa: PLC0415
+
+        return AgentTarget.from_name(agent_name)
+
     async def _dispatch_rows(
         self,
         dataset: list[DatasetRow],
-        agent_name: str,
+        target: Target,
     ) -> list[EvalRowResult]:
         """Execute rows respecting ``parallelism`` and ``fail_fast``."""
         if self._parallelism == 1 and not self._fail_fast:
-            return [await self._score_row(row, agent_name=agent_name) for row in dataset]
-        return await self._dispatch_concurrent(dataset, agent_name)
+            return [await self._score_row(row, target=target) for row in dataset]
+        return await self._dispatch_concurrent(dataset, target)
 
     async def _dispatch_concurrent(
         self,
         dataset: list[DatasetRow],
-        agent_name: str,
+        target: Target,
     ) -> list[EvalRowResult]:
         semaphore = asyncio.Semaphore(self._parallelism)
         stop_event = asyncio.Event()
@@ -246,7 +289,7 @@ class EvalRunner:
                     error="cancelled by fail_fast",
                 )
             async with semaphore:
-                result = await self._score_row(row, agent_name=agent_name)
+                result = await self._score_row(row, target=target)
             if self._fail_fast and not result.passed:
                 stop_event.set()
             return result

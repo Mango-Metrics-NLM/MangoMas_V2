@@ -7,13 +7,18 @@ ADR-001 — service-account JSON keys are NEVER accepted by this module.
 
 Error semantics
 ---------------
-All failure modes — NotFound, PermissionDenied, Unauthenticated,
-DeadlineExceeded, missing ADC, network errors — collapse to ``None`` so
-that ``mangomas.composition._resolve_llm_secrets`` falls back to the
-inline ``api_key`` (preserving local-dev ergonomics). Auth failures and
-unexpected errors emit ERROR-level structured logs; missing secrets emit
-a debug log only. **The secret value, the full resource path (with
-version), and credential payloads are never logged.** See ADR-002.
+By default (``strict=False``) all failure modes — NotFound,
+PermissionDenied, Unauthenticated, DeadlineExceeded, missing ADC, network
+errors — collapse to ``None`` so that
+``mangomas.composition._resolve_llm_secrets`` falls back to the inline
+``api_key`` (preserving local-dev ergonomics). When ``strict=True``
+(ADR-0010) the auth/permission/timeout/API failures raise
+:class:`~mangomas.errors.SecretsResolutionError` instead, giving operators
+an opt-in "fail loud" mode; ``NotFound`` still returns ``None`` because an
+absent secret is not a failure. Auth failures and unexpected errors emit
+ERROR-level structured logs; missing secrets emit a debug log only. **The
+secret value, the full resource path (with version), and credential
+payloads are never logged.** See ADR-002 and ADR-0010.
 
 The Google SDK is imported lazily inside method bodies so this module
 remains importable even when the optional ``gcp`` extra is absent.
@@ -24,10 +29,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from mangomas.errors import SecretsResolutionError
+
 if TYPE_CHECKING:  # pragma: no cover
     from google.cloud import secretmanager
 
 logger = logging.getLogger(__name__)
+
+_PROVIDER_NAME = "gcp"
 
 
 _PROJECTS_PREFIX = "projects/"
@@ -74,6 +83,11 @@ class GCPSecretManagerProvider:
         Per-call deadline forwarded to ``access_secret_version``.
     default_version:
         Version suffix appended to short ids (typically ``"latest"``).
+    strict:
+        When ``True``, auth/permission/timeout/API failures raise
+        :class:`~mangomas.errors.SecretsResolutionError` instead of collapsing
+        to ``None`` (ADR-0010). ``NotFound`` still returns ``None`` — an absent
+        secret is not a failure. Default ``False`` preserves ADR-002.
     client:
         Optional pre-built :class:`SecretManagerServiceClient` — the
         injection seam for tests. When ``None`` the SDK is imported and
@@ -86,12 +100,23 @@ class GCPSecretManagerProvider:
         project_id: str,
         timeout_seconds: float,
         default_version: str,
+        strict: bool = False,
         client: Any | None = None,
     ) -> None:
         self._project_id = project_id
         self._timeout_seconds = timeout_seconds
         self._default_version = default_version
+        self._strict = strict
         self._client = client
+
+    def _raise_if_strict(self, ref: str, exc: Exception) -> None:
+        """Raise in strict mode; otherwise do nothing (ADR-002 / ADR-0010).
+
+        *ref* is the short secret id (already scrubbed of project/version), so
+        the raised error never carries sensitive context.
+        """
+        if self._strict:
+            raise SecretsResolutionError(ref, _PROVIDER_NAME, detail=type(exc).__name__)
 
     def _ensure_client(self) -> secretmanager.SecretManagerServiceClient:
         # The SDK-construction branch is exercised only when the optional
@@ -140,6 +165,7 @@ class GCPSecretManagerProvider:
                     "secret_name": short,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
         except (gax.PermissionDenied, gax.Unauthenticated) as exc:
             logger.error(
@@ -150,6 +176,7 @@ class GCPSecretManagerProvider:
                     "secret_name": short,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
         except gax.DeadlineExceeded as exc:
             logger.error(
@@ -161,6 +188,7 @@ class GCPSecretManagerProvider:
                     "timeout_seconds": self._timeout_seconds,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
         except gax.GoogleAPIError as exc:
             logger.error(
@@ -171,6 +199,7 @@ class GCPSecretManagerProvider:
                     "secret_name": short,
                 },
             )
+            self._raise_if_strict(short, exc)
             return None
 
         payload: bytes = response.payload.data

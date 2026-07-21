@@ -9,11 +9,14 @@ from typing import Any, Final
 
 import httpx
 
+from mangomas.adapters._http_errors import translate_httpx_error
 from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
 from mangomas.core.agent import Message
-from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
+from mangomas.errors import LLMBadResponse
 
 logger = logging.getLogger(__name__)
+
+_LABEL = "LM Studio"
 
 # SSE sentinel that marks the end of a streaming completion. The literal is
 # defined by the OpenAI-compatible streaming spec — promoted to a module-level
@@ -27,20 +30,7 @@ class LMStudioError(LLMBadResponse):
 
 def _translate_httpx_error(exc: BaseException, *, base_url: str) -> Exception:
     """Map raw ``httpx`` exceptions to typed :class:`~mangomas.errors.LLMError` subclasses."""
-    if isinstance(exc, httpx.TimeoutException):
-        return LLMTimeout(
-            f"LM Studio request timed out at {base_url}",
-            detail=str(exc)[:200],
-        )
-    if isinstance(exc, httpx.HTTPStatusError):
-        return LMStudioError(
-            f"LM Studio returned HTTP {exc.response.status_code}",
-            detail=str(exc)[:200],
-        )
-    return LLMUnavailable(
-        f"LM Studio unreachable at {base_url}",
-        detail=f"{type(exc).__name__}: {exc}"[:200],
-    )
+    return translate_httpx_error(exc, base_url=base_url, label=_LABEL, bad_response=LMStudioError)
 
 
 class LMStudioClient:

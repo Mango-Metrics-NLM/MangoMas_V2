@@ -54,13 +54,28 @@ src/mangomas/
 │   ├── planner.py      PlannerAgent (ExecutionPlan structured output)
 │   └── reviewer.py     ReviewerAgent (ReviewResult structured output)
 ├── adapters/
-│   ├── llm/            LLMClient protocol + LMStudioAdapter
+│   ├── _http_errors.py  Shared httpx → typed-error translator (llm + embeddings)
+│   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
+│   ├── llm/            LLMClient protocol + LMStudioAdapter + VertexClient
+│   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
+│   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
 │   └── storage/        TurnRepository + MemoryRepository protocols + impls
+├── rag/            Pure-domain RAG layer (opt-in; imports only protocols + models)
+│   ├── models.py       Chunk, SearchResult (frozen dataclasses)
+│   ├── chunker.py      Word-window chunker (pure fn)
+│   ├── loader.py       file/dir → raw docs (asyncio.to_thread)
+│   ├── pipeline.py     IngestionPipeline: load→chunk→embed_batch→upsert
+│   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
+├── workflow/       Declarative multi-agent graphs (opt-in; composes dispatch_*)
+│   ├── models.py       WorkflowGraph, WorkflowNode (frozen; Kahn level compile)
+│   ├── runner.py       WorkflowRunner (levels → dispatch/fan_out/acceptance loop)
+│   └── loader.py       parse_graph / graph_from_settings (JSON | file → graph)
 ├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
-├── cli/main.py     Typer CLI (chat, history commands)
+├── cli/main.py     Typer CLI (chat, history, eval, rag ingest|query commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
 ├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
-│                   LoopSettings, MemorySettings
+│                   LoopSettings, MemorySettings, EmbeddingSettings,
+│                   VectorSettings, RagSettings
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
 └── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
@@ -101,11 +116,118 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
 | `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
 | `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
+| `MANGOMAS_SECRETS__STRICT` | `false` | Raise `SecretsResolutionError` on cloud secret failures instead of returning `None` |
 | `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap |
 | `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout |
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
 | `MANGOMAS_MEMORY__PROVIDER` | `file` | Memory backend provider |
 | `MANGOMAS_MEMORY__MEMORY_DIR` | `memory` | Memory root directory |
+| `MANGOMAS_EMBEDDINGS__ENABLED` | `false` | Construct + attach `ctx.embeddings` |
+| `MANGOMAS_EMBEDDINGS__PROVIDER` | `lmstudio` | `lmstudio` \| `sentence_transformers` \| `vertex` |
+| `MANGOMAS_EMBEDDINGS__MODEL` | `local-model` | Embedding model id (set per provider) |
+| `MANGOMAS_EMBEDDINGS__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
+| `MANGOMAS_EMBEDDINGS__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
+| `MANGOMAS_EMBEDDINGS__BATCH_SIZE` | `32` | Pipeline embed-batch size |
+| `MANGOMAS_EMBEDDINGS__TIMEOUT_SECONDS` | `60.0` | httpx timeout (LM Studio) |
+| `MANGOMAS_EMBEDDINGS__PROJECT_ID` / `__LOCATION` | _(none)_ / `us-central1` | Vertex only (ADC auth) |
+| `MANGOMAS_VECTOR__ENABLED` | `false` | Construct + attach `ctx.vector_store` |
+| `MANGOMAS_VECTOR__PROVIDER` | `chroma` | Vector backend |
+| `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent dir |
+| `MANGOMAS_VECTOR__COLLECTION` | `mangomas` | Collection name |
+| `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
+| `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
+| `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
+| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
+| `MANGOMAS_EVAL__TARGET` | `agent` | Eval target (`agent`/`pipeline`/`fan_out`/`echo`) resolved via `target_registry` |
+| `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name (e.g. `{"pipeline": {"agents": [...]}}`) |
+| `MANGOMAS_EVAL__DATASET_SOURCE` | `jsonl` | Dataset source (`jsonl`/`inline`/`langfuse`) resolved via `dataset_source_registry` |
+| `MANGOMAS_EVAL__DATASET_SOURCE_OPTIONS` | `{}` | Per-source options keyed by source name (e.g. `{"inline": {"rows": [...]}}`) |
+| `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the CI quality gate (exit 3 on fail) |
+| `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
+| `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
+| `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
+| `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
+| `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
+| `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
+| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
+| `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative multi-agent workflow graphs (spec 0005) |
+| `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Graph as inline JSON (starts `{`) or a `.json` file path |
+
+---
+
+## Retrieval-Augmented Generation (opt-in)
+
+RAG is fully opt-in and off by default (`embeddings.enabled` / `vector.enabled`
+both `false`), so existing deployments see no behaviour change. Three seams:
+
+- **`EmbeddingClient`** (`adapters/embeddings/base.py`) — `embed` / `embed_batch`
+  / `aclose`. Backends: `LMStudioEmbeddingClient` (httpx POST `{base_url}/embeddings`),
+  `SentenceTransformersEmbeddingClient` (in-process, lazy SDK), `VertexEmbeddingClient`
+  (`text-embedding-004`, **ADC only**).
+- **`VectorStoreRepository`** (`adapters/vector/base.py`) — primitives only
+  (`ids`/`embeddings`/`documents`/`metadatas` + `VectorMatch`), so the vector
+  layer never imports `rag/`. `ChromaVectorStore` forces `hnsw:space=cosine` and
+  maps distance→similarity as `1 - d/2` (keeps scores in `[0, 1]`).
+- **`rag/`** — pure domain: `chunk_text` word-window chunker, `load_documents`,
+  `IngestionPipeline` (delete_by_source → chunk → embed_batch → upsert),
+  `Retriever` + `RetrievalTool` (satisfies the `Tool` protocol; auto-discovered
+  by `ToolAgent` via `ctx.tools` when both embeddings + vector store are present).
+
+CLI: `mangomas rag ingest <path>` and `mangomas rag query <text>`. When RAG is
+disabled both exit `2` with a clear "not enabled" message. The stubbed
+`EmbeddingScorer` now resolves a real provider via `ScorerContext.embeddings`.
+
+Extras: `pip install 'mangomas[embeddings-local]'` (sentence-transformers),
+`pip install 'mangomas[rag]'` (chromadb); Vertex embeddings reuse the `vertex`
+extra. Gated tests: `RUN_EMBEDDINGS_LOCAL=1`, `RUN_RAG=1`.
+
+---
+
+## Evaluation Harness (opt-in)
+
+`mangomas.eval` runs a JSONL dataset through any agent, scores each row with a
+pluggable `Scorer`, emits an `EvalReport` to one or more `Sink`s, and optionally
+gates the run for CI. Everything is additive and default-OFF. See
+`docs/eval/harness.md` and ADR-0003.
+
+- **Scorers** (`eval/scorers/`, registered in `scorer_registry`): `exact_match`,
+  `regex_match`, `contains`, `json_keys` (schema-conformance for `planner`/
+  `reviewer` JSON output), `llm_judge`, `embedding`.
+- **Targets** (`eval/target.py` + `eval/targets/`, registered in `target_registry`):
+  `agent` (default — dispatch one agent), `pipeline`, `fan_out`, and `echo`
+  (deterministic baseline). `EvalRunner.run` takes an optional `target=`; the
+  legacy `agent_name` positional is wrapped in the `agent` target. `EvalReport`
+  gains an additive `target_name`. See ADR-0004.
+- **Dataset sources** (`eval/dataset_source.py` + `eval/sources/`, registered in
+  `dataset_source_registry`): `jsonl` (default — wraps `load_jsonl`), `inline`
+  (rows via options), and the optional `langfuse` source (extra
+  `mangomas[langfuse]`). Selected via `--dataset-source`. See ADR-0004.
+- **Gate** (`eval/gate.py`): pure `evaluate_gate(report, ...) -> GateResult`.
+  CLI adds **exit code 3** on failure (distinct from 1=runtime, 2=config), raised
+  only after sinks emit. Off unless a threshold / `gate_enabled` / `fail_on_error`
+  is set.
+- **Regression gate** (`eval/baseline.py` + `eval/gate.py`): `load_baseline` reads
+  a prior `json_file` report; pure `diff_reports` → `ReportDiff`;
+  `evaluate_regression_gate(diff, ...)` fails (exit 3) on a `mean_score`/`pass_rate`
+  drop beyond tolerance or new row failures. `--baseline` + `--max-*-drop` /
+  `--no-allow-new-failures`; threshold + regression verdicts combine via
+  `merge_gate_results`. See ADR-0005.
+- **Sinks** (`eval/sink.py` + `eval/sinks/`, registered in `sink_registry`):
+  `console`, `json_file`, `sqlite_results` (append report + rows to SQLite),
+  `webhook` (httpx POST), and the optional `langfuse` sink (extra
+  `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC; `per_row` option
+  emits one trace/score per row). Multiple sinks compose under per-sink fault
+  isolation. `--output-json` injects `json_file`.
+- **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
+  `mangomas.eval.sinks` / `mangomas.eval.targets` / `mangomas.eval.dataset_sources`;
+  discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`.
+
+CLI: `mangomas eval -d <dataset> -s <scorer> [-t <target>] [--dataset-source <src>] [-o report.json]`.
+Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
 
 ---
 
@@ -117,6 +239,7 @@ MangomasError           # base; has .code str
 ├── LLMBadResponse      # code="llm_bad_response"
 ├── LLMError            # code="llm_error"
 ├── MaxStepsExceeded    # code="max_steps_exceeded"; .steps int
+├── SecretsResolutionError  # code="secrets_resolution_error"; .ref, .provider (503; strict mode)
 ├── ToolNotFound        # code="tool_not_found"; .name, .available
 └── ToolExecutionError  # code="tool_execution_error"; .tool_name
 ```
@@ -128,7 +251,7 @@ HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
 ## Testing Conventions
 
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
-- **Coverage gate**: 95 % minimum — enforced by `pytest --cov` (515 tests, 98.16 % current coverage)
+- **Coverage gate**: 95 % minimum (global + per-package floors) — enforced by `pytest --cov` and `scripts/check_coverage.py`; the suite currently runs 800+ unit tests at ~98 % coverage
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
 - **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
@@ -147,6 +270,18 @@ To add a new agent:
 
 ---
 
+## Spec-Driven Development
+
+Non-trivial features get a **spec before code** under `specs/`. Copy
+`specs/TEMPLATE.md` to `specs/NNNN-kebab-slug.md` (next free integer, mirroring
+the `docs/adr/` numbering), fill in Problem / Requirements / Config-env /
+Protocol-contract impact / Backwards-compat / Test plan / Acceptance criteria,
+and link an ADR when a boundary changes. Specs are thin and **not**
+CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
+`docs/plans/` records multi-milestone sequencing.
+
+---
+
 ## Claude Code Sub-Agents
 
 Each parent agent in `.github/agents/<parent>.agent.md` may declare specialised
@@ -156,7 +291,7 @@ live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
 | Parent | Sub-agents |
 |--------|-----------|
 | `architect` | `protocol-auditor`, `layering-auditor`, `adr-author`, `pr-watcher` |
-| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev` |
+| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev`, `telemetry-exporter-dev` |
 | `test-engineer` | `fake-builder`, `hypothesis-fuzz`, `integration-runner` |
 | `api-dev` | `sse-streamer`, `schema-evolution` |
 
@@ -172,7 +307,9 @@ The enterprise harness layer is configured by `HarnessSettings` (env prefix
 |---|---|---|
 | `MANGOMAS_HARNESS__ENABLED` | `false` | Wrap dispatch + stream_dispatch in `harness.agent_invoke` |
 | `MANGOMAS_HARNESS__METRICS_NAMESPACE` | `mangomas.harness` | OTel tracer namespace for harness spans |
+| `MANGOMAS_HARNESS__METRICS_EXPORTER` | `inherit` | Harness span exporter (`inherit`/`console`/`gcp`); `inherit` reuses the app exporter |
 | `MANGOMAS_HARNESS__HOOK_LOG_LEVEL` | `INFO` | Level for SessionStart-hook log records |
+| `MANGOMAS_TELEMETRY__EXPORTER` | `console` | Application span exporter (`console`/`gcp` Cloud Trace) |
 
 When enabled, `composition.py::build_orchestrator` returns
 `_HarnessOrchestrator` instead of the bare `Orchestrator`. The subclass
@@ -187,9 +324,11 @@ Two scripts in `scripts/` complete the harness:
 - `lint_agent_frontmatter.py` — Pydantic-validated lint of `*.agent.md`
   / `SKILL.md` frontmatter and `sub_agents:` resolution. Also gates
   protected core paths (`src/mangomas/core/agent.py`,
-  `src/mangomas/registry.py`, `src/mangomas/core/orchestrator.py`,
-  `src/mangomas/core/tools.py`) with a required `BREAKING-CHANGE`
-  marker on staged diffs. Wired into CI as `frontmatter-lint`.
+  `src/mangomas/core/orchestrator.py`, `src/mangomas/core/tools.py`,
+  `src/mangomas/errors.py`, `src/mangomas/registry.py`) with a required
+  `BREAKING-CHANGE` marker on staged diffs (the legacy
+  `# approved-breaking-change` marker is still accepted). Wired into CI
+  as `frontmatter-lint`.
 - `harness_session_start.py` — SessionStart hook for Claude Code on
   the web. Emits a single-line JSON probe report (venv + LM Studio)
   so a fresh session knows what's available. Always returns `EXIT_OK`.
@@ -207,6 +346,9 @@ Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
 | `mango-observability` | Instrumenting with spans + structured logging |
 | `mango-config` | Adding a new tunable to `Settings` |
 | `mango-topology` | Composing pipelines, fan-outs, acceptance loops |
+| `mango-rag` | Embeddings/vector/RAG: ingestion, retrieval, RetrievalTool wiring |
+| `mango-eval` | Evaluation harness: scorers, sinks, targets, sources, gate/baseline |
+| `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
 
 ---
@@ -224,7 +366,24 @@ responses = await orchestrator.dispatch_fan_out(["reviewer", "summarize"], reque
 from mangomas.core import AcceptanceFn
 accept: AcceptanceFn = lambda r: "DONE" in r.content
 response = await orchestrator.dispatch("chat", request, acceptance_fn=accept, max_steps=5)
+
+# Declarative graph (opt-in) — the same topologies from JSON, no imperative calls.
+# A linear graph reproduces dispatch_pipeline exactly; a level with >1 node fans
+# out and joins (first|concat); a node with until/max_steps is an acceptance loop.
+from mangomas.workflow import WorkflowRunner, parse_graph
+graph = parse_graph({
+    "nodes": [
+        {"id": "plan", "agent": "planner"},
+        {"id": "act", "agent": "tool", "depends_on": ["plan"]},
+        {"id": "review", "agent": "reviewer", "depends_on": ["act"]},
+    ]
+})
+response = await WorkflowRunner(graph).run(request, orch=orchestrator)
 ```
+
+Enable via `MANGOMAS_WORKFLOW__ENABLED=true` + `MANGOMAS_WORKFLOW__DEFINITION`
+(inline JSON or a `.json` path), or run `mangomas workflow "<message>"`. Default
+OFF; see ADR-0007 / spec 0005.
 
 ---
 
@@ -232,7 +391,13 @@ response = await orchestrator.dispatch("chat", request, acceptance_fn=accept, ma
 
 | Path | Change with care |
 |------|-----------------|
-| `src/mangomas/core/agent.py` | Stable public contract — backward-compat required |
-| `src/mangomas/registry.py` | Generic, no project-specific logic |
+| `src/mangomas/core/agent.py` | Stable public contract — backward-compat required (protected path) |
+| `src/mangomas/core/orchestrator.py` | Dispatch surface — backward-compat required (protected path) |
+| `src/mangomas/core/tools.py` | Tool contracts + parser — backward-compat required (protected path) |
+| `src/mangomas/errors.py` | Typed error hierarchy + HTTP mapping (protected path) |
+| `src/mangomas/registry.py` | Generic, no project-specific logic (protected path) |
 | `src/mangomas/composition.py` | Single wiring point — all new adapters registered here |
 | `tests/fakes.py` | Shared test doubles — keep minimal and protocol-accurate |
+
+Paths marked _(protected path)_ are gated by the `lint_agent_frontmatter.py`
+hook: a staged edit requires a `BREAKING-CHANGE` marker in the diff.

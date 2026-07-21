@@ -34,6 +34,38 @@ async def test_runner_all_pass(eval_orchestrator: Orchestrator, fixtures_dir: Pa
     assert report.passed == 2
     assert report.failed == 0
     assert report.mean_score == pytest.approx(1.0)
+    # The legacy agent_name path keeps populating agent_name AND mirrors it into
+    # the new target_name field (default 'agent' target named after the agent).
+    assert report.agent_name == "chat"
+    assert report.target_name == "chat"
+
+
+async def test_runner_explicit_target(eval_orchestrator: Orchestrator, fixtures_dir: Path) -> None:
+    """An explicit Target wins over agent_name and is reflected in the report."""
+    from mangomas.eval.targets import EchoTarget  # noqa: PLC0415
+
+    rows = await load_jsonl(fixtures_dir / "all_pass.jsonl")
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer())
+    # EchoTarget(text=STUB_REPLY) makes every prediction match the expected.
+    report = await runner.run(rows, target=EchoTarget(text=STUB_REPLY))
+    assert report.passed == 2
+    assert report.agent_name == "echo"
+    assert report.target_name == "echo"
+
+
+async def test_runner_requires_agent_or_target(eval_orchestrator: Orchestrator) -> None:
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer())
+    with pytest.raises(ValueError, match="agent_name or a target"):
+        await runner.run([])
+
+
+async def test_runner_rejects_both_agent_and_target(eval_orchestrator: Orchestrator) -> None:
+    """Supplying both agent_name and target is a misconfiguration, not silently ignored."""
+    from mangomas.eval.targets import EchoTarget  # noqa: PLC0415
+
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer())
+    with pytest.raises(ValueError, match="not both"):
+        await runner.run([], agent_name="chat", target=EchoTarget(text=STUB_REPLY))
 
 
 async def test_runner_all_fail(eval_orchestrator: Orchestrator, fixtures_dir: Path) -> None:
@@ -119,3 +151,30 @@ async def test_runner_records_scorer_error(eval_orchestrator: Orchestrator) -> N
 def test_runner_rejects_invalid_parallelism(eval_orchestrator: Orchestrator) -> None:
     with pytest.raises(ValueError):
         EvalRunner(eval_orchestrator, ExactMatchScorer(), parallelism=0)
+
+
+async def test_runner_forwards_embeddings_to_scorer_context(
+    eval_orchestrator: Orchestrator,
+) -> None:
+    """The runner must hand the orchestrator's embeddings client to the scorer."""
+    from mangomas.core.agent import Message  # noqa: PLC0415
+    from mangomas.eval.dataset import DatasetRow  # noqa: PLC0415
+    from mangomas.eval.protocol import ScoreResult  # noqa: PLC0415
+    from tests.fakes import FakeEmbeddingClient  # noqa: PLC0415
+
+    embeddings = FakeEmbeddingClient()
+    eval_orchestrator.context.embeddings = embeddings
+
+    captured: dict[str, object] = {}
+
+    class _CapturingScorer:
+        name = "capture"
+
+        async def score(self, *_: object, context: object = None, **__: object) -> ScoreResult:
+            captured["embeddings"] = getattr(context, "embeddings", None)
+            return ScoreResult(score=1.0, passed=True)
+
+    runner = EvalRunner(eval_orchestrator, _CapturingScorer())
+    rows = [DatasetRow(id="x", messages=[Message(role="user", content="x")], expected="y")]
+    await runner.run(rows, agent_name="chat")
+    assert captured["embeddings"] is embeddings

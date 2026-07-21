@@ -1,0 +1,57 @@
+name: Deploy to Cloud Run
+
+# Author-only pipeline (ADR-0001): builds the image, pushes it to Artifact
+# Registry, and deploys to Cloud Run on a published release. Authentication is
+# via Workload Identity Federation — NO service-account JSON keys. The
+# workflow references GitHub Actions secrets by name only (their values live in
+# repo settings, never in the repo).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # required for Workload Identity Federation
+
+jobs:
+  deploy:
+    name: Build, push & deploy
+    runs-on: ubuntu-latest
+    env:
+      REGION: us-central1
+      SERVICE: mangomas
+      REPOSITORY: mangomas
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPOSITORY}/${SERVICE}:${{ github.event.release.tag_name || github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        run: |
+          set -euo pipefail
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --platform managed \
+            --no-allow-unauthenticated

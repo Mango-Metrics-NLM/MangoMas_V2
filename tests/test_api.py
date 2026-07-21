@@ -20,6 +20,7 @@ from mangomas.errors import (
     LLMUnavailable,
     MangomasError,
     PersistenceError,
+    SecretsResolutionError,
 )
 from tests.constants import STUB_REPLY
 from tests.fakes import FakeLLM, FakeRepository
@@ -91,6 +92,7 @@ def test_invoke_validation_error(orchestrator: Orchestrator) -> None:
         (LLMUnavailable("u"), 503),
         (LLMBadResponse("b"), 502),
         (LLMError("e"), 502),
+        (SecretsResolutionError("ref", "gcp"), 503),
         (PersistenceError("p"), 500),
         (MangomasError("m"), 500),
     ],

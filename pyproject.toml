@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mangomas"
-version = "0.3.1"
+version = "0.4.0"
 description = "Mango-Mas V2 — modular, local-first agent platform (LM Studio now, GCP later)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -53,10 +53,27 @@ vertex = [
 postgres = [
     "asyncpg>=0.29",
 ]
-# GCP Secret Manager provider — install with `pip install 'mangomas[gcp]'`.
+# In-process embeddings — install with `pip install 'mangomas[embeddings-local]'`.
+# The sentence-transformers backend lazy-imports the SDK so it stays optional.
+embeddings-local = [
+    "sentence-transformers>=2.7",
+]
+# Retrieval-augmented generation — install with `pip install 'mangomas[rag]'`.
+# The Chroma vector store lazy-imports chromadb so it stays optional.
+rag = [
+    "chromadb>=0.5",
+]
+# Langfuse eval sink — install with `pip install 'mangomas[langfuse]'`.
+# The sink lazy-imports the SDK so it stays optional. Pinned below the v3 API
+# rewrite to keep the trace/score surface stable.
+langfuse = [
+    "langfuse>=2,<3",
+]
+# GCP Secret Manager provider + Cloud Trace exporter — `pip install 'mangomas[gcp]'`.
 gcp = [
     "google-cloud-secret-manager>=2.20",
     "google-auth>=2.30",
+    "opentelemetry-exporter-gcp-trace>=1.6",
 ]
 # Convenience meta-extra: install all cloud adapters.
 cloud = [
@@ -65,6 +82,27 @@ cloud = [
 
 [project.scripts]
 mangomas = "mangomas.cli.main:app"
+
+# Plugin contract: third-party packages register eval scorers/sinks/targets by
+# adding entries to these groups, each pointing at a factory
+# `Callable[[dict], Scorer|Sink|Target]`.
+# Discovery runs only when MANGOMAS_DISCOVERY_ENABLED=true (see eval/discovery.py).
+# Built-ins register in-process, so these groups stay empty here.
+#   [project.entry-points."mangomas.eval.scorers"]
+#   my_scorer = "mypkg.module:factory"
+#   [project.entry-points."mangomas.eval.sinks"]
+#   my_sink = "mypkg.module:factory"
+#   [project.entry-points."mangomas.eval.targets"]
+#   my_target = "mypkg.module:factory"
+#   [project.entry-points."mangomas.eval.dataset_sources"]
+#   my_source = "mypkg.module:factory"
+#
+# Third-party agents register under the `mangomas.agents` group, each pointing
+# at an agent factory `Callable[[AgentSettings | None], Agent]` (see
+# agents/discovery.py). A discovered name that collides with a built-in agent is
+# skipped with a warning.
+#   [project.entry-points."mangomas.agents"]
+#   my_agent = "mypkg.module:factory"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mangomas"]
@@ -109,6 +147,12 @@ module = [
     "google.auth.*",
     "vertexai",
     "vertexai.*",
+    "chromadb",
+    "chromadb.*",
+    "langfuse",
+    "langfuse.*",
+    "sentence_transformers",
+    "sentence_transformers.*",
 ]
 ignore_missing_imports = true
 
@@ -150,6 +194,10 @@ markers = [
     "postgres: tests that require a Postgres instance (testcontainers or live)",
     "vertex: tests that require a reachable Vertex AI project (ADC + project_id)",
     "gcp_secrets: tests that require GCP Secret Manager access (ADC + project)",
+    "gcp_trace: tests that require the Cloud Trace exporter extra installed (RUN_GCP_TRACE=1)",
+    "embeddings_local: tests that require the sentence-transformers extra installed",
+    "rag: tests that require the chromadb extra installed",
+    "langfuse: tests that require the langfuse extra installed (RUN_LANGFUSE=1)",
 ]
 
 [tool.coverage.run]

@@ -14,7 +14,7 @@ from mangomas.eval.scorers.embedding import (
     EmbeddingScorer,
     _cosine_similarity,
 )
-from tests.fakes import FakeLLM
+from tests.fakes import FakeEmbeddingClient, FakeLLM
 
 
 @dataclass
@@ -51,6 +51,31 @@ async def test_embedding_scorer_raises_when_context_is_none() -> None:
     scorer = EmbeddingScorer()
     with pytest.raises(NotImplementedError):
         await scorer.score("a", "b", context=None)
+
+
+async def test_embedding_scorer_uses_dedicated_embeddings_client() -> None:
+    scorer = EmbeddingScorer(threshold=0.0)
+    result = await scorer.score(
+        "abc",
+        "abc",
+        context=ScorerContext(embeddings=FakeEmbeddingClient()),
+    )
+    assert result.score == pytest.approx(1.0)
+    assert result.passed is True
+
+
+async def test_embedding_scorer_prefers_embeddings_over_llm() -> None:
+    """When both are present, the dedicated embeddings client wins."""
+    scorer = EmbeddingScorer(threshold=0.0)
+    embedder = FakeEmbeddingClient()
+    result = await scorer.score(
+        "abc",
+        "abc",
+        context=ScorerContext(llm=FakeLLM(), embeddings=embedder),
+    )
+    assert result.passed is True
+    # The dedicated client was the one invoked (twice: prediction + expected).
+    assert embedder.calls == [["abc"], ["abc"]]
 
 
 async def test_embedding_scorer_with_real_embed_passes() -> None:

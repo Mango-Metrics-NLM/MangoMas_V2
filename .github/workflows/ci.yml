@@ -60,7 +60,7 @@ jobs:
             --cov=mangomas \
             --cov-report=term-missing \
             --cov-report=xml \
-            --cov-fail-under=90 \
+            --cov-fail-under=95 \
             -q
 
       - name: Per-package coverage floors
