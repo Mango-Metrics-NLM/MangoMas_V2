@@ -43,7 +43,10 @@ def load_workflow(source: str) -> WorkflowGraph:
     else:
         try:
             text = Path(source).read_text(encoding="utf-8")
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
+            # UnicodeDecodeError subclasses ValueError (not OSError), so a binary
+            # or non-UTF-8 file must be caught explicitly to reach the ConfigError
+            # normalization boundary rather than crashing.
             raise ConfigError(f"cannot read workflow definition {source!r}: {exc}") from exc
         data = _parse_json(text)
 

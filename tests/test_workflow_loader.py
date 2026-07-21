@@ -55,3 +55,11 @@ def test_unsupported_schema_version_raises_config_error() -> None:
     payload = {**_VALID_GRAPH, "schema_version": 999}
     with pytest.raises(ConfigError, match="unsupported workflow schema_version"):
         load_workflow(json.dumps(payload))
+
+
+def test_binary_file_raises_config_error(tmp_path: Path) -> None:
+    """A non-UTF-8 file must normalize to ConfigError, not crash (UnicodeDecodeError)."""
+    path = tmp_path / "graph.bin"
+    path.write_bytes(b"\xff\xfe\x00\x01not-utf8")
+    with pytest.raises(ConfigError, match="cannot read"):
+        load_workflow(str(path))

@@ -1,9 +1,10 @@
 """``sequence`` node — thread steps so each output feeds the next input.
 
-Threads exactly as :meth:`Orchestrator.dispatch_pipeline`: the next request is
-``AgentRequest(messages=[Message("user", resp.content)], metadata=resp.metadata)``
-with no ``max_steps`` carried forward. A sequence whose steps are all ``agent``
-nodes is therefore byte-identical to ``dispatch_pipeline([names], request)``.
+Threads like :meth:`Orchestrator.dispatch_pipeline`: the next request is
+``AgentRequest(messages=[Message("user", resp.content)], metadata=<copy of resp.metadata>)``
+with no ``max_steps`` carried forward. The metadata is copied per step for
+isolation (the values are unchanged), so a sequence whose steps are all ``agent``
+nodes produces a result identical to ``dispatch_pipeline([names], request)``.
 """
 
 from __future__ import annotations
@@ -38,9 +39,12 @@ class SequenceNodeExecutor:
             for i, step in enumerate(self._steps):
                 response = await resolve_executor(step).run(current, orch=orch)
                 if i < last:
+                    # Copy the metadata so a downstream step mutating its request
+                    # can never corrupt the prior step's response (the values are
+                    # unchanged, so result parity with dispatch_pipeline holds).
                     current = AgentRequest(
                         messages=[Message(role="user", content=response.content)],
-                        metadata=response.metadata,
+                        metadata=dict(response.metadata),
                     )
         assert response is not None  # noqa: S101 — steps is non-empty (min_length=1)
         return response
