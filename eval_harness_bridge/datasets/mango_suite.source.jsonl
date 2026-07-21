@@ -1,0 +1,5 @@
+{"id": "greet-1", "messages": [{"role": "user", "content": "Reply with exactly one word: pong"}], "expected": "pong", "metadata": {"category": "smoke"}}
+{"id": "sys-1", "messages": [{"role": "system", "content": "You answer with a single lowercase word and nothing else."}, {"role": "user", "content": "What is the opposite of up?"}], "expected": "down", "metadata": {"category": "constrained"}}
+{"id": "math-1", "messages": [{"role": "user", "content": "Reply with only the number: what is 2 + 2?"}], "expected": "4", "metadata": {"category": "arithmetic"}}
+{"id": "echo-1", "messages": [{"role": "user", "content": "Repeat back exactly this token and nothing else: MANGO"}], "expected": "MANGO", "metadata": {"category": "smoke"}}
+{"id": "bool-1", "messages": [{"role": "user", "content": "Answer with exactly 'yes' or 'no': is water wet?"}], "expected": "yes", "metadata": {"category": "constrained"}}
