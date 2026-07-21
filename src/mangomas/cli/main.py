@@ -34,11 +34,13 @@ from mangomas.eval import (
     target_registry,
 )
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
+from mangomas.workflow import execute_workflow, load_workflow
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import EvalSettings
     from mangomas.core import Orchestrator
     from mangomas.eval import DatasetSource, GateResult, Sink, Target
+    from mangomas.workflow import WorkflowGraph
 
 # Windows default console codec is cp1252; LLM replies routinely contain
 # em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
@@ -623,6 +625,92 @@ def rag_query(
         return
     for line in lines:
         typer.echo(line)
+
+
+workflow_app = typer.Typer(
+    help="Declarative multi-agent workflow-graph commands", no_args_is_help=True
+)
+app.add_typer(workflow_app, name="workflow")
+
+
+def _resolve_workflow_source(definition: str | None) -> str:
+    """Return the effective graph source, or ``Exit(2)`` when off/unset.
+
+    An explicit ``--definition`` runs even when the feature is disabled (the
+    caller opted in per-invocation); otherwise the feature must be enabled AND a
+    ``MANGOMAS_WORKFLOW__DEFINITION`` configured. Both failure paths mirror the
+    eval CLI's config exit code (2).
+    """
+    cfg = get_settings().workflow
+    if definition is None and not cfg.enabled:
+        typer.echo(
+            "Workflow graph disabled. Set MANGOMAS_WORKFLOW__ENABLED=true and "
+            "MANGOMAS_WORKFLOW__DEFINITION, or pass --definition.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    source = definition or cfg.definition
+    if not source:
+        typer.echo(
+            "No workflow definition. Set MANGOMAS_WORKFLOW__DEFINITION or pass --definition.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return source
+
+
+def _load_workflow_or_exit(source: str) -> WorkflowGraph:
+    """Parse *source* into a graph, mapping a config error to ``Exit(2)``."""
+    try:
+        return load_workflow(source)
+    except MangomasError as exc:
+        typer.echo(f"Workflow configuration error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@workflow_app.command(name="validate")
+def workflow_validate(
+    definition: str | None = typer.Option(
+        None, "--definition", "-f", help="Path or inline JSON graph (falls back to settings)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
+) -> None:
+    """Parse and validate a workflow graph without running it (no LLM I/O)."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
+    typer.echo(f"ok name={graph.name} root={graph.root.kind}")
+
+
+@workflow_app.command(name="run")
+def workflow_run(
+    message: str = typer.Argument(..., help="User message fed to the graph's root node"),
+    definition: str | None = typer.Option(
+        None, "--definition", "-f", help="Path or inline JSON graph (falls back to settings)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
+) -> None:
+    """Execute a declarative workflow graph and print the final node's response."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
+    orch = _build()
+    request = AgentRequest(messages=[Message(role="user", content=message)])
+
+    async def _run() -> str:
+        try:
+            response = await execute_workflow(graph, request, orch=orch)
+            return response.content
+        finally:
+            await _close_orchestrator(orch)
+
+    try:
+        typer.echo(asyncio.run(_run()))
+    except MangomasError as exc:
+        typer.echo(f"Workflow run failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 if __name__ == "__main__":  # pragma: no cover

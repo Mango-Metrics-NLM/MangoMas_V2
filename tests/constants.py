@@ -157,3 +157,11 @@ EVAL_SCHEMA_VERSION_CURRENT: int = 1
 FAKE_PLUGIN_SCORER_NAME: str = "fake_plugin_scorer"
 FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"
 FAKE_PLUGIN_AGENT_NAME: str = "fake_plugin_agent"
+
+# ── Declarative workflow graphs (spec 0005) ───────────────────────────────────
+WORKFLOW_NODE_KINDS: tuple[str, ...] = ("agent", "fan_out", "loop", "sequence")
+WORKFLOW_SCHEMA_VERSION_CURRENT: int = 1
+WORKFLOW_LOOP_SENTINEL: str = "DONE"
+# Exit code the CLI raises for a workflow *config* error (mirrors eval's exit 2).
+WORKFLOW_CONFIG_EXIT_CODE: int = 2
+WORKFLOW_RUNTIME_EXIT_CODE: int = 1

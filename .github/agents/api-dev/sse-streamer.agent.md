@@ -18,7 +18,7 @@ backward-compatible.
 ## Surface
 
 - `src/mangomas/api/app.py` — `POST /agents/{name}/stream` endpoint
-- `src/mangomas/core/orchestrator.py::stream_dispatch` (line 212)
+- `src/mangomas/core/orchestrator.py::stream_dispatch`
 - `src/mangomas/agents/_streaming.py` — shared buffered-fallback helper for
   agents whose LLM client doesn't satisfy `StreamingLLMClient`
 

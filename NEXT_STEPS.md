@@ -234,12 +234,16 @@ _(The first long-term capability — the evaluation harness — landed in
 v0.3.0; the embedding-capable provider that unblocked its `EmbeddingScorer`
 landed on the RAG branch above. Follow-ups below.)_
 
-### Multi-agent workflows
+### ✅ Multi-agent workflows — done
 
 Composition of multiple agents (e.g. planner → executor → reviewer) through a
-declarative graph definition consumed by `Orchestrator`.  Must remain backwards
-compatible: existing single-agent dispatch is unchanged. Design stub:
-`specs/0005-declarative-agent-workflows.md`.
+declarative graph definition consumed by `Orchestrator`. The opt-in `workflow/`
+package compiles a frozen `WorkflowGraph` (JSON: `sequence` of `agent` /
+`fan_out` / `loop`) down to the existing `dispatch_*` primitives; default-OFF, so
+single-agent dispatch is unchanged. Enable via `MANGOMAS_WORKFLOW__ENABLED` +
+`__DEFINITION`; drive with `mangomas workflow run|validate`. See ADR-0011,
+spec 0005. Follow-ups: conditional branching, composite loop/fan-out bodies, and
+entry-point discovery of third-party node kinds.
 
 ### Multi-tenancy
 

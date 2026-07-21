@@ -66,8 +66,15 @@ src/mangomas/
 │   ├── loader.py       file/dir → raw docs (asyncio.to_thread)
 │   ├── pipeline.py     IngestionPipeline: load→chunk→embed_batch→upsert
 │   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
+├── workflow/       Declarative workflow-graph layer (opt-in; spec 0005)
+│   ├── graph.py        Frozen node models + WorkflowNode union + WorkflowGraph
+│   ├── predicate.py    PredicateSpec + compile_predicate → sync AcceptanceFn
+│   ├── registry.py     node_registry + resolve_executor
+│   ├── executor.py     NodeExecutor protocol + execute_workflow driver
+│   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
+│   └── nodes/          Self-registering agent/sequence/fan_out/loop executors
 ├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
-├── cli/main.py     Typer CLI (chat, history, eval, rag ingest|query commands)
+├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
 ├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
 │                   LoopSettings, MemorySettings, EmbeddingSettings,
@@ -150,6 +157,8 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
+| `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
+| `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
 
 ---
 
@@ -285,7 +294,7 @@ live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
 | Parent | Sub-agents |
 |--------|-----------|
 | `architect` | `protocol-auditor`, `layering-auditor`, `adr-author`, `pr-watcher` |
-| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev`, `telemetry-exporter-dev` |
+| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev`, `telemetry-exporter-dev`, `workflow-graph-dev` |
 | `test-engineer` | `fake-builder`, `hypothesis-fuzz`, `integration-runner` |
 | `api-dev` | `sse-streamer`, `schema-evolution` |
 
@@ -339,7 +348,8 @@ Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
 | `mango-error` | Adding a new error type with HTTP mapping |
 | `mango-observability` | Instrumenting with spans + structured logging |
 | `mango-config` | Adding a new tunable to `Settings` |
-| `mango-topology` | Composing pipelines, fan-outs, acceptance loops |
+| `mango-topology` | Composing pipelines, fan-outs, acceptance loops (imperative) |
+| `mango-workflow` | Declarative workflow graphs: schema, nodes, predicates, `workflow` CLI |
 | `mango-rag` | Embeddings/vector/RAG: ingestion, retrieval, RetrievalTool wiring |
 | `mango-eval` | Evaluation harness: scorers, sinks, targets, sources, gate/baseline |
 | `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
@@ -360,6 +370,38 @@ responses = await orchestrator.dispatch_fan_out(["reviewer", "summarize"], reque
 from mangomas.core import AcceptanceFn
 accept: AcceptanceFn = lambda r: "DONE" in r.content
 response = await orchestrator.dispatch("chat", request, acceptance_fn=accept, max_steps=5)
+```
+
+For the **declarative** equivalent (compose these topologies from JSON), see
+"Declarative Workflow Graphs" below and the `mango-workflow` skill.
+
+---
+
+## Declarative Workflow Graphs (opt-in)
+
+Off by default (`MANGOMAS_WORKFLOW__ENABLED=false`), so existing deployments see
+no change. A `WorkflowGraph` (JSON) is a bounded tree compiled to the imperative
+dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop`, where
+every leaf is one public dispatch call (no reimplemented loop/gather). See spec
+0005 / ADR-0011 and `docs/workflow/graphs.md`.
+
+- **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;
+  metadata-transparent executors, so an all-agent `sequence` equals
+  `dispatch_pipeline`.
+- **Predicate** (`workflow/predicate.py`) — `PredicateSpec` (`contains`/`regex`)
+  compiles once to a pure sync `AcceptanceFn`.
+- **Registry** (`workflow/registry.py`) — `node_registry` (mirrors
+  `eval.target_registry`); seeded by `import mangomas.workflow`.
+- **Errors** reuse `ConfigError` (400) / `AgentNotFound` (404) /
+  `MaxStepsExceeded` (422) — `errors.py` unchanged.
+
+CLI: `mangomas workflow validate -f graph.json` and `mangomas workflow run "<msg>"
+-f graph.json`. Both exit `2` when disabled and no `--definition` is passed.
+
+```python
+from mangomas.workflow import execute_workflow, load_workflow
+graph = load_workflow("graph.json")          # or an inline JSON string
+response = await execute_workflow(graph, request, orch=orchestrator)
 ```
 
 ---
