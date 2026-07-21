@@ -53,6 +53,7 @@ def _resolve_version() -> str:
     except PackageNotFoundError:  # pragma: no cover — package is always installed
         return "0.0.0"
 
+
 logger = logging.getLogger(__name__)
 
 # ── Error → HTTP status mapping ───────────────────────────────────────────────
