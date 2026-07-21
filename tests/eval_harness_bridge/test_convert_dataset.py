@@ -73,6 +73,13 @@ def test_convert_row_rejects_non_object_metadata() -> None:
         convert_dataset.convert_row({**_VALID_ROW, "metadata": ["nope"]})
 
 
+def test_convert_row_rejects_falsy_non_none_metadata() -> None:
+    """A present-but-falsy metadata (e.g. ``[]``) must fail loud, not silently
+    become ``{}`` via a truthiness check."""
+    with pytest.raises(ValueError, match="'metadata' must be an object"):
+        convert_dataset.convert_row({**_VALID_ROW, "metadata": []})
+
+
 # --- convert_lines -------------------------------------------------------------
 
 

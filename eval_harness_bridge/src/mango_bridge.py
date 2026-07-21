@@ -127,9 +127,21 @@ def to_messages(inputs: dict[str, Any]) -> list[dict[str, str]]:
 
     messages: list[dict[str, str]] = []
     system = inputs.get("system")
-    if isinstance(system, str) and system:
-        messages.append({"role": "system", "content": system})
-    user = next((str(inputs[key]) for key in _USER_TEXT_FIELDS if key in inputs), "")
+    if system is not None:
+        if not isinstance(system, str):
+            raise ValueError(f"inputs.system must be a string; got {type(system).__name__}")
+        if system:
+            messages.append({"role": "system", "content": system})
+
+    user = ""
+    for key in _USER_TEXT_FIELDS:
+        if key in inputs:
+            val = inputs[key]
+            if val is not None:
+                if not isinstance(val, str):
+                    raise ValueError(f"inputs.{key} must be a string; got {type(val).__name__}")
+                user = val
+                break
     messages.append({"role": "user", "content": user})
     return messages
 
@@ -142,7 +154,9 @@ def predict(inputs: dict[str, Any]) -> str:
     bogus string. Emits structured logs for request outcome, latency, and agent.
     """
     agent = str(inputs.get("agent") or os.environ.get("MANGO_AGENT", _DEFAULT_AGENT))
-    metadata = inputs.get("metadata") or {}
+    metadata = inputs.get("metadata")
+    if metadata is None:
+        metadata = {}
     if not isinstance(metadata, dict):
         raise ValueError(f"inputs.metadata must be an object; got {type(metadata).__name__}")
     messages = to_messages(inputs)

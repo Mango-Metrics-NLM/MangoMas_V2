@@ -92,6 +92,36 @@ def test_to_messages_selects_present_key_even_when_empty() -> None:
     ]
 
 
+def test_to_messages_treats_none_user_field_as_absent() -> None:
+    # A present-but-None field must not become the literal string "None"; it's
+    # treated as absent and falls through to the next candidate in precedence.
+    assert mango_bridge.to_messages({"question": None, "prompt": "P"}) == [
+        {"role": "user", "content": "P"}
+    ]
+    assert mango_bridge.to_messages({"question": None}) == [{"role": "user", "content": ""}]
+
+
+def test_to_messages_rejects_non_string_user_field() -> None:
+    with pytest.raises(ValueError, match=r"inputs\.question must be a string"):
+        mango_bridge.to_messages({"question": 123})
+
+
+def test_to_messages_treats_none_system_as_absent() -> None:
+    out = mango_bridge.to_messages({"system": None, "question": "hi"})
+    assert out == [{"role": "user", "content": "hi"}]
+
+
+def test_to_messages_rejects_non_string_system() -> None:
+    with pytest.raises(ValueError, match=r"inputs\.system must be a string"):
+        mango_bridge.to_messages({"system": 123, "question": "hi"})
+
+
+def test_to_messages_treats_empty_string_system_as_no_op() -> None:
+    # An explicit empty-string system is valid (not an error) but adds no message.
+    out = mango_bridge.to_messages({"system": "", "question": "hi"})
+    assert out == [{"role": "user", "content": "hi"}]
+
+
 # --- predict -------------------------------------------------------------------
 
 
@@ -122,6 +152,13 @@ def test_predict_honours_per_row_max_steps_and_metadata() -> None:
 def test_predict_rejects_non_mapping_metadata() -> None:
     with pytest.raises(ValueError, match="metadata must be an object"):
         mango_bridge.predict({"question": "hi", "metadata": ["not", "a", "map"]})
+
+
+def test_predict_rejects_falsy_non_none_metadata() -> None:
+    """A present-but-falsy metadata (e.g. ``[]``) must fail loud, not silently
+    become ``{}`` via a truthiness check."""
+    with pytest.raises(ValueError, match="metadata must be an object"):
+        mango_bridge.predict({"question": "hi", "metadata": []})
 
 
 @respx.mock
