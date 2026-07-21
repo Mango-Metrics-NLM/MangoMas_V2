@@ -50,6 +50,13 @@ def test_to_messages_prefers_question_then_prompt_then_input() -> None:
     assert mango_bridge.to_messages({}) == [{"role": "user", "content": ""}]
 
 
+def test_to_messages_rejects_malformed_message_entry() -> None:
+    with pytest.raises(ValueError, match="malformed message"):
+        mango_bridge.to_messages({"messages": [{"role": "user"}]})
+    with pytest.raises(ValueError, match="malformed message"):
+        mango_bridge.to_messages({"messages": ["not-a-dict"]})
+
+
 @respx.mock
 def test_predict_posts_expected_body_and_returns_content() -> None:
     route = respx.post(f"{_BASE_URL}/agents/chat/invoke").mock(
@@ -75,4 +82,13 @@ def test_predict_routes_to_per_row_agent_override() -> None:
 def test_predict_raises_on_non_2xx() -> None:
     respx.post(f"{_BASE_URL}/agents/chat/invoke").mock(return_value=httpx.Response(503))
     with pytest.raises(httpx.HTTPStatusError):
+        mango_bridge.predict({"question": "hi"})
+
+
+@respx.mock
+def test_predict_raises_on_200_missing_content() -> None:
+    respx.post(f"{_BASE_URL}/agents/chat/invoke").mock(
+        return_value=httpx.Response(200, json={"agent": "chat"})
+    )
+    with pytest.raises(ValueError, match="missing 'content'"):
         mango_bridge.predict({"question": "hi"})

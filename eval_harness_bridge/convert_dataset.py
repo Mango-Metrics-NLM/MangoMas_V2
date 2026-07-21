@@ -55,7 +55,10 @@ def convert_lines(lines: Iterable[str], *, agent: str | None = None) -> list[dic
             raw = json.loads(stripped)
         except json.JSONDecodeError as exc:
             raise ValueError(f"line {index}: malformed JSON: {exc}") from exc
-        rows.append(convert_row(raw, agent=agent))
+        try:
+            rows.append(convert_row(raw, agent=agent))
+        except ValueError as exc:
+            raise ValueError(f"line {index}: {exc}") from exc
     return rows
 
 
@@ -68,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = convert_lines(args.src.read_text(encoding="utf-8").splitlines(), agent=args.agent)
     payload = "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n"
+    args.dst.parent.mkdir(parents=True, exist_ok=True)
     args.dst.write_text(payload, encoding="utf-8")
     print(f"Converted {len(rows)} rows -> {args.dst}")
     return 0
