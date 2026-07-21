@@ -100,18 +100,14 @@ class <Name>Agent:
     def __init__(self, settings: AgentSettings | None = None) -> None:
         self._settings = settings
 
-    @property
-    def spec(self) -> dict[str, str]:
-        return {"name": self.name, "description": "<one-line>"}
-
-    async def execute(
-        self, ctx: AgentContext, request: AgentRequest
+    async def handle(
+        self, request: AgentRequest, ctx: AgentContext
     ) -> AgentResponse:
         with _tracer.start_as_current_span("agent.<name>.execute") as span:
             span.set_attribute("agent.name", self.name)
             logger.info("Agent executing", extra={"agent": self.name})
             content = await ctx.llm.complete(request.messages)
-            return AgentResponse(content=content, metadata={"agent": self.name})
+            return AgentResponse(content=content, agent=self.name)
 ```
 
 Re-export from `src/mangomas/agents/__init__.py`:
