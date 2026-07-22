@@ -45,7 +45,8 @@ from opentelemetry import baggage
 from opentelemetry import context as otel_context
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.types import ASGIApp
 
 from mangomas.correlation import (
     correlation_id as _correlation_var,
@@ -60,6 +61,72 @@ _REQUEST_ID_HEADER = "X-Request-ID"
 _BAGGAGE_KEY = "mangomas.correlation_id"
 _FALLBACK_ERROR_STATUS = 500
 _INTERNAL_ERROR_BODY = "Internal Server Error"
+
+_REQUEST_TOO_LARGE_STATUS = 413
+_TOO_MANY_REQUESTS_STATUS = 503
+
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    """Reject a request whose declared ``Content-Length`` exceeds ``max_bytes``.
+
+    The check is on the ``Content-Length`` header, so an oversized body is
+    rejected with ``413`` before Starlette buffers it. Chunked requests without a
+    Content-Length are not bounded here (documented in ADR-0015).
+    """
+
+    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+        super().__init__(app)
+        self._max_bytes = max_bytes
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        content_length = request.headers.get("content-length")
+        if content_length is not None and int(content_length) > self._max_bytes:
+            return JSONResponse(
+                status_code=_REQUEST_TOO_LARGE_STATUS,
+                content={
+                    "error": "request_too_large",
+                    "message": f"request body exceeds {self._max_bytes} bytes",
+                },
+            )
+        return await call_next(request)
+
+
+class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests beyond ``max_concurrent`` in-flight with ``503``.
+
+    Uses a plain in-flight counter — race-free under asyncio's single-threaded
+    event loop, since there is no ``await`` between the check and the increment.
+    Excess requests are rejected immediately rather than queued, so a slow
+    upstream cannot build an unbounded backlog (ADR-0015).
+    """
+
+    def __init__(self, app: ASGIApp, *, max_concurrent: int) -> None:
+        super().__init__(app)
+        self._max = max_concurrent
+        self._in_flight = 0
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if self._in_flight >= self._max:
+            return JSONResponse(
+                status_code=_TOO_MANY_REQUESTS_STATUS,
+                content={
+                    "error": "too_many_requests",
+                    "message": "server at capacity; retry later",
+                },
+            )
+        self._in_flight += 1
+        try:
+            return await call_next(request)
+        finally:
+            self._in_flight -= 1
 
 
 class AccessLogMiddleware(BaseHTTPMiddleware):

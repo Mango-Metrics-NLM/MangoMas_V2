@@ -17,7 +17,11 @@ from pydantic import BaseModel, Field
 
 from mangomas.api.auth import AuthenticationError, require_auth, resolve_auth_state
 from mangomas.api.health import check_ready
-from mangomas.api.middleware import AccessLogMiddleware
+from mangomas.api.middleware import (
+    AccessLogMiddleware,
+    ConcurrencyLimitMiddleware,
+    MaxBodySizeMiddleware,
+)
 from mangomas.api.tracing import TraceMiddleware
 from mangomas.composition import build_orchestrator
 from mangomas.config import WorkflowSettings, get_settings
@@ -135,6 +139,21 @@ def _resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> s
     return source
 
 
+def _install_backpressure(app: FastAPI) -> None:
+    """Install the opt-in backpressure guards (no-op when both limits are 0).
+
+    Added after the access/trace loggers so they sit outermost — an
+    oversized/over-capacity request is rejected at the edge (ADR-0015).
+    """
+    api_cfg = get_settings().api
+    if api_cfg.max_concurrent_requests > 0:
+        app.add_middleware(
+            ConcurrencyLimitMiddleware, max_concurrent=api_cfg.max_concurrent_requests
+        )
+    if api_cfg.max_body_bytes > 0:
+        app.add_middleware(MaxBodySizeMiddleware, max_bytes=api_cfg.max_body_bytes)
+
+
 def _register_workflow_routes(app: FastAPI) -> None:
     """Register the ``/workflows/*`` routes on *app* (kept out of ``create_app``)."""
 
@@ -212,6 +231,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
 
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(TraceMiddleware)
+    _install_backpressure(app)
 
     # Opt-in CORS: installed only when an allow-list is configured, so the
     # default (empty) keeps the response headers byte-identical to before.

@@ -162,6 +162,18 @@ Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
   line with the real gate (`scripts/check_coverage.py` @ 95 % + per-package
   floors) and current counts.
 
+### Added — Request backpressure (opt-in)
+
+Bound request size and concurrency for a service fronting one slow upstream
+(spec 0011 / ADR-0015), additive and default-OFF.
+
+- **`api/middleware.py`**: `MaxBodySizeMiddleware` rejects a request whose
+  `Content-Length` exceeds the limit with `413` before Starlette buffers it;
+  `ConcurrencyLimitMiddleware` rejects requests beyond the in-flight cap with
+  `503` (reject, don't queue) via a race-free in-flight counter.
+- **Config**: `MANGOMAS_API__MAX_BODY_BYTES` / `MANGOMAS_API__MAX_CONCURRENT_REQUESTS`
+  (both default `0` = off → the middleware is not installed).
+
 ### Added — Application authentication seam (opt-in)
 
 Add a default-OFF bearer / API-key check on the data + execution routes

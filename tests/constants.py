@@ -174,3 +174,7 @@ WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
 # a non-MANGOMAS prefix keeps pydantic-settings from parsing it as a setting.
 AUTH_SECRET_REF_ENV: str = "TEST_API_TOKEN"  # noqa: S105 — env-var name, not a secret
 AUTH_TOKEN: str = "test-api-token-value"  # noqa: S105 — test fixture value, not a real secret
+
+# Request backpressure (spec 0011).
+BACKPRESSURE_MAX_BODY_BYTES: int = 10
+BACKPRESSURE_MAX_CONCURRENT: int = 1

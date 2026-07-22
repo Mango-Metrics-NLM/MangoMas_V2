@@ -121,6 +121,8 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
 | `MANGOMAS_SECRETS__STRICT` | `false` | Raise `SecretsResolutionError` on cloud secret failures instead of returning `None` |
 | `MANGOMAS_API__CORS_ALLOW_ORIGINS` | `[]` | Opt-in CORS allow-list; empty → `CORSMiddleware` not installed |
+| `MANGOMAS_API__MAX_BODY_BYTES` | `0` | Max request body bytes (`0` = off; 413 when exceeded; ADR-0015) |
+| `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; ADR-0015) |
 | `MANGOMAS_AUTH__ENABLED` | `false` | Enforce bearer / API-key auth on data + execution routes (ADR-0014) |
 | `MANGOMAS_AUTH__SECRET_REF` | _(none)_ | `SecretsProvider` ref resolving to the expected API token (required when enabled) |
 | `MANGOMAS_TELEMETRY__METRICS_ENABLED` | `false` | Install an OTel `MeterProvider` (agent invocation/error/duration; ADR-0013) |
