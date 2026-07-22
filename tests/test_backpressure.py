@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
+from typing import Any
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse, Response
 
 from mangomas.api.app import create_app
 from mangomas.api.middleware import ConcurrencyLimitMiddleware, MaxBodySizeMiddleware
@@ -43,6 +46,26 @@ def test_max_body_size_rejects_oversized() -> None:
         assert big.json()["error"] == "request_too_large"
         small = client.post("/echo", content=b"xx")
         assert small.status_code == 200
+
+
+async def test_max_body_size_ignores_non_numeric_content_length() -> None:
+    # A malformed Content-Length passes through (no 500) rather than crashing.
+    middleware = MaxBodySizeMiddleware(FastAPI(), max_bytes=BACKPRESSURE_MAX_BODY_BYTES)
+    scope: dict[str, Any] = {
+        "type": "http",
+        "method": "POST",
+        "path": "/x",
+        "headers": [(b"content-length", b"not-a-number")],
+    }
+    called = {"passed": False}
+
+    async def call_next(_request: Request) -> Response:
+        called["passed"] = True
+        return PlainTextResponse("ok")
+
+    response = await middleware.dispatch(Request(scope), call_next)
+    assert called["passed"] is True
+    assert response.status_code == 200
 
 
 # ── ConcurrencyLimitMiddleware (isolation) ────────────────────────────────────

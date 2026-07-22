@@ -56,6 +56,15 @@ def test_history_respects_limit() -> None:
         assert len(r.json()["turns"]) == 2
 
 
+def test_history_rejects_out_of_range_limit() -> None:
+    app = create_app(orchestrator=_orchestrator(FakeRepository()))
+    with TestClient(app) as client:
+        # Negative / huge limits are rejected before reaching storage (422).
+        assert client.get("/history", params={"limit": -1}).status_code == 422
+        assert client.get("/history", params={"limit": 100_000}).status_code == 422
+        assert client.get("/history", params={"limit": 5}).status_code == 200
+
+
 def test_history_empty_when_no_repo() -> None:
     app = create_app(orchestrator=_orchestrator(repo=None))
     with TestClient(app) as client:

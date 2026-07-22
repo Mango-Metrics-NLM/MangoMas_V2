@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -53,6 +53,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
 
 logger = logging.getLogger(__name__)
+
+# Bounds for the /history ``limit`` query param — a user-controlled value passed
+# to the storage backend, so it is clamped to prevent unbounded reads (SQLite /
+# Postgres treat a negative LIMIT as unlimited).
+_HISTORY_DEFAULT_LIMIT = 10
+_HISTORY_MAX_LIMIT = 1000
 
 # ── Error → HTTP status mapping ───────────────────────────────────────────────
 # Walk the exception's MRO to find the most specific entry.
@@ -282,7 +288,9 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         return {"agents": orch.list_agents()}
 
     @app.get("/history", dependencies=[Depends(require_auth)])
-    async def history(limit: int = 10) -> dict[str, list[dict[str, Any]]]:
+    async def history(
+        limit: int = Query(default=_HISTORY_DEFAULT_LIMIT, ge=1, le=_HISTORY_MAX_LIMIT),
+    ) -> dict[str, list[dict[str, Any]]]:
         """Return recent persisted turns (HTTP twin of ``mangomas history``).
 
         When no storage is configured (``ctx.repo is None``) this returns an

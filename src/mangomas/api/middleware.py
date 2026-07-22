@@ -83,8 +83,15 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        # A malformed / non-numeric Content-Length is treated as "unknown size"
+        # and passed through (not a 500) — the ASGI server rejects bad values
+        # upstream, and reject-by-guess would be worse than deferring the check.
         content_length = request.headers.get("content-length")
-        if content_length is not None and int(content_length) > self._max_bytes:
+        if (
+            content_length is not None
+            and content_length.isdigit()
+            and int(content_length) > self._max_bytes
+        ):
             return JSONResponse(
                 status_code=_REQUEST_TOO_LARGE_STATUS,
                 content={
