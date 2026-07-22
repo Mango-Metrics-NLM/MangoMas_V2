@@ -57,6 +57,10 @@ DEFAULT_EMBEDDINGS_PROVIDER: str = "lmstudio"
 DEFAULT_EMBEDDINGS_MODEL: str = "local-model"
 DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
 TEST_EMBEDDINGS_MOCK_MODEL: str = "embed-m"
+# Gated live embedding smoke tests (spec 0013): the loaded embedding model id.
+LMSTUDIO_EMBEDDING_MODEL_ENV: str = "LMSTUDIO_EMBEDDING_MODEL"
+VERTEX_EMBEDDING_MODEL_ENV: str = "VERTEX_EMBEDDING_MODEL"
+DEFAULT_VERTEX_EMBEDDING_MODEL: str = "text-embedding-004"
 
 # ── Vector store / RAG defaults ───────────────────────────────────────────────
 DEFAULT_VECTOR_PROVIDER: str = "chroma"

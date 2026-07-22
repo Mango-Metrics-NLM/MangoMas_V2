@@ -261,9 +261,12 @@ package compiles a frozen `WorkflowGraph` (JSON: `sequence` of `agent` /
 single-agent dispatch is unchanged. Enable via `MANGOMAS_WORKFLOW__ENABLED` +
 `__DEFINITION`; drive with `mangomas workflow run|validate` or over HTTP
 (`POST /workflows/run|validate`). See ADR-0011, spec 0005. ✅ **Conditional
-branching** landed as the `branch` node (spec 0012 / ADR-0016). Remaining
-follow-ups: composite loop/fan-out bodies, and entry-point discovery of
-third-party node kinds.
+branching** landed as the `branch` node (spec 0012 / ADR-0016). ✅ **Composite
+`fan_out` branches** landed (spec 0013 / ADR-0018): a `fan_out` branch may now be
+any `WorkflowStep` (nested `fan_out` / `loop` / `branch`), with an all-`agent`
+fan_out preserving byte-identical `dispatch_fan_out` parity. Remaining
+follow-ups: composite `loop` bodies (touches the protected `dispatch_loop`), and
+entry-point discovery of third-party node kinds.
 
 ### Multi-tenancy
 

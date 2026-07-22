@@ -32,15 +32,18 @@ class AgentNode(_NodeBase):
 
 
 class FanOutNode(_NodeBase):
-    """Dispatch several agents in parallel and reduce their replies.
+    """Fan several branches out in parallel and reduce their replies.
 
-    ``join`` selects the reduction: ``first`` returns the first branch's response
-    verbatim; ``concat`` newline-joins every branch's ``content`` into a fresh
-    response (``agent="fan_out"``, empty metadata).
+    Each branch is any :data:`WorkflowStep` (an ``agent`` / ``fan_out`` / ``loop``
+    / ``branch``). An **all-``agent``** fan_out delegates to
+    ``dispatch_fan_out`` verbatim (parity); a composite branch is run via its
+    executor (ADR-0018). ``join`` selects the reduction: ``first`` returns the
+    first branch's response verbatim; ``concat`` newline-joins every branch's
+    ``content`` into a fresh response (``agent="fan_out"``, empty metadata).
     """
 
     kind: Literal["fan_out"] = "fan_out"
-    branches: list[AgentNode] = Field(min_length=1)
+    branches: list[WorkflowStep] = Field(min_length=1)
     join: Literal["first", "concat"] = "first"
 
 

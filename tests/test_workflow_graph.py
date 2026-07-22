@@ -88,17 +88,31 @@ def test_sequence_step_cannot_be_a_sequence() -> None:
         )
 
 
-def test_fan_out_branch_must_be_agent() -> None:
-    """Branches are agents only in v1 (no composite fan-out)."""
+def test_fan_out_branch_may_be_composite() -> None:
+    """A fan_out branch may be any WorkflowStep (spec 0013 / ADR-0018).
+
+    A nested fan_out (or loop / branch) branch now validates; ``sequence``
+    remains a non-step, so it is still rejected.
+    """
+    graph = WorkflowGraph.model_validate(
+        {
+            "name": "x",
+            "root": {
+                "kind": "fan_out",
+                "branches": [{"kind": "fan_out", "branches": [{"kind": "agent", "agent": "c"}]}],
+            },
+        }
+    )
+    assert isinstance(graph.root, FanOutNode)
+    assert graph.root.branches[0].kind == "fan_out"
+
     with pytest.raises(ValidationError):
         WorkflowGraph.model_validate(
             {
                 "name": "x",
                 "root": {
                     "kind": "fan_out",
-                    "branches": [
-                        {"kind": "fan_out", "branches": [{"kind": "agent", "agent": "c"}]}
-                    ],
+                    "branches": [{"kind": "sequence", "steps": [{"kind": "agent", "agent": "c"}]}],
                 },
             }
         )

@@ -135,6 +135,22 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Composite fan_out branches (workflow) + gated embedding smoke tests
+
+Widen a `fan_out` branch to any `WorkflowStep` (spec 0013 / ADR-0018),
+backwards-compatible (a superset).
+
+- **`workflow/graph.py`**: `FanOutNode.branches` widens from `list[AgentNode]`
+  to `list[WorkflowStep]` (an `agent` / `fan_out` / `loop` / `branch`).
+- **`workflow/nodes/fan_out.py`**: hybrid executor — an **all-`agent`** fan_out
+  still delegates to `dispatch_fan_out` verbatim (parity: identical output +
+  spans); a composite branch runs via its executor under `asyncio.gather`. The
+  `first`/`concat` join is unchanged.
+- **Gated live embedding smoke tests** closing a coverage gap: `tests/lmstudio/
+  test_embeddings.py` (`RUN_LMSTUDIO=1`) and `tests/vertex/test_embeddings.py`
+  (`RUN_VERTEX=1`) exercise `LMStudioEmbeddingClient` / `VertexEmbeddingClient`
+  against a real backend (skipped by default).
+
 ### Added — Multi-tenancy Phase 1 (storage isolation, opt-in)
 
 Tenant-scoped conversation storage (spec 0007 / ADR-0017), additive and
