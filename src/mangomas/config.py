@@ -44,6 +44,9 @@ DEFAULT_DB_STATEMENT_TIMEOUT_SECONDS: float | None = None
 DEFAULT_API_HOST: str = "0.0.0.0"  # noqa: S104
 DEFAULT_API_PORT: int = 8000
 DEFAULT_API_READY_TIMEOUT: float = 2.0
+# Opt-in CORS allow-list. Empty (default) → CORSMiddleware is not installed, so
+# behaviour is byte-identical unless MANGOMAS_API__CORS_ALLOW_ORIGINS is set.
+DEFAULT_API_CORS_ALLOW_ORIGINS: tuple[str, ...] = ()
 
 DEFAULT_LOG_FORMAT: Literal["text", "json"] = "text"
 DEFAULT_LOG_BODY_TRUNCATE: int = 512
@@ -285,6 +288,11 @@ class APISettings(BaseModel):
     host: str = DEFAULT_API_HOST
     port: int = DEFAULT_API_PORT
     ready_timeout_seconds: float = DEFAULT_API_READY_TIMEOUT
+    # Opt-in CORS allow-list. Empty (default) → CORSMiddleware not installed, so
+    # an environment without MANGOMAS_API__CORS_ALLOW_ORIGINS sees no change.
+    cors_allow_origins: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_API_CORS_ALLOW_ORIGINS)
+    )
 
 
 class LogSettings(BaseModel):

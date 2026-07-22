@@ -10,13 +10,15 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
 from mangomas.api.health import check_ready
 from mangomas.api.middleware import AccessLogMiddleware
 from mangomas.api.tracing import TraceMiddleware
 from mangomas.composition import build_orchestrator
-from mangomas.config import get_settings
+from mangomas.config import WorkflowSettings, get_settings
 from mangomas.core import AgentRequest, AgentResponse
 from mangomas.errors import (
     AgentNotFound,
@@ -34,6 +36,7 @@ from mangomas.errors import (
     UnknownProvider,
 )
 from mangomas.telemetry import configure_telemetry
+from mangomas.workflow import execute_workflow, load_workflow
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -66,6 +69,62 @@ def _error_status(exc: MangomasError) -> int:
         if cls in _ERROR_STATUS:
             return int(_ERROR_STATUS[cls])
     return HTTPStatus.INTERNAL_SERVER_ERROR  # pragma: no cover  -- MangomasError always in MRO
+
+
+# ── Workflow request/response models ──────────────────────────────────────────
+# Api-layer only: the core AgentRequest/AgentResponse models are untouched.
+
+
+class WorkflowRunRequest(BaseModel):
+    """Body for ``POST /workflows/run``.
+
+    Carries the ``request`` (an :class:`AgentRequest` fed to the graph's root
+    node) plus an optional per-request ``definition`` (inline JSON or a path)
+    that overrides ``settings.workflow.definition``.
+    """
+
+    request: AgentRequest
+    definition: str | None = Field(default=None)
+
+
+class WorkflowValidateRequest(BaseModel):
+    """Body for ``POST /workflows/validate``.
+
+    An optional ``definition`` (inline JSON or a path); falls back to
+    ``settings.workflow.definition`` when omitted.
+    """
+
+    definition: str | None = Field(default=None)
+
+
+class WorkflowValidateResponse(BaseModel):
+    """Result of a successful ``POST /workflows/validate``."""
+
+    ok: bool = True
+    name: str
+    root_kind: str
+
+
+def _resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> str:
+    """Return the effective graph source, or raise ``ConfigError`` (HTTP 400).
+
+    Mirrors :func:`mangomas.cli.main._resolve_workflow_source`: an explicit
+    *definition* runs even when the feature is disabled (per-invocation opt-in);
+    otherwise the feature must be enabled AND a definition configured. Both
+    failure paths raise :class:`~mangomas.errors.ConfigError`, mapped to 400 by
+    :data:`_ERROR_STATUS`.
+    """
+    if definition is None and not cfg.enabled:
+        raise ConfigError(
+            "workflow disabled; set MANGOMAS_WORKFLOW__ENABLED=true and "
+            "MANGOMAS_WORKFLOW__DEFINITION, or pass 'definition'"
+        )
+    source = definition or cfg.definition
+    if not source:
+        raise ConfigError(
+            "no workflow definition; set MANGOMAS_WORKFLOW__DEFINITION or pass 'definition'"
+        )
+    return source
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -108,6 +167,18 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(TraceMiddleware)
 
+    # Opt-in CORS: installed only when an allow-list is configured, so the
+    # default (empty) keeps the response headers byte-identical to before.
+    cors_origins = get_settings().api.cors_allow_origins
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     @app.exception_handler(MangomasError)
     async def _mangomas_error_handler(_request: Request, exc: MangomasError) -> JSONResponse:
         status = _error_status(exc)
@@ -141,6 +212,20 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         orch: Orchestrator = app.state.orchestrator
         return {"agents": orch.list_agents()}
 
+    @app.get("/history")
+    async def history(limit: int = 10) -> dict[str, list[dict[str, Any]]]:
+        """Return recent persisted turns (HTTP twin of ``mangomas history``).
+
+        When no storage is configured (``ctx.repo is None``) this returns an
+        empty list rather than erroring, so the route is safe on a
+        storage-less deployment.
+        """
+        orch: Orchestrator = app.state.orchestrator
+        repo = orch.context.repo
+        if repo is None:
+            return {"turns": []}
+        return {"turns": await repo.list_turns(limit=limit)}
+
     @app.post("/agents/{name}/invoke", response_model=AgentResponse)
     async def invoke(name: str, request: AgentRequest) -> AgentResponse:
         orch: Orchestrator = app.state.orchestrator
@@ -168,6 +253,28 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @app.post("/workflows/run", response_model=AgentResponse)
+    async def workflow_run(body: WorkflowRunRequest) -> AgentResponse:
+        """Execute a declarative workflow graph and return the final response.
+
+        A per-request ``definition`` runs even when the feature is disabled;
+        otherwise ``workflow.enabled`` + a configured definition is required
+        (disabled/unset → 400 ``ConfigError``). Graph parse/validation errors
+        (400), an unknown agent (404), and ``MaxStepsExceeded`` (422) all flow
+        through the shared error handler.
+        """
+        orch: Orchestrator = app.state.orchestrator
+        source = _resolve_workflow_source(body.definition, get_settings().workflow)
+        graph = load_workflow(source)
+        return await execute_workflow(graph, body.request, orch=orch)
+
+    @app.post("/workflows/validate", response_model=WorkflowValidateResponse)
+    async def workflow_validate(body: WorkflowValidateRequest) -> WorkflowValidateResponse:
+        """Parse and validate a workflow graph without running it (no LLM I/O)."""
+        source = _resolve_workflow_source(body.definition, get_settings().workflow)
+        graph = load_workflow(source)
+        return WorkflowValidateResponse(name=graph.name, root_kind=graph.root.kind)
 
     return app
 

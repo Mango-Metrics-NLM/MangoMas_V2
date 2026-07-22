@@ -37,6 +37,8 @@ from mangomas.rag import IngestionPipeline, IngestReport, Retriever
 from mangomas.workflow import execute_workflow, load_workflow
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.adapters.embeddings.base import EmbeddingClient
+    from mangomas.adapters.vector.base import VectorStoreRepository
     from mangomas.config import EvalSettings
     from mangomas.core import Orchestrator
     from mangomas.eval import DatasetSource, GateResult, Sink, Target
@@ -545,7 +547,7 @@ rag_app = typer.Typer(help="Retrieval-augmented generation commands", no_args_is
 app.add_typer(rag_app, name="rag")
 
 
-def _require_rag(orch: Orchestrator) -> tuple[object, object]:
+def _require_rag(orch: Orchestrator) -> tuple[EmbeddingClient, VectorStoreRepository]:
     """Return ``(embeddings, vector_store)`` or exit(2) if RAG is not enabled."""
     ctx = orch.context
     if ctx.embeddings is None or ctx.vector_store is None:
@@ -574,8 +576,8 @@ def rag_ingest(
         try:
             embeddings, vector_store = _require_rag(orch)
             pipeline = IngestionPipeline(
-                embeddings=embeddings,  # type: ignore[arg-type]
-                vector_store=vector_store,  # type: ignore[arg-type]
+                embeddings=embeddings,
+                vector_store=vector_store,
                 settings=cfg.rag,
                 batch_size=cfg.embeddings.batch_size,
             )
@@ -607,8 +609,8 @@ def rag_query(
         try:
             embeddings, vector_store = _require_rag(orch)
             retriever = Retriever(
-                embeddings=embeddings,  # type: ignore[arg-type]
-                vector_store=vector_store,  # type: ignore[arg-type]
+                embeddings=embeddings,
+                vector_store=vector_store,
                 top_k=cfg.vector.top_k,
             )
             results = await retriever.search(text, top_k=top_k)

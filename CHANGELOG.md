@@ -135,6 +135,33 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — HTTP surface parity (workflows, history, CORS)
+
+Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
+
+- **Workflow HTTP endpoint** (spec 0008 / ADR-0012): `POST /workflows/run` and
+  `POST /workflows/validate` in `api/app.py`, delegating to the public
+  `load_workflow` / `execute_workflow`. Graph-source resolution mirrors the CLI
+  (`_resolve_workflow_source`): a per-request `definition` runs even when the
+  feature is disabled, otherwise `workflow.enabled` + a configured definition is
+  required. No new error type — reuses `ConfigError` (400) / `AgentNotFound`
+  (404) / `MaxStepsExceeded` (422). No protected-path edits.
+- **`GET /history`**: HTTP twin of `mangomas history`, delegating to
+  `orch.context.repo.list_turns(limit=...)`; returns an empty list when no
+  storage is configured.
+- **Opt-in CORS**: `MANGOMAS_API__CORS_ALLOW_ORIGINS` (default empty →
+  `CORSMiddleware` not installed, so behaviour is byte-identical unless set).
+
+### Fixed
+
+- **`cli/main.py`**: typed `_require_rag`'s return as
+  `tuple[EmbeddingClient, VectorStoreRepository]` under `TYPE_CHECKING`, deleting
+  the four `# type: ignore[arg-type]` comments (now redundant under
+  `warn_unused_ignores`).
+- **`CLAUDE.md`**: reconciled the stale "515 tests, 98.16 %" testing-conventions
+  line with the real gate (`scripts/check_coverage.py` @ 95 % + per-package
+  floors) and current counts.
+
 ### Added — Declarative multi-agent workflow graphs
 
 Compose agents through a declarative JSON graph consumed by the `Orchestrator`,

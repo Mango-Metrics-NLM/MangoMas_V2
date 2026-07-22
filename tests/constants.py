@@ -165,3 +165,7 @@ WORKFLOW_LOOP_SENTINEL: str = "DONE"
 # Exit code the CLI raises for a workflow *config* error (mirrors eval's exit 2).
 WORKFLOW_CONFIG_EXIT_CODE: int = 2
 WORKFLOW_RUNTIME_EXIT_CODE: int = 1
+
+# Workflow HTTP routes (spec 0008).
+WORKFLOW_RUN_ROUTE: str = "/workflows/run"
+WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
