@@ -46,6 +46,7 @@ configuration table; this is the deploy-time contract by settings group.
 | `MANGOMAS_DB__` | Turn storage (`postgres` / Cloud SQL on GCP) |
 | `MANGOMAS_API__` | HTTP surface options (incl. opt-in `CORS_ALLOW_ORIGINS`) |
 | `MANGOMAS_AUTH__` | API authentication (opt-in bearer / API-key; `SECRET_REF`) |
+| `MANGOMAS_TENANCY__` | Tenant-scoped storage (opt-in; `X-Tenant-ID` header row-filter) |
 | `MANGOMAS_LOG__` | Log format (`json` on Cloud Run) |
 | `MANGOMAS_TELEMETRY__` | Span exporter (`gcp` → Cloud Trace) |
 | `MANGOMAS_LOOP__` | Orchestrator loop caps |

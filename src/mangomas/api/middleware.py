@@ -54,6 +54,8 @@ from mangomas.correlation import (
 from mangomas.correlation import (
     resolve_correlation_id,
 )
+from mangomas.tenancy import resolve_tenant
+from mangomas.tenancy import tenant_id as _tenant_var
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +142,33 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         finally:
             self._in_flight -= 1
+
+
+class TenancyMiddleware(BaseHTTPMiddleware):
+    """Set the per-request tenant from the configured header (ADR-0017).
+
+    Installed only when tenancy is enabled. Reads + sanitises the header and sets
+    the ``tenant_id`` ContextVar (falling back to the configured default when
+    absent) so the storage repositories scope their SQL to it; resets it on the
+    way out so the tenant never leaks across requests.
+    """
+
+    def __init__(self, app: ASGIApp, *, header: str, default: str) -> None:
+        super().__init__(app)
+        self._header = header
+        self._default = default
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        tenant = resolve_tenant(request.headers.get(self._header), self._default)
+        token = _tenant_var.set(tenant)
+        try:
+            return await call_next(request)
+        finally:
+            _tenant_var.reset(token)
 
 
 class AccessLogMiddleware(BaseHTTPMiddleware):

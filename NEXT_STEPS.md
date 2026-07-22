@@ -267,9 +267,12 @@ third-party node kinds.
 
 ### Multi-tenancy
 
-Tenant-scoped conversation storage and agent configuration (per-tenant
-`AgentSettings` registry) without leaking state across tenants. Design stub:
-`specs/0007-multi-tenancy.md`.
+✅ **Phase 1 (storage isolation) — done** (spec 0007 / ADR-0017): tenant-scoped
+conversation storage via a `tenant_id` `ContextVar` + a `tenant` column /
+`WHERE tenant = ?` row filter in both SQLite and Postgres, set by
+`TenancyMiddleware` from `X-Tenant-ID`. Opt-in (`MANGOMAS_TENANCY__ENABLED`),
+no `TurnRepository` signature change. **Phase 2 (deferred):** per-tenant
+`AgentSettings` resolved at dispatch (needs a dispatch-time resolution decision).
 
 ### ✅ Agent marketplace / dynamic loading — done (Milestone B)
 

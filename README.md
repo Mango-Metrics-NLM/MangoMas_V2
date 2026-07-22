@@ -127,6 +127,7 @@ surface is byte-identical:
 | **CORS** | `MANGOMAS_API__CORS_ALLOW_ORIGINS='["https://app"]'` | `CORSMiddleware`; methods/headers/credentials are env-driven (credentials default off) |
 | **Backpressure** (ADR-0015) | `MANGOMAS_API__MAX_BODY_BYTES` / `__MAX_CONCURRENT_REQUESTS` | `413` on oversized body; `503` (reject-don't-queue) at capacity |
 | **Metrics** (ADR-0013) | `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` | OTel `MeterProvider` — agent invocation / error / duration instruments |
+| **Multi-tenancy** (ADR-0017) | `MANGOMAS_TENANCY__ENABLED=true` | `X-Tenant-ID` → tenant-scoped conversation storage (row filter in SQLite/Postgres) |
 
 ### SSE streaming envelope
 

@@ -21,6 +21,7 @@ from mangomas.api.middleware import (
     AccessLogMiddleware,
     ConcurrencyLimitMiddleware,
     MaxBodySizeMiddleware,
+    TenancyMiddleware,
 )
 from mangomas.api.tracing import TraceMiddleware
 from mangomas.composition import build_orchestrator
@@ -134,6 +135,17 @@ def _install_backpressure(app: FastAPI, api_cfg: APISettings) -> None:
         app.add_middleware(MaxBodySizeMiddleware, max_bytes=api_cfg.max_body_bytes)
 
 
+def _install_tenancy(app: FastAPI) -> None:
+    """Install the opt-in `TenancyMiddleware` (no-op when tenancy is disabled).
+
+    Sets the per-request tenant `ContextVar` the storage repos read; default-OFF
+    ⇒ not installed ⇒ every row uses the implicit ``"default"`` tenant (ADR-0017).
+    """
+    cfg = get_settings().tenancy
+    if cfg.enabled:
+        app.add_middleware(TenancyMiddleware, header=cfg.header, default=cfg.default)
+
+
 def _register_workflow_routes(app: FastAPI) -> None:
     """Register the ``/workflows/*`` routes on *app* (kept out of ``create_app``)."""
 
@@ -229,6 +241,8 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             allow_methods=api_cfg.cors_allow_methods,
             allow_headers=api_cfg.cors_allow_headers,
         )
+
+    _install_tenancy(app)
 
     # Resolve the expected API token once (default-OFF → a no-op pass-through).
     app.state.auth = resolve_auth_state(get_settings())

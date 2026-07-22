@@ -135,6 +135,27 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Multi-tenancy Phase 1 (storage isolation, opt-in)
+
+Tenant-scoped conversation storage (spec 0007 / ADR-0017), additive and
+default-OFF. Phase 2 (per-tenant `AgentSettings` at dispatch) is deferred.
+
+- **`src/mangomas/tenancy.py`**: a `tenant_id` `ContextVar` + `set/get/resolve/
+  sanitize_tenant` helpers, cloning the `correlation.py` pattern; `DEFAULT_TENANT`
+  is the single source of the implicit `"default"` tenant.
+- **`api/middleware.py`**: `TenancyMiddleware` sets the ContextVar from the
+  configured header (installed only when `tenancy.enabled`).
+- **Storage**: `adapters/storage/{sqlite,postgres}.py` add a
+  `tenant TEXT NOT NULL DEFAULT 'default'` column with an idempotent migration
+  for pre-tenancy databases, stamp `save_turn`, and filter `list_turns` by
+  `WHERE tenant = ?`. The tenant is read from the ContextVar **inside** each
+  method — so the `TurnRepository` Protocol signature is unchanged. Disabled ⇒
+  all rows use `"default"` ⇒ byte-identical.
+- **Config**: `MANGOMAS_TENANCY__ENABLED` (default `false`) / `__HEADER` / `__DEFAULT`.
+- **Tests**: SQLite isolation + disabled-path parity + migration + a
+  `TenancyMiddleware` end-to-end `/history` isolation test; gated Postgres
+  isolation under `RUN_POSTGRES=1`. New `tenancy` coverage floor at 100%.
+
 ### Changed — Wave 1–3 hardening pass
 
 Gap-analysis + hardening of the HTTP-surface work (no behaviour change by

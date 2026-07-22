@@ -16,6 +16,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from mangomas.tenancy import DEFAULT_TENANT
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,6 +100,11 @@ DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
 # no-op pass-through, so the HTTP surface is byte-identical.
 DEFAULT_AUTH_ENABLED: bool = False
 DEFAULT_AUTH_SECRET_REF: str | None = None
+
+# Multi-tenancy (ADR-0017). Default OFF → a single implicit DEFAULT_TENANT, so
+# storage behaviour is byte-identical. DEFAULT_TENANT is owned by tenancy.py.
+DEFAULT_TENANCY_ENABLED: bool = False
+DEFAULT_TENANCY_HEADER: str = "X-Tenant-ID"
 
 DEFAULT_SECRETS_PROVIDER: str = "env"
 # GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
@@ -351,6 +358,20 @@ class AuthSettings(BaseModel):
         return self
 
 
+class TenancySettings(BaseModel):
+    """Tenant scoping for conversation storage (ADR-0017).
+
+    Gated by ``enabled`` (default ``False``): when off, no middleware is installed
+    and the storage repositories use the implicit ``default`` tenant, so behaviour
+    is byte-identical. When on, the ``header`` value is sanitised into a
+    ``ContextVar`` per request; ``default`` is used when the header is absent.
+    """
+
+    enabled: bool = DEFAULT_TENANCY_ENABLED
+    header: str = DEFAULT_TENANCY_HEADER
+    default: str = DEFAULT_TENANT
+
+
 class LogSettings(BaseModel):
     """Logging format and filtering configuration."""
 
@@ -544,6 +565,7 @@ class Settings(BaseSettings):
     db: DBSettings = Field(default_factory=DBSettings)
     api: APISettings = Field(default_factory=APISettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    tenancy: TenancySettings = Field(default_factory=TenancySettings)
     log: LogSettings = Field(default_factory=LogSettings)
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 

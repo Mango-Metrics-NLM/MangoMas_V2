@@ -178,3 +178,8 @@ AUTH_TOKEN: str = "test-api-token-value"  # noqa: S105 — test fixture value, n
 # Request backpressure (spec 0011).
 BACKPRESSURE_MAX_BODY_BYTES: int = 10
 BACKPRESSURE_MAX_CONCURRENT: int = 1
+
+# Multi-tenancy (spec 0007 / ADR-0017).
+TENANT_A: str = "tenant-a"
+TENANT_B: str = "tenant-b"
+TENANT_HEADER: str = "X-Tenant-ID"
