@@ -44,7 +44,9 @@ class BranchNodeExecutor:
             probe = AgentResponse(content=_input_content(request), agent="branch")
             for index, (predicate, then) in enumerate(self._cases):
                 if predicate(probe):
-                    span.set_attribute("branch.selected", index)
+                    # Stringify so the attribute is uniformly typed with the
+                    # "default" path below (OTel wants one value type per key).
+                    span.set_attribute("branch.selected", str(index))
                     return await resolve_executor(then).run(request, orch=orch)
             if self._default is not None:
                 span.set_attribute("branch.selected", "default")

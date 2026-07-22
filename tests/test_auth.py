@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from mangomas.api.app import create_app
 from mangomas.api.auth import resolve_auth_state
@@ -17,13 +17,6 @@ from tests.constants import AUTH_SECRET_REF_ENV, AUTH_TOKEN
 
 _MSG = {"messages": [{"role": "user", "content": "hi"}]}
 _AGENT_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "chat"}})
-
-
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 @pytest.fixture
@@ -112,6 +105,12 @@ def test_fail_closed_when_secret_unresolved(
 
 
 # ── resolve_auth_state unit branches ──────────────────────────────────────────
+
+
+def test_auth_settings_enabled_requires_secret_ref() -> None:
+    """enabled=True without a secret_ref is rejected — auth is never keyless."""
+    with pytest.raises(ValidationError, match="secret_ref"):
+        AuthSettings(enabled=True)
 
 
 def test_resolve_auth_state_disabled() -> None:

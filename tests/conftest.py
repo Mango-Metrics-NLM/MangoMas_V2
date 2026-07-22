@@ -98,6 +98,18 @@ def settings() -> Iterator[Settings]:
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _clear_settings_cache() -> Iterator[None]:
+    """Read env-driven settings fresh per test so a cached value never leaks.
+
+    Shared by every env-toggling API test (CORS / auth / backpressure /
+    workflow-endpoint), which previously each redefined this fixture.
+    """
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 # ── Storage fixtures ──────────────────────────────────────────────────────────
 
 

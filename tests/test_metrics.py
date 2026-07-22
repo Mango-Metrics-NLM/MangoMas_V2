@@ -21,7 +21,9 @@ from opentelemetry.sdk.metrics.export import (
 
 from mangomas import metrics as app_metrics
 from mangomas import telemetry
+from mangomas.api import app as app_module
 from mangomas.api.app import create_app
+from mangomas.config import get_settings
 from mangomas.core import Orchestrator
 from mangomas.errors import ConfigError
 
@@ -125,6 +127,25 @@ def test_invoke_records_error_metrics(
 
 
 # ── telemetry.configure_metrics / _build_metric_reader ────────────────────────
+
+
+def test_lifespan_engages_metrics_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator
+) -> None:
+    """MANGOMAS_TELEMETRY__METRICS_ENABLED=true flows through the app lifespan
+    into configure_metrics(enabled=True) — proven via a spy, without touching the
+    process-global provider."""
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(app_module, "build_orchestrator", lambda _settings: orchestrator)
+    monkeypatch.setattr(app_module, "configure_telemetry", lambda **_kw: None)
+    monkeypatch.setattr(app_module, "configure_metrics", lambda **kw: captured.update(kw))
+    monkeypatch.setenv("MANGOMAS_TELEMETRY__METRICS_ENABLED", "true")
+    get_settings.cache_clear()
+
+    fastapi_app = create_app()  # no injected orchestrator → runs _lifespan
+    with TestClient(fastapi_app):
+        pass
+    assert captured.get("enabled") is True
 
 
 def test_configure_metrics_disabled_is_noop() -> None:

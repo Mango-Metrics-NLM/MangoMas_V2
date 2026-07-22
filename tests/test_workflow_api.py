@@ -8,13 +8,10 @@ request that carries a ``definition`` runs regardless — mirroring the CLI.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 
-import pytest
 from fastapi.testclient import TestClient
 
 from mangomas.api.app import create_app
-from mangomas.config import get_settings
 from mangomas.core import Orchestrator
 from tests.constants import (
     STUB_REPLY,
@@ -47,14 +44,6 @@ _LOOP_GRAPH = json.dumps(
 )
 
 _RUN_BODY = {"messages": [{"role": "user", "content": "hi"}]}
-
-
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:
-    """Read process settings fresh so the default (workflow OFF) is deterministic."""
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 def test_run_single_agent_returns_final_response(orchestrator: Orchestrator) -> None:

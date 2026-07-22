@@ -29,7 +29,8 @@ protected core files or breaking single-agent dispatch.
 | Invariant | Enforcement |
 |-----------|-------------|
 | No protected-core edit | Never touch `core/*`, `errors.py`, `registry.py`; reuse `ConfigError` / `AgentNotFound` |
-| Every leaf is one dispatch call | `agent`→`dispatch`, `fan_out`→`dispatch_fan_out`, `loop`→`dispatch(acceptance_fn=…)`; never reimplement the loop/gather |
+| Every leaf is one dispatch call | `agent`→`dispatch`, `fan_out`→`dispatch_fan_out`, `loop`→`dispatch(acceptance_fn=…)`; `branch` selects one child via `resolve_executor` (no dispatch of its own); never reimplement the loop/gather |
+| Node kinds (v1) | `agent` / `fan_out` / `loop` / `sequence` / `branch` (predicate-routed, spec 0012 / ADR-0016). Opt-in precedence for the graph source is the shared `workflow.resolve_workflow_source` — reused by the CLI and the HTTP `/workflows/*` routes |
 | `AcceptanceFn` stays sync | `compile_predicate` returns a plain `Callable[[AgentResponse], bool]` |
 | Metadata-transparent | Executors return the `dispatch*` result verbatim (provenance in spans) so an all-agent `sequence` equals `dispatch_pipeline` |
 | No `eval` import | Copy any shared helper (e.g. the regex-flag map); `workflow` is a pure sibling of `eval` |

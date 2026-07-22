@@ -4,6 +4,18 @@ Mango-Mas V2 emits structured logs + OpenTelemetry spans on every request,
 all tied together by a per-request **correlation id**. This document
 explains the moving parts.
 
+## Metrics (opt-in; ADR-0013)
+
+Alongside spans, an opt-in `MeterProvider` (default-OFF — enable with
+`MANGOMAS_TELEMETRY__METRICS_ENABLED=true`) emits three instruments at the
+`POST /agents/{name}/invoke` boundary: `mangomas.agent.invocations` (counter,
+attributes `agent` + `status`), `mangomas.agent.errors` (counter, `agent` +
+`code`), and `mangomas.agent.duration` (histogram, `agent`). The metric
+exporter reuses the same `console` / `gcp` selection seam as the span exporter
+(`telemetry._build_metric_reader` mirrors `_build_span_exporter`); when the
+feature is off the global provider stays the OTel no-op, so recording is free.
+The record helpers live in `src/mangomas/metrics.py`.
+
 ## Three identifiers, one request
 
 | Identifier | Source | Lifetime | Where it appears |

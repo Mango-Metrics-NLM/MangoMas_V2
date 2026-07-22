@@ -25,7 +25,11 @@ from mangomas.workflow.graph import (
     WorkflowGraph,
     WorkflowNode,
 )
-from mangomas.workflow.loader import SUPPORTED_SCHEMA_VERSIONS, load_workflow
+from mangomas.workflow.loader import (
+    SUPPORTED_SCHEMA_VERSIONS,
+    load_workflow,
+    resolve_workflow_source,
+)
 from mangomas.workflow.predicate import PredicateSpec, compile_predicate
 from mangomas.workflow.registry import node_registry, resolve_executor
 
@@ -46,4 +50,5 @@ __all__ = [
     "load_workflow",
     "node_registry",
     "resolve_executor",
+    "resolve_workflow_source",
 ]

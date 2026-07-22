@@ -24,7 +24,7 @@ from mangomas.api.middleware import (
 )
 from mangomas.api.tracing import TraceMiddleware
 from mangomas.composition import build_orchestrator
-from mangomas.config import WorkflowSettings, get_settings
+from mangomas.config import APISettings, get_settings
 from mangomas.core import AgentRequest, AgentResponse
 from mangomas.errors import (
     AgentNotFound,
@@ -47,18 +47,12 @@ from mangomas.metrics import (
     record_agent_invocation,
 )
 from mangomas.telemetry import configure_metrics, configure_telemetry
-from mangomas.workflow import execute_workflow, load_workflow
+from mangomas.workflow import execute_workflow, load_workflow, resolve_workflow_source
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
 
 logger = logging.getLogger(__name__)
-
-# Bounds for the /history ``limit`` query param — a user-controlled value passed
-# to the storage backend, so it is clamped to prevent unbounded reads (SQLite /
-# Postgres treat a negative LIMIT as unlimited).
-_HISTORY_DEFAULT_LIMIT = 10
-_HISTORY_MAX_LIMIT = 1000
 
 # ── Error → HTTP status mapping ───────────────────────────────────────────────
 # Walk the exception's MRO to find the most specific entry.
@@ -123,35 +117,15 @@ class WorkflowValidateResponse(BaseModel):
     root_kind: str
 
 
-def _resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> str:
-    """Return the effective graph source, or raise ``ConfigError`` (HTTP 400).
-
-    Mirrors :func:`mangomas.cli.main._resolve_workflow_source`: an explicit
-    *definition* runs even when the feature is disabled (per-invocation opt-in);
-    otherwise the feature must be enabled AND a definition configured. Both
-    failure paths raise :class:`~mangomas.errors.ConfigError`, mapped to 400 by
-    :data:`_ERROR_STATUS`.
-    """
-    if definition is None and not cfg.enabled:
-        raise ConfigError(
-            "workflow disabled; set MANGOMAS_WORKFLOW__ENABLED=true and "
-            "MANGOMAS_WORKFLOW__DEFINITION, or pass 'definition'"
-        )
-    source = definition or cfg.definition
-    if not source:
-        raise ConfigError(
-            "no workflow definition; set MANGOMAS_WORKFLOW__DEFINITION or pass 'definition'"
-        )
-    return source
-
-
-def _install_backpressure(app: FastAPI) -> None:
+def _install_backpressure(app: FastAPI, api_cfg: APISettings) -> None:
     """Install the opt-in backpressure guards (no-op when both limits are 0).
 
-    Added after the access/trace loggers so they sit outermost — an
-    oversized/over-capacity request is rejected at the edge (ADR-0015).
+    Installed *inner* to the access/trace loggers (see ``create_app``) so a
+    rejected 413/503 still flows back through ``AccessLogMiddleware`` and carries
+    its ``X-Request-ID`` + access-log line (ADR-0015). The body-size guard is
+    added after the concurrency guard so it sits outer — an oversized request is
+    rejected before it consumes a concurrency slot.
     """
-    api_cfg = get_settings().api
     if api_cfg.max_concurrent_requests > 0:
         app.add_middleware(
             ConcurrencyLimitMiddleware, max_concurrent=api_cfg.max_concurrent_requests
@@ -178,7 +152,7 @@ def _register_workflow_routes(app: FastAPI) -> None:
         through the shared error handler.
         """
         orch: Orchestrator = app.state.orchestrator
-        source = _resolve_workflow_source(body.definition, get_settings().workflow)
+        source = resolve_workflow_source(body.definition, get_settings().workflow)
         graph = load_workflow(source)
         return await execute_workflow(graph, body.request, orch=orch)
 
@@ -189,7 +163,7 @@ def _register_workflow_routes(app: FastAPI) -> None:
     )
     async def workflow_validate(body: WorkflowValidateRequest) -> WorkflowValidateResponse:
         """Parse and validate a workflow graph without running it (no LLM I/O)."""
-        source = _resolve_workflow_source(body.definition, get_settings().workflow)
+        source = resolve_workflow_source(body.definition, get_settings().workflow)
         graph = load_workflow(source)
         return WorkflowValidateResponse(name=graph.name, root_kind=graph.root.kind)
 
@@ -235,20 +209,25 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     if orchestrator is not None:
         app.state.orchestrator = orchestrator
 
+    # Backpressure guards are installed FIRST so they end up *inner* to the
+    # log/trace middlewares added next — a rejected 413/503 still flows back
+    # through AccessLog (X-Request-ID + access-log line). CORS is added last so
+    # it sits outermost (correct for preflight).
+    api_cfg = get_settings().api
+    _install_backpressure(app, api_cfg)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(TraceMiddleware)
-    _install_backpressure(app)
 
     # Opt-in CORS: installed only when an allow-list is configured, so the
-    # default (empty) keeps the response headers byte-identical to before.
-    cors_origins = get_settings().api.cors_allow_origins
-    if cors_origins:
+    # default (empty) keeps the response headers byte-identical to before. All
+    # knobs are env-driven (no hard-coded policy); credentials default off.
+    if api_cfg.cors_allow_origins:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=cors_origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_origins=api_cfg.cors_allow_origins,
+            allow_credentials=api_cfg.cors_allow_credentials,
+            allow_methods=api_cfg.cors_allow_methods,
+            allow_headers=api_cfg.cors_allow_headers,
         )
 
     # Resolve the expected API token once (default-OFF → a no-op pass-through).
@@ -289,7 +268,9 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
 
     @app.get("/history", dependencies=[Depends(require_auth)])
     async def history(
-        limit: int = Query(default=_HISTORY_DEFAULT_LIMIT, ge=1, le=_HISTORY_MAX_LIMIT),
+        limit: int = Query(
+            default=api_cfg.history_default_limit, ge=1, le=api_cfg.history_max_limit
+        ),
     ) -> dict[str, list[dict[str, Any]]]:
         """Return recent persisted turns (HTTP twin of ``mangomas history``).
 

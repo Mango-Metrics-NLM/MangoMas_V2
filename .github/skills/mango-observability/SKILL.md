@@ -58,11 +58,26 @@ RUN_LMSTUDIO=1 python -m pytest tests/lmstudio/test_chat_invoke.py -v -s
 
 ---
 
+## Metrics (opt-in; ADR-0013)
+
+Spans are always on; **metrics are opt-in** (`MANGOMAS_TELEMETRY__METRICS_ENABLED=true`).
+
+| Rule | Detail |
+|------|--------|
+| One provider | `configure_metrics()` installs a single global `MeterProvider` (idempotent, `_TelemetryState.metrics_configured`). Default-OFF → global provider stays the OTel no-op, so `record_*` calls are free. |
+| Reuse the exporter seam | `_build_metric_reader(token)` mirrors `_build_span_exporter` — same `console`/`gcp` tokens; do not add a parallel selection path. |
+| Record via helpers | Use `mangomas.metrics.record_agent_invocation/_error/_duration`; instruments are lazily bound to the current provider, so call them unconditionally. |
+| Instrument names | `mangomas.agent.invocations` (counter: `agent`,`status`), `mangomas.agent.errors` (counter: `agent`,`code`), `mangomas.agent.duration` (histogram: `agent`). Emitted at the `POST /agents/{name}/invoke` boundary. |
+| Test with an in-memory reader | Bind an `InMemoryMetricReader` via `configure_metrics(enabled=True, reader=...)` and reset `metrics._state.instruments` (set-once global provider — see `tests/test_metrics.py`). |
+
+---
+
 ## Reference
 
 | File | Role |
 |------|------|
-| `src/mangomas/telemetry.py` | `get_tracer`, `configure_telemetry`, `JsonFormatter`, `TraceContextFilter` |
+| `src/mangomas/telemetry.py` | `get_tracer`, `configure_telemetry`, `configure_metrics`, `get_meter`, `_build_metric_reader`, `JsonFormatter`, `TraceContextFilter` |
+| `src/mangomas/metrics.py` | Opt-in metric record helpers (`record_agent_invocation` / `_error` / `_duration`) |
 | `src/mangomas/correlation.py` | Correlation `ContextVar` + `CorrelationFilter` (picked up by both formatters) |
 | `src/mangomas/core/orchestrator.py` | Reference span usage in `dispatch`, `dispatch_pipeline`, `dispatch_fan_out`, `stream_dispatch` |
 | `src/mangomas/api/middleware.py` | `AccessLogMiddleware` — HTTP-layer instrumentation example |

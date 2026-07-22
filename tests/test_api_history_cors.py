@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,14 +10,6 @@ from mangomas.api.app import create_app
 from mangomas.config import get_settings
 from mangomas.core import AgentContext, Orchestrator
 from tests.fakes import FakeLLM, FakeRepository
-
-
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:
-    """Isolate the CORS-env test's settings mutation from other tests."""
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 def _orchestrator(repo: FakeRepository | None) -> Orchestrator:
@@ -92,3 +82,15 @@ def test_cors_present_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
         r = client.get("/health", headers={"Origin": "http://example.com"})
         assert r.status_code == 200
         assert r.headers["access-control-allow-origin"] == "http://example.com"
+        # Credentials default OFF (secure default) — not reflected with the origin.
+        assert "access-control-allow-credentials" not in r.headers
+
+
+def test_cors_credentials_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_API__CORS_ALLOW_ORIGINS", '["http://example.com"]')
+    monkeypatch.setenv("MANGOMAS_API__CORS_ALLOW_CREDENTIALS", "true")
+    get_settings.cache_clear()
+    app = create_app(orchestrator=_orchestrator(FakeRepository()))
+    with TestClient(app) as client:
+        r = client.get("/health", headers={"Origin": "http://example.com"})
+        assert r.headers["access-control-allow-credentials"] == "true"

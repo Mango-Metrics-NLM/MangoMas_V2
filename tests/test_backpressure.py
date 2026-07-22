@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -17,16 +16,9 @@ from mangomas.api.app import create_app
 from mangomas.api.middleware import ConcurrencyLimitMiddleware, MaxBodySizeMiddleware
 from mangomas.config import get_settings
 from mangomas.core import Orchestrator
-from tests.constants import BACKPRESSURE_MAX_BODY_BYTES
+from tests.constants import BACKPRESSURE_MAX_BODY_BYTES, BACKPRESSURE_MAX_CONCURRENT
 
 _MSG = {"messages": [{"role": "user", "content": "hi"}]}
-
-
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 # ── MaxBodySizeMiddleware (isolation) ─────────────────────────────────────────
@@ -89,7 +81,7 @@ async def test_concurrency_limit_rejects_when_saturated() -> None:
         await started.wait()  # first request is now in-flight (holds the only slot)
         second = await client.get("/slow")
         assert second.status_code == 503
-        assert second.json()["error"] == "too_many_requests"
+        assert second.json()["error"] == "server_at_capacity"
         release.set()
         first_result = await first
         assert first_result.status_code == 200
@@ -128,10 +120,14 @@ def test_body_limit_wired_from_settings(
 def test_concurrency_guard_wired_from_settings(
     orchestrator: Orchestrator, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("MANGOMAS_API__MAX_CONCURRENT_REQUESTS", "2")
+    monkeypatch.setenv("MANGOMAS_API__MAX_CONCURRENT_REQUESTS", str(BACKPRESSURE_MAX_CONCURRENT))
     get_settings.cache_clear()
     app = create_app(orchestrator=orchestrator)
+    # The guard is actually installed from settings (not a no-op wiring branch);
+    # the 503 reject path itself is proven in the isolation test above.
+    installed = {getattr(m.cls, "__name__", "") for m in app.user_middleware}
+    assert ConcurrencyLimitMiddleware.__name__ in installed
     with TestClient(app) as client:
-        # A single request is served normally within the cap (guard installed).
+        # A single request is still served normally within the cap.
         r = client.post("/agents/chat/invoke", json=_MSG)
         assert r.status_code == 200

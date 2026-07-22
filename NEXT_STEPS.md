@@ -198,6 +198,24 @@ and echoes it on the outgoing response.
 
 ---
 
+## Done on the development-next-steps branch (Unreleased)
+
+HTTP-surface parity + production-hardening substrates + a workflow branch node,
+all additive and default-OFF (no protected-path edits). See `CHANGELOG.md`
+`[Unreleased]`, specs `0008`–`0012`, and ADRs `0012`–`0016`.
+
+- **Workflow HTTP endpoint** — `POST /workflows/run|validate`, gated exactly like
+  the CLI, reusing the shared `resolve_workflow_source` + `execute_workflow`.
+- **`GET /history`** — HTTP twin of `mangomas history`, with an env-bounded
+  `limit` (`MANGOMAS_API__HISTORY_*`).
+- **Opt-in HTTP hardening** — env-driven CORS (methods/headers/credentials, all
+  default-safe), an auth seam (bearer / API-key via `SecretsProvider`,
+  fail-closed), and backpressure (413 body-size + 503 at-capacity).
+- **OTel metrics** — a `MeterProvider` behind the exporter seam
+  (`MANGOMAS_TELEMETRY__METRICS_ENABLED`), with agent invocation / error /
+  duration instruments emitted at the HTTP boundary.
+- **Workflow `branch` node** — predicate-routed conditional selection.
+
 ## Done on the RAG branch (Unreleased)
 
 ### Retrieval-augmented generation
@@ -241,9 +259,11 @@ declarative graph definition consumed by `Orchestrator`. The opt-in `workflow/`
 package compiles a frozen `WorkflowGraph` (JSON: `sequence` of `agent` /
 `fan_out` / `loop`) down to the existing `dispatch_*` primitives; default-OFF, so
 single-agent dispatch is unchanged. Enable via `MANGOMAS_WORKFLOW__ENABLED` +
-`__DEFINITION`; drive with `mangomas workflow run|validate`. See ADR-0011,
-spec 0005. Follow-ups: conditional branching, composite loop/fan-out bodies, and
-entry-point discovery of third-party node kinds.
+`__DEFINITION`; drive with `mangomas workflow run|validate` or over HTTP
+(`POST /workflows/run|validate`). See ADR-0011, spec 0005. ✅ **Conditional
+branching** landed as the `branch` node (spec 0012 / ADR-0016). Remaining
+follow-ups: composite loop/fan-out bodies, and entry-point discovery of
+third-party node kinds.
 
 ### Multi-tenancy
 

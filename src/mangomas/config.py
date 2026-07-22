@@ -44,12 +44,20 @@ DEFAULT_DB_STATEMENT_TIMEOUT_SECONDS: float | None = None
 DEFAULT_API_HOST: str = "0.0.0.0"  # noqa: S104
 DEFAULT_API_PORT: int = 8000
 DEFAULT_API_READY_TIMEOUT: float = 2.0
-# Opt-in CORS allow-list. Empty (default) → CORSMiddleware is not installed, so
+# Opt-in CORS. Empty origins (default) → CORSMiddleware is not installed, so
 # behaviour is byte-identical unless MANGOMAS_API__CORS_ALLOW_ORIGINS is set.
+# ``credentials`` defaults False: reflecting credentials with a wildcard origin
+# is a browser-security footgun, so operators must opt in explicitly.
 DEFAULT_API_CORS_ALLOW_ORIGINS: tuple[str, ...] = ()
+DEFAULT_API_CORS_ALLOW_METHODS: tuple[str, ...] = ("*",)
+DEFAULT_API_CORS_ALLOW_HEADERS: tuple[str, ...] = ("*",)
+DEFAULT_API_CORS_ALLOW_CREDENTIALS: bool = False
 # Request backpressure (ADR-0015). 0 = off → the middleware is not installed.
 DEFAULT_API_MAX_BODY_BYTES: int = 0
 DEFAULT_API_MAX_CONCURRENT_REQUESTS: int = 0
+# /history read bounds (a user-controlled ``limit`` query param).
+DEFAULT_API_HISTORY_DEFAULT_LIMIT: int = 10
+DEFAULT_API_HISTORY_MAX_LIMIT: int = 1000
 
 DEFAULT_LOG_FORMAT: Literal["text", "json"] = "text"
 DEFAULT_LOG_BODY_TRUNCATE: int = 512
@@ -299,14 +307,25 @@ class APISettings(BaseModel):
     host: str = DEFAULT_API_HOST
     port: int = DEFAULT_API_PORT
     ready_timeout_seconds: float = DEFAULT_API_READY_TIMEOUT
-    # Opt-in CORS allow-list. Empty (default) → CORSMiddleware not installed, so
-    # an environment without MANGOMAS_API__CORS_ALLOW_ORIGINS sees no change.
+    # Opt-in CORS. Empty origins (default) → CORSMiddleware not installed, so an
+    # environment without MANGOMAS_API__CORS_ALLOW_ORIGINS sees no change. The
+    # methods/headers/credentials knobs are env-driven too (no hard-coded policy).
     cors_allow_origins: list[str] = Field(
         default_factory=lambda: list(DEFAULT_API_CORS_ALLOW_ORIGINS)
     )
+    cors_allow_methods: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_API_CORS_ALLOW_METHODS)
+    )
+    cors_allow_headers: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_API_CORS_ALLOW_HEADERS)
+    )
+    cors_allow_credentials: bool = DEFAULT_API_CORS_ALLOW_CREDENTIALS
     # Request backpressure (0 = off). Bytes cap → 413; in-flight cap → 503.
     max_body_bytes: int = DEFAULT_API_MAX_BODY_BYTES
     max_concurrent_requests: int = DEFAULT_API_MAX_CONCURRENT_REQUESTS
+    # /history read bounds (user-controlled ``limit`` query param).
+    history_default_limit: int = DEFAULT_API_HISTORY_DEFAULT_LIMIT
+    history_max_limit: int = DEFAULT_API_HISTORY_MAX_LIMIT
 
 
 class AuthSettings(BaseModel):

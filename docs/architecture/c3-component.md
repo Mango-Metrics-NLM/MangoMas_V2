@@ -13,8 +13,10 @@ C4Component
     Component(correlation, "correlation.py", "ContextVar + logging filter", "ContextVar carrying the per-request correlation id; CorrelationFilter injects it into every log record.")
     Component(trace_mw, "TraceMiddleware", "Starlette middleware / OTel", "Opens and closes an OpenTelemetry span per request. Tracer is obtained lazily via trace.get_tracer() to avoid capturing NoopTracer at import time.")
     Component(error_handler, "MangomasError handler", "FastAPI exception handler", "Walks the exception MRO to select the most specific HTTP status code and returns a structured JSON envelope.")
-    Component(health_routes, "Health routes", "FastAPI routes", "GET /healthz (+ /health alias) → liveness. GET /readyz (+ /ready alias) → ReadinessReport from check_ready().")
-    Component(agent_routes, "Agent routes", "FastAPI routes", "GET /agents, POST /agents/{name}/invoke, POST /agents/{name}/stream. Delegates to Orchestrator.")
+    Component(health_routes, "Health routes", "FastAPI routes", "GET /healthz (+ /health alias) → liveness. GET /readyz (+ /ready alias) → ReadinessReport from check_ready(). Never authenticated.")
+    Component(agent_routes, "Agent + history routes", "FastAPI routes", "GET /agents; POST /agents/{name}/invoke (emits invocation/error/duration metrics); POST /agents/{name}/stream; GET /history (bounded limit). Delegates to Orchestrator.")
+    Component(workflow_routes, "Workflow routes (opt-in)", "FastAPI routes", "POST /workflows/run|validate. Resolve the graph source via the shared resolve_workflow_source, then load_workflow + execute_workflow. Reuse the MangomasError envelope (ConfigError 400 / AgentNotFound 404 / MaxStepsExceeded 422).")
+    Component(backpressure_mw, "Backpressure + CORS + auth (opt-in)", "Middleware / dependency", "Default-OFF: MaxBodySizeMiddleware (413), ConcurrencyLimitMiddleware (503, reject-don't-queue), env-driven CORSMiddleware, and require_auth (bearer / X-API-Key via SecretsProvider, fail-closed). Backpressure sits inner of log/trace so rejections are still logged.")
   }
 
   Container_Boundary(secrets_boundary, "Secrets (src/mangomas/secrets/)") {
@@ -58,7 +60,11 @@ C4Component
   Rel(app_factory, error_handler, "registers exception handler")
   Rel(app_factory, health_routes, "mounts routes")
   Rel(app_factory, agent_routes, "mounts routes")
+  Rel(app_factory, workflow_routes, "mounts routes (opt-in)")
+  Rel(app_factory, backpressure_mw, "installs when configured")
   Rel(agent_routes, orchestrator, "dispatch() / stream_dispatch() (or _HarnessOrchestrator when harness.enabled=true)")
+  Rel(workflow_routes, orchestrator, "execute_workflow() → dispatch*")
+  Rel(backpressure_mw, secrets_provider, "resolve expected auth token")
   Rel(harness_orch, orchestrator, "delegates via super() — harness only adds the parent span")
   Rel(health_routes, health_svc, "check_ready(orchestrator)")
   Rel(health_svc, llm_client, "ping()")

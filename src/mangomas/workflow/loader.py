@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from mangomas.config import DEFAULT_WORKFLOW_SCHEMA_VERSION
+from mangomas.config import DEFAULT_WORKFLOW_SCHEMA_VERSION, WorkflowSettings
 from mangomas.errors import ConfigError
 from mangomas.workflow.graph import WorkflowGraph
 
@@ -20,6 +20,29 @@ from mangomas.workflow.graph import WorkflowGraph
 # *warn*, an unknown graph version is rejected: executing an unknown structure
 # would silently misbehave.
 SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({DEFAULT_WORKFLOW_SCHEMA_VERSION})
+
+
+def resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> str:
+    """Return the effective graph source, or raise ``ConfigError``.
+
+    Single source of the opt-in precedence rule shared by the CLI and the HTTP
+    surface: an explicit *definition* runs even when the feature is disabled
+    (per-invocation opt-in); otherwise ``cfg.enabled`` **and** a configured
+    ``cfg.definition`` are required. Surface-neutral — callers map the raised
+    :class:`~mangomas.errors.ConfigError` onto their own error surface (HTTP 400 /
+    CLI exit 2).
+    """
+    if definition is None and not cfg.enabled:
+        raise ConfigError(
+            "workflow disabled; enable it (MANGOMAS_WORKFLOW__ENABLED=true + "
+            "MANGOMAS_WORKFLOW__DEFINITION) or pass a definition"
+        )
+    source = definition or cfg.definition
+    if not source:
+        raise ConfigError(
+            "no workflow definition; set MANGOMAS_WORKFLOW__DEFINITION or pass a definition"
+        )
+    return source
 
 
 def _parse_json(raw: str) -> object:

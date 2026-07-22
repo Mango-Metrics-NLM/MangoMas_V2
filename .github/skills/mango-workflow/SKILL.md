@@ -14,7 +14,9 @@ argument-hint: "Describe the graph or node kind (e.g. 'planner then fan-out revi
 ## When to Use
 
 - Author a declarative `WorkflowGraph` (JSON) and run it via `mangomas workflow run`
-- Compose a `sequence` of `agent` / `fan_out` / `loop` steps
+  or over HTTP (`POST /workflows/run|validate`)
+- Compose a `sequence` of `agent` / `fan_out` / `loop` / `branch` steps
+- Route conditionally with a `branch` node (predicate-selected child; spec 0012 / ADR-0016)
 - Add a node kind or an acceptance predicate (`contains` / `regex`)
 - Diagnose parity gaps vs the imperative `dispatch_pipeline` / `dispatch_fan_out`
 - Enable the feature (`MANGOMAS_WORKFLOW__ENABLED` + `__DEFINITION`)
@@ -44,8 +46,8 @@ mangomas workflow run "ship it" -f graph.json
 
 | Rule | Detail |
 |------|--------|
-| Bounded tree | Composition lives only in `sequence`; `fan_out` fans to agents; `loop` wraps one agent. Acyclic by construction — no cycles. |
-| Every leaf is one dispatch call | `agent`→`dispatch`, `fan_out`→`dispatch_fan_out`+join, `loop`→`dispatch(acceptance_fn=…, max_steps=…)`. |
+| Bounded tree | Composition lives only in `sequence`; `fan_out` fans to agents; `loop` wraps one agent; `branch` selects one child. Acyclic by construction — no cycles. |
+| Every leaf is one dispatch call | `agent`→`dispatch`, `fan_out`→`dispatch_fan_out`+join, `loop`→`dispatch(acceptance_fn=…, max_steps=…)`. `branch` runs the first matching case's child via `resolve_executor` (no dispatch of its own). |
 | Sequence threading | A step's `content` becomes the next step's user message; `metadata` threads too — identical to `Orchestrator.dispatch_pipeline`. |
 | Metadata-transparent | An all-agent `sequence` result **equals** `dispatch_pipeline([names], request)` (full model, incl. metadata). |
 | Fan-out reduce | `first` returns the first branch verbatim; `concat` newline-joins `content` (`agent="fan_out"`, empty metadata). |
@@ -62,7 +64,7 @@ mangomas workflow run "ship it" -f graph.json
 | `src/mangomas/workflow/graph.py` | Node models + `WorkflowNode` union + `WorkflowGraph` |
 | `src/mangomas/workflow/predicate.py` | `PredicateSpec` + `compile_predicate` |
 | `src/mangomas/workflow/executor.py` | `NodeExecutor` protocol + `execute_workflow` |
-| `src/mangomas/workflow/nodes/` | Self-registering `agent` / `sequence` / `fan_out` / `loop` executors |
+| `src/mangomas/workflow/nodes/` | Self-registering `agent` / `sequence` / `fan_out` / `loop` / `branch` executors |
 | `src/mangomas/workflow/loader.py` | Path/inline JSON → `WorkflowGraph` |
 | `src/mangomas/core/orchestrator.py` | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out` (the primitives graphs compile to) |
 | `src/mangomas/core/loop.py` | `AcceptanceFn` type alias |

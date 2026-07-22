@@ -62,8 +62,18 @@ _BAGGAGE_KEY = "mangomas.correlation_id"
 _FALLBACK_ERROR_STATUS = 500
 _INTERNAL_ERROR_BODY = "Internal Server Error"
 
+# Backpressure rejection statuses + JSON envelope codes.
 _REQUEST_TOO_LARGE_STATUS = 413
-_TOO_MANY_REQUESTS_STATUS = 503
+_REQUEST_TOO_LARGE_CODE = "request_too_large"
+# 503 (not 429): reject-don't-queue per ADR-0015 — a momentarily-at-capacity
+# server is a retryable *server* condition, not a per-client rate limit.
+_AT_CAPACITY_STATUS = 503
+_AT_CAPACITY_CODE = "server_at_capacity"
+
+
+def _json_error(status_code: int, error: str, message: str) -> JSONResponse:
+    """Build the app's ``{"error", "message"}`` envelope as a JSONResponse."""
+    return JSONResponse(status_code=status_code, content={"error": error, "message": message})
 
 
 class MaxBodySizeMiddleware(BaseHTTPMiddleware):
@@ -92,12 +102,10 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
             and content_length.isdigit()
             and int(content_length) > self._max_bytes
         ):
-            return JSONResponse(
-                status_code=_REQUEST_TOO_LARGE_STATUS,
-                content={
-                    "error": "request_too_large",
-                    "message": f"request body exceeds {self._max_bytes} bytes",
-                },
+            return _json_error(
+                _REQUEST_TOO_LARGE_STATUS,
+                _REQUEST_TOO_LARGE_CODE,
+                f"request body exceeds {self._max_bytes} bytes",
             )
         return await call_next(request)
 
@@ -122,12 +130,10 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         if self._in_flight >= self._max:
-            return JSONResponse(
-                status_code=_TOO_MANY_REQUESTS_STATUS,
-                content={
-                    "error": "too_many_requests",
-                    "message": "server at capacity; retry later",
-                },
+            return _json_error(
+                _AT_CAPACITY_STATUS,
+                _AT_CAPACITY_CODE,
+                "server at capacity; retry later",
             )
         self._in_flight += 1
         try:

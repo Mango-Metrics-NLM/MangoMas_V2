@@ -135,6 +135,27 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — Wave 1–3 hardening pass
+
+Gap-analysis + hardening of the HTTP-surface work (no behaviour change by
+default; all still additive/default-OFF):
+
+- **CORS is fully env-driven** — `MANGOMAS_API__CORS_ALLOW_METHODS` /
+  `__CORS_ALLOW_HEADERS` / `__CORS_ALLOW_CREDENTIALS` join `__CORS_ALLOW_ORIGINS`.
+  Credentials default **off** (reflecting credentials with a wildcard origin is a
+  browser-security footgun).
+- **`/history` bounds are env-driven** — `MANGOMAS_API__HISTORY_DEFAULT_LIMIT` /
+  `__HISTORY_MAX_LIMIT` replace the inline constants.
+- **Single source for workflow opt-in precedence** — `resolve_workflow_source`
+  moved to `workflow/loader.py` and shared by the CLI and HTTP surfaces (was
+  duplicated).
+- **Backpressure guards moved inner of the log/trace middlewares**, so a rejected
+  413/503 still carries its `X-Request-ID` + access-log line; the at-capacity
+  status constant/slug renamed to reflect its 503 (`server_at_capacity`).
+- **Tests**: shared `_clear_settings_cache` fixture hoisted to `conftest.py`;
+  the concurrency-wiring test now asserts the guard is actually installed; added
+  negative tests for the auth validator and the metrics lifespan wiring.
+
 ### Added — Conditional workflow branch node
 
 Add a `branch` node to the declarative workflow graph (spec 0012 / ADR-0016),
