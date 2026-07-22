@@ -162,6 +162,24 @@ Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
   line with the real gate (`scripts/check_coverage.py` @ 95 % + per-package
   floors) and current counts.
 
+### Added — OpenTelemetry metrics (opt-in)
+
+Add a metrics pipeline alongside the existing span pipeline, additive and
+default-OFF (spec 0009 / ADR-0013). Pays down the harness `METRICS_*` naming debt.
+
+- **`telemetry.py`**: a `MeterProvider` behind `_build_metric_reader` (parallel to
+  `_build_span_exporter`, reusing the `console`/`gcp` tokens), plus
+  `configure_metrics` (idempotent, installs the provider only when enabled) and
+  `get_meter`. Disabled by default → the global provider stays the OTel no-op, so
+  recording is byte-identical.
+- **`src/mangomas/metrics.py`**: record helpers for an agent-invocation counter
+  (`agent`, `status`), an error counter (`agent`, `code`), and a duration
+  histogram (`agent`); instruments bind lazily to the installed provider.
+- **`api/app.py`**: emits those metrics at the `/agents/{name}/invoke` boundary
+  (no protected-core edit); the lifespan calls `configure_metrics`.
+- **Config**: `MANGOMAS_TELEMETRY__METRICS_ENABLED` (default `false`); reuses
+  `MANGOMAS_TELEMETRY__EXPORTER` for the metric exporter.
+
 ### Added — Declarative multi-agent workflow graphs
 
 Compose agents through a declarative JSON graph consumed by the `Orchestrator`,

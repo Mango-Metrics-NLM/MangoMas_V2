@@ -148,6 +148,9 @@ DEFAULT_HARNESS_HOOK_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING"] = "INFO"
 DEFAULT_HARNESS_METRICS_EXPORTER: Literal["inherit", "console", "gcp"] = "inherit"
 
 DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"
+# Opt-in metrics pipeline (ADR-0013). Default False → no MeterProvider installed,
+# so the global provider stays the OTel no-op and recording is byte-identical.
+DEFAULT_TELEMETRY_METRICS_ENABLED: bool = False
 
 # Declarative multi-agent workflow-graph defaults (spec 0005 / ADR-0011).
 # All OFF/None so an environment without ``MANGOMAS_WORKFLOW__*`` behaves
@@ -308,9 +311,14 @@ class TelemetrySettings(BaseModel):
     ``exporter`` chooses the application span exporter: ``console`` (default,
     built-in) or ``gcp`` (Cloud Trace via the optional ``gcp`` extra). Absent
     from the environment → ``console``, identical to prior behaviour.
+
+    ``metrics_enabled`` gates the opt-in metrics pipeline (ADR-0013); the same
+    ``exporter`` token selects the metric exporter. Default ``False`` installs no
+    ``MeterProvider``, so the global provider stays the OTel no-op.
     """
 
     exporter: Literal["console", "gcp"] = DEFAULT_TELEMETRY_EXPORTER
+    metrics_enabled: bool = DEFAULT_TELEMETRY_METRICS_ENABLED
 
 
 class AgentSettings(BaseModel):

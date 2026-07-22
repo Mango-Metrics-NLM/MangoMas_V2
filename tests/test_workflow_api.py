@@ -101,6 +101,16 @@ def test_run_disabled_without_definition_returns_400(orchestrator: Orchestrator)
         assert r.json()["error"] == "config_error"
 
 
+def test_run_empty_definition_returns_400(orchestrator: Orchestrator) -> None:
+    # An empty (but non-None) definition skips the "disabled" branch and hits the
+    # "no definition" branch — feature off means cfg.definition is None too.
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(WORKFLOW_RUN_ROUTE, json={"request": _RUN_BODY, "definition": ""})
+        assert r.status_code == 400
+        assert r.json()["error"] == "config_error"
+
+
 def test_run_malformed_definition_returns_400(orchestrator: Orchestrator) -> None:
     app = create_app(orchestrator=orchestrator)
     with TestClient(app) as client:

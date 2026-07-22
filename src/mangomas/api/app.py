@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
@@ -35,7 +36,12 @@ from mangomas.errors import (
     ToolNotFound,
     UnknownProvider,
 )
-from mangomas.telemetry import configure_telemetry
+from mangomas.metrics import (
+    record_agent_duration,
+    record_agent_error,
+    record_agent_invocation,
+)
+from mangomas.telemetry import configure_metrics, configure_telemetry
 from mangomas.workflow import execute_workflow, load_workflow
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -127,6 +133,32 @@ def _resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> s
     return source
 
 
+def _register_workflow_routes(app: FastAPI) -> None:
+    """Register the ``/workflows/*`` routes on *app* (kept out of ``create_app``)."""
+
+    @app.post("/workflows/run", response_model=AgentResponse)
+    async def workflow_run(body: WorkflowRunRequest) -> AgentResponse:
+        """Execute a declarative workflow graph and return the final response.
+
+        A per-request ``definition`` runs even when the feature is disabled;
+        otherwise ``workflow.enabled`` + a configured definition is required
+        (disabled/unset → 400 ``ConfigError``). Graph parse/validation errors
+        (400), an unknown agent (404), and ``MaxStepsExceeded`` (422) all flow
+        through the shared error handler.
+        """
+        orch: Orchestrator = app.state.orchestrator
+        source = _resolve_workflow_source(body.definition, get_settings().workflow)
+        graph = load_workflow(source)
+        return await execute_workflow(graph, body.request, orch=orch)
+
+    @app.post("/workflows/validate", response_model=WorkflowValidateResponse)
+    async def workflow_validate(body: WorkflowValidateRequest) -> WorkflowValidateResponse:
+        """Parse and validate a workflow graph without running it (no LLM I/O)."""
+        source = _resolve_workflow_source(body.definition, get_settings().workflow)
+        graph = load_workflow(source)
+        return WorkflowValidateResponse(name=graph.name, root_kind=graph.root.kind)
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 
@@ -137,6 +169,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         log_level=settings.log_level,
         log_format=settings.log.format,
         exporter=settings.telemetry.exporter,
+    )
+    configure_metrics(
+        exporter=settings.telemetry.exporter,
+        enabled=settings.telemetry.metrics_enabled,
     )
     app.state.orchestrator = build_orchestrator(settings)
     logger.info("Application started")
@@ -229,7 +265,18 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     @app.post("/agents/{name}/invoke", response_model=AgentResponse)
     async def invoke(name: str, request: AgentRequest) -> AgentResponse:
         orch: Orchestrator = app.state.orchestrator
-        return await orch.dispatch(name, request)
+        start = time.perf_counter()
+        try:
+            response = await orch.dispatch(name, request)
+        except MangomasError as exc:
+            # Metrics are no-ops unless MANGOMAS_TELEMETRY__METRICS_ENABLED=true;
+            # the error still flows to the shared handler for its HTTP envelope.
+            record_agent_invocation(name, "error")
+            record_agent_error(name, exc.code)
+            raise
+        record_agent_invocation(name, "ok")
+        record_agent_duration(name, time.perf_counter() - start)
+        return response
 
     @app.post("/agents/{name}/stream")
     async def stream_agent(name: str, request: AgentRequest) -> StreamingResponse:
@@ -254,27 +301,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @app.post("/workflows/run", response_model=AgentResponse)
-    async def workflow_run(body: WorkflowRunRequest) -> AgentResponse:
-        """Execute a declarative workflow graph and return the final response.
-
-        A per-request ``definition`` runs even when the feature is disabled;
-        otherwise ``workflow.enabled`` + a configured definition is required
-        (disabled/unset → 400 ``ConfigError``). Graph parse/validation errors
-        (400), an unknown agent (404), and ``MaxStepsExceeded`` (422) all flow
-        through the shared error handler.
-        """
-        orch: Orchestrator = app.state.orchestrator
-        source = _resolve_workflow_source(body.definition, get_settings().workflow)
-        graph = load_workflow(source)
-        return await execute_workflow(graph, body.request, orch=orch)
-
-    @app.post("/workflows/validate", response_model=WorkflowValidateResponse)
-    async def workflow_validate(body: WorkflowValidateRequest) -> WorkflowValidateResponse:
-        """Parse and validate a workflow graph without running it (no LLM I/O)."""
-        source = _resolve_workflow_source(body.definition, get_settings().workflow)
-        graph = load_workflow(source)
-        return WorkflowValidateResponse(name=graph.name, root_kind=graph.root.kind)
+    _register_workflow_routes(app)
 
     return app
 
