@@ -169,3 +169,8 @@ WORKFLOW_RUNTIME_EXIT_CODE: int = 1
 # Workflow HTTP routes (spec 0008).
 WORKFLOW_RUN_ROUTE: str = "/workflows/run"
 WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
+
+# API authentication (spec 0010). The secret_ref is an env-var NAME (env provider);
+# a non-MANGOMAS prefix keeps pydantic-settings from parsing it as a setting.
+AUTH_SECRET_REF_ENV: str = "TEST_API_TOKEN"  # noqa: S105 — env-var name, not a secret
+AUTH_TOKEN: str = "test-api-token-value"  # noqa: S105 — test fixture value, not a real secret

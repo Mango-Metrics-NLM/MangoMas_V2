@@ -83,6 +83,11 @@ DEFAULT_RAG_CHUNK_WORDS: int = 800
 DEFAULT_RAG_CHUNK_OVERLAP: int = 120
 DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
 
+# Opt-in API authentication (ADR-0014). Default OFF → the auth dependency is a
+# no-op pass-through, so the HTTP surface is byte-identical.
+DEFAULT_AUTH_ENABLED: bool = False
+DEFAULT_AUTH_SECRET_REF: str | None = None
+
 DEFAULT_SECRETS_PROVIDER: str = "env"
 # GCP Secret Manager defaults — consumed when MANGOMAS_SECRETS__PROVIDER=gcp.
 DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS: float = 5.0
@@ -298,6 +303,29 @@ class APISettings(BaseModel):
     )
 
 
+class AuthSettings(BaseModel):
+    """Opt-in API authentication (ADR-0014).
+
+    Gated by ``enabled`` (default ``False``): when off, the FastAPI auth
+    dependency is a no-op. When on, the expected token is resolved from
+    ``secret_ref`` via the configured ``SecretsProvider`` and compared
+    (constant-time) against ``Authorization: Bearer`` / ``X-API-Key``.
+    """
+
+    enabled: bool = DEFAULT_AUTH_ENABLED
+    secret_ref: str | None = DEFAULT_AUTH_SECRET_REF
+
+    @model_validator(mode="after")
+    def _validate_auth(self) -> AuthSettings:
+        """Require a secret reference when enabled so auth is never keyless."""
+        if self.enabled and not self.secret_ref:
+            raise ValueError(
+                "auth.enabled requires auth.secret_ref "
+                "(set MANGOMAS_AUTH__SECRET_REF to a SecretsProvider reference)"
+            )
+        return self
+
+
 class LogSettings(BaseModel):
     """Logging format and filtering configuration."""
 
@@ -490,6 +518,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     db: DBSettings = Field(default_factory=DBSettings)
     api: APISettings = Field(default_factory=APISettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     log: LogSettings = Field(default_factory=LogSettings)
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 

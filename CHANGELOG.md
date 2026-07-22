@@ -162,6 +162,23 @@ Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
   line with the real gate (`scripts/check_coverage.py` @ 95 % + per-package
   floors) and current counts.
 
+### Added — Application authentication seam (opt-in)
+
+Add a default-OFF bearer / API-key check on the data + execution routes
+(spec 0010 / ADR-0014). Prerequisite for multi-tenancy.
+
+- **`api/auth.py`**: a FastAPI dependency (`require_auth`) that resolves the
+  expected token once (from `AuthSettings.secret_ref` via the `SecretsProvider`
+  seam), compares it constant-time against `Authorization: Bearer` / `X-API-Key`,
+  and **fails closed** if the secret does not resolve. Disabled → no-op.
+- **Guarded routes**: `/agents/{name}/invoke|stream`, `/history`, `/workflows/*`.
+  Probes (`/healthz`, `/readyz` + aliases) and `GET /agents` stay open.
+- **`AuthenticationError`** (code `authentication_error`, HTTP 401) is an
+  api-layer `MangomasError` subclass mapped in `_ERROR_STATUS`; `errors.py`
+  (protected) is untouched.
+- **Config**: `MANGOMAS_AUTH__ENABLED` (default `false`), `MANGOMAS_AUTH__SECRET_REF`
+  (required when enabled).
+
 ### Added — OpenTelemetry metrics (opt-in)
 
 Add a metrics pipeline alongside the existing span pipeline, additive and

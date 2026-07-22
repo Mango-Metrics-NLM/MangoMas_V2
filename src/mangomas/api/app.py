@@ -10,11 +10,12 @@ from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from mangomas.api.auth import AuthenticationError, require_auth, resolve_auth_state
 from mangomas.api.health import check_ready
 from mangomas.api.middleware import AccessLogMiddleware
 from mangomas.api.tracing import TraceMiddleware
@@ -56,6 +57,7 @@ _ERROR_STATUS: dict[type[MangomasError], int] = {
     UnknownProvider: HTTPStatus.BAD_REQUEST,
     ConfigError: HTTPStatus.BAD_REQUEST,
     ToolNotFound: HTTPStatus.BAD_REQUEST,
+    AuthenticationError: HTTPStatus.UNAUTHORIZED,
     AgentNotFound: HTTPStatus.NOT_FOUND,
     LLMTimeout: HTTPStatus.GATEWAY_TIMEOUT,
     LLMUnavailable: HTTPStatus.SERVICE_UNAVAILABLE,
@@ -136,7 +138,11 @@ def _resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> s
 def _register_workflow_routes(app: FastAPI) -> None:
     """Register the ``/workflows/*`` routes on *app* (kept out of ``create_app``)."""
 
-    @app.post("/workflows/run", response_model=AgentResponse)
+    @app.post(
+        "/workflows/run",
+        response_model=AgentResponse,
+        dependencies=[Depends(require_auth)],
+    )
     async def workflow_run(body: WorkflowRunRequest) -> AgentResponse:
         """Execute a declarative workflow graph and return the final response.
 
@@ -151,7 +157,11 @@ def _register_workflow_routes(app: FastAPI) -> None:
         graph = load_workflow(source)
         return await execute_workflow(graph, body.request, orch=orch)
 
-    @app.post("/workflows/validate", response_model=WorkflowValidateResponse)
+    @app.post(
+        "/workflows/validate",
+        response_model=WorkflowValidateResponse,
+        dependencies=[Depends(require_auth)],
+    )
     async def workflow_validate(body: WorkflowValidateRequest) -> WorkflowValidateResponse:
         """Parse and validate a workflow graph without running it (no LLM I/O)."""
         source = _resolve_workflow_source(body.definition, get_settings().workflow)
@@ -215,6 +225,9 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             allow_headers=["*"],
         )
 
+    # Resolve the expected API token once (default-OFF → a no-op pass-through).
+    app.state.auth = resolve_auth_state(get_settings())
+
     @app.exception_handler(MangomasError)
     async def _mangomas_error_handler(_request: Request, exc: MangomasError) -> JSONResponse:
         status = _error_status(exc)
@@ -248,7 +261,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         orch: Orchestrator = app.state.orchestrator
         return {"agents": orch.list_agents()}
 
-    @app.get("/history")
+    @app.get("/history", dependencies=[Depends(require_auth)])
     async def history(limit: int = 10) -> dict[str, list[dict[str, Any]]]:
         """Return recent persisted turns (HTTP twin of ``mangomas history``).
 
@@ -262,7 +275,11 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             return {"turns": []}
         return {"turns": await repo.list_turns(limit=limit)}
 
-    @app.post("/agents/{name}/invoke", response_model=AgentResponse)
+    @app.post(
+        "/agents/{name}/invoke",
+        response_model=AgentResponse,
+        dependencies=[Depends(require_auth)],
+    )
     async def invoke(name: str, request: AgentRequest) -> AgentResponse:
         orch: Orchestrator = app.state.orchestrator
         start = time.perf_counter()
@@ -278,7 +295,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         record_agent_duration(name, time.perf_counter() - start)
         return response
 
-    @app.post("/agents/{name}/stream")
+    @app.post("/agents/{name}/stream", dependencies=[Depends(require_auth)])
     async def stream_agent(name: str, request: AgentRequest) -> StreamingResponse:
         orch: Orchestrator = app.state.orchestrator
         # AgentNotFound is raised here (before streaming begins) so the
