@@ -135,6 +135,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Conditional workflow branch node
+
+Add a `branch` node to the declarative workflow graph (spec 0012 / ADR-0016),
+additive and default-OFF (existing graphs never carry `kind="branch"`).
+
+- **`workflow/graph.py`**: frozen `BranchNode` (`kind="branch"`) — an ordered list
+  of `{when: PredicateSpec, then: WorkflowStep}` cases plus an optional `default`
+  — added to the `WorkflowStep` and `WorkflowNode` unions.
+- **`workflow/nodes/branch.py`**: `BranchNodeExecutor` compiles each `when` once
+  (reusing `compile_predicate`), evaluates them in order against the node's input
+  content, and runs the first match's `then` via `resolve_executor` (so a branch
+  child may itself be any node kind). No match + no `default` → `ConfigError`.
+- Enables the `planner → route by output → specialised agent` pattern; the node
+  selects one child and adds no back-edge, so the graph stays an acyclic tree.
+
 ### Added — HTTP surface parity (workflows, history, CORS)
 
 Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.

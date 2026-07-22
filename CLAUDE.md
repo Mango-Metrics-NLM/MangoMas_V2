@@ -72,7 +72,7 @@ src/mangomas/
 │   ├── registry.py     node_registry + resolve_executor
 │   ├── executor.py     NodeExecutor protocol + execute_workflow driver
 │   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
-│   └── nodes/          Self-registering agent/sequence/fan_out/loop executors
+│   └── nodes/          Self-registering agent/sequence/fan_out/loop/branch executors
 ├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
 ├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
@@ -390,9 +390,10 @@ For the **declarative** equivalent (compose these topologies from JSON), see
 
 Off by default (`MANGOMAS_WORKFLOW__ENABLED=false`), so existing deployments see
 no change. A `WorkflowGraph` (JSON) is a bounded tree compiled to the imperative
-dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop`, where
-every leaf is one public dispatch call (no reimplemented loop/gather). See spec
-0005 / ADR-0011 and `docs/workflow/graphs.md`.
+dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop` / `branch`
+(predicate-routed selection; spec 0012 / ADR-0016), where every leaf is one public
+dispatch call (no reimplemented loop/gather). See spec 0005 / ADR-0011 and
+`docs/workflow/graphs.md`.
 
 - **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;
   metadata-transparent executors, so an all-agent `sequence` equals

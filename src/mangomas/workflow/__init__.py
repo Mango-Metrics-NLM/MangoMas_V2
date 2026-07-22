@@ -17,6 +17,8 @@ from mangomas.workflow import nodes  # noqa: F401  (imported for registration si
 from mangomas.workflow.executor import NodeExecutor, execute_workflow
 from mangomas.workflow.graph import (
     AgentNode,
+    BranchCase,
+    BranchNode,
     FanOutNode,
     LoopNode,
     SequenceNode,
@@ -30,6 +32,8 @@ from mangomas.workflow.registry import node_registry, resolve_executor
 __all__ = [
     "SUPPORTED_SCHEMA_VERSIONS",
     "AgentNode",
+    "BranchCase",
+    "BranchNode",
     "FanOutNode",
     "LoopNode",
     "NodeExecutor",
