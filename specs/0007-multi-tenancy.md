@@ -1,8 +1,10 @@
 # Spec-0007: Multi-tenancy
 
-- **Status:** Draft (stub — no code this pass)
-- **Linked ADR:** ADR-0009 (to be authored when implementation begins)
-- **Linked CHANGELOG entry:** _pending_
+- **Status:** Phase 1 (storage isolation) — Implemented. Phase 2 (per-tenant
+  `AgentSettings` at dispatch) — deferred.
+- **Linked ADR:** ADR-0017 (storage isolation). _(Corrected from the original
+  stub's "ADR-0009" — that number is already `telemetry-exporter-seam`.)_
+- **Linked CHANGELOG entry:** `[Unreleased]` › `Added`
 
 ## Problem
 
@@ -12,14 +14,16 @@ serve multiple tenants with **tenant-scoped conversation storage** and
 
 ## Requirements
 
-- A tenant identifier flows through the request path (proposed:
-  `X-Tenant-ID` header → correlation-style `ContextVar`, reusing the
-  `correlation.py` pattern).
-- `TurnRepository` reads/writes are scoped by tenant (schema/prefix/row-filter —
-  decide per backend in the ADR); no cross-tenant reads possible.
-- Per-tenant `AgentSettings` via a tenant-keyed registry, resolved at dispatch.
-- Must remain **additive & default-OFF**: absent tenant id → a single implicit
-  "default" tenant, behaviour byte-identical to today.
+- A tenant identifier flows through the request path: an `X-Tenant-ID` header →
+  a correlation-style `ContextVar`, reusing the `correlation.py` pattern.
+- `TurnRepository` reads/writes are scoped by tenant via a **row filter**
+  (`tenant` column + `WHERE tenant = ?`); no cross-tenant reads possible. The
+  tenant is read from the `ContextVar` **inside** each repo method, so the
+  `TurnRepository` Protocol signature is byte-identical (no new kwarg).
+- **Phase 2 (deferred):** per-tenant `AgentSettings` via a tenant-keyed registry,
+  resolved at dispatch — needs a dispatch-time settings-resolution decision.
+- Must remain **additive & default-OFF**: absent/disabled tenant id → a single
+  implicit `"default"` tenant, behaviour byte-identical to today.
 
 ## Config / env additions (sketch)
 
@@ -31,11 +35,12 @@ serve multiple tenants with **tenant-scoped conversation storage** and
 
 ## Protocol / contract impact
 
-- `TurnRepository` gains a tenant-scoping seam **without breaking** the existing
-  signature (candidate: an optional `tenant` kwarg defaulting to the implicit
-  tenant, or a scoped-repository factory — evaluate both in ADR-0009 to keep the
-  protocol backwards-compatible).
-- New `TenancySettings` group; new middleware analogous to `AccessLogMiddleware`.
+- `TurnRepository` signature **byte-identical** — the tenant is read from a
+  `ContextVar` inside `save_turn` / `list_turns` (exactly like `correlation_id`),
+  not passed as a kwarg (ADR-0017).
+- New `TenancySettings` group; new `TenancyMiddleware` analogous to
+  `AccessLogMiddleware`; new top-level `tenancy.py` (sibling of `correlation.py`).
+- New error types: _none_.
 
 ## Backwards-compatibility
 
@@ -50,11 +55,15 @@ serve multiple tenants with **tenant-scoped conversation storage** and
 
 ## Acceptance criteria
 
-- [ ] Cross-tenant read isolation proven for every `TurnRepository` impl.
-- [ ] `AgentSettings` resolve per tenant with a documented precedence.
-- [ ] Off by default; 95% coverage maintained; no protocol break.
+- [x] Cross-tenant read isolation proven for SQLite (unit) + Postgres (gated).
+- [x] Disabled/absent tenant → single implicit `"default"` tenant, byte-identical.
+- [x] Off by default; coverage floors maintained; no protocol break.
+- [ ] _(Phase 2)_ `AgentSettings` resolve per tenant with a documented precedence.
 
-## Open questions
+## Resolved decisions (ADR-0017)
 
-- Storage isolation strategy per backend (schema-per-tenant vs. row filter)?
-- Does tenancy compose with the eval harness targets, or stay request-path only?
+- **Storage isolation = row filter** (`tenant` column + `WHERE tenant = ?`),
+  not schema-per-tenant — simplest, backend-symmetric, and preserves the
+  Protocol signature. Existing rows migrate to `"default"` via the column default.
+- **Request-path only** for Phase 1 — tenancy does **not** compose with the eval
+  harness targets (which run out-of-band); that stays a Phase 2 question.

@@ -135,6 +135,153 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Composite fan_out branches (workflow) + gated embedding smoke tests
+
+Widen a `fan_out` branch to any `WorkflowStep` (spec 0013 / ADR-0018),
+backwards-compatible (a superset).
+
+- **`workflow/graph.py`**: `FanOutNode.branches` widens from `list[AgentNode]`
+  to `list[WorkflowStep]` (an `agent` / `fan_out` / `loop` / `branch`).
+- **`workflow/nodes/fan_out.py`**: hybrid executor — an **all-`agent`** fan_out
+  still delegates to `dispatch_fan_out` verbatim (parity: identical output +
+  spans); a composite branch runs via its executor under `asyncio.gather`. The
+  `first`/`concat` join is unchanged.
+- **Gated live embedding smoke tests** closing a coverage gap: `tests/lmstudio/
+  test_embeddings.py` (`RUN_LMSTUDIO=1`) and `tests/vertex/test_embeddings.py`
+  (`RUN_VERTEX=1`) exercise `LMStudioEmbeddingClient` / `VertexEmbeddingClient`
+  against a real backend (skipped by default).
+
+### Added — Multi-tenancy Phase 1 (storage isolation, opt-in)
+
+Tenant-scoped conversation storage (spec 0007 / ADR-0017), additive and
+default-OFF. Phase 2 (per-tenant `AgentSettings` at dispatch) is deferred.
+
+- **`src/mangomas/tenancy.py`**: a `tenant_id` `ContextVar` + `set/get/resolve/
+  sanitize_tenant` helpers, cloning the `correlation.py` pattern; `DEFAULT_TENANT`
+  is the single source of the implicit `"default"` tenant.
+- **`api/middleware.py`**: `TenancyMiddleware` sets the ContextVar from the
+  configured header (installed only when `tenancy.enabled`).
+- **Storage**: `adapters/storage/{sqlite,postgres}.py` add a
+  `tenant TEXT NOT NULL DEFAULT 'default'` column with an idempotent migration
+  for pre-tenancy databases, stamp `save_turn`, and filter `list_turns` by
+  `WHERE tenant = ?`. The tenant is read from the ContextVar **inside** each
+  method — so the `TurnRepository` Protocol signature is unchanged. Disabled ⇒
+  all rows use `"default"` ⇒ byte-identical.
+- **Config**: `MANGOMAS_TENANCY__ENABLED` (default `false`) / `__HEADER` / `__DEFAULT`.
+- **Tests**: SQLite isolation + disabled-path parity + migration + a
+  `TenancyMiddleware` end-to-end `/history` isolation test; gated Postgres
+  isolation under `RUN_POSTGRES=1`. New `tenancy` coverage floor at 100%.
+
+### Changed — Wave 1–3 hardening pass
+
+Gap-analysis + hardening of the HTTP-surface work (no behaviour change by
+default; all still additive/default-OFF):
+
+- **CORS is fully env-driven** — `MANGOMAS_API__CORS_ALLOW_METHODS` /
+  `__CORS_ALLOW_HEADERS` / `__CORS_ALLOW_CREDENTIALS` join `__CORS_ALLOW_ORIGINS`.
+  Credentials default **off** (reflecting credentials with a wildcard origin is a
+  browser-security footgun).
+- **`/history` bounds are env-driven** — `MANGOMAS_API__HISTORY_DEFAULT_LIMIT` /
+  `__HISTORY_MAX_LIMIT` replace the inline constants.
+- **Single source for workflow opt-in precedence** — `resolve_workflow_source`
+  moved to `workflow/loader.py` and shared by the CLI and HTTP surfaces (was
+  duplicated).
+- **Backpressure guards moved inner of the log/trace middlewares**, so a rejected
+  413/503 still carries its `X-Request-ID` + access-log line; the at-capacity
+  status constant/slug renamed to reflect its 503 (`server_at_capacity`).
+- **Tests**: shared `_clear_settings_cache` fixture hoisted to `conftest.py`;
+  the concurrency-wiring test now asserts the guard is actually installed; added
+  negative tests for the auth validator and the metrics lifespan wiring.
+
+### Added — Conditional workflow branch node
+
+Add a `branch` node to the declarative workflow graph (spec 0012 / ADR-0016),
+additive and default-OFF (existing graphs never carry `kind="branch"`).
+
+- **`workflow/graph.py`**: frozen `BranchNode` (`kind="branch"`) — an ordered list
+  of `{when: PredicateSpec, then: WorkflowStep}` cases plus an optional `default`
+  — added to the `WorkflowStep` and `WorkflowNode` unions.
+- **`workflow/nodes/branch.py`**: `BranchNodeExecutor` compiles each `when` once
+  (reusing `compile_predicate`), evaluates them in order against the node's input
+  content, and runs the first match's `then` via `resolve_executor` (so a branch
+  child may itself be any node kind). No match + no `default` → `ConfigError`.
+- Enables the `planner → route by output → specialised agent` pattern; the node
+  selects one child and adds no back-edge, so the graph stays an acyclic tree.
+
+### Added — HTTP surface parity (workflows, history, CORS)
+
+Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
+
+- **Workflow HTTP endpoint** (spec 0008 / ADR-0012): `POST /workflows/run` and
+  `POST /workflows/validate` in `api/app.py`, delegating to the public
+  `load_workflow` / `execute_workflow`. Graph-source resolution mirrors the CLI
+  (`_resolve_workflow_source`): a per-request `definition` runs even when the
+  feature is disabled, otherwise `workflow.enabled` + a configured definition is
+  required. No new error type — reuses `ConfigError` (400) / `AgentNotFound`
+  (404) / `MaxStepsExceeded` (422). No protected-path edits.
+- **`GET /history`**: HTTP twin of `mangomas history`, delegating to
+  `orch.context.repo.list_turns(limit=...)`; returns an empty list when no
+  storage is configured.
+- **Opt-in CORS**: `MANGOMAS_API__CORS_ALLOW_ORIGINS` (default empty →
+  `CORSMiddleware` not installed, so behaviour is byte-identical unless set).
+
+### Fixed
+
+- **`cli/main.py`**: typed `_require_rag`'s return as
+  `tuple[EmbeddingClient, VectorStoreRepository]` under `TYPE_CHECKING`, deleting
+  the four `# type: ignore[arg-type]` comments (now redundant under
+  `warn_unused_ignores`).
+- **`CLAUDE.md`**: reconciled the stale "515 tests, 98.16 %" testing-conventions
+  line with the real gate (`scripts/check_coverage.py` @ 95 % + per-package
+  floors) and current counts.
+
+### Added — Request backpressure (opt-in)
+
+Bound request size and concurrency for a service fronting one slow upstream
+(spec 0011 / ADR-0015), additive and default-OFF.
+
+- **`api/middleware.py`**: `MaxBodySizeMiddleware` rejects a request whose
+  `Content-Length` exceeds the limit with `413` before Starlette buffers it;
+  `ConcurrencyLimitMiddleware` rejects requests beyond the in-flight cap with
+  `503` (reject, don't queue) via a race-free in-flight counter.
+- **Config**: `MANGOMAS_API__MAX_BODY_BYTES` / `MANGOMAS_API__MAX_CONCURRENT_REQUESTS`
+  (both default `0` = off → the middleware is not installed).
+
+### Added — Application authentication seam (opt-in)
+
+Add a default-OFF bearer / API-key check on the data + execution routes
+(spec 0010 / ADR-0014). Prerequisite for multi-tenancy.
+
+- **`api/auth.py`**: a FastAPI dependency (`require_auth`) that resolves the
+  expected token once (from `AuthSettings.secret_ref` via the `SecretsProvider`
+  seam), compares it constant-time against `Authorization: Bearer` / `X-API-Key`,
+  and **fails closed** if the secret does not resolve. Disabled → no-op.
+- **Guarded routes**: `/agents/{name}/invoke|stream`, `/history`, `/workflows/*`.
+  Probes (`/healthz`, `/readyz` + aliases) and `GET /agents` stay open.
+- **`AuthenticationError`** (code `authentication_error`, HTTP 401) is an
+  api-layer `MangomasError` subclass mapped in `_ERROR_STATUS`; `errors.py`
+  (protected) is untouched.
+- **Config**: `MANGOMAS_AUTH__ENABLED` (default `false`), `MANGOMAS_AUTH__SECRET_REF`
+  (required when enabled).
+
+### Added — OpenTelemetry metrics (opt-in)
+
+Add a metrics pipeline alongside the existing span pipeline, additive and
+default-OFF (spec 0009 / ADR-0013). Pays down the harness `METRICS_*` naming debt.
+
+- **`telemetry.py`**: a `MeterProvider` behind `_build_metric_reader` (parallel to
+  `_build_span_exporter`, reusing the `console`/`gcp` tokens), plus
+  `configure_metrics` (idempotent, installs the provider only when enabled) and
+  `get_meter`. Disabled by default → the global provider stays the OTel no-op, so
+  recording is byte-identical.
+- **`src/mangomas/metrics.py`**: record helpers for an agent-invocation counter
+  (`agent`, `status`), an error counter (`agent`, `code`), and a duration
+  histogram (`agent`); instruments bind lazily to the installed provider.
+- **`api/app.py`**: emits those metrics at the `/agents/{name}/invoke` boundary
+  (no protected-core edit); the lifespan calls `configure_metrics`.
+- **Config**: `MANGOMAS_TELEMETRY__METRICS_ENABLED` (default `false`); reuses
+  `MANGOMAS_TELEMETRY__EXPORTER` for the metric exporter.
+
 ### Added — Declarative multi-agent workflow graphs
 
 Compose agents through a declarative JSON graph consumed by the `Orchestrator`,

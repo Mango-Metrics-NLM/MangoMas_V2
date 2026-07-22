@@ -32,15 +32,18 @@ class AgentNode(_NodeBase):
 
 
 class FanOutNode(_NodeBase):
-    """Dispatch several agents in parallel and reduce their replies.
+    """Fan several branches out in parallel and reduce their replies.
 
-    ``join`` selects the reduction: ``first`` returns the first branch's response
-    verbatim; ``concat`` newline-joins every branch's ``content`` into a fresh
-    response (``agent="fan_out"``, empty metadata).
+    Each branch is any :data:`WorkflowStep` (an ``agent`` / ``fan_out`` / ``loop``
+    / ``branch``). An **all-``agent``** fan_out delegates to
+    ``dispatch_fan_out`` verbatim (parity); a composite branch is run via its
+    executor (ADR-0018). ``join`` selects the reduction: ``first`` returns the
+    first branch's response verbatim; ``concat`` newline-joins every branch's
+    ``content`` into a fresh response (``agent="fan_out"``, empty metadata).
     """
 
     kind: Literal["fan_out"] = "fan_out"
-    branches: list[AgentNode] = Field(min_length=1)
+    branches: list[WorkflowStep] = Field(min_length=1)
     join: Literal["first", "concat"] = "first"
 
 
@@ -53,9 +56,34 @@ class LoopNode(_NodeBase):
     max_steps: int = Field(default=DEFAULT_WORKFLOW_LOOP_MAX_STEPS, ge=1)
 
 
+class BranchCase(_NodeBase):
+    """A predicate-guarded case: run ``then`` when ``when`` matches the input."""
+
+    when: PredicateSpec
+    then: WorkflowStep
+
+
+class BranchNode(_NodeBase):
+    """Select exactly one child by predicate (first match wins).
+
+    ``when`` predicates are evaluated in declared order against the node's input
+    content (the last threaded message); the first match's ``then`` runs.
+    ``default`` runs when no case matches — with no ``default`` an unmatched
+    branch raises :class:`~mangomas.errors.ConfigError`. The node selects one
+    child and adds no back-edge, so the graph stays an acyclic tree (ADR-0016).
+    """
+
+    kind: Literal["branch"] = "branch"
+    branches: list[BranchCase] = Field(min_length=1)
+    default: WorkflowStep | None = None
+
+
 # A ``sequence`` step is any leaf node — but NOT another ``sequence`` (v1 keeps
-# nesting bounded to depth two, so no recursion / cycle is possible).
-WorkflowStep = Annotated[AgentNode | FanOutNode | LoopNode, Field(discriminator="kind")]
+# nesting bounded to depth two, so no recursion / cycle is possible). A ``branch``
+# is a step too (it selects one child, adding no cycle).
+WorkflowStep = Annotated[
+    AgentNode | FanOutNode | LoopNode | BranchNode, Field(discriminator="kind")
+]
 
 
 class SequenceNode(_NodeBase):
@@ -66,7 +94,7 @@ class SequenceNode(_NodeBase):
 
 
 WorkflowNode = Annotated[
-    AgentNode | FanOutNode | LoopNode | SequenceNode,
+    AgentNode | FanOutNode | LoopNode | BranchNode | SequenceNode,
     Field(discriminator="kind"),
 ]
 

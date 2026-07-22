@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DBSettings
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
+from mangomas.tenancy import get_tenant
 
 if TYPE_CHECKING:  # pragma: no cover
     import asyncpg
@@ -43,9 +44,16 @@ CREATE TABLE IF NOT EXISTS turns (
     ts        TIMESTAMPTZ  NOT NULL,
     agent     TEXT         NOT NULL,
     request   JSONB        NOT NULL,
-    response  JSONB        NOT NULL
+    response  JSONB        NOT NULL,
+    tenant    TEXT         NOT NULL DEFAULT 'default'
 );
 """
+
+# Idempotent migration for a table created before multi-tenancy (ADR-0017);
+# existing rows adopt the column default. No-op on a fresh table.
+_PG_TENANT_MIGRATION: str = (
+    "ALTER TABLE turns ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default'"
+)
 
 
 def _normalise_dsn(url: str) -> str:
@@ -137,6 +145,7 @@ class PostgresRepository:
                     ms = int(self._statement_timeout * 1000)
                     await conn.execute(f"SET statement_timeout = {ms}")
                 await conn.execute(_PG_SCHEMA)
+                await conn.execute(_PG_TENANT_MIGRATION)
             return self._pool
 
     async def save_turn(
@@ -148,16 +157,18 @@ class PostgresRepository:
         """Persist a single turn; returns the new row id."""
         import asyncpg  # noqa: PLC0415
 
+        tenant = get_tenant()
         pool = await self._ensure_pool()
         try:
             async with pool.acquire() as conn:
                 row_id = await conn.fetchval(
-                    "INSERT INTO turns (ts, agent, request, response) "
-                    "VALUES ($1, $2, $3, $4) RETURNING id",
+                    "INSERT INTO turns (ts, agent, request, response, tenant) "
+                    "VALUES ($1, $2, $3, $4, $5) RETURNING id",
                     datetime.now(UTC),
                     agent,
                     request.model_dump_json(),
                     response.model_dump_json(),
+                    tenant,
                 )
             int_id = int(row_id)
             logger.debug(
@@ -180,14 +191,17 @@ class PostgresRepository:
             ) from exc
 
     async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
-        """Return the most recent turns, newest first."""
+        """Return the most recent turns for the active tenant, newest first."""
         import asyncpg  # noqa: PLC0415
 
+        tenant = get_tenant()
         pool = await self._ensure_pool()
         try:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, ts, agent, request, response FROM turns ORDER BY id DESC LIMIT $1",
+                    "SELECT id, ts, agent, request, response FROM turns "
+                    "WHERE tenant = $1 ORDER BY id DESC LIMIT $2",
+                    tenant,
                     limit,
                 )
         except asyncpg.PostgresError as exc:

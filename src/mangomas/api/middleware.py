@@ -45,7 +45,8 @@ from opentelemetry import baggage
 from opentelemetry import context as otel_context
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.types import ASGIApp
 
 from mangomas.correlation import (
     correlation_id as _correlation_var,
@@ -53,6 +54,8 @@ from mangomas.correlation import (
 from mangomas.correlation import (
     resolve_correlation_id,
 )
+from mangomas.tenancy import resolve_tenant
+from mangomas.tenancy import tenant_id as _tenant_var
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,112 @@ _REQUEST_ID_HEADER = "X-Request-ID"
 _BAGGAGE_KEY = "mangomas.correlation_id"
 _FALLBACK_ERROR_STATUS = 500
 _INTERNAL_ERROR_BODY = "Internal Server Error"
+
+# Backpressure rejection statuses + JSON envelope codes.
+_REQUEST_TOO_LARGE_STATUS = 413
+_REQUEST_TOO_LARGE_CODE = "request_too_large"
+# 503 (not 429): reject-don't-queue per ADR-0015 — a momentarily-at-capacity
+# server is a retryable *server* condition, not a per-client rate limit.
+_AT_CAPACITY_STATUS = 503
+_AT_CAPACITY_CODE = "server_at_capacity"
+
+
+def _json_error(status_code: int, error: str, message: str) -> JSONResponse:
+    """Build the app's ``{"error", "message"}`` envelope as a JSONResponse."""
+    return JSONResponse(status_code=status_code, content={"error": error, "message": message})
+
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    """Reject a request whose declared ``Content-Length`` exceeds ``max_bytes``.
+
+    The check is on the ``Content-Length`` header, so an oversized body is
+    rejected with ``413`` before Starlette buffers it. Chunked requests without a
+    Content-Length are not bounded here (documented in ADR-0015).
+    """
+
+    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+        super().__init__(app)
+        self._max_bytes = max_bytes
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        # A malformed / non-numeric Content-Length is treated as "unknown size"
+        # and passed through (not a 500) — the ASGI server rejects bad values
+        # upstream, and reject-by-guess would be worse than deferring the check.
+        content_length = request.headers.get("content-length")
+        if (
+            content_length is not None
+            and content_length.isdigit()
+            and int(content_length) > self._max_bytes
+        ):
+            return _json_error(
+                _REQUEST_TOO_LARGE_STATUS,
+                _REQUEST_TOO_LARGE_CODE,
+                f"request body exceeds {self._max_bytes} bytes",
+            )
+        return await call_next(request)
+
+
+class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests beyond ``max_concurrent`` in-flight with ``503``.
+
+    Uses a plain in-flight counter — race-free under asyncio's single-threaded
+    event loop, since there is no ``await`` between the check and the increment.
+    Excess requests are rejected immediately rather than queued, so a slow
+    upstream cannot build an unbounded backlog (ADR-0015).
+    """
+
+    def __init__(self, app: ASGIApp, *, max_concurrent: int) -> None:
+        super().__init__(app)
+        self._max = max_concurrent
+        self._in_flight = 0
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if self._in_flight >= self._max:
+            return _json_error(
+                _AT_CAPACITY_STATUS,
+                _AT_CAPACITY_CODE,
+                "server at capacity; retry later",
+            )
+        self._in_flight += 1
+        try:
+            return await call_next(request)
+        finally:
+            self._in_flight -= 1
+
+
+class TenancyMiddleware(BaseHTTPMiddleware):
+    """Set the per-request tenant from the configured header (ADR-0017).
+
+    Installed only when tenancy is enabled. Reads + sanitises the header and sets
+    the ``tenant_id`` ContextVar (falling back to the configured default when
+    absent) so the storage repositories scope their SQL to it; resets it on the
+    way out so the tenant never leaks across requests.
+    """
+
+    def __init__(self, app: ASGIApp, *, header: str, default: str) -> None:
+        super().__init__(app)
+        self._header = header
+        self._default = default
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        tenant = resolve_tenant(request.headers.get(self._header), self._default)
+        token = _tenant_var.set(tenant)
+        try:
+            return await call_next(request)
+        finally:
+            _tenant_var.reset(token)
 
 
 class AccessLogMiddleware(BaseHTTPMiddleware):

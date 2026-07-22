@@ -37,6 +37,7 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/adapters/**/*.py", 85, "adapters"),
     Floor("src/mangomas/secrets/*.py", 100, "secrets"),
     Floor("src/mangomas/correlation.py", 100, "correlation"),
+    Floor("src/mangomas/tenancy.py", 100, "tenancy"),
     Floor("src/mangomas/eval/**/*.py", 95, "eval"),
     Floor("src/mangomas/rag/**/*.py", 95, "rag"),
     Floor("src/mangomas/workflow/**/*.py", 95, "workflow"),

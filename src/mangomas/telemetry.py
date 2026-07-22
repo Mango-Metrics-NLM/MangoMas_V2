@@ -15,8 +15,10 @@ import logging
 from threading import Lock
 from typing import Any
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.propagate import set_global_textmap
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
@@ -104,10 +106,12 @@ class _TelemetryState:
     """Mutable singleton that tracks idempotency — avoids PLW0603."""
 
     configured: bool = False
+    metrics_configured: bool = False
 
 
 _state = _TelemetryState()
 _lock = Lock()
+_metrics_lock = Lock()
 # Cache of dedicated scoped tracers keyed by (namespace, exporter) so repeated
 # build_orchestrator calls reuse one TracerProvider/SpanProcessor instead of
 # leaking a new one each time (matters most for the gcp Cloud Trace exporter).
@@ -161,6 +165,43 @@ def _build_span_exporter(exporter: str) -> Any:
         return _lazy_cloud_trace_exporter()
     if exporter == EXPORTER_CONSOLE:
         return ConsoleSpanExporter()
+    raise ConfigError(
+        f"Unknown telemetry exporter {exporter!r}; expected one of {sorted(_VALID_APP_EXPORTERS)}."
+    )
+
+
+_GCP_MONITORING_INSTALL_HINT = (
+    "Cloud Monitoring metric exporter is not installed. "
+    "Install: pip install opentelemetry-exporter-gcp-monitoring"
+)
+
+
+def _lazy_cloud_monitoring_exporter() -> Any:  # pragma: no cover - requires gcp monitoring extra
+    """Import and construct the Cloud Monitoring metric exporter lazily.
+
+    Excluded from coverage because the success path requires an optional GCP
+    exporter that the base ``gcp`` extra (Cloud Trace only) does not install; the
+    metric-reader unit tests inject an ``InMemoryMetricReader`` instead.
+    """
+    try:
+        from opentelemetry.exporter.cloud_monitoring import (  # noqa: PLC0415
+            CloudMonitoringMetricsExporter,
+        )
+    except ImportError as exc:
+        raise ImportError(_GCP_MONITORING_INSTALL_HINT) from exc
+    return CloudMonitoringMetricsExporter()
+
+
+def _build_metric_reader(exporter: str) -> Any:
+    """Return a periodic metric reader for the selected *exporter* token.
+
+    Mirrors :func:`_build_span_exporter` so metric-exporter selection reuses the
+    same ``console``/``gcp`` tokens. An unknown token raises :class:`ConfigError`.
+    """
+    if exporter == EXPORTER_GCP:
+        return PeriodicExportingMetricReader(_lazy_cloud_monitoring_exporter())
+    if exporter == EXPORTER_CONSOLE:
+        return PeriodicExportingMetricReader(ConsoleMetricExporter())
     raise ConfigError(
         f"Unknown telemetry exporter {exporter!r}; expected one of {sorted(_VALID_APP_EXPORTERS)}."
     )
@@ -220,6 +261,48 @@ def get_tracer(name: str = "mangomas") -> trace.Tracer:
     if not _state.configured:
         configure_telemetry()
     return trace.get_tracer(name)
+
+
+def configure_metrics(
+    service_name: str = "mangomas",
+    exporter: str = EXPORTER_CONSOLE,
+    *,
+    enabled: bool = False,
+    reader: Any = None,
+) -> None:
+    """Idempotently install a global ``MeterProvider`` when *enabled*.
+
+    Default-OFF: when *enabled* is ``False`` this is a no-op, so the global
+    provider stays the OTel no-op and every instrument ``.add()``/``.record()``
+    call costs nothing. A *reader* may be injected (tests pass an
+    ``InMemoryMetricReader``); otherwise a periodic reader is built from the
+    *exporter* token. Safe to call multiple times.
+    """
+    if not enabled:
+        return
+    with _metrics_lock:
+        if _state.metrics_configured:
+            return
+        metric_reader = reader if reader is not None else _build_metric_reader(exporter)
+        provider = MeterProvider(
+            resource=Resource.create({"service.name": service_name}),
+            metric_readers=[metric_reader],
+        )
+        metrics.set_meter_provider(provider)
+        logger.debug(
+            "Metrics configured",
+            extra={"event": "metrics_configured", "exporter": exporter},
+        )
+        _state.metrics_configured = True
+
+
+def get_meter(name: str = "mangomas") -> metrics.Meter:
+    """Return a meter from the global ``MeterProvider``.
+
+    Returns a no-op meter until :func:`configure_metrics` installs a real
+    provider, so callers can record unconditionally.
+    """
+    return metrics.get_meter(name)
 
 
 def build_scoped_tracer(namespace: str, *, exporter: str = EXPORTER_INHERIT) -> trace.Tracer:

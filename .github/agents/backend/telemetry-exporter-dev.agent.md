@@ -18,9 +18,13 @@ default behaviour and without leaking cloud SDKs into the default install.
 
 ## Scope you own
 
-- `src/mangomas/telemetry.py` — `configure_telemetry()` and the exporter
-  selection branch.
-- `TelemetrySettings` (`MANGOMAS_TELEMETRY__*`) in `config.py`.
+- `src/mangomas/telemetry.py` — `configure_telemetry()` + `_build_span_exporter()`
+  (spans) **and** `configure_metrics()` + `_build_metric_reader()` + `get_meter()`
+  (the opt-in `MeterProvider`, ADR-0013). `_build_metric_reader` mirrors
+  `_build_span_exporter`, reusing the same `console`/`gcp` tokens.
+- `src/mangomas/metrics.py` — the lazily-bound record helpers
+  (`record_agent_invocation` / `_error` / `_duration`).
+- `TelemetrySettings` (`MANGOMAS_TELEMETRY__*`, incl. `METRICS_ENABLED`) in `config.py`.
 - Harness span routing: `MANGOMAS_HARNESS__METRICS_EXPORTER` wired into
   `_HarnessOrchestrator` via `composition.py`.
 
@@ -28,7 +32,9 @@ default behaviour and without leaking cloud SDKs into the default install.
 
 - **Default-OFF**: absent `MANGOMAS_TELEMETRY__EXPORTER` → the exporter used
   today (console/OTLP) is unchanged. Absent `MANGOMAS_HARNESS__METRICS_EXPORTER`
-  → harness spans fall through to the application exporter.
+  → harness spans fall through to the application exporter. `METRICS_ENABLED`
+  defaults `False` → no `MeterProvider` installed, so the global provider stays
+  the OTel no-op and every `record_*` call is free.
 - **Lazy SDK**: `opentelemetry-exporter-gcp-trace` imported inside a factory
   helper (`# noqa: PLC0415`, `# pragma: no cover - requires extra`) behind the
   `gcp` extra. The module must import without the extra installed.

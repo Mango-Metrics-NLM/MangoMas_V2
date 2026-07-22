@@ -72,7 +72,7 @@ src/mangomas/
 │   ├── registry.py     node_registry + resolve_executor
 │   ├── executor.py     NodeExecutor protocol + execute_workflow driver
 │   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
-│   └── nodes/          Self-registering agent/sequence/fan_out/loop executors
+│   └── nodes/          Self-registering agent/sequence/fan_out/loop/branch executors
 ├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
 ├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
@@ -120,6 +120,15 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
 | `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
 | `MANGOMAS_SECRETS__STRICT` | `false` | Raise `SecretsResolutionError` on cloud secret failures instead of returning `None` |
+| `MANGOMAS_API__CORS_ALLOW_ORIGINS` | `[]` | Opt-in CORS allow-list; empty → `CORSMiddleware` not installed |
+| `MANGOMAS_API__MAX_BODY_BYTES` | `0` | Max request body bytes (`0` = off; 413 when exceeded; ADR-0015) |
+| `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; ADR-0015) |
+| `MANGOMAS_AUTH__ENABLED` | `false` | Enforce bearer / API-key auth on data + execution routes (ADR-0014) |
+| `MANGOMAS_AUTH__SECRET_REF` | _(none)_ | `SecretsProvider` ref resolving to the expected API token (required when enabled) |
+| `MANGOMAS_TENANCY__ENABLED` | `false` | Tenant-scoped conversation storage via a row filter (ADR-0017) |
+| `MANGOMAS_TENANCY__HEADER` | `X-Tenant-ID` | Inbound tenant header → per-request `ContextVar` |
+| `MANGOMAS_TENANCY__DEFAULT` | `default` | Implicit tenant when the header is absent/disabled |
+| `MANGOMAS_TELEMETRY__METRICS_ENABLED` | `false` | Install an OTel `MeterProvider` (agent invocation/error/duration; ADR-0013) |
 | `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap |
 | `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout |
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
@@ -254,7 +263,10 @@ HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
 ## Testing Conventions
 
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
-- **Coverage gate**: 95 % minimum — enforced by `pytest --cov` (515 tests, 98.16 % current coverage)
+- **Coverage gate**: 95 % global minimum, enforced by `scripts/check_coverage.py` (the
+  real gate — the CI `pytest --cov-fail-under=90` step is a coarse pre-filter) plus
+  per-package floors (`errors`/`registry`/`core`/`secrets`/`correlation` = 100 %,
+  `adapters` = 85 %, rest = 95 %). ~953 tests, ~98 % current coverage.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
 - **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
@@ -381,9 +393,10 @@ For the **declarative** equivalent (compose these topologies from JSON), see
 
 Off by default (`MANGOMAS_WORKFLOW__ENABLED=false`), so existing deployments see
 no change. A `WorkflowGraph` (JSON) is a bounded tree compiled to the imperative
-dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop`, where
-every leaf is one public dispatch call (no reimplemented loop/gather). See spec
-0005 / ADR-0011 and `docs/workflow/graphs.md`.
+dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop` / `branch`
+(predicate-routed selection; spec 0012 / ADR-0016), where every leaf is one public
+dispatch call (no reimplemented loop/gather). See spec 0005 / ADR-0011 and
+`docs/workflow/graphs.md`.
 
 - **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;
   metadata-transparent executors, so an all-agent `sequence` equals

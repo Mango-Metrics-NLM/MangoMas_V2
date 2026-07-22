@@ -112,6 +112,22 @@ the full error-mapping matrix, auth precedence, and logging events.
 | `GET` | `/agents` | List registered agent names |
 | `POST` | `/agents/{name}/invoke` | Invoke an agent (buffered response) |
 | `POST` | `/agents/{name}/stream` | Stream agent response as Server-Sent Events |
+| `GET` | `/history` | Recent persisted turns (bounded `limit` query; HTTP twin of `mangomas history`) |
+| `POST` | `/workflows/run` | Execute a declarative workflow graph (spec 0008 / ADR-0012) |
+| `POST` | `/workflows/validate` | Parse + validate a graph without LLM I/O |
+
+### Opt-in HTTP hardening (all default-OFF)
+
+Additive middleware / dependencies, installed only when configured — the default
+surface is byte-identical:
+
+| Feature | Enable via | Behaviour |
+|---|---|---|
+| **Auth** (ADR-0014) | `MANGOMAS_AUTH__ENABLED=true` + `MANGOMAS_AUTH__SECRET_REF` | Bearer / `X-API-Key` check on data + execution routes (probes stay open); fail-closed |
+| **CORS** | `MANGOMAS_API__CORS_ALLOW_ORIGINS='["https://app"]'` | `CORSMiddleware`; methods/headers/credentials are env-driven (credentials default off) |
+| **Backpressure** (ADR-0015) | `MANGOMAS_API__MAX_BODY_BYTES` / `__MAX_CONCURRENT_REQUESTS` | `413` on oversized body; `503` (reject-don't-queue) at capacity |
+| **Metrics** (ADR-0013) | `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` | OTel `MeterProvider` — agent invocation / error / duration instruments |
+| **Multi-tenancy** (ADR-0017) | `MANGOMAS_TENANCY__ENABLED=true` | `X-Tenant-ID` → tenant-scoped conversation storage (row filter in SQLite/Postgres) |
 
 ### SSE streaming envelope
 
@@ -235,11 +251,14 @@ so `mangomas.adapters.embeddings` / `.vector` stay importable without the extras
 
 Compose agents through a declarative JSON graph consumed by the `Orchestrator`,
 default-OFF so existing deployments see no change. A `WorkflowGraph` is a bounded
-tree — a `sequence` of `agent` / `fan_out` / `loop` steps — compiled down to the
-existing `dispatch_pipeline` / `dispatch_fan_out` / acceptance-loop primitives.
-Every leaf is one public dispatch call, so an all-agent `sequence` is identical to
-the imperative `dispatch_pipeline`. See `docs/workflow/graphs.md`, spec 0005, and
-ADR-0011.
+tree — a `sequence` of `agent` / `fan_out` / `loop` / `branch` steps — compiled
+down to the existing `dispatch_pipeline` / `dispatch_fan_out` / acceptance-loop
+primitives. Every leaf is one public dispatch call, so an all-agent `sequence` is
+identical to the imperative `dispatch_pipeline`. The `branch` node (spec 0012 /
+ADR-0016) routes on the threaded content via a predicate, enabling
+`planner → route → specialised agent`. Graphs are also runnable over HTTP
+(`POST /workflows/run|validate`). See `docs/workflow/graphs.md`, specs 0005/0008/0012,
+and ADRs 0011/0012/0016.
 
 ```bash
 export MANGOMAS_WORKFLOW__ENABLED=true

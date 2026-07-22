@@ -57,6 +57,10 @@ DEFAULT_EMBEDDINGS_PROVIDER: str = "lmstudio"
 DEFAULT_EMBEDDINGS_MODEL: str = "local-model"
 DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
 TEST_EMBEDDINGS_MOCK_MODEL: str = "embed-m"
+# Gated live embedding smoke tests (spec 0013): the loaded embedding model id.
+LMSTUDIO_EMBEDDING_MODEL_ENV: str = "LMSTUDIO_EMBEDDING_MODEL"
+VERTEX_EMBEDDING_MODEL_ENV: str = "VERTEX_EMBEDDING_MODEL"
+DEFAULT_VERTEX_EMBEDDING_MODEL: str = "text-embedding-004"
 
 # ── Vector store / RAG defaults ───────────────────────────────────────────────
 DEFAULT_VECTOR_PROVIDER: str = "chroma"
@@ -159,9 +163,27 @@ FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"
 FAKE_PLUGIN_AGENT_NAME: str = "fake_plugin_agent"
 
 # ── Declarative workflow graphs (spec 0005) ───────────────────────────────────
-WORKFLOW_NODE_KINDS: tuple[str, ...] = ("agent", "fan_out", "loop", "sequence")
+WORKFLOW_NODE_KINDS: tuple[str, ...] = ("agent", "branch", "fan_out", "loop", "sequence")
 WORKFLOW_SCHEMA_VERSION_CURRENT: int = 1
 WORKFLOW_LOOP_SENTINEL: str = "DONE"
 # Exit code the CLI raises for a workflow *config* error (mirrors eval's exit 2).
 WORKFLOW_CONFIG_EXIT_CODE: int = 2
 WORKFLOW_RUNTIME_EXIT_CODE: int = 1
+
+# Workflow HTTP routes (spec 0008).
+WORKFLOW_RUN_ROUTE: str = "/workflows/run"
+WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
+
+# API authentication (spec 0010). The secret_ref is an env-var NAME (env provider);
+# a non-MANGOMAS prefix keeps pydantic-settings from parsing it as a setting.
+AUTH_SECRET_REF_ENV: str = "TEST_API_TOKEN"  # noqa: S105 — env-var name, not a secret
+AUTH_TOKEN: str = "test-api-token-value"  # noqa: S105 — test fixture value, not a real secret
+
+# Request backpressure (spec 0011).
+BACKPRESSURE_MAX_BODY_BYTES: int = 10
+BACKPRESSURE_MAX_CONCURRENT: int = 1
+
+# Multi-tenancy (spec 0007 / ADR-0017).
+TENANT_A: str = "tenant-a"
+TENANT_B: str = "tenant-b"
+TENANT_HEADER: str = "X-Tenant-ID"

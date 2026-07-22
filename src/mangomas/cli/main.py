@@ -34,9 +34,11 @@ from mangomas.eval import (
     target_registry,
 )
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
-from mangomas.workflow import execute_workflow, load_workflow
+from mangomas.workflow import execute_workflow, load_workflow, resolve_workflow_source
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.adapters.embeddings.base import EmbeddingClient
+    from mangomas.adapters.vector.base import VectorStoreRepository
     from mangomas.config import EvalSettings
     from mangomas.core import Orchestrator
     from mangomas.eval import DatasetSource, GateResult, Sink, Target
@@ -545,7 +547,7 @@ rag_app = typer.Typer(help="Retrieval-augmented generation commands", no_args_is
 app.add_typer(rag_app, name="rag")
 
 
-def _require_rag(orch: Orchestrator) -> tuple[object, object]:
+def _require_rag(orch: Orchestrator) -> tuple[EmbeddingClient, VectorStoreRepository]:
     """Return ``(embeddings, vector_store)`` or exit(2) if RAG is not enabled."""
     ctx = orch.context
     if ctx.embeddings is None or ctx.vector_store is None:
@@ -574,8 +576,8 @@ def rag_ingest(
         try:
             embeddings, vector_store = _require_rag(orch)
             pipeline = IngestionPipeline(
-                embeddings=embeddings,  # type: ignore[arg-type]
-                vector_store=vector_store,  # type: ignore[arg-type]
+                embeddings=embeddings,
+                vector_store=vector_store,
                 settings=cfg.rag,
                 batch_size=cfg.embeddings.batch_size,
             )
@@ -607,8 +609,8 @@ def rag_query(
         try:
             embeddings, vector_store = _require_rag(orch)
             retriever = Retriever(
-                embeddings=embeddings,  # type: ignore[arg-type]
-                vector_store=vector_store,  # type: ignore[arg-type]
+                embeddings=embeddings,
+                vector_store=vector_store,
                 top_k=cfg.vector.top_k,
             )
             results = await retriever.search(text, top_k=top_k)
@@ -636,27 +638,16 @@ app.add_typer(workflow_app, name="workflow")
 def _resolve_workflow_source(definition: str | None) -> str:
     """Return the effective graph source, or ``Exit(2)`` when off/unset.
 
-    An explicit ``--definition`` runs even when the feature is disabled (the
-    caller opted in per-invocation); otherwise the feature must be enabled AND a
-    ``MANGOMAS_WORKFLOW__DEFINITION`` configured. Both failure paths mirror the
-    eval CLI's config exit code (2).
+    Delegates the opt-in precedence rule to the shared
+    :func:`mangomas.workflow.resolve_workflow_source` (single source of truth
+    with the HTTP surface) and maps its :class:`ConfigError` onto the CLI's
+    config exit code (2), mirroring :func:`_load_workflow_or_exit`.
     """
-    cfg = get_settings().workflow
-    if definition is None and not cfg.enabled:
-        typer.echo(
-            "Workflow graph disabled. Set MANGOMAS_WORKFLOW__ENABLED=true and "
-            "MANGOMAS_WORKFLOW__DEFINITION, or pass --definition.",
-            err=True,
-        )
-        raise typer.Exit(code=2)
-    source = definition or cfg.definition
-    if not source:
-        typer.echo(
-            "No workflow definition. Set MANGOMAS_WORKFLOW__DEFINITION or pass --definition.",
-            err=True,
-        )
-        raise typer.Exit(code=2)
-    return source
+    try:
+        return resolve_workflow_source(definition, get_settings().workflow)
+    except MangomasError as exc:
+        typer.echo(f"Workflow configuration error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
 
 
 def _load_workflow_or_exit(source: str) -> WorkflowGraph:

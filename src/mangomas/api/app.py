@@ -4,19 +4,28 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
+from mangomas.api.auth import AuthenticationError, require_auth, resolve_auth_state
 from mangomas.api.health import check_ready
-from mangomas.api.middleware import AccessLogMiddleware
+from mangomas.api.middleware import (
+    AccessLogMiddleware,
+    ConcurrencyLimitMiddleware,
+    MaxBodySizeMiddleware,
+    TenancyMiddleware,
+)
 from mangomas.api.tracing import TraceMiddleware
 from mangomas.composition import build_orchestrator
-from mangomas.config import get_settings
+from mangomas.config import APISettings, get_settings
 from mangomas.core import AgentRequest, AgentResponse
 from mangomas.errors import (
     AgentNotFound,
@@ -33,7 +42,13 @@ from mangomas.errors import (
     ToolNotFound,
     UnknownProvider,
 )
-from mangomas.telemetry import configure_telemetry
+from mangomas.metrics import (
+    record_agent_duration,
+    record_agent_error,
+    record_agent_invocation,
+)
+from mangomas.telemetry import configure_metrics, configure_telemetry
+from mangomas.workflow import execute_workflow, load_workflow, resolve_workflow_source
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -47,6 +62,7 @@ _ERROR_STATUS: dict[type[MangomasError], int] = {
     UnknownProvider: HTTPStatus.BAD_REQUEST,
     ConfigError: HTTPStatus.BAD_REQUEST,
     ToolNotFound: HTTPStatus.BAD_REQUEST,
+    AuthenticationError: HTTPStatus.UNAUTHORIZED,
     AgentNotFound: HTTPStatus.NOT_FOUND,
     LLMTimeout: HTTPStatus.GATEWAY_TIMEOUT,
     LLMUnavailable: HTTPStatus.SERVICE_UNAVAILABLE,
@@ -68,6 +84,102 @@ def _error_status(exc: MangomasError) -> int:
     return HTTPStatus.INTERNAL_SERVER_ERROR  # pragma: no cover  -- MangomasError always in MRO
 
 
+# ── Workflow request/response models ──────────────────────────────────────────
+# Api-layer only: the core AgentRequest/AgentResponse models are untouched.
+
+
+class WorkflowRunRequest(BaseModel):
+    """Body for ``POST /workflows/run``.
+
+    Carries the ``request`` (an :class:`AgentRequest` fed to the graph's root
+    node) plus an optional per-request ``definition`` (inline JSON or a path)
+    that overrides ``settings.workflow.definition``.
+    """
+
+    request: AgentRequest
+    definition: str | None = Field(default=None)
+
+
+class WorkflowValidateRequest(BaseModel):
+    """Body for ``POST /workflows/validate``.
+
+    An optional ``definition`` (inline JSON or a path); falls back to
+    ``settings.workflow.definition`` when omitted.
+    """
+
+    definition: str | None = Field(default=None)
+
+
+class WorkflowValidateResponse(BaseModel):
+    """Result of a successful ``POST /workflows/validate``."""
+
+    ok: bool = True
+    name: str
+    root_kind: str
+
+
+def _install_backpressure(app: FastAPI, api_cfg: APISettings) -> None:
+    """Install the opt-in backpressure guards (no-op when both limits are 0).
+
+    Installed *inner* to the access/trace loggers (see ``create_app``) so a
+    rejected 413/503 still flows back through ``AccessLogMiddleware`` and carries
+    its ``X-Request-ID`` + access-log line (ADR-0015). The body-size guard is
+    added after the concurrency guard so it sits outer — an oversized request is
+    rejected before it consumes a concurrency slot.
+    """
+    if api_cfg.max_concurrent_requests > 0:
+        app.add_middleware(
+            ConcurrencyLimitMiddleware, max_concurrent=api_cfg.max_concurrent_requests
+        )
+    if api_cfg.max_body_bytes > 0:
+        app.add_middleware(MaxBodySizeMiddleware, max_bytes=api_cfg.max_body_bytes)
+
+
+def _install_tenancy(app: FastAPI) -> None:
+    """Install the opt-in `TenancyMiddleware` (no-op when tenancy is disabled).
+
+    Sets the per-request tenant `ContextVar` the storage repos read; default-OFF
+    ⇒ not installed ⇒ every row uses the implicit ``"default"`` tenant (ADR-0017).
+    """
+    cfg = get_settings().tenancy
+    if cfg.enabled:
+        app.add_middleware(TenancyMiddleware, header=cfg.header, default=cfg.default)
+
+
+def _register_workflow_routes(app: FastAPI) -> None:
+    """Register the ``/workflows/*`` routes on *app* (kept out of ``create_app``)."""
+
+    @app.post(
+        "/workflows/run",
+        response_model=AgentResponse,
+        dependencies=[Depends(require_auth)],
+    )
+    async def workflow_run(body: WorkflowRunRequest) -> AgentResponse:
+        """Execute a declarative workflow graph and return the final response.
+
+        A per-request ``definition`` runs even when the feature is disabled;
+        otherwise ``workflow.enabled`` + a configured definition is required
+        (disabled/unset → 400 ``ConfigError``). Graph parse/validation errors
+        (400), an unknown agent (404), and ``MaxStepsExceeded`` (422) all flow
+        through the shared error handler.
+        """
+        orch: Orchestrator = app.state.orchestrator
+        source = resolve_workflow_source(body.definition, get_settings().workflow)
+        graph = load_workflow(source)
+        return await execute_workflow(graph, body.request, orch=orch)
+
+    @app.post(
+        "/workflows/validate",
+        response_model=WorkflowValidateResponse,
+        dependencies=[Depends(require_auth)],
+    )
+    async def workflow_validate(body: WorkflowValidateRequest) -> WorkflowValidateResponse:
+        """Parse and validate a workflow graph without running it (no LLM I/O)."""
+        source = resolve_workflow_source(body.definition, get_settings().workflow)
+        graph = load_workflow(source)
+        return WorkflowValidateResponse(name=graph.name, root_kind=graph.root.kind)
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 
@@ -78,6 +190,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         log_level=settings.log_level,
         log_format=settings.log.format,
         exporter=settings.telemetry.exporter,
+    )
+    configure_metrics(
+        exporter=settings.telemetry.exporter,
+        enabled=settings.telemetry.metrics_enabled,
     )
     app.state.orchestrator = build_orchestrator(settings)
     logger.info("Application started")
@@ -105,8 +221,31 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     if orchestrator is not None:
         app.state.orchestrator = orchestrator
 
+    # Backpressure guards are installed FIRST so they end up *inner* to the
+    # log/trace middlewares added next — a rejected 413/503 still flows back
+    # through AccessLog (X-Request-ID + access-log line). CORS is added last so
+    # it sits outermost (correct for preflight).
+    api_cfg = get_settings().api
+    _install_backpressure(app, api_cfg)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(TraceMiddleware)
+
+    # Opt-in CORS: installed only when an allow-list is configured, so the
+    # default (empty) keeps the response headers byte-identical to before. All
+    # knobs are env-driven (no hard-coded policy); credentials default off.
+    if api_cfg.cors_allow_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=api_cfg.cors_allow_origins,
+            allow_credentials=api_cfg.cors_allow_credentials,
+            allow_methods=api_cfg.cors_allow_methods,
+            allow_headers=api_cfg.cors_allow_headers,
+        )
+
+    _install_tenancy(app)
+
+    # Resolve the expected API token once (default-OFF → a no-op pass-through).
+    app.state.auth = resolve_auth_state(get_settings())
 
     @app.exception_handler(MangomasError)
     async def _mangomas_error_handler(_request: Request, exc: MangomasError) -> JSONResponse:
@@ -141,12 +280,45 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
         orch: Orchestrator = app.state.orchestrator
         return {"agents": orch.list_agents()}
 
-    @app.post("/agents/{name}/invoke", response_model=AgentResponse)
+    @app.get("/history", dependencies=[Depends(require_auth)])
+    async def history(
+        limit: int = Query(
+            default=api_cfg.history_default_limit, ge=1, le=api_cfg.history_max_limit
+        ),
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return recent persisted turns (HTTP twin of ``mangomas history``).
+
+        When no storage is configured (``ctx.repo is None``) this returns an
+        empty list rather than erroring, so the route is safe on a
+        storage-less deployment.
+        """
+        orch: Orchestrator = app.state.orchestrator
+        repo = orch.context.repo
+        if repo is None:
+            return {"turns": []}
+        return {"turns": await repo.list_turns(limit=limit)}
+
+    @app.post(
+        "/agents/{name}/invoke",
+        response_model=AgentResponse,
+        dependencies=[Depends(require_auth)],
+    )
     async def invoke(name: str, request: AgentRequest) -> AgentResponse:
         orch: Orchestrator = app.state.orchestrator
-        return await orch.dispatch(name, request)
+        start = time.perf_counter()
+        try:
+            response = await orch.dispatch(name, request)
+        except MangomasError as exc:
+            # Metrics are no-ops unless MANGOMAS_TELEMETRY__METRICS_ENABLED=true;
+            # the error still flows to the shared handler for its HTTP envelope.
+            record_agent_invocation(name, "error")
+            record_agent_error(name, exc.code)
+            raise
+        record_agent_invocation(name, "ok")
+        record_agent_duration(name, time.perf_counter() - start)
+        return response
 
-    @app.post("/agents/{name}/stream")
+    @app.post("/agents/{name}/stream", dependencies=[Depends(require_auth)])
     async def stream_agent(name: str, request: AgentRequest) -> StreamingResponse:
         orch: Orchestrator = app.state.orchestrator
         # AgentNotFound is raised here (before streaming begins) so the
@@ -168,6 +340,8 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    _register_workflow_routes(app)
 
     return app
 
