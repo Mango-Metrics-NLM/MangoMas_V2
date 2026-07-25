@@ -8,12 +8,18 @@ keeps each adapter down to its genuinely backend-specific ``embed_batch``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
-if TYPE_CHECKING:  # pragma: no cover
 
-    class _HasEmbedBatch(Protocol):
-        async def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
+class _HasEmbedBatch(Protocol):
+    """Structural bound for the mixin's ``self`` — the batching half of the adapter.
+
+    Defined at runtime (not under ``TYPE_CHECKING``) so ``typing.get_type_hints``
+    on the mixin resolves; a deferred-only definition raises ``NameError`` for any
+    caller that introspects signatures.
+    """
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
 
 
 class SingleTextEmbedMixin:

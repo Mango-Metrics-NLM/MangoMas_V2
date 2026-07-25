@@ -2,9 +2,10 @@
 
 Useful for CI notifications. The payload is built by the shared
 :func:`mangomas.eval._serialize.report_payload`, so it is structurally identical
-to the ``json_file`` sink's. ``httpx`` is a core dependency, so this needs no optional extra. The
-client is constructed per ``emit`` and closed in a ``finally``; a non-2xx
-response raises (caught by the CLI's per-sink fault isolation).
+to the ``json_file`` sink's. ``httpx`` is a core dependency, so this needs no
+optional extra. The client is constructed per ``emit`` and closed in a
+``finally``; a non-2xx response raises (caught by the CLI's per-sink fault
+isolation).
 """
 
 from __future__ import annotations

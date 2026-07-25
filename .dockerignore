@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
 .coverage
 coverage.xml
 htmlcov/
@@ -24,10 +25,14 @@ build/
 docs/
 specs/
 tests/
+eval_harness_bridge/
 CHANGELOG.md
 NEXT_STEPS.md
-README.md
 typings/
+pyrightconfig.json
+# NOTE: README.md is deliberately NOT ignored — pyproject.toml declares
+# `readme = "README.md"`, so the builder stage's `COPY pyproject.toml
+# README.md ./` needs it in the build context or the wheel build fails.
 
 # Claude Code harness assets — development tooling, not part of the runtime image
 .claude/

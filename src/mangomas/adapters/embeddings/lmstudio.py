@@ -41,7 +41,13 @@ class LMStudioEmbeddingClient(SingleTextEmbedMixin, OpenAICompatHTTPClient):
         timeout_seconds: float = DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        super().__init__(base_url, model, api_key, timeout_seconds, client)
+        super().__init__(
+            base_url,
+            model,
+            api_key=api_key,
+            timeout_seconds=timeout_seconds,
+            client=client,
+        )
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """POST ``/embeddings`` and return one vector per input text, in order."""

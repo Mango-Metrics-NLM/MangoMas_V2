@@ -11,9 +11,12 @@ repos:
 
   # ── mypy: static type checking ─────────────────────────────────────────────
   # Scoped to src/ only: additional_dependencies below covers exactly the
-  # runtime deps, which is all src/ needs. Tests and scripts pull in far more
-  # (pytest, respx, hypothesis, ...) and are type-checked authoritatively by
-  # CI's full `mypy --strict src tests scripts eval_harness_bridge/src` run.
+  # runtime deps, which is all src/ needs. Everything else in CI's surface
+  # (tests, scripts, eval_harness_bridge/src) pulls in far more — pytest,
+  # respx, hypothesis, asyncpg — and is type-checked authoritatively by CI's
+  # full `mypy --strict src tests scripts eval_harness_bridge/src` run, so the
+  # hook trades breadth for fast, dependency-accurate local feedback.
+  # Keep the rev in lockstep with the `mypy==` pin in pyproject's dev extra.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.0
     hooks:
