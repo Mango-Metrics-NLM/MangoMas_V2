@@ -5,7 +5,8 @@ description: >
   diagnosing failing tests, writing new tests for a module, extending fake
   adapters in fakes.py, updating constants.py, checking coverage, or adding
   integration tests. Covers the pytest-asyncio auto mode, Fake* patterns,
-  Hypothesis fuzz testing, and the 95% coverage gate.
+  Hypothesis fuzz testing, the constants.py config re-export contract, and the
+  coverage gate.
 argument-hint: "Describe the module to test, paste a failing test, or say 'run all tests'"
 ---
 
@@ -17,8 +18,9 @@ argument-hint: "Describe the module to test, paste a failing test, or say 'run a
 - Diagnose a test failure or import error
 - Write a `tests/test_<module>.py` for a new or modified module
 - Extend `tests/fakes.py` with a new fake adapter
-- Add domain constants to `tests/constants.py`
-- Verify coverage gate (95 % minimum)
+- Add domain constants to `tests/constants.py` (re-export config defaults; define
+  test-scoped values locally)
+- Verify the coverage gate
 - Add or run integration tests gated by `RUN_INTEGRATION=1`
 
 ---
@@ -26,14 +28,17 @@ argument-hint: "Describe the module to test, paste a failing test, or say 'run a
 ## Quick Commands
 
 ```powershell
-# Unit tests (fast, no real I/O)
-python -m pytest --tb=short -q
+# Unit tests (fast, no real I/O) — pyproject addopts already supply --cov
+python -m pytest -q
 
 # Single module
 python -m pytest tests/test_<module>.py -v
 
-# Coverage report
-python -m pytest --cov=mangomas --cov-report=term-missing -q
+# Per-package coverage floors — the authoritative gate
+python scripts/check_coverage.py
+
+# Which lines are uncovered (only when chasing a specific gap)
+python -m pytest --cov-report=term-missing -q
 
 # Integration tests (requires LM Studio running)
 $env:RUN_INTEGRATION='1' ; python -m pytest tests/integration --no-cov -q ; Remove-Item Env:\RUN_INTEGRATION
@@ -52,6 +57,8 @@ mypy
 | `asyncio_mode = "auto"` | All async tests are `async def`. Never add `@pytest.mark.asyncio`. |
 | No `mock.patch` on protocols | Use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository` from `fakes.py`. |
 | No magic values | Strings/numbers in tests come from `tests/constants.py`. |
+| Constants re-export config | A default that mirrors `mangomas.config` is **re-exported**, not restated: `from mangomas.config import DEFAULT_X as DEFAULT_X` (the explicit `X as X` idiom, allowed by the `PLC0414` per-file ignore in `pyproject.toml`). Only test-scoped values — mock URLs, env-var names, fixture payloads, `TEST_VERTEX_PROJECT` — are literals in `constants.py`. |
+| Coverage gate | `python scripts/check_coverage.py` is the authoritative per-package gate; the pytest `--cov-fail-under` addopt is a coarse pre-filter. |
 | One file per module | `tests/test_<module>.py` mirrors `src/mangomas/<module>.py`. |
 | Integration gating | `tests/integration/` tests skip unless `RUN_INTEGRATION=1`. |
 | Hypothesis | Fuzz/property tests use `from hypothesis import given, strategies as st`. |

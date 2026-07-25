@@ -33,6 +33,7 @@ eval/protocol.py       Scorer, ScorerContext, ScoreResult protocols
 eval/registry.py       scorer_registry (+ sibling registries per component)
 eval/scorers/          exact_match, regex_match, contains, json_keys, llm_judge, embedding
 eval/sink.py + sinks/  console, json_file, sqlite_results, webhook, langfuse
+eval/_serialize.py     report_payload(report, *, gate_result=None) — the one payload builder
 eval/target.py + targets/  agent (default), pipeline, fan_out, echo
 eval/dataset_source.py + sources/  jsonl (default), inline, langfuse
 eval/runner.py         EvalRunner (reuses Orchestrator) → EvalReport
@@ -59,6 +60,7 @@ eval/discovery.py      entry-point plugins (MANGOMAS_DISCOVERY_ENABLED)
 | Schema version | `EvalSettings.schema_version` is the forward-compat marker; bump deliberately, never silently. |
 | Optional deps | `langfuse` sink/source is lazy-imported behind the `langfuse` extra; module stays importable without it. |
 | Gate purity | `evaluate_gate` / `diff_reports` / `evaluate_regression_gate` are **pure functions** — no I/O; combine verdicts via `merge_gate_results`. |
+| One payload shape | A sink that serialises the whole report calls `eval/_serialize.py::report_payload(report, gate_result=...)` — never `dataclasses.asdict(report)` itself. `json_file` and `webhook` share it, and `baseline.load_baseline` round-trips that exact shape (the gate verdict lands under the top-level `"gate"` key). |
 
 ---
 
@@ -75,7 +77,10 @@ eval/discovery.py      entry-point plugins (MANGOMAS_DISCOVERY_ENABLED)
    (it breaks the embedding-scorer fallback test).
 
 Sinks, targets, and dataset sources follow the identical register-a-factory
-pattern against their own registry.
+pattern against their own registry. A new sink that emits the full report builds
+its body with `report_payload(report, gate_result=gate_result)` from
+`eval/_serialize.py` so it stays byte-identical to `json_file` / `webhook` and
+remains loadable by `baseline.load_baseline`.
 
 ---
 

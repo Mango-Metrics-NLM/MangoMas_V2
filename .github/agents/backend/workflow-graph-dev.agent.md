@@ -23,6 +23,8 @@ protected core files or breaking single-agent dispatch.
 - `src/mangomas/workflow/executor.py` — `NodeExecutor` protocol + `execute_workflow`
 - `src/mangomas/workflow/loader.py` — path/inline JSON → `WorkflowGraph`
 - `src/mangomas/workflow/nodes/` — self-registering node executors
+- `src/mangomas/workflow/nodes/_factory.py` — `make_node_factory(kind, node_cls, executor_cls)`,
+  the shared registry factory + `ConfigError` type guard every node module registers through
 
 ## Invariants
 
@@ -33,14 +35,19 @@ protected core files or breaking single-agent dispatch.
 | Node kinds (v1) | `agent` / `fan_out` / `loop` / `sequence` / `branch` (predicate-routed, spec 0012 / ADR-0016). Opt-in precedence for the graph source is the shared `workflow.resolve_workflow_source` — reused by the CLI and the HTTP `/workflows/*` routes |
 | `AcceptanceFn` stays sync | `compile_predicate` returns a plain `Callable[[AgentResponse], bool]` |
 | Metadata-transparent | Executors return the `dispatch*` result verbatim (provenance in spans) so an all-agent `sequence` equals `dispatch_pipeline` |
-| No `eval` import | Copy any shared helper (e.g. the regex-flag map); `workflow` is a pure sibling of `eval` |
+| No `eval` import | `workflow` is a pure sibling of `eval`, so a helper it needs (e.g. the regex-flag map) is re-stated under `workflow/` — and, once a second workflow module wants it, extracted into a shared `workflow/` module (as `nodes/_factory.py` did) rather than duplicated in-package |
+| One registration line per node | Register via `make_node_factory` — no hand-written `_X_factory` + `isinstance` guard + `# pragma: no cover` boilerplate |
 | Registry seeded once | Node modules self-register; `import mangomas.workflow` wires them via submodule paths |
 
 ## Workflow
 
 1. Read `workflow/graph.py` and the relevant node module in full.
-2. Add a node kind: define the frozen model (add to the union), write a
-   self-registering executor under `nodes/`, delegate to a public dispatch method.
+2. Add a node kind: define the frozen model (add to the union), write an executor
+   under `nodes/<kind>.py` that delegates to a public dispatch method, and
+   self-register it in one line at module bottom:
+   `node_registry.register("<kind>", make_node_factory("<kind>", <Kind>Node, <Kind>NodeExecutor))`.
+   The builder supplies the `isinstance` guard (raising `ConfigError`) and names
+   the closure `_<kind>_factory` so tracebacks still identify the node.
 3. New tunables → `WorkflowSettings` in `config.py` (never hard-code).
 4. Tests: parity vs the imperative equivalent + each error branch, using
    `FakeLLM(replies=[...])` and the `tests/test_workflow_executor.py` idioms.

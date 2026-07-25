@@ -181,8 +181,11 @@ Built-in scorers (registered through `mangomas.eval.scorer_registry`):
 | Scorer | Behaviour |
 |---|---|
 | `exact_match` | Strict string match with case-folding + whitespace normalisation toggles |
+| `regex_match` | Pattern match against the prediction, with configurable regex flags |
+| `contains` | Substring containment, with case-folding toggle |
+| `json_keys` | Schema conformance — asserts the required keys in structured JSON output (`planner` / `reviewer`) |
 | `llm_judge` | Routes a structured JSON prompt through the orchestrator's LLM; pass = `score >= threshold` |
-| `embedding` | Cosine similarity of embeddings; requires an LLM with `.embed()` (gap documented in harness docs) |
+| `embedding` | Cosine similarity of embeddings; resolves a real provider via `ScorerContext.embeddings` |
 
 `EvalSettings` is wired into top-level `Settings` with the
 `MANGOMAS_EVAL__*` env prefix; the CLI flags fall back to those values. See
@@ -301,9 +304,9 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.github/skills/<name>/SKILL.md` | 8 skills |
+| Skills (workflow helpers) | `.github/skills/<name>/SKILL.md` | 12 skills |
 | Parent agents | `.github/agents/<parent>.agent.md` | 4 parents |
-| Sub-agents (opt-in `sub_agents:` key) | `.github/agents/<parent>/<slug>.agent.md` | 12 specialised sub-agents |
+| Sub-agents (opt-in `sub_agents:` key) | `.github/agents/<parent>/<slug>.agent.md` | 15 specialised sub-agents |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
 | Project settings | `.claude/settings.json` | Allow/Deny + Stop/PostToolUse hooks |
@@ -332,29 +335,34 @@ HEALTHCHECK that polls `/healthz`.
 
 ## Quality gates
 
-All gates must pass before merging:
+All gates must pass before merging. The `Makefile` wraps the exact commands
+CI runs, so one target reproduces the whole pipeline locally:
 
 ```powershell
-# Lint
-python -m ruff check src tests scripts
-
-# Format check
-python -m ruff format --check src tests scripts
-
-# Type check (strict)
-python -m mypy --strict src tests scripts
-
-# Tests + coverage (95% global floor; per-package floors layered on top)
-python -m pytest
-
-# Per-package coverage floors
-python scripts/check_coverage.py
+make gate     # lint + format-check + typecheck + frontmatter + test + coverage + bridge-coverage
+make help     # list every target
 ```
 
-Per-package floors (`scripts/check_coverage.py`): `errors`, `registry`,
-`core`, `secrets`, `correlation` at **100 %**; `composition`, `agents`,
-`api`, `cli`, `eval`, `rag` at **95 %**; `adapters` at **85 %**; global at
-**95 %**.
+Individually — note the lint surface includes `eval_harness_bridge/src`,
+matching `.github/workflows/ci.yml`:
+
+```powershell
+make lint            # python -m ruff check src tests scripts eval_harness_bridge/src
+make format-check    # python -m ruff format --check ...
+make typecheck       # python -m mypy --strict ...
+make frontmatter     # python scripts/lint_agent_frontmatter.py
+make test            # python -m pytest -q  (addopts supply --cov + the global floor)
+make coverage        # python scripts/check_coverage.py  — per-package floors
+make bridge-coverage # eval_harness_bridge isolated 100% floor
+make precommit       # pre-commit run --all-files
+```
+
+Per-package floors (`scripts/check_coverage.py` — the authoritative gate):
+`errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy` at
+**100 %**; `composition`, `agents`, `api`, `cli`, `eval`, `rag`, `workflow`
+at **95 %**; `adapters` at **85 %**; global at **95 %**. The
+`--cov-fail-under` in `pyproject.toml` mirrors the global floor for local
+runs.
 
 > **Current baseline:** comfortably above every floor — run
 > `python -m pytest -q && python scripts/check_coverage.py` for the live numbers.
@@ -399,30 +407,49 @@ python -m pytest tests/vertex --no-cov
 src/mangomas/
   core/         Domain: agent protocol, orchestrator, tool models
   adapters/     llm/ (lmstudio, vertex), embeddings/, vector/, storage/ — swappable for GCP (see ADR-001)
+                Shared, underscore-prefixed helpers sit at the package root:
+                _http_errors.py / _vertex_errors.py (error translation),
+                _openai_client.py (OpenAI-compatible httpx lifecycle),
+                embeddings/_shared.py (embed / aclose mixins)
   agents/       Concrete agents: chat, summarize, tool_agent, planner, reviewer
   rag/          Opt-in RAG layer — chunker, loader, ingestion pipeline, retriever + RetrievalTool
-  api/          FastAPI app factory, routes, middleware, health checks
-  cli/          Typer CLI (chat, history, eval, rag ingest|query subcommands)
-  eval/         Offline evaluation harness — Scorer protocol, registry, runner, scorers
+  workflow/     Opt-in declarative workflow graphs — frozen node models, predicate
+                compiler, node registry + executors, loader (compiles to dispatch)
+  api/          FastAPI app factory, routes, middleware, auth, health checks
+  cli/          Typer CLI (chat, history, eval, rag, workflow subcommands)
+  eval/         Offline evaluation harness — Scorer protocol, registry, runner, scorers, sinks
   secrets/      SecretsProvider seam (env-var backend; cloud backends pluggable)
   config.py     Pydantic-settings — all config is env-driven (MANGOMAS_*)
   composition.py  Composition root — wires registries at startup
   correlation.py  Per-request correlation id ContextVar + filter
+  tenancy.py    Opt-in tenant ContextVar for tenant-scoped storage
+  errors.py     Typed error hierarchy (MangomasError subclasses)
+  registry.py   Generic, protocol-checked provider store
+  metrics.py    Opt-in OTel MeterProvider + agent metrics
   telemetry.py  OpenTelemetry configuration
 
 tests/
-  unit/          (inline with src naming) — mocked dependencies
+  (root)         Unit tests, named after the module under test
+  adapters/      Adapter unit tests incl. the shared error/client helpers
+  agents/        Agent unit tests
+  deploy/        Deploy-manifest and Docker build-context contract tests
+  eval/          Evaluation-harness tests (in-process)
+  rag/           RAG domain tests
   integration/   ASGITransport-based; set RUN_INTEGRATION=1
   lmstudio/      Real-server tests; set RUN_LMSTUDIO=1
   vertex/        Real Vertex project tests; set RUN_VERTEX=1
-  eval/          Evaluation-harness tests (in-process)
+  postgres/      Testcontainers-backed; set RUN_POSTGRES=1
+  constants.py   Shared constants — re-exports config defaults from mangomas.config
+  fakes.py       Protocol-accurate test doubles
 
 docs/
   adr/           Architecture Decision Records
   adapters/      Per-adapter usage docs (vertex.md)
-  architecture/  C4 diagrams (Mermaid) + observability
+  architecture/  C4 diagrams (Mermaid) + observability + cloud providers
   eval/          Evaluation harness usage (harness.md)
-  testing/       Regression baseline and LM Studio scenario plan
+  workflow/      Declarative workflow-graph usage (graphs.md)
+  plans/         Multi-milestone delivery sequencing
+  testing/       Regression baseline and per-suite scenario plans
 ```
 
 ---

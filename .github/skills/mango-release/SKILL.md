@@ -27,21 +27,23 @@ argument-hint: "Describe the change being released (e.g. 'new Vertex AI adapter'
 
 ```powershell
 # Pre-merge checklist (must all pass)
-python -m ruff check src tests scripts
-python -m ruff format --check src tests scripts
-python -m mypy --strict src tests scripts
+pre-commit run --all-files  # ruff + ruff-format + mypy(src) + file hygiene
+python -m ruff check src tests scripts eval_harness_bridge/src
+python -m ruff format --check src tests scripts eval_harness_bridge/src
+python -m mypy --strict src tests scripts eval_harness_bridge/src
 python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=95
 python scripts/check_coverage.py
-python scripts/lint_agent_frontmatter.py  # added in Phase 3
+python scripts/lint_agent_frontmatter.py
 ```
 
 ```bash
-python -m ruff check src tests scripts
-python -m ruff format --check src tests scripts
-python -m mypy --strict src tests scripts
+pre-commit run --all-files  # ruff + ruff-format + mypy(src) + file hygiene
+python -m ruff check src tests scripts eval_harness_bridge/src
+python -m ruff format --check src tests scripts eval_harness_bridge/src
+python -m mypy --strict src tests scripts eval_harness_bridge/src
 python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=95
 python scripts/check_coverage.py
-python scripts/lint_agent_frontmatter.py  # added in Phase 3
+python scripts/lint_agent_frontmatter.py
 ```
 
 ---
@@ -54,8 +56,10 @@ python scripts/lint_agent_frontmatter.py  # added in Phase 3
 | CHANGELOG-first | Every user-visible change has a CHANGELOG entry under `## [Unreleased]` before merge. |
 | Section ordering | `### Added`, `### Changed`, `### Fixed`, `### Breaking Changes`, `### Deprecated`, `### Removed`. |
 | ADR for architecture | Any change that introduces a new boundary, swaps a provider, or alters the composition root needs an ADR in `docs/adr/`. |
+| Pre-commit parity | `pre-commit run --all-files` is the cheapest way to reproduce CI's lint/format/type gates locally. `ruff` and `mypy` are **exact-pinned** in `pyproject.toml`'s dev extra in lockstep with the hook `rev:`s in `.pre-commit-config.yaml` — bump both together, or the hook and CI disagree. The mypy hook is scoped to `src/`; CI type-checks `src tests scripts eval_harness_bridge/src`. |
+| Lint/type surface | CI runs ruff and mypy over `src tests scripts eval_harness_bridge/src`. Omitting `eval_harness_bridge/src` locally is the usual "green locally, red in CI" cause. |
 | Coverage gate | `scripts/check_coverage.py` is the single source of truth: global 95 % plus per-package floors ranging from 85 % (adapters) to 100 % (`errors.py`, `registry.py`, `core/*`). The pytest `--cov-fail-under=95` addopt in `pyproject.toml` mirrors the global floor. |
-| Frontmatter lint | Once Phase 3 lands, `scripts/lint_agent_frontmatter.py` validates every `.agent.md` and `SKILL.md`. Run before pushing. |
+| Frontmatter lint | `scripts/lint_agent_frontmatter.py` validates every `.agent.md` and `SKILL.md` (and gates protected-core paths on a `BREAKING-CHANGE` marker). Run before pushing. |
 | Sub-agent review checkboxes | PR template lists each parent agent (architect, backend, test-engineer, api-dev); tick the ones whose domain you touched. |
 
 ---
@@ -66,9 +70,10 @@ python scripts/lint_agent_frontmatter.py  # added in Phase 3
 |------|------|
 | `CHANGELOG.md` | Top section is always `## [Unreleased]`; release cuts move it under a dated heading |
 | `pyproject.toml` | `version = "..."` field; `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]` |
-| `.github/workflows/ci.yml` | Authoritative CI gates (ruff, mypy, pytest with coverage, secret scan) |
-| `.github/PULL_REQUEST_TEMPLATE.md` | PR description skeleton (added in Phase 4) |
-| `docs/adr/_template.md` | ADR skeleton (added in Phase 4) |
+| `.github/workflows/ci.yml` | Authoritative CI gates (ruff, mypy, pytest with coverage, secret scan) over `src tests scripts eval_harness_bridge/src` |
+| `.pre-commit-config.yaml` | ruff / ruff-format / mypy / file-hygiene hooks; `rev:`s kept in lockstep with the exact `ruff==` / `mypy==` pins in `pyproject.toml` |
+| `.github/PULL_REQUEST_TEMPLATE.md` | PR description skeleton |
+| `docs/adr/_template.md` | ADR skeleton |
 | `docs/adr/0001-cloud-targets.md` | Reference ADR — current cloud-target matrix |
 | `scripts/check_coverage.py` | Per-package coverage floors (errors/registry/core 100%, agents 95%, etc.) |
 
@@ -94,7 +99,7 @@ python scripts/lint_agent_frontmatter.py  # added in Phase 3
 
 ---
 
-## PR Description Template (mirrors `.github/PULL_REQUEST_TEMPLATE.md` once Phase 4 lands)
+## PR Description Template (mirrors `.github/PULL_REQUEST_TEMPLATE.md`)
 
 ```markdown
 ## Summary
@@ -105,10 +110,11 @@ python scripts/lint_agent_frontmatter.py  # added in Phase 3
 
 ## Test plan
 - [ ] `python -m pytest --tb=short -q`
-- [ ] `python -m ruff check src tests scripts`
-- [ ] `python -m mypy --strict src tests scripts`
+- [ ] `pre-commit run --all-files`
+- [ ] `python -m ruff check src tests scripts eval_harness_bridge/src`
+- [ ] `python -m mypy --strict src tests scripts eval_harness_bridge/src`
 - [ ] `python scripts/check_coverage.py`
-- [ ] `python scripts/lint_agent_frontmatter.py`  <!-- added in Phase 3 -->
+- [ ] `python scripts/lint_agent_frontmatter.py`
 - [ ] Manual smoke (describe)
 
 ## ADR
@@ -152,7 +158,7 @@ python scripts/lint_agent_frontmatter.py  # added in Phase 3
 ## Diagnosing Failures
 
 1. Coverage gate fails per-package → run `pytest --cov-report=term-missing` and read the missing-lines column for the failing package.
-2. `ruff format --check` fails in CI but not locally → run `python -m ruff format src tests scripts` and commit the diff.
+2. `ruff format --check` fails in CI but not locally → you probably omitted a path; run `python -m ruff format src tests scripts eval_harness_bridge/src` and commit the diff. If the *findings* differ rather than the paths, your local ruff drifted from the `ruff==` pin — reinstall the dev extra so it matches the `.pre-commit-config.yaml` rev.
 3. CHANGELOG conflict on merge → take both sides, re-group entries under the correct sections.
 4. ADR number collision → run `ls docs/adr/` and pick the next free number.
 5. PR template not auto-applied → confirm `.github/PULL_REQUEST_TEMPLATE.md` exists on the default branch; GitHub picks it up from `main` only.
