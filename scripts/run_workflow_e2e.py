@@ -8,9 +8,8 @@ Run with LM Studio listening on the host/port configured via
 
 The graph below composes a ``sequence`` of a single agent, a parallel
 ``fan_out`` (joined by ``concat``), and an acceptance ``loop`` — proving the
-declarative layer drives the same primitives as ``run_topologies_e2e.py`` but
-from a JSON definition. Point ``MANGOMAS_DB__URL`` at a throwaway database for a
-clean run (see the note in ``run_topologies_e2e.py``).
+declarative layer drives the imperative dispatch primitives from a JSON
+definition. Point ``MANGOMAS_DB__URL`` at a throwaway database for a clean run.
 """
 
 from __future__ import annotations

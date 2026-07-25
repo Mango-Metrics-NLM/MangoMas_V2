@@ -1,5 +1,7 @@
 """Core domain: agent contract + orchestrator."""
 
+from __future__ import annotations
+
 from mangomas.core.agent import (
     Agent,
     AgentContext,

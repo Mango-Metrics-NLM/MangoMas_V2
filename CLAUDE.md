@@ -110,11 +110,10 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
 | `MANGOMAS_LLM__MODEL` | `local-model` | Model id |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
-| `MANGOMAS_LLM__PROJECT` | _(none)_ | GCP project id (required when `PROVIDER=vertex`) |
+| `MANGOMAS_LLM__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=vertex`) |
 | `MANGOMAS_LLM__LOCATION` | `us-central1` | GCP region for Vertex |
-| `MANGOMAS_LLM__MAX_OUTPUT_TOKENS` | _(none)_ | Optional Gemini generation_config ceiling |
 | `MANGOMAS_DB__PROVIDER` | `sqlite` | Storage registry entry; `postgres` enables Cloud SQL |
-| `MANGOMAS_DB__URL` | `sqlite:///./mangomas.db` | Turn-storage database |
+| `MANGOMAS_DB__URL` | `sqlite:///./data/mangomas.db` | Turn-storage database |
 | `MANGOMAS_DB__POOL_MIN` | `1` | asyncpg pool minimum |
 | `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
 | `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
@@ -263,10 +262,11 @@ HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
 ## Testing Conventions
 
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
-- **Coverage gate**: 95 % global minimum, enforced by `scripts/check_coverage.py` (the
-  real gate — the CI `pytest --cov-fail-under=90` step is a coarse pre-filter) plus
-  per-package floors (`errors`/`registry`/`core`/`secrets`/`correlation` = 100 %,
-  `adapters` = 85 %, rest = 95 %). ~953 tests, ~98 % current coverage.
+- **Coverage gate**: `scripts/check_coverage.py` is the single source of truth —
+  95 % global minimum plus per-package floors
+  (`errors`/`registry`/`core`/`secrets`/`correlation` = 100 %,
+  `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
+  `pyproject.toml` mirrors the global floor.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
 - **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`

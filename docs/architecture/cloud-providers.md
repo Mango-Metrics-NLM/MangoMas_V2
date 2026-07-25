@@ -34,12 +34,11 @@ The meta-extra `pip install -e ".[cloud]"` installs all three.
 | Env var | Default | Notes |
 |---|---|---|
 | `MANGOMAS_LLM__PROVIDER` | `lmstudio` | Set to `vertex` to activate |
-| `MANGOMAS_LLM__PROJECT` | _(none)_ | **Required.** GCP project that owns the model |
+| `MANGOMAS_LLM__PROJECT_ID` | _(none)_ | **Required.** GCP project that owns the model |
 | `MANGOMAS_LLM__LOCATION` | `us-central1` | Vertex region |
 | `MANGOMAS_LLM__MODEL` | `local-model` | Gemini id, e.g. `gemini-1.5-flash` |
 | `MANGOMAS_LLM__TIMEOUT_SECONDS` | `60.0` | Per-request deadline |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
-| `MANGOMAS_LLM__MAX_OUTPUT_TOKENS` | _(none)_ | Optional generation_config ceiling |
 
 ### Registration
 

@@ -119,6 +119,9 @@ ignore = ["PLR0913"]
 [tool.ruff.lint.per-file-ignores]
 # SLF001: tests routinely assert on adapter internals (e.g. lazy-pool state).
 "tests/*" = ["PLR2004", "S101", "SLF001"]
+# PLC0414: the constants hub re-exports config defaults via the explicit
+# ``X as X`` idiom so they read as re-exports, not unused imports.
+"tests/constants.py" = ["PLC0414"]
 "scripts/*" = ["T201", "S603", "S607"]
 
 [tool.mypy]
