@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from mangomas.agents import ExecutionPlan, PlannerAgent, ReviewerAgent, ReviewResult
 from mangomas.config import AgentSettings
 from mangomas.core import AgentContext, AgentRequest, Message
@@ -23,7 +21,6 @@ def _request_with_system() -> AgentRequest:
     )
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_default_prompt_and_json_model() -> None:
     llm = FakeLLM(reply='{"goal":"ship","steps":[{"step":1,"description":"test"}]}')
     agent = PlannerAgent()
@@ -38,7 +35,6 @@ async def test_planner_agent_default_prompt_and_json_model() -> None:
     assert plan.steps[0].description == "test"
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_constructor_prompt_override() -> None:
     llm = FakeLLM(reply='{"goal":"ship","steps":[{"step":1,"description":"test"}]}')
     agent = PlannerAgent(system_prompt="Plan carefully.")
@@ -47,7 +43,6 @@ async def test_planner_agent_constructor_prompt_override() -> None:
     assert llm.calls[0][0].content.startswith("Plan carefully.")
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_settings_prompt_override() -> None:
     llm = FakeLLM(reply='{"goal":"ship","steps":[{"step":1,"description":"test"}]}')
     agent = PlannerAgent(settings=AgentSettings(system_prompt="Settings planner."))
@@ -56,7 +51,6 @@ async def test_planner_agent_settings_prompt_override() -> None:
     assert llm.calls[0][0].content.startswith("Settings planner.")
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_preserves_existing_system_prompt() -> None:
     llm = FakeLLM(reply='{"goal":"ship","steps":[{"step":1,"description":"test"}]}')
     agent = PlannerAgent(system_prompt="unused")
@@ -66,7 +60,6 @@ async def test_planner_agent_preserves_existing_system_prompt() -> None:
     assert llm.calls[0][0].content == "existing"
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_default_prompt_and_json_model() -> None:
     llm = FakeLLM(reply='{"passed":true,"score":0.9,"feedback":"good"}')
     agent = ReviewerAgent()
@@ -81,7 +74,6 @@ async def test_reviewer_agent_default_prompt_and_json_model() -> None:
     assert review.suggestions == []
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_constructor_prompt_override() -> None:
     llm = FakeLLM(reply='{"passed":true,"score":0.9,"feedback":"good"}')
     agent = ReviewerAgent(system_prompt="Review carefully.")
@@ -90,7 +82,6 @@ async def test_reviewer_agent_constructor_prompt_override() -> None:
     assert llm.calls[0][0].content.startswith("Review carefully.")
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_settings_prompt_override() -> None:
     llm = FakeLLM(reply='{"passed":true,"score":0.9,"feedback":"good"}')
     agent = ReviewerAgent(settings=AgentSettings(system_prompt="Settings reviewer."))
@@ -99,7 +90,6 @@ async def test_reviewer_agent_settings_prompt_override() -> None:
     assert llm.calls[0][0].content.startswith("Settings reviewer.")
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_preserves_existing_system_prompt() -> None:
     llm = FakeLLM(reply='{"passed":true,"score":0.9,"feedback":"good"}')
     agent = ReviewerAgent(system_prompt="unused")

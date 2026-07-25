@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pathlib
 
-import pytest
-
 from mangomas.adapters.storage.base import MemoryRepository
 from mangomas.adapters.storage.memory import FileMemoryRepository
 from mangomas.config import MemorySettings
@@ -21,7 +19,6 @@ def test_fake_memory_satisfies_protocol() -> None:
 # ── FakeMemoryRepository write_episodic ───────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_fake_memory_write_episodic_appends() -> None:
     mem = FakeMemoryRepository()
     await mem.write_episodic("entry one")
@@ -29,7 +26,6 @@ async def test_fake_memory_write_episodic_appends() -> None:
     assert mem.episodic_entries == ["entry one", "entry two"]
 
 
-@pytest.mark.asyncio
 async def test_fake_memory_write_episodic_returns_path_string() -> None:
     mem = FakeMemoryRepository()
     path = await mem.write_episodic("hi", prefix="daily")
@@ -40,13 +36,11 @@ async def test_fake_memory_write_episodic_returns_path_string() -> None:
 # ── FakeMemoryRepository read_index / append_index ───────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_fake_memory_read_index_empty_by_default() -> None:
     mem = FakeMemoryRepository()
     assert await mem.read_index() == ""
 
 
-@pytest.mark.asyncio
 async def test_fake_memory_append_index_accumulates() -> None:
     mem = FakeMemoryRepository()
     await mem.append_index("line one")
@@ -77,7 +71,6 @@ def _settings(tmp_path: object) -> MemorySettings:
     )
 
 
-@pytest.mark.asyncio
 async def test_file_memory_write_episodic_creates_file(tmp_path: object) -> None:
     repo = FileMemoryRepository(_settings(tmp_path))
     path = await repo.write_episodic("Hello, memory!")
@@ -86,7 +79,6 @@ async def test_file_memory_write_episodic_creates_file(tmp_path: object) -> None
     assert "Hello, memory!" in pathlib.Path(path).read_text()
 
 
-@pytest.mark.asyncio
 async def test_file_memory_write_episodic_appends(tmp_path: object) -> None:
     repo = FileMemoryRepository(_settings(tmp_path))
     await repo.write_episodic("line 1")
@@ -97,20 +89,17 @@ async def test_file_memory_write_episodic_appends(tmp_path: object) -> None:
     assert "line 2" in content
 
 
-@pytest.mark.asyncio
 async def test_file_memory_write_episodic_prefix(tmp_path: object) -> None:
     repo = FileMemoryRepository(_settings(tmp_path))
     path = await repo.write_episodic("note", prefix="agent")
     assert "agent" in path
 
 
-@pytest.mark.asyncio
 async def test_file_memory_read_index_missing(tmp_path: object) -> None:
     repo = FileMemoryRepository(_settings(tmp_path))
     assert await repo.read_index() == ""
 
 
-@pytest.mark.asyncio
 async def test_file_memory_append_and_read_index(tmp_path: object) -> None:
     repo = FileMemoryRepository(_settings(tmp_path))
     await repo.append_index("- item one")
@@ -120,7 +109,6 @@ async def test_file_memory_append_and_read_index(tmp_path: object) -> None:
     assert "- item two" in content
 
 
-@pytest.mark.asyncio
 async def test_file_memory_creates_parent_dirs(tmp_path: object) -> None:
     settings = MemorySettings(
         enabled=True,

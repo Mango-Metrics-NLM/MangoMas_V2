@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from mangomas.agents.summarize import SummarizeAgent, _format_turns
 from mangomas.config import AgentSettings
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Message
@@ -106,7 +104,6 @@ def test_format_turns_missing_user_message() -> None:
 # ── handle() behaviour ────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_summarize_agent_with_history() -> None:
     repo = FakeRepository()
     llm = FakeLLM(reply="Summary of conversation.")
@@ -127,7 +124,6 @@ async def test_summarize_agent_with_history() -> None:
     assert "Tell me a joke" in combined
 
 
-@pytest.mark.asyncio
 async def test_summarize_agent_no_repo_graceful() -> None:
     """No repository → agent falls back gracefully, still calls LLM."""
     llm = FakeLLM(reply="Nothing to summarize.")
@@ -137,7 +133,6 @@ async def test_summarize_agent_no_repo_graceful() -> None:
     assert len(llm.calls) == 1
 
 
-@pytest.mark.asyncio
 async def test_summarize_agent_empty_request_message() -> None:
     """Empty messages list → falls back to default user content."""
     llm = FakeLLM(reply="OK")
@@ -148,7 +143,6 @@ async def test_summarize_agent_empty_request_message() -> None:
     assert result.content == "OK"
 
 
-@pytest.mark.asyncio
 async def test_summarize_agent_history_limit() -> None:
     """history_limit caps the number of turns fetched."""
     repo = FakeRepository()

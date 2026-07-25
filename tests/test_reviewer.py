@@ -55,7 +55,6 @@ def test_reviewer_agent_custom_prefix_prepended() -> None:
 # ── ReviewerAgent.handle ──────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_returns_llm_content() -> None:
     review_json = json.dumps(
         {"passed": True, "score": 0.8, "feedback": "Good job.", "suggestions": []}
@@ -69,7 +68,6 @@ async def test_reviewer_agent_returns_llm_content() -> None:
     assert resp.agent == "reviewer"
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_injects_system_prompt() -> None:
     llm = FakeLLM(reply="{}")
     ctx = AgentContext(llm=llm, repo=None)
@@ -80,7 +78,6 @@ async def test_reviewer_agent_injects_system_prompt() -> None:
     assert first_message.role == "system"
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_no_duplicate_system_prompt() -> None:
     llm = FakeLLM(reply="{}")
     ctx = AgentContext(llm=llm, repo=None)
@@ -96,7 +93,6 @@ async def test_reviewer_agent_no_duplicate_system_prompt() -> None:
     assert len(system_msgs) == 1
 
 
-@pytest.mark.asyncio
 async def test_reviewer_agent_llm_output_parseable_as_review() -> None:
     result = ReviewResult(
         passed=False,

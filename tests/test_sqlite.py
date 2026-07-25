@@ -21,7 +21,6 @@ def test_path_from_url_variants(tmp_path: Path) -> None:
         _path_from_url("sqlite://")
 
 
-@pytest.mark.asyncio
 async def test_save_and_list(repo: SQLiteRepository) -> None:
     req = AgentRequest(messages=[Message(role="user", content="hi")])
     resp = AgentResponse(content="ok", agent=DEFAULT_AGENT_NAME)
@@ -38,7 +37,6 @@ async def test_save_and_list(repo: SQLiteRepository) -> None:
     assert response["content"] == "ok"
 
 
-@pytest.mark.asyncio
 async def test_file_backed(tmp_path: Path) -> None:
     db = tmp_path / "nested" / "m.db"
     r = SQLiteRepository(f"sqlite:///{db}")

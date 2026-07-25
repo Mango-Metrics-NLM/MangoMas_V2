@@ -19,7 +19,6 @@ _MODELS_URL = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/models"
 _BASE_URL_WITH_TRAILING_SLASH = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_complete_returns_content() -> None:
     route = respx.post(_CHAT_COMPLETIONS_URL).mock(
@@ -40,7 +39,6 @@ async def test_complete_returns_content() -> None:
     assert b'"model":"m"' in sent.content
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_complete_raises_on_malformed() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(
@@ -54,7 +52,6 @@ async def test_complete_raises_on_malformed() -> None:
         await client.aclose()
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_complete_raises_on_http_error() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(500, json={"error": "boom"}))
@@ -67,7 +64,6 @@ async def test_complete_raises_on_http_error() -> None:
         await client.aclose()
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_complete_raises_llm_unavailable_on_connect_error() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(side_effect=httpx.ConnectError("connection refused"))
@@ -79,7 +75,6 @@ async def test_complete_raises_llm_unavailable_on_connect_error() -> None:
         await client.aclose()
 
 
-@pytest.mark.asyncio
 async def test_external_client_not_closed() -> None:
     async with httpx.AsyncClient() as external:
         client = LMStudioClient(
@@ -93,7 +88,6 @@ async def test_external_client_not_closed() -> None:
 # ── ping ──────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_ping_succeeds() -> None:
     respx.get(_MODELS_URL).mock(return_value=httpx.Response(200, json={"data": []}))
@@ -104,7 +98,6 @@ async def test_ping_succeeds() -> None:
         await client.aclose()
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_ping_translates_http_error() -> None:
     respx.get(_MODELS_URL).mock(return_value=httpx.Response(503))
@@ -116,7 +109,6 @@ async def test_ping_translates_http_error() -> None:
         await client.aclose()
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_ping_translates_connect_error_to_unavailable() -> None:
     respx.get(_MODELS_URL).mock(side_effect=httpx.ConnectError("no route"))
@@ -141,7 +133,6 @@ def _sse_body(*chunks: str) -> bytes:
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_stream_yields_content_tokens() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(
@@ -157,7 +148,6 @@ async def test_stream_yields_content_tokens() -> None:
     assert "".join(tokens) == "Hello world"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_stream_skips_unparseable_and_non_data_lines() -> None:
     """Lines the parser rejects are skipped without interrupting the token stream."""
@@ -181,7 +171,6 @@ async def test_stream_skips_unparseable_and_non_data_lines() -> None:
     assert tokens == ["ok"]
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_stream_ends_cleanly_without_done_sentinel() -> None:
     """A truncated stream (no ``[DONE]``) terminates on body exhaustion, not an error."""
@@ -199,7 +188,6 @@ async def test_stream_ends_cleanly_without_done_sentinel() -> None:
     assert tokens == ["partial"]
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_stream_raises_translated_error_on_http_status() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(500))
@@ -212,7 +200,6 @@ async def test_stream_raises_translated_error_on_http_status() -> None:
         await client.aclose()
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_stream_raises_unavailable_on_connect_error() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(side_effect=httpx.ConnectError("refused"))
@@ -253,7 +240,6 @@ def test_parse_sse_line_skips_empty_content() -> None:
 # ── timeout translation ───────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_complete_translates_timeout() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(side_effect=httpx.ReadTimeout("slow"))

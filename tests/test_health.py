@@ -190,7 +190,6 @@ def test_readiness_report_as_dict_omits_empty_detail() -> None:
     assert "detail" not in d["checks"][0]
 
 
-@pytest.mark.asyncio
 async def test_check_ready_pingable_llm() -> None:
     fake_llm = FakeLLM()
     ctx = AgentContext(llm=fake_llm, repo=None)
@@ -200,7 +199,6 @@ async def test_check_ready_pingable_llm() -> None:
     assert report.ready is True
 
 
-@pytest.mark.asyncio
 async def test_check_ready_ping_error() -> None:
     fake_llm = FakeLLM(ping_error=ConnectionError("refused"))
     ctx = AgentContext(llm=fake_llm, repo=None)

@@ -24,14 +24,12 @@ def _req(content: str = "go") -> AgentRequest:
 # ── dispatch_pipeline ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_pipeline_single_agent_passes_through() -> None:
     orch = _make_orch(FakeLLM(reply="hello"))
     resp = await orch.dispatch_pipeline(["chat"], _req())
     assert resp.content == "hello"
 
 
-@pytest.mark.asyncio
 async def test_pipeline_threads_output_as_input() -> None:
     llm = FakeLLM(replies=["step-one", "step-two"])
     orch = _make_orch(llm)
@@ -49,21 +47,18 @@ async def test_pipeline_threads_output_as_input() -> None:
     assert resp.content == "step-two"
 
 
-@pytest.mark.asyncio
 async def test_pipeline_empty_list_raises_value_error() -> None:
     orch = _make_orch()
     with pytest.raises(ValueError, match="non-empty"):
         await orch.dispatch_pipeline([], _req())
 
 
-@pytest.mark.asyncio
 async def test_pipeline_unknown_agent_raises_agent_not_found() -> None:
     orch = _make_orch()
     with pytest.raises(AgentNotFound):
         await orch.dispatch_pipeline(["chat", "ghost"], _req())
 
 
-@pytest.mark.asyncio
 async def test_pipeline_preserves_metadata_in_intermediate_request() -> None:
     llm = FakeLLM(replies=["out1", "out2"])
     orch = _make_orch(llm)
@@ -80,7 +75,6 @@ async def test_pipeline_preserves_metadata_in_intermediate_request() -> None:
 # ── dispatch_fan_out ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_fan_out_single_agent_returns_list_of_one() -> None:
     orch = _make_orch(FakeLLM(reply="one"))
     results = await orch.dispatch_fan_out(["chat"], _req())
@@ -88,7 +82,6 @@ async def test_fan_out_single_agent_returns_list_of_one() -> None:
     assert results[0].content == "one"
 
 
-@pytest.mark.asyncio
 async def test_fan_out_parallel_same_agent_both_receive_same_request() -> None:
     llm = FakeLLM(reply="parallel")
     orch = _make_orch(llm)
@@ -103,21 +96,18 @@ async def test_fan_out_parallel_same_agent_both_receive_same_request() -> None:
         assert r.content == "parallel"
 
 
-@pytest.mark.asyncio
 async def test_fan_out_empty_list_raises_value_error() -> None:
     orch = _make_orch()
     with pytest.raises(ValueError, match="non-empty"):
         await orch.dispatch_fan_out([], _req())
 
 
-@pytest.mark.asyncio
 async def test_fan_out_unknown_agent_propagates_immediately() -> None:
     orch = _make_orch()
     with pytest.raises(AgentNotFound):
         await orch.dispatch_fan_out(["chat", "ghost"], _req())
 
 
-@pytest.mark.asyncio
 async def test_fan_out_results_order_matches_agent_names() -> None:
     """Results list is in the same order as agent_names."""
     llm = FakeLLM()
