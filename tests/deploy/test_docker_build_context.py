@@ -14,7 +14,8 @@ the real manifests instead of a hard-coded snapshot of them.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from fnmatch import fnmatch
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -43,25 +44,46 @@ def _copy_sources() -> list[str]:
     return sources
 
 
-def _ignore_patterns() -> list[str]:
-    """Return the effective (non-comment, non-negated) ``.dockerignore`` patterns."""
-    patterns: list[str] = []
+def _ignore_rules() -> list[tuple[str, bool]]:
+    """Return ``(pattern, is_negation)`` pairs in file order.
+
+    Order is preserved because Docker resolves a path against *every* rule and
+    the **last** match wins — a later ``!pattern`` re-includes something an
+    earlier rule excluded.
+    """
+    rules: list[tuple[str, bool]] = []
     for raw in _DOCKERIGNORE.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("!"):
+        if not line or line.startswith("#"):
             continue
-        patterns.append(line)
-    return patterns
+        negated = line.startswith("!")
+        if negated:
+            line = line[1:].strip()
+        if line:
+            rules.append((line.rstrip("/"), negated))
+    return rules
 
 
-def _is_excluded(source: str, patterns: list[str]) -> str | None:
-    """Return the pattern excluding *source*, or ``None`` when it survives filtering."""
-    candidate = source.rstrip("/")
-    for pattern in patterns:
-        normalised = pattern.rstrip("/")
-        if candidate == normalised or candidate.startswith(f"{normalised}/"):
-            return pattern
-    return None
+def _exclusion_rule(source: str, rules: list[tuple[str, bool]]) -> str | None:
+    """Return the pattern excluding *source*, or ``None`` when it survives filtering.
+
+    Follows Docker's `.dockerignore` semantics rather than approximating them:
+    patterns are globs (``fnmatch``), a rule covering a directory also covers
+    everything beneath it, and every rule is evaluated in order so the last
+    match decides. Anything less can both miss a glob exclusion and report a
+    path as excluded that a later negation puts back.
+    """
+    candidate = source.rstrip("/").removeprefix("./")
+    # Test the path and each ancestor, since ignoring a directory ignores its
+    # contents (`docs/` excludes `docs/adr/0001.md`).
+    paths = [candidate]
+    paths.extend(str(parent) for parent in PurePosixPath(candidate).parents if str(parent) != ".")
+
+    matched: str | None = None
+    for pattern, negated in rules:
+        if any(fnmatch(path, pattern) for path in paths):
+            matched = None if negated else pattern
+    return matched
 
 
 def test_dockerfile_declares_copy_instructions() -> None:
@@ -71,7 +93,7 @@ def test_dockerfile_declares_copy_instructions() -> None:
 
 @pytest.mark.parametrize("source", _copy_sources())
 def test_copied_path_is_not_excluded_by_dockerignore(source: str) -> None:
-    excluded_by = _is_excluded(source, _ignore_patterns())
+    excluded_by = _exclusion_rule(source, _ignore_rules())
     assert excluded_by is None, (
         f"Dockerfile copies {source!r}, but .dockerignore excludes it via "
         f"{excluded_by!r}; `docker build .` would fail at that COPY."
@@ -82,4 +104,44 @@ def test_readme_is_in_build_context() -> None:
     """``pyproject.toml`` sets ``readme = 'README.md'``, so the wheel build needs it."""
     pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'readme = "README.md"' in pyproject
-    assert _is_excluded("README.md", _ignore_patterns()) is None
+    assert _exclusion_rule("README.md", _ignore_rules()) is None
+
+
+# ── matcher semantics ─────────────────────────────────────────────────────────
+# The guard above is only as trustworthy as its matcher, so pin the three
+# Dockerfile behaviours an exact/prefix-only implementation silently gets wrong.
+
+
+@pytest.mark.parametrize(
+    ("rules", "source", "expected"),
+    [
+        # Globs must match, not be compared literally.
+        ([("*.pyc", False)], "module.pyc", "*.pyc"),
+        ([("*.pyc", False)], "module.py", None),
+        ([(".env.*", False)], ".env.local", ".env.*"),
+        # A directory rule covers everything beneath it.
+        ([("docs", False)], "docs/adr/0001.md", "docs"),
+        ([("docs", False)], "docsite/index.md", None),
+        # Last match wins, so a later negation re-includes.
+        ([(".env.*", False), (".env.example", True)], ".env.example", None),
+        # ...and order matters: the same rules reversed keep it excluded.
+        ([(".env.example", True), (".env.*", False)], ".env.example", ".env.*"),
+        # An unmatched path survives.
+        ([("tests", False), ("docs", False)], "pyproject.toml", None),
+    ],
+)
+def test_exclusion_rule_follows_dockerignore_semantics(
+    rules: list[tuple[str, bool]], source: str, expected: str | None
+) -> None:
+    assert _exclusion_rule(source, rules) == expected
+
+
+def test_ignore_rules_preserve_negation_and_order() -> None:
+    """Negations must be parsed, not skipped — dropping them breaks last-match-wins."""
+    rules = _ignore_rules()
+    assert rules, "no rules parsed from .dockerignore"
+    assert any(negated for _, negated in rules), (
+        ".dockerignore has a negation (!.env.example); the parser dropped it"
+    )
+    # Comments and blank lines never become rules.
+    assert all(pattern and not pattern.startswith(("#", "!")) for pattern, _ in rules)
