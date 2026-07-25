@@ -9,14 +9,12 @@ from typing import Any, Final
 
 import httpx
 
-from mangomas.adapters._http_errors import translate_httpx_error
+from mangomas.adapters._openai_client import OpenAICompatHTTPClient
 from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
 
 logger = logging.getLogger(__name__)
-
-_LABEL = "LM Studio"
 
 # SSE sentinel that marks the end of a streaming completion. The literal is
 # defined by the OpenAI-compatible streaming spec — promoted to a module-level
@@ -28,13 +26,11 @@ class LMStudioError(LLMBadResponse):
     """Raised when LM Studio returns an unexpected or malformed response."""
 
 
-def _translate_httpx_error(exc: BaseException, *, base_url: str) -> Exception:
-    """Map raw ``httpx`` exceptions to typed :class:`~mangomas.errors.LLMError` subclasses."""
-    return translate_httpx_error(exc, base_url=base_url, label=_LABEL, bad_response=LMStudioError)
-
-
-class LMStudioClient:
+class LMStudioClient(OpenAICompatHTTPClient):
     """Thin OpenAI-compatible client targeting LM Studio's local server."""
+
+    _LABEL = "LM Studio"
+    _BAD_RESPONSE = LMStudioError
 
     def __init__(
         self,
@@ -45,14 +41,8 @@ class LMStudioClient:
         default_temperature: float = DEFAULT_LLM_TEMPERATURE,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._model = model
+        super().__init__(base_url, model, api_key, timeout_seconds, client)
         self._default_temperature = default_temperature
-        self._owns_client = client is None
-        self._client = client or httpx.AsyncClient(
-            timeout=timeout_seconds,
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
 
     async def complete(
         self,
@@ -74,7 +64,7 @@ class LMStudioClient:
                 "LM Studio request failed",
                 extra={"error": type(exc).__name__, "base_url": self._base_url},
             )
-            raise _translate_httpx_error(exc, base_url=self._base_url) from exc
+            raise self._translate_error(exc) from exc
         data = resp.json()
         try:
             return str(data["choices"][0]["message"]["content"])
@@ -95,7 +85,7 @@ class LMStudioClient:
                 "LM Studio ping failed",
                 extra={"error": type(exc).__name__, "base_url": self._base_url},
             )
-            raise _translate_httpx_error(exc, base_url=self._base_url) from exc
+            raise self._translate_error(exc) from exc
         logger.debug("LM Studio ping OK (%s)", self._base_url)
 
     async def stream(
@@ -128,9 +118,7 @@ class LMStudioClient:
                 try:
                     resp.raise_for_status()
                 except httpx.HTTPError as status_exc:
-                    raise _translate_httpx_error(
-                        status_exc, base_url=self._base_url
-                    ) from status_exc
+                    raise self._translate_error(status_exc) from status_exc
                 async for line in resp.aiter_lines():
                     yield_value = self._parse_sse_line(line)
                     if yield_value is None:
@@ -143,7 +131,7 @@ class LMStudioClient:
                 "LM Studio stream request failed",
                 extra={"error": type(exc).__name__, "base_url": self._base_url},
             )
-            raise _translate_httpx_error(exc, base_url=self._base_url) from exc
+            raise self._translate_error(exc) from exc
 
     @staticmethod
     def _parse_sse_line(line: str) -> str | None:
@@ -160,8 +148,3 @@ class LMStudioClient:
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             logger.debug("Skipping unparseable SSE chunk: %s", exc)
             return None
-
-    async def aclose(self) -> None:
-        """Close the underlying HTTP client (if owned)."""
-        if self._owns_client:
-            await self._client.aclose()

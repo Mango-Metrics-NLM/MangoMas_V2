@@ -12,7 +12,6 @@ span + structured log, mirroring :mod:`mangomas.eval.gate`.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import json
 import logging
 from dataclasses import dataclass, field, fields
@@ -20,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mangomas.errors import ConfigError
+from mangomas.eval._serialize import report_payload
 from mangomas.eval.runner import EvalReport, EvalRowResult
 from mangomas.telemetry import get_tracer
 
@@ -159,4 +159,4 @@ def _row_from_dict(raw: Mapping[str, Any]) -> EvalRowResult:
 
 def report_to_dict(report: EvalReport) -> dict[str, Any]:
     """Serialise *report* to the same dict shape the ``json_file`` sink writes."""
-    return dataclasses.asdict(report)
+    return report_payload(report)

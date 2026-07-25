@@ -13,14 +13,12 @@ from typing import TYPE_CHECKING
 from opentelemetry import trace
 
 from mangomas.core import AgentRequest, Message
-from mangomas.errors import ConfigError
 from mangomas.workflow.graph import SequenceNode
+from mangomas.workflow.nodes._factory import make_node_factory
 from mangomas.workflow.registry import node_registry, resolve_executor
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentResponse, Orchestrator
-    from mangomas.workflow.executor import NodeExecutor
-    from mangomas.workflow.graph import WorkflowNode
 
 
 class SequenceNodeExecutor:
@@ -46,10 +44,6 @@ class SequenceNodeExecutor:
         return response
 
 
-def _sequence_factory(node: WorkflowNode) -> NodeExecutor:
-    if not isinstance(node, SequenceNode):  # pragma: no cover — guarded by the kind discriminator
-        raise ConfigError(f"sequence executor requires a SequenceNode; got {node.kind!r}")
-    return SequenceNodeExecutor(node)
-
-
-node_registry.register("sequence", _sequence_factory)
+node_registry.register(
+    "sequence", make_node_factory("sequence", SequenceNode, SequenceNodeExecutor)
+)

@@ -15,14 +15,13 @@ from typing import TYPE_CHECKING
 from opentelemetry import trace
 
 from mangomas.core import AgentResponse
-from mangomas.errors import ConfigError
 from mangomas.workflow.graph import AgentNode, FanOutNode
+from mangomas.workflow.nodes._factory import make_node_factory
 from mangomas.workflow.registry import node_registry, resolve_executor
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
-    from mangomas.workflow.executor import NodeExecutor
-    from mangomas.workflow.graph import WorkflowNode, WorkflowStep
+    from mangomas.workflow.graph import WorkflowStep
 
 # Agent name stamped on the synthesized ``concat`` response (no single agent owns
 # a joined reply). ``first`` returns a branch response verbatim, keeping its agent.
@@ -65,10 +64,4 @@ class FanOutNodeExecutor:
         return responses[0]
 
 
-def _fan_out_factory(node: WorkflowNode) -> NodeExecutor:
-    if not isinstance(node, FanOutNode):  # pragma: no cover — guarded by the kind discriminator
-        raise ConfigError(f"fan_out executor requires a FanOutNode; got {node.kind!r}")
-    return FanOutNodeExecutor(node)
-
-
-node_registry.register("fan_out", _fan_out_factory)
+node_registry.register("fan_out", make_node_factory("fan_out", FanOutNode, FanOutNodeExecutor))
