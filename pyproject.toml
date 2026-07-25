@@ -27,8 +27,10 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
-    # Pin a recent ruff so local + CI agree on rule availability (esp. PLC0415).
-    "ruff>=0.11,<1.0",
+    # Exact-pinned and kept in lockstep with the ruff-pre-commit rev in
+    # .pre-commit-config.yaml so the hook, local pip, and CI cannot drift
+    # (rule availability and formatter style both change between releases).
+    "ruff==0.16.0",
     "mypy>=1.10",
     "httpx>=0.27",
     "hypothesis>=6.100",
@@ -114,7 +116,15 @@ src = ["src", "tests", "eval_harness_bridge/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG"]
-ignore = ["PLR0913"]
+# PLR0913/PLR0917: adapter constructors and typer CLI commands are
+# keyword-heavy by design; the argument-count ceilings fight both.
+ignore = ["PLR0913", "PLR0917"]
+
+[tool.ruff.format]
+# ruff >= 0.16 formats code fences inside Markdown; the agent.md docs format
+# their example snippets for readability (multi-line JSON bodies), so keep
+# the formatter off Markdown.
+exclude = ["*.md"]
 
 [tool.ruff.lint.per-file-ignores]
 # SLF001: tests routinely assert on adapter internals (e.g. lazy-pool state).
@@ -122,7 +132,7 @@ ignore = ["PLR0913"]
 # PLC0414: the constants hub re-exports config defaults via the explicit
 # ``X as X`` idiom so they read as re-exports, not unused imports.
 "tests/constants.py" = ["PLC0414"]
-"scripts/*" = ["T201", "S603", "S607"]
+"scripts/*" = ["S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -142,12 +152,19 @@ module = [
     "asyncpg.*",
     "testcontainers",
     "testcontainers.*",
+    # google/vertexai entries: the Vertex SDK is an optional extra; the
+    # adapters lazy-import it and mypy must not require stubs that ship with
+    # `mangomas[vertex]` to be installed.
     "google",
     "google.*",
     "google.cloud",
     "google.cloud.*",
+    "google.api_core",
     "google.api_core.*",
+    "google.auth",
     "google.auth.*",
+    "google.oauth2",
+    "google.oauth2.*",
     "vertexai",
     "vertexai.*",
     "chromadb",
@@ -156,23 +173,6 @@ module = [
     "langfuse.*",
     "sentence_transformers",
     "sentence_transformers.*",
-]
-ignore_missing_imports = true
-
-# Vertex SDK is an optional extra; the adapter lazy-imports it and mypy must
-# not require type stubs that ship with `mangomas[vertex]` to be installed.
-[[tool.mypy.overrides]]
-module = [
-    "vertexai",
-    "vertexai.*",
-    "google.api_core",
-    "google.api_core.*",
-    "google.auth",
-    "google.auth.*",
-    "google.oauth2",
-    "google.oauth2.*",
-    "google.cloud",
-    "google.cloud.*",
 ]
 ignore_missing_imports = true
 
@@ -187,6 +187,8 @@ disallow_incomplete_defs = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"
+# --cov-fail-under mirrors GLOBAL_FLOOR in scripts/check_coverage.py — the
+# authoritative gate (per-package floors live there); keep the two in sync.
 addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=95"
 testpaths = ["tests"]
 asyncio_mode = "auto"

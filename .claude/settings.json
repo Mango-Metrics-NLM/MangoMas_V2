@@ -67,7 +67,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m pytest --cov=mangomas --cov-fail-under=85 -q 2>/dev/null || true"
+            "command": "python -m pytest -q"
           }
         ]
       }

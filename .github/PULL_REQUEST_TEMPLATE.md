@@ -18,7 +18,7 @@ Fill every section; the architect sub-agent reviews on these headings.
 - [ ] `python -m ruff check src tests scripts`
 - [ ] `python -m ruff format --check src tests scripts`
 - [ ] `python -m mypy --strict src tests scripts`
-- [ ] `python -m pytest --cov=mangomas --cov-fail-under=90 -q`
+- [ ] `python -m pytest -q` <!-- addopts supply --cov + the global --cov-fail-under=95 -->
 - [ ] `python scripts/check_coverage.py`
 - [ ] `python scripts/lint_agent_frontmatter.py`
 - [ ] Manual smoke (describe): <!-- e.g. ran `mangomas chat "hello"` against LM Studio -->

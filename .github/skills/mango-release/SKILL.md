@@ -30,7 +30,7 @@ argument-hint: "Describe the change being released (e.g. 'new Vertex AI adapter'
 python -m ruff check src tests scripts
 python -m ruff format --check src tests scripts
 python -m mypy --strict src tests scripts
-python -m pytest --cov=mangomas --cov-fail-under=90 -q
+python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=95
 python scripts/check_coverage.py
 python scripts/lint_agent_frontmatter.py  # added in Phase 3
 ```
@@ -39,7 +39,7 @@ python scripts/lint_agent_frontmatter.py  # added in Phase 3
 python -m ruff check src tests scripts
 python -m ruff format --check src tests scripts
 python -m mypy --strict src tests scripts
-python -m pytest --cov=mangomas --cov-fail-under=90 -q
+python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=95
 python scripts/check_coverage.py
 python scripts/lint_agent_frontmatter.py  # added in Phase 3
 ```
@@ -54,7 +54,7 @@ python scripts/lint_agent_frontmatter.py  # added in Phase 3
 | CHANGELOG-first | Every user-visible change has a CHANGELOG entry under `## [Unreleased]` before merge. |
 | Section ordering | `### Added`, `### Changed`, `### Fixed`, `### Breaking Changes`, `### Deprecated`, `### Removed`. |
 | ADR for architecture | Any change that introduces a new boundary, swaps a provider, or alters the composition root needs an ADR in `docs/adr/`. |
-| Coverage gate | Global `--cov-fail-under=90` (enforced by CI) plus per-package floors in `scripts/check_coverage.py` ranging from 85 % (adapters) to 100 % (`errors.py`, `registry.py`, `core/*`). Both must pass; `CLAUDE.md`'s legacy "85 %" wording reflects the lowest per-package floor, not the global gate. |
+| Coverage gate | `scripts/check_coverage.py` is the single source of truth: global 95 % plus per-package floors ranging from 85 % (adapters) to 100 % (`errors.py`, `registry.py`, `core/*`). The pytest `--cov-fail-under=95` addopt in `pyproject.toml` mirrors the global floor. |
 | Frontmatter lint | Once Phase 3 lands, `scripts/lint_agent_frontmatter.py` validates every `.agent.md` and `SKILL.md`. Run before pushing. |
 | Sub-agent review checkboxes | PR template lists each parent agent (architect, backend, test-engineer, api-dev); tick the ones whose domain you touched. |
 
