@@ -1,5 +1,7 @@
 """Retrieval-augmented generation: chunking, ingestion, and retrieval."""
 
+from __future__ import annotations
+
 from mangomas.rag.chunker import chunk_text
 from mangomas.rag.loader import RawDoc, load_documents
 from mangomas.rag.models import Chunk, SearchResult

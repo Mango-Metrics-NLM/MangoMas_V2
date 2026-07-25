@@ -1,15 +1,14 @@
 """Webhook sink — POST the report (and gate verdict) JSON to a URL.
 
-Useful for CI notifications. The payload matches the ``json_file`` sink
-(``dataclasses.asdict(report)`` plus a top-level ``"gate"`` key when a verdict is
-present). ``httpx`` is a core dependency, so this needs no optional extra. The
+Useful for CI notifications. The payload is built by the shared
+:func:`mangomas.eval._serialize.report_payload`, so it is structurally identical
+to the ``json_file`` sink's. ``httpx`` is a core dependency, so this needs no optional extra. The
 client is constructed per ``emit`` and closed in a ``finally``; a non-2xx
 response raises (caught by the CLI's per-sink fault isolation).
 """
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +16,7 @@ import httpx
 
 from mangomas.config import DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS
 from mangomas.errors import ConfigError
+from mangomas.eval._serialize import report_payload
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
 
@@ -47,9 +47,7 @@ class WebhookSink:
         *,
         gate_result: GateResult | None = None,
     ) -> None:
-        payload: dict[str, Any] = dataclasses.asdict(report)
-        if gate_result is not None:
-            payload["gate"] = dataclasses.asdict(gate_result)
+        payload = report_payload(report, gate_result=gate_result)
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(self._url, json=payload)
             response.raise_for_status()

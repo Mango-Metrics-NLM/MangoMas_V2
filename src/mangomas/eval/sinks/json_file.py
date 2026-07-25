@@ -9,13 +9,13 @@ attached under a top-level ``"gate"`` key, so CI artifacts capture the verdict.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mangomas.errors import ConfigError
+from mangomas.eval._serialize import report_payload
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
 
@@ -40,9 +40,7 @@ class JsonFileSink:
         *,
         gate_result: GateResult | None = None,
     ) -> None:
-        payload: dict[str, Any] = dataclasses.asdict(report)
-        if gate_result is not None:
-            payload["gate"] = dataclasses.asdict(gate_result)
+        payload = report_payload(report, gate_result=gate_result)
         text = json.dumps(payload, ensure_ascii=False, indent=2)
         await asyncio.to_thread(self._write, text)
         logger.debug(

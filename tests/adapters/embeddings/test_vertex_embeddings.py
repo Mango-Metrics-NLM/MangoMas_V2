@@ -7,12 +7,11 @@ from typing import Any
 
 import pytest
 
+from mangomas.adapters.embeddings import vertex as vertex_module
 from mangomas.adapters.embeddings.vertex import VertexEmbeddingClient
 from mangomas.config import DEFAULT_VERTEX_LOCATION
 from mangomas.errors import LLMTimeout, LLMUnavailable
-from tests.constants import DEFAULT_EMBEDDINGS_MODEL
-
-_TEST_PROJECT = "test-project"
+from tests.constants import DEFAULT_EMBEDDINGS_MODEL, TEST_VERTEX_PROJECT
 
 
 @dataclass
@@ -46,7 +45,7 @@ class _FakeModelClient:
 
 def _client(model: _FakeModelClient) -> VertexEmbeddingClient:
     return VertexEmbeddingClient(
-        project_id=_TEST_PROJECT,
+        project_id=TEST_VERTEX_PROJECT,
         location=DEFAULT_VERTEX_LOCATION,
         model=DEFAULT_EMBEDDINGS_MODEL,
         client=model,
@@ -82,3 +81,27 @@ async def test_embed_translates_generic_error_to_unavailable() -> None:
 async def test_aclose_is_noop() -> None:
     client = _client(_FakeModelClient())
     await client.aclose()  # no raise
+
+
+def test_omitting_client_triggers_lazy_sdk_init(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without an injected client the adapter lazy-loads the SDK model (ADC path)."""
+    seen: dict[str, Any] = {}
+    sentinel = _FakeModelClient()
+
+    def _fake_lazy_init(*, project_id: str | None, location: str, model: str) -> Any:
+        seen.update(project_id=project_id, location=location, model=model)
+        return sentinel
+
+    monkeypatch.setattr(vertex_module, "_lazy_init_model", _fake_lazy_init)
+    client = VertexEmbeddingClient(
+        project_id=TEST_VERTEX_PROJECT,
+        location=DEFAULT_VERTEX_LOCATION,
+        model=DEFAULT_EMBEDDINGS_MODEL,
+    )
+
+    assert client._client is sentinel
+    assert seen == {
+        "project_id": TEST_VERTEX_PROJECT,
+        "location": DEFAULT_VERTEX_LOCATION,
+        "model": DEFAULT_EMBEDDINGS_MODEL,
+    }

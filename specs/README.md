@@ -39,12 +39,24 @@ thinking tool, not a gate.
 
 ## Index
 
-| Spec | Title | Status |
-|------|-------|--------|
-| 0005 | Declarative multi-agent workflow graph | In progress |
-| 0006 | Dynamic agent loading via entry points | Draft (stub) |
-| 0007 | Multi-tenancy | Draft (stub) |
+| Spec | Title |
+|------|-------|
+| [0001](0001-telemetry-exporter.md) | Telemetry exporter selection |
+| [0002](0002-harness-metrics-exporter.md) | Harness metrics-exporter routing |
+| [0003](0003-secrets-strict-mode.md) | `SecretsSettings.strict` + `SecretsResolutionError` |
+| [0004](0004-cloud-run-deploy.md) | Cloud Run deployment pipeline |
+| [0005](0005-declarative-agent-workflows.md) | Declarative multi-agent workflow graph |
+| [0006](0006-dynamic-agent-loading.md) | Dynamic agent loading via entry points |
+| [0007](0007-multi-tenancy.md) | Multi-tenancy |
+| [0008](0008-workflow-http-endpoint.md) | Workflow HTTP endpoint |
+| [0009](0009-otel-metrics.md) | OpenTelemetry metrics (MeterProvider) |
+| [0010](0010-application-auth-seam.md) | Application authentication seam |
+| [0011](0011-request-backpressure.md) | Request backpressure |
+| [0012](0012-conditional-branch-node.md) | Conditional branch node |
+| [0013](0013-composite-fan-out-branches.md) | Composite fan_out branches |
 
-Specs `0001`–`0004` are reserved for the telemetry-exporter, harness
-metrics-exporter, secrets-strict-mode, and Cloud Run deploy features and will be
-authored as those milestones begin.
+Note: spec and ADR numbers advance independently ("next free integer" applies
+within each directory), so the two sequences do not line up. On this branch
+`docs/adr/` has no `0006`/`0007`. The `main` branch allocated those numbers
+differently — see the ADR-renumbering item in [`NEXT_STEPS.md`](../NEXT_STEPS.md)
+before reconciling the two lines.

@@ -159,6 +159,48 @@ async def test_stream_yields_content_tokens() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_stream_skips_unparseable_and_non_data_lines() -> None:
+    """Lines the parser rejects are skipped without interrupting the token stream."""
+    body = (
+        ": keep-alive comment\n"
+        "event: ping\n"
+        "data: not-json\n"
+        + "data: "
+        + json.dumps({"choices": [{"delta": {"content": "ok"}}]})
+        + "\n"
+        "data: [DONE]\n"
+    ).encode("utf-8")
+    respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(200, content=body))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    tokens: list[str] = []
+    try:
+        async for tok in await client.stream([Message(role="user", content="hi")]):
+            tokens.append(tok)
+    finally:
+        await client.aclose()
+    assert tokens == ["ok"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_stream_ends_cleanly_without_done_sentinel() -> None:
+    """A truncated stream (no ``[DONE]``) terminates on body exhaustion, not an error."""
+    body = ("data: " + json.dumps({"choices": [{"delta": {"content": "partial"}}]}) + "\n").encode(
+        "utf-8"
+    )
+    respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(200, content=body))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    tokens: list[str] = []
+    try:
+        async for tok in await client.stream([Message(role="user", content="hi")]):
+            tokens.append(tok)
+    finally:
+        await client.aclose()
+    assert tokens == ["partial"]
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_stream_raises_translated_error_on_http_status() -> None:
     respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(500))
     client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)

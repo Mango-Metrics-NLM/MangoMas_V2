@@ -6,15 +6,13 @@ from typing import TYPE_CHECKING
 
 from opentelemetry import trace
 
-from mangomas.errors import ConfigError
 from mangomas.workflow.graph import LoopNode
+from mangomas.workflow.nodes._factory import make_node_factory
 from mangomas.workflow.predicate import compile_predicate
 from mangomas.workflow.registry import node_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, AgentResponse, Orchestrator
-    from mangomas.workflow.executor import NodeExecutor
-    from mangomas.workflow.graph import WorkflowNode
 
 
 class LoopNodeExecutor:
@@ -41,10 +39,4 @@ class LoopNodeExecutor:
             )
 
 
-def _loop_factory(node: WorkflowNode) -> NodeExecutor:
-    if not isinstance(node, LoopNode):  # pragma: no cover — guarded by the kind discriminator
-        raise ConfigError(f"loop executor requires a LoopNode; got {node.kind!r}")
-    return LoopNodeExecutor(node)
-
-
-node_registry.register("loop", _loop_factory)
+node_registry.register("loop", make_node_factory("loop", LoopNode, LoopNodeExecutor))

@@ -6,14 +6,12 @@ from typing import TYPE_CHECKING
 
 from opentelemetry import trace
 
-from mangomas.errors import ConfigError
 from mangomas.workflow.graph import AgentNode
+from mangomas.workflow.nodes._factory import make_node_factory
 from mangomas.workflow.registry import node_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, AgentResponse, Orchestrator
-    from mangomas.workflow.executor import NodeExecutor
-    from mangomas.workflow.graph import WorkflowNode
 
 
 class AgentNodeExecutor:
@@ -28,10 +26,4 @@ class AgentNodeExecutor:
             return await orch.dispatch(self._agent, request)
 
 
-def _agent_factory(node: WorkflowNode) -> NodeExecutor:
-    if not isinstance(node, AgentNode):  # pragma: no cover — guarded by the kind discriminator
-        raise ConfigError(f"agent executor requires an AgentNode; got {node.kind!r}")
-    return AgentNodeExecutor(node)
-
-
-node_registry.register("agent", _agent_factory)
+node_registry.register("agent", make_node_factory("agent", AgentNode, AgentNodeExecutor))

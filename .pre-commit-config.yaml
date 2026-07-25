@@ -1,18 +1,25 @@
 repos:
   # ── Ruff: linting + formatting ─────────────────────────────────────────────
+  # Keep this rev in lockstep with the `ruff==` pin in pyproject's dev extra so
+  # the hook, local pip, and CI all run the identical linter/formatter.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    rev: v0.16.0
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
   # ── mypy: static type checking ─────────────────────────────────────────────
+  # Scoped to src/ only: additional_dependencies below covers exactly the
+  # runtime deps, which is all src/ needs. Tests and scripts pull in far more
+  # (pytest, respx, hypothesis, ...) and are type-checked authoritatively by
+  # CI's full `mypy --strict src tests scripts eval_harness_bridge/src` run.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+    rev: v2.3.0
     hooks:
       - id: mypy
         args: [--strict]
+        files: ^src/
         additional_dependencies:
           - fastapi>=0.115
           - pydantic>=2.7
@@ -25,7 +32,7 @@ repos:
 
   # ── Misc: file hygiene ─────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer

@@ -1,18 +1,50 @@
 """Shared test constants.
 
 Import these instead of repeating magic literals in tests.
-Values mirror the defaults defined in ``mangomas.config``.
+Defaults that mirror ``mangomas.config`` are re-exported from it below so a
+config change can never silently desync the tests.
 """
 
 from __future__ import annotations
 
-# ── LLM defaults ──────────────────────────────────────────────────────────────
-DEFAULT_LLM_PROVIDER: str = "lmstudio"
-DEFAULT_LLM_BASE_URL: str = "http://localhost:1234/v1"
-DEFAULT_MODEL: str = "local-model"
-DEFAULT_API_KEY: str = "lm-studio"
-DEFAULT_TIMEOUT_SECONDS: float = 60.0
-DEFAULT_TEMPERATURE: float = 0.2
+# Defaults that mirror ``mangomas.config`` are re-exported (``X as X``) rather
+# than restated, so the config remains the single source of truth.
+from mangomas.config import (
+    DEFAULT_EMBEDDINGS_BATCH_SIZE as DEFAULT_EMBEDDINGS_BATCH_SIZE,
+)
+from mangomas.config import (
+    DEFAULT_EMBEDDINGS_MODEL as DEFAULT_EMBEDDINGS_MODEL,
+)
+from mangomas.config import (
+    DEFAULT_EMBEDDINGS_PROVIDER as DEFAULT_EMBEDDINGS_PROVIDER,
+)
+from mangomas.config import (
+    DEFAULT_LLM_BASE_URL as DEFAULT_LLM_BASE_URL,
+)
+from mangomas.config import (
+    DEFAULT_LOOP_MAX_STEPS as DEFAULT_LOOP_MAX_STEPS,
+)
+from mangomas.config import (
+    DEFAULT_RAG_CHUNK_OVERLAP as DEFAULT_RAG_CHUNK_OVERLAP,
+)
+from mangomas.config import (
+    DEFAULT_RAG_CHUNK_WORDS as DEFAULT_RAG_CHUNK_WORDS,
+)
+from mangomas.config import (
+    DEFAULT_RAG_MIN_CHUNK_WORDS as DEFAULT_RAG_MIN_CHUNK_WORDS,
+)
+from mangomas.config import (
+    DEFAULT_VECTOR_COLLECTION as DEFAULT_VECTOR_COLLECTION,
+)
+from mangomas.config import (
+    DEFAULT_VECTOR_PERSIST_DIR as DEFAULT_VECTOR_PERSIST_DIR,
+)
+from mangomas.config import (
+    DEFAULT_VECTOR_PROVIDER as DEFAULT_VECTOR_PROVIDER,
+)
+from mangomas.config import (
+    DEFAULT_VECTOR_TOP_K as DEFAULT_VECTOR_TOP_K,
+)
 
 # ── LM Studio E2E env-var names (single source of truth) ──────────────────────
 LMSTUDIO_BASE_URL_ENV: str = "LMSTUDIO_BASE_URL"
@@ -23,7 +55,6 @@ VERTEX_PROJECT_ENV: str = "VERTEX_PROJECT_ID"
 VERTEX_LOCATION_ENV: str = "VERTEX_LOCATION"
 VERTEX_MODEL_ENV: str = "VERTEX_MODEL"
 VERTEX_CREDENTIALS_PATH_ENV: str = "VERTEX_CREDENTIALS_PATH"
-RUN_VERTEX_ENV: str = "RUN_VERTEX"
 # Default Vertex model used by E2E tests when ``VERTEX_MODEL`` is unset.
 DEFAULT_VERTEX_TEST_MODEL: str = "gemini-1.5-flash"
 STUB_VERTEX_REPLY: str = "stub-vertex-reply"
@@ -52,41 +83,23 @@ ASGI_TEST_BASE_URL: str = "http://testserver"
 TEST_LMSTUDIO_MOCK_BASE_URL: str = "http://lm/v1"
 TEST_LMSTUDIO_MOCK_MODEL: str = "m"
 
-# ── Embeddings defaults / mock ────────────────────────────────────────────────
-DEFAULT_EMBEDDINGS_PROVIDER: str = "lmstudio"
-DEFAULT_EMBEDDINGS_MODEL: str = "local-model"
-DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
+# ── Embeddings mock ───────────────────────────────────────────────────────────
 TEST_EMBEDDINGS_MOCK_MODEL: str = "embed-m"
 # Gated live embedding smoke tests (spec 0013): the loaded embedding model id.
 LMSTUDIO_EMBEDDING_MODEL_ENV: str = "LMSTUDIO_EMBEDDING_MODEL"
 VERTEX_EMBEDDING_MODEL_ENV: str = "VERTEX_EMBEDDING_MODEL"
 DEFAULT_VERTEX_EMBEDDING_MODEL: str = "text-embedding-004"
 
-# ── Vector store / RAG defaults ───────────────────────────────────────────────
-DEFAULT_VECTOR_PROVIDER: str = "chroma"
-DEFAULT_VECTOR_PERSIST_DIR: str = "./data/chroma"
-DEFAULT_VECTOR_COLLECTION: str = "mangomas"
-DEFAULT_VECTOR_TOP_K: int = 5
-DEFAULT_RAG_CHUNK_WORDS: int = 800
-DEFAULT_RAG_CHUNK_OVERLAP: int = 120
-DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
+# Stand-in GCP project id for Vertex adapter unit tests (never contacts GCP).
+TEST_VERTEX_PROJECT: str = "test-project"
+
+# ── Vector store test-scoped values ───────────────────────────────────────────
 TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
 TEST_VECTOR_COLLECTION: str = "test-col"
-
-# ── DB defaults ───────────────────────────────────────────────────────────────
-DEFAULT_DB_PROVIDER: str = "sqlite"
-DEFAULT_DB_URL: str = "sqlite:///./data/mangomas.db"
-
-# ── API defaults ──────────────────────────────────────────────────────────────
-DEFAULT_API_HOST: str = "0.0.0.0"  # noqa: S104
-DEFAULT_API_PORT: int = 8000
 
 # ── Agent / reply stubs ───────────────────────────────────────────────────────
 DEFAULT_AGENT_NAME: str = "chat"
 STUB_REPLY: str = "stub-reply"
-
-# ── Control loop ──────────────────────────────────────────────────────────────
-DEFAULT_LOOP_MAX_STEPS: int = 1
 
 # ── Tool stubs ────────────────────────────────────────────────────────────────
 DEFAULT_TOOL_NAME: str = "echo"
@@ -147,11 +160,9 @@ GCP_SECRETS_PROJECT_ENV: str = "GCP_SECRETS_PROJECT"
 GCP_SECRETS_SECRET_NAME_ENV: str = "GCP_SECRETS_SECRET_NAME"  # noqa: S105  env-var name
 
 # ── Eval harness (gate / sinks / scorers / discovery) ─────────────────────────
-RUN_LANGFUSE_ENV: str = "RUN_LANGFUSE"
 FAKE_SINK_NAME: str = "fake"
 EVAL_SINK_CONSOLE: str = "console"
 EVAL_SINK_JSON_FILE: str = "json_file"
-EVAL_SINK_LANGFUSE: str = "langfuse"
 # Exit code the CLI raises when the quality gate fails (mirrors
 # mangomas.cli.main.EVAL_GATE_EXIT_CODE).
 EVAL_GATE_EXIT_CODE: int = 3

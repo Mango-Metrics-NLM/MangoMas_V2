@@ -1,5 +1,7 @@
 """LLM adapters."""
 
+from __future__ import annotations
+
 from mangomas.adapters.llm.base import LLMClient
 from mangomas.adapters.llm.lmstudio import LMStudioClient
 from mangomas.adapters.llm.vertex import VertexClient, VertexError

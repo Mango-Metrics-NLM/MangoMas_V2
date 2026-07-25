@@ -1,5 +1,7 @@
 """Concrete agents."""
 
+from __future__ import annotations
+
 from mangomas.agents.chat import ChatAgent
 from mangomas.agents.planner import ExecutionPlan, PlannerAgent, PlanStep
 from mangomas.agents.reviewer import ReviewerAgent, ReviewResult

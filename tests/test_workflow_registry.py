@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mangomas.errors import UnknownProvider
+from mangomas.errors import ConfigError, UnknownProvider
 from mangomas.workflow import node_registry, resolve_executor
 from mangomas.workflow.graph import AgentNode
 from tests.constants import WORKFLOW_NODE_KINDS
@@ -34,3 +34,10 @@ def test_scoped_swaps_a_kind() -> None:
 def test_unknown_kind_raises_unknown_provider() -> None:
     with pytest.raises(UnknownProvider):
         node_registry.get("does-not-exist")
+
+
+def test_factory_rejects_mismatched_node_type() -> None:
+    # The kind discriminator normally routes each node to its own factory; a
+    # direct factory call with the wrong node type must fail loud (ConfigError).
+    with pytest.raises(ConfigError, match="sequence executor requires a SequenceNode"):
+        node_registry.get("sequence")(AgentNode(agent="chat"))

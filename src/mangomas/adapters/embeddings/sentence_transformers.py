@@ -13,6 +13,8 @@ import asyncio
 import logging
 from typing import Any
 
+from mangomas.adapters.embeddings._shared import NoTransportAcloseMixin, SingleTextEmbedMixin
+
 logger = logging.getLogger(__name__)
 
 _SDK_INSTALL_HINT = (
@@ -37,17 +39,12 @@ def _lazy_load_model(model_name: str) -> Any:  # pragma: no cover - requires ext
     return SentenceTransformer(model_name)
 
 
-class SentenceTransformersEmbeddingClient:
+class SentenceTransformersEmbeddingClient(SingleTextEmbedMixin, NoTransportAcloseMixin):
     """Embedding client using an in-process ``SentenceTransformer`` model."""
 
     def __init__(self, model: str, *, client: Any | None = None) -> None:
         self._model_name = model
         self._model = client if client is not None else _lazy_load_model(model)
-
-    async def embed(self, text: str) -> list[float]:
-        """Return the embedding vector for a single ``text``."""
-        vectors = await self.embed_batch([text])
-        return vectors[0]
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Encode ``texts`` off the event loop and return plain ``list[float]`` vectors."""
@@ -56,7 +53,3 @@ class SentenceTransformersEmbeddingClient:
     def _encode(self, texts: list[str]) -> list[list[float]]:
         result = self._model.encode(texts)
         return [[float(x) for x in row] for row in result]
-
-    async def aclose(self) -> None:
-        """No owned sockets; satisfies the ``EmbeddingClient`` protocol."""
-        return None

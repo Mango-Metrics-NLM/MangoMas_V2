@@ -1,5 +1,7 @@
 """Storage adapters."""
 
+from __future__ import annotations
+
 from mangomas.adapters.storage.base import (
     AsyncCloseableRepository,
     MemoryRepository,

@@ -17,6 +17,7 @@ import logging
 from typing import Any
 
 from mangomas.adapters._vertex_errors import translate_vertex_error
+from mangomas.adapters.embeddings._shared import NoTransportAcloseMixin, SingleTextEmbedMixin
 from mangomas.config import DEFAULT_VERTEX_LOCATION
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ def _lazy_init_model(  # pragma: no cover - requires vertex extra
     return TextEmbeddingModel.from_pretrained(model)
 
 
-class VertexEmbeddingClient:
+class VertexEmbeddingClient(SingleTextEmbedMixin, NoTransportAcloseMixin):
     """Embedding client backed by Vertex AI ``TextEmbeddingModel`` (ADC auth)."""
 
     def __init__(
@@ -74,11 +75,6 @@ class VertexEmbeddingClient:
                 model=model,
             )
 
-    async def embed(self, text: str) -> list[float]:
-        """Return the embedding vector for a single ``text``."""
-        vectors = await self.embed_batch([text])
-        return vectors[0]
-
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Call ``get_embeddings_async`` and return one ``list[float]`` per text."""
         try:
@@ -95,7 +91,3 @@ class VertexEmbeddingClient:
             )
             raise translate_vertex_error(exc, project=self._project_id) from exc
         return [[float(x) for x in emb.values] for emb in embeddings]
-
-    async def aclose(self) -> None:
-        """Vertex SDK manages its own transport; satisfies the protocol."""
-        return None
