@@ -55,6 +55,8 @@ thinking tool, not a gate.
 | [0012](0012-conditional-branch-node.md) | Conditional branch node |
 | [0013](0013-composite-fan-out-branches.md) | Composite fan_out branches |
 
-Note: ADR numbers `0006` and `0007` in `docs/adr/` are intentionally
-unassigned; spec and ADR sequences advance independently ("next free
-integer" applies within each directory).
+Note: spec and ADR numbers advance independently ("next free integer" applies
+within each directory), so the two sequences do not line up. On this branch
+`docs/adr/` has no `0006`/`0007`. The `main` branch allocated those numbers
+differently — see the ADR-renumbering item in [`NEXT_STEPS.md`](../NEXT_STEPS.md)
+before reconciling the two lines.
