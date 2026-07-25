@@ -31,7 +31,9 @@ dev = [
     # .pre-commit-config.yaml so the hook, local pip, and CI cannot drift
     # (rule availability and formatter style both change between releases).
     "ruff==0.16.0",
-    "mypy>=1.10",
+    # Exact-pinned in lockstep with the mirrors-mypy rev in
+    # .pre-commit-config.yaml, for the same reason as the ruff pin above.
+    "mypy==2.3.0",
     "httpx>=0.27",
     "hypothesis>=6.100",
     # Used by scripts/lint_agent_frontmatter.py (the Claude Code harness linter).
@@ -116,9 +118,10 @@ src = ["src", "tests", "eval_harness_bridge/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG"]
-# PLR0913/PLR0917: adapter constructors and typer CLI commands are
-# keyword-heavy by design; the argument-count ceilings fight both.
-ignore = ["PLR0913", "PLR0917"]
+# PLR0913: constructors and typer CLI commands are argument-heavy by design.
+# PLR0917 (positional-count) stays ON globally — it is the guard against a
+# silent positional-parameter reorder in a shared base class.
+ignore = ["PLR0913"]
 
 [tool.ruff.format]
 # ruff >= 0.16 formats code fences inside Markdown; the agent.md docs format
@@ -133,6 +136,13 @@ exclude = ["*.md"]
 # ``X as X`` idiom so they read as re-exports, not unused imports.
 "tests/constants.py" = ["PLC0414"]
 "scripts/*" = ["S603", "S607"]
+# PLR0917: these two signatures are fixed by external contract, not by choice.
+# `LMStudioClient.__init__` is a public adapter constructor frozen for
+# backwards compatibility (its shared base is keyword-only); `eval_cmd` is a
+# typer command whose options must stay positional parameters. Narrow ignores
+# keep PLR0917 active as a guard everywhere else.
+"src/mangomas/adapters/llm/lmstudio.py" = ["PLR0917"]
+"src/mangomas/cli/main.py" = ["PLR0917"]
 
 [tool.mypy]
 python_version = "3.11"

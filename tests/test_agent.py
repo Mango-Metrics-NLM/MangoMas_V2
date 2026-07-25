@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-
 from mangomas.adapters.storage import SQLiteRepository
 from mangomas.agents import ChatAgent
 from mangomas.core import AgentContext, AgentRequest, Message
 from tests.fakes import FakeLLM
 
 
-@pytest.mark.asyncio
 async def test_chat_agent_forwards_to_llm(fake_llm: FakeLLM, repo: SQLiteRepository) -> None:
     fake_llm.reply = "hi there"
     ctx = AgentContext(llm=fake_llm, repo=repo)
@@ -24,7 +21,6 @@ async def test_chat_agent_forwards_to_llm(fake_llm: FakeLLM, repo: SQLiteReposit
     assert fake_llm.calls[0][0].role == "user"
 
 
-@pytest.mark.asyncio
 async def test_chat_agent_injects_system_prompt(fake_llm: FakeLLM, repo: SQLiteRepository) -> None:
     ctx = AgentContext(llm=fake_llm, repo=repo)
     agent = ChatAgent(system_prompt="you are mango")
@@ -38,7 +34,6 @@ async def test_chat_agent_injects_system_prompt(fake_llm: FakeLLM, repo: SQLiteR
     assert sent[1].role == "user"
 
 
-@pytest.mark.asyncio
 async def test_chat_agent_does_not_duplicate_system(
     fake_llm: FakeLLM, repo: SQLiteRepository
 ) -> None:

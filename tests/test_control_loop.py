@@ -24,7 +24,6 @@ def _make_orch(
 # ── Single-step default — existing behaviour unchanged ────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_single_step_default_unchanged() -> None:
     orch = _make_orch()
     req = AgentRequest(messages=[Message(role="user", content="hello")])
@@ -38,7 +37,6 @@ async def test_single_step_default_unchanged() -> None:
 # ── Loop exits early when acceptance_fn satisfied before max ──────────────────
 
 
-@pytest.mark.asyncio
 async def test_loop_exits_on_acceptance_before_max() -> None:
     llm = FakeLLM(replies=["no", "no", "yes", "never"])
     orch = _make_orch(llm=llm)
@@ -60,7 +58,6 @@ async def test_loop_exits_on_acceptance_before_max() -> None:
 # ── MaxStepsExceeded raised when acceptance_fn never satisfied ────────────────
 
 
-@pytest.mark.asyncio
 async def test_loop_raises_max_steps_exceeded() -> None:
     orch = _make_orch()
     req = AgentRequest(messages=[Message(role="user", content="x")])
@@ -72,7 +69,6 @@ async def test_loop_raises_max_steps_exceeded() -> None:
 # ── No exception when no acceptance_fn — just runs max_steps times ───────────
 
 
-@pytest.mark.asyncio
 async def test_no_acceptance_fn_runs_max_steps_without_raising() -> None:
     llm = FakeLLM()
     orch = _make_orch(llm=llm)
@@ -85,7 +81,6 @@ async def test_no_acceptance_fn_runs_max_steps_without_raising() -> None:
 # ── Assistant reply re-injected as context for next step ─────────────────────
 
 
-@pytest.mark.asyncio
 async def test_loop_reinjects_assistant_message() -> None:
     llm = FakeLLM(replies=["first-reply", "second-reply"])
     orch = _make_orch(llm=llm)
@@ -108,7 +103,6 @@ async def test_loop_reinjects_assistant_message() -> None:
 # ── Turn persisted exactly once (on the final step) ──────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_loop_persists_final_turn_only() -> None:
     repo = FakeRepository()
     orch = _make_orch(repo=repo)
@@ -128,7 +122,6 @@ async def test_loop_persists_final_turn_only() -> None:
 # ── Loop metadata in response ─────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_loop_metadata_reflects_actual_steps() -> None:
     orch = _make_orch()
     req = AgentRequest(messages=[Message(role="user", content="x")])
@@ -148,7 +141,6 @@ async def test_loop_metadata_reflects_actual_steps() -> None:
 # ── max_steps kwarg overrides request.max_steps ───────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_dispatch_max_steps_kwarg_overrides_request() -> None:
     orch = _make_orch()
     req = AgentRequest(

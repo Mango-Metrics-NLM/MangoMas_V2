@@ -24,6 +24,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 NodeT = TypeVar("NodeT", bound="WorkflowNode")
 
+_VOWELS = frozenset("AEIOU")
+
 
 def make_node_factory(
     kind: str,
@@ -32,9 +34,18 @@ def make_node_factory(
 ) -> Callable[[WorkflowNode], NodeExecutor]:
     """Return a registry factory building *executor_cls* after a type guard on *node_cls*."""
 
+    article = "an" if node_cls.__name__[:1].upper() in _VOWELS else "a"
+
     def factory(node: WorkflowNode) -> NodeExecutor:
         if not isinstance(node, node_cls):
-            raise ConfigError(f"{kind} executor requires a {node_cls.__name__}; got {node.kind!r}")
+            raise ConfigError(
+                f"{kind} executor requires {article} {node_cls.__name__}; got {node.kind!r}"
+            )
         return executor_cls(node)
 
+    # Name the closure after the kind it serves: without this every registered
+    # factory reports the same `make_node_factory.<locals>.factory` qualname in
+    # tracebacks and registry reprs, so a failure cannot be traced to its node.
+    factory.__name__ = f"_{kind}_factory"
+    factory.__qualname__ = factory.__name__
     return factory

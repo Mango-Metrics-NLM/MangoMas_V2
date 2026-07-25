@@ -16,15 +16,12 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from mangomas.adapters.storage import SQLiteRepository
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 
 CONCURRENT_WRITES: int = 50
 
 
-@pytest.mark.asyncio
 async def test_save_turn_under_fan_out_yields_unique_ids(
     repo: SQLiteRepository,
 ) -> None:

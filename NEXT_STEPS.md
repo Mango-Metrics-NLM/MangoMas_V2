@@ -51,13 +51,13 @@ see the skill and sub-agent tables in `CLAUDE.md` for the current set.
 
 - **8 skills** under `.github/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
-  observability, config, release, and topology. _(Since grown to 11:
-  `mango-rag` on the RAG branch, plus `mango-eval` and `mango-deploy`.)_
+  observability, config, release, and topology. _(Since grown — see the
+  skill table in `CLAUDE.md` for the current set.)_
 - **13 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
   grouped under the 4 parent agents (including `pr-watcher` under
   `architect`). The new `sub_agents:` frontmatter key is optional and
-  backwards-compatible. _(Since grown to 14 with `telemetry-exporter-dev`
-  under `backend`.)_
+  backwards-compatible. _(Since grown — see the sub-agent table in
+  `CLAUDE.md`.)_
 - **`HarnessSettings`** (env prefix `MANGOMAS_HARNESS__`,
   `enabled=False` default) drives whether `build_orchestrator`
   returns a `_HarnessOrchestrator` wrapper that adds a
@@ -239,10 +239,66 @@ The full RAG port landed as a non-breaking opt-in layer
 - **Shared adapter error helpers** (`adapters/_http_errors.py`,
   `adapters/_vertex_errors.py`) de-duplicate the httpx + Vertex error
   translation across the chat and embedding adapters.
-- New `rag` 95 % coverage floor; 639 tests, 97.95 % global coverage.
+- New `rag` 95 % coverage floor; all floors met.
 
 See the `mango-rag` skill (`.github/skills/mango-rag/SKILL.md`) and the
 C4 diagrams in `docs/architecture/`.
+
+---
+
+## Done on the code-hygiene branch (Unreleased)
+
+A hygiene pass with no public-contract change. Extends the shared-helper
+precedent set by `adapters/_http_errors.py` to the four remaining duplication
+seams, and reconciles config/doc drift.
+
+- **Four shared helpers** — `adapters/_openai_client.py`
+  (`OpenAICompatHTTPClient`: httpx lifecycle for both LM Studio adapters,
+  keyword-only past `model`, `_LABEL`/`_BAD_RESPONSE` enforced by
+  `__init_subclass__`), `adapters/embeddings/_shared.py` (`embed`/`aclose`
+  mixins — a new backend implements only `embed_batch`),
+  `eval/_serialize.py` (`report_payload` shared by the `json_file`/`webhook`
+  sinks and round-tripped by `load_baseline`), and
+  `workflow/nodes/_factory.py` (`make_node_factory`, replacing five
+  hand-written factories and their `# pragma: no cover` waivers).
+- **Docker build fix** — `.dockerignore` excluded `README.md`, which the
+  Dockerfile copies and the wheel build requires; the Cloud Run image build
+  was broken. Guarded by `tests/deploy/test_docker_build_context.py`, which
+  parses both manifests at runtime.
+- **`Makefile`** — every CI command as a target; `make gate` runs the full
+  pipeline locally.
+- **Coverage-floor truth** — `scripts/check_coverage.py` is now named as the
+  single source everywhere; CI dropped its weaker `--cov-fail-under=90`
+  override; docs stopped restating test counts that went stale each release.
+- **Tooling lockstep** — `ruff==0.16.0` and `mypy==2.3.0` exact-pinned in the
+  `dev` extra in lockstep with the pre-commit revs (both hooks were years
+  behind CI); `PLR0917` enabled with two narrow per-file ignores.
+- **Docs drift** — corrected `MANGOMAS_LLM__PROJECT_ID`, removed a documented
+  setting that never existed, fixed the `VertexClient` name and a moved
+  `correlation.py` path, and added the missing `workflow/` package to the C2
+  and C3 diagrams.
+
+### Follow-ups this branch deliberately did not take
+
+- **`.env.example` still documents `MANGOMAS_LLM__PROJECT` and
+  `MANGOMAS_LLM__MAX_OUTPUT_TOKENS`** in a duplicated Vertex block (roughly
+  lines 25–33), and its eval-var block names settings that do not exist. The
+  file is read-protected in the authoring environment, so it needs a manual
+  edit — this is the last live instance of that drift.
+- **`main` / `feat/initial-release` reconciliation.** The two branches have
+  genuinely diverged: `main` carries a harness-hardening layer
+  (`src/mangomas/harness/`, `scripts/harness_stop_gate.py`,
+  `scripts/harness_config_audit.py`) that this line lacks, and each branch
+  implements `workflow/` differently (DAG + `WorkflowRunner` on `main`;
+  bounded tree + node registry here). **ADR-0011 names a different decision on
+  each branch**, and `main` allocates ADR-0007. Reconciliation needs its own
+  PR: pick one workflow implementation, renumber the colliding ADRs, and port
+  `main`'s stop-gate/config-audit hooks (they are stronger than this branch's
+  Stop hook — the gate reads the floor from `pyproject.toml` at runtime and
+  honours `stop_hook_active`).
+- **Deferred tooling** — ruff `ASYNC`/`DTZ`/`C4`/`RET`/`PERF`/`C90` rule
+  families, a `dependabot.yml`, a `pip-audit` job, a Python 3.13 matrix leg, a
+  `verify` job gating `deploy.yml`, and a `pre-commit run --all-files` CI job.
 
 ---
 

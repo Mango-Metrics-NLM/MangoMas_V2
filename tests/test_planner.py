@@ -54,7 +54,6 @@ def test_planner_agent_custom_prefix_prepended() -> None:
 # ── PlannerAgent.handle ───────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_returns_llm_content() -> None:
     plan_json = json.dumps(
         {
@@ -71,7 +70,6 @@ async def test_planner_agent_returns_llm_content() -> None:
     assert resp.agent == "planner"
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_injects_system_prompt() -> None:
     llm = FakeLLM(reply="{}")
     ctx = AgentContext(llm=llm, repo=None)
@@ -82,7 +80,6 @@ async def test_planner_agent_injects_system_prompt() -> None:
     assert first_message.role == "system"
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_no_duplicate_system_prompt() -> None:
     llm = FakeLLM(reply="{}")
     ctx = AgentContext(llm=llm, repo=None)
@@ -98,7 +95,6 @@ async def test_planner_agent_no_duplicate_system_prompt() -> None:
     assert len(system_msgs) == 1
 
 
-@pytest.mark.asyncio
 async def test_planner_agent_llm_output_parseable_as_plan() -> None:
     plan = ExecutionPlan(
         goal="launch",

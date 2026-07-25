@@ -40,7 +40,6 @@ def _req(*msgs: tuple[MessageRole, str]) -> AgentRequest:
 # ── Plain response (no tool call) ─────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_plain_response() -> None:
     llm = FakeLLM(reply="Hello!")
     agent = ToolAgent()
@@ -52,7 +51,6 @@ async def test_tool_agent_plain_response() -> None:
 # ── Single tool call then final response ──────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_executes_single_tool_call() -> None:
     tool_json = json.dumps({"tool": DEFAULT_TOOL_NAME, "arguments": {"msg": "ping"}})
     llm = FakeLLM(replies=[f"```json\n{tool_json}\n```", "Final answer."])
@@ -68,7 +66,6 @@ async def test_tool_agent_executes_single_tool_call() -> None:
 # ── Tool result re-injected as 'tool' role message ────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_reinjects_tool_result() -> None:
     tool_json = json.dumps({"tool": DEFAULT_TOOL_NAME, "arguments": {}})
     llm = FakeLLM(replies=[f"```json\n{tool_json}\n```", "Done."])
@@ -87,7 +84,6 @@ async def test_tool_agent_reinjects_tool_result() -> None:
 # ── Unknown tool raises ToolNotFound ──────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_unknown_tool_raises_tool_not_found() -> None:
     tool_json = json.dumps({"tool": "ghost", "arguments": {}})
     llm = FakeLLM(reply=f"```json\n{tool_json}\n```")
@@ -98,7 +94,6 @@ async def test_tool_agent_unknown_tool_raises_tool_not_found() -> None:
     assert exc_info.value.name == "ghost"
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_unknown_tool_logs_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -114,7 +109,6 @@ async def test_tool_agent_unknown_tool_logs_error(
     assert "unknown tool" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_tool_call_without_registry_logs_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -132,7 +126,6 @@ async def test_tool_agent_tool_call_without_registry_logs_error(
 # ── Tool execution error wraps non-ToolExecutionError exceptions ───────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_execution_failure_raises_tool_execution_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -158,7 +151,6 @@ async def test_tool_agent_execution_failure_raises_tool_execution_error(
 # ── ToolExecutionError is not re-wrapped ──────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_execution_error_propagates_unchanged() -> None:
     class AlreadyError(FakeTool):
         async def execute(self, _arguments: dict[str, Any]) -> str:
@@ -178,7 +170,6 @@ async def test_tool_execution_error_propagates_unchanged() -> None:
 # ── max_tool_steps exhausted falls back to final LLM response ─────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_exhausts_max_tool_steps() -> None:
     tool_json = json.dumps({"tool": DEFAULT_TOOL_NAME, "arguments": {}})
     tool_reply = f"```json\n{tool_json}\n```"
@@ -194,7 +185,6 @@ async def test_tool_agent_exhausts_max_tool_steps() -> None:
 # ── No tools registered: no system prompt injection ───────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_no_tools_no_tool_prompt() -> None:
     llm = FakeLLM(reply="ok")
     agent = ToolAgent()
@@ -207,7 +197,6 @@ async def test_tool_agent_no_tools_no_tool_prompt() -> None:
 # ── Custom system_prompt injected before user messages ────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_custom_system_prompt_injected() -> None:
     llm = FakeLLM(reply="ok")
     agent = ToolAgent(system_prompt="Be concise.")
@@ -220,7 +209,6 @@ async def test_tool_agent_custom_system_prompt_injected() -> None:
 # ── System prompt not duplicated when already present ─────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_no_duplicate_system_prompt() -> None:
     llm = FakeLLM(reply="ok")
     agent = ToolAgent(system_prompt="Injected.")

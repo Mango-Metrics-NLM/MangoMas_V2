@@ -16,7 +16,6 @@ from mangomas.core import AgentContext, Orchestrator
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_invoke_flow_persists_turn(fake_repo: FakeRepository) -> None:
     llm = FakeLLM(reply="integration-reply")
     orch = Orchestrator(AgentContext(llm=llm, repo=fake_repo))

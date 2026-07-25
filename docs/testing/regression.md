@@ -12,43 +12,53 @@ It covers unit, API, and integration boundaries with all external services
 replaced by deterministic test doubles (`FakeLLM`, `FakeRepository`,
 `FakeMemoryRepository`, `FakeTool`, `FakeEmbeddingClient`, `FakeVectorStore`).
 
-### Current baseline (RAG branch — Unreleased)
+### Current baseline
 
-| Metric | Value |
-|---|---|
-| Tests collected | 658 |
-| Tests passed | 639 |
-| Tests skipped | 19 (integration/LM Studio/Vertex/Postgres/RAG-local — gated) |
-| Global coverage | 97.95% |
-| Coverage floor | 95% (enforced by `pyproject.toml --cov-fail-under`) |
-| All coverage floors | ✅ Met (incl. new `rag` 95% floor) |
-| Mypy (strict) | 0 errors |
-| Ruff lint + format | Clean |
-| Frontmatter lint (`lint_agent_frontmatter.py`) | Clean |
+Absolute test counts are deliberately **not** recorded here — they went stale
+within a release every time they were. The suite's health is defined by the
+gates below, all of which are executable:
+
+| Gate | Command | Authority |
+|---|---|---|
+| Unit suite + global floor | `make test` | `pyproject.toml` addopts mirror the global floor |
+| Per-package floors | `make coverage` | **`scripts/check_coverage.py` — the authoritative gate** |
+| Bridge floor (100%) | `make bridge-coverage` | `eval_harness_bridge` is gated separately |
+| Mypy (strict) | `make typecheck` | 0 errors required |
+| Ruff lint + format | `make lint` / `make format-check` | Clean required |
+| Frontmatter lint | `make frontmatter` | `scripts/lint_agent_frontmatter.py` |
+| Everything above | `make gate` | Mirrors `.github/workflows/ci.yml` |
+
+`pyproject.toml`'s `--cov-fail-under` **mirrors** the global floor for local
+runs; `scripts/check_coverage.py` is the single source of truth, because it is
+the only place that also enforces the per-package floors.
 
 ### Running the baseline
 
 ```powershell
 # From the repo root with the venv activated
-python -m pytest -q
+make gate          # or: python -m pytest -q && python scripts/check_coverage.py
 ```
 
-Expected output: `639 passed, 19 skipped`.
+Skips are expected: every opt-in suite (integration, LM Studio, Vertex,
+Postgres, RAG-local, Langfuse) is env-gated and does not run by default — see
+the per-suite sections below, or use the matching `make` target
+(`make integration`, `make lmstudio`, `make vertex`, `make postgres`,
+`make rag`).
 
-### New suites on the RAG branch
+### Suite inventory
 
 | Suite | Path | Covers |
 |---|---|---|
-| Embedding adapters | `tests/adapters/embeddings/` | LM Studio (respx), sentence-transformers + Vertex (injected fakes) |
+| Embedding adapters | `tests/adapters/embeddings/` | LM Studio (respx), sentence-transformers + Vertex (injected fakes), lazy-SDK-init wiring |
 | Shared error helpers | `tests/adapters/test_shared_errors.py` | `_http_errors` / `_vertex_errors` translation + detail truncation |
+| Shared HTTP client base | `tests/adapters/test_openai_client.py` | `OpenAICompatHTTPClient` lifecycle: client ownership, `ClassVar` enforcement, MRO tail, public constructor stability |
 | Vector adapter | `tests/adapters/vector/` | `ChromaVectorStore` via injected fake collection; cosine scoring |
 | RAG domain | `tests/rag/` | chunker (+ Hypothesis fuzz), models, loader, pipeline, retrieval, ToolAgent-invokes-RetrievalTool, gated end-to-end |
+| Eval serializer | `tests/eval/test_serialize.py` | `report_payload` shape + round trip through `load_baseline` |
+| Workflow graph | `tests/test_workflow_*.py` | graph model, predicates, loader, registry (per-kind factory guards), executors, HTTP endpoints, CLI |
+| Deploy contract | `tests/deploy/` | `service.yaml` / `deploy.yml` shape; Dockerfile ↔ `.dockerignore` build-context consistency |
 | CLI RAG | `tests/test_cli_rag.py` | `mangomas rag ingest|query` (Typer `CliRunner`, fakes injected) |
 | Orchestrator teardown | `tests/test_orchestrator_aclose.py` | `aclose()` closes embeddings + vector store, fault-tolerant + idempotent |
-
-The previous v0.3.1 baseline was **533 collected / 515 passed / 18 skipped /
-98.16%**. The RAG port adds the opt-in embeddings + vector + `rag/` layers
-(all `enabled=False` by default), so no prior behaviour changed.
 
 ---
 
@@ -56,24 +66,29 @@ The previous v0.3.1 baseline was **533 collected / 515 passed / 18 skipped /
 
 Enforced by `scripts/check_coverage.py` in CI and locally:
 
-| Package | Floor | Status |
-|---|---|---|
-| `errors` | 100% | ✅ Met |
-| `registry` | 100% | ✅ Met |
-| `core` | 100% | ✅ Met |
-| `secrets` | 100% | ✅ Met |
-| `correlation` | 100% | ✅ Met |
-| `composition` | 95% | ✅ Met |
-| `agents` | 95% | ✅ Met |
-| `api` | 95% | ✅ Met |
-| `cli` | 95% | ✅ Met |
-| `eval` | 95% | ✅ Met |
-| `rag` | 95% | ✅ Met |
-| `adapters` | 85% | ✅ Met (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
-| **Global** | **95%** | **97.95%** |
+| Package | Floor |
+|---|---|
+| `errors` | 100% |
+| `registry` | 100% |
+| `core` | 100% |
+| `secrets` | 100% |
+| `correlation` | 100% |
+| `tenancy` | 100% |
+| `composition` | 95% |
+| `agents` | 95% |
+| `api` | 95% |
+| `cli` | 95% |
+| `eval` | 95% |
+| `rag` | 95% |
+| `workflow` | 95% |
+| `adapters` | 85% (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
+| **Global** | **95%** |
+
+`scripts/check_coverage.py` is the authority — if this table and that script
+ever disagree, the script wins and this table is the bug.
 
 ```powershell
-python scripts/check_coverage.py
+make coverage      # python scripts/check_coverage.py
 ```
 
 Floors are enforced in CI; a PR that drops any floor will fail the
@@ -173,10 +188,29 @@ python -m pytest tests/rag -q
 ## Full gate (matches CI)
 
 ```powershell
-python -m ruff check src tests scripts
-python -m ruff format --check src tests scripts
-python -m mypy --strict src tests scripts
+make gate
+```
+
+`make gate` is the whole of `.github/workflows/ci.yml`, in CI's order. The
+underlying commands, if you prefer to run them individually — note the lint
+surface includes `eval_harness_bridge/src`, and the bridge carries its own
+100% floor as a separate CI job:
+
+```powershell
+python -m ruff check src tests scripts eval_harness_bridge/src
+python -m ruff format --check src tests scripts eval_harness_bridge/src
+python -m mypy --strict src tests scripts eval_harness_bridge/src
+python scripts/lint_agent_frontmatter.py
 python -m pytest -q
 python scripts/check_coverage.py
-python scripts/lint_agent_frontmatter.py
+python -m coverage run --source=eval_harness_bridge/src -m pytest `
+    tests/eval_harness_bridge -o addopts="" -q
+python -m coverage report --show-missing --fail-under=100
+```
+
+Hook parity (`ruff` / `mypy` revs are exact-pinned in `pyproject.toml` in
+lockstep with `.pre-commit-config.yaml`):
+
+```powershell
+make precommit     # pre-commit run --all-files
 ```

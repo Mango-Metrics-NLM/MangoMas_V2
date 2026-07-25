@@ -33,7 +33,11 @@ the unique source of test doubles for internal protocols.
   tests can assert "what was called with what".
 - A fake must satisfy `isinstance(fake, Protocol)` at runtime — add this as a
   guard test in `tests/test_fakes.py` (if absent) or `test_<module>.py`.
-- Constants used by fakes live in `tests/constants.py`, not inline literals.
+- Constants used by fakes live in `tests/constants.py`, not inline literals. That
+  file has two halves: a default mirroring `mangomas.config` is **re-exported**
+  (`from mangomas.config import DEFAULT_X as DEFAULT_X`), never restated, so it
+  cannot desync; genuinely test-scoped values (stub replies, mock URLs, fixture
+  payloads) are defined locally.
 
 ## Workflow
 
@@ -41,7 +45,9 @@ the unique source of test doubles for internal protocols.
 2. Add the new `@dataclass FakeXxx` satisfying the target Protocol.
 3. If broadly used, add a fixture in `tests/conftest.py`.
 4. Add `assert isinstance(FakeXxx(), XxxProtocol)` to a test.
-5. Update `tests/constants.py` with any new domain literals (e.g. `DEFAULT_TOOL_RESULT`).
+5. Update `tests/constants.py` with any new domain literals (e.g. `DEFAULT_TOOL_RESULT`)
+   — re-export from `mangomas.config` if it mirrors a config default, otherwise
+   define it locally.
 
 ## Constraints
 

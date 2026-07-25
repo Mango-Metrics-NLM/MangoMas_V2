@@ -99,14 +99,20 @@ unchanged.
 
 Add a node kind with the `mango-workflow` skill or the
 `backend/workflow-graph-dev` sub-agent: define a frozen model in `graph.py` (add
-it to the `WorkflowNode` union), write a self-registering executor under
-`workflow/nodes/` that delegates to a public dispatch method, and add a parity
+it to the `WorkflowNode` union), write an executor under `workflow/nodes/` that
+delegates to a public dispatch method, register it in one line via
+`make_node_factory` from `workflow/nodes/_factory.py` (which supplies the shared
+`isinstance` guard and names the closure `_<kind>_factory`), and add a parity
 test in `tests/test_workflow_executor.py`.
 
 ## Non-goals (v1)
 
-- Conditional branch-on-predicate edges (needs explicit edges + cycle detection).
-- Composite `loop` bodies / composite `fan_out` branches (bounded to single agents).
-- Multiple named graphs / a graph catalog; an HTTP endpoint; streaming a whole
-  graph; a loop "best-effort on exhaustion" mode; entry-point discovery of
-  third-party node kinds.
+- Explicit edges + cycle detection (the graph is a bounded tree, not a DAG).
+- Multiple named graphs / a graph catalog; streaming a whole graph; a loop
+  "best-effort on exhaustion" mode; entry-point discovery of third-party node
+  kinds.
+
+Two original v1 non-goals have since shipped: conditional branch-on-predicate
+selection landed as the `branch` node (spec 0012 / ADR-0016), and `fan_out`
+branches widened from single agents to any `WorkflowStep` (spec 0013 /
+ADR-0018).

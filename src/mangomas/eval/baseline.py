@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mangomas.errors import ConfigError
-from mangomas.eval._serialize import report_payload
 from mangomas.eval.runner import EvalReport, EvalRowResult
 from mangomas.telemetry import get_tracer
 
@@ -155,8 +154,3 @@ def _report_from_dict(data: Mapping[str, Any]) -> EvalReport:
 def _row_from_dict(raw: Mapping[str, Any]) -> EvalRowResult:
     # Filter to known fields so a newer artifact (extra columns) still loads.
     return EvalRowResult(**{k: v for k, v in raw.items() if k in _ROW_FIELDS})
-
-
-def report_to_dict(report: EvalReport) -> dict[str, Any]:
-    """Serialise *report* to the same dict shape the ``json_file`` sink writes."""
-    return report_payload(report)

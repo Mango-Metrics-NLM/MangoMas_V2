@@ -3,33 +3,41 @@
 from __future__ import annotations
 
 import dataclasses
+import json
+from pathlib import Path
 
+from mangomas.config import DEFAULT_EVAL_SCORER, DEFAULT_EVAL_TARGET
 from mangomas.eval._serialize import report_payload
+from mangomas.eval.baseline import load_baseline
 from mangomas.eval.gate import GateResult
 from mangomas.eval.runner import EvalReport, EvalRowResult
+from tests.constants import DEFAULT_AGENT_NAME, STUB_REPLY
+
+_ROW_ID = "row-0"
+_DURATION_MS = 1.0
 
 
 def _report() -> EvalReport:
     return EvalReport(
-        scorer="exact_match",
-        agent_name="chat",
+        scorer=DEFAULT_EVAL_SCORER,
+        agent_name=DEFAULT_AGENT_NAME,
         dataset_size=1,
         passed=1,
         failed=0,
         errored=0,
         mean_score=1.0,
-        duration_ms=1.0,
+        duration_ms=_DURATION_MS,
         rows=[
             EvalRowResult(
-                row_id="row-0",
+                row_id=_ROW_ID,
                 score=1.0,
                 passed=True,
-                duration_ms=1.0,
-                prediction="p",
-                expected="p",
+                duration_ms=_DURATION_MS,
+                prediction=STUB_REPLY,
+                expected=STUB_REPLY,
             )
         ],
-        target_name="agent",
+        target_name=DEFAULT_EVAL_TARGET,
     )
 
 
@@ -48,3 +56,23 @@ def test_payload_attaches_gate_verdict() -> None:
     # The report portion is unchanged by attaching a gate verdict.
     without_gate = {k: v for k, v in payload.items() if k != "gate"}
     assert without_gate == dataclasses.asdict(report)
+
+
+async def test_payload_round_trips_through_load_baseline(tmp_path: Path) -> None:
+    """The sink payload and the baseline parser are two halves of one contract.
+
+    ``load_baseline`` reads exactly what the ``json_file`` sink writes, so the
+    serializer must survive the round trip — including the extra ``"gate"`` key,
+    which the parser is expected to tolerate.
+    """
+    report = _report()
+    gate = GateResult(passed=True, actual_mean_score=1.0, actual_pass_rate=1.0)
+    path = tmp_path / "baseline.json"
+    path.write_text(
+        json.dumps(report_payload(report, gate_result=gate), ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    restored = await load_baseline(str(path))
+
+    assert restored == report

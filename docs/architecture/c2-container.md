@@ -11,9 +11,10 @@ C4Container
 
   Container_Boundary(mangomas_boundary, "Mango-Mas V2") {
     Container(api, "FastAPI Application", "Python / FastAPI", "Exposes REST endpoints. Factory: create_app(). Middleware: AccessLogMiddleware, TraceMiddleware. Manages lifespan: startup wires adapters, shutdown closes clients.")
-    Container(cli, "Typer CLI", "Python / Typer", "mangomas chat (single-turn), mangomas history (turn log), mangomas eval (offline harness). Shares the same composition root as the API.")
+    Container(cli, "Typer CLI", "Python / Typer", "mangomas chat (single-turn), mangomas history (turn log), mangomas eval (offline harness), mangomas rag ingest|query, mangomas workflow validate|run. Shares the same composition root as the API.")
     Container(eval_harness, "Evaluation Harness", "Python package (src/mangomas/eval/)", "Drives a JSONL dataset through the orchestrator and aggregates per-row Scorer results. In-process; no extra runtime dependency. Surfaced via the CLI's `eval` subcommand.")
     Container(rag, "RAG Layer (opt-in)", "Python package (src/mangomas/rag/)", "Pure-domain retrieval-augmented generation: chunker, loader, IngestionPipeline, Retriever, RetrievalTool. Imports only the EmbeddingClient / VectorStoreRepository protocols. Surfaced via `mangomas rag ingest|query` and wired into ToolAgent via ctx.tools. Dormant unless MANGOMAS_EMBEDDINGS__ENABLED + MANGOMAS_VECTOR__ENABLED.")
+    Container(workflow, "Workflow Graph Layer (opt-in)", "Python package (src/mangomas/workflow/)", "Declarative multi-agent topologies: a frozen WorkflowGraph (agent / sequence / fan_out / loop / branch) compiled to the Orchestrator's public dispatch primitives — every leaf is one dispatch call, so an all-agent sequence equals dispatch_pipeline. Surfaced via POST /workflows/run|validate and `mangomas workflow validate|run`. Dormant unless MANGOMAS_WORKFLOW__ENABLED or an explicit --definition.")
     Container(composition, "Composition Root", "Python module", "composition.py — wires LLM, storage, secrets, embeddings, vector, agent, and harness registries at startup. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
     Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .github/agents and .github/skills), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
   }
@@ -41,6 +42,9 @@ C4Container
   Rel(composition, postgres_db, "PostgresRepository — reads/writes turns (when provider=postgres)", "asyncpg / TLS")
   Rel(composition, secret_mgr, "GCPSecretManagerProvider — resolves secret refs (when provider=gcp)", "Secret Manager API / IAM")
   Rel(composition, mem_file, "file memory provider — reads/writes index (when memory enabled)", "filesystem")
+  Rel(api, workflow, "POST /workflows/run|validate — load_workflow + execute_workflow (opt-in)")
+  Rel(cli, workflow, "mangomas workflow validate|run -f graph.json")
+  Rel(workflow, composition, "executes against the orchestrator's public dispatch surface")
   Rel(composition, rag, "constructs IngestionPipeline + Retriever + RetrievalTool (when embeddings + vector enabled)")
   Rel(cli, rag, "mangomas rag ingest|query — load/chunk/embed/upsert, then embed-query/search")
   Rel(rag, embed_backend, "EmbeddingClient.embed_batch (when provider=lmstudio → HTTP; sentence_transformers → in-process; vertex → SDK)")
@@ -68,7 +72,8 @@ C4Container
   (default) or `gcp` (GCP Secret Manager, E2E verified in v0.3.1).
 - The evaluation harness ships its own Scorer registry
   (`mangomas.eval.scorer_registry`) parallel to the agent/LLM/storage
-  registries. Built-in scorers: `exact_match`, `llm_judge`, `embedding`.
+  registries. Built-in scorers: `exact_match`, `regex_match`, `contains`,
+  `json_keys`, `llm_judge`, `embedding`.
   The `embedding` scorer prefers `ctx.embeddings` and falls back to an
   `embed`-capable LLM; it raises only when neither is available.
 - The **RAG layer** is opt-in and dual-gated: `ctx.embeddings` is attached

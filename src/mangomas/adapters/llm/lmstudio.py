@@ -41,7 +41,13 @@ class LMStudioClient(OpenAICompatHTTPClient):
         default_temperature: float = DEFAULT_LLM_TEMPERATURE,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        super().__init__(base_url, model, api_key, timeout_seconds, client)
+        super().__init__(
+            base_url,
+            model,
+            api_key=api_key,
+            timeout_seconds=timeout_seconds,
+            client=client,
+        )
         self._default_temperature = default_temperature
 
     async def complete(

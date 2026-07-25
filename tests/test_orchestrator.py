@@ -19,20 +19,17 @@ class _DummyAgent:
         return AgentResponse(content=f"got:{len(request.messages)}", agent=self.name)
 
 
-@pytest.mark.asyncio
 async def test_dispatch_routes_to_registered_agent(orchestrator: Orchestrator) -> None:
     req = AgentRequest(messages=[Message(role="user", content="x")])
     resp = await orchestrator.dispatch("chat", req)
     assert resp.agent == "chat"
 
 
-@pytest.mark.asyncio
 async def test_dispatch_unknown_agent_raises_agent_not_found(orchestrator: Orchestrator) -> None:
     with pytest.raises(AgentNotFound):
         await orchestrator.dispatch("nope", AgentRequest(messages=[]))
 
 
-@pytest.mark.asyncio
 async def test_dispatch_unknown_agent_logs_error(
     orchestrator: Orchestrator,
     caplog: pytest.LogCaptureFixture,
@@ -45,14 +42,12 @@ async def test_dispatch_unknown_agent_logs_error(
     assert "agent not found" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_dispatch_unknown_agent_caught_by_key_error(orchestrator: Orchestrator) -> None:
     """Back-compat: existing ``except KeyError`` callers still catch AgentNotFound."""
     with pytest.raises(KeyError):
         await orchestrator.dispatch("nope", AgentRequest(messages=[]))
 
 
-@pytest.mark.asyncio
 async def test_register_rejects_blank_name(orchestrator: Orchestrator) -> None:
     class Bad:
         name = ""
@@ -64,14 +59,12 @@ async def test_register_rejects_blank_name(orchestrator: Orchestrator) -> None:
         orchestrator.register(Bad())
 
 
-@pytest.mark.asyncio
 async def test_register_and_list(orchestrator: Orchestrator) -> None:
     orchestrator.register(_DummyAgent())
     assert "dummy" in orchestrator.list_agents()
     assert "chat" in orchestrator.list_agents()
 
 
-@pytest.mark.asyncio
 async def test_dispatch_persists_turn(orchestrator: Orchestrator) -> None:
     req = AgentRequest(messages=[Message(role="user", content="x")])
     await orchestrator.dispatch("chat", req)
@@ -82,7 +75,6 @@ async def test_dispatch_persists_turn(orchestrator: Orchestrator) -> None:
     assert rows[0]["agent"] == "chat"
 
 
-@pytest.mark.asyncio
 async def test_dispatch_without_repo() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="ok"), repo=None)
     orch = Orchestrator(ctx)
@@ -91,7 +83,6 @@ async def test_dispatch_without_repo() -> None:
     assert resp.content == "ok"
 
 
-@pytest.mark.asyncio
 async def test_context_property_returns_context() -> None:
     """The public ``context`` property exposes the AgentContext."""
     ctx = AgentContext(llm=FakeLLM(reply="ok"), repo=None)
@@ -102,7 +93,6 @@ async def test_context_property_returns_context() -> None:
 # ── dispatch max_steps validation ────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_dispatch_max_steps_zero_raises_value_error(orchestrator: Orchestrator) -> None:
     req = AgentRequest(messages=[Message(role="user", content="x")])
     with pytest.raises(ValueError, match="max_steps must be >= 1"):
@@ -112,7 +102,6 @@ async def test_dispatch_max_steps_zero_raises_value_error(orchestrator: Orchestr
 # ── dispatch_pipeline ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_dispatch_pipeline_empty_raises_value_error() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="ok"), repo=None)
     orch = Orchestrator(ctx)
@@ -120,7 +109,6 @@ async def test_dispatch_pipeline_empty_raises_value_error() -> None:
         await orch.dispatch_pipeline([], AgentRequest(messages=[Message(role="user", content="x")]))
 
 
-@pytest.mark.asyncio
 async def test_dispatch_pipeline_single_agent() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="pipeline-reply"), repo=None)
     orch = Orchestrator(ctx)
@@ -130,7 +118,6 @@ async def test_dispatch_pipeline_single_agent() -> None:
     assert resp.content == "pipeline-reply"
 
 
-@pytest.mark.asyncio
 async def test_dispatch_pipeline_two_agents() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="chained"), repo=None)
     orch = Orchestrator(ctx)
@@ -143,7 +130,6 @@ async def test_dispatch_pipeline_two_agents() -> None:
 # ── dispatch_fan_out ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_dispatch_fan_out_empty_raises_value_error() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="ok"), repo=None)
     orch = Orchestrator(ctx)
@@ -151,7 +137,6 @@ async def test_dispatch_fan_out_empty_raises_value_error() -> None:
         await orch.dispatch_fan_out([], AgentRequest(messages=[Message(role="user", content="x")]))
 
 
-@pytest.mark.asyncio
 async def test_dispatch_fan_out_parallel() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="fan"), repo=None)
     orch = Orchestrator(ctx)
@@ -165,7 +150,6 @@ async def test_dispatch_fan_out_parallel() -> None:
 # ── stream_dispatch ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_stream_dispatch_unknown_agent_raises() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="ok"), repo=None)
     orch = Orchestrator(ctx)
@@ -173,7 +157,6 @@ async def test_stream_dispatch_unknown_agent_raises() -> None:
         await orch.stream_dispatch("nope", AgentRequest(messages=[]))
 
 
-@pytest.mark.asyncio
 async def test_stream_dispatch_non_streaming_agent_yields_content() -> None:
     ctx = AgentContext(llm=FakeLLM(reply="streamed-as-non-stream"), repo=None)
     orch = Orchestrator(ctx)

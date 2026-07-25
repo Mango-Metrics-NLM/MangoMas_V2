@@ -56,7 +56,6 @@ def test_fake_tool_spec_name_matches() -> None:
     assert tool.spec.name == DEFAULT_TOOL_NAME
 
 
-@pytest.mark.asyncio
 async def test_fake_tool_execute_returns_result_and_records_call() -> None:
     tool = FakeTool(result="pong")
     out = await tool.execute({"arg": "ping"})

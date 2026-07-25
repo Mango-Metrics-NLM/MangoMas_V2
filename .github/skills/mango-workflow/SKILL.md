@@ -65,6 +65,7 @@ mangomas workflow run "ship it" -f graph.json
 | `src/mangomas/workflow/predicate.py` | `PredicateSpec` + `compile_predicate` |
 | `src/mangomas/workflow/executor.py` | `NodeExecutor` protocol + `execute_workflow` |
 | `src/mangomas/workflow/nodes/` | Self-registering `agent` / `sequence` / `fan_out` / `loop` / `branch` executors |
+| `src/mangomas/workflow/nodes/_factory.py` | `make_node_factory(kind, node_cls, executor_cls)` — the shared registry factory + `ConfigError` type guard every node module registers through |
 | `src/mangomas/workflow/loader.py` | Path/inline JSON → `WorkflowGraph` |
 | `src/mangomas/core/orchestrator.py` | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out` (the primitives graphs compile to) |
 | `src/mangomas/core/loop.py` | `AcceptanceFn` type alias |
@@ -97,8 +98,18 @@ mangomas workflow run "ship it" -f graph.json
 1. Add a frozen model in `graph.py` and to the `WorkflowNode` union (and, if it
    may be a sequence step, to `WorkflowStep`).
 2. Create `nodes/<kind>.py` with an executor whose `run(request, *, orch)`
-   delegates to a public dispatch method; register it at module bottom:
-   `node_registry.register("<kind>", _factory)`.
+   delegates to a public dispatch method; register it at module bottom with the
+   shared factory builder — one line, no hand-written guard:
+
+   ```python
+   from mangomas.workflow.nodes._factory import make_node_factory
+
+   node_registry.register("<kind>", make_node_factory("<kind>", <Kind>Node, <Kind>NodeExecutor))
+   ```
+
+   `make_node_factory` supplies the `isinstance` type guard (raising `ConfigError`
+   on a mismatched node) and names the closure `_<kind>_factory` so tracebacks and
+   registry reprs still identify the node.
 3. Add a parity/validation test in `tests/test_workflow_executor.py`.
 
 ---
@@ -117,7 +128,10 @@ mangomas workflow run "ship it" -f graph.json
 
 - DO NOT reimplement the acceptance loop or fan-out `gather` — delegate to `Orchestrator`.
 - DO NOT put workflow provenance in `AgentResponse.metadata` (breaks parity); use spans.
-- DO NOT import from `mangomas.eval` — copy shared helpers into `workflow/`.
+- DO NOT import from `mangomas.eval` — `workflow` is a pure sibling, so a helper it
+  needs is re-stated under `workflow/` (and, if more than one workflow module wants
+  it, extracted into a shared `workflow/` module such as `nodes/_factory.py` — never
+  duplicated within the package).
 - DO NOT nest a `sequence` inside a `sequence`, or a composite inside `fan_out`/`loop` (v1 bounds nesting).
 
 ---

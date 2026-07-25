@@ -12,10 +12,19 @@ mapping itself).
 Subclasses set two class attributes: ``_LABEL`` (human-readable upstream name
 woven into error messages) and ``_BAD_RESPONSE`` (the adapter's distinguishable
 :class:`~mangomas.errors.LLMBadResponse` subtype raised for HTTP status errors).
+Both are enforced at subclass-creation time by :meth:`__init_subclass__` — a
+subclass that forgets one fails at import rather than with an ``AttributeError``
+raised from inside an upstream-failure handler, where it would mask the real
+network error.
+
+Every parameter past ``model`` is keyword-only: the two subclasses forward to
+``super().__init__`` by keyword, so inserting or reordering a base parameter
+can never silently rebind a subclass's arguments.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, ClassVar
 
 import httpx
@@ -25,6 +34,10 @@ from mangomas.adapters._http_errors import translate_httpx_error
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.errors import LLMBadResponse
 
+logger = logging.getLogger(__name__)
+
+_REQUIRED_CLASS_ATTRS = ("_LABEL", "_BAD_RESPONSE")
+
 
 class OpenAICompatHTTPClient:
     """Own the ``httpx.AsyncClient`` lifecycle for an OpenAI-compatible upstream."""
@@ -32,10 +45,18 @@ class OpenAICompatHTTPClient:
     _LABEL: ClassVar[str]
     _BAD_RESPONSE: ClassVar[type[LLMBadResponse]]
 
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Fail loud at import when a subclass omits the required class attributes."""
+        super().__init_subclass__(**kwargs)
+        missing = [name for name in _REQUIRED_CLASS_ATTRS if not hasattr(cls, name)]
+        if missing:
+            raise TypeError(f"{cls.__name__} must define {', '.join(missing)}")
+
     def __init__(
         self,
         base_url: str,
         model: str,
+        *,
         api_key: str,
         timeout_seconds: float,
         client: httpx.AsyncClient | None = None,
@@ -59,5 +80,17 @@ class OpenAICompatHTTPClient:
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client (if owned)."""
+        # Ownership is invisible from the outside, and getting it wrong shows up
+        # as a leaked socket or a double-close during lifespan teardown — the
+        # one piece of lifecycle state worth naming in the log.
+        logger.debug(
+            "Closing OpenAI-compatible HTTP client",
+            extra={
+                "event": "openai_client_aclose",
+                "label": self._LABEL,
+                "base_url": self._base_url,
+                "owns_client": self._owns_client,
+            },
+        )
         if self._owns_client:
             await self._client.aclose()

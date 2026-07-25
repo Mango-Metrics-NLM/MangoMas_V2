@@ -135,6 +135,77 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — Docker build context excluded a file the Dockerfile copies
+
+`deploy.yml` builds the production image with `docker build .`, the builder
+stage runs `COPY pyproject.toml README.md ./`, and `pyproject.toml` declares
+`readme = "README.md"` — but `.dockerignore` listed `README.md`, keeping it out
+of the build context. The Cloud Run image build would fail at that `COPY`.
+
+- **`.dockerignore`**: stop excluding `README.md` (with a comment recording
+  why it must stay); additionally exclude `.hypothesis/`,
+  `eval_harness_bridge/`, and `pyrightconfig.json`.
+- **`tests/deploy/test_docker_build_context.py`**: new contract test that
+  parses the `Dockerfile`'s `COPY` sources and asserts none is excluded by
+  `.dockerignore`. Both files are parsed at runtime, so the test tracks the
+  real manifests rather than a snapshot of them.
+
+### Changed — Code hygiene: shared helpers, docs/config drift, tooling sync
+
+Internal hygiene pass. No public contract changed; every adapter constructor
+keeps its signature, and the new modules are private helpers behind the
+existing protocols (the `adapters/_http_errors.py` precedent).
+
+- **`adapters/_openai_client.py`** (new): `OpenAICompatHTTPClient` owns the
+  httpx lifecycle both LM Studio adapters duplicated — base-URL normalisation,
+  bearer-auth construction, injected-vs-owned client tracking, error-translation
+  binding, and `aclose()`. Parameters past `model` are keyword-only and
+  `_LABEL` / `_BAD_RESPONSE` are enforced by `__init_subclass__`, so a
+  misconfigured subclass fails at import rather than from inside an error
+  handler. Emits a debug log naming client ownership on close.
+- **`adapters/embeddings/_shared.py`** (new): `SingleTextEmbedMixin` +
+  `NoTransportAcloseMixin` replace byte-identical `embed()` / `aclose()` across
+  all three embedding adapters — a new backend now implements only
+  `embed_batch`.
+- **`eval/_serialize.py`** (new): `report_payload()` is the single payload
+  builder for the `json_file` and `webhook` sinks, replacing an invariant that
+  was asserted only in a docstring. A round-trip test now binds it to
+  `eval/baseline.py::load_baseline` in code.
+- **`workflow/nodes/_factory.py`** (new): `make_node_factory()` collapses five
+  identical hand-written node factories, removing five `# pragma: no cover`
+  waivers in favour of per-kind tests of the type guard.
+- **Docs drift**: `MANGOMAS_LLM__PROJECT` → `MANGOMAS_LLM__PROJECT_ID` and the
+  nonexistent `MANGOMAS_LLM__MAX_OUTPUT_TOKENS` row removed (`CLAUDE.md`,
+  `docs/architecture/cloud-providers.md`) — `Settings` uses `extra="ignore"`,
+  so the documented names silently produced an unconfigured Vertex client.
+  Corrected the `MANGOMAS_DB__URL` default, the `VertexClient` class name, and
+  a `correlation.py` path that moved in v0.3.0.
+- **Architecture docs**: C2/C3 now model the `workflow/` package, which was
+  absent from both diagrams.
+- **`Makefile`** (new): wraps each CI command as a target; `make gate`
+  reproduces the full pipeline locally.
+- **Coverage floors**: `scripts/check_coverage.py` is now stated as the single
+  source of truth everywhere. CI dropped its weaker `--cov-fail-under=90`
+  override (pyproject's 95 applies), and the docs no longer restate test counts
+  that went stale every release.
+- **Tooling**: pre-commit `ruff` v0.5.0 → v0.16.0 and `mypy` v1.10.0 → v2.3.0,
+  both exact-pinned in the `dev` extra in lockstep with the hook revs;
+  `pre-commit-hooks` v4.6.0 → v6.0.0; merged a duplicated mypy override block;
+  dropped a no-op `T201` ignore. `PLR0917` is enabled with two narrow per-file
+  ignores rather than globally suppressed.
+
+### Removed
+
+- **`config.DEFAULT_TOOL_MAX_STEPS`** — unreferenced; no `Settings` field
+  backed it.
+- **`eval/baseline.py::report_to_dict`** — unreferenced and absent from the
+  package exports; callers use `eval/_serialize.py::report_payload`.
+- **`scripts/run_pipeline_e2e.py`, `scripts/run_topologies_e2e.py`** — orphaned
+  manual drivers superseded by `scripts/run_workflow_e2e.py`.
+- **12 unused constants in `tests/constants.py`**; the remaining
+  config-mirroring defaults are now re-exported from `mangomas.config` (via the
+  explicit `X as X` idiom) instead of hand-restated, so they cannot desync.
+
 ### Added — Composite fan_out branches (workflow) + gated embedding smoke tests
 
 Widen a `fan_out` branch to any `WorkflowStep` (spec 0013 / ADR-0018),

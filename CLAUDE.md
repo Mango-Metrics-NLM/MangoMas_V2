@@ -19,7 +19,7 @@ uvicorn mangomas.api.app:create_app --factory --reload
 # Run CLI
 mangomas chat "hello"
 
-# Tests (unit + coverage gate at 95 %)
+# Tests (unit; addopts supply --cov + the global 95 % floor)
 python -m pytest --tb=short -q
 
 # Integration tests (requires LM Studio running)
@@ -35,6 +35,13 @@ mypy
 # Pre-commit (runs ruff + mypy on staged files)
 pre-commit run --all-files
 ```
+
+Every CI command is also wrapped as a `Makefile` target — `make gate` runs the
+whole pipeline (lint, format-check, typecheck, frontmatter, test, per-package
+coverage, bridge coverage) in CI's order; `make help` lists the rest. Prefer it
+over retyping paths: CI's lint surface is
+`src tests scripts eval_harness_bridge/src`, which is wider than the
+`src tests` shown above.
 
 ---
 
@@ -56,8 +63,10 @@ src/mangomas/
 ├── adapters/
 │   ├── _http_errors.py  Shared httpx → typed-error translator (llm + embeddings)
 │   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
+│   ├── _openai_client.py OpenAICompatHTTPClient — shared httpx lifecycle base
 │   ├── llm/            LLMClient protocol + LMStudioAdapter + VertexClient
 │   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
+│   │                   (_shared.py: embed / aclose mixins — backends write embed_batch only)
 │   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
 │   └── storage/        TurnRepository + MemoryRepository protocols + impls
 ├── rag/            Pure-domain RAG layer (opt-in; imports only protocols + models)
@@ -70,6 +79,7 @@ src/mangomas/
 │   ├── graph.py        Frozen node models + WorkflowNode union + WorkflowGraph
 │   ├── predicate.py    PredicateSpec + compile_predicate → sync AcceptanceFn
 │   ├── registry.py     node_registry + resolve_executor
+│   ├── nodes/_factory.py make_node_factory — shared typed factory + guard
 │   ├── executor.py     NodeExecutor protocol + execute_workflow driver
 │   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
 │   └── nodes/          Self-registering agent/sequence/fan_out/loop/branch executors

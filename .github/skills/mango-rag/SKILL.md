@@ -30,13 +30,18 @@ argument-hint: "Describe the RAG change (e.g. 'add Cohere embedding provider', '
 
 ```
 adapters/embeddings/   EmbeddingClient protocol; lmstudio / sentence_transformers / vertex
+adapters/embeddings/_shared.py  SingleTextEmbedMixin + NoTransportAcloseMixin
 adapters/vector/       VectorStoreRepository protocol + VectorMatch; chroma
 rag/                   models, chunker, loader, pipeline, retrieval (imports protocols only)
 ```
 
 - **`EmbeddingClient`** (`adapters/embeddings/base.py`): `embed(text)` /
-  `embed_batch(texts)` / `aclose()`. `embed` delegates to `embed_batch([text])[0]`.
-  `list[float]` everywhere — no numpy.
+  `embed_batch(texts)` / `aclose()`. `list[float]` everywhere — no numpy.
+  Adapters implement only `embed_batch`: `SingleTextEmbedMixin`
+  (`adapters/embeddings/_shared.py`) derives `embed` as `embed_batch([text])[0]`,
+  and `NoTransportAcloseMixin` supplies the no-op `aclose()` for backends owning
+  no sockets (`sentence_transformers`, `vertex`). `lmstudio` instead inherits its
+  `aclose()` from `OpenAICompatHTTPClient`, which owns the httpx client.
 - **`VectorStoreRepository`** (`adapters/vector/base.py`): primitives only
   (`upsert`/`query`/`delete_by_source`/`aclose` + `VectorMatch`). Keeps the
   vector layer free of any `rag/` import (no cycle).
@@ -74,11 +79,16 @@ at construction.
 
 ## Add a new embedding provider (worked example)
 
-1. Implement the class in `adapters/embeddings/<name>.py` satisfying
-   `EmbeddingClient`. Accept an injected client for tests; lazy-import the
-   real SDK inside a `_lazy_*` helper marked `# pragma: no cover`.
+1. Implement **only `embed_batch`** in `adapters/embeddings/<name>.py`, inheriting
+   `embed` from `SingleTextEmbedMixin` and (for a transport-less backend) `aclose`
+   from `NoTransportAcloseMixin` — both in `adapters/embeddings/_shared.py`. That
+   is enough to satisfy `EmbeddingClient`. Accept an injected client for tests;
+   lazy-import the real SDK inside a `_lazy_*` helper marked `# pragma: no cover`.
 2. Reuse `_http_errors.translate_httpx_error` (HTTP backends) or
-   `_vertex_errors.translate_vertex_error` (Vertex) for typed errors.
+   `_vertex_errors.translate_vertex_error` (Vertex) for typed errors. An
+   OpenAI-compatible HTTP backend subclasses `adapters/_openai_client.py::OpenAICompatHTTPClient`
+   (set `_LABEL` / `_BAD_RESPONSE`) and calls the inherited `self._translate_error(exc)`
+   — see `adapters/embeddings/lmstudio.py`.
 3. Export it from `adapters/embeddings/__init__.py`.
 4. Register a factory in `composition.py` and seed `embedding_registry`.
 5. Add `FakeEmbeddingClient`-style tests under `tests/adapters/embeddings/`.

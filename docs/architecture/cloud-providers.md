@@ -19,7 +19,7 @@ ADR-001 swap matrix. All three follow the same pattern:
 
 | Boundary | Adapter | Selected by | Optional extra |
 |---|---|---|---|
-| LLM | `mangomas.adapters.llm.vertex.VertexLLMClient` | `MANGOMAS_LLM__PROVIDER=vertex` | `pip install -e ".[vertex]"` |
+| LLM | `mangomas.adapters.llm.vertex.VertexClient` | `MANGOMAS_LLM__PROVIDER=vertex` | `pip install -e ".[vertex]"` |
 | Storage | `mangomas.adapters.storage.postgres.PostgresRepository` | `MANGOMAS_DB__PROVIDER=postgres` | `pip install -e ".[postgres]"` |
 | Secrets | `mangomas.secrets.gcp.GCPSecretManagerProvider` | `MANGOMAS_SECRETS__PROVIDER=gcp` | `pip install -e ".[gcp]"` |
 

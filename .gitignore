@@ -14,6 +14,8 @@ dist/
 .coverage.*
 htmlcov/
 coverage.xml
+# Hypothesis example database (written by the fuzz tests in test_tools.py)
+.hypothesis/
 
 # Type checkers / linters
 .mypy_cache/
@@ -60,7 +62,6 @@ eval-output/
 .claude/logs/
 
 # Test artefacts
-coverage.xml
 .tox/
 
 # Defensive (JS tooling not in project but gitignore is inherited)

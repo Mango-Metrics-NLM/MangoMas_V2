@@ -3,8 +3,9 @@ name: Layering Auditor
 description: >
   Sub-agent of Architect. Audits cross-layer imports to enforce the
   Mango-Mas V2 dependency direction (adapters → core, agents → core,
-  api → composition only). Use when: a PR touches any module that
-  imports across src/mangomas/{core,agents,adapters,api,cli}/. Read-only.
+  api → composition only). Use when: a PR touches any module that imports
+  across src/mangomas/{core,agents,adapters,api,cli,workflow,eval,rag,secrets}/.
+  Read-only.
 tools: [read, search]
 model: Claude Sonnet 4.5 (copilot)
 argument-hint: "Paste a diff or name a module to audit for layering violations"
@@ -22,7 +23,16 @@ core ←  api  (only via composition root)
 api  ←  composition
 cli  ←  composition
 adapters ←  composition  (the ONLY place adapters are imported as concrete types)
+
+core, errors, registry, config  ←  workflow, eval, rag, secrets
+adapters/*/base.py (Protocols only)  ←  eval, rag
 ```
+
+`workflow/`, `eval/`, `rag/`, and `secrets/` are **pure siblings**: each may
+import `core`, `errors`, `registry`, `config` (and, for `eval` / `rag`, the
+adapter *Protocol* modules `adapters/*/base.py`), but never each other. In
+particular `workflow` must not import `mangomas.eval`, and `rag` must not be
+imported from `adapters/vector/` or `adapters/embeddings/` (that would cycle).
 
 ## Banned Patterns
 
@@ -30,6 +40,11 @@ adapters ←  composition  (the ONLY place adapters are imported as concrete typ
 - `from mangomas.adapters.storage.sqlite import` outside `composition.py`
 - `from mangomas.adapters.storage.memory import` outside `composition.py`
 - `from mangomas.agents.<concrete>` inside `src/mangomas/core/`
+- Any import between the pure siblings — `from mangomas.eval` inside
+  `src/mangomas/workflow/` (or vice versa), `from mangomas.rag` inside
+  `src/mangomas/adapters/`
+- `from mangomas.adapters._<private>` (e.g. `_openai_client`, `_http_errors`)
+  from **outside** `src/mangomas/adapters/`
 - Any import from `src/mangomas/api/` inside `src/mangomas/agents/` or `src/mangomas/core/`
 - Any `if TYPE_CHECKING:` block that contains *runtime* imports (the block runs
   only during type-checking, so an import there is fine for typing — but using
@@ -37,10 +52,21 @@ adapters ←  composition  (the ONLY place adapters are imported as concrete typ
 
 ## Audit Procedure
 
-1. `grep -rn 'from mangomas.adapters' src/mangomas/ --include='*.py' | grep -v 'composition.py'` — should return zero hits for **concrete** modules (base.py is fine).
+1. `grep -rn 'from mangomas.adapters' src/mangomas/ --include='*.py' | grep -v 'composition.py'` — should return zero hits for **concrete** modules. Two documented exemptions:
+   - `adapters/*/base.py` — Protocol surfaces, importable from anywhere.
+   - Underscore-prefixed shared modules **inside** `adapters/` — `_http_errors.py`,
+     `_vertex_errors.py`, `_openai_client.py`, `embeddings/_shared.py`. A hit like
+     `adapters/llm/lmstudio.py: from mangomas.adapters._openai_client import ...` is
+     same-layer sibling sharing (one adapter reusing adapter-layer plumbing), not a
+     cross-layer import. The leading underscore marks them private to `adapters/`:
+     flag them only if imported from **outside** `src/mangomas/adapters/`.
 2. `grep -rn 'from mangomas.agents' src/mangomas/core/ --include='*.py'` — should return zero hits.
 3. `grep -rn 'from mangomas.api' src/mangomas/{agents,core,adapters}/ --include='*.py'` — should return zero hits.
-4. Inspect every new `TYPE_CHECKING:` block; ensure the imported names are only used as type annotations.
+4. `grep -rn 'from mangomas.eval' src/mangomas/workflow/ --include='*.py'` (and the
+   reverse) — should return zero hits; the siblings share nothing by import.
+5. `grep -rn 'from mangomas.adapters._' src/mangomas/ --include='*.py' | grep -v '/adapters/'`
+   — should return zero hits; the private adapter helpers stay inside `adapters/`.
+6. Inspect every new `TYPE_CHECKING:` block; ensure the imported names are only used as type annotations.
 
 ## Output Format
 
@@ -60,5 +86,8 @@ Violations:
 
 - DO NOT permit any concrete adapter import outside composition.py.
 - DO NOT confuse Protocol bases (base.py) with concrete implementations.
+- DO NOT flag an underscore-prefixed shared module inside `adapters/` as a layering
+  violation when the importer is itself under `adapters/` — that is deliberate
+  same-layer extraction, and demanding it be inlined re-introduces the drift it removed.
 - DO NOT approve a fix that introduces a circular import — propose using
   `TYPE_CHECKING:` or factoring a shared type into `core/`.

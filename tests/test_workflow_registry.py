@@ -36,8 +36,18 @@ def test_unknown_kind_raises_unknown_provider() -> None:
         node_registry.get("does-not-exist")
 
 
-def test_factory_rejects_mismatched_node_type() -> None:
+@pytest.mark.parametrize("kind", [k for k in WORKFLOW_NODE_KINDS if k != "agent"])
+def test_every_factory_rejects_a_mismatched_node_type(kind: str) -> None:
     # The kind discriminator normally routes each node to its own factory; a
     # direct factory call with the wrong node type must fail loud (ConfigError).
-    with pytest.raises(ConfigError, match="sequence executor requires a SequenceNode"):
-        node_registry.get("sequence")(AgentNode(agent="chat"))
+    # Asserted per kind: all five share one closure body, so a single case would
+    # leave the other four guards unexercised.
+    with pytest.raises(ConfigError, match=f"{kind} executor requires an? "):
+        node_registry.get(kind)(AgentNode(agent="chat"))
+
+
+@pytest.mark.parametrize("kind", WORKFLOW_NODE_KINDS)
+def test_registered_factory_is_named_after_its_kind(kind: str) -> None:
+    # Shared-closure factories would otherwise all report the same qualname,
+    # making a traceback unable to say which node kind failed.
+    assert node_registry.get(kind).__name__ == f"_{kind}_factory"

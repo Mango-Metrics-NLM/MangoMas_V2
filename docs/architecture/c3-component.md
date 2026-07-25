@@ -48,6 +48,13 @@ C4Component
     Component(vector_store, "ChromaVectorStore (resolved by vector_registry)", "VectorStoreRepository", "Attached to ctx.vector_store when MANGOMAS_VECTOR__ENABLED=true. upsert/query/delete_by_source/aclose over a persistent Chroma collection created with hnsw:space=cosine; VectorMatch.score = 1 - distance/2. chromadb lazy-imported (mangomas[rag]).")
   }
 
+  Container_Boundary(workflow_boundary, "Workflow (src/mangomas/workflow/) — opt-in") {
+    Component(workflow_graph, "WorkflowGraph", "Frozen Pydantic model", "Discriminated union of agent / sequence / fan_out / loop / branch nodes forming a bounded tree. Loaded from a JSON path or inline definition by load_workflow (ConfigError boundary).")
+    Component(execute_workflow, "execute_workflow()", "Driver", "Resolves the root node to a NodeExecutor and runs it against the Orchestrator. Every leaf is exactly one public dispatch call — the layer compiles to the imperative primitives rather than reimplementing them.")
+    Component(node_registry, "node_registry + make_node_factory", "Registry[NodeExecutorFactory]", "Maps a node kind to its executor factory. Built-in nodes self-register at import; make_node_factory (nodes/_factory.py) builds each factory with a shared isinstance guard raising ConfigError, naming the closure _<kind>_factory for traceable failures.")
+    Component(node_executors, "Node executors", "NodeExecutor impls", "agent → dispatch; sequence → threads output into the next input (equals dispatch_pipeline when all-agent); fan_out → dispatch_fan_out, or asyncio.gather for composite branches; loop → dispatch with a compiled acceptance predicate; branch → predicate-routed selection.")
+  }
+
   Container_Boundary(rag_boundary, "RAG (src/mangomas/rag/) — opt-in") {
     Component(retrieval_tool, "RetrievalTool", "Tool", "name='retrieve'. Registered into a ToolRegistry and set on ctx.tools only when BOTH ctx.embeddings and ctx.vector_store are present, so ToolAgent auto-discovers it. execute() returns formatted top-k context.")
     Component(retriever, "Retriever", "Domain service", "search(query): embed query → vector_store.query → map VectorMatch → SearchResult. top_k from MANGOMAS_VECTOR__TOP_K.")
@@ -63,7 +70,11 @@ C4Component
   Rel(app_factory, workflow_routes, "mounts routes (opt-in)")
   Rel(app_factory, backpressure_mw, "installs when configured")
   Rel(agent_routes, orchestrator, "dispatch() / stream_dispatch() (or _HarnessOrchestrator when harness.enabled=true)")
-  Rel(workflow_routes, orchestrator, "execute_workflow() → dispatch*")
+  Rel(workflow_routes, execute_workflow, "load_workflow() then execute_workflow()")
+  Rel(execute_workflow, node_registry, "resolve_executor(node) by kind")
+  Rel(node_registry, node_executors, "builds via make_node_factory")
+  Rel(execute_workflow, workflow_graph, "walks the frozen node tree")
+  Rel(node_executors, orchestrator, "dispatch / dispatch_pipeline / dispatch_fan_out")
   Rel(backpressure_mw, secrets_provider, "resolve expected auth token")
   Rel(harness_orch, orchestrator, "delegates via super() — harness only adds the parent span")
   Rel(health_routes, health_svc, "check_ready(orchestrator)")
