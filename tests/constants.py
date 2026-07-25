@@ -90,6 +90,9 @@ LMSTUDIO_EMBEDDING_MODEL_ENV: str = "LMSTUDIO_EMBEDDING_MODEL"
 VERTEX_EMBEDDING_MODEL_ENV: str = "VERTEX_EMBEDDING_MODEL"
 DEFAULT_VERTEX_EMBEDDING_MODEL: str = "text-embedding-004"
 
+# Stand-in GCP project id for Vertex adapter unit tests (never contacts GCP).
+TEST_VERTEX_PROJECT: str = "test-project"
+
 # ── Vector store test-scoped values ───────────────────────────────────────────
 TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
 TEST_VECTOR_COLLECTION: str = "test-col"
