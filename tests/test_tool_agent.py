@@ -9,11 +9,18 @@ from typing import Any, Literal
 import pytest
 
 from mangomas.agents.tool_agent import ToolAgent
+from mangomas.config import DEFAULT_TOOL_MAX_STEPS, AgentSettings, Settings
 from mangomas.core.agent import AgentContext, AgentRequest, Message
-from mangomas.core.tools import ToolRegistry
+from mangomas.core.tools import ToolRegistry, build_tool_system_prompt
 from mangomas.errors import ToolExecutionError, ToolNotFound
 from mangomas.registry import Registry
-from tests.constants import DEFAULT_TOOL_NAME
+from tests.constants import (
+    DEFAULT_TOOL_NAME,
+    TEST_TOOL_MAX_STEPS,
+    TEST_TOOL_MAX_STEPS_OVERRIDE,
+    TEST_TOOL_SYSTEM_PROMPT,
+    TOOL_MAX_STEPS_ENV,
+)
 from tests.fakes import FakeLLM, FakeTool
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
@@ -24,6 +31,12 @@ def _tool_registry(tool: FakeTool | None = None) -> ToolRegistry:
     t = tool or FakeTool()
     reg.register(t.name, t)
     return reg
+
+
+def _tool_reply() -> str:
+    """A well-formed tool-call reply targeting the default fake tool."""
+    tool_json = json.dumps({"tool": DEFAULT_TOOL_NAME, "arguments": {}})
+    return f"```json\n{tool_json}\n```"
 
 
 def _ctx(
@@ -167,19 +180,22 @@ async def test_tool_execution_error_propagates_unchanged() -> None:
     assert str(exc_info.value) == "already"
 
 
-# ── max_tool_steps exhausted falls back to final LLM response ─────────────────
+# ── max_tool_steps exhausted: budget bounds total LLM calls ───────────────────
 
 
 async def test_tool_agent_exhausts_max_tool_steps() -> None:
-    tool_json = json.dumps({"tool": DEFAULT_TOOL_NAME, "arguments": {}})
-    tool_reply = f"```json\n{tool_json}\n```"
-    llm = FakeLLM(replies=[tool_reply, tool_reply, "final"])
+    tool_reply = _tool_reply()
+    llm = FakeLLM(reply=tool_reply)  # keeps requesting tools forever
     tool = FakeTool()
     reg = _tool_registry(tool)
-    agent = ToolAgent(max_tool_steps=2)
+    agent = ToolAgent(max_tool_steps=TEST_TOOL_MAX_STEPS)
     resp = await agent.handle(_req(("user", "go")), _ctx(llm=llm, tools=reg))
-    assert resp.content == "final"
-    assert resp.metadata["tool_steps"] == 2
+    # Exactly N LLM calls — no extra "final" call beyond the budget.
+    assert len(llm.calls) == TEST_TOOL_MAX_STEPS
+    assert resp.metadata["tool_steps"] == TEST_TOOL_MAX_STEPS
+    # The last reply is returned as-is; its tool call is not executed.
+    assert resp.content == tool_reply
+    assert len(tool.calls) == TEST_TOOL_MAX_STEPS - 1
 
 
 # ── No tools registered: no system prompt injection ───────────────────────────
@@ -222,3 +238,117 @@ async def test_tool_agent_no_duplicate_system_prompt() -> None:
     system_msgs = [m for m in llm.calls[0] if m.role == "system"]
     assert len(system_msgs) == 1
     assert system_msgs[0].content == "Existing system."
+
+
+# ── Custom system prompt + tools: BOTH prompts sent, custom first ─────────────
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_combines_custom_and_tool_prompt() -> None:
+    llm = FakeLLM(reply="ok")
+    tool = FakeTool()
+    reg = _tool_registry(tool)
+    agent = ToolAgent(system_prompt=TEST_TOOL_SYSTEM_PROMPT)
+    await agent.handle(_req(("user", "hi")), _ctx(llm=llm, tools=reg))
+    first_message = llm.calls[0][0]
+    assert first_message.role == "system"
+    expected_tool_prompt = build_tool_system_prompt([tool.spec])
+    assert first_message.content == f"{TEST_TOOL_SYSTEM_PROMPT}\n\n{expected_tool_prompt}"
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_tool_prompt_alone_without_custom_prompt() -> None:
+    llm = FakeLLM(reply="ok")
+    tool = FakeTool()
+    reg = _tool_registry(tool)
+    agent = ToolAgent()
+    await agent.handle(_req(("user", "hi")), _ctx(llm=llm, tools=reg))
+    first_message = llm.calls[0][0]
+    assert first_message.role == "system"
+    assert first_message.content == build_tool_system_prompt([tool.spec])
+
+
+# ── metadata["tool_steps"] == actual number of LLM calls ──────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_prose_immediately_counts_one_llm_call() -> None:
+    llm = FakeLLM(reply="Just prose.")
+    reg = _tool_registry()
+    agent = ToolAgent()
+    resp = await agent.handle(_req(("user", "hi")), _ctx(llm=llm, tools=reg))
+    assert len(llm.calls) == 1
+    assert resp.metadata["tool_steps"] == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_tool_then_prose_counts_llm_calls() -> None:
+    llm = FakeLLM(replies=[_tool_reply(), "Final answer."])
+    tool = FakeTool()
+    reg = _tool_registry(tool)
+    agent = ToolAgent()
+    resp = await agent.handle(_req(("user", "go")), _ctx(llm=llm, tools=reg))
+    assert resp.content == "Final answer."
+    assert len(llm.calls) == 2
+    assert resp.metadata["tool_steps"] == 2
+    assert len(tool.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_zero_budget_makes_no_llm_calls() -> None:
+    llm = FakeLLM(reply=_tool_reply())
+    reg = _tool_registry()
+    agent = ToolAgent(max_tool_steps=0)
+    resp = await agent.handle(_req(("user", "go")), _ctx(llm=llm, tools=reg))
+    assert llm.calls == []
+    assert resp.content == ""
+    assert resp.metadata["tool_steps"] == 0
+
+
+# ── max_tool_steps resolution: constructor > settings > DEFAULT ───────────────
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_uses_settings_max_tool_steps() -> None:
+    llm = FakeLLM(reply=_tool_reply())  # keeps requesting tools forever
+    reg = _tool_registry()
+    agent = ToolAgent(settings=AgentSettings(max_tool_steps=TEST_TOOL_MAX_STEPS))
+    resp = await agent.handle(_req(("user", "go")), _ctx(llm=llm, tools=reg))
+    assert len(llm.calls) == TEST_TOOL_MAX_STEPS
+    assert resp.metadata["tool_steps"] == TEST_TOOL_MAX_STEPS
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_constructor_arg_overrides_settings() -> None:
+    llm = FakeLLM(reply=_tool_reply())
+    reg = _tool_registry()
+    agent = ToolAgent(
+        max_tool_steps=TEST_TOOL_MAX_STEPS_OVERRIDE,
+        settings=AgentSettings(max_tool_steps=TEST_TOOL_MAX_STEPS),
+    )
+    resp = await agent.handle(_req(("user", "go")), _ctx(llm=llm, tools=reg))
+    assert len(llm.calls) == TEST_TOOL_MAX_STEPS_OVERRIDE
+    assert resp.metadata["tool_steps"] == TEST_TOOL_MAX_STEPS_OVERRIDE
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("settings", [None, AgentSettings()])
+async def test_tool_agent_defaults_to_config_constant(settings: AgentSettings | None) -> None:
+    llm = FakeLLM(reply=_tool_reply())
+    reg = _tool_registry()
+    agent = ToolAgent(settings=settings)
+    resp = await agent.handle(_req(("user", "go")), _ctx(llm=llm, tools=reg))
+    assert len(llm.calls) == DEFAULT_TOOL_MAX_STEPS
+    assert resp.metadata["tool_steps"] == DEFAULT_TOOL_MAX_STEPS
+
+
+def test_agent_settings_max_tool_steps_env_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(TOOL_MAX_STEPS_ENV, str(TEST_TOOL_MAX_STEPS))
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.agents["tool"].max_tool_steps == TEST_TOOL_MAX_STEPS
+
+
+def test_agent_settings_max_tool_steps_defaults_to_none() -> None:
+    assert AgentSettings().max_tool_steps is None

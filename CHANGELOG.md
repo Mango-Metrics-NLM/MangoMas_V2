@@ -13,9 +13,21 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 
 ### Fixed
 
+- `ToolAgent`: no longer discards the tool-format system prompt when a custom
+  `system_prompt` is configured — both are sent (custom first), so the LLM
+  always learns the tool-call JSON contract.
+- `ToolAgent`: honours `max_tool_steps` exactly — at most N LLM calls per
+  request (previously up to N+1) and `metadata["tool_steps"]` reports the
+  actual number of calls made.
+
 ### Changed
 
 ### Added
+
+- `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` per-agent setting
+  (`AgentSettings.max_tool_steps`, default `None` → `DEFAULT_TOOL_MAX_STEPS=5`)
+  replacing `ToolAgent`'s hard-coded step cap; resolution order is constructor
+  arg > settings > default.
 
 ### Removed
 

@@ -104,6 +104,14 @@ STUB_REPLY: str = "stub-reply"
 # ── Tool stubs ────────────────────────────────────────────────────────────────
 DEFAULT_TOOL_NAME: str = "echo"
 DEFAULT_TOOL_RESULT: str = "echo-result"
+# ToolAgent LLM-call budget values used by tests (distinct from the config
+# default so overrides are observable).
+TEST_TOOL_MAX_STEPS: int = 2
+TEST_TOOL_MAX_STEPS_OVERRIDE: int = 3
+# Custom system prompt for prompt-combination tests.
+TEST_TOOL_SYSTEM_PROMPT: str = "Answer like a pirate."
+# Env var driving AgentSettings.max_tool_steps for the "tool" agent.
+TOOL_MAX_STEPS_ENV: str = "MANGOMAS_AGENTS__TOOL__MAX_TOOL_STEPS"
 
 # ── Harness frontmatter linter fixtures ───────────────────────────────────────
 VALID_AGENT_FRONTMATTER: str = """\

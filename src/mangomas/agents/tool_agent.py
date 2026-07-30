@@ -6,6 +6,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from mangomas.config import DEFAULT_TOOL_MAX_STEPS
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolCallParser, build_tool_system_prompt
 from mangomas.errors import ToolExecutionError, ToolNotFound, UnknownProvider
@@ -21,6 +22,9 @@ class ToolAgent:
 
     The inner tool-execution loop (controlled by *max_tool_steps*) is distinct
     from the outer dispatch-loop steps managed by the :class:`Orchestrator`.
+    ``max_tool_steps`` bounds the *total* number of LLM calls per request;
+    resolution order is: explicit constructor argument, then
+    ``settings.max_tool_steps``, then :data:`DEFAULT_TOOL_MAX_STEPS`.
     """
 
     name = "tool"
@@ -28,7 +32,7 @@ class ToolAgent:
     def __init__(
         self,
         system_prompt: str | None = None,
-        max_tool_steps: int = 5,
+        max_tool_steps: int | None = None,
         settings: AgentSettings | None = None,
     ) -> None:
         self._system_prompt: str | None = (
@@ -36,11 +40,20 @@ class ToolAgent:
             if settings is not None and settings.system_prompt is not None
             else system_prompt
         )
-        self._max_tool_steps = max_tool_steps
+        if max_tool_steps is not None:
+            self._max_tool_steps = max_tool_steps
+        elif settings is not None and settings.max_tool_steps is not None:
+            self._max_tool_steps = settings.max_tool_steps
+        else:
+            self._max_tool_steps = DEFAULT_TOOL_MAX_STEPS
         self._parser = ToolCallParser()
 
     async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
-        """Process *request*, executing any tool calls until a plain response is produced."""
+        """Process *request*, executing any tool calls until a plain response is produced.
+
+        Issues at most ``max_tool_steps`` LLM calls in total;
+        ``metadata["tool_steps"]`` reports the exact number made.
+        """
         messages = list(request.messages)
 
         # Build tool-aware system prompt when tools are registered.
@@ -49,22 +62,35 @@ class ToolAgent:
             specs = [ctx.tools.get(n).spec for n in ctx.tools.available()]
             tool_prompt = build_tool_system_prompt(specs)
 
-        effective_prompt = self._system_prompt or tool_prompt
+        # A custom system prompt must not displace the tool-format prompt —
+        # concatenate custom-first (mirroring PlannerAgent) so the LLM always
+        # learns the tool-call JSON contract when tools are registered.
+        if self._system_prompt is not None and tool_prompt is not None:
+            effective_prompt: str | None = f"{self._system_prompt}\n\n{tool_prompt}"
+        else:
+            effective_prompt = self._system_prompt or tool_prompt
         if effective_prompt and not any(m.role == "system" for m in messages):
             messages.insert(0, Message(role="system", content=effective_prompt))
 
-        for step in range(self._max_tool_steps):
-            logger.debug("ToolAgent step %d/%d", step + 1, self._max_tool_steps)
+        content = ""
+        steps = 0
+        while steps < self._max_tool_steps:
+            steps += 1
+            logger.debug("ToolAgent step %d/%d", steps, self._max_tool_steps)
             content = await ctx.llm.complete(messages)
             tool_call = self._parser.parse(content)
 
             if tool_call is None:
                 logger.debug("ToolAgent: no tool call detected, returning response")
-                return AgentResponse(
-                    content=content,
-                    agent=self.name,
-                    metadata={"tool_steps": step + 1},
+                break
+
+            if steps == self._max_tool_steps:
+                logger.debug(
+                    "ToolAgent: LLM-call budget exhausted; returning last response "
+                    "without executing tool %r",
+                    tool_call.tool,
                 )
+                break
 
             logger.debug("ToolAgent: dispatching tool %r", tool_call.tool)
 
@@ -116,10 +142,9 @@ class ToolAgent:
                 ),
             ]
 
-        # Tool steps exhausted: get a final plain response.
-        content = await ctx.llm.complete(messages)
+        # ``steps`` equals the number of LLM calls actually made (<= max_tool_steps).
         return AgentResponse(
             content=content,
             agent=self.name,
-            metadata={"tool_steps": self._max_tool_steps},
+            metadata={"tool_steps": steps},
         )
