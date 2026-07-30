@@ -17,9 +17,9 @@ from opentelemetry import trace
 from mangomas.core import AgentResponse
 from mangomas.errors import ConfigError
 from mangomas.workflow.graph import BranchNode
-from mangomas.workflow.nodes._factory import make_node_factory
+from mangomas.workflow.nodes._factory import register_node
 from mangomas.workflow.predicate import compile_predicate
-from mangomas.workflow.registry import node_registry, resolve_executor
+from mangomas.workflow.registry import resolve_executor
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
@@ -53,4 +53,4 @@ class BranchNodeExecutor:
             raise ConfigError("branch matched no case and has no default")
 
 
-node_registry.register("branch", make_node_factory("branch", BranchNode, BranchNodeExecutor))
+register_node("branch", BranchNode, BranchNodeExecutor)

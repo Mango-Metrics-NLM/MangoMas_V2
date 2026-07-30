@@ -33,23 +33,19 @@ to ``"-"`` in log records, which is distinguishable from a real id.
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from contextvars import ContextVar
+
+from mangomas._headers import sanitize_header_token
 
 # ── Configurable bounds ───────────────────────────────────────────────────────
 # Inbound ``X-Request-ID`` headers are clamped to this many characters before
 # being stored to prevent log-injection or unbounded growth in observability
 # pipelines. 64 is generous enough to fit any reasonable trace/UUID and tight
 # enough that misbehaving clients can't push large payloads through the log.
+# The allowed character set itself is a security invariant shared with
+# ``mangomas.tenancy`` and lives in :mod:`mangomas._headers`.
 MAX_CORRELATION_ID_LENGTH: int = 64
-
-# Characters allowed in a correlation id. Anything outside this set is
-# stripped when sanitising an inbound value — this prevents CR/LF injection
-# (line-splitting in log records) and keeps the id safe to embed in HTTP
-# headers and JSON. The set covers all canonical UUID/hex/url-safe forms
-# without enabling free-form text.
-_ALLOWED_CHAR_PATTERN: re.Pattern[str] = re.compile(r"[^A-Za-z0-9_\-./:]")
 
 _NO_CORRELATION = "-"  # placeholder injected into log records when no id is active
 _CONTEXT_VAR_NAME = "mangomas_correlation_id"
@@ -85,7 +81,8 @@ def sanitize_inbound_correlation_id(raw: str | None) -> str | None:
     2. Strip surrounding whitespace.
     3. Remove characters outside the allowed set (alphanumerics + ``_-./:``)
        — this is the log-injection defence: CR/LF, tabs, control chars all
-       get dropped.
+       get dropped. The charset is the shared security invariant hosted in
+       :func:`mangomas._headers.sanitize_header_token`.
     4. Truncate to :data:`MAX_CORRELATION_ID_LENGTH` characters.
     5. If the result is empty (e.g. the inbound value was entirely composed
        of disallowed characters), return ``None``.
@@ -95,11 +92,7 @@ def sanitize_inbound_correlation_id(raw: str | None) -> str | None:
     """
     if raw is None:
         return None
-    stripped = raw.strip()
-    if not stripped:
-        return None
-    cleaned = _ALLOWED_CHAR_PATTERN.sub("", stripped)[:MAX_CORRELATION_ID_LENGTH]
-    return cleaned or None
+    return sanitize_header_token(raw, max_length=MAX_CORRELATION_ID_LENGTH) or None
 
 
 def resolve_correlation_id(inbound: str | None) -> str:

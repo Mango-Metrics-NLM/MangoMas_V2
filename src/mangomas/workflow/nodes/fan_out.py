@@ -16,8 +16,8 @@ from opentelemetry import trace
 
 from mangomas.core import AgentResponse
 from mangomas.workflow.graph import AgentNode, FanOutNode
-from mangomas.workflow.nodes._factory import make_node_factory
-from mangomas.workflow.registry import node_registry, resolve_executor
+from mangomas.workflow.nodes._factory import register_node
+from mangomas.workflow.registry import resolve_executor
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
@@ -55,13 +55,16 @@ class FanOutNodeExecutor:
                         *(resolve_executor(b).run(request, orch=orch) for b in self._branches)
                     )
                 )
-        if self._join == "concat":
-            return AgentResponse(
-                content="\n".join(r.content for r in responses),
-                agent=_FAN_OUT_AGENT,
-                metadata={},
-            )
-        return responses[0]
+            # The join is part of the node's work — keep it inside the span so
+            # the span covers the full fan-out (dispatch + reduce), like every
+            # other node executor.
+            if self._join == "concat":
+                return AgentResponse(
+                    content="\n".join(r.content for r in responses),
+                    agent=_FAN_OUT_AGENT,
+                    metadata={},
+                )
+            return responses[0]
 
 
-node_registry.register("fan_out", make_node_factory("fan_out", FanOutNode, FanOutNodeExecutor))
+register_node("fan_out", FanOutNode, FanOutNodeExecutor)

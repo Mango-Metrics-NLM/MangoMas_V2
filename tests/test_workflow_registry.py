@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import inspect
+from importlib import import_module
+from pathlib import Path
+
 import pytest
 
 from mangomas.errors import ConfigError, UnknownProvider
 from mangomas.workflow import node_registry, resolve_executor
-from mangomas.workflow.graph import AgentNode
-from tests.constants import WORKFLOW_NODE_KINDS
+from mangomas.workflow.graph import (
+    AgentNode,
+    BranchCase,
+    BranchNode,
+    FanOutNode,
+    LoopNode,
+    SequenceNode,
+    WorkflowNode,
+)
+from mangomas.workflow.predicate import PredicateSpec
+from tests.constants import DEFAULT_AGENT_NAME, WORKFLOW_NODE_KINDS
 
 
 def test_builtin_kinds_registered() -> None:
@@ -51,3 +64,35 @@ def test_registered_factory_is_named_after_its_kind(kind: str) -> None:
     # Shared-closure factories would otherwise all report the same qualname,
     # making a traceback unable to say which node kind failed.
     assert node_registry.get(kind).__name__ == f"_{kind}_factory"
+
+
+# One well-formed node instance per kind, for resolving through the registry.
+_AGENT_NODE = AgentNode(agent=DEFAULT_AGENT_NAME)
+_PREDICATE = PredicateSpec(kind="contains", value="ok")
+_NODE_BY_KIND: dict[str, WorkflowNode] = {
+    "agent": _AGENT_NODE,
+    "branch": BranchNode(branches=[BranchCase(when=_PREDICATE, then=_AGENT_NODE)]),
+    "fan_out": FanOutNode(branches=[_AGENT_NODE]),
+    "loop": LoopNode(agent=DEFAULT_AGENT_NAME, accept=_PREDICATE),
+    "sequence": SequenceNode(steps=[_AGENT_NODE]),
+}
+
+
+@pytest.mark.parametrize("kind", WORKFLOW_NODE_KINDS)
+def test_every_kind_resolves_to_a_runnable_executor(kind: str) -> None:
+    # register_node wired each built-in kind end-to-end: a well-formed node of
+    # every kind resolves through the registry to an executor exposing run().
+    executor = resolve_executor(_NODE_BY_KIND[kind])
+    assert hasattr(executor, "run")
+
+
+@pytest.mark.parametrize("kind", WORKFLOW_NODE_KINDS)
+def test_registration_states_kind_literal_once(kind: str) -> None:
+    # register_node collapsed the old `node_registry.register("<kind>",
+    # make_node_factory("<kind>", ...))` line, which stated the kind literal
+    # twice. Each node module must now register with a single-literal call and
+    # never call make_node_factory directly.
+    module = import_module(f"mangomas.workflow.nodes.{kind}")
+    source = Path(inspect.getfile(module)).read_text(encoding="utf-8")
+    assert source.count(f'register_node("{kind}"') == 1
+    assert "make_node_factory(" not in source

@@ -34,7 +34,18 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   `VectorStoreRepository.delete_by_source` now returns the number of vectors
   removed.
 
+- `FileMemoryRepository`: honours its closed state — post-`close()` reads and
+  writes raise `PersistenceError`, matching `SQLiteRepository`.
+- Workflow `fan_out` join and `sequence` final return now execute inside their
+  `workflow.node.*` span, so node spans cover the full unit of work.
+
 ### Changed
+
+- The inbound-header sanitiser shared by `correlation.py` and `tenancy.py`
+  lives once in `mangomas._headers.sanitize_header_token` — the allowed-charset
+  security invariant is stated in one place; both public APIs unchanged.
+- Workflow node modules register through the new `register_node()` helper,
+  stating each node kind literal exactly once.
 
 ### Added
 

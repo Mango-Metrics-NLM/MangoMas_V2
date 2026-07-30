@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING
 from opentelemetry import trace
 
 from mangomas.workflow.graph import LoopNode
-from mangomas.workflow.nodes._factory import make_node_factory
+from mangomas.workflow.nodes._factory import register_node
 from mangomas.workflow.predicate import compile_predicate
-from mangomas.workflow.registry import node_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, AgentResponse, Orchestrator
@@ -39,4 +38,4 @@ class LoopNodeExecutor:
             )
 
 
-node_registry.register("loop", make_node_factory("loop", LoopNode, LoopNodeExecutor))
+register_node("loop", LoopNode, LoopNodeExecutor)
