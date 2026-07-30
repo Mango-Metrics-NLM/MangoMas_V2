@@ -46,6 +46,16 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   security invariant is stated in one place; both public APIs unchanged.
 - Workflow node modules register through the new `register_node()` helper,
   stating each node kind literal exactly once.
+- `api/app.py` decomposed into `api/errors.py`, `api/models.py`, and
+  `api/routes/{system,agents,workflows}.py`; `create_app` is a slim assembly
+  factory (the repo's last ruff C901 violation is gone) and the HTTP surface is
+  byte-identical (OpenAPI schema diffed). Routers are built by factory
+  functions inside `create_app` so per-app settings keep their construction-time
+  semantics.
+- `set_tenant` / `set_correlation_id` now return the ContextVar `Token`
+  (additive) and are used by the tenancy/access-log middleware as the canonical
+  setters; middleware docstring covers all four classes and bare status ints
+  are `http.HTTPStatus` constants.
 
 ### Added
 
@@ -53,6 +63,9 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   (`AgentSettings.max_tool_steps`, default `None` → `DEFAULT_TOOL_MAX_STEPS=5`)
   replacing `ToolAgent`'s hard-coded step cap; resolution order is constructor
   arg > settings > default.
+- `api.errors.error_envelope()` — the single construction site for the
+  `{"error", "message"[, "detail"]}` body, shared by the exception handler and
+  the middleware 413/503 rejections.
 
 ### Removed
 

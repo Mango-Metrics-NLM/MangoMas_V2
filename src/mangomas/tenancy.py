@@ -24,7 +24,7 @@ byte-identical to the pre-tenancy behaviour.
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 
 from mangomas._headers import sanitize_header_token
 
@@ -44,9 +44,15 @@ _CONTEXT_VAR_NAME = "mangomas_tenant_id"
 tenant_id: ContextVar[str | None] = ContextVar(_CONTEXT_VAR_NAME, default=None)
 
 
-def set_tenant(value: str) -> None:
-    """Set the tenant for the current async context."""
-    tenant_id.set(value)
+def set_tenant(value: str) -> Token[str | None]:
+    """Set the tenant for the current async context.
+
+    Returns the :class:`contextvars.Token` from the underlying ``set`` so
+    request-scoped callers (``TenancyMiddleware``) can restore the previous
+    value exactly via ``tenant_id.reset(token)``. Additive: callers that ignore
+    the return value are unaffected.
+    """
+    return tenant_id.set(value)
 
 
 def get_tenant() -> str:

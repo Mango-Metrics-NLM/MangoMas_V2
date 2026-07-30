@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 
 from mangomas._headers import sanitize_header_token
 
@@ -57,9 +57,15 @@ correlation_id: ContextVar[str | None] = ContextVar(_CONTEXT_VAR_NAME, default=N
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
-def set_correlation_id(value: str) -> None:
-    """Set the correlation id for the current async context."""
-    correlation_id.set(value)
+def set_correlation_id(value: str) -> Token[str | None]:
+    """Set the correlation id for the current async context.
+
+    Returns the :class:`contextvars.Token` from the underlying ``set`` so
+    request-scoped callers (``AccessLogMiddleware``) can restore the previous
+    value exactly via ``correlation_id.reset(token)``. Additive: callers that
+    ignore the return value are unaffected.
+    """
+    return correlation_id.set(value)
 
 
 def get_correlation_id() -> str | None:

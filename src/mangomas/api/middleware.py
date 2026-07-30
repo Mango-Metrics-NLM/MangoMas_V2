@@ -1,38 +1,29 @@
-"""HTTP access log middleware with per-request correlation IDs.
+"""HTTP middleware: backpressure guards, tenancy scoping, and access logging.
 
-Attaches a short correlation id to every request and emits two structured log
-records per request:
+Four ``BaseHTTPMiddleware`` classes, assembled by ``create_app``:
 
-* **DEBUG** — ``→ METHOD /path`` immediately on arrival.
-* **INFO** — ``METHOD /path STATUS_CODE Xms`` after the response is sent,
-  with ``request_id``, ``correlation_id``, ``method``, ``path``,
-  ``status_code`` and ``latency_ms`` as extra fields for JSON log consumers.
+* :class:`MaxBodySizeMiddleware` — rejects a request whose declared
+  ``Content-Length`` exceeds the configured cap with ``413`` (ADR-0015).
+* :class:`ConcurrencyLimitMiddleware` — rejects requests beyond the in-flight
+  cap with ``503``, reject-don't-queue (ADR-0015).
+* :class:`TenancyMiddleware` — sets the per-request tenant ``ContextVar`` from
+  the configured header so storage scopes its SQL (ADR-0017; opt-in).
+* :class:`AccessLogMiddleware` — per-request correlation ids + two structured
+  access-log records (DEBUG on arrival, INFO after the response).
 
-Correlation IDs
----------------
-The middleware reads the inbound ``X-Request-ID`` header when present (so
-upstream services and clients can propagate their own correlation id) and
-falls back to a freshly generated 8-hex-char token. Inbound values are
-sanitised via :func:`~mangomas.correlation.sanitize_inbound_correlation_id`
-to clamp the length (max :data:`~mangomas.correlation.MAX_CORRELATION_ID_LENGTH`)
-and strip control characters / CR / LF, which prevents log injection from
-hostile clients.
+Ordering
+--------
+Starlette runs middleware outermost-last-added. ``create_app`` adds the
+backpressure pair FIRST so they sit *inner* to the access/trace loggers — a
+rejected 413/503 still flows back through :class:`AccessLogMiddleware` and
+carries its ``X-Request-ID`` + access-log line. Within the pair, the body-size
+guard is added after the concurrency guard so it sits outer: an oversized
+request is rejected before it consumes a concurrency slot. CORS (when
+configured) is added last, outermost, which is what preflight requires.
 
-The resolved value is:
-
-* stored on a :class:`contextvars.ContextVar` so log records and downstream
-  code in the same async context can read it;
-* attached to the current OpenTelemetry baggage as
-  ``mangomas.correlation_id`` so distributed traces carry it across service
-  boundaries;
-* echoed on the outgoing response as ``X-Request-ID`` so clients can
-  reference it in support requests — **including** error responses produced
-  by FastAPI exception handlers (the header is set in the ``finally`` block,
-  so handled errors carry the same correlation id as successful responses).
-
-``request_id`` is retained as an attribute distinct from ``correlation_id``
-for backwards compatibility with existing log consumers; today they always
-carry the same value.
+Backpressure rejections build their JSON bodies via the app-wide
+:func:`~mangomas.api.errors.error_envelope`, so a 413/503 body has exactly the
+same ``{"error", "message"}`` shape as handler-produced error responses.
 """
 
 from __future__ import annotations
@@ -40,6 +31,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from http import HTTPStatus
 
 from opentelemetry import baggage
 from opentelemetry import context as otel_context
@@ -48,34 +40,51 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.types import ASGIApp
 
+from mangomas.api.errors import error_envelope
 from mangomas.correlation import (
     correlation_id as _correlation_var,
 )
 from mangomas.correlation import (
     resolve_correlation_id,
+    set_correlation_id,
 )
-from mangomas.tenancy import resolve_tenant
+from mangomas.tenancy import resolve_tenant, set_tenant
 from mangomas.tenancy import tenant_id as _tenant_var
+
+# ``error_envelope`` is deliberately part of this module's surface: the
+# middleware rejections and the app-level exception handler must build the
+# identical client-visible body (asserted by tests/test_api_envelope.py).
+__all__ = [
+    "AccessLogMiddleware",
+    "ConcurrencyLimitMiddleware",
+    "MaxBodySizeMiddleware",
+    "TenancyMiddleware",
+    "error_envelope",
+]
 
 logger = logging.getLogger(__name__)
 
 _REQUEST_ID_HEADER = "X-Request-ID"
 _BAGGAGE_KEY = "mangomas.correlation_id"
-_FALLBACK_ERROR_STATUS = 500
+_FALLBACK_ERROR_STATUS: int = HTTPStatus.INTERNAL_SERVER_ERROR
 _INTERNAL_ERROR_BODY = "Internal Server Error"
 
 # Backpressure rejection statuses + JSON envelope codes.
-_REQUEST_TOO_LARGE_STATUS = 413
+_REQUEST_TOO_LARGE_STATUS: int = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 _REQUEST_TOO_LARGE_CODE = "request_too_large"
 # 503 (not 429): reject-don't-queue per ADR-0015 — a momentarily-at-capacity
 # server is a retryable *server* condition, not a per-client rate limit.
-_AT_CAPACITY_STATUS = 503
+_AT_CAPACITY_STATUS: int = HTTPStatus.SERVICE_UNAVAILABLE
 _AT_CAPACITY_CODE = "server_at_capacity"
 
 
 def _json_error(status_code: int, error: str, message: str) -> JSONResponse:
-    """Build the app's ``{"error", "message"}`` envelope as a JSONResponse."""
-    return JSONResponse(status_code=status_code, content={"error": error, "message": message})
+    """Build the app's ``{"error", "message"}`` envelope as a JSONResponse.
+
+    Delegates the body shape to the shared :func:`error_envelope` so the
+    middleware rejections and the exception handler can never drift apart.
+    """
+    return JSONResponse(status_code=status_code, content=error_envelope(error, message))
 
 
 class MaxBodySizeMiddleware(BaseHTTPMiddleware):
@@ -164,15 +173,80 @@ class TenancyMiddleware(BaseHTTPMiddleware):
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         tenant = resolve_tenant(request.headers.get(self._header), self._default)
-        token = _tenant_var.set(tenant)
+        # set_tenant is the canonical setter; it returns the ContextVar Token so
+        # the finally block can restore the pre-request value exactly.
+        token = set_tenant(tenant)
         try:
             return await call_next(request)
         finally:
             _tenant_var.reset(token)
 
 
+def _emit_access_log(
+    request: Request,
+    response: Response | None,
+    status_code: int,
+    correlation: str,
+    start: float,
+) -> None:
+    """Echo the correlation id and emit the INFO access-log record.
+
+    Runs for **every** outbound response, including error envelopes produced by
+    FastAPI exception handlers — called from the ``finally`` block (not the
+    success branch) so handled MangomasError responses, validation 422s, and any
+    other framework-generated 4xx/5xx still carry the same ``X-Request-ID`` the
+    client can quote when filing a support ticket.
+    """
+    if response is not None:
+        response.headers[_REQUEST_ID_HEADER] = correlation
+
+    latency_ms = round((time.perf_counter() - start) * 1000, 2)
+    logger.info(
+        "%s %s %d %.1fms",
+        request.method,
+        request.url.path,
+        status_code,
+        latency_ms,
+        extra={
+            "request_id": correlation,
+            "correlation_id": correlation,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": status_code,
+            "latency_ms": latency_ms,
+        },
+    )
+
+
 class AccessLogMiddleware(BaseHTTPMiddleware):
-    """Structured access logging + correlation id propagation."""
+    """Structured access logging + correlation id propagation.
+
+    Reads the inbound ``X-Request-ID`` header when present (so upstream services
+    and clients can propagate their own correlation id) and falls back to a
+    freshly generated 8-hex-char token. Inbound values are sanitised via
+    :func:`~mangomas.correlation.sanitize_inbound_correlation_id` to clamp the
+    length (max :data:`~mangomas.correlation.MAX_CORRELATION_ID_LENGTH`) and
+    strip control characters / CR / LF, which prevents log injection from
+    hostile clients.
+
+    The resolved value is:
+
+    * stored on a :class:`contextvars.ContextVar` so log records and downstream
+      code in the same async context can read it;
+    * attached to the current OpenTelemetry baggage as
+      ``mangomas.correlation_id`` so distributed traces carry it across service
+      boundaries;
+    * echoed on the outgoing response as ``X-Request-ID`` — see
+      :func:`_emit_access_log`.
+
+    Emits two structured records per request: **DEBUG** ``→ METHOD /path`` on
+    arrival, and **INFO** ``METHOD /path STATUS Xms`` after the response, with
+    ``request_id``, ``correlation_id``, ``method``, ``path``, ``status_code``
+    and ``latency_ms`` as extra fields for JSON log consumers. ``request_id``
+    is retained as an attribute distinct from ``correlation_id`` for backwards
+    compatibility with existing log consumers; today they always carry the
+    same value.
+    """
 
     async def dispatch(
         self,
@@ -182,7 +256,9 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         # Sanitise + clamp the inbound header (or mint a fresh id when absent).
         correlation = resolve_correlation_id(request.headers.get(_REQUEST_ID_HEADER))
 
-        ctx_token = _correlation_var.set(correlation)
+        # set_correlation_id is the canonical setter; it returns the ContextVar
+        # Token so the finally block can restore the pre-request value exactly.
+        ctx_token = set_correlation_id(correlation)
         baggage_ctx = baggage.set_baggage(_BAGGAGE_KEY, correlation)
         otel_token = otel_context.attach(baggage_ctx)
 
@@ -226,30 +302,6 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
             status_code = _FALLBACK_ERROR_STATUS
             return response
         finally:
-            # Echo the correlation id on **every** outbound response, including
-            # error envelopes produced by FastAPI exception handlers. Setting
-            # the header here (not in the success branch) ensures handled
-            # MangomasError responses, validation 422s, and any other
-            # framework-generated 4xx/5xx still carry the same X-Request-ID
-            # the client can quote when filing a support ticket.
-            if response is not None:
-                response.headers[_REQUEST_ID_HEADER] = correlation
-
-            latency_ms = round((time.perf_counter() - start) * 1000, 2)
-            logger.info(
-                "%s %s %d %.1fms",
-                request.method,
-                request.url.path,
-                status_code,
-                latency_ms,
-                extra={
-                    "request_id": correlation,
-                    "correlation_id": correlation,
-                    "method": request.method,
-                    "path": request.url.path,
-                    "status_code": status_code,
-                    "latency_ms": latency_ms,
-                },
-            )
+            _emit_access_log(request, response, status_code, correlation, start)
             otel_context.detach(otel_token)
             _correlation_var.reset(ctx_token)
