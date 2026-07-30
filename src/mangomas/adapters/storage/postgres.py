@@ -181,7 +181,7 @@ class PostgresRepository:
             )
             return int_id
         except asyncpg.PostgresError as exc:
-            logger.error(
+            logger.exception(
                 "Postgres save_turn failed",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
@@ -205,7 +205,7 @@ class PostgresRepository:
                     limit,
                 )
         except asyncpg.PostgresError as exc:
-            logger.error(
+            logger.exception(
                 "Postgres list_turns failed",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )

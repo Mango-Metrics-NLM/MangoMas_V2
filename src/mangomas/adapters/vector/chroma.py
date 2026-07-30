@@ -127,9 +127,21 @@ class ChromaVectorStore:
             )
         return matches
 
-    async def delete_by_source(self, source: str) -> None:
-        """Delete every record whose metadata ``source`` matches, off-thread."""
-        await asyncio.to_thread(self._collection.delete, where={"source": source})
+    async def delete_by_source(self, source: str) -> int:
+        """Delete every record whose metadata ``source`` matches, off-thread.
+
+        Returns the number of vectors removed. ``Collection.delete`` returns
+        ``None``, so the matching ids are counted first via ``Collection.get``
+        (``include=[]`` fetches ids only — no embeddings or documents).
+        """
+
+        def _delete() -> int:
+            existing = self._collection.get(where={"source": source}, include=[])
+            ids = existing.get("ids") or []
+            self._collection.delete(where={"source": source})
+            return len(ids)
+
+        return await asyncio.to_thread(_delete)
 
     async def aclose(self) -> None:
         """Chroma's persistent client flushes on write; satisfies the protocol."""

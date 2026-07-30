@@ -29,7 +29,11 @@ __all__ = ["IngestReport", "IngestionPipeline"]
 
 @dataclass(frozen=True)
 class IngestReport:
-    """Counts summarising a single :meth:`IngestionPipeline.ingest` run."""
+    """Counts summarising a single :meth:`IngestionPipeline.ingest` run.
+
+    ``deleted_sources`` counts only sources whose prior vectors were actually
+    removed before re-upserting — a first-time ingest reports ``0``.
+    """
 
     documents: int
     chunks: int
@@ -61,8 +65,11 @@ class IngestionPipeline:
         deleted = 0
         for doc in docs:
             # Idempotent re-ingest: clear prior chunks for this source first.
-            await self._vector_store.delete_by_source(doc.source)
-            deleted += 1
+            # Only sources the store actually held vectors for count as
+            # deletions — a first-time ingest reports 0 (spec 0014 / D10).
+            removed = await self._vector_store.delete_by_source(doc.source)
+            if removed > 0:
+                deleted += 1
             texts = chunk_text(
                 doc.text,
                 size=self._settings.chunk_words,

@@ -93,6 +93,11 @@ DEFAULT_VERTEX_EMBEDDING_MODEL: str = "text-embedding-004"
 # Stand-in GCP project id for Vertex adapter unit tests (never contacts GCP).
 TEST_VERTEX_PROJECT: str = "test-project"
 
+# ── Oversized upstream-body fixture (spec 0014 / D2) ──────────────────────────
+# Comfortably larger than ``DEFAULT_ERROR_DETAIL_TRUNCATE`` (200) so the
+# truncation of client-visible error detail is observable in regression tests.
+LARGE_UPSTREAM_BODY_CHARS: int = 5000
+
 # ── Vector store test-scoped values ───────────────────────────────────────────
 TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
 TEST_VECTOR_COLLECTION: str = "test-col"

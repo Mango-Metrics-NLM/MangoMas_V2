@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import get_tenant
@@ -120,7 +121,10 @@ class SQLiteRepository:
                         "save_turn failed",
                         extra={"agent": agent, "db_path": self._path},
                     )
-                    raise PersistenceError(str(exc)) from exc
+                    raise PersistenceError(
+                        "Failed to persist turn",
+                        detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+                    ) from exc
             logger.debug(
                 "save_turn ok",
                 extra={"row_id": row_id, "agent": agent, "db_path": self._path},
@@ -147,7 +151,10 @@ class SQLiteRepository:
                         "list_turns failed",
                         extra={"db_path": self._path},
                     )
-                    raise PersistenceError(str(exc)) from exc
+                    raise PersistenceError(
+                        "Failed to list turns",
+                        detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+                    ) from exc
             logger.debug(
                 "list_turns ok",
                 extra={"count": len(rows), "db_path": self._path},

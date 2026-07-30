@@ -48,11 +48,13 @@ class VectorStoreRepository(Protocol):
         """Return up to ``top_k`` nearest matches to ``embedding``, best first."""
         ...
 
-    async def delete_by_source(self, source: str) -> None:
+    async def delete_by_source(self, source: str) -> int:
         """Remove every record whose metadata ``source`` equals ``source``.
 
-        Used for idempotent re-ingestion: a shortened document must not leave
-        orphaned high-index chunks behind.
+        Returns the number of vectors removed (``0`` when the store held none
+        for this source), so callers can distinguish a real cleanup from a
+        no-op. Used for idempotent re-ingestion: a shortened document must not
+        leave orphaned high-index chunks behind.
         """
         ...
 

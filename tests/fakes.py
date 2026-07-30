@@ -293,13 +293,15 @@ class FakeVectorStore:
         scored.sort(key=lambda m: m.score, reverse=True)
         return scored[:top_k]
 
-    async def delete_by_source(self, source: str) -> None:
+    async def delete_by_source(self, source: str) -> int:
         self.deleted_sources.append(source)
+        before = len(self.records)
         self.records = {
             doc_id: rec
             for doc_id, rec in self.records.items()
             if rec["metadata"].get("source") != source
         }
+        return before - len(self.records)
 
     async def aclose(self) -> None:
         self.closed = True

@@ -8,6 +8,8 @@ coverage uses monkeypatched provider installation to stay independent of it.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
@@ -184,3 +186,25 @@ def test_build_metric_reader_unknown_raises() -> None:
 def test_build_metric_reader_gcp_uses_lazy_exporter(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telemetry, "_lazy_cloud_monitoring_exporter", ConsoleMetricExporter)
     assert telemetry._build_metric_reader(telemetry.EXPORTER_GCP) is not None
+
+
+# ── lazy-instrument singleton thread-safety (spec 0014 / D7) ──────────────────
+
+
+def test_instruments_singleton_survives_concurrent_first_record() -> None:
+    """Regression: 32 threads racing the first record must observe exactly one
+    ``_Instruments`` (double-checked locking in ``metrics._instruments``)."""
+    workers = 32
+    app_metrics._state.instruments = None  # force re-creation under contention
+    barrier = threading.Barrier(workers)
+
+    def _get(_: int) -> app_metrics._Instruments:
+        barrier.wait()  # line all workers up on the empty singleton
+        return app_metrics._instruments()
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(_get, range(workers)))
+
+    first = results[0]
+    assert all(instruments is first for instruments in results)
+    assert app_metrics._state.instruments is first

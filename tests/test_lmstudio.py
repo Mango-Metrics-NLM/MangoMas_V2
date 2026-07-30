@@ -9,9 +9,14 @@ import pytest
 import respx
 
 from mangomas.adapters.llm.lmstudio import LMStudioClient, LMStudioError
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core import Message
 from mangomas.errors import LLMTimeout, LLMUnavailable
-from tests.constants import TEST_LMSTUDIO_MOCK_BASE_URL, TEST_LMSTUDIO_MOCK_MODEL
+from tests.constants import (
+    LARGE_UPSTREAM_BODY_CHARS,
+    TEST_LMSTUDIO_MOCK_BASE_URL,
+    TEST_LMSTUDIO_MOCK_MODEL,
+)
 
 _CHAT_COMPLETIONS_URL = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/chat/completions"
 _MODELS_URL = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/models"
@@ -50,6 +55,33 @@ async def test_complete_raises_on_malformed() -> None:
             await client.complete([Message(role="user", content="hi")])
     finally:
         await client.aclose()
+
+
+@pytest.mark.parametrize(
+    "malformed_body",
+    [
+        {"unexpected": "x" * LARGE_UPSTREAM_BODY_CHARS},
+        ["x" * LARGE_UPSTREAM_BODY_CHARS],
+    ],
+    ids=["dict-body", "list-body"],
+)
+@respx.mock
+async def test_malformed_body_detail_is_truncated(malformed_body: object) -> None:
+    """Regression (spec 0014 / D2): a ~5KB malformed upstream body must never
+    reach the client-visible exception message; the truncated body lives in
+    ``detail``, bounded by ``DEFAULT_ERROR_DETAIL_TRUNCATE``."""
+    respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(200, json=malformed_body))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        with pytest.raises(LMStudioError) as excinfo:
+            await client.complete([Message(role="user", content="hi")])
+    finally:
+        await client.aclose()
+
+    assert str(excinfo.value) == "Malformed LM Studio response"
+    assert "x" * DEFAULT_ERROR_DETAIL_TRUNCATE not in str(excinfo.value)
+    assert len(excinfo.value.detail) <= DEFAULT_ERROR_DETAIL_TRUNCATE
+    assert excinfo.value.detail  # the truncated body is still carried
 
 
 @respx.mock

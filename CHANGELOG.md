@@ -23,6 +23,16 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   the RAG suite can run standalone without tripping the 95 % coverage gate.
 - `scripts/run_workflow_e2e.py`: the orchestrator (and its LLM httpx pool) is
   closed in a `finally`, so workflow failures no longer leak connections.
+- LM Studio LLM/embeddings adapters and the SQLite repository no longer embed
+  unbounded upstream bodies in client-visible error messages — the body is
+  truncated to `DEFAULT_ERROR_DETAIL_TRUNCATE` and carried in `detail`.
+  Persistence-failure logging unified on `logger.exception` (SQLite/Postgres).
+- The lazy metrics-instrument singleton is built under a lock (double-checked),
+  so concurrent first records can no longer register duplicate instruments.
+- `IngestReport.deleted_sources` counts sources whose vectors were actually
+  deleted instead of always equalling `documents`;
+  `VectorStoreRepository.delete_by_source` now returns the number of vectors
+  removed.
 
 ### Changed
 
