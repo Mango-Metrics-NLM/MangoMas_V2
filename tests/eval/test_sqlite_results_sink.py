@@ -113,3 +113,42 @@ def test_sqlite_results_factory_requires_db_path() -> None:
 
 def test_sqlite_results_in_registry() -> None:
     assert "sqlite_results" in sink_registry.available()
+
+
+async def test_sqlite_results_sink_normalises_sqlite_url(tmp_path: Path) -> None:
+    """D4 regression: a ``sqlite:///`` URL (as found in ``MANGOMAS_DB__URL`` or
+    a baseline's ``db_path`` option) must resolve to the same file a bare path
+    would, not create a literal ``sqlite:`` directory next to a stray file.
+    """
+    db = tmp_path / "eval.db"
+    url = f"sqlite:///{db}"
+    await SqliteResultsSink(db_path=url).emit(_report())
+
+    assert db.is_file()
+    assert not (tmp_path / "sqlite:").exists()
+    conn = sqlite3.connect(str(db))
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM eval_reports").fetchone()[0]
+    finally:
+        conn.close()
+    assert count == 1
+
+
+async def test_sqlite_results_sink_url_and_bare_path_write_the_same_file(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "eval.db"
+    await SqliteResultsSink(db_path=str(db)).emit(_report())
+    await SqliteResultsSink(db_path=f"sqlite:///{db}").emit(_report())
+
+    conn = sqlite3.connect(str(db))
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM eval_reports").fetchone()[0]
+    finally:
+        conn.close()
+    assert count == 2
+
+
+async def test_sqlite_results_sink_memory_url_still_works() -> None:
+    # ":memory:" must keep working after URL normalisation is introduced.
+    await SqliteResultsSink(db_path=":memory:").emit(_report())

@@ -133,6 +133,27 @@ def test_ensure_agent_plugins_runs_once_when_enabled(monkeypatch: pytest.MonkeyP
     assert calls == [discovery.AGENT_ENTRY_POINT_GROUP]
 
 
+def test_discover_agents_skips_non_callable_factory(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """D8 regression: a plugin whose entry point resolves to a non-callable
+    object (bad packaging, wrong attribute path) is skipped with a warning
+    instead of being registered and failing mysteriously at dispatch time.
+    """
+    monkeypatch.setattr(
+        discovery,
+        "entry_points",
+        lambda **_: [_FakeEntryPoint("not-callable", factory="a string, not a factory")],
+    )
+    registry: Registry[Any] = Registry("agent-test")
+    with caplog.at_level(logging.WARNING, logger="mangomas.agents.discovery"):
+        registered = discovery.discover_agents(registry, frozenset(), group="x")
+    assert registered == []
+    assert "not-callable" not in registry.available()
+    assert any(getattr(rec, "event", None) == "agent_plugin_not_callable" for rec in caplog.records)
+
+
 def test_ensure_agent_plugins_protects_seeded_builtins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

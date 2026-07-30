@@ -13,6 +13,7 @@ import mangomas.eval.scorers  # noqa: F401 — registers scorers
 from mangomas.errors import ConfigError
 from mangomas.eval import scorer_registry
 from mangomas.eval.scorers.json_keys import JsonKeysScorer
+from tests.constants import EVAL_BAD_REQUIRED_KEYS_OPTION
 
 
 async def test_json_keys_all_present_passes() -> None:
@@ -111,3 +112,15 @@ def test_json_keys_score_in_unit_interval_and_never_raises(
     result = asyncio.run(scorer.score(json.dumps(obj), ""))
     assert 0.0 <= result.score <= 1.0
     assert result.score == len(set(subset)) / len(keys)
+
+
+def test_json_keys_bad_option_shape_raises_at_factory_time() -> None:
+    """D3 regression: a malformed 'required_keys' option must fail before any
+    row runs (see ``test_regex_match_bad_option_flag_raises_at_factory_time``
+    for the sibling scorer). The factory validates the option's *shape*
+    eagerly; only the option-absent "derive keys from a row's `expected`"
+    path is legitimately row-scoped.
+    """
+    factory = scorer_registry.get("json_keys")
+    with pytest.raises(ConfigError, match="required_keys"):
+        factory({"required_keys": EVAL_BAD_REQUIRED_KEYS_OPTION})

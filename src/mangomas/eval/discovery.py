@@ -16,39 +16,64 @@ from __future__ import annotations
 
 import logging
 from importlib.metadata import entry_points
+from threading import Lock
 from typing import TYPE_CHECKING, Any
+
+from opentelemetry import trace
 
 from mangomas.eval.dataset_source import dataset_source_registry
 from mangomas.eval.registry import scorer_registry
 from mangomas.eval.sink_registry import sink_registry
 from mangomas.eval.target_registry import target_registry
-from mangomas.telemetry import get_tracer
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import Settings
     from mangomas.registry import Registry
 
 logger = logging.getLogger(__name__)
-_tracer = get_tracer(__name__)
+
+# The tracer is acquired lazily inside ``_discover`` via the raw
+# ``trace.get_tracer`` (matching ``agents/discovery.py`` and
+# ``core/orchestrator.py``) — never the auto-configuring
+# ``mangomas.telemetry.get_tracer`` at import time. This module is imported
+# by the CLI (and transitively by ``api/app.py`` via shared plugin wiring);
+# configuring telemetry at import would make the FastAPI lifespan's
+# ``configure_telemetry`` a no-op and silently ignore the configured exporter
+# / log format.
 
 SCORER_ENTRY_POINT_GROUP = "mangomas.eval.scorers"
 SINK_ENTRY_POINT_GROUP = "mangomas.eval.sinks"
 TARGET_ENTRY_POINT_GROUP = "mangomas.eval.targets"
 DATASET_SOURCE_ENTRY_POINT_GROUP = "mangomas.eval.dataset_sources"
 
-# Idempotency latch so repeated CLI invocations in one process scan once.
-_discovered = False
+# Idempotency latch, tracked *per registry instance* (by id) rather than a
+# single global boolean — mirrors ``agents/discovery.py``. A per-registry
+# latch is both thread-safe (guarded by the lock) and keeps a scan of one
+# registry from suppressing discovery on another (e.g. an injected registry
+# in tests), which the previous single ``bool`` latch could not do.
+_discovered_registries: set[int] = set()
+_discovery_lock = Lock()
 
 
 def _discover(group: str, registry: Registry[Any], label: str) -> list[str]:
     """Load and register every entry point in *group* into *registry*."""
     existing = set(registry.available())
     discovered: list[str] = []
-    with _tracer.start_as_current_span("eval.discovery") as span:
+    with trace.get_tracer(__name__).start_as_current_span("eval.discovery") as span:
         span.set_attribute("discovery.group", group)
         for ep in entry_points(group=group):
             try:
                 factory = ep.load()
+                if not callable(factory):
+                    logger.warning(
+                        "Eval plugin is not callable; skipping",
+                        extra={
+                            "event": "eval_plugin_not_callable",
+                            "group": group,
+                            "plugin": ep.name,
+                        },
+                    )
+                    continue
                 if ep.name in existing:
                     logger.info(
                         "Eval plugin overrides built-in %s %r",
@@ -118,12 +143,29 @@ def ensure_eval_plugins(settings: Settings) -> None:
     Idempotent and a no-op when discovery is disabled, so it is safe to call
     from every CLI entry point. Built-in scorers/sinks are already registered
     at import time; this only layers in entry-point plugins.
+
+    The idempotency latch is a per-registry-id set guarded by a lock (mirrors
+    ``agents.discovery.ensure_agent_plugins``), not a single global ``bool`` —
+    so concurrent first calls cannot both pass the check and double-scan, and
+    a registry that has already been scanned is tracked independently of the
+    others (matters for tests that swap one of the four module-level
+    registries for a fresh instance).
     """
-    global _discovered  # noqa: PLW0603 — deliberate once-per-process latch
-    if not settings.discovery_enabled or _discovered:
+    if not settings.discovery_enabled:
         return
-    discover_scorers()
-    discover_sinks()
-    discover_targets()
-    discover_dataset_sources()
-    _discovered = True
+    # Resolved dynamically against the module namespace (not via the
+    # discover_* functions' default arguments, which bind at *definition*
+    # time) so a monkeypatched ``discovery.scorer_registry`` etc. is both
+    # what the latch checks and what actually gets scanned.
+    registries = (scorer_registry, sink_registry, target_registry, dataset_source_registry)
+    if all(id(r) in _discovered_registries for r in registries):
+        return
+    with _discovery_lock:
+        # Double-checked under the lock so concurrent calls scan exactly once.
+        if all(id(r) in _discovered_registries for r in registries):
+            return
+        discover_scorers(registry=registries[0])
+        discover_sinks(registry=registries[1])
+        discover_targets(registry=registries[2])
+        discover_dataset_sources(registry=registries[3])
+        _discovered_registries.update(id(r) for r in registries)

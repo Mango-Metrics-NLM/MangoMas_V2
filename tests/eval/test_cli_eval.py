@@ -12,13 +12,14 @@ from typer.testing import CliRunner
 
 # Importing the CLI module also wires the scorer registry.
 import mangomas.cli.main as cli_main
+from mangomas.agents import ChatAgent
 from mangomas.cli.main import app
 from mangomas.config import get_settings
-from mangomas.core import Orchestrator
+from mangomas.core import AgentContext, Orchestrator
 from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
 from tests.constants import EVAL_GATE_EXIT_CODE, EVAL_THRESHOLD_LENIENT, EVAL_THRESHOLD_STRICT
-from tests.fakes import FakeSink
+from tests.fakes import FakeLLM, FakeRepository, FakeSink
 
 
 @pytest.fixture(autouse=True)
@@ -127,6 +128,37 @@ def test_eval_cli_missing_dataset_exits_2() -> None:
     result = runner.invoke(app, ["eval"])
     assert result.exit_code == 2
     assert "No dataset path provided" in result.stdout + result.stderr
+
+
+def test_eval_cli_bad_scorer_option_exits_2_before_any_row_runs(
+    fixtures_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D3 regression, end-to-end: an option-level config error must abort the
+    run with exit code 2 (config), not surface as every row erroring with
+    exit code 1 (runtime). A local, concretely-typed ``FakeLLM`` (rather than
+    the shared ``eval_orchestrator`` fixture, whose ``AgentContext.llm`` is
+    protocol-typed) recording zero calls proves the dataset loop never started.
+    """
+    fake_llm = FakeLLM()
+    orch = Orchestrator(AgentContext(llm=fake_llm, repo=FakeRepository()))
+    orch.register(ChatAgent())
+    monkeypatch.setattr(cli_main, "_build", lambda: orch)
+    monkeypatch.setenv("MANGOMAS_EVAL__SCORER_OPTIONS", '{"required_keys": "not-a-list"}')
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "mixed.jsonl"),
+            "--scorer",
+            "json_keys",
+        ],
+    )
+    assert result.exit_code == 2, result.stdout
+    assert "required_keys" in result.stdout + result.stderr
+    assert fake_llm.calls == []
 
 
 def test_eval_cli_inline_dataset_source(monkeypatch: pytest.MonkeyPatch) -> None:

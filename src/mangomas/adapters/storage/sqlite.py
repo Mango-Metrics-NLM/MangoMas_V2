@@ -14,8 +14,8 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
+from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
@@ -24,27 +24,10 @@ from mangomas.tenancy import get_tenant
 logger = logging.getLogger(__name__)
 
 
-def _path_from_url(url: str) -> str:
-    """Parse ``sqlite:///path`` URLs; fall back to bare paths or ``:memory:``.
-
-    ``sqlite:///abs/path.db`` -> ``abs/path.db`` (absolute-style, three slashes).
-    ``sqlite://relative.db``  -> ``relative.db`` (netloc form, two slashes).
-    ``:memory:`` / ``file::memory:...`` -> ``:memory:``.
-    Anything else is treated as a bare filesystem path.
-    """
-    if url == ":memory:" or url.startswith("file::memory:"):
-        return ":memory:"
-    if url.startswith("sqlite:///"):
-        return url[len("sqlite:///") :]
-    if url.startswith("sqlite://"):
-        parsed = urlparse(url)
-        # netloc carries the path when only two slashes are present.
-        path = parsed.path.lstrip("/")
-        combined = f"{parsed.netloc}/{path}" if path else parsed.netloc
-        if not combined:
-            raise ValueError(f"Empty sqlite URL path: {url!r}")
-        return combined
-    return url
+# Re-exported for backwards compatibility: the real implementation now lives
+# in ``_url.py`` so the eval ``sqlite_results`` sink can share it without
+# importing the full repository module.
+_path_from_url = path_from_sqlite_url
 
 
 class SQLiteRepository:

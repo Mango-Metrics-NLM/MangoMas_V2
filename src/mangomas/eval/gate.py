@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from mangomas.telemetry import get_tracer
 
@@ -45,6 +45,13 @@ class GateResult:
     ``actual_mean_score`` / ``actual_pass_rate``
     are surfaced (alongside the configured thresholds) so a sink can emit the
     full gate context without recomputing it.
+
+    ``kind`` discriminates a threshold-gate verdict (:func:`evaluate_gate`,
+    which populates ``min_mean_score``/``min_pass_rate``/``fail_on_error``/
+    ``errored``) from a regression-gate verdict (:func:`evaluate_regression_gate`,
+    which leaves those four at their defaults). :func:`merge_gate_results`
+    uses it to source the threshold fields from the correct verdict
+    regardless of the order its inputs are passed in.
     """
 
     passed: bool
@@ -55,6 +62,13 @@ class GateResult:
     fail_on_error: bool = False
     errored: int = 0
     reasons: list[str] = field(default_factory=list)
+    kind: Literal["threshold", "regression"] = "threshold"
+
+
+# Sentinel supplying GateResult's own threshold-field defaults when
+# merge_gate_results() has no kind="threshold" verdict among its inputs.
+# Never surfaced directly — only its four threshold fields are read.
+_DEFAULT_THRESHOLDS = GateResult(passed=True, actual_mean_score=0.0, actual_pass_rate=0.0)
 
 
 def evaluate_gate(
@@ -74,29 +88,22 @@ def evaluate_gate(
     reasons: list[str] = []
 
     if report.dataset_size == 0:
+        # Nothing to gate — always passes; the threshold checks below are
+        # skipped entirely rather than evaluated against a meaningless
+        # pass_rate/mean_score of 0.0 (which would otherwise fail thresholds).
         reasons.append("empty dataset — nothing to gate")
-        result = GateResult(
-            passed=True,
-            actual_mean_score=report.mean_score,
-            actual_pass_rate=pass_rate,
-            min_mean_score=min_mean_score,
-            min_pass_rate=min_pass_rate,
-            fail_on_error=fail_on_error,
-            errored=report.errored,
-            reasons=reasons,
-        )
-        _log(result)
-        return result
-
-    if min_mean_score is not None and report.mean_score < min_mean_score:
-        reasons.append(f"mean_score {report.mean_score:.3f} < min_mean_score {min_mean_score:.3f}")
-    if min_pass_rate is not None and pass_rate < min_pass_rate:
-        reasons.append(f"pass_rate {pass_rate:.3f} < min_pass_rate {min_pass_rate:.3f}")
-    if fail_on_error and report.errored > 0:
-        reasons.append(f"{report.errored} row(s) errored (fail_on_error)")
+    else:
+        if min_mean_score is not None and report.mean_score < min_mean_score:
+            reasons.append(
+                f"mean_score {report.mean_score:.3f} < min_mean_score {min_mean_score:.3f}"
+            )
+        if min_pass_rate is not None and pass_rate < min_pass_rate:
+            reasons.append(f"pass_rate {pass_rate:.3f} < min_pass_rate {min_pass_rate:.3f}")
+        if fail_on_error and report.errored > 0:
+            reasons.append(f"{report.errored} row(s) errored (fail_on_error)")
 
     result = GateResult(
-        passed=not reasons,
+        passed=report.dataset_size == 0 or not reasons,
         actual_mean_score=report.mean_score,
         actual_pass_rate=pass_rate,
         min_mean_score=min_mean_score,
@@ -138,6 +145,7 @@ def evaluate_regression_gate(
         actual_mean_score=diff.current_mean_score,
         actual_pass_rate=diff.current_pass_rate,
         reasons=reasons,
+        kind="regression",
     )
     _log_regression(result, diff)
     return result
@@ -150,22 +158,33 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
     only one is present (byte-compatible with single-gate runs), or a merged
     verdict carrying every reason when both a threshold and a regression gate
     are engaged.
+
+    The merged verdict's threshold fields (``min_mean_score``/``min_pass_rate``/
+    ``fail_on_error``/``errored``) are sourced from the ``kind="threshold"``
+    verdict specifically — *not* positionally from ``results[0]`` — so the
+    merge is correct regardless of the order the caller passes its gates in.
+    When no threshold-kind verdict is present (e.g. only a regression gate),
+    the defaults on :class:`GateResult` apply.
     """
     present = [r for r in results if r is not None]
     if not present:
         return None
     if len(present) == 1:
         return present[0]
-    first = present[0]
+    threshold_candidates = [r for r in present if r.kind == "threshold"]
+    # No threshold-kind verdict among `present` (e.g. only regression gates
+    # were engaged): fall back to GateResult's own field defaults, matching
+    # the pre-``kind`` behaviour for a regression-only merge.
+    threshold_result = threshold_candidates[0] if threshold_candidates else _DEFAULT_THRESHOLDS
     reasons: list[str] = [reason for r in present for reason in r.reasons]
     return GateResult(
         passed=all(r.passed for r in present),
-        actual_mean_score=first.actual_mean_score,
-        actual_pass_rate=first.actual_pass_rate,
-        min_mean_score=first.min_mean_score,
-        min_pass_rate=first.min_pass_rate,
-        fail_on_error=first.fail_on_error,
-        errored=first.errored,
+        actual_mean_score=present[0].actual_mean_score,
+        actual_pass_rate=present[0].actual_pass_rate,
+        min_mean_score=threshold_result.min_mean_score,
+        min_pass_rate=threshold_result.min_pass_rate,
+        fail_on_error=threshold_result.fail_on_error,
+        errored=threshold_result.errored,
         reasons=reasons,
     )
 

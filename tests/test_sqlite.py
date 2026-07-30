@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.adapters.storage.sqlite import SQLiteRepository, _path_from_url
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core import AgentRequest, AgentResponse, Message
@@ -22,6 +23,14 @@ def test_path_from_url_variants(tmp_path: Path) -> None:
     assert _path_from_url(str(tmp_path / "x.db")) == str(tmp_path / "x.db")
     with pytest.raises(ValueError, match="Empty sqlite URL"):
         _path_from_url("sqlite://")
+
+
+def test_path_from_url_is_the_shared_helper() -> None:
+    """D4: ``sqlite.py``'s ``_path_from_url`` is a re-export, not a second
+    implementation — proves the eval sqlite_results sink (which imports
+    ``path_from_sqlite_url`` directly) shares behaviour with the repository.
+    """
+    assert _path_from_url is path_from_sqlite_url
 
 
 async def test_save_and_list(repo: SQLiteRepository) -> None:

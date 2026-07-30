@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from tests.constants import ASGI_TEST_BASE_URL
-from tests.fakes import FakeLLM, FakeRepository
 
 from mangomas.agents import ChatAgent
 from mangomas.api.app import create_app
 from mangomas.core import AgentContext, Orchestrator
+from tests.constants import ASGI_TEST_BASE_URL
+from tests.fakes import FakeLLM, FakeRepository
 
 
 @pytest.mark.integration

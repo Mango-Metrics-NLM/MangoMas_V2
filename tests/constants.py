@@ -186,6 +186,14 @@ FAKE_PLUGIN_SCORER_NAME: str = "fake_plugin_scorer"
 FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"
 FAKE_PLUGIN_AGENT_NAME: str = "fake_plugin_agent"
 
+# Bad option values used to prove scorer factories validate at construction
+# time (before any row runs) rather than raising from inside score().
+EVAL_BAD_REGEX_FLAG: str = "not-a-real-flag"
+EVAL_BAD_REQUIRED_KEYS_OPTION: str = "not-a-list"
+# A sqlite:/// URL whose naive (non-normalised) handling would create a
+# literal "sqlite:" directory instead of resolving to the intended file.
+EVAL_SQLITE_URL_PREFIX: str = "sqlite:///"
+
 # ── Declarative workflow graphs (spec 0005) ───────────────────────────────────
 WORKFLOW_NODE_KINDS: tuple[str, ...] = ("agent", "branch", "fan_out", "loop", "sequence")
 WORKFLOW_SCHEMA_VERSION_CURRENT: int = 1

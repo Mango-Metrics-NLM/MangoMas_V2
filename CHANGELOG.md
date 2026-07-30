@@ -33,11 +33,24 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   deleted instead of always equalling `documents`;
   `VectorStoreRepository.delete_by_source` now returns the number of vectors
   removed.
-
 - `FileMemoryRepository`: honours its closed state — post-`close()` reads and
   writes raise `PersistenceError`, matching `SQLiteRepository`.
 - Workflow `fan_out` join and `sequence` final return now execute inside their
   `workflow.node.*` span, so node spans cover the full unit of work.
+- `eval.sinks.sqlite_results`: normalises `sqlite:///` URLs the same way the
+  storage adapter does (shared `adapters.storage._url.path_from_sqlite_url`),
+  so a `db_path` copied from `MANGOMAS_DB__URL` resolves to the intended file
+  instead of creating a literal `sqlite:` directory; its `PersistenceError`
+  detail is now truncated too.
+- `eval.discovery`: acquires its tracer lazily (matching `agents.discovery`)
+  instead of via the auto-configuring `mangomas.telemetry.get_tracer` at
+  import time, and its idempotency latch is now a locked per-registry set
+  instead of an unlocked global `bool`. Both discovery modules skip a
+  non-callable entry-point factory with a warning instead of registering it.
+- `eval.gate.merge_gate_results`: sources the merged verdict's threshold
+  fields from the `kind="threshold"` verdict specifically, not positionally
+  from the first argument — correct regardless of the order gates are passed
+  in.
 
 ### Changed
 

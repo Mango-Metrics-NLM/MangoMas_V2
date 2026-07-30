@@ -13,6 +13,7 @@ import mangomas.eval.scorers  # noqa: F401 — registers scorers
 from mangomas.errors import ConfigError
 from mangomas.eval import scorer_registry
 from mangomas.eval.scorers.regex_match import RegexMatchScorer
+from tests.constants import EVAL_BAD_REGEX_FLAG
 
 
 async def test_regex_match_searches_substring() -> None:
@@ -81,3 +82,16 @@ def test_regex_match_never_raises_on_literal_pattern(prediction: str, needle: st
     # Escaped needle is always a valid pattern → must not raise.
     result = asyncio.run(scorer.score(prediction, re.escape(needle)))
     assert 0.0 <= result.score <= 1.0
+
+
+def test_regex_match_bad_option_flag_raises_at_factory_time() -> None:
+    """D3 regression: an option-supplied bad flag must fail before any row runs.
+
+    ``RegexMatchScorer.__init__`` resolves ``flags`` eagerly (not inside
+    ``score()``), so a misconfigured ``scorer_options`` fails once, at
+    construction — which the CLI maps to exit code 2 — instead of becoming
+    the same ``ConfigError`` repeated for every row in the dataset.
+    """
+    factory = scorer_registry.get("regex_match")
+    with pytest.raises(ConfigError, match=EVAL_BAD_REGEX_FLAG):
+        factory({"flags": [EVAL_BAD_REGEX_FLAG]})
