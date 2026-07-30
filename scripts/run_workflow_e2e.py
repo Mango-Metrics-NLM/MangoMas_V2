@@ -88,19 +88,20 @@ async def _main() -> int:
     t0 = time.perf_counter()
     try:
         response = await execute_workflow(graph, request, orch=orch)
-    except MaxStepsExceeded as exc:
-        print(f"[loop] MaxStepsExceeded after {exc.steps} steps — sentinel never emitted.")
-        await orch.aclose()
-        return 0
-    finally:
         elapsed = time.perf_counter() - t0
 
-    print(f"--- final ({response.agent}, {len(response.content)} chars) ---")
-    print(_preview(response.content))
-    loop_meta = response.metadata.get("loop", {})
-    print(f"\n[workflow] elapsed={elapsed:.2f}s loop={loop_meta}")
-    await orch.aclose()
-    return 0
+        print(f"--- final ({response.agent}, {len(response.content)} chars) ---")
+        print(_preview(response.content))
+        loop_meta = response.metadata.get("loop", {})
+        print(f"\n[workflow] elapsed={elapsed:.2f}s loop={loop_meta}")
+        return 0
+    except MaxStepsExceeded as exc:
+        print(f"[loop] MaxStepsExceeded after {exc.steps} steps — sentinel never emitted.")
+        return 0
+    finally:
+        # Always release the LLM httpx pool — even when execute_workflow raises
+        # something other than MaxStepsExceeded (e.g. an adapter/network error).
+        await orch.aclose()
 
 
 if __name__ == "__main__":

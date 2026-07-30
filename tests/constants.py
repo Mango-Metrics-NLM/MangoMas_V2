@@ -193,6 +193,15 @@ WORKFLOW_RUNTIME_EXIT_CODE: int = 1
 WORKFLOW_RUN_ROUTE: str = "/workflows/run"
 WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
 
+# ── Workflow E2E demo script (scripts/run_workflow_e2e.py) ────────────────────
+WORKFLOW_E2E_SCRIPT: str = "run_workflow_e2e.py"
+# Marker the script prints on its elapsed-time report line (happy path only).
+WORKFLOW_E2E_ELAPSED_MARKER: str = "elapsed="
+# Sentinel message for an injected generic dispatch failure.
+WORKFLOW_E2E_FAILURE_MESSAGE: str = "workflow-e2e-dispatch-boom"
+# Exit code the script returns on success (and on the MaxStepsExceeded path).
+WORKFLOW_E2E_EXIT_OK: int = 0
+
 # API authentication (spec 0010). The secret_ref is an env-var NAME (env provider);
 # a non-MANGOMAS prefix keeps pydantic-settings from parsing it as a setting.
 AUTH_SECRET_REF_ENV: str = "TEST_API_TOKEN"  # noqa: S105 — env-var name, not a secret

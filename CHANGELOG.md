@@ -19,6 +19,10 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 - `ToolAgent`: honours `max_tool_steps` exactly — at most N LLM calls per
   request (previously up to N+1) and `metadata["tool_steps"]` reports the
   actual number of calls made.
+- `make rag`: now passes `--no-cov` like every other opt-in suite target, so
+  the RAG suite can run standalone without tripping the 95 % coverage gate.
+- `scripts/run_workflow_e2e.py`: the orchestrator (and its LLM httpx pool) is
+  closed in a `finally`, so workflow failures no longer leak connections.
 
 ### Changed
 

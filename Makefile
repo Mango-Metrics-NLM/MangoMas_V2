@@ -76,7 +76,7 @@ postgres: ## Postgres suite (needs Docker for testcontainers)
 	RUN_POSTGRES=1 $(PYTHON) -m pytest tests/postgres --no-cov $(PYTEST_FLAGS)
 
 rag: ## RAG + local-embedding suites (needs the rag/embeddings-local extras)
-	RUN_EMBEDDINGS_LOCAL=1 RUN_RAG=1 $(PYTHON) -m pytest tests/rag $(PYTEST_FLAGS)
+	RUN_EMBEDDINGS_LOCAL=1 RUN_RAG=1 $(PYTHON) -m pytest tests/rag --no-cov $(PYTEST_FLAGS)
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 
