@@ -7,6 +7,20 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+_Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
+
+### Fixed
+
+### Changed
+
+### Added
+
+### Removed
+
+---
+
 ## [0.1.0] — 2026-05-13
 
 ### Fixed
