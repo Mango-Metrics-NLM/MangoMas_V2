@@ -51,6 +51,14 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   fields from the `kind="threshold"` verdict specifically, not positionally
   from the first argument — correct regardless of the order gates are passed
   in.
+- `scripts/check_coverage.py`: the `api` coverage floor pattern was
+  `src/mangomas/api/*.py` (non-recursive), so it silently excluded the
+  `api/routes/` subpackage added in the M11 split; now `api/**/*.py`.
+- `Makefile`'s `bridge-coverage` target used the default `.coverage` data
+  file, so `make gate` (which runs `test → coverage → bridge-coverage`)
+  overwrote the main suite's coverage data with the bridge's — a standalone
+  `make coverage` run afterward would then measure the wrong run. Now uses
+  `COVERAGE_FILE=.coverage.bridge` to keep the two isolated.
 
 ### Changed
 
@@ -69,6 +77,19 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   (additive) and are used by the tenancy/access-log middleware as the canonical
   setters; middleware docstring covers all four classes and bare status ints
   are `http.HTTPStatus` constants.
+- `.github/workflows/ci.yml`'s lint/test/bridge-coverage jobs now invoke the
+  corresponding `make` target instead of duplicating each command inline, so
+  the two can no longer drift; a new `tests/deploy/test_ci_make_parity.py`
+  locks the delegation and the global-floor/pytest-addopts equality in place.
+- `Makefile` gains `gcp-secrets`, `gcp-trace`, and `langfuse` opt-in targets
+  (marker-selected, since those tests live alongside their unit-test siblings
+  rather than in a dedicated directory) — all nine `RUN_*`-gated suites are
+  now reachable from `make help`.
+- `scripts/check_coverage.py` gains floors for `_headers.py` (100%),
+  `config.py`, `telemetry.py`, and `metrics.py` (95% each) — previously
+  covered only by the blanket global floor.
+- `.pre-commit-config.yaml` gains a local `lint-agent-frontmatter` hook, so a
+  broken `.agent.md`/`SKILL.md` is caught before commit instead of only in CI.
 
 ### Added
 

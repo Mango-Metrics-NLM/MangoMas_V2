@@ -43,3 +43,18 @@ repos:
       - id: check-toml
       - id: check-merge-conflict
       - id: debug-statements
+
+  # ── Agent/skill frontmatter lint ────────────────────────────────────────────
+  # Previously CI-only (the `frontmatter` job in ci.yml / `make frontmatter`),
+  # so a broken .agent.md or SKILL.md only surfaced after a push. This local
+  # hook runs the identical full-repo validation before commit; `files:` only
+  # decides whether the hook fires this run — the script itself always scans
+  # the whole .github/agents / .github/skills tree (pass_filenames: false).
+  - repo: local
+    hooks:
+      - id: lint-agent-frontmatter
+        name: Lint agent/skill frontmatter
+        entry: python scripts/lint_agent_frontmatter.py
+        language: system
+        pass_filenames: false
+        files: (\.agent\.md|SKILL\.md)$
