@@ -6,6 +6,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from mangomas.agents._prompt import build_messages, resolve_system_prompt
 from mangomas.config import DEFAULT_TOOL_MAX_STEPS
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolCallParser, build_tool_system_prompt
@@ -35,15 +36,9 @@ class ToolAgent:
         max_tool_steps: int | None = None,
         settings: AgentSettings | None = None,
     ) -> None:
-        # Normalize blank/whitespace-only prompts to None for consistency.
-        prompt_candidate: str | None = (
-            settings.system_prompt
-            if settings is not None and settings.system_prompt is not None
-            else system_prompt
-        )
-        self._system_prompt: str | None = (
-            prompt_candidate.strip() if prompt_candidate else None
-        ) or None
+        self._system_prompt: str | None = resolve_system_prompt(system_prompt, settings)
+        self._temperature: float | None = settings.temperature if settings is not None else None
+        self._max_tokens: int | None = settings.max_tokens if settings is not None else None
         if max_tool_steps is not None:
             self._max_tool_steps = max_tool_steps
         elif settings is not None and settings.max_tool_steps is not None:
@@ -58,8 +53,6 @@ class ToolAgent:
         Issues at most ``max_tool_steps`` LLM calls in total;
         ``metadata["tool_steps"]`` reports the exact number made.
         """
-        messages = list(request.messages)
-
         # Build tool-aware system prompt when tools are registered.
         tool_prompt: str | None = None
         if ctx.tools is not None:
@@ -69,19 +62,22 @@ class ToolAgent:
         # A custom system prompt must not displace the tool-format prompt —
         # concatenate custom-first (mirroring PlannerAgent) so the LLM always
         # learns the tool-call JSON contract when tools are registered.
-        if self._system_prompt is not None and tool_prompt is not None:
-            effective_prompt: str | None = f"{self._system_prompt}\n\n{tool_prompt}"
-        else:
-            effective_prompt = self._system_prompt or tool_prompt
-        if effective_prompt and not any(m.role == "system" for m in messages):
-            messages.insert(0, Message(role="system", content=effective_prompt))
+        # Reuses resolve_system_prompt's suffix-combination: settings=None
+        # means precedence is moot here — self._system_prompt was already
+        # resolved once in __init__.
+        effective_prompt = resolve_system_prompt(self._system_prompt, None, suffix=tool_prompt)
+        messages = build_messages(request, effective_prompt)
 
         content = ""
         steps = 0
         while steps < self._max_tool_steps:
             steps += 1
             logger.debug("ToolAgent step %d/%d", steps, self._max_tool_steps)
-            content = await ctx.llm.complete(messages)
+            content = await ctx.llm.complete(
+                messages,
+                temperature=self._temperature,
+                max_tokens=self._max_tokens,
+            )
             tool_call = self._parser.parse(content)
 
             if tool_call is None:

@@ -36,6 +36,9 @@ async def stream_with_buffered_fallback(
     agent_name: str,
     messages: list[Message],
     ctx: AgentContext,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """Yield LLM tokens for *messages*, with a buffered ``complete()`` fallback.
 
@@ -51,6 +54,13 @@ async def stream_with_buffered_fallback(
     ctx:
         The agent context whose ``llm`` will be inspected for streaming
         capability.
+    temperature:
+        Forwarded verbatim to ``ctx.llm.stream``/``ctx.llm.complete`` (the
+        caller resolves this from ``AgentSettings``; ``None`` lets the LLM
+        adapter apply its own default).
+    max_tokens:
+        Forwarded verbatim to ``ctx.llm.stream``/``ctx.llm.complete``, same
+        resolution contract as *temperature*.
 
     Behaviour
     ---------
@@ -61,7 +71,9 @@ async def stream_with_buffered_fallback(
       uniform "stream" of one element.
     """
     if isinstance(ctx.llm, StreamingLLMClient):
-        async for chunk in await ctx.llm.stream(messages):
+        async for chunk in await ctx.llm.stream(
+            messages, temperature=temperature, max_tokens=max_tokens
+        ):
             yield chunk
         return
 
@@ -69,5 +81,5 @@ async def stream_with_buffered_fallback(
         _FALLBACK_WARNING_MESSAGE,
         extra={"agent": agent_name},
     )
-    content = await ctx.llm.complete(messages)
+    content = await ctx.llm.complete(messages, temperature=temperature, max_tokens=max_tokens)
     yield content

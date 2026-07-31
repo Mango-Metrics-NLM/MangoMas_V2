@@ -17,8 +17,14 @@ class LLMClient(Protocol):
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
-        """Return the assistant content for ``messages``."""
+        """Return the assistant content for ``messages``.
+
+        ``max_tokens=None`` (the default) means "let the adapter/provider
+        apply its own default" — additive parameter (spec-0014 M5); existing
+        callers that never pass it see no behaviour change.
+        """
         ...
 
     async def aclose(self) -> None:
@@ -48,6 +54,10 @@ class StreamingLLMClient(LLMClient, Protocol):
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
-        """Return an async iterator that yields content tokens."""
+        """Return an async iterator that yields content tokens.
+
+        See :meth:`LLMClient.complete` for the ``max_tokens`` contract.
+        """
         ...

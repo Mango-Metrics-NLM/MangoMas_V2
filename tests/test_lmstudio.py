@@ -16,6 +16,7 @@ from tests.constants import (
     LARGE_UPSTREAM_BODY_CHARS,
     TEST_LMSTUDIO_MOCK_BASE_URL,
     TEST_LMSTUDIO_MOCK_MODEL,
+    TEST_MAX_TOKENS_OVERRIDE,
 )
 
 _CHAT_COMPLETIONS_URL = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/chat/completions"
@@ -42,6 +43,47 @@ async def test_complete_returns_content() -> None:
     assert route.called
     sent = route.calls.last.request
     assert b'"model":"m"' in sent.content
+
+
+@respx.mock
+async def test_complete_omits_max_tokens_when_none() -> None:
+    """spec-0014 M5: max_tokens=None must not appear in the request body at all,
+    so the payload stays byte-identical for every existing (pre-M5) caller."""
+    route = respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "hello!"}}]},
+        )
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        await client.complete([Message(role="user", content="hi")])
+    finally:
+        await client.aclose()
+
+    assert route.called
+    sent = json.loads(route.calls.last.request.content)
+    assert "max_tokens" not in sent
+
+
+@respx.mock
+async def test_complete_includes_max_tokens_when_given() -> None:
+    route = respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "hello!"}}]},
+        )
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        await client.complete(
+            [Message(role="user", content="hi")], max_tokens=TEST_MAX_TOKENS_OVERRIDE
+        )
+    finally:
+        await client.aclose()
+
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["max_tokens"] == TEST_MAX_TOKENS_OVERRIDE
 
 
 @respx.mock
@@ -178,6 +220,38 @@ async def test_stream_yields_content_tokens() -> None:
     finally:
         await client.aclose()
     assert "".join(tokens) == "Hello world"
+
+
+@respx.mock
+async def test_stream_includes_max_tokens_when_given() -> None:
+    route = respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(200, content=_sse_body("Hello"))
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        async for _ in await client.stream(
+            [Message(role="user", content="hi")], max_tokens=TEST_MAX_TOKENS_OVERRIDE
+        ):
+            pass
+    finally:
+        await client.aclose()
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["max_tokens"] == TEST_MAX_TOKENS_OVERRIDE
+
+
+@respx.mock
+async def test_stream_omits_max_tokens_when_none() -> None:
+    route = respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(200, content=_sse_body("Hello"))
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        async for _ in await client.stream([Message(role="user", content="hi")]):
+            pass
+    finally:
+        await client.aclose()
+    sent = json.loads(route.calls.last.request.content)
+    assert "max_tokens" not in sent
 
 
 @respx.mock

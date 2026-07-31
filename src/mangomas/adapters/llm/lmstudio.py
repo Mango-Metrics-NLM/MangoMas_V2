@@ -59,6 +59,7 @@ class LMStudioClient(OpenAICompatHTTPClient):
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Call ``/chat/completions`` and return the first choice's content."""
         payload: dict[str, Any] = {
@@ -66,6 +67,8 @@ class LMStudioClient(OpenAICompatHTTPClient):
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": (self._default_temperature if temperature is None else temperature),
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         try:
             resp = await self._client.post(f"{self._base_url}/chat/completions", json=payload)
             resp.raise_for_status()
@@ -109,15 +112,17 @@ class LMStudioClient(OpenAICompatHTTPClient):
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
         """Return an async iterator that yields content tokens from a streaming completion."""
-        return self._stream_impl(messages, temperature=temperature)
+        return self._stream_impl(messages, temperature=temperature, max_tokens=max_tokens)
 
     async def _stream_impl(
         self,
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncGenerator[str, None]:
         """Async generator: yields SSE content tokens from LM Studio."""
         payload: dict[str, Any] = {
@@ -126,6 +131,8 @@ class LMStudioClient(OpenAICompatHTTPClient):
             "temperature": (self._default_temperature if temperature is None else temperature),
             "stream": True,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         try:
             stream_cm = self._client.stream(
                 "POST", f"{self._base_url}/chat/completions", json=payload

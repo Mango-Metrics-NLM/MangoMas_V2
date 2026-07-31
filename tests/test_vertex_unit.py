@@ -21,6 +21,7 @@ from mangomas.adapters.llm.vertex import (
 from mangomas.config import DEFAULT_VERTEX_LOCATION
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
+from tests.constants import TEST_MAX_TOKENS_OVERRIDE
 from tests.fakes import FakeVertexGenerativeModel
 
 _TEST_PROJECT = "unit-test-project"
@@ -106,6 +107,29 @@ async def test_complete_respects_explicit_temperature() -> None:
     assert fake.calls[0]["generation_config"] == {"temperature": 0.9}
 
 
+async def test_complete_omits_max_output_tokens_when_none() -> None:
+    """spec-0014 M5: max_tokens=None must not add max_output_tokens to the
+    generation_config, so every existing (pre-M5) caller's request is unchanged."""
+    fake = FakeVertexGenerativeModel()
+    client, _ = _make_client(model=fake)
+    await client.complete([Message(role="user", content="hi")])
+    assert fake.calls[0]["generation_config"] == {"temperature": 0.2}
+
+
+async def test_complete_includes_max_output_tokens_when_given() -> None:
+    fake = FakeVertexGenerativeModel()
+    client, _ = _make_client(model=fake)
+    await client.complete(
+        [Message(role="user", content="hi")],
+        temperature=0.9,
+        max_tokens=TEST_MAX_TOKENS_OVERRIDE,
+    )
+    assert fake.calls[0]["generation_config"] == {
+        "temperature": 0.9,
+        "max_output_tokens": TEST_MAX_TOKENS_OVERRIDE,
+    }
+
+
 async def test_complete_raises_vertex_error_on_empty_text() -> None:
     fake = FakeVertexGenerativeModel(reply="")
     client, _ = _make_client(model=fake)
@@ -176,6 +200,19 @@ async def test_stream_skips_empty_chunks() -> None:
     stream = await client.stream([Message(role="user", content="hi")])
     collected = [tok async for tok in stream]
     assert collected == ["foo", "bar"]
+
+
+async def test_stream_includes_max_output_tokens_when_given() -> None:
+    fake = FakeVertexGenerativeModel(chunks=["foo"])
+    client, _ = _make_client(model=fake)
+    stream = await client.stream(
+        [Message(role="user", content="hi")], max_tokens=TEST_MAX_TOKENS_OVERRIDE
+    )
+    _ = [tok async for tok in stream]
+    assert fake.calls[0]["generation_config"] == {
+        "temperature": 0.2,
+        "max_output_tokens": TEST_MAX_TOKENS_OVERRIDE,
+    }
 
 
 async def test_stream_translates_sdk_exception_on_start() -> None:
