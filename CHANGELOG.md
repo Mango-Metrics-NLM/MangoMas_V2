@@ -90,6 +90,33 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   covered only by the blanket global floor.
 - `.pre-commit-config.yaml` gains a local `lint-agent-frontmatter` hook, so a
   broken `.agent.md`/`SKILL.md` is caught before commit instead of only in CI.
+- `chat`/`summarize`/`tool_agent`/`planner`/`reviewer` share one system-prompt
+  resolution and message-building path via `agents._prompt.resolve_system_prompt`
+  / `build_messages` (five previously-duplicated precedence ternaries and
+  message-insert copies collapse to one; each agent's pre-existing precedence —
+  settings-first vs. explicit-first — is preserved exactly, not unified).
+  `PlannerAgent`/`ReviewerAgent` are now thin subclasses of the new
+  `agents._structured.StructuredOutputAgent`. `AgentSettings.temperature` and
+  `max_tokens` are live: every agent forwards them to `ctx.llm.complete()`/
+  `stream()` instead of the settings existing but never being read.
+- `eval`'s Langfuse sink/source share one client-bootstrap helper
+  (`eval._langfuse`, ending 12 lines of verbatim duplication incl. an
+  identical error string) and one option-validation helper module
+  (`eval._options`: `require_str`/`require_list`/`require_unit_float`) instead
+  of each implementing its own strict-vs-coercing validation. `AgentTarget`,
+  `PipelineTarget`, `InlineSource`, and `JsonlSource` take keyword-only
+  constructor arguments; entry-point iteration for eval plugin discovery moves
+  to the shared `mangomas._entry_points`.
+- LM Studio's chat-completion, streaming, embedding, and ping call sites share
+  one POST/GET → `raise_for_status` → log → translate path
+  (`OpenAICompatHTTPClient._request` / `_log_and_translate`) instead of
+  repeating it four times across `adapters/llm/lmstudio.py` and
+  `adapters/embeddings/lmstudio.py`.
+- `secrets.gcp.GCPSecretManagerProvider.get()`'s five near-identical
+  log-then-raise-if-strict failure branches collapse into one
+  `_handle_failure()` helper; its lazy `secretmanager` import now raises
+  `ImportError` with an install hint (`mangomas[gcp]`), matching every other
+  lazy-SDK adapter.
 
 ### Added
 
@@ -100,6 +127,10 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 - `api.errors.error_envelope()` — the single construction site for the
   `{"error", "message"[, "detail"]}` body, shared by the exception handler and
   the middleware 413/503 rejections.
+- `LLMClient.complete()` / `StreamingLLMClient.stream()` gain an additive
+  keyword-only `max_tokens: int | None = None` parameter, implemented by the
+  LM Studio and Vertex adapters (and `tests.fakes.FakeLLM`), so
+  `AgentSettings.max_tokens` has somewhere to go.
 
 ### Removed
 
