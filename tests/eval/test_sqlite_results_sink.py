@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import mangomas.eval.sinks  # noqa: F401 — registers built-in sinks
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import ConfigError
 from mangomas.eval import evaluate_gate
 from mangomas.eval.runner import EvalReport, EvalRowResult
@@ -111,6 +112,11 @@ def test_sqlite_results_factory_requires_db_path() -> None:
         sink_registry.get("sqlite_results")({})
 
 
+def test_sqlite_results_factory_builds(tmp_path: Path) -> None:
+    sink = sink_registry.get("sqlite_results")({"db_path": str(tmp_path / "r.db")})
+    assert isinstance(sink, SqliteResultsSink)
+
+
 def test_sqlite_results_in_registry() -> None:
     assert "sqlite_results" in sink_registry.available()
 
@@ -152,3 +158,12 @@ async def test_sqlite_results_sink_url_and_bare_path_write_the_same_file(
 async def test_sqlite_results_sink_memory_url_still_works() -> None:
     # ":memory:" must keep working after URL normalisation is introduced.
     await SqliteResultsSink(db_path=":memory:").emit(_report())
+
+
+def test_sqlite_results_sink_error_detail_truncate_constant() -> None:
+    """D2/D4 regression: the sink's error path shares SQLiteRepository's truncation
+    constant. Actual truncation behaviour is covered by
+    ``test_sqlite.py::test_persistence_error_detail_is_truncated``; this test just
+    pins the shared constant the sink relies on.
+    """
+    assert DEFAULT_ERROR_DETAIL_TRUNCATE == 200

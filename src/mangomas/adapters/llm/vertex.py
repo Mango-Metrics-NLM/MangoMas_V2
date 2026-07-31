@@ -212,10 +212,15 @@ class VertexClient:
             contents.append(self._Content(role=role, parts=[self._Part.from_text(_annotate(m))]))
         return contents
 
-    def _generation_config(self, temperature: float | None) -> dict[str, Any]:
-        return {
+    def _generation_config(
+        self, temperature: float | None, max_tokens: int | None = None
+    ) -> dict[str, Any]:
+        config: dict[str, Any] = {
             "temperature": (self._default_temperature if temperature is None else temperature),
         }
+        if max_tokens is not None:
+            config["max_output_tokens"] = max_tokens
+        return config
 
     # ── Protocol surface ──────────────────────────────────────────────────
 
@@ -224,10 +229,11 @@ class VertexClient:
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Return the assistant content for ``messages`` (single non-streaming response)."""
         contents = self._build_contents(messages)
-        config = self._generation_config(temperature)
+        config = self._generation_config(temperature, max_tokens)
         logger.info(
             "Vertex request",
             extra={
@@ -309,18 +315,20 @@ class VertexClient:
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
         """Return an async iterator that yields content tokens incrementally."""
-        return self._stream_impl(messages, temperature=temperature)
+        return self._stream_impl(messages, temperature=temperature, max_tokens=max_tokens)
 
     async def _stream_impl(
         self,
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncGenerator[str, None]:
         contents = self._build_contents(messages)
-        config = self._generation_config(temperature)
+        config = self._generation_config(temperature, max_tokens)
         logger.debug(
             "Vertex stream start",
             extra={

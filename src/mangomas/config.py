@@ -404,6 +404,10 @@ class AgentSettings(BaseModel):
     system_prompt: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    # Reserved for a follow-up spec (spec-0014 M5 activates temperature and
+    # max_tokens only): per-agent client/model selection needs a
+    # composition-layer change (a per-agent LLMClient rather than one shared
+    # `ctx.llm`) that is out of scope here. Not read by any agent yet.
     model_override: str | None = None
     # ToolAgent only: cap on the total number of LLM calls per request.
     # ``None`` (the default) falls back to ``DEFAULT_TOOL_MAX_STEPS``, so

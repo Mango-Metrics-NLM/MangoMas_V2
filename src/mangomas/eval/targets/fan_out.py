@@ -16,6 +16,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from mangomas.errors import ConfigError
+from mangomas.eval._options import require_list
 from mangomas.eval.target import Target
 from mangomas.eval.target_registry import target_registry
 
@@ -38,6 +39,17 @@ class FanOutTarget:
         self._join = join
 
     async def run(self, request: AgentRequest, *, orch: Orchestrator) -> str:
+        # The orchestrator's own "Fan-out complete" debug log has no visibility
+        # into the *join* strategy — that's this target's own configuration —
+        # so it is worth a dedicated line here rather than assumed from context.
+        logger.debug(
+            "Fan-out target dispatching",
+            extra={
+                "event": "eval_fan_out_target_run",
+                "agents": self._agents,
+                "join": self._join,
+            },
+        )
         responses = await orch.dispatch_fan_out(self._agents, request)
         if self._join == "concat":
             return "\n".join(r.content for r in responses)
@@ -45,8 +57,8 @@ class FanOutTarget:
 
 
 def _fan_out_target_factory(options: dict[str, Any]) -> Target:
-    agents = options.get("agents")
-    if not isinstance(agents, list) or not agents:
+    agents = require_list(options, "agents", owner="fan_out target")
+    if not agents:
         raise ConfigError("fan_out target requires a non-empty 'agents' list")
     join = str(options.get("join", _DEFAULT_JOIN))
     if join not in _VALID_JOINS:

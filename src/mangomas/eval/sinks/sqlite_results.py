@@ -21,7 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
-from mangomas.errors import ConfigError, PersistenceError
+from mangomas.errors import PersistenceError
+from mangomas.eval._options import require_str
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
 
@@ -143,9 +144,7 @@ class SqliteResultsSink:
 
 
 def _sqlite_results_factory(options: dict[str, Any]) -> Sink:
-    db_path = options.get("db_path")
-    if not db_path or not isinstance(db_path, str):
-        raise ConfigError("sqlite_results sink requires a string 'db_path' option")
+    db_path = require_str(options, "db_path", owner="sqlite_results sink")
     return SqliteResultsSink(db_path=db_path)
 
 

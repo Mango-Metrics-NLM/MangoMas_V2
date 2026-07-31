@@ -50,8 +50,9 @@ class NonStreamingLMStudioClient:
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
-        return await self._inner.complete(messages, temperature=temperature)
+        return await self._inner.complete(messages, temperature=temperature, max_tokens=max_tokens)
 
     async def ping(self) -> None:
         await self._inner.ping()

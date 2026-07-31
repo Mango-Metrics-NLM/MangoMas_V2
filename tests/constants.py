@@ -228,3 +228,15 @@ BACKPRESSURE_MAX_CONCURRENT: int = 1
 TENANT_A: str = "tenant-a"
 TENANT_B: str = "tenant-b"
 TENANT_HEADER: str = "X-Tenant-ID"
+
+# ── Shared prompt-resolution helpers / live temperature+max_tokens (spec 0014 M5) ──
+# Distinct literal text so precedence-matrix assertions can tell explicit vs
+# settings-sourced prompts apart unambiguously.
+TEST_PROMPT_EXPLICIT: str = "Explicit constructor prompt."
+TEST_PROMPT_SETTINGS: str = "Settings-provided prompt."
+TEST_PROMPT_SUFFIX: str = "Suffix block."
+# Distinct from DEFAULT_LLM_TEMPERATURE (0.2) so an override is observable;
+# reused by both agent-level (AgentSettings) and adapter-level (LM Studio /
+# Vertex request-payload) tests.
+TEST_TEMPERATURE_OVERRIDE: float = 0.42
+TEST_MAX_TOKENS_OVERRIDE: int = 256

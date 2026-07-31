@@ -55,6 +55,8 @@ src/mangomas/
 │   ├── tools.py        ToolSpec, ToolCallParser, ToolRegistry, prompt builders
 │   └── loop.py         AcceptanceFn type alias
 ├── agents/         # Concrete agent implementations (all satisfy Agent protocol)
+│   ├── _prompt.py      resolve_system_prompt + build_messages (shared precedence + message insertion)
+│   ├── _structured.py  StructuredOutputAgent — shared base for planner/reviewer
 │   ├── chat.py         ChatAgent
 │   ├── summarize.py    SummarizeAgent
 │   ├── tool_agent.py   ToolAgent (inner tool-execution loop)
@@ -64,6 +66,7 @@ src/mangomas/
 │   ├── _http_errors.py  Shared httpx → typed-error translator (llm + embeddings)
 │   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
 │   ├── _openai_client.py OpenAICompatHTTPClient — shared httpx lifecycle base
+│   │                    (_request / _log_and_translate: POST/GET → raise → log → translate)
 │   ├── llm/            LLMClient protocol + LMStudioAdapter + VertexClient
 │   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
 │   │                   (_shared.py: embed / aclose mixins — backends write embed_batch only)
@@ -83,7 +86,15 @@ src/mangomas/
 │   ├── executor.py     NodeExecutor protocol + execute_workflow driver
 │   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
 │   └── nodes/          Self-registering agent/sequence/fan_out/loop/branch executors
-├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
+├── api/
+│   ├── app.py          FastAPI app factory (lifespan, middleware installation)
+│   ├── errors.py       Error-status mapping, error-envelope builder
+│   ├── models.py       DTO models (WorkflowRunRequest, ValidateRequest/Response)
+│   ├── middleware.py   MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
+│   └── routes/         Endpoint routers by resource
+│       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
+│       ├── system.py   /health, /ready, /list_agents endpoints
+│       └── workflows.py /workflows/run, /workflows/validate endpoints
 ├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
 ├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
@@ -91,7 +102,10 @@ src/mangomas/
 │                   VectorSettings, RagSettings
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
-└── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
+├── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
+├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
+├── _entry_points.py Shared entry-point iteration for eval plugin discovery
+└── metrics.py      Instrumentation registry (singleton, double-checked lock)
 ```
 
 ---
@@ -177,6 +191,11 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
 | `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
+| `MANGOMAS_AGENTS__<NAME>__SYSTEM_PROMPT` | _(none)_ | Per-agent system-prompt override (`AgentSettings.system_prompt`) |
+| `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
+| `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |
+| `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` | `5` (`DEFAULT_TOOL_MAX_STEPS`) | `ToolAgent`-only: cap on total LLM calls per request |
+| `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Reserved — not read by any agent yet; per-agent model selection needs a composition-layer change (spec-0015) |
 
 ---
 
@@ -245,7 +264,12 @@ gates the run for CI. Everything is additive and default-OFF. See
   isolation. `--output-json` injects `json_file`.
 - **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
   `mangomas.eval.sinks` / `mangomas.eval.targets` / `mangomas.eval.dataset_sources`;
-  discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`.
+  discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`; iterates entry points via
+  the shared `mangomas._entry_points`.
+- **Shared helpers**: `eval/_langfuse.py` (client bootstrap reused by the
+  Langfuse sink and dataset source); `eval/_options.py`
+  (`require_str`/`require_list`/`require_unit_float` — factory-time option
+  validation shared across sinks/sources/targets).
 
 CLI: `mangomas eval -d <dataset> -s <scorer> [-t <target>] [--dataset-source <src>] [-o report.json]`.
 Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
@@ -255,17 +279,22 @@ Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
 ## Error Types
 
 ```python
-MangomasError           # base; has .code str
+MangomasError           # base; has .code str, .message, .detail
 ├── AgentNotFound       # code="agent_not_found"
-├── LLMBadResponse      # code="llm_bad_response"
-├── LLMError            # code="llm_error"
+├── ConfigError         # code="config_error"; invalid config
+│   └── UnknownProvider # code="unknown_provider"
+├── LLMError            # code="llm_error" (base for LLM errors)
+│   ├── LLMBadResponse  # code="llm_bad_response"
+│   ├── LLMTimeout      # code="llm_timeout"
+│   └── LLMUnavailable  # code="llm_unavailable"
 ├── MaxStepsExceeded    # code="max_steps_exceeded"; .steps int
+├── PersistenceError    # code="persistence_error"; file/DB I/O failures
 ├── SecretsResolutionError  # code="secrets_resolution_error"; .ref, .provider (503; strict mode)
 ├── ToolNotFound        # code="tool_not_found"; .name, .available
 └── ToolExecutionError  # code="tool_execution_error"; .tool_name
 ```
 
-HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
+HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 
 ---
 

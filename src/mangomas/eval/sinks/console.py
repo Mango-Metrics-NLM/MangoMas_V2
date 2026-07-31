@@ -9,7 +9,6 @@ tests can capture output without monkeypatching.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -21,8 +20,6 @@ from mangomas.eval.sink_registry import sink_registry
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.gate import GateResult
     from mangomas.eval.runner import EvalReport
-
-logger = logging.getLogger(__name__)
 
 
 class ConsoleSink:

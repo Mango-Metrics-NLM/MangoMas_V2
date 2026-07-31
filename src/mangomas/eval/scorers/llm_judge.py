@@ -18,6 +18,7 @@ from typing import Any
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
+from mangomas.eval._options import require_unit_float
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -51,9 +52,7 @@ class LLMJudgeScorer:
     name = "llm_judge"
 
     def __init__(self, *, threshold: float = DEFAULT_JUDGE_THRESHOLD) -> None:
-        if not 0.0 <= threshold <= 1.0:
-            raise ValueError(f"threshold must be in [0.0, 1.0]; got {threshold}")
-        self._threshold = threshold
+        self._threshold = require_unit_float(threshold, owner=self.name)
 
     async def score(
         self,

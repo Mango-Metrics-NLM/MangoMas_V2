@@ -252,7 +252,7 @@ class EvalRunner:
             raise ValueError("run requires either an agent_name or a target")
         from mangomas.eval.targets.agent import AgentTarget  # noqa: PLC0415
 
-        return AgentTarget.from_name(agent_name)
+        return AgentTarget(agent=agent_name)
 
     async def _dispatch_rows(
         self,

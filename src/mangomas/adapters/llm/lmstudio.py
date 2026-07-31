@@ -59,6 +59,7 @@ class LMStudioClient(OpenAICompatHTTPClient):
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Call ``/chat/completions`` and return the first choice's content."""
         payload: dict[str, Any] = {
@@ -66,15 +67,11 @@ class LMStudioClient(OpenAICompatHTTPClient):
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": (self._default_temperature if temperature is None else temperature),
         }
-        try:
-            resp = await self._client.post(f"{self._base_url}/chat/completions", json=payload)
-            resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.error(
-                "LM Studio request failed",
-                extra={"error": type(exc).__name__, "base_url": self._base_url},
-            )
-            raise self._translate_error(exc) from exc
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        resp = await self._request(
+            "POST", "/chat/completions", json=payload, log_event="LM Studio request failed"
+        )
         data = resp.json()
         try:
             return str(data["choices"][0]["message"]["content"])
@@ -93,15 +90,7 @@ class LMStudioClient(OpenAICompatHTTPClient):
 
     async def ping(self) -> None:
         """GET ``/models`` to verify the LM Studio server is reachable."""
-        try:
-            resp = await self._client.get(f"{self._base_url}/models")
-            resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.error(
-                "LM Studio ping failed",
-                extra={"error": type(exc).__name__, "base_url": self._base_url},
-            )
-            raise self._translate_error(exc) from exc
+        await self._request("GET", "/models", log_event="LM Studio ping failed")
         logger.debug("LM Studio ping OK (%s)", self._base_url)
 
     async def stream(
@@ -109,15 +98,17 @@ class LMStudioClient(OpenAICompatHTTPClient):
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
         """Return an async iterator that yields content tokens from a streaming completion."""
-        return self._stream_impl(messages, temperature=temperature)
+        return self._stream_impl(messages, temperature=temperature, max_tokens=max_tokens)
 
     async def _stream_impl(
         self,
         messages: list[Message],
         *,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncGenerator[str, None]:
         """Async generator: yields SSE content tokens from LM Studio."""
         payload: dict[str, Any] = {
@@ -126,6 +117,8 @@ class LMStudioClient(OpenAICompatHTTPClient):
             "temperature": (self._default_temperature if temperature is None else temperature),
             "stream": True,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         try:
             stream_cm = self._client.stream(
                 "POST", f"{self._base_url}/chat/completions", json=payload
@@ -134,7 +127,7 @@ class LMStudioClient(OpenAICompatHTTPClient):
                 try:
                     resp.raise_for_status()
                 except httpx.HTTPError as status_exc:
-                    raise self._translate_error(status_exc) from status_exc
+                    self._log_and_translate(status_exc, "LM Studio stream request failed")
                 async for line in resp.aiter_lines():
                     yield_value = self._parse_sse_line(line)
                     if yield_value is None:
@@ -143,11 +136,7 @@ class LMStudioClient(OpenAICompatHTTPClient):
                         return
                     yield yield_value
         except httpx.HTTPError as exc:
-            logger.error(
-                "LM Studio stream request failed",
-                extra={"error": type(exc).__name__, "base_url": self._base_url},
-            )
-            raise self._translate_error(exc) from exc
+            self._log_and_translate(exc, "LM Studio stream request failed")
 
     @staticmethod
     def _parse_sse_line(line: str) -> str | None:

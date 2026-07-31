@@ -2,7 +2,16 @@
 
 ## Status
 
-Proposed
+Accepted — proven by the `api/app.py` decomposition (spec-0014 / M11):
+`api/errors.py`, `api/models.py`, and `api/routes/{system,agents,workflows}.py`
+now hold the split-out logic, `app.py`'s previously-importable names
+(`_ERROR_STATUS`, `error_envelope`, …) are re-exported permanently, the HTTP
+surface is byte-identical (OpenAPI schema diffed), and no consumer import
+changed. The remaining decompositions this ADR scopes —
+`cli/main.py`, `config.py`, `telemetry.py`, and the protected-path
+`core/tools.py` / `errors.py` batch — are deferred to a follow-up PR
+(spec-0015) rather than bundled into this one; see that spec for the
+up-to-date remaining scope.
 
 ## Context
 

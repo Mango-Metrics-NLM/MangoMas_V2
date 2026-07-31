@@ -37,14 +37,20 @@ class FakeLLM:
     ping_error: BaseException | None = None
     # Token chunks for streaming; defaults to [reply] when empty.
     chunks: list[str] = field(default_factory=list)
+    # Records the (temperature, max_tokens) kwargs each complete()/stream()
+    # call received, index-aligned with `calls` (spec-0014 M5: proves the two
+    # AgentSettings fields actually flow from agents through to the client).
+    call_kwargs: list[dict[str, float | int | None]] = field(default_factory=list)
 
     async def complete(
         self,
         messages: list[Message],
         *,
-        temperature: float | None = None,  # noqa: ARG002
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         self.calls.append(list(messages))
+        self.call_kwargs.append({"temperature": temperature, "max_tokens": max_tokens})
         idx = len(self.calls) - 1
         if self.replies and idx < len(self.replies):
             return self.replies[idx]
@@ -59,12 +65,20 @@ class FakeLLM:
         self,
         messages: list[Message],
         *,
-        temperature: float | None = None,  # noqa: ARG002
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
-        return self._fake_stream(messages)
+        return self._fake_stream(messages, temperature=temperature, max_tokens=max_tokens)
 
-    async def _fake_stream(self, messages: list[Message]) -> AsyncGenerator[str, None]:
+    async def _fake_stream(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> AsyncGenerator[str, None]:
         self.calls.append(list(messages))
+        self.call_kwargs.append({"temperature": temperature, "max_tokens": max_tokens})
         for chunk in self.chunks if self.chunks else [self.reply]:
             yield chunk
 
@@ -74,7 +88,12 @@ class FakeLLM:
 
 @dataclass
 class NonPingableFakeLLM:
-    """Minimal LLM stub that does NOT expose ``ping()`` — tests the 'unknown' readiness path."""
+    """Minimal LLM stub that does NOT expose ``ping()`` — tests the 'unknown' readiness path.
+
+    Deliberately has no ``stream()`` method either — this is what forces
+    callers onto the ``stream_with_buffered_fallback`` buffered-``complete()``
+    path, so ``complete()`` must accept the same kwargs that path forwards.
+    """
 
     reply: str = STUB_REPLY
     calls: list[list[Message]] = field(default_factory=list)
@@ -85,6 +104,7 @@ class NonPingableFakeLLM:
         messages: list[Message],
         *,
         temperature: float | None = None,  # noqa: ARG002
+        max_tokens: int | None = None,  # noqa: ARG002
     ) -> str:
         self.calls.append(list(messages))
         return self.reply

@@ -52,15 +52,9 @@ class LMStudioEmbeddingClient(SingleTextEmbedMixin, OpenAICompatHTTPClient):
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """POST ``/embeddings`` and return one vector per input text, in order."""
         payload: dict[str, Any] = {"model": self._model, "input": texts}
-        try:
-            resp = await self._client.post(f"{self._base_url}/embeddings", json=payload)
-            resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.error(
-                "LM Studio embeddings request failed",
-                extra={"error": type(exc).__name__, "base_url": self._base_url},
-            )
-            raise self._translate_error(exc) from exc
+        resp = await self._request(
+            "POST", "/embeddings", json=payload, log_event="LM Studio embeddings request failed"
+        )
         data = resp.json()
         try:
             rows = data["data"]
