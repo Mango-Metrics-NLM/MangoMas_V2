@@ -268,6 +268,48 @@ async def test_tool_agent_tool_prompt_alone_without_custom_prompt() -> None:
     assert first_message.content == build_tool_system_prompt([tool.spec])
 
 
+# ── Blank/whitespace prompts are normalized to None ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_blank_custom_prompt_no_tools() -> None:
+    """Empty string custom prompt with no tools should not inject a system message."""
+    llm = FakeLLM(reply="ok")
+    agent = ToolAgent(system_prompt="")
+    await agent.handle(_req(("user", "hi")), _ctx(llm=llm))
+    system_msgs = [m for m in llm.calls[0] if m.role == "system"]
+    assert len(system_msgs) == 0
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_whitespace_prompt_with_tools() -> None:
+    """Whitespace-only custom prompt with tools should use only the tool prompt."""
+    llm = FakeLLM(reply="ok")
+    tool = FakeTool()
+    reg = _tool_registry(tool)
+    agent = ToolAgent(system_prompt="   \t  \n  ")
+    await agent.handle(_req(("user", "hi")), _ctx(llm=llm, tools=reg))
+    first_message = llm.calls[0][0]
+    assert first_message.role == "system"
+    # Should be just the tool prompt, not prefixed with whitespace
+    assert first_message.content == build_tool_system_prompt([tool.spec])
+
+
+@pytest.mark.asyncio
+async def test_tool_agent_blank_prompt_no_duplicate_prefix() -> None:
+    """Blank custom prompt + tools should not produce '\\n\\n' prefix."""
+    llm = FakeLLM(reply="ok")
+    tool = FakeTool()
+    reg = _tool_registry(tool)
+    agent = ToolAgent(system_prompt="")
+    await agent.handle(_req(("user", "hi")), _ctx(llm=llm, tools=reg))
+    first_message = llm.calls[0][0]
+    assert first_message.role == "system"
+    # Should not start with \n\n
+    assert not first_message.content.startswith("\n\n")
+    assert first_message.content == build_tool_system_prompt([tool.spec])
+
+
 # ── metadata["tool_steps"] == actual number of LLM calls ──────────────────────
 
 

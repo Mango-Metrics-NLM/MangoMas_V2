@@ -35,11 +35,15 @@ class ToolAgent:
         max_tool_steps: int | None = None,
         settings: AgentSettings | None = None,
     ) -> None:
-        self._system_prompt: str | None = (
+        # Normalize blank/whitespace-only prompts to None for consistency.
+        prompt_candidate: str | None = (
             settings.system_prompt
             if settings is not None and settings.system_prompt is not None
             else system_prompt
         )
+        self._system_prompt: str | None = (
+            prompt_candidate.strip() if prompt_candidate else None
+        ) or None
         if max_tool_steps is not None:
             self._max_tool_steps = max_tool_steps
         elif settings is not None and settings.max_tool_steps is not None:

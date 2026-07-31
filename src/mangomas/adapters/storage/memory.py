@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -30,6 +31,7 @@ class FileMemoryRepository:
         self._root = Path(settings.memory_dir)
         self._index_path = self._root / settings.index_file
         self._closed = False
+        self._io_lock = threading.Lock()
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -48,9 +50,11 @@ class FileMemoryRepository:
         The SQLite adapter surfaces post-close operations as
         :class:`~mangomas.errors.PersistenceError` (``sqlite3`` raises on a
         closed connection and the adapter wraps it); the file backend enforces
-        the same contract explicitly.
+        the same contract explicitly by checking in both the async wrapper and
+        inside the thread body.
         """
         if self._closed:
+            logger.warning("Attempted operation on closed FileMemoryRepository")
             raise PersistenceError("FileMemoryRepository is closed")
 
     # ── MemoryRepository protocol ─────────────────────────────────────────────
@@ -61,11 +65,14 @@ class FileMemoryRepository:
         path = self._episodic_path(prefix=prefix)
 
         def _write() -> str:
-            self._ensure_dir()
-            with path.open("a", encoding="utf-8") as fh:
-                fh.write(content)
-                if not content.endswith("\n"):
-                    fh.write("\n")
+            with self._io_lock:
+                if self._closed:
+                    raise PersistenceError("FileMemoryRepository is closed")
+                self._ensure_dir()
+                with path.open("a", encoding="utf-8") as fh:
+                    fh.write(content)
+                    if not content.endswith("\n"):
+                        fh.write("\n")
             logger.debug("Wrote episodic entry to %s", path)
             return str(path)
 
@@ -76,9 +83,12 @@ class FileMemoryRepository:
         self._ensure_open()
 
         def _read() -> str:
-            if not self._index_path.exists():
-                return ""
-            return self._index_path.read_text(encoding="utf-8")
+            with self._io_lock:
+                if self._closed:
+                    raise PersistenceError("FileMemoryRepository is closed")
+                if not self._index_path.exists():
+                    return ""
+                return self._index_path.read_text(encoding="utf-8")
 
         return await asyncio.to_thread(_read)
 
@@ -87,15 +97,20 @@ class FileMemoryRepository:
         self._ensure_open()
 
         def _append() -> None:
-            self._ensure_dir()
-            with self._index_path.open("a", encoding="utf-8") as fh:
-                fh.write(entry)
-                if not entry.endswith("\n"):
-                    fh.write("\n")
+            with self._io_lock:
+                if self._closed:
+                    raise PersistenceError("FileMemoryRepository is closed")
+                self._ensure_dir()
+                with self._index_path.open("a", encoding="utf-8") as fh:
+                    fh.write(entry)
+                    if not entry.endswith("\n"):
+                        fh.write("\n")
             logger.debug("Appended entry to index %s", self._index_path)
 
         await asyncio.to_thread(_append)
 
     def close(self) -> None:
         """Mark the repository as closed; subsequent operations raise ``PersistenceError``."""
-        self._closed = True
+        with self._io_lock:
+            self._closed = True
+        logger.debug("FileMemoryRepository closed")

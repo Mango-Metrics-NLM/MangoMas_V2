@@ -83,7 +83,15 @@ src/mangomas/
 │   ├── executor.py     NodeExecutor protocol + execute_workflow driver
 │   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
 │   └── nodes/          Self-registering agent/sequence/fan_out/loop/branch executors
-├── api/app.py      FastAPI app (lifespan, /agents/{name}/invoke|stream)
+├── api/
+│   ├── app.py          FastAPI app factory (lifespan, middleware installation)
+│   ├── errors.py       Error-status mapping, error-envelope builder
+│   ├── models.py       DTO models (WorkflowRunRequest, ValidateRequest/Response)
+│   ├── middleware.py   MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
+│   └── routes/         Endpoint routers by resource
+│       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
+│       ├── system.py   /health, /ready, /list_agents endpoints
+│       └── workflows.py /workflows/run, /workflows/validate endpoints
 ├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
 ├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
@@ -91,7 +99,9 @@ src/mangomas/
 │                   VectorSettings, RagSettings
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
-└── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
+├── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
+├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
+└── metrics.py      Instrumentation registry (singleton, double-checked lock)
 ```
 
 ---
@@ -255,17 +265,23 @@ Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
 ## Error Types
 
 ```python
-MangomasError           # base; has .code str
+MangomasError           # base; has .code str, .message, .detail
 ├── AgentNotFound       # code="agent_not_found"
+├── ConfigError         # code="config_error"; invalid config
 ├── LLMBadResponse      # code="llm_bad_response"
+├── LLMError            # code="llm_error" (base for LLM errors)
+│   ├── LLMTimeout      # code="llm_timeout"
+│   └── LLMUnavailable  # code="llm_unavailable"
 ├── LLMError            # code="llm_error"
 ├── MaxStepsExceeded    # code="max_steps_exceeded"; .steps int
+├── PersistenceError    # code="persistence_error"; file/DB I/O failures
 ├── SecretsResolutionError  # code="secrets_resolution_error"; .ref, .provider (503; strict mode)
 ├── ToolNotFound        # code="tool_not_found"; .name, .available
-└── ToolExecutionError  # code="tool_execution_error"; .tool_name
+├── ToolExecutionError  # code="tool_execution_error"; .tool_name
+└── UnknownProvider     # code="unknown_provider"; extends ConfigError
 ```
 
-HTTP status mapping is centralised in `api/app.py::_ERROR_STATUS`.
+HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 
 ---
 
