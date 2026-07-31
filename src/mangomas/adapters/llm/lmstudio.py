@@ -10,7 +10,11 @@ from typing import Any, Final
 import httpx
 
 from mangomas.adapters._openai_client import OpenAICompatHTTPClient
-from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
+from mangomas.config import (
+    DEFAULT_ERROR_DETAIL_TRUNCATE,
+    DEFAULT_LLM_TEMPERATURE,
+    DEFAULT_LLM_TIMEOUT_SECONDS,
+)
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
 
@@ -79,7 +83,13 @@ class LMStudioClient(OpenAICompatHTTPClient):
                 "Malformed LM Studio response",
                 extra={"response_keys": list(data.keys()) if isinstance(data, dict) else []},
             )
-            raise LMStudioError(f"Malformed LM Studio response: {data!r}") from exc
+            # Keep the client-visible message static; the (truncated) body goes
+            # into ``detail`` so an arbitrarily large upstream payload can never
+            # blow out an error envelope or log line (spec 0014 / D2).
+            raise LMStudioError(
+                "Malformed LM Studio response",
+                detail=repr(data)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+            ) from exc
 
     async def ping(self) -> None:
         """GET ``/models`` to verify the LM Studio server is reachable."""

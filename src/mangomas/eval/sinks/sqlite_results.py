@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from mangomas.adapters.storage._url import path_from_sqlite_url
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import ConfigError, PersistenceError
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
@@ -66,7 +68,11 @@ class SqliteResultsSink:
     name = "sqlite_results"
 
     def __init__(self, *, db_path: str) -> None:
-        self._path = db_path
+        # Normalise ``sqlite:///...`` URLs the same way the storage adapter
+        # does, so a value copied from ``MANGOMAS_DB__URL`` or a baseline's
+        # ``db_path`` option resolves to the intended file instead of
+        # creating a literal ``sqlite:`` directory (see ``adapters.storage._url``).
+        self._path = path_from_sqlite_url(db_path)
 
     async def emit(
         self,
@@ -128,7 +134,10 @@ class SqliteResultsSink:
             )
             conn.commit()
         except sqlite3.Error as exc:
-            raise PersistenceError(str(exc)) from exc
+            # Mirror the storage adapter's truncated-detail convention (D2):
+            # keep the message short and bound the untrusted exception text.
+            detail = f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE]
+            raise PersistenceError("Failed to write eval report to SQLite", detail=detail) from exc
         finally:
             conn.close()
 

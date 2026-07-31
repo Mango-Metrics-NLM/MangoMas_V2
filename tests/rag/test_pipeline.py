@@ -34,7 +34,8 @@ async def test_ingest_chunks_embeds_and_upserts(tmp_path: Path) -> None:
     report = _pipeline(emb, store, batch_size=10).ingest
     result = await report(str(f))
 
-    assert result == IngestReport(documents=1, chunks=2, batches=1, deleted_sources=1)
+    # First-time ingest: the store held nothing for this source → 0 deletions.
+    assert result == IngestReport(documents=1, chunks=2, batches=1, deleted_sources=0)
     # Stable {source}#{index} ids.
     assert sorted(store.records) == [f"{f.as_posix()}#0", f"{f.as_posix()}#1"]
     assert store.records[f"{f.as_posix()}#0"]["document"] == "one two three"
@@ -73,7 +74,7 @@ async def test_ingest_empty_document_upserts_nothing_but_still_deletes(tmp_path:
     store = FakeVectorStore()
     result = await _pipeline(emb, store, batch_size=10).ingest(str(f))
 
-    assert result == IngestReport(documents=1, chunks=0, batches=0, deleted_sources=1)
+    assert result == IngestReport(documents=1, chunks=0, batches=0, deleted_sources=0)
     assert store.records == {}
     assert store.deleted_sources == [f.as_posix()]  # idempotent cleanup still runs
 
@@ -88,6 +89,24 @@ async def test_ingest_directory_processes_each_doc(tmp_path: Path) -> None:
     assert result.documents == 2
     assert result.chunks == 2
     assert sorted(store.records) == ["a.txt#0", "b.md#0"]
+
+
+async def test_deleted_sources_counts_real_deletions_only(tmp_path: Path) -> None:
+    """Regression (spec 0014 / D10): ``deleted_sources`` used to equal
+    ``documents`` unconditionally; it must count only sources whose prior
+    vectors were actually removed."""
+    f = tmp_path / "doc.txt"
+    f.write_text("one two three four five six", encoding="utf-8")  # 6 words → 2 chunks
+    emb = FakeEmbeddingClient()
+    store = FakeVectorStore()
+
+    first = await _pipeline(emb, store, batch_size=10).ingest(str(f))
+    assert first.documents == 1
+    assert first.deleted_sources == 0  # brand-new source: nothing to delete
+
+    second = await _pipeline(emb, store, batch_size=10).ingest(str(f))
+    assert second.documents == 1
+    assert second.deleted_sources == 1  # re-ingest: prior chunks were removed
 
 
 async def test_batch_size_floored_at_one(tmp_path: Path) -> None:

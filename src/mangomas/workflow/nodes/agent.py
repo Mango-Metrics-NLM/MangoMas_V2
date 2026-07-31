@@ -7,8 +7,7 @@ from typing import TYPE_CHECKING
 from opentelemetry import trace
 
 from mangomas.workflow.graph import AgentNode
-from mangomas.workflow.nodes._factory import make_node_factory
-from mangomas.workflow.registry import node_registry
+from mangomas.workflow.nodes._factory import register_node
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, AgentResponse, Orchestrator
@@ -26,4 +25,4 @@ class AgentNodeExecutor:
             return await orch.dispatch(self._agent, request)
 
 
-node_registry.register("agent", make_node_factory("agent", AgentNode, AgentNodeExecutor))
+register_node("agent", AgentNode, AgentNodeExecutor)

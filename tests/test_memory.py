@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from mangomas.adapters.storage.base import MemoryRepository
 from mangomas.adapters.storage.memory import FileMemoryRepository
 from mangomas.config import MemorySettings
+from mangomas.errors import PersistenceError
 from tests.fakes import FakeMemoryRepository
 
 # ── FakeMemoryRepository satisfies the MemoryRepository protocol ──────────────
@@ -124,3 +127,16 @@ def test_file_memory_close_sets_flag(tmp_path: object) -> None:
     repo = FileMemoryRepository(_settings(tmp_path))
     repo.close()
     assert repo._closed
+
+
+async def test_file_memory_use_after_close_raises(tmp_path: object) -> None:
+    # Mirrors SQLiteRepository: any operation on a closed repository surfaces
+    # as PersistenceError instead of silently succeeding.
+    repo = FileMemoryRepository(_settings(tmp_path))
+    repo.close()
+    with pytest.raises(PersistenceError):
+        await repo.write_episodic("after close")
+    with pytest.raises(PersistenceError):
+        await repo.read_index()
+    with pytest.raises(PersistenceError):
+        await repo.append_index("after close")

@@ -16,10 +16,10 @@ from __future__ import annotations
 import os
 
 import pytest
-from tests.constants import GCP_SECRETS_PROJECT_ENV, GCP_SECRETS_SECRET_NAME_ENV
 
 from mangomas.config import DEFAULT_GCP_SECRET_VERSION, DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS
 from mangomas.secrets.gcp import GCPSecretManagerProvider
+from tests.constants import GCP_SECRETS_PROJECT_ENV, GCP_SECRETS_SECRET_NAME_ENV
 
 pytestmark = pytest.mark.gcp_secrets
 

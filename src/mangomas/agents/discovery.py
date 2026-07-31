@@ -80,6 +80,16 @@ def discover_agents(
                     )
                     continue
                 factory = ep.load()
+                if not callable(factory):
+                    logger.warning(
+                        "Agent plugin is not callable; skipping",
+                        extra={
+                            "event": "agent_plugin_not_callable",
+                            "group": group,
+                            "plugin": ep.name,
+                        },
+                    )
+                    continue
                 registry.register(ep.name, factory)
             except Exception as exc:
                 # Loading *or* registering a plugin must never break discovery

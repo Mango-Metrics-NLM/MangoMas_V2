@@ -14,8 +14,8 @@ from opentelemetry import trace
 
 from mangomas.core import AgentRequest, Message
 from mangomas.workflow.graph import SequenceNode
-from mangomas.workflow.nodes._factory import make_node_factory
-from mangomas.workflow.registry import node_registry, resolve_executor
+from mangomas.workflow.nodes._factory import register_node
+from mangomas.workflow.registry import resolve_executor
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentResponse, Orchestrator
@@ -40,10 +40,10 @@ class SequenceNodeExecutor:
                         messages=[Message(role="user", content=response.content)],
                         metadata=response.metadata,
                     )
-        assert response is not None  # noqa: S101 — steps is non-empty (min_length=1)
-        return response
+            # Return inside the span so it covers the sequence to completion,
+            # like every other node executor.
+            assert response is not None  # noqa: S101 — steps is non-empty (min_length=1)
+            return response
 
 
-node_registry.register(
-    "sequence", make_node_factory("sequence", SequenceNode, SequenceNodeExecutor)
-)
+register_node("sequence", SequenceNode, SequenceNodeExecutor)

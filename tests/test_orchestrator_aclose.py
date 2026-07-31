@@ -239,8 +239,8 @@ class _VectorStoreWithoutAclose:
     async def query(self, **_kw: object) -> list[object]:
         return []
 
-    async def delete_by_source(self, source: str) -> None:  # noqa: ARG002
-        return None
+    async def delete_by_source(self, source: str) -> int:  # noqa: ARG002
+        return 0
 
 
 @dataclass
@@ -255,8 +255,8 @@ class _FailingAcloseVectorStore:
     async def query(self, **_kw: object) -> list[object]:
         return []
 
-    async def delete_by_source(self, source: str) -> None:  # noqa: ARG002
-        return None
+    async def delete_by_source(self, source: str) -> int:  # noqa: ARG002
+        return 0
 
     async def aclose(self) -> None:
         self.closed_attempted = True

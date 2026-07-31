@@ -24,28 +24,35 @@ byte-identical to the pre-tenancy behaviour.
 
 from __future__ import annotations
 
-import re
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
+
+from mangomas._headers import sanitize_header_token
 
 # The implicit tenant used when none is supplied or tenancy is disabled. Single
 # source of truth — ``config.py`` imports this for ``TenancySettings.default``.
 DEFAULT_TENANT = "default"
 
 # Inbound ``X-Tenant-ID`` headers are clamped to this many characters and stripped
-# of anything outside the allowed set, mirroring ``correlation.py``'s
-# log-injection defence — CR/LF/control chars can never reach a SQL parameter or
-# a log line. The set covers UUID/hex/url-safe forms without free-form text.
+# of anything outside the allowed set, sharing ``correlation.py``'s log-injection
+# defence — CR/LF/control chars can never reach a SQL parameter or a log line.
+# The allowed character set is the security invariant hosted in
+# :mod:`mangomas._headers` (one regex for both consumers).
 MAX_TENANT_ID_LENGTH: int = 64
-_ALLOWED_CHAR_PATTERN: re.Pattern[str] = re.compile(r"[^A-Za-z0-9_\-./:]")
 
 _CONTEXT_VAR_NAME = "mangomas_tenant_id"
 
 tenant_id: ContextVar[str | None] = ContextVar(_CONTEXT_VAR_NAME, default=None)
 
 
-def set_tenant(value: str) -> None:
-    """Set the tenant for the current async context."""
-    tenant_id.set(value)
+def set_tenant(value: str) -> Token[str | None]:
+    """Set the tenant for the current async context.
+
+    Returns the :class:`contextvars.Token` from the underlying ``set`` so
+    request-scoped callers (``TenancyMiddleware``) can restore the previous
+    value exactly via ``tenant_id.reset(token)``. Additive: callers that ignore
+    the return value are unaffected.
+    """
+    return tenant_id.set(value)
 
 
 def get_tenant() -> str:
@@ -61,17 +68,14 @@ def sanitize_tenant(raw: str | None) -> str | None:
     """Return a safe tenant id derived from an inbound header, or ``None``.
 
     ``None`` / empty / whitespace-only → ``None``; characters outside the allowed
-    set are stripped (the log/SQL-injection defence); the result is truncated to
-    :data:`MAX_TENANT_ID_LENGTH`. Returning ``None`` signals the caller to fall
-    back to the configured default.
+    set are stripped (the log/SQL-injection defence shared with
+    :mod:`mangomas.correlation` via :func:`mangomas._headers.sanitize_header_token`);
+    the result is truncated to :data:`MAX_TENANT_ID_LENGTH`. Returning ``None``
+    signals the caller to fall back to the configured default.
     """
     if raw is None:
         return None
-    stripped = raw.strip()
-    if not stripped:
-        return None
-    cleaned = _ALLOWED_CHAR_PATTERN.sub("", stripped)[:MAX_TENANT_ID_LENGTH]
-    return cleaned or None
+    return sanitize_header_token(raw, max_length=MAX_TENANT_ID_LENGTH) or None
 
 
 def resolve_tenant(inbound: str | None, default: str) -> str:

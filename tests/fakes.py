@@ -18,6 +18,7 @@ from tests.constants import (
 )
 
 if TYPE_CHECKING:
+    from mangomas.core import AcceptanceFn
     from mangomas.eval import EvalReport, GateResult
 
 
@@ -292,13 +293,15 @@ class FakeVectorStore:
         scored.sort(key=lambda m: m.score, reverse=True)
         return scored[:top_k]
 
-    async def delete_by_source(self, source: str) -> None:
+    async def delete_by_source(self, source: str) -> int:
         self.deleted_sources.append(source)
+        before = len(self.records)
         self.records = {
             doc_id: rec
             for doc_id, rec in self.records.items()
             if rec["metadata"].get("source") != source
         }
+        return before - len(self.records)
 
     async def aclose(self) -> None:
         self.closed = True
@@ -361,3 +364,40 @@ class FakeSink:
         if self.raise_on_emit is not None:
             raise self.raise_on_emit
         self.emitted.append((report, gate_result))
+
+
+@dataclass
+class FakeOrchestrator:
+    """Minimal stand-in for :class:`mangomas.core.Orchestrator` in entry-point tests.
+
+    Covers only the dispatch surface the workflow node executors drive
+    (``dispatch`` + ``dispatch_fan_out``) plus the ``aclose`` teardown
+    contract. Set ``raise_on_dispatch`` to make every dispatch fail — used to
+    prove entry points still release adapter resources on arbitrary errors.
+    """
+
+    reply: str = STUB_REPLY
+    raise_on_dispatch: BaseException | None = None
+    dispatched: list[str] = field(default_factory=list)
+    closed: bool = False
+
+    async def dispatch(
+        self,
+        agent_name: str,
+        request: AgentRequest,  # noqa: ARG002
+        *,
+        acceptance_fn: AcceptanceFn | None = None,  # noqa: ARG002
+        max_steps: int | None = None,  # noqa: ARG002
+    ) -> AgentResponse:
+        self.dispatched.append(agent_name)
+        if self.raise_on_dispatch is not None:
+            raise self.raise_on_dispatch
+        return AgentResponse(content=self.reply, agent=agent_name)
+
+    async def dispatch_fan_out(
+        self, agent_names: list[str], request: AgentRequest
+    ) -> list[AgentResponse]:
+        return [await self.dispatch(name, request) for name in agent_names]
+
+    async def aclose(self) -> None:
+        self.closed = True

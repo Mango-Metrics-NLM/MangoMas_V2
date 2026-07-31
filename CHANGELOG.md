@@ -7,6 +7,104 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+_Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
+
+### Fixed
+
+- `ToolAgent`: no longer discards the tool-format system prompt when a custom
+  `system_prompt` is configured — both are sent (custom first), so the LLM
+  always learns the tool-call JSON contract.
+- `ToolAgent`: honours `max_tool_steps` exactly — at most N LLM calls per
+  request (previously up to N+1) and `metadata["tool_steps"]` reports the
+  actual number of calls made.
+- `make rag`: now passes `--no-cov` like every other opt-in suite target, so
+  the RAG suite can run standalone without tripping the 95 % coverage gate.
+- `scripts/run_workflow_e2e.py`: the orchestrator (and its LLM httpx pool) is
+  closed in a `finally`, so workflow failures no longer leak connections.
+- LM Studio LLM/embeddings adapters and the SQLite repository no longer embed
+  unbounded upstream bodies in client-visible error messages — the body is
+  truncated to `DEFAULT_ERROR_DETAIL_TRUNCATE` and carried in `detail`.
+  Persistence-failure logging unified on `logger.exception` (SQLite/Postgres).
+- The lazy metrics-instrument singleton is built under a lock (double-checked),
+  so concurrent first records can no longer register duplicate instruments.
+- `IngestReport.deleted_sources` counts sources whose vectors were actually
+  deleted instead of always equalling `documents`;
+  `VectorStoreRepository.delete_by_source` now returns the number of vectors
+  removed.
+- `FileMemoryRepository`: honours its closed state — post-`close()` reads and
+  writes raise `PersistenceError`, matching `SQLiteRepository`.
+- Workflow `fan_out` join and `sequence` final return now execute inside their
+  `workflow.node.*` span, so node spans cover the full unit of work.
+- `eval.sinks.sqlite_results`: normalises `sqlite:///` URLs the same way the
+  storage adapter does (shared `adapters.storage._url.path_from_sqlite_url`),
+  so a `db_path` copied from `MANGOMAS_DB__URL` resolves to the intended file
+  instead of creating a literal `sqlite:` directory; its `PersistenceError`
+  detail is now truncated too.
+- `eval.discovery`: acquires its tracer lazily (matching `agents.discovery`)
+  instead of via the auto-configuring `mangomas.telemetry.get_tracer` at
+  import time, and its idempotency latch is now a locked per-registry set
+  instead of an unlocked global `bool`. Both discovery modules skip a
+  non-callable entry-point factory with a warning instead of registering it.
+- `eval.gate.merge_gate_results`: sources the merged verdict's threshold
+  fields from the `kind="threshold"` verdict specifically, not positionally
+  from the first argument — correct regardless of the order gates are passed
+  in.
+- `scripts/check_coverage.py`: the `api` coverage floor pattern was
+  `src/mangomas/api/*.py` (non-recursive), so it silently excluded the
+  `api/routes/` subpackage added in the M11 split; now `api/**/*.py`.
+- `Makefile`'s `bridge-coverage` target used the default `.coverage` data
+  file, so `make gate` (which runs `test → coverage → bridge-coverage`)
+  overwrote the main suite's coverage data with the bridge's — a standalone
+  `make coverage` run afterward would then measure the wrong run. Now uses
+  `COVERAGE_FILE=.coverage.bridge` to keep the two isolated.
+
+### Changed
+
+- The inbound-header sanitiser shared by `correlation.py` and `tenancy.py`
+  lives once in `mangomas._headers.sanitize_header_token` — the allowed-charset
+  security invariant is stated in one place; both public APIs unchanged.
+- Workflow node modules register through the new `register_node()` helper,
+  stating each node kind literal exactly once.
+- `api/app.py` decomposed into `api/errors.py`, `api/models.py`, and
+  `api/routes/{system,agents,workflows}.py`; `create_app` is a slim assembly
+  factory (the repo's last ruff C901 violation is gone) and the HTTP surface is
+  byte-identical (OpenAPI schema diffed). Routers are built by factory
+  functions inside `create_app` so per-app settings keep their construction-time
+  semantics.
+- `set_tenant` / `set_correlation_id` now return the ContextVar `Token`
+  (additive) and are used by the tenancy/access-log middleware as the canonical
+  setters; middleware docstring covers all four classes and bare status ints
+  are `http.HTTPStatus` constants.
+- `.github/workflows/ci.yml`'s lint/test/bridge-coverage jobs now invoke the
+  corresponding `make` target instead of duplicating each command inline, so
+  the two can no longer drift; a new `tests/deploy/test_ci_make_parity.py`
+  locks the delegation and the global-floor/pytest-addopts equality in place.
+- `Makefile` gains `gcp-secrets`, `gcp-trace`, and `langfuse` opt-in targets
+  (marker-selected, since those tests live alongside their unit-test siblings
+  rather than in a dedicated directory) — all nine `RUN_*`-gated suites are
+  now reachable from `make help`.
+- `scripts/check_coverage.py` gains floors for `_headers.py` (100%),
+  `config.py`, `telemetry.py`, and `metrics.py` (95% each) — previously
+  covered only by the blanket global floor.
+- `.pre-commit-config.yaml` gains a local `lint-agent-frontmatter` hook, so a
+  broken `.agent.md`/`SKILL.md` is caught before commit instead of only in CI.
+
+### Added
+
+- `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` per-agent setting
+  (`AgentSettings.max_tool_steps`, default `None` → `DEFAULT_TOOL_MAX_STEPS=5`)
+  replacing `ToolAgent`'s hard-coded step cap; resolution order is constructor
+  arg > settings > default.
+- `api.errors.error_envelope()` — the single construction site for the
+  `{"error", "message"[, "detail"]}` body, shared by the exception handler and
+  the middleware 413/503 rejections.
+
+### Removed
+
+---
+
 ## [0.1.0] — 2026-05-13
 
 ### Fixed

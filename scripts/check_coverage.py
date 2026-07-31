@@ -7,10 +7,11 @@ Usage::
 
     python scripts/check_coverage.py
 
-The script reads ``coverage.xml`` (or the ``.coverage`` data file) produced by
-the preceding pytest run.  Add ``--cov-report=xml`` to your pytest invocation
-if you want the XML report used here; otherwise it uses ``coverage report``
-against the existing data file.
+The script shells out to ``coverage report --include=<glob> --fail-under=<N>``
+once per floor, reading the ``.coverage`` data file produced by the preceding
+pytest run (pytest's ``--cov=mangomas`` addopt writes it). It never reads
+``coverage.xml`` — that report exists only for the codecov upload step in CI
+and is not consulted here.
 """
 
 from __future__ import annotations
@@ -32,12 +33,19 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/core/*.py", 100, "core"),
     Floor("src/mangomas/composition.py", 95, "composition"),
     Floor("src/mangomas/agents/*.py", 95, "agents"),
-    Floor("src/mangomas/api/*.py", 95, "api"),
+    # ``**/*.py`` (not ``*.py``) so the ``api/routes/`` subpackage is measured
+    # too — a flat ``*.py`` glob is non-recursive and would silently exclude
+    # any file added under a new subdirectory.
+    Floor("src/mangomas/api/**/*.py", 95, "api"),
     Floor("src/mangomas/cli/*.py", 95, "cli"),
     Floor("src/mangomas/adapters/**/*.py", 85, "adapters"),
     Floor("src/mangomas/secrets/*.py", 100, "secrets"),
     Floor("src/mangomas/correlation.py", 100, "correlation"),
     Floor("src/mangomas/tenancy.py", 100, "tenancy"),
+    Floor("src/mangomas/_headers.py", 100, "headers"),
+    Floor("src/mangomas/config.py", 95, "config"),
+    Floor("src/mangomas/telemetry.py", 95, "telemetry"),
+    Floor("src/mangomas/metrics.py", 95, "metrics"),
     Floor("src/mangomas/eval/**/*.py", 95, "eval"),
     Floor("src/mangomas/rag/**/*.py", 95, "rag"),
     Floor("src/mangomas/workflow/**/*.py", 95, "workflow"),

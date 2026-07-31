@@ -67,6 +67,10 @@ DEFAULT_LOG_BODY_TRUNCATE: int = 512
 DEFAULT_LOOP_MAX_STEPS: int = 1
 DEFAULT_LOOP_STEP_TIMEOUT: float = 30.0
 
+# ToolAgent: cap on the total number of LLM calls per request. Overridable
+# per agent via ``MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS`` (AgentSettings).
+DEFAULT_TOOL_MAX_STEPS: int = 5
+
 DEFAULT_MEMORY_PROVIDER: str = "file"
 DEFAULT_MEMORY_DIR: str = "memory"
 DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
@@ -401,6 +405,10 @@ class AgentSettings(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     model_override: str | None = None
+    # ToolAgent only: cap on the total number of LLM calls per request.
+    # ``None`` (the default) falls back to ``DEFAULT_TOOL_MAX_STEPS``, so
+    # existing environments see no behaviour change.
+    max_tool_steps: int | None = None
 
 
 class LoopSettings(BaseModel):

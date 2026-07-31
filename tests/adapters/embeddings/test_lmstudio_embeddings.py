@@ -10,8 +10,13 @@ from mangomas.adapters.embeddings.lmstudio import (
     LMStudioEmbeddingClient,
     LMStudioEmbeddingError,
 )
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import LLMTimeout, LLMUnavailable
-from tests.constants import TEST_EMBEDDINGS_MOCK_MODEL, TEST_LMSTUDIO_MOCK_BASE_URL
+from tests.constants import (
+    LARGE_UPSTREAM_BODY_CHARS,
+    TEST_EMBEDDINGS_MOCK_MODEL,
+    TEST_LMSTUDIO_MOCK_BASE_URL,
+)
 
 _EMBEDDINGS_URL = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/embeddings"
 _BASE_URL_WITH_TRAILING_SLASH = f"{TEST_LMSTUDIO_MOCK_BASE_URL}/"
@@ -66,6 +71,33 @@ async def test_embed_raises_on_malformed() -> None:
             await client.embed("hi")
     finally:
         await client.aclose()
+
+
+@pytest.mark.parametrize(
+    "malformed_body",
+    [
+        {"unexpected": "x" * LARGE_UPSTREAM_BODY_CHARS},
+        ["x" * LARGE_UPSTREAM_BODY_CHARS],
+    ],
+    ids=["dict-body", "list-body"],
+)
+@respx.mock
+async def test_malformed_body_detail_is_truncated(malformed_body: object) -> None:
+    """Regression (spec 0014 / D2): a ~5KB malformed upstream body must never
+    reach the client-visible exception message; the truncated body lives in
+    ``detail``, bounded by ``DEFAULT_ERROR_DETAIL_TRUNCATE``."""
+    respx.post(_EMBEDDINGS_URL).mock(return_value=httpx.Response(200, json=malformed_body))
+    client = _client()
+    try:
+        with pytest.raises(LMStudioEmbeddingError) as excinfo:
+            await client.embed("hi")
+    finally:
+        await client.aclose()
+
+    assert str(excinfo.value) == "Malformed LM Studio embeddings response"
+    assert "x" * DEFAULT_ERROR_DETAIL_TRUNCATE not in str(excinfo.value)
+    assert len(excinfo.value.detail) <= DEFAULT_ERROR_DETAIL_TRUNCATE
+    assert excinfo.value.detail  # the truncated body is still carried
 
 
 @respx.mock

@@ -93,6 +93,11 @@ DEFAULT_VERTEX_EMBEDDING_MODEL: str = "text-embedding-004"
 # Stand-in GCP project id for Vertex adapter unit tests (never contacts GCP).
 TEST_VERTEX_PROJECT: str = "test-project"
 
+# ── Oversized upstream-body fixture (spec 0014 / D2) ──────────────────────────
+# Comfortably larger than ``DEFAULT_ERROR_DETAIL_TRUNCATE`` (200) so the
+# truncation of client-visible error detail is observable in regression tests.
+LARGE_UPSTREAM_BODY_CHARS: int = 5000
+
 # ── Vector store test-scoped values ───────────────────────────────────────────
 TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
 TEST_VECTOR_COLLECTION: str = "test-col"
@@ -104,6 +109,14 @@ STUB_REPLY: str = "stub-reply"
 # ── Tool stubs ────────────────────────────────────────────────────────────────
 DEFAULT_TOOL_NAME: str = "echo"
 DEFAULT_TOOL_RESULT: str = "echo-result"
+# ToolAgent LLM-call budget values used by tests (distinct from the config
+# default so overrides are observable).
+TEST_TOOL_MAX_STEPS: int = 2
+TEST_TOOL_MAX_STEPS_OVERRIDE: int = 3
+# Custom system prompt for prompt-combination tests.
+TEST_TOOL_SYSTEM_PROMPT: str = "Answer like a pirate."
+# Env var driving AgentSettings.max_tool_steps for the "tool" agent.
+TOOL_MAX_STEPS_ENV: str = "MANGOMAS_AGENTS__TOOL__MAX_TOOL_STEPS"
 
 # ── Harness frontmatter linter fixtures ───────────────────────────────────────
 VALID_AGENT_FRONTMATTER: str = """\
@@ -173,6 +186,14 @@ FAKE_PLUGIN_SCORER_NAME: str = "fake_plugin_scorer"
 FAKE_PLUGIN_SINK_NAME: str = "fake_plugin_sink"
 FAKE_PLUGIN_AGENT_NAME: str = "fake_plugin_agent"
 
+# Bad option values used to prove scorer factories validate at construction
+# time (before any row runs) rather than raising from inside score().
+EVAL_BAD_REGEX_FLAG: str = "not-a-real-flag"
+EVAL_BAD_REQUIRED_KEYS_OPTION: str = "not-a-list"
+# A sqlite:/// URL whose naive (non-normalised) handling would create a
+# literal "sqlite:" directory instead of resolving to the intended file.
+EVAL_SQLITE_URL_PREFIX: str = "sqlite:///"
+
 # ── Declarative workflow graphs (spec 0005) ───────────────────────────────────
 WORKFLOW_NODE_KINDS: tuple[str, ...] = ("agent", "branch", "fan_out", "loop", "sequence")
 WORKFLOW_SCHEMA_VERSION_CURRENT: int = 1
@@ -184,6 +205,15 @@ WORKFLOW_RUNTIME_EXIT_CODE: int = 1
 # Workflow HTTP routes (spec 0008).
 WORKFLOW_RUN_ROUTE: str = "/workflows/run"
 WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
+
+# ── Workflow E2E demo script (scripts/run_workflow_e2e.py) ────────────────────
+WORKFLOW_E2E_SCRIPT: str = "run_workflow_e2e.py"
+# Marker the script prints on its elapsed-time report line (happy path only).
+WORKFLOW_E2E_ELAPSED_MARKER: str = "elapsed="
+# Sentinel message for an injected generic dispatch failure.
+WORKFLOW_E2E_FAILURE_MESSAGE: str = "workflow-e2e-dispatch-boom"
+# Exit code the script returns on success (and on the MaxStepsExceeded path).
+WORKFLOW_E2E_EXIT_OK: int = 0
 
 # API authentication (spec 0010). The secret_ref is an env-var NAME (env provider);
 # a non-MANGOMAS prefix keeps pydantic-settings from parsing it as a setting.

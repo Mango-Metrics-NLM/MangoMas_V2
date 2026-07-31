@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from mangomas.config import MemorySettings
+from mangomas.errors import PersistenceError
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,22 @@ class FileMemoryRepository:
     def _ensure_dir(self) -> None:
         self._root.mkdir(parents=True, exist_ok=True)
 
+    def _ensure_open(self) -> None:
+        """Fail loud on use-after-close, mirroring ``SQLiteRepository``.
+
+        The SQLite adapter surfaces post-close operations as
+        :class:`~mangomas.errors.PersistenceError` (``sqlite3`` raises on a
+        closed connection and the adapter wraps it); the file backend enforces
+        the same contract explicitly.
+        """
+        if self._closed:
+            raise PersistenceError("FileMemoryRepository is closed")
+
     # ── MemoryRepository protocol ─────────────────────────────────────────────
 
     async def write_episodic(self, content: str, *, prefix: str = "") -> str:
         """Append *content* to today's episodic file; return the resolved path string."""
+        self._ensure_open()
         path = self._episodic_path(prefix=prefix)
 
         def _write() -> str:
@@ -60,6 +73,7 @@ class FileMemoryRepository:
 
     async def read_index(self) -> str:
         """Return the index document contents, or an empty string if absent."""
+        self._ensure_open()
 
         def _read() -> str:
             if not self._index_path.exists():
@@ -70,6 +84,7 @@ class FileMemoryRepository:
 
     async def append_index(self, entry: str) -> None:
         """Append *entry* as a new line to the index document."""
+        self._ensure_open()
 
         def _append() -> None:
             self._ensure_dir()
@@ -82,5 +97,5 @@ class FileMemoryRepository:
         await asyncio.to_thread(_append)
 
     def close(self) -> None:
-        """Mark the repository as closed (no-op for file I/O; provided for protocol compliance)."""
+        """Mark the repository as closed; subsequent operations raise ``PersistenceError``."""
         self._closed = True

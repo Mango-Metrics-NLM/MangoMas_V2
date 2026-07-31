@@ -91,3 +91,81 @@ def test_merge_both_ands_passed_and_concats_reasons() -> None:
     assert merged is not None
     assert not merged.passed
     assert len(merged.reasons) == len(threshold.reasons) + len(regression.reasons)
+
+
+def test_merge_result_kinds() -> None:
+    """evaluate_gate produces a threshold-kind verdict; evaluate_regression_gate
+    produces a regression-kind verdict — the discriminator merge_gate_results
+    uses instead of positional indexing (D11)."""
+    report = EvalReport(
+        scorer="s",
+        agent_name="a",
+        dataset_size=1,
+        passed=1,
+        failed=0,
+        errored=0,
+        mean_score=1.0,
+        duration_ms=1.0,
+        rows=[],
+        target_name="a",
+    )
+    assert evaluate_gate(report).kind == "threshold"
+    assert evaluate_regression_gate(_diff()).kind == "regression"
+
+
+def test_merge_sources_threshold_fields_regardless_of_order() -> None:
+    """D11 regression: merge_gate_results must take the threshold-gate's
+    fields (min_mean_score, min_pass_rate, fail_on_error, errored) from the
+    threshold-kind verdict specifically — not positionally from results[0].
+    Previously the merge was only correct because the CLI always passed
+    [threshold, regression] in that fixed order; this proves both orders
+    produce the identical merged verdict.
+    """
+    report = EvalReport(
+        scorer="s",
+        agent_name="a",
+        dataset_size=2,
+        passed=1,
+        failed=1,
+        errored=1,
+        mean_score=0.4,
+        duration_ms=1.0,
+        rows=[],
+        target_name="a",
+    )
+    threshold = evaluate_gate(report, min_mean_score=0.9, min_pass_rate=0.9, fail_on_error=True)
+    regression = evaluate_regression_gate(_diff(mean_score_delta=-0.5), max_mean_score_drop=0.1)
+
+    forward = merge_gate_results([threshold, regression])
+    backward = merge_gate_results([regression, threshold])
+
+    assert forward is not None
+    assert backward is not None
+    for field_name in (
+        "passed",
+        "min_mean_score",
+        "min_pass_rate",
+        "fail_on_error",
+        "errored",
+    ):
+        assert getattr(forward, field_name) == getattr(backward, field_name), field_name
+    # Both orders must carry the *threshold* gate's real configured values —
+    # not the regression gate's defaults (None/None/False/0) that a
+    # positional results[0] read would have picked up in the backward order.
+    assert backward.min_mean_score == 0.9
+    assert backward.min_pass_rate == 0.9
+    assert backward.fail_on_error is True
+    assert backward.errored == 1
+
+
+def test_merge_falls_back_to_defaults_with_no_threshold_verdict() -> None:
+    """Merging two regression-kind verdicts (no threshold gate engaged) keeps
+    GateResult's own field defaults for the threshold-only fields."""
+    a = evaluate_regression_gate(_diff())
+    b = evaluate_regression_gate(_diff(mean_score_delta=-0.5), max_mean_score_drop=0.1)
+    merged = merge_gate_results([a, b])
+    assert merged is not None
+    assert merged.min_mean_score is None
+    assert merged.min_pass_rate is None
+    assert merged.fail_on_error is False
+    assert merged.errored == 0

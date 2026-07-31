@@ -17,7 +17,7 @@ import httpx
 
 from mangomas.adapters._openai_client import OpenAICompatHTTPClient
 from mangomas.adapters.embeddings._shared import SingleTextEmbedMixin
-from mangomas.config import DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS
+from mangomas.config import DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS, DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import LLMBadResponse
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,10 @@ class LMStudioEmbeddingClient(SingleTextEmbedMixin, OpenAICompatHTTPClient):
                 "Malformed LM Studio embeddings response",
                 extra={"response_keys": list(data.keys()) if isinstance(data, dict) else []},
             )
+            # Keep the client-visible message static; the (truncated) body goes
+            # into ``detail`` so an arbitrarily large upstream payload can never
+            # blow out an error envelope or log line (spec 0014 / D2).
             raise LMStudioEmbeddingError(
-                f"Malformed LM Studio embeddings response: {data!r}"
+                "Malformed LM Studio embeddings response",
+                detail=repr(data)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc

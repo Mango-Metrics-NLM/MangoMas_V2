@@ -16,8 +16,10 @@ class _FakeCollection:
     """Mimics the slice of the chromadb Collection API the adapter touches."""
 
     query_result: dict[str, Any] = field(default_factory=dict)
+    get_result: dict[str, Any] = field(default_factory=dict)
     upserts: list[dict[str, Any]] = field(default_factory=list)
     queries: list[dict[str, Any]] = field(default_factory=list)
+    gets: list[dict[str, Any]] = field(default_factory=list)
     deletes: list[dict[str, Any]] = field(default_factory=list)
 
     def upsert(
@@ -35,6 +37,10 @@ class _FakeCollection:
     def query(self, *, query_embeddings: list[list[float]], n_results: int) -> dict[str, Any]:
         self.queries.append({"query_embeddings": query_embeddings, "n_results": n_results})
         return self.query_result
+
+    def get(self, *, where: dict[str, Any], include: list[str]) -> dict[str, Any]:
+        self.gets.append({"where": where, "include": include})
+        return self.get_result
 
     def delete(self, *, where: dict[str, Any]) -> None:
         self.deletes.append({"where": where})
@@ -108,10 +114,20 @@ async def test_query_tolerates_missing_metadata_rows() -> None:
 
 
 async def test_delete_by_source_targets_metadata() -> None:
-    col = _FakeCollection()
+    col = _FakeCollection(get_result={"ids": ["a#0", "a#1"]})
     store = _store(col)
-    await store.delete_by_source("a")
+    removed = await store.delete_by_source("a")
+    # ids counted first (ids-only fetch), then the metadata-targeted delete.
+    assert removed == 2
+    assert col.gets == [{"where": {"source": "a"}, "include": []}]
     assert col.deletes == [{"where": {"source": "a"}}]
+
+
+async def test_delete_by_source_returns_zero_for_unknown_source() -> None:
+    col = _FakeCollection()  # empty get_result → no ids for this source
+    store = _store(col)
+    assert await store.delete_by_source("ghost") == 0
+    assert col.deletes == [{"where": {"source": "ghost"}}]
 
 
 async def test_aclose_is_noop() -> None:

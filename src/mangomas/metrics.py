@@ -10,6 +10,8 @@ call costs nothing — callers record unconditionally.
 
 from __future__ import annotations
 
+from threading import Lock
+
 from mangomas.telemetry import get_meter
 
 _METER_NAME = "mangomas.metrics"
@@ -49,12 +51,22 @@ class _InstrumentState:
 
 
 _state = _InstrumentState()
+# Guards first-record instrument creation. Record helpers may be hit from many
+# threads at once (e.g. ``asyncio.to_thread`` workers); double-checked locking
+# keeps the post-init fast path lock-free while guaranteeing exactly one
+# ``_Instruments`` is ever built (mirrors ``telemetry._lock``; spec 0014 / D7).
+_instruments_lock = Lock()
 
 
 def _instruments() -> _Instruments:
-    if _state.instruments is None:
-        _state.instruments = _Instruments()
-    return _state.instruments
+    instruments = _state.instruments
+    if instruments is None:
+        with _instruments_lock:
+            instruments = _state.instruments
+            if instruments is None:
+                instruments = _Instruments()
+                _state.instruments = instruments
+    return instruments
 
 
 def record_agent_invocation(agent: str, status: str) -> None:

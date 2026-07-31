@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from mangomas import telemetry
 from mangomas.config import Settings
 from mangomas.eval import discovery
 from mangomas.eval.protocol import ScorerContext, ScoreResult
@@ -98,6 +99,44 @@ def test_discover_skips_failing_plugin(
     assert any(getattr(rec, "event", None) == "eval_plugin_load_failed" for rec in caplog.records)
 
 
+def test_discover_scorers_does_not_configure_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D8 regression: discovery must acquire its tracer lazily via the raw
+    ``opentelemetry.trace.get_tracer`` (matching ``agents/discovery.py``), not
+    the auto-configuring ``mangomas.telemetry.get_tracer``. A module-level
+    ``get_tracer(__name__)`` would silently run ``configure_telemetry()`` at
+    import time, making the FastAPI lifespan's own call a no-op and locking
+    in whatever exporter/log-format happened to be default at import.
+    """
+    monkeypatch.setattr(telemetry._state, "configured", False)
+    monkeypatch.setattr(discovery, "entry_points", lambda **_: [])
+    registry: Registry[Any] = Registry("scorer-test")
+    discovery.discover_scorers(registry=registry, group="x")
+    assert telemetry._state.configured is False
+
+
+def test_discover_skips_non_callable_factory(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """D8 regression: a plugin whose entry point resolves to a non-callable
+    object is skipped with a warning instead of being registered (mirrors
+    ``tests.agents.test_discovery.test_discover_agents_skips_non_callable_factory``).
+    """
+    monkeypatch.setattr(
+        discovery,
+        "entry_points",
+        lambda **_: [_FakeEntryPoint("not-callable", factory=123)],
+    )
+    registry: Registry[Any] = Registry("scorer-test")
+    with caplog.at_level(logging.WARNING, logger="mangomas.eval.discovery"):
+        registered = discovery.discover_scorers(registry=registry, group="x")
+    assert registered == []
+    assert "not-callable" not in registry.available()
+    assert any(getattr(rec, "event", None) == "eval_plugin_not_callable" for rec in caplog.records)
+
+
 def test_discover_override_logs_info(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -115,7 +154,7 @@ def test_discover_override_logs_info(
 
 
 def test_ensure_eval_plugins_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(discovery, "_discovered", False)
+    monkeypatch.setattr(discovery, "_discovered_registries", set())
     calls: list[str] = []
     monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     discovery.ensure_eval_plugins(Settings(discovery_enabled=False))
@@ -123,12 +162,38 @@ def test_ensure_eval_plugins_noop_when_disabled(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_ensure_eval_plugins_runs_once_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(discovery, "_discovered", False)
+    monkeypatch.setattr(discovery, "_discovered_registries", set())
     calls: list[str] = []
     monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
     settings = Settings(discovery_enabled=True)
     discovery.ensure_eval_plugins(settings)
     discovery.ensure_eval_plugins(settings)  # idempotent — no second scan
+    assert calls == [
+        discovery.SCORER_ENTRY_POINT_GROUP,
+        discovery.SINK_ENTRY_POINT_GROUP,
+        discovery.TARGET_ENTRY_POINT_GROUP,
+        discovery.DATASET_SOURCE_ENTRY_POINT_GROUP,
+    ]
+
+
+def test_ensure_eval_plugins_rescans_when_a_registry_is_swapped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registry not yet in the latch is scanned even if the others are.
+
+    Regression test for the previous single global ``bool`` latch, which
+    would have skipped this scan entirely once *any* call had succeeded.
+    """
+    monkeypatch.setattr(discovery, "_discovered_registries", set())
+    calls: list[str] = []
+    monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
+    settings = Settings(discovery_enabled=True)
+    discovery.ensure_eval_plugins(settings)
+    calls.clear()
+
+    fresh_scorer_registry: Registry[Any] = Registry("scorer-fresh")
+    monkeypatch.setattr(discovery, "scorer_registry", fresh_scorer_registry)
+    discovery.ensure_eval_plugins(settings)
     assert calls == [
         discovery.SCORER_ENTRY_POINT_GROUP,
         discovery.SINK_ENTRY_POINT_GROUP,
