@@ -278,6 +278,51 @@ seams, and reconciles config/doc drift.
   `correlation.py` path, and added the missing `workflow/` package to the C2
   and C3 diagrams.
 
+### Spec-0014 follow-on: defects, further dedup, and the `api/` split
+
+A second hygiene pass (spec-0014 / ADR-0019, PR #24) found twelve verified
+defects and a further round of duplication clusters via a full-repo audit:
+
+- **Twelve defects fixed** (D1–D12), each with a dedicated regression test —
+  a silently-dropped tool prompt, untruncated upstream error bodies, eval
+  config errors surfacing as per-row failures instead of an exit-2 config
+  error, a broken `make rag` target, an httpx-pool leak in
+  `run_workflow_e2e.py`, an unlocked metrics-singleton race,
+  `IngestReport.deleted_sources` undercounting, `FileMemoryRepository`
+  ignoring its own closed state, a workflow span not covering its node's
+  final return, a `sqlite:///` URL sink resolving to the wrong path,
+  `eval.discovery` configuring telemetry as an import side effect, and
+  `eval.gate.merge_gate_results` reading the wrong verdict positionally.
+- **Five more shared helpers** — `agents/_prompt.py` (`resolve_system_prompt`
+  + `build_messages`, collapsing five agents' prompt-precedence logic),
+  `agents/_structured.py` (`StructuredOutputAgent`, the planner/reviewer
+  base), `eval/_langfuse.py` + `eval/_options.py` (Langfuse bootstrap +
+  option validation, shared by the sink/source/target factories),
+  `mangomas/_entry_points.py` (shared entry-point iteration for eval plugin
+  discovery), and `OpenAICompatHTTPClient._request`/`_log_and_translate`
+  (collapsing the POST/GET → raise → log → translate sequence repeated
+  across LM Studio's chat, streaming, embedding, and ping call sites).
+  `secrets.gcp.GCPSecretManagerProvider.get()`'s five failure branches
+  collapse into one `_handle_failure()` helper.
+- **`AgentSettings.temperature`/`max_tokens` activated** — previously dead
+  config fields now forwarded to `LLMClient.complete`/`stream` via an
+  additive keyword-only `max_tokens` parameter; `model_override` stays
+  explicitly reserved (needs a composition-layer change, deferred).
+- **`api/app.py` decomposed** into `api/errors.py`, `api/models.py`, and
+  `api/routes/{system,agents,workflows}.py` (ADR-0019's first proof point) —
+  `create_app` is now a slim assembly factory and the repo's last ruff C901
+  violation is gone; the HTTP surface is byte-identical (OpenAPI diffed).
+- **CI/Makefile parity locked** — `ci.yml`'s lint/test/bridge-coverage jobs
+  invoke `make` targets instead of duplicating commands, pinned by
+  `tests/deploy/test_ci_make_parity.py`.
+- **Deferred to `specs/0015-package-decomposition.md`** — decomposing
+  `cli/main.py` (708 lines), `config.py` (593 lines, the repo's #1 churn
+  file), and `telemetry.py` into packages, plus the protected-path
+  `core/structured.py` extraction from `core/tools.py` + `errors.py`. These
+  were in spec-0014's original scope but were descoped mid-execution to keep
+  PR #24 mergeable rather than open-ended; see that spec for the full
+  rationale.
+
 ### Follow-ups this branch deliberately did not take
 
 - **`.env.example` still documents `MANGOMAS_LLM__PROJECT` and
