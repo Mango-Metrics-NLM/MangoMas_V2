@@ -25,7 +25,7 @@ can never silently rebind a subclass's arguments.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn
 
 import httpx
 
@@ -77,6 +77,38 @@ class OpenAICompatHTTPClient:
             label=self._LABEL,
             bad_response=self._BAD_RESPONSE,
         )
+
+    def _log_and_translate(self, exc: httpx.HTTPError, log_event: str) -> NoReturn:
+        """Log *exc* against *log_event* then raise its translated equivalent.
+
+        Every call site (chat completions, streaming, embeddings, health ping)
+        repeated this log-then-translate pairing identically; only the log
+        message differed. Centralised here so new call sites cannot drop the
+        log line or reintroduce a raw ``httpx`` exception by mistake.
+        """
+        logger.error(log_event, extra={"error": type(exc).__name__, "base_url": self._base_url})
+        raise self._translate_error(exc) from exc
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        log_event: str,
+    ) -> httpx.Response:
+        """Issue a non-streaming request against ``{base_url}{path}``.
+
+        Raises the translated ``LLMError`` vocabulary (via :meth:`_log_and_translate`)
+        on any transport or HTTP-status failure; returns the raw response otherwise
+        so callers remain responsible for parsing their own payload shape.
+        """
+        try:
+            resp = await self._client.request(method, f"{self._base_url}{path}", json=json)
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            self._log_and_translate(exc, log_event)
+        return resp
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client (if owned)."""

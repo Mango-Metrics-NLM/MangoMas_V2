@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_NAME = "gcp"
 
+_SDK_INSTALL_HINT = (
+    "Google Cloud Secret Manager SDK is not installed. "
+    "Install the optional extra: pip install 'mangomas[gcp]'"
+)
+
 
 _PROJECTS_PREFIX = "projects/"
 
@@ -124,10 +129,40 @@ class GCPSecretManagerProvider:
         # via the constructor seam, so the import + instantiation paths
         # are excluded from coverage.
         if self._client is None:  # pragma: no cover
-            from google.cloud import secretmanager  # noqa: PLC0415
+            try:
+                from google.cloud import secretmanager  # noqa: PLC0415
+            except ImportError as exc:
+                raise ImportError(_SDK_INSTALL_HINT) from exc
 
             self._client = secretmanager.SecretManagerServiceClient()
         return cast("secretmanager.SecretManagerServiceClient", self._client)
+
+    def _handle_failure(
+        self,
+        exc: Exception,
+        *,
+        short: str,
+        message: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Log *exc* at ERROR then re-raise per strict mode (ADR-002 / ADR-0010).
+
+        Every non-``NotFound`` failure branch of :meth:`get` logged an
+        ERROR-level record with the same ``{error, project_id, secret_name}``
+        envelope and then deferred to :meth:`_raise_if_strict` — this is that
+        shared tail, parameterised by the branch-specific message and any
+        extra log fields (e.g. ``timeout_seconds`` for a deadline).
+        """
+        logger.error(
+            message,
+            extra={
+                "error": type(exc).__name__,
+                "project_id": self._project_id,
+                "secret_name": short,
+                **(extra or {}),
+            },
+        )
+        self._raise_if_strict(short, exc)
 
     def get(self, name: str) -> str | None:
         """Return the plaintext secret, or ``None`` on any failure.
@@ -157,49 +192,25 @@ class GCPSecretManagerProvider:
             )
             return None
         except gauth_exc.DefaultCredentialsError as exc:
-            logger.error(
-                "GCP Secret Manager credentials missing (ADC not configured)",
-                extra={
-                    "error": type(exc).__name__,
-                    "project_id": self._project_id,
-                    "secret_name": short,
-                },
+            self._handle_failure(
+                exc,
+                short=short,
+                message="GCP Secret Manager credentials missing (ADC not configured)",
             )
-            self._raise_if_strict(short, exc)
             return None
         except (gax.PermissionDenied, gax.Unauthenticated) as exc:
-            logger.error(
-                "GCP Secret Manager auth failure",
-                extra={
-                    "error": type(exc).__name__,
-                    "project_id": self._project_id,
-                    "secret_name": short,
-                },
-            )
-            self._raise_if_strict(short, exc)
+            self._handle_failure(exc, short=short, message="GCP Secret Manager auth failure")
             return None
         except gax.DeadlineExceeded as exc:
-            logger.error(
-                "GCP Secret Manager request timed out",
-                extra={
-                    "error": type(exc).__name__,
-                    "project_id": self._project_id,
-                    "secret_name": short,
-                    "timeout_seconds": self._timeout_seconds,
-                },
+            self._handle_failure(
+                exc,
+                short=short,
+                message="GCP Secret Manager request timed out",
+                extra={"timeout_seconds": self._timeout_seconds},
             )
-            self._raise_if_strict(short, exc)
             return None
         except gax.GoogleAPIError as exc:
-            logger.error(
-                "GCP Secret Manager request failed",
-                extra={
-                    "error": type(exc).__name__,
-                    "project_id": self._project_id,
-                    "secret_name": short,
-                },
-            )
-            self._raise_if_strict(short, exc)
+            self._handle_failure(exc, short=short, message="GCP Secret Manager request failed")
             return None
 
         payload: bytes = response.payload.data

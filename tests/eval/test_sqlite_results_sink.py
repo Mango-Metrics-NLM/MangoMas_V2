@@ -10,7 +10,7 @@ import pytest
 
 import mangomas.eval.sinks  # noqa: F401 — registers built-in sinks
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
-from mangomas.errors import ConfigError, PersistenceError
+from mangomas.errors import ConfigError
 from mangomas.eval import evaluate_gate
 from mangomas.eval.runner import EvalReport, EvalRowResult
 from mangomas.eval.sink_registry import sink_registry
@@ -160,14 +160,10 @@ async def test_sqlite_results_sink_memory_url_still_works() -> None:
     await SqliteResultsSink(db_path=":memory:").emit(_report())
 
 
-async def test_sqlite_results_sink_error_detail_is_truncated(tmp_path: Path) -> None:
-    """D2/D4 regression: verify that PersistenceError from sqlite3.Error in _write()
-    uses the truncated error detail pattern. The truncation is applied via the shared
-    _error_handler pattern used by both SQLiteRepository and SqliteResultsSink.
-    This test verifies the sink uses the same error handling as the repository.
+def test_sqlite_results_sink_error_detail_truncate_constant() -> None:
+    """D2/D4 regression: the sink's error path shares SQLiteRepository's truncation
+    constant. Actual truncation behaviour is covered by
+    ``test_sqlite.py::test_persistence_error_detail_is_truncated``; this test just
+    pins the shared constant the sink relies on.
     """
-    # Verify that the error mapping in the sink matches the repository pattern
-    # by checking that DEFAULT_ERROR_DETAIL_TRUNCATE is available and reasonable
     assert DEFAULT_ERROR_DETAIL_TRUNCATE == 200
-    # The actual truncation is tested extensively in test_sqlite.py::test_persistence_error_detail_is_truncated
-    # The sink inherits the same error handling via the shared infrastructure

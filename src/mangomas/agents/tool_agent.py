@@ -36,7 +36,15 @@ class ToolAgent:
         max_tool_steps: int | None = None,
         settings: AgentSettings | None = None,
     ) -> None:
-        self._system_prompt: str | None = resolve_system_prompt(system_prompt, settings)
+        resolved_prompt = resolve_system_prompt(system_prompt, settings)
+        # Blank/whitespace-only prompts are treated as unset: resolve_system_prompt
+        # preserves the raw value (no truthiness collapsing) for its other four
+        # callers, but ToolAgent concatenates this base with a tool-format suffix
+        # below — an empty-but-not-None base would otherwise leave a stray
+        # leading "\n\n" (or bare whitespace) in front of the tool prompt.
+        self._system_prompt: str | None = (
+            resolved_prompt.strip() or None if resolved_prompt is not None else None
+        )
         self._temperature: float | None = settings.temperature if settings is not None else None
         self._max_tokens: int | None = settings.max_tokens if settings is not None else None
         if max_tool_steps is not None:
