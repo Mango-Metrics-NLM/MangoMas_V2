@@ -16,15 +16,12 @@ Options (via ``EvalSettings.scorer_options``):
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import Any
 
 from mangomas.errors import ConfigError
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
-
-logger = logging.getLogger(__name__)
 
 _FLAG_BY_NAME: dict[str, re.RegexFlag] = {
     "ignorecase": re.IGNORECASE,

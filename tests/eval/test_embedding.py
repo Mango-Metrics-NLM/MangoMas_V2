@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from mangomas.errors import ConfigError
 from mangomas.eval.protocol import ScorerContext
 from mangomas.eval.registry import scorer_registry
 from mangomas.eval.scorers.embedding import (
@@ -121,7 +122,9 @@ def test_cosine_similarity_identical() -> None:
 
 
 def test_embedding_scorer_rejects_invalid_threshold() -> None:
-    with pytest.raises(ValueError):
+    # ConfigError (not ValueError): unified onto the shared eval option-error
+    # taxonomy via `require_unit_float` (mangomas.eval._options).
+    with pytest.raises(ConfigError):
         EmbeddingScorer(threshold=-0.1)
 
 

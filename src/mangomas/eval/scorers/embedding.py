@@ -19,6 +19,7 @@ import logging
 import math
 from typing import Any, Protocol, runtime_checkable
 
+from mangomas.eval._options import require_unit_float
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -50,9 +51,7 @@ class EmbeddingScorer:
     name = "embedding"
 
     def __init__(self, *, threshold: float = DEFAULT_EMBEDDING_THRESHOLD) -> None:
-        if not 0.0 <= threshold <= 1.0:
-            raise ValueError(f"threshold must be in [0.0, 1.0]; got {threshold}")
-        self._threshold = threshold
+        self._threshold = require_unit_float(threshold, owner=self.name)
 
     @staticmethod
     def _resolve_embedder(context: ScorerContext | None) -> _Embeddable | None:

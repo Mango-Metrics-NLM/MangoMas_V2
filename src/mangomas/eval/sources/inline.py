@@ -8,17 +8,14 @@ uses, so an inline dataset enforces an identical schema.
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING, Any
 
-from mangomas.errors import ConfigError
+from mangomas.eval._options import require_list
 from mangomas.eval.dataset import _parse_row
 from mangomas.eval.dataset_source import DatasetSource, dataset_source_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.dataset import DatasetRow
-
-logger = logging.getLogger(__name__)
 
 
 class InlineSource:
@@ -26,7 +23,7 @@ class InlineSource:
 
     name = "inline"
 
-    def __init__(self, rows: list[Any]) -> None:
+    def __init__(self, *, rows: list[Any]) -> None:
         self._rows = rows
 
     async def load(self) -> list[DatasetRow]:
@@ -40,10 +37,8 @@ class InlineSource:
 
 
 def _inline_source_factory(options: dict[str, Any]) -> DatasetSource:
-    rows = options.get("rows")
-    if not isinstance(rows, list):
-        raise ConfigError("inline dataset source requires a 'rows' list")
-    return InlineSource(list(rows))
+    rows = require_list(options, "rows", owner="inline dataset source")
+    return InlineSource(rows=list(rows))
 
 
 dataset_source_registry.register("inline", _inline_source_factory)

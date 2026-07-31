@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mangomas.errors import LLMBadResponse
+from mangomas.errors import ConfigError, LLMBadResponse
 from mangomas.eval.protocol import ScorerContext
 from mangomas.eval.registry import scorer_registry
 from mangomas.eval.scorers.llm_judge import LLMJudgeScorer
@@ -93,7 +93,9 @@ async def test_llm_judge_without_llm_raises_bad_response() -> None:
 
 
 def test_llm_judge_rejects_invalid_threshold() -> None:
-    with pytest.raises(ValueError):
+    # ConfigError (not ValueError): unified onto the shared eval option-error
+    # taxonomy via `require_unit_float` (mangomas.eval._options).
+    with pytest.raises(ConfigError):
         LLMJudgeScorer(threshold=1.5)
 
 

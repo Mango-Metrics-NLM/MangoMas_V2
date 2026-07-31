@@ -7,7 +7,7 @@ from mangomas.eval.targets import AgentTarget, EchoTarget, FanOutTarget, Pipelin
 
 
 def test_builtin_targets_satisfy_protocol() -> None:
-    assert isinstance(AgentTarget("chat"), Target)
+    assert isinstance(AgentTarget(agent="chat"), Target)
     assert isinstance(EchoTarget(), Target)
-    assert isinstance(PipelineTarget(["chat"]), Target)
+    assert isinstance(PipelineTarget(agents=["chat"]), Target)
     assert isinstance(FanOutTarget(["chat"]), Target)

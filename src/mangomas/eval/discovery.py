@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
 
+from mangomas._entry_points import load_entry_point_factory
 from mangomas.eval.dataset_source import dataset_source_registry
 from mangomas.eval.registry import scorer_registry
 from mangomas.eval.sink_registry import sink_registry
@@ -62,29 +63,11 @@ def _discover(group: str, registry: Registry[Any], label: str) -> list[str]:
     with trace.get_tracer(__name__).start_as_current_span("eval.discovery") as span:
         span.set_attribute("discovery.group", group)
         for ep in entry_points(group=group):
-            try:
-                factory = ep.load()
-                if not callable(factory):
-                    logger.warning(
-                        "Eval plugin is not callable; skipping",
-                        extra={
-                            "event": "eval_plugin_not_callable",
-                            "group": group,
-                            "plugin": ep.name,
-                        },
-                    )
-                    continue
-                if ep.name in existing:
-                    logger.info(
-                        "Eval plugin overrides built-in %s %r",
-                        label,
-                        ep.name,
-                        extra={"event": "eval_plugin_override", "group": group, "plugin": ep.name},
-                    )
-                registry.register(ep.name, factory)
-            except Exception as exc:
-                # Loading *or* registering a plugin must never break discovery
-                # for everyone else — log and skip the offending entry point.
+            # A broken plugin (missing module, import-time error, ...) must
+            # never break discovery for everyone else — ``factory`` is
+            # ``None`` instead of raising when ``ep.load()`` fails.
+            factory, error = load_entry_point_factory(ep)
+            if factory is None:
                 logger.warning(
                     "Eval plugin failed to load or register; skipping",
                     extra={
@@ -92,10 +75,28 @@ def _discover(group: str, registry: Registry[Any], label: str) -> list[str]:
                         "group": group,
                         # ``name`` is a reserved LogRecord attribute — use ``plugin``.
                         "plugin": ep.name,
-                        "error": str(exc),
+                        "error": error,
                     },
                 )
                 continue
+            if not callable(factory):
+                logger.warning(
+                    "Eval plugin is not callable; skipping",
+                    extra={
+                        "event": "eval_plugin_not_callable",
+                        "group": group,
+                        "plugin": ep.name,
+                    },
+                )
+                continue
+            if ep.name in existing:
+                logger.info(
+                    "Eval plugin overrides built-in %s %r",
+                    label,
+                    ep.name,
+                    extra={"event": "eval_plugin_override", "group": group, "plugin": ep.name},
+                )
+            registry.register(ep.name, factory)
             discovered.append(ep.name)
         span.set_attribute("discovery.count", len(discovered))
     return discovered

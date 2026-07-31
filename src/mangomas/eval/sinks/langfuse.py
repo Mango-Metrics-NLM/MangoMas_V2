@@ -18,7 +18,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from mangomas.errors import ConfigError
+from mangomas.eval._langfuse import build_langfuse_client
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
 from mangomas.telemetry import get_tracer
@@ -30,16 +30,7 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
 
-
-def _import_langfuse() -> Any:
-    """Import the optional ``langfuse`` SDK or raise a clear ``ConfigError``."""
-    try:
-        import langfuse  # noqa: PLC0415
-    except ImportError as exc:
-        raise ConfigError(
-            "langfuse sink requires the 'langfuse' extra: pip install 'mangomas[langfuse]'"
-        ) from exc
-    return langfuse
+_OWNER = "langfuse sink"
 
 
 class LangfuseSink:
@@ -51,16 +42,13 @@ class LangfuseSink:
         # Resolve the SDK *and* construct the client at init so any
         # misconfiguration (missing extra, bad options) surfaces immediately
         # (exit 2) rather than after a full eval run.
-        langfuse = _import_langfuse()
-        opts = dict(options or {})
-        # ``per_row`` is our own option — pop it so it isn't forwarded to the
-        # SDK ctor as an unknown kwarg. Default False preserves the aggregate-
-        # only behaviour (one trace + one mean_score).
-        self._per_row = bool(opts.pop("per_row", False))
-        try:
-            self._client = langfuse.Langfuse(**opts)
-        except Exception as exc:
-            raise ConfigError(f"invalid Langfuse configuration: {exc}") from exc
+        opts = options or {}
+        # ``per_row`` is our own option — read it before the shared client
+        # constructor drops it from the kwargs forwarded to the SDK ctor.
+        # Default False preserves the aggregate-only behaviour (one trace +
+        # one mean_score).
+        self._per_row = bool(opts.get("per_row", False))
+        self._client = build_langfuse_client(opts, owner=_OWNER, drop_keys=("per_row",))
 
     async def emit(
         self,

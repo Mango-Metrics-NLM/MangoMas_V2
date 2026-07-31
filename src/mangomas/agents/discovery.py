@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
 
+from mangomas._entry_points import load_entry_point_factory
+
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import Settings
     from mangomas.registry import Registry
@@ -66,44 +68,44 @@ def discover_agents(
     with trace.get_tracer(__name__).start_as_current_span("agents.discovery") as span:
         span.set_attribute("discovery.group", group)
         for ep in entry_points(group=group):
-            try:
-                if ep.name in protected:
-                    logger.warning(
-                        "Agent plugin %r collides with a built-in agent; skipping",
-                        ep.name,
-                        extra={
-                            "event": "agent_plugin_collision",
-                            "group": group,
-                            # ``name`` is a reserved LogRecord attribute — use ``plugin``.
-                            "plugin": ep.name,
-                        },
-                    )
-                    continue
-                factory = ep.load()
-                if not callable(factory):
-                    logger.warning(
-                        "Agent plugin is not callable; skipping",
-                        extra={
-                            "event": "agent_plugin_not_callable",
-                            "group": group,
-                            "plugin": ep.name,
-                        },
-                    )
-                    continue
-                registry.register(ep.name, factory)
-            except Exception as exc:
-                # Loading *or* registering a plugin must never break discovery
-                # for everyone else — log and skip the offending entry point.
+            if ep.name in protected:
+                logger.warning(
+                    "Agent plugin %r collides with a built-in agent; skipping",
+                    ep.name,
+                    extra={
+                        "event": "agent_plugin_collision",
+                        "group": group,
+                        # ``name`` is a reserved LogRecord attribute — use ``plugin``.
+                        "plugin": ep.name,
+                    },
+                )
+                continue
+            # A broken plugin (missing module, import-time error, ...) must
+            # never break discovery for everyone else — ``factory`` is
+            # ``None`` instead of raising when ``ep.load()`` fails.
+            factory, error = load_entry_point_factory(ep)
+            if factory is None:
                 logger.warning(
                     "Agent plugin failed to load or register; skipping",
                     extra={
                         "event": "agent_plugin_load_failed",
                         "group": group,
                         "plugin": ep.name,
-                        "error": str(exc),
+                        "error": error,
                     },
                 )
                 continue
+            if not callable(factory):
+                logger.warning(
+                    "Agent plugin is not callable; skipping",
+                    extra={
+                        "event": "agent_plugin_not_callable",
+                        "group": group,
+                        "plugin": ep.name,
+                    },
+                )
+                continue
+            registry.register(ep.name, factory)
             discovered.append(ep.name)
             logger.debug(
                 "Registered discovered agent %r",

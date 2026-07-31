@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from mangomas.config import DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS
-from mangomas.errors import ConfigError
+from mangomas.eval._options import require_str
 from mangomas.eval._serialize import report_payload
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
@@ -59,9 +59,7 @@ class WebhookSink:
 
 
 def _webhook_factory(options: dict[str, Any]) -> Sink:
-    url = options.get("url")
-    if not url or not isinstance(url, str):
-        raise ConfigError("webhook sink requires a string 'url' option")
+    url = require_str(options, "url", owner="webhook sink")
     timeout = float(options.get("timeout_seconds", DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS))
     return WebhookSink(url=url, timeout_seconds=timeout)
 

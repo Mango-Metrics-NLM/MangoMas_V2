@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mangomas.errors import ConfigError
+from mangomas.eval._options import require_str
 from mangomas.eval._serialize import report_payload
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
@@ -54,9 +54,7 @@ class JsonFileSink:
 
 
 def _json_file_factory(options: dict[str, Any]) -> Sink:
-    path = options.get("path")
-    if not path or not isinstance(path, str):
-        raise ConfigError("json_file sink requires a string 'path' option")
+    path = require_str(options, "path", owner="json_file sink")
     return JsonFileSink(path=path)
 
 

@@ -12,29 +12,17 @@ harness's :class:`DatasetRow` schema via the shared
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING, Any
 
-from mangomas.errors import ConfigError
+from mangomas.eval._langfuse import build_langfuse_client
+from mangomas.eval._options import require_str
 from mangomas.eval.dataset import _parse_row
 from mangomas.eval.dataset_source import DatasetSource, dataset_source_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.dataset import DatasetRow
 
-logger = logging.getLogger(__name__)
-
-
-def _import_langfuse() -> Any:
-    """Import the optional ``langfuse`` SDK or raise a clear ``ConfigError``."""
-    try:
-        import langfuse  # noqa: PLC0415
-    except ImportError as exc:
-        raise ConfigError(
-            "langfuse dataset source requires the 'langfuse' extra: "
-            "pip install 'mangomas[langfuse]'"
-        ) from exc
-    return langfuse
+_OWNER = "langfuse dataset source"
 
 
 class LangfuseDatasetSource:
@@ -43,13 +31,8 @@ class LangfuseDatasetSource:
     name = "langfuse"
 
     def __init__(self, *, dataset: str, options: dict[str, Any] | None = None) -> None:
-        langfuse = _import_langfuse()
         # ``dataset`` is our own option — never forward it to the SDK ctor.
-        client_options = {k: v for k, v in (options or {}).items() if k != "dataset"}
-        try:
-            self._client = langfuse.Langfuse(**client_options)
-        except Exception as exc:
-            raise ConfigError(f"invalid Langfuse configuration: {exc}") from exc
+        self._client = build_langfuse_client(options, owner=_OWNER, drop_keys=("dataset",))
         self._dataset = dataset
 
     async def load(self) -> list[DatasetRow]:
@@ -91,10 +74,8 @@ class LangfuseDatasetSource:
 
 
 def _langfuse_dataset_source_factory(options: dict[str, Any]) -> DatasetSource:
-    dataset = options.get("dataset")
-    if not dataset:
-        raise ConfigError("langfuse dataset source requires a 'dataset' option (the dataset name)")
-    return LangfuseDatasetSource(dataset=str(dataset), options=options)
+    dataset = require_str(options, "dataset", owner=_OWNER)
+    return LangfuseDatasetSource(dataset=dataset, options=options)
 
 
 dataset_source_registry.register("langfuse", _langfuse_dataset_source_factory)

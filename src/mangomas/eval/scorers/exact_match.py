@@ -6,13 +6,10 @@ after the configured normalisation (case-folding, whitespace collapse).
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
-
-logger = logging.getLogger(__name__)
 
 
 class ExactMatchScorer:

@@ -9,7 +9,6 @@ target is fully deterministic.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from mangomas.eval.target import Target
@@ -17,8 +16,6 @@ from mangomas.eval.target_registry import target_registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
-
-logger = logging.getLogger(__name__)
 
 
 class EchoTarget:

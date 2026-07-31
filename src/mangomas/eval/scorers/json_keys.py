@@ -23,14 +23,11 @@ when the prediction carries any key beyond the required set. ``passed`` is
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 from mangomas.errors import ConfigError
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
-
-logger = logging.getLogger(__name__)
 
 
 class JsonKeysScorer:

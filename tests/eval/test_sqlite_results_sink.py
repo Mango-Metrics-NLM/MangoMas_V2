@@ -112,6 +112,11 @@ def test_sqlite_results_factory_requires_db_path() -> None:
         sink_registry.get("sqlite_results")({})
 
 
+def test_sqlite_results_factory_builds(tmp_path: Path) -> None:
+    sink = sink_registry.get("sqlite_results")({"db_path": str(tmp_path / "r.db")})
+    assert isinstance(sink, SqliteResultsSink)
+
+
 def test_sqlite_results_in_registry() -> None:
     assert "sqlite_results" in sink_registry.available()
 
