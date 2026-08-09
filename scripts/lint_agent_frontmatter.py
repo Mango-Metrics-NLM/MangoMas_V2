@@ -1,49 +1,87 @@
-"""Frontmatter linter for Claude Code agents and skills.
+"""Frontmatter linter for Claude Code agents and skills — and its hook modes.
 
 Validates every ``.github/agents/**/*.agent.md`` and
 ``.github/skills/**/SKILL.md`` against the project's Pydantic v2 frontmatter
-schemas.  Also supports a ``--check-protected-paths`` mode used by the
-``.claude/settings.json`` PreToolUse hook to block edits to stable contracts
-without an explicit approval marker.
+schemas (the default, no-argument mode). Two independent hook modes live here
+too, both stdlib-only so neither depends on ``pydantic``/``pyyaml`` being
+installed — a ``PreToolUse``/``PostToolUse`` hook must work in an interpreter
+where the dev extras have not been installed, and must never crash a session
+over its own plumbing (see ADR-0021 / spec-0017):
+
+``--hook pre-tool-use``
+    Reads the tool-call JSON Claude Code delivers on stdin, and — for an edit
+    to a protected core contract — emits an **advisory**
+    ``permissionDecision: "ask"`` response (never ``"deny"``; the
+    authoritative enforcement point is the CI job run by
+    ``scripts/check_protected_paths.py``, which reads committed history an
+    in-session agent cannot rewrite). Always exits ``EXIT_OK``.
+``--hook post-tool-use --emit-path``
+    Reads the same stdin JSON and prints the edited file's path (or nothing),
+    for piping into another tool, e.g.
+    ``... --emit-path | xargs -r python -m ruff check --fix``. Always exits
+    ``EXIT_OK``.
+
+The legacy ``--check-protected-paths <path>`` flag (staged-diff based, used by
+pre-commit where a staged diff genuinely exists) is unchanged.
 
 Exit codes
 ----------
 ``EXIT_OK = 0``
-    All files passed schema validation.
+    All files passed schema validation, or a hook mode ran to completion (hook
+    modes never fail the calling process — see module docstring above).
 ``EXIT_SCHEMA = 1``
     At least one file failed schema validation, sub_agents resolution, or
     file-discovery.
 ``EXIT_PROTECTED = 2``
-    The ``--check-protected-paths`` flag is set and the staged diff of the
-    requested path lacks the breaking-change marker.
+    The legacy ``--check-protected-paths`` flag is set and the staged diff of
+    the requested path lacks the breaking-change marker.
 
 Run::
 
     python scripts/lint_agent_frontmatter.py
     python scripts/lint_agent_frontmatter.py --check-protected-paths src/mangomas/core/agent.py
+    python scripts/lint_agent_frontmatter.py --hook pre-tool-use < payload.json
+    python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path < payload.json
 """
 
 from __future__ import annotations
 
 import argparse
 import glob
+import json
 import logging
 import os
 import subprocess
 import sys
-from typing import Final, Literal
+import tomllib
+from pathlib import Path
+from typing import IO, Final, Literal
 
-import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+# ``pydantic``/``pyyaml`` are deferred into the schema-lint code path (the
+# module-level ``if`` below), not imported unconditionally at the top of the
+# file — a hook mode must not require them. ``main()``'s default (no-flag)
+# mode always needs them, exactly as before; that requirement is unchanged.
+try:
+    import yaml
+    from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+    _SCHEMA_DEPS_AVAILABLE = True
+except ImportError:
+    _SCHEMA_DEPS_AVAILABLE = False
 
 # ── Module-level constants (single source of truth, no magic literals) ────────
 
 AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
 SKILLS_GLOB: Final[str] = ".github/skills/**/SKILL.md"
 
-# Stable core contracts gated by the protected-path hook. Kept in lock-step with
-# the "File Ownership" / protected-paths documentation in CLAUDE.md.
-PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
+_DEFAULT_PYPROJECT_PATH: Final[Path] = Path("pyproject.toml")
+
+# Fallback governance values, used only if pyproject.toml's
+# [tool.mangomas.governance] table (the single source of truth — see
+# ADR-0021 / spec-0017, shared with scripts/check_protected_paths.py) can't
+# be read. Never fall back to an *empty* protected-path set — that would
+# silently disable protection instead of degrading safely.
+_FALLBACK_PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
     {
         "src/mangomas/core/agent.py",
         "src/mangomas/core/orchestrator.py",
@@ -52,14 +90,40 @@ PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
         "src/mangomas/registry.py",
     }
 )
-# Marker a committer adds to the staged diff to approve a breaking change to a
-# protected path. ``BREAKING_CHANGE_MARKER`` is the documented (CLAUDE.md)
-# string; the legacy ``# approved-breaking-change`` form is kept as an accepted
-# alias so any in-flight staged diffs are not retroactively blocked.
-BREAKING_CHANGE_MARKER: Final[str] = "BREAKING-CHANGE"
-BREAKING_CHANGE_MARKER_ALIASES: Final[frozenset[str]] = frozenset(
-    {BREAKING_CHANGE_MARKER, "# approved-breaking-change"}
+_FALLBACK_BREAKING_CHANGE_MARKER_ALIASES: Final[frozenset[str]] = frozenset(
+    {"BREAKING-CHANGE", "# approved-breaking-change"}
 )
+
+
+def _load_governance(
+    pyproject_path: Path = _DEFAULT_PYPROJECT_PATH,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Return ``(protected_paths, marker_aliases)`` from *pyproject_path*.
+
+    Stdlib-only (``tomllib``). Falls back to the documented defaults on any
+    read/parse/shape failure rather than raising — this feeds both the
+    schema-lint module constants (import time) and the hook modes (must
+    never crash a session).
+    """
+    try:
+        doc = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        governance = doc["tool"]["mangomas"]["governance"]
+        protected = frozenset(governance["protected_paths"])
+        aliases = frozenset(governance["breaking_change_marker_aliases"])
+        if protected and aliases:
+            return protected, aliases
+    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError):
+        pass
+    return _FALLBACK_PROTECTED_PATHS, _FALLBACK_BREAKING_CHANGE_MARKER_ALIASES
+
+
+# Stable core contracts gated by the protected-path hook. Kept in lock-step with
+# the "File Ownership" / protected-paths documentation in CLAUDE.md, sourced
+# from pyproject.toml so this file and check_protected_paths.py can't drift.
+PROTECTED_PATHS, BREAKING_CHANGE_MARKER_ALIASES = _load_governance()
+# Marker a committer adds to a commit message (CI gate) or staged diff (legacy
+# pre-commit path) to approve a breaking change to a protected path.
+BREAKING_CHANGE_MARKER: Final[str] = "BREAKING-CHANGE"
 
 FRONTMATTER_DELIMITER: Final[str] = "---"
 FRONTMATTER_SPLIT_PARTS: Final[int] = 3  # [pre, frontmatter, body]
@@ -72,33 +136,37 @@ EXIT_OK: Final[int] = 0
 EXIT_SCHEMA: Final[int] = 1
 EXIT_PROTECTED: Final[int] = 2
 
+# PreToolUse advisory-decision constants (ADR-0021).
+_HOOK_EVENT_NAME: Final[str] = "PreToolUse"
+_HOOK_PERMISSION_ASK: Final[str] = "ask"
+
 logger = logging.getLogger(__name__)
 
 
-# ── Pydantic v2 schemas ───────────────────────────────────────────────────────
+# ── Pydantic v2 schemas (schema-lint mode only — see module docstring) ────────
 
+if _SCHEMA_DEPS_AVAILABLE:
 
-class SkillFrontmatter(BaseModel):
-    """Frontmatter schema for ``.github/skills/<name>/SKILL.md``."""
+    class SkillFrontmatter(BaseModel):
+        """Frontmatter schema for ``.github/skills/<name>/SKILL.md``."""
 
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    name: str = Field(min_length=1)
-    description: str = Field(min_length=DESCRIPTION_MIN_LENGTH)
-    argument_hint: str = Field(alias="argument-hint", min_length=1)
+        name: str = Field(min_length=1)
+        description: str = Field(min_length=DESCRIPTION_MIN_LENGTH)
+        argument_hint: str = Field(alias="argument-hint", min_length=1)
 
+    class AgentFrontmatter(BaseModel):
+        """Frontmatter schema for ``.github/agents/**/*.agent.md``."""
 
-class AgentFrontmatter(BaseModel):
-    """Frontmatter schema for ``.github/agents/**/*.agent.md``."""
+        model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    name: str = Field(min_length=1)
-    description: str = Field(min_length=DESCRIPTION_MIN_LENGTH)
-    tools: list[Literal["read", "edit", "search", "execute"]] = Field(min_length=1)
-    model: str = Field(min_length=1)
-    argument_hint: str = Field(alias="argument-hint", min_length=1)
-    sub_agents: list[str] | None = None
+        name: str = Field(min_length=1)
+        description: str = Field(min_length=DESCRIPTION_MIN_LENGTH)
+        tools: list[Literal["read", "edit", "search", "execute"]] = Field(min_length=1)
+        model: str = Field(min_length=1)
+        argument_hint: str = Field(alias="argument-hint", min_length=1)
+        sub_agents: list[str] | None = None
 
 
 # ── Parsing helpers ───────────────────────────────────────────────────────────
@@ -191,7 +259,11 @@ def _validate_agent(path: str, all_agent_paths: list[str]) -> list[str]:
     return errors
 
 
-# ── Protected-path enforcement (hook mode) ────────────────────────────────────
+# ── Protected-path enforcement (legacy: staged-diff based, pre-commit only) ───
+#
+# Retained unchanged for pre-commit, where a staged diff genuinely exists (the
+# ``--hook pre-tool-use`` mode below does not use this — see its docstring for
+# why a staged-diff check cannot work at PreToolUse time).
 
 
 def _staged_diff(path: str) -> str:
@@ -240,6 +312,101 @@ def _check_protected_path(path: str) -> int:
     return EXIT_PROTECTED
 
 
+# ── Hook modes (stdin JSON, stdlib-only — ADR-0021 / spec-0017) ───────────────
+#
+# Claude Code delivers hook input as JSON on stdin, not as per-field
+# environment variables — the ``$CLAUDE_TOOL_INPUT_path`` interpolation
+# previously used in ``.claude/settings.json`` was never a real substitution,
+# so it always expanded empty. Both functions below read the real payload.
+#
+# Neither function blocks: a ``PreToolUse`` hook cannot be a complete gate
+# regardless of its internal correctness (an agent with ``Write`` can create
+# any file it likes, including a proposed approval marker, and ``Bash``/MCP
+# filesystem tool calls bypass the ``Edit|Write`` matcher entirely) — so the
+# authoritative enforcement point is the CI job
+# (``scripts/check_protected_paths.py``), which reads committed history an
+# in-session agent cannot rewrite. These hooks exist to inform, not to block.
+
+
+def _read_hook_payload(stream: IO[str]) -> dict[str, object]:
+    """Return the hook's stdin JSON, or ``{}`` on any parse failure.
+
+    A hook must never crash a session over its own plumbing — malformed or
+    empty stdin degrades to "nothing to report" rather than raising.
+    """
+    raw = stream.read()
+    if not raw.strip():
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_tool_path(payload: dict[str, object]) -> str | None:
+    """Return the path a ``PreToolUse``/``PostToolUse`` payload names, if any.
+
+    Tries ``tool_input.file_path`` first (``Edit``/``Write``), then
+    ``tool_input.notebook_path`` (``NotebookEdit``) — matching the matcher
+    widened to ``Edit|Write|NotebookEdit`` in ``.claude/settings.json``.
+    """
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    for key in ("file_path", "notebook_path"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _pre_tool_use_hook(stream: IO[str]) -> int:
+    """Advisory protected-path check. Always returns ``EXIT_OK``.
+
+    For an edit to a protected core contract, prints a
+    ``permissionDecision: "ask"`` JSON response (Claude Code processes hook
+    JSON only on exit 0) so the human approving the tool call sees a heads-up
+    naming the path and the trailer requirement the CI gate enforces.
+    """
+    path = _extract_tool_path(_read_hook_payload(stream))
+    if path is None:
+        return EXIT_OK
+    normalised = _normalize_path(path)
+    if normalised not in PROTECTED_PATHS:
+        return EXIT_OK
+    reason = (
+        f"{normalised} is a protected core contract (CLAUDE.md 'File "
+        f"Ownership'). Approve only if this change will land in a commit "
+        f"whose message contains {BREAKING_CHANGE_MARKER!r} — "
+        f"scripts/check_protected_paths.py enforces this in CI."
+    )
+    decision = {
+        "hookSpecificOutput": {
+            "hookEventName": _HOOK_EVENT_NAME,
+            "permissionDecision": _HOOK_PERMISSION_ASK,
+            "permissionDecisionReason": reason,
+        }
+    }
+    print(json.dumps(decision))
+    return EXIT_OK
+
+
+def _post_tool_use_emit_path(stream: IO[str]) -> int:
+    """Print the edited file's path (or nothing). Always returns ``EXIT_OK``.
+
+    Companion to the ``PostToolUse`` ruff-autofix hook, which had the same
+    ``$CLAUDE_TOOL_INPUT_path`` defect. ``.claude/settings.json`` pipes this
+    mode's stdout into ``xargs -r python -m ruff check --fix`` — ``xargs -r``
+    treats empty input as "run nothing", so a payload naming no path is a
+    silent no-op rather than an error.
+    """
+    path = _extract_tool_path(_read_hook_payload(stream))
+    if path:
+        print(path)
+    return EXIT_OK
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 
@@ -249,19 +416,42 @@ def _configure_logging() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Lint frontmatter; return one of ``EXIT_OK``/``EXIT_SCHEMA``/``EXIT_PROTECTED``."""
+    """Lint frontmatter, or run a hook mode; see the module docstring."""
     _configure_logging()
     parser = argparse.ArgumentParser(description="Lint Claude Code agent and skill frontmatter.")
     parser.add_argument(
         "--check-protected-paths",
         dest="protected_path",
         default=None,
-        help="If set, treat the given path as a candidate edit and block when missing the marker.",
+        help="Legacy staged-diff check (pre-commit only). See --hook for the PreToolUse mode.",
+    )
+    parser.add_argument(
+        "--hook",
+        choices=("pre-tool-use", "post-tool-use"),
+        default=None,
+        help="Run a Claude Code hook mode, reading the tool-call JSON from stdin.",
+    )
+    parser.add_argument(
+        "--emit-path",
+        action="store_true",
+        help="With --hook post-tool-use, print the edited file's path for piping elsewhere.",
     )
     args = parser.parse_args(argv)
 
+    if args.hook == "pre-tool-use":
+        return _pre_tool_use_hook(sys.stdin)
+    if args.hook == "post-tool-use":
+        return _post_tool_use_emit_path(sys.stdin) if args.emit_path else EXIT_OK
+
     if args.protected_path is not None:
         return _check_protected_path(args.protected_path)
+
+    if not _SCHEMA_DEPS_AVAILABLE:
+        logger.error(
+            "Schema-lint mode requires the 'dev' extra (pydantic, pyyaml); "
+            "run `pip install -e '.[dev]'`, or use --hook for a stdlib-only mode."
+        )
+        return EXIT_SCHEMA
 
     skill_paths = sorted(glob.glob(SKILLS_GLOB, recursive=True))
     agent_paths = sorted(glob.glob(AGENTS_GLOB, recursive=True))

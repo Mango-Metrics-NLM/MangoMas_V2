@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+from io import StringIO
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -10,6 +15,9 @@ from tests import constants
 from tests._script_loader import load_script_module
 
 linter = load_script_module("lint_agent_frontmatter.py")
+
+_REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+_SCRIPT_PATH: Final[Path] = _REPO_ROOT / "scripts" / "lint_agent_frontmatter.py"
 
 
 def _arbitrary_protected_path() -> str:
@@ -284,3 +292,192 @@ def test_main_schema_failure_returns_exit_schema(
 
     monkeypatch.chdir(tmp_path)
     assert linter.main([]) == linter.EXIT_SCHEMA
+
+
+# ── Hook modes (ADR-0021 / spec-0017) ─────────────────────────────────────────
+#
+# These deliberately do NOT monkeypatch anything internal to the hook
+# functions — that is exactly the pattern that hid the original defects
+# ($CLAUDE_TOOL_INPUT_path expanding empty, and the import-time crash on a
+# bare interpreter). Every test below either calls the public hook function
+# with a real stdin-shaped stream, or shells out to the real script as a
+# subprocess, matching how `.claude/settings.json` actually invokes it.
+
+_PROTECTED_PAYLOAD: Final[str] = json.dumps(
+    {"tool_name": "Edit", "tool_input": {"file_path": "src/mangomas/errors.py"}}
+)
+_UNPROTECTED_PAYLOAD: Final[str] = json.dumps(
+    {"tool_name": "Edit", "tool_input": {"file_path": "src/mangomas/agents/chat.py"}}
+)
+_NOTEBOOK_PAYLOAD: Final[str] = json.dumps(
+    {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "src/mangomas/errors.py"}}
+)
+
+
+def test_pre_tool_use_protected_path_returns_ask_decision() -> None:
+    result = linter._pre_tool_use_hook(StringIO(_PROTECTED_PAYLOAD))
+    assert result == linter.EXIT_OK
+
+
+def test_pre_tool_use_protected_path_emits_valid_hook_json(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    linter._pre_tool_use_hook(StringIO(_PROTECTED_PAYLOAD))
+    out = capsys.readouterr().out
+    decision = json.loads(out)["hookSpecificOutput"]
+    assert decision["hookEventName"] == "PreToolUse"
+    assert decision["permissionDecision"] == "ask"
+    assert "src/mangomas/errors.py" in decision["permissionDecisionReason"]
+    assert linter.BREAKING_CHANGE_MARKER in decision["permissionDecisionReason"]
+
+
+def test_pre_tool_use_never_returns_deny() -> None:
+    """The hook is advisory only — it must never emit ``permissionDecision:
+    "deny"``; the CI gate (scripts/check_protected_paths.py) is the
+    authoritative enforcement point."""
+    for payload in (_PROTECTED_PAYLOAD, _UNPROTECTED_PAYLOAD):
+        assert linter._pre_tool_use_hook(StringIO(payload)) == linter.EXIT_OK
+
+
+def test_pre_tool_use_unprotected_path_emits_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    result = linter._pre_tool_use_hook(StringIO(_UNPROTECTED_PAYLOAD))
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
+def test_pre_tool_use_notebook_edit_path_is_recognised(capsys: pytest.CaptureFixture[str]) -> None:
+    """``notebook_path`` (NotebookEdit) is checked too, not just ``file_path``."""
+    linter._pre_tool_use_hook(StringIO(_NOTEBOOK_PAYLOAD))
+    decision = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "ask"
+
+
+def test_pre_tool_use_malformed_stdin_returns_ok_silently(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = linter._pre_tool_use_hook(StringIO("not json at all"))
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
+def test_pre_tool_use_empty_stdin_returns_ok_silently(capsys: pytest.CaptureFixture[str]) -> None:
+    result = linter._pre_tool_use_hook(StringIO(""))
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
+def test_pre_tool_use_payload_missing_tool_input_returns_ok() -> None:
+    result = linter._pre_tool_use_hook(StringIO(json.dumps({"tool_name": "Edit"})))
+    assert result == linter.EXIT_OK
+
+
+def test_post_tool_use_emit_path_prints_the_path(capsys: pytest.CaptureFixture[str]) -> None:
+    result = linter._post_tool_use_emit_path(StringIO(_UNPROTECTED_PAYLOAD))
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out.strip() == "src/mangomas/agents/chat.py"
+
+
+def test_post_tool_use_emit_path_prints_nothing_for_empty_payload(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = linter._post_tool_use_emit_path(StringIO("{}"))
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
+# ── Subprocess-level: the real invocation shape .claude/settings.json uses ───
+
+
+def _run_hook_subprocess(args: list[str], stdin_text: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603
+        [sys.executable, str(_SCRIPT_PATH), *args],
+        input=stdin_text,
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        check=False,
+    )
+
+
+def test_subprocess_pre_tool_use_protected_path_exits_ok_with_ask_json() -> None:
+    result = _run_hook_subprocess(["--hook", "pre-tool-use"], _PROTECTED_PAYLOAD)
+    assert result.returncode == linter.EXIT_OK
+    decision = json.loads(result.stdout)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "ask"
+
+
+def test_subprocess_post_tool_use_emit_path_pipes_the_path() -> None:
+    result = _run_hook_subprocess(["--hook", "post-tool-use", "--emit-path"], _UNPROTECTED_PAYLOAD)
+    assert result.returncode == linter.EXIT_OK
+    assert result.stdout.strip() == "src/mangomas/agents/chat.py"
+
+
+def test_subprocess_post_tool_use_without_emit_path_flag_prints_nothing() -> None:
+    """Reserved for future PostToolUse modes; today it's a documented no-op."""
+    result = _run_hook_subprocess(["--hook", "post-tool-use"], _UNPROTECTED_PAYLOAD)
+    assert result.returncode == linter.EXIT_OK
+    assert result.stdout == ""
+
+
+def test_subprocess_hook_mode_runs_without_pydantic_installed(tmp_path: Path) -> None:
+    """Regression guard for the exact defect this milestone fixes: the hook
+    used to crash on `import pydantic` before reaching any logic (exit 1,
+    which Claude Code treats as non-blocking — so the check silently never
+    ran). A stub `pydantic` module earlier on `sys.path` than the real one
+    reproduces "pydantic not installed" deterministically, without depending
+    on any particular interpreter happening to lack it."""
+    stub_dir = tmp_path / "stub_site_packages"
+    stub_dir.mkdir()
+    (stub_dir / "pydantic.py").write_text(
+        "raise ImportError('stub: pydantic intentionally unavailable for this test')\n",
+        encoding="utf-8",
+    )
+    (stub_dir / "yaml.py").write_text(
+        "raise ImportError('stub: pyyaml intentionally unavailable for this test')\n",
+        encoding="utf-8",
+    )
+    import os  # noqa: PLC0415 -- scoped to this one test's env construction
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(stub_dir) + os.pathsep + env.get("PYTHONPATH", "")
+
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(_SCRIPT_PATH), "--hook", "pre-tool-use"],
+        input=_PROTECTED_PAYLOAD,
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == linter.EXIT_OK
+    decision = json.loads(result.stdout)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "ask"
+
+
+def test_subprocess_default_schema_lint_mode_still_requires_pydantic(tmp_path: Path) -> None:
+    """The *default* (no-flag) schema-lint mode is unaffected by this
+    milestone — it always needed pydantic/pyyaml and still does. This pins
+    the friendly error path added alongside the hook-mode fix, rather than a
+    bare NameError, when the dev extras genuinely are not installed."""
+    stub_dir = tmp_path / "stub_site_packages"
+    stub_dir.mkdir()
+    (stub_dir / "pydantic.py").write_text(
+        "raise ImportError('stub: pydantic intentionally unavailable for this test')\n",
+        encoding="utf-8",
+    )
+    import os  # noqa: PLC0415 -- scoped to this one test's env construction
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(stub_dir) + os.pathsep + env.get("PYTHONPATH", "")
+
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(_SCRIPT_PATH)],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == linter.EXIT_SCHEMA
+    assert "dev' extra" in (result.stdout + result.stderr)

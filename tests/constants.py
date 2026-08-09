@@ -244,6 +244,7 @@ TEST_MAX_TOKENS_OVERRIDE: int = 256
 # ── Claude Code ecosystem tooling (spec 0016 / ADR-0020) ─────────────────────
 # Repo-relative paths to the two shared Claude Code config files.
 CLAUDE_SETTINGS_RELPATH: str = ".claude/settings.json"
+CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH: str = ".claude/settings.local.json.example"
 MCP_CONFIG_RELPATH: str = ".mcp.json"
 
 # Hooks that predate the ecosystem-tooling integration, as
@@ -254,15 +255,21 @@ MCP_CONFIG_RELPATH: str = ".mcp.json"
 PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
     ("SessionStart", "*", "python scripts/harness_session_start.py"),
     (
+        # ADR-0021 / spec-0017: replaced the dead `$CLAUDE_TOOL_INPUT_path`
+        # interpolation (Claude Code delivers hook input as stdin JSON, never
+        # as a per-field env var) with the real `--hook pre-tool-use` stdin
+        # mode, and widened the matcher to cover NotebookEdit.
         "PreToolUse",
-        "Edit|Write",
-        "python scripts/lint_agent_frontmatter.py "
-        '--check-protected-paths "$CLAUDE_TOOL_INPUT_path"',
+        "Edit|Write|NotebookEdit",
+        "python scripts/lint_agent_frontmatter.py --hook pre-tool-use",
     ),
     (
+        # Same stdin-JSON fix applied to the ruff-autofix hook, which had the
+        # identical defect.
         "PostToolUse",
         "Edit|Write",
-        'python -m ruff check --fix "$CLAUDE_TOOL_INPUT_path" 2>/dev/null || true',
+        "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path "
+        "| xargs -r python -m ruff check --fix 2>/dev/null || true",
     ),
     ("Stop", "*", "python -m pytest -q --no-cov || true"),
 )
