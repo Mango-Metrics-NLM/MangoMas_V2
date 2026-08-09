@@ -396,9 +396,50 @@ def test_floor_is_a_minimum_not_an_equality(
 def test_floors_are_overridable_via_cli_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Tooling knobs get a script-level ``Final`` plus a flag, never a bare literal."""
+    """Tooling knobs get a script-level ``Final`` plus a flag, never a bare literal.
+
+    Overridability is demonstrated with a floor the corpus *fails* — the previous
+    version of this test passed ``0`` against an empty directory and asserted
+    ``EXIT_OK``, which proved only that a disabled guard stays quiet.
+    """
+    skills_dir = tmp_path / _glob_root(linter.SKILLS_GLOB)
+    agents_dir = tmp_path / _glob_root(linter.AGENTS_GLOB)
+    skill = skills_dir / "skill-0"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "agent-0.agent.md").write_text(
+        constants.VALID_AGENT_FRONTMATTER, encoding="utf-8"
+    )
+
     monkeypatch.chdir(tmp_path)
-    assert linter.main(["--min-agents", "0", "--min-skills", "0"]) == linter.EXIT_OK
+    assert linter.main(["--min-agents", "1", "--min-skills", "1"]) == linter.EXIT_OK
+    # The same corpus, one over the floor: the raised value is what changes the verdict.
+    assert linter.main(["--min-agents", "2", "--min-skills", "1"]) == linter.EXIT_SCHEMA
+
+
+@pytest.mark.parametrize("flag", ["--min-agents", "--min-skills"])
+@pytest.mark.parametrize("value", ["-1", "0"])
+def test_floor_below_lower_bound_is_rejected(
+    flag: str, value: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A floor of 0 or less can never fail, so accepting one silently restores the
+    gate that passes without validating anything. ``tmp_path`` is empty, so the
+    run would otherwise report EXIT_OK — proving the guard, not the corpus."""
+    monkeypatch.chdir(tmp_path)
+    assert linter.main([flag, value]) == linter.EXIT_SCHEMA
+
+
+def test_floor_rejection_names_the_flag_and_the_bound(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The error has to say which flag and what bound, or it can't be acted on."""
+    caplog.set_level(logging.ERROR, logger=linter.__name__)
+    monkeypatch.chdir(tmp_path)
+    assert linter.main(["--min-agents", "-1"]) == linter.EXIT_SCHEMA
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "--min-agents" in logged
+    assert str(linter.MIN_FLOOR_LOWER_BOUND) in logged
 
 
 def test_passing_log_message_carries_the_counts(

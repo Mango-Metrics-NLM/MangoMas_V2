@@ -1,7 +1,7 @@
 """Frontmatter linter for Claude Code agents and skills — and its hook modes.
 
 Validates every ``.github/agents/**/*.agent.md`` and
-``.github/skills/**/SKILL.md`` against the project's Pydantic v2 frontmatter
+``.claude/skills/**/SKILL.md`` against the project's Pydantic v2 frontmatter
 schemas (the default, no-argument mode). Two independent hook modes live here
 too, both stdlib-only so neither depends on ``pydantic``/``pyyaml`` being
 installed — a ``PreToolUse``/``PostToolUse`` hook must work in an interpreter
@@ -32,7 +32,8 @@ Exit codes
 ``EXIT_SCHEMA = 1``
     At least one file failed schema validation, sub_agents resolution, or
     file-discovery — the last of which includes a glob matching fewer files
-    than its floor (see ``MIN_AGENT_FILES`` / ``MIN_SKILL_FILES``).
+    than its floor (see ``MIN_AGENT_FILES`` / ``MIN_SKILL_FILES``), or a
+    ``--min-agents``/``--min-skills`` value below ``MIN_FLOOR_LOWER_BOUND``.
 ``EXIT_PROTECTED = 2``
     The legacy ``--check-protected-paths`` flag is set and the staged diff of
     the requested path lacks the breaking-change marker.
@@ -90,6 +91,13 @@ SKILLS_GLOB: Final[str] = ".claude/skills/**/SKILL.md"
 # where a change names the file that appeared or vanished.
 MIN_AGENT_FILES: Final[int] = 1
 MIN_SKILL_FILES: Final[int] = 1
+
+# The lowest floor the --min-agents/--min-skills overrides may express. Zero is
+# rejected alongside negatives, and for the same reason: a floor of 0 (or -1)
+# means *no* file count can ever fail _below_floor, which restores exactly the
+# silently-passing gate spec-0018 R1 exists to kill. An override is for pointing
+# the floor at a different corpus size, never for switching the guard off.
+MIN_FLOOR_LOWER_BOUND: Final[int] = 1
 
 _DEFAULT_PYPROJECT_PATH: Final[Path] = Path("pyproject.toml")
 
@@ -452,6 +460,17 @@ def _below_floor(label: str, paths: list[str], pattern: str, minimum: int) -> st
     )
 
 
+def _invalid_floor(flag: str, value: int) -> str | None:
+    """Return an error message when a floor override is below its lower bound."""
+    if value >= MIN_FLOOR_LOWER_BOUND:
+        return None
+    return (
+        f"{flag}={value} is below the minimum of {MIN_FLOOR_LOWER_BOUND}. A floor "
+        f"of {value} can never fail, which would silently restore the gate that "
+        f"passes without validating anything. Use a value >= {MIN_FLOOR_LOWER_BOUND}."
+    )
+
+
 def run_schema_lint(
     *,
     min_agents: int = MIN_AGENT_FILES,
@@ -483,6 +502,56 @@ def run_schema_lint(
     )
 
 
+def _schema_lint_mode(*, min_agents: int, min_skills: int) -> int:
+    """Run the default (no-flag) schema lint and return its exit code.
+
+    Split out of ``main()`` so the dispatcher stays a flat list of mode
+    branches, and so the floor/dependency preconditions live next to the run
+    they guard rather than among the argument definitions.
+    """
+    # Floors are validated here rather than via argparse's ``type=``: a type
+    # callable raises SystemExit(2), and 2 is already EXIT_PROTECTED, so a bad
+    # flag would be indistinguishable from a missing breaking-change marker.
+    # Checked before the dependency probe so the message appears even when the
+    # dev extras are not installed.
+    floor_errors = [
+        message
+        for message in (
+            _invalid_floor("--min-agents", min_agents),
+            _invalid_floor("--min-skills", min_skills),
+        )
+        if message is not None
+    ]
+    if floor_errors:
+        for message in floor_errors:
+            logger.error("Frontmatter lint failed: %s", message)
+        return EXIT_SCHEMA
+
+    if not _SCHEMA_DEPS_AVAILABLE:
+        logger.error(
+            "Schema-lint mode requires the 'dev' extra (pydantic, pyyaml); "
+            "run `pip install -e '.[dev]'`, or use --hook for a stdlib-only mode."
+        )
+        return EXIT_SCHEMA
+
+    result = run_schema_lint(min_agents=min_agents, min_skills=min_skills)
+
+    if result.failures:
+        for msg in result.failures:
+            logger.error("Frontmatter lint failed: %s", msg)
+        return result.exit_code
+
+    # Counts go in the message, not extra={}: the configured format string drops
+    # extra, so a "0 skills, 0 agents" run used to be indistinguishable from a
+    # healthy one in CI output.
+    logger.info(
+        "Frontmatter lint passed: %d skills, %d agents",
+        result.skill_count,
+        result.agent_count,
+    )
+    return result.exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     """Lint frontmatter, or run a hook mode; see the module docstring."""
     _configure_logging()
@@ -508,13 +577,19 @@ def main(argv: list[str] | None = None) -> int:
         "--min-agents",
         type=int,
         default=MIN_AGENT_FILES,
-        help=f"Minimum agent files the glob must match (default: {MIN_AGENT_FILES}).",
+        help=(
+            f"Minimum agent files the glob must match "
+            f"(default: {MIN_AGENT_FILES}, minimum: {MIN_FLOOR_LOWER_BOUND})."
+        ),
     )
     parser.add_argument(
         "--min-skills",
         type=int,
         default=MIN_SKILL_FILES,
-        help=f"Minimum skill files the glob must match (default: {MIN_SKILL_FILES}).",
+        help=(
+            f"Minimum skill files the glob must match "
+            f"(default: {MIN_SKILL_FILES}, minimum: {MIN_FLOOR_LOWER_BOUND})."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -526,29 +601,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.protected_path is not None:
         return _check_protected_path(args.protected_path)
 
-    if not _SCHEMA_DEPS_AVAILABLE:
-        logger.error(
-            "Schema-lint mode requires the 'dev' extra (pydantic, pyyaml); "
-            "run `pip install -e '.[dev]'`, or use --hook for a stdlib-only mode."
-        )
-        return EXIT_SCHEMA
-
-    result = run_schema_lint(min_agents=args.min_agents, min_skills=args.min_skills)
-
-    if result.failures:
-        for msg in result.failures:
-            logger.error("Frontmatter lint failed: %s", msg)
-        return result.exit_code
-
-    # Counts go in the message, not extra={}: the configured format string drops
-    # extra, so a "0 skills, 0 agents" run used to be indistinguishable from a
-    # healthy one in CI output.
-    logger.info(
-        "Frontmatter lint passed: %d skills, %d agents",
-        result.skill_count,
-        result.agent_count,
-    )
-    return result.exit_code
+    return _schema_lint_mode(min_agents=args.min_agents, min_skills=args.min_skills)
 
 
 if __name__ == "__main__":
