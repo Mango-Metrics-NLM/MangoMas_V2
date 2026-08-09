@@ -1,5 +1,5 @@
 ---
-name: schema-evolution
+name: mango-schema-evolution
 description: "Owns backward-compatible evolution of AgentRequest, AgentResponse, Message and the Pydantic v2 DTOs on the HTTP surface. core/agent.py is a protected path: changes there need a BREAKING-CHANGE commit trailer. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

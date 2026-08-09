@@ -379,51 +379,51 @@ ENV_FLAG_OFF: str = "0"
 # The 19 agents, by slug. Set equality, so a change names what appeared or
 # vanished and editing this tuple is the review record.
 EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
-    "adr-author",
-    "api-dev",
-    "architect",
-    "backend",
-    "error-taxonomy-dev",
-    "fake-builder",
-    "hypothesis-fuzz",
-    "integration-runner",
-    "layering-auditor",
-    "llm-adapter-dev",
-    "orchestrator-dev",
-    "pr-watcher",
-    "protocol-auditor",
-    "schema-evolution",
-    "sse-streamer",
-    "storage-adapter-dev",
-    "telemetry-exporter-dev",
-    "test-engineer",
-    "workflow-graph-dev",
+    "mango-adr-author",
+    "mango-api-dev",
+    "mango-architect",
+    "mango-backend",
+    "mango-error-taxonomy-dev",
+    "mango-fake-builder",
+    "mango-hypothesis-fuzz",
+    "mango-integration-runner",
+    "mango-layering-auditor",
+    "mango-llm-adapter-dev",
+    "mango-orchestrator-dev",
+    "mango-pr-watcher",
+    "mango-protocol-auditor",
+    "mango-schema-evolution",
+    "mango-sse-streamer",
+    "mango-storage-adapter-dev",
+    "mango-telemetry-exporter-dev",
+    "mango-test-engineer",
+    "mango-workflow-graph-dev",
 )
 # Routers are the only agents that carry trigger conditions, so they are the
 # only descriptions auto-delegation can match. They cannot write.
-ROUTER_AGENT_SLUGS: frozenset[str] = frozenset({"architect", "backend", "api-dev", "test-engineer"})
+ROUTER_AGENT_SLUGS: frozenset[str] = frozenset({"mango-architect", "mango-backend", "mango-api-dev", "mango-test-engineer"})
 # Agents holding Edit and/or Write. A reviewed-change gate, NOT a substitute
 # for a deny rule: it covers 12 of 19 and only fails when the set changes.
 WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
-        "adr-author",
-        "error-taxonomy-dev",
-        "fake-builder",
-        "hypothesis-fuzz",
-        "integration-runner",
-        "llm-adapter-dev",
-        "orchestrator-dev",
-        "schema-evolution",
-        "sse-streamer",
-        "storage-adapter-dev",
-        "telemetry-exporter-dev",
-        "workflow-graph-dev",
+        "mango-adr-author",
+        "mango-error-taxonomy-dev",
+        "mango-fake-builder",
+        "mango-hypothesis-fuzz",
+        "mango-integration-runner",
+        "mango-llm-adapter-dev",
+        "mango-orchestrator-dev",
+        "mango-schema-evolution",
+        "mango-sse-streamer",
+        "mango-storage-adapter-dev",
+        "mango-telemetry-exporter-dev",
+        "mango-workflow-graph-dev",
     }
 )
 # Agents whose declared surface includes a protected core contract. Each must
 # say so, because the CI trailer gate will otherwise fail their first commit.
 PROTECTED_PATH_OWNER_SLUGS: frozenset[str] = frozenset(
-    {"error-taxonomy-dev", "orchestrator-dev", "schema-evolution", "hypothesis-fuzz"}
+    {"mango-error-taxonomy-dev", "mango-orchestrator-dev", "mango-schema-evolution", "mango-hypothesis-fuzz"}
 )
 # The description is the entire routing surface and loads at every session
 # start. 320 binds on the corpus as written; 400 would bind on nothing.

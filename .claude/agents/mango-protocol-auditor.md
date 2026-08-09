@@ -1,5 +1,5 @@
 ---
-name: protocol-auditor
+name: mango-protocol-auditor
 description: "Audits @runtime_checkable Protocol surfaces for backward-compatibility, signature drift and missing isinstance verification, across core/agent.py and adapters/*/base.py. Read-only: reports findings, never edits. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill
 model: inherit

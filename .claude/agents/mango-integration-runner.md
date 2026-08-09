@@ -1,5 +1,5 @@
 ---
-name: integration-runner
+name: mango-integration-runner
 description: "Owns tests/integration/ and tests/lmstudio/ — the real-network suites gated by RUN_INTEGRATION=1 and RUN_LMSTUDIO=1, including flake diagnosis. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

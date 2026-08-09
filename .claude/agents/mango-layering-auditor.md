@@ -1,5 +1,5 @@
 ---
-name: layering-auditor
+name: mango-layering-auditor
 description: "Audits cross-layer imports against the Mango-Mas V2 dependency direction (adapters and agents depend on core; api depends on composition only). Read-only: reports findings, never edits. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill
 model: inherit

@@ -1,6 +1,6 @@
 ---
-name: api-dev
-description: "HTTP surface routing for Mango-Mas V2: routers, DTOs, middleware, error envelopes and streaming. Use when: adding or changing an endpoint, evolving a request or response schema, or debugging API-layer integration. Routes to sse-streamer or schema-evolution; reads and advises, never edits."
+name: mango-api-dev
+description: "HTTP surface routing for Mango-Mas V2: routers, DTOs, middleware, error envelopes and streaming. Use when: adding or changing an endpoint, evolving a request or response schema, or debugging API-layer integration. Routes to mango-sse-streamer or mango-schema-evolution; reads and advises, never edits."
 tools: Read, Grep, Glob, Skill
 model: inherit
 ---

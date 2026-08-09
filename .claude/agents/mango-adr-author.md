@@ -1,5 +1,5 @@
 ---
-name: adr-author
+name: mango-adr-author
 description: "Drafts Architectural Decision Records in docs/adr/ from the project template, for boundary changes, provider swaps, composition-root edits and breaking contracts. Writes only the ADR markdown, never source. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write
 model: inherit

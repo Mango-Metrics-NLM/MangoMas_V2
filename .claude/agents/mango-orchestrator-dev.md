@@ -1,5 +1,5 @@
 ---
-name: orchestrator-dev
+name: mango-orchestrator-dev
 description: "Owns src/mangomas/core/orchestrator.py and the whole dispatch surface, including stream_dispatch. A protected path: changes need a BREAKING-CHANGE commit trailer and must preserve every existing signature. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

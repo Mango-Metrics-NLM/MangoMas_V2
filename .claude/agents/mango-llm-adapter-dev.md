@@ -1,5 +1,5 @@
 ---
-name: llm-adapter-dev
+name: mango-llm-adapter-dev
 description: "Implements LLMClient, PingableLLMClient and StreamingLLMClient adapters under src/mangomas/adapters/llm/, including typed-error translation for transient upstream failures. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

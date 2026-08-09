@@ -1,5 +1,5 @@
 ---
-name: telemetry-exporter-dev
+name: mango-telemetry-exporter-dev
 description: "Owns the OpenTelemetry exporter seam in src/mangomas/telemetry.py, the TelemetrySettings group and harness span routing in composition.py. Default behaviour must not change when the env vars are absent. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
