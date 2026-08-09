@@ -336,6 +336,24 @@ RTK_TELEMETRY_DISABLED_ENV: str = "RTK_TELEMETRY_DISABLED"
 ENV_FLAG_ON: str = "1"
 ENV_FLAG_OFF: str = "0"
 
+# Claude Code permission rules in `.claude/settings.json`. Pinned by set
+# equality: nothing else in the suite asserted anything about `permissions`, so
+# a rule could be dropped, or added unreviewed, in total silence.
+EXPECTED_DENY_RULES: frozenset[str] = frozenset(
+    {"Bash(rm -rf:*)", "Bash(git push --force:*)", "Bash(git push -f:*)"}
+)
+# Claude Code honours exactly one wildcard in a Bash rule: a trailing `:*` after
+# the command prefix. An interior `*` is matched as a literal character, so
+# `Bash(python -m ruff *:*)` never matched `python -m ruff check --fix` and the
+# call prompted on every run — a dead allow-rule that looks live.
+BASH_RULE_PREFIX: str = "Bash("
+BASH_RULE_WILDCARD_SUFFIX: str = ":*"
+# Rule heads Claude Code accepts but never consults for a file write, emitting a
+# startup warning instead. Only `Edit(...)` is matched, and it already covers
+# Edit, Write and NotebookEdit — so a `Write(...)` rule is a non-control that
+# reads like one.
+INERT_FILE_RULE_PREFIXES: tuple[str, ...] = ("Write(", "NotebookEdit(")
+
 # MCP servers adopted by ADR-0020. Upstream `memory` (redundant with
 # claude-mem), `everything` (test/demo), and `time` (low value here) are
 # deliberately excluded — the test asserts an exact set so an unreviewed

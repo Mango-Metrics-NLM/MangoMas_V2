@@ -20,10 +20,14 @@ import pytest
 
 from tests.constants import (
     ADOPTED_MCP_SERVERS,
+    BASH_RULE_PREFIX,
+    BASH_RULE_WILDCARD_SUFFIX,
     CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH,
     CLAUDE_SETTINGS_RELPATH,
     ENV_FLAG_ON,
+    EXPECTED_DENY_RULES,
     HARNESS_CONFIG_AUDIT_MODE_ENV,
+    INERT_FILE_RULE_PREFIXES,
     MCP_CONFIG_RELPATH,
     MCP_PROJECT_DIR_SCOPE,
     PATH_SCOPED_MCP_SERVERS,
@@ -161,6 +165,57 @@ def test_settings_local_example_is_valid_json_with_the_documented_opt_outs() -> 
     example = _load_json(CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH)
     assert RTK_DISABLE_ENV in example["env"]
     assert HARNESS_CONFIG_AUDIT_MODE_ENV in example["env"]
+
+
+# ── permissions (ADR-0020 / ADR-0024) ─────────────────────────────────────────
+
+
+def _permission_rules(section: str) -> list[str]:
+    return list(_settings()["permissions"][section])
+
+
+def test_deny_rules_match_the_expected_set() -> None:
+    """Nothing asserted anything about ``permissions`` before this, so all three
+    deny rules could have been dropped by an unrelated edit without a single
+    test going red. Set equality names what appeared or vanished."""
+    assert set(_permission_rules("deny")) == set(EXPECTED_DENY_RULES)
+
+
+@pytest.mark.parametrize("section", ["allow", "deny"])
+def test_bash_rules_use_only_the_trailing_wildcard(section: str) -> None:
+    """An interior ``*`` in a Bash rule is a literal character, not a wildcard.
+
+    Regression guard for ``Bash(python -m ruff *:*)``, which sat in ``allow``
+    looking like a working grant while never matching ``python -m ruff check
+    --fix`` — so the call prompted every time and the rule was pure decoration.
+    """
+    for rule in _permission_rules(section):
+        if not rule.startswith(BASH_RULE_PREFIX):
+            continue
+        body = rule[len(BASH_RULE_PREFIX) : -1]
+        if "*" not in body:
+            continue
+        assert body.endswith(BASH_RULE_WILDCARD_SUFFIX), rule
+        assert body.count("*") == 1, rule
+
+
+@pytest.mark.parametrize("section", ["allow", "deny"])
+def test_no_rule_uses_a_head_claude_code_ignores(section: str) -> None:
+    """``Write(...)``/``NotebookEdit(...)`` are accepted and then never consulted
+    for a file write — Claude Code warns at startup and matches only
+    ``Edit(...)``, which already covers all three. A rule with one of these
+    heads is a control in appearance only."""
+    offenders = [
+        rule for rule in _permission_rules(section) if rule.startswith(INERT_FILE_RULE_PREFIXES)
+    ]
+    assert offenders == []
+
+
+def test_permission_sections_are_non_empty() -> None:
+    """Guards the two tests above from passing vacuously if ``permissions`` is
+    ever emptied or restructured."""
+    assert _permission_rules("allow")
+    assert _permission_rules("deny")
 
 
 # ── .mcp.json ─────────────────────────────────────────────────────────────────
