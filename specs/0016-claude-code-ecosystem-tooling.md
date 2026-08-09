@@ -128,5 +128,8 @@ The actual additions are Claude Code config, not application config:
       `docs/tooling/claude-code-ecosystem.md`.
 - [x] `ruff`, `mypy`, `pytest` (95% gate), `frontmatter-lint` all clean —
       confirmed via `make gate` for every phase landed in this session.
-- [ ] CHANGELOG updated once the two pending items above land; this spec's
-      status moves to Implemented at that point, not before.
+- [x] CHANGELOG records the landed scope, including the corrected `claude-mem`
+      finding.
+- [ ] `claude-hud` — the sole remaining blocker on this spec's move to
+      **Implemented**. Everything else above is done; re-status this spec once
+      that one confirmation lands.

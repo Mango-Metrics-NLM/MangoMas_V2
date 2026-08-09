@@ -116,9 +116,24 @@ undecided, nothing enabled). The interactive provider prompt — where the
 hosted "CMEM Pro" tier is offered first — is **skipped in a non-TTY**; on a
 real terminal, decline it to stay local-only.
 
-Two things worth knowing before installing: it runs a **local background
-worker** (HTTP listener on `127.0.0.1:37700`), and its `PostToolUse` hook
-matches `*`, so it captures output from every tool call into local storage.
+**Understand what it captures before installing.** Its `PostToolUse` hook
+matches `*`, so *every* tool call's output is captured — and tool output
+routinely contains secrets: a CLI echoing a token, an env dump, a database
+connection string, a decrypted config. Those land in `~/.claude-mem/`
+(SQLite + Chroma) in whatever form they were printed; nothing in this repo's
+`gitleaks` job or `.gitignore` protects a directory outside the repo. Treat
+`~/.claude-mem/` as sensitive at rest, and prefer not to print secrets in a
+session you are recording.
+
+"Local" is the **default, not an invariant** — the same settings file
+accepts `CLAUDE_MEM_CLOUD_SYNC_HUB_URL` (sync to a hosted hub) and
+`CLAUDE_MEM_CHROMA_HOST` / `CLAUDE_MEM_CHROMA_API_KEY` (point the vector
+store at a remote Chroma). Both are unset out of the box; setting either
+turns captured tool output into outbound data, so treat those two knobs as
+the review boundary.
+
+It also runs a **local background worker** (HTTP listener on
+`127.0.0.1:37700`).
 
 `claude-mem`'s memory is entirely separate from this repo's own memory
 systems (`MANGOMAS_MEMORY__ENABLED` file-memory, and the RAG/vector layer at
