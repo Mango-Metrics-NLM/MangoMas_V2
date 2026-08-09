@@ -1,6 +1,6 @@
 ---
 name: fake-builder
-description: "Owns tests/fakes.py — the shared Fake* adapters that keep tests off unittest.mock for internal protocols, and grow whenever a Protocol they satisfy grows. Invoked by name, not by topic match."
+description: "Owns tests/fakes.py — the shared Fake* adapters that keep tests off unittest.mock for internal protocols. A fake grows with the Protocol it satisfies. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
