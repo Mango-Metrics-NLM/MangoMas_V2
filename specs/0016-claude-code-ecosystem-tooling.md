@@ -1,9 +1,11 @@
 # Spec-0016: Claude Code ecosystem tooling integration
 
 - **Status:** In progress — `.mcp.json`, the `rtk` hook, guardrails, and this
-  documentation are landed; `claude-hud`'s disposition and `claude-mem`'s
-  hook wiring each require one hands-on step outside this session (see
-  Acceptance criteria) before this spec moves to Implemented.
+  documentation are landed, and `claude-mem`'s disposition is now settled by
+  a verified isolated install (R3). One item remains: `claude-hud`'s
+  disposition needs a hands-on `/claude-hud:setup` run on a host that can
+  reach GitHub (see Acceptance criteria) before this spec moves to
+  Implemented.
 - **Linked ADR:** ADR-0020 (Claude Code ecosystem tooling integration)
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added`
 
@@ -29,9 +31,19 @@ a reference source rather than software.
   additive to the four pre-existing hooks, gated on `MANGOMAS_DISABLE_RTK_HOOK`
   so it has a real per-contributor opt-out despite Claude Code's lack of a
   per-hook disable mechanism.
-- R3 — Add `claude-mem`'s lifecycle hooks the same way, sourced from an
+- R3 — ~~Add `claude-mem`'s lifecycle hooks the same way, sourced from an
   observed installer diff (never hand-authored), gated on
-  `MANGOMAS_DISABLE_CLAUDE_MEM_HOOKS`, configured local-only.
+  `MANGOMAS_DISABLE_CLAUDE_MEM_HOOKS`, configured local-only.~~
+  **Superseded by the verification this requirement demanded.** Running the
+  installer in an isolated sandbox showed `claude-mem` v13.14.0 installs as a
+  **user-scoped Claude Code plugin**: the project's `.claude/settings.json`
+  was byte-identical (sha256) before and after, its six hooks ship in the
+  plugin's own `hooks.json` under `~/.claude/plugins/cache/`, and user-level
+  settings gain only an `enabledPlugins` entry. There is therefore no shared
+  hook to add and no `MANGOMAS_DISABLE_*` gate to apply — opting out means
+  not installing the plugin. Local-only default confirmed
+  (`{"CLAUDE_MEM_RUNTIME": "worker"}`, no cloud-sync URL; telemetry consent
+  undecided). Documented as per-contributor setup instead.
 - R4 — Document `claude-hud` as per-contributor setup (not committed to
   shared config) pending confirmation that its wizard writes a
   machine-specific path to user-level settings.
@@ -56,7 +68,8 @@ The actual additions are Claude Code config, not application config:
 | `hooks.PreToolUse[].matcher == "Bash"` | `.claude/settings.json` | present | `rtk` output-compaction hook |
 | `env.RTK_TELEMETRY_DISABLED` | `.claude/settings.json` | `"1"` | Asserts rtk's telemetry-off stance explicitly |
 | `env.MANGOMAS_DISABLE_RTK_HOOK` | `.claude/settings.json` | `"0"` | Per-contributor opt-out for the rtk hook (set `"1"` in a personal `.claude/settings.local.json`) |
-| `env.MANGOMAS_DISABLE_CLAUDE_MEM_HOOKS` | `.claude/settings.json` | `"0"` (once Phase 4 lands) | Per-contributor opt-out for claude-mem's hooks |
+
+(No `claude-mem` entry: it adds no key to either shared config file — see R3.)
 
 ## Protocol / contract impact
 
@@ -83,8 +96,9 @@ The actual additions are Claude Code config, not application config:
   asserts the pre-existing hooks survive, the rtk hook is present and
   opt-out-gated, and the five MCP servers are exactly the adopted set, scoped
   correctly, with no server declaring a secret. Written incrementally: the
-  rtk/MCP assertions landed with those changes; claude-mem's assertions are
-  added when its hook JSON is known (R3).
+  rtk/MCP assertions landed with those changes. No claude-mem assertions:
+  per R3 it contributes no key to either shared config file, so there is
+  nothing in-repo for a contract test to pin.
 - `tests/deploy/test_ci_make_parity.py::test_lint_job_delegates_every_step_to_make`
   updated to include the new `make validate-config` step, keeping CI ↔
   Makefile parity structural rather than a comment asking someone to
@@ -105,11 +119,14 @@ The actual additions are Claude Code config, not application config:
 - [ ] `claude-hud` disposition confirmed by an actual `/claude-hud:setup` run
       (requires a human on a network that can reach GitHub — unreachable from
       this session).
-- [ ] `claude-mem` hooks added from an observed `npx claude-mem install` diff,
-      local-only provider confirmed selected (requires the user's explicit
-      go-ahead to run the installer, plus a network that can reach npm/the
-      provider's setup flow).
-- [ ] `ruff`, `mypy`, `pytest` (95% gate), `frontmatter-lint` all clean —
+- [x] `claude-mem` disposition settled by running the installer under
+      isolation (throwaway `HOME` + throwaway project copy): it is a
+      **user-scoped plugin** that leaves the project's `.claude/settings.json`
+      byte-identical, so no hooks are added to shared config and no
+      `MANGOMAS_DISABLE_*` gate applies. Local-only default and undecided
+      telemetry consent both confirmed. See R3 and
+      `docs/tooling/claude-code-ecosystem.md`.
+- [x] `ruff`, `mypy`, `pytest` (95% gate), `frontmatter-lint` all clean —
       confirmed via `make gate` for every phase landed in this session.
 - [ ] CHANGELOG updated once the two pending items above land; this spec's
       status moves to Implemented at that point, not before.

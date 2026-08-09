@@ -23,12 +23,14 @@ supported way to disable a single hook** once added to shared config.
 
 Adopt `modelcontextprotocol/servers` (filesystem/git/fetch/sequential-
 thinking subset), `repomix`, and `rtk` into the shared, checked-in `.mcp.json`
-/ `.claude/settings.json`. Adopt `claude-mem` the same way, gated on a hands-
-on install-and-diff (never hand-authored JSON) and a mandatory local-only
-provider selection. Wrap both `rtk`'s and `claude-mem`'s hook commands in an
-env-var-gated no-op (`MANGOMAS_DISABLE_RTK_HOOK`, `MANGOMAS_DISABLE_CLAUDE_MEM_HOOKS`)
-since `env` values layer across settings files even though hook arrays don't
-— the only real per-contributor opt-out available. Treat `claude-hud` as
+/ `.claude/settings.json`. Wrap `rtk`'s hook command in an env-var-gated
+no-op (`MANGOMAS_DISABLE_RTK_HOOK`) since `env` values layer across settings
+files even though hook arrays don't — the only real per-contributor opt-out
+for a committed hook. Adopt `claude-mem` as a **per-contributor, user-scoped
+plugin**: a verified isolated install showed it leaves the project's
+`.claude/settings.json` byte-identical and ships its hooks in its own plugin
+manifest under `~/.claude/plugins/`, so it takes no shared config and needs
+no env gate. Treat `claude-hud` as
 per-contributor-only (documented, not committed) pending one hands-on
 confirmation that its setup wizard writes a machine-specific path to
 user-level settings, as its own docs indicate. Reject `claude-context`.
@@ -39,11 +41,12 @@ Treat `awesome-claude-code` as a reference/discovery source, not software.
 ### Positive
 
 - Contributors get semantic file/git/fetch access, structured reasoning,
-  repo-packing, token-efficient Bash output, and cross-session memory,
-  wired through the same additive/opt-in discipline the rest of the codebase
-  follows.
-- The `MANGOMAS_DISABLE_*` env-var pattern gives individual contributors a
-  real opt-out despite Claude Code's all-or-nothing hook-disable limitation.
+  repo-packing, and token-efficient Bash output, wired through the same
+  additive/opt-in discipline the rest of the codebase follows; cross-session
+  memory is available as a personal add-on.
+- The `MANGOMAS_DISABLE_RTK_HOOK` env-var pattern gives individual
+  contributors a real opt-out from the one committed hook, despite Claude
+  Code's all-or-nothing hook-disable limitation.
 
 ### Negative / Trade-offs
 
@@ -53,9 +56,11 @@ Treat `awesome-claude-code` as a reference/discovery source, not software.
   interactive trust dialog only exists for a human at a terminal. The control
   surface in cloud mode is `disabledMcpjsonServers` (blocks a named server in
   every mode), not the approval flow.
-- `claude-mem` runs local session-capture (SQLite + Chroma under
-  `~/.claude-mem/`) for every contributor by default once merged; cloud sync
-  stays off unless explicitly configured.
+- `claude-mem` reaches no contributor automatically — being user-scoped, it
+  is opt-in per machine, so the team gets no shared memory baseline. Whoever
+  does install it runs a local background worker (`127.0.0.1:37700`) and a
+  `PostToolUse` hook matching `*`, capturing every tool call into local
+  storage; cloud sync stays off unless explicitly configured.
 
 ### Neutral
 

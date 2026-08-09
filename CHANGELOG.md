@@ -205,8 +205,12 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   opt-out-gated via `MANGOMAS_DISABLE_RTK_HOOK`; `make validate-config` +
   `check-json` pre-commit hook guard both config files' JSON syntax;
   `docs/tooling/claude-code-ecosystem.md` catalogs all 7 evaluated tools,
-  including the `claude-context` rejection. `claude-mem`'s hooks and
-  `claude-hud`'s final disposition are tracked as pending in spec-0016.
+  including the `claude-context` rejection. `claude-mem` was verified (via an
+  isolated install under a throwaway `HOME`) to be a **user-scoped Claude Code
+  plugin** that leaves the project's `.claude/settings.json` byte-identical —
+  it takes no shared config and needs no opt-out gate, correcting spec-0016's
+  original assumption. `claude-hud`'s final disposition remains pending in
+  spec-0016.
 
 ### Removed
 

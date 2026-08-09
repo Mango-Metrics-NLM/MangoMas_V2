@@ -470,10 +470,12 @@ with `MANGOMAS_DISABLE_RTK_HOOK=1` in their personal
 `.claude/settings.local.json`, since Claude Code has no per-hook disable.
 
 Cross-session memory (`claude-mem`) and the `claude-hud` statusline are
-**opt-in and local-only**; `claude-mem`'s shared hooks and `claude-hud`'s
-final disposition are both pending one hands-on step each — see
-`docs/tooling/claude-code-ecosystem.md` for current status. Neither is
-required to work on this repo. `zilliztech/claude-context` was evaluated and
+**per-contributor, user-scoped installs** — neither appears in this repo's
+config and neither is required to work here. `claude-mem` was verified to
+leave the project's `.claude/settings.json` byte-identical (it ships its
+hooks as a Claude Code plugin under `~/.claude/plugins/`); `claude-hud`'s
+disposition is still pending one hands-on `/claude-hud:setup` run. See
+`docs/tooling/claude-code-ecosystem.md`. `zilliztech/claude-context` was evaluated and
 explicitly **rejected** (redundant with this repo's own `rag/` + Chroma
 stack; sends code to third parties by default) — see ADR-0020 before
 re-proposing it.
