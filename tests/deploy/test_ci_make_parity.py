@@ -76,7 +76,13 @@ def test_lint_job_delegates_every_step_to_make() -> None:
     ruff/mypy/frontmatter commands live in exactly one place (the Makefile).
     """
     commands = _step_run_commands(_ci_jobs()["lint"])
-    assert commands == ["make lint", "make format-check", "make frontmatter", "make typecheck"]
+    assert commands == [
+        "make validate-config",
+        "make lint",
+        "make format-check",
+        "make frontmatter",
+        "make typecheck",
+    ]
 
 
 def test_test_job_delegates_to_make() -> None:

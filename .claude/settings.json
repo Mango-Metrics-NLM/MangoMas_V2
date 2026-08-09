@@ -25,7 +25,9 @@
   },
   "env": {
     "MANGOMAS_LOG__FORMAT": "json",
-    "RUN_INTEGRATION": "0"
+    "RUN_INTEGRATION": "0",
+    "RTK_TELEMETRY_DISABLED": "1",
+    "MANGOMAS_DISABLE_RTK_HOOK": "0"
   },
   "hooks": {
     "SessionStart": [
@@ -46,6 +48,15 @@
           {
             "type": "command",
             "command": "python scripts/lint_agent_frontmatter.py --check-protected-paths \"$CLAUDE_TOOL_INPUT_path\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$MANGOMAS_DISABLE_RTK_HOOK\" = \"1\" ] || rtk hook claude"
           }
         ]
       }

@@ -408,6 +408,40 @@ Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
 
 ---
 
+## Claude Code MCP Servers & Ecosystem Tooling
+
+Project-scoped MCP servers are declared in `.mcp.json` (repo root). In a
+human's interactive terminal session they connect after a one-time
+workspace-trust approval (`claude mcp list` to check status; `/mcp` to
+approve pending servers); **cloud/Agent-SDK sessions skip that prompt
+entirely and load them with no approval step** — see
+`docs/tooling/claude-code-ecosystem.md` before assuming otherwise.
+
+| Server | Use for |
+|--------|---------|
+| `filesystem` | Reading/listing files scoped to the repo root |
+| `git` | `git log`/`blame`/`diff` introspection via MCP instead of Bash |
+| `fetch` | Retrieving a URL's content directly (e.g. upstream library docs) |
+| `sequential-thinking` | Structured multi-step reasoning for planning-heavy tasks |
+| `repomix` | Pack a directory into one context-efficient bundle before a cross-cutting refactor |
+
+`rtk` (if installed locally) transparently compacts noisy Bash stdout via a
+`PreToolUse` hook; if the binary is absent, Bash tool calls work exactly as
+before (fails open — see ADR-0020). A contributor can opt out individually
+with `MANGOMAS_DISABLE_RTK_HOOK=1` in their personal
+`.claude/settings.local.json`, since Claude Code has no per-hook disable.
+
+Cross-session memory (`claude-mem`) and the `claude-hud` statusline are
+**opt-in and local-only**; `claude-mem`'s shared hooks and `claude-hud`'s
+final disposition are both pending one hands-on step each — see
+`docs/tooling/claude-code-ecosystem.md` for current status. Neither is
+required to work on this repo. `zilliztech/claude-context` was evaluated and
+explicitly **rejected** (redundant with this repo's own `rag/` + Chroma
+stack; sends code to third parties by default) — see ADR-0020 before
+re-proposing it.
+
+---
+
 ## Multi-Agent Topologies
 
 ```python
