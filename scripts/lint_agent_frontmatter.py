@@ -31,7 +31,8 @@ Exit codes
     modes never fail the calling process — see module docstring above).
 ``EXIT_SCHEMA = 1``
     At least one file failed schema validation, sub_agents resolution, or
-    file-discovery.
+    file-discovery — the last of which includes a glob matching fewer files
+    than its floor (see ``MIN_AGENT_FILES`` / ``MIN_SKILL_FILES``).
 ``EXIT_PROTECTED = 2``
     The legacy ``--check-protected-paths`` flag is set and the staged diff of
     the requested path lacks the breaking-change marker.
@@ -53,6 +54,7 @@ import logging
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Final, Literal
 
@@ -75,6 +77,17 @@ except ImportError:
 
 AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
 SKILLS_GLOB: Final[str] = ".github/skills/**/SKILL.md"
+
+# Minimum files each glob must match before the lint can honestly claim to have
+# validated anything (spec-0018 R1). Deliberately 1, not the current roster size:
+# the claim this script makes is "a non-empty corpus was validated", not "the
+# roster we expect was validated". A floor of 1 catches the entire failure class
+# — a glob that silently matches nothing, which previously fell through to
+# EXIT_OK — while never needing a bump when the corpus legitimately grows. The
+# roster itself is asserted by set equality in tests/tooling/test_corpus_contract.py,
+# where a change names the file that appeared or vanished.
+MIN_AGENT_FILES: Final[int] = 1
+MIN_SKILL_FILES: Final[int] = 1
 
 _DEFAULT_PYPROJECT_PATH: Final[Path] = Path("pyproject.toml")
 
@@ -411,6 +424,63 @@ def _configure_logging() -> None:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
+@dataclass(frozen=True)
+class LintResult:
+    """Outcome of one schema-lint run.
+
+    ``main()`` returns only an ``int``, so before this existed no test could
+    assert *how many* files were discovered — which is precisely the fact that
+    distinguishes "the corpus is clean" from "the globs matched nothing".
+    """
+
+    exit_code: int
+    skill_count: int
+    agent_count: int
+    failures: tuple[str, ...] = ()
+
+
+def _below_floor(label: str, paths: list[str], pattern: str, minimum: int) -> str | None:
+    """Return an error message when *paths* is under *minimum*, else ``None``."""
+    if len(paths) >= minimum:
+        return None
+    return (
+        f"{pattern!r} matched {len(paths)} {label} file(s), below the minimum of "
+        f"{minimum}. The gate would otherwise pass without validating anything — "
+        f"check the glob against the corpus location."
+    )
+
+
+def run_schema_lint(
+    *,
+    min_agents: int = MIN_AGENT_FILES,
+    min_skills: int = MIN_SKILL_FILES,
+) -> LintResult:
+    """Validate every discovered skill and agent file; return a structured result."""
+    skill_paths = sorted(glob.glob(SKILLS_GLOB, recursive=True))
+    agent_paths = sorted(glob.glob(AGENTS_GLOB, recursive=True))
+
+    failures: list[str] = []
+    for message in (
+        _below_floor("skill", skill_paths, SKILLS_GLOB, min_skills),
+        _below_floor("agent", agent_paths, AGENTS_GLOB, min_agents),
+    ):
+        if message is not None:
+            failures.append(message)
+
+    for path in skill_paths:
+        failures.extend(_validate_skill(path))
+    for path in agent_paths:
+        failures.extend(_validate_agent(path, agent_paths))
+
+    exit_code = EXIT_SCHEMA if failures else EXIT_OK
+    return LintResult(
+        exit_code=exit_code,
+        skill_count=len(skill_paths),
+        agent_count=len(agent_paths),
+        failures=tuple(failures),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Lint frontmatter, or run a hook mode; see the module docstring."""
     _configure_logging()
@@ -432,6 +502,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="With --hook post-tool-use, print the edited file's path for piping elsewhere.",
     )
+    parser.add_argument(
+        "--min-agents",
+        type=int,
+        default=MIN_AGENT_FILES,
+        help=f"Minimum agent files the glob must match (default: {MIN_AGENT_FILES}).",
+    )
+    parser.add_argument(
+        "--min-skills",
+        type=int,
+        default=MIN_SKILL_FILES,
+        help=f"Minimum skill files the glob must match (default: {MIN_SKILL_FILES}).",
+    )
     args = parser.parse_args(argv)
 
     if args.hook == "pre-tool-use":
@@ -449,25 +531,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_SCHEMA
 
-    skill_paths = sorted(glob.glob(SKILLS_GLOB, recursive=True))
-    agent_paths = sorted(glob.glob(AGENTS_GLOB, recursive=True))
+    result = run_schema_lint(min_agents=args.min_agents, min_skills=args.min_skills)
 
-    failures: list[str] = []
-    for path in skill_paths:
-        failures.extend(_validate_skill(path))
-    for path in agent_paths:
-        failures.extend(_validate_agent(path, agent_paths))
-
-    if failures:
-        for msg in failures:
+    if result.failures:
+        for msg in result.failures:
             logger.error("Frontmatter lint failed: %s", msg)
-        return EXIT_SCHEMA
+        return result.exit_code
 
+    # Counts go in the message, not extra={}: the configured format string drops
+    # extra, so a "0 skills, 0 agents" run used to be indistinguishable from a
+    # healthy one in CI output.
     logger.info(
-        "Frontmatter lint passed",
-        extra={"skills": len(skill_paths), "agents": len(agent_paths)},
+        "Frontmatter lint passed: %d skills, %d agents",
+        result.skill_count,
+        result.agent_count,
     )
-    return EXIT_OK
+    return result.exit_code
 
 
 if __name__ == "__main__":

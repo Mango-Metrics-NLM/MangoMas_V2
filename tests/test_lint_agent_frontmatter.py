@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from io import StringIO
@@ -313,6 +314,92 @@ def test_staged_diff_returns_empty_on_git_failure(
 def test_main_returns_ok_on_clean_repo() -> None:
     """Running the linter against the actual repo must pass."""
     assert linter.main([]) == linter.EXIT_OK
+
+
+# ── Non-empty corpus floor (spec-0018 R1/R2) ──────────────────────────────────
+#
+# The defect these guard: ``main()`` used to fall straight through to
+# "Frontmatter lint passed" and EXIT_OK when both globs matched ZERO files, and
+# the counts went into an ``extra={}`` the log format drops — so a corpus that
+# moved out from under the globs produced a green, silent, entirely vacuous gate.
+
+
+def test_run_schema_lint_reports_nonzero_counts_on_the_real_repo() -> None:
+    """The vacuity check ``test_main_returns_ok_on_clean_repo`` cannot make:
+    that the run actually discovered files rather than passing on an empty set."""
+    result = linter.run_schema_lint()
+    assert result.exit_code == linter.EXIT_OK
+    assert result.skill_count >= linter.MIN_SKILL_FILES
+    assert result.agent_count >= linter.MIN_AGENT_FILES
+    assert result.failures == ()
+
+
+def test_empty_corpus_fails_instead_of_passing_vacuously(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zero matched files must be a loud failure, not EXIT_OK."""
+    monkeypatch.chdir(tmp_path)
+    result = linter.run_schema_lint()
+    assert result.exit_code == linter.EXIT_SCHEMA
+    assert result.skill_count == 0
+    assert result.agent_count == 0
+    assert len(result.failures) == 2
+
+
+def test_floor_failure_names_the_offending_glob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare "0 files" error would send a reader hunting. The message must
+    name the glob, since a corpus that moved is the likeliest cause."""
+    monkeypatch.chdir(tmp_path)
+    failures = linter.run_schema_lint().failures
+    assert any(linter.SKILLS_GLOB in message for message in failures)
+    assert any(linter.AGENTS_GLOB in message for message in failures)
+
+
+def test_floor_is_a_minimum_not_an_equality(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A surplus over the floor must pass — otherwise every legitimate corpus
+    addition would break the gate and the floor would need constant bumping."""
+    skills_dir = tmp_path / ".github" / "skills"
+    agents_dir = tmp_path / ".github" / "agents"
+    for index in range(3):
+        skill = skills_dir / f"skill-{index}"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
+    agents_dir.mkdir(parents=True)
+    for index in range(3):
+        (agents_dir / f"agent-{index}.agent.md").write_text(
+            constants.VALID_AGENT_FRONTMATTER, encoding="utf-8"
+        )
+
+    monkeypatch.chdir(tmp_path)
+    result = linter.run_schema_lint(min_agents=1, min_skills=1)
+    assert result.exit_code == linter.EXIT_OK
+    assert (result.skill_count, result.agent_count) == (3, 3)
+
+
+def test_floors_are_overridable_via_cli_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tooling knobs get a script-level ``Final`` plus a flag, never a bare literal."""
+    monkeypatch.chdir(tmp_path)
+    assert linter.main(["--min-agents", "0", "--min-skills", "0"]) == linter.EXIT_OK
+
+
+def test_passing_log_message_carries_the_counts(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression guard: the counts previously went to ``extra={}``, which the
+    configured format string drops — so "0 skills, 0 agents" was invisible."""
+    caplog.set_level(logging.INFO, logger=linter.__name__)
+    assert linter.main([]) == linter.EXIT_OK
+    passed = [r for r in caplog.records if "Frontmatter lint passed" in r.getMessage()]
+    assert len(passed) == 1
+    message = passed[0].getMessage()
+    assert "skills" in message and "agents" in message
+    assert "0 skills" not in message
 
 
 def test_main_protected_mode_unprotected_path() -> None:
