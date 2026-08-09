@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import itertools
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ import pytest
 from tests._script_loader import load_script_module
 from tests.constants import (
     AGENT_DESCRIPTION_MAX_CHARS,
+    AGENT_SLUG_PREFIX,
     AGENT_TRIGGER_PHRASE_PATTERN,
     CLAUDE_SKILLS_DIR_RELPATH,
     CORPUS_DOC_RELPATHS,
@@ -32,6 +34,7 @@ from tests.constants import (
     MIN_CORPUS_TRACEABILITY_REFS,
     PROTECTED_PATH_OWNER_SLUGS,
     RETIRED_AGENT_PREFIX,
+    RETIRED_AGENTS_DIR_RELPATH,
     RETIRED_SKILLS_DIR_RELPATH,
     ROUTER_AGENT_SLUGS,
     WRITE_CAPABLE_AGENT_SLUGS,
@@ -132,7 +135,26 @@ _linter = load_script_module("lint_agent_frontmatter.py")
 
 
 def _agent_paths() -> list[Path]:
-    return sorted(_REPO_ROOT.glob(_linter.AGENTS_GLOB))
+    """Return the *tracked* agent files.
+
+    Scoped to `git ls-files` rather than a bare glob because Claude Code's
+    ``/agents`` command writes a personal agent straight into
+    ``.claude/agents/``. A glob-based roster would then report it as an
+    unexpected entry and red-light ``make gate`` for a contributor who did
+    nothing wrong. Tracked-only keeps the roster a statement about the shared
+    corpus, which is the only thing it can honestly assert.
+    """
+    # `:(glob)` magic is required: git's default pathspec matching does not
+    # treat `**` as a recursive wildcard, so the bare glob silently matched
+    # zero files. The non-empty guard below is what caught that.
+    result = subprocess.run(  # noqa: S603
+        ["git", "ls-files", "-z", "--", f":(glob){_linter.AGENTS_GLOB}"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        check=True,
+    )
+    return sorted(_REPO_ROOT / rel for rel in result.stdout.split("\0") if rel)
 
 
 def _agent_frontmatter(path: Path) -> dict[str, object]:
@@ -270,3 +292,17 @@ def test_corpus_carries_traceability_references() -> None:
     body = "\n".join(p.read_text(encoding="utf-8") for p in _agent_paths())
     found = set(re.findall(r"ADR-\d{4}|spec[- ]\d{4}", body))
     assert len(found) >= MIN_CORPUS_TRACEABILITY_REFS, sorted(found)
+
+
+def test_retired_agents_directory_is_gone() -> None:
+    """Two live trees would drift, and the linter's glob would validate only
+    one of them — the same failure the skills migration guards against."""
+    assert not (_REPO_ROOT / RETIRED_AGENTS_DIR_RELPATH).exists()
+
+
+@pytest.mark.parametrize("slug", sorted(EXPECTED_AGENT_SLUGS))
+def test_tracked_agents_carry_the_shared_prefix(slug: str) -> None:
+    """The prefix is what makes the tracked roster separable from a
+    contributor's own agents in the same directory, and what keeps agent and
+    skill names from colliding as both corpora grow."""
+    assert slug.startswith(AGENT_SLUG_PREFIX)

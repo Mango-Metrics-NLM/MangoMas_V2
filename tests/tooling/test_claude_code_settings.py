@@ -20,16 +20,20 @@ import pytest
 
 from tests.constants import (
     ADOPTED_MCP_SERVERS,
+    ANCHORED_RULE_PATH_PREFIX,
     BASH_RULE_PREFIX,
     BASH_RULE_WILDCARD_SUFFIX,
     CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH,
     CLAUDE_SETTINGS_RELPATH,
+    CREDENTIALED_MCP_SERVERS,
     ENV_FLAG_ON,
+    ENV_INTERPOLATION_PREFIX,
     EXPECTED_DENY_RULES,
     HARNESS_CONFIG_AUDIT_MODE_ENV,
     INERT_FILE_RULE_PREFIXES,
     MCP_CONFIG_RELPATH,
     MCP_PROJECT_DIR_SCOPE,
+    PATH_SCOPED_DENY_RULE_PREFIX,
     PATH_SCOPED_MCP_SERVERS,
     PREEXISTING_HOOKS,
     RTK_BINARY_GUARD_FRAGMENT,
@@ -233,8 +237,41 @@ def test_path_scoped_server_is_pinned_to_the_project_directory(server: str) -> N
     assert MCP_PROJECT_DIR_SCOPE in _mcp_servers()[server]["args"]
 
 
-def test_no_mcp_server_declares_an_api_key() -> None:
-    """None of the adopted servers needs a secret — an ``env`` key here would
-    mean either an unreviewed scope change or a key pasted into shared
-    config."""
-    assert [name for name, cfg in _mcp_servers().items() if "env" in cfg] == []
+def test_only_the_declared_servers_carry_credentials() -> None:
+    """Superseded the old "no server declares an API key" assertion, which the
+    github server retires. The property worth keeping is not "no secrets" but
+    "no *unreviewed* secrets": an ``env`` block appearing on a sixth server
+    should fail until someone adds it to the constant deliberately."""
+    with_env = {name for name, cfg in _mcp_servers().items() if cfg.get("env")}
+    assert with_env == set(CREDENTIALED_MCP_SERVERS), (
+        f"gained credentials: {sorted(with_env - set(CREDENTIALED_MCP_SERVERS))}; "
+        f"lost them: {sorted(set(CREDENTIALED_MCP_SERVERS) - with_env)}"
+    )
+
+
+def test_no_mcp_server_hardcodes_a_secret_value() -> None:
+    """The replacement for the blanket ban, and the part that actually protects
+    anything: every credential must arrive as a ``${VAR}`` interpolation. A
+    literal here would be a committed secret in a file cloud sessions load with
+    no approval prompt."""
+    literals = [
+        f"{name}.{key}"
+        for name, cfg in _mcp_servers().items()
+        for key, value in cfg.get("env", {}).items()
+        if not str(value).startswith(ENV_INTERPOLATION_PREFIX)
+    ]
+    assert literals == []
+
+
+def test_path_scoped_deny_rules_are_anchored_at_the_project_root() -> None:
+    """A leading ``/`` anchors a rule at the settings file's directory. Without
+    it the rule is cwd-relative, so it silently stops matching the moment a
+    session starts from a subdirectory — a control that looks present and is
+    not."""
+    unanchored = [
+        rule
+        for rule in _permission_rules("deny")
+        if rule.startswith(PATH_SCOPED_DENY_RULE_PREFIX)
+        and not rule[len(PATH_SCOPED_DENY_RULE_PREFIX) :].startswith(ANCHORED_RULE_PATH_PREFIX)
+    ]
+    assert unanchored == []
