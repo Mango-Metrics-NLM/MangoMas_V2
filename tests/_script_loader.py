@@ -40,6 +40,14 @@ def load_script_module(script_name: str, *, alias: str | None = None) -> ModuleT
     if not path.exists():
         raise FileNotFoundError(f"Script not found: {path}")
 
+    # A direct `python scripts/foo.py` invocation gets scripts/ prepended to
+    # sys.path[0] automatically by the interpreter; spec_from_file_location
+    # below does not, so a script that imports a sibling helper (e.g.
+    # `import _governance`) would fail under this loader without it.
+    scripts_dir = str(_SCRIPTS_DIR)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
     module_name = alias or f"_{path.stem}_under_test"
     spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None

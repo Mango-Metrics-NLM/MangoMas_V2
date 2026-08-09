@@ -20,8 +20,10 @@ import pytest
 
 from tests.constants import (
     ADOPTED_MCP_SERVERS,
+    CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH,
     CLAUDE_SETTINGS_RELPATH,
     ENV_FLAG_ON,
+    HARNESS_CONFIG_AUDIT_MODE_ENV,
     MCP_CONFIG_RELPATH,
     MCP_PROJECT_DIR_SCOPE,
     PATH_SCOPED_MCP_SERVERS,
@@ -86,6 +88,31 @@ def test_preexisting_hook_survives_verbatim(event: str, matcher: str, command: s
     assert command in _hook_commands(event, matcher)
 
 
+def test_config_change_hook_is_scoped_to_governed_sources() -> None:
+    """ADR-0021 / spec-0017: the ConfigChange hook's matcher must scope it to
+    only the two sources this repo governs — Claude Code cannot block
+    policy_settings regardless, and user_settings/skills are out of scope."""
+    commands = _hook_commands("ConfigChange", "project_settings|local_settings")
+    assert commands == ["python scripts/harness_config_audit.py"]
+
+
+def test_no_hook_command_references_the_dead_tool_input_env_var() -> None:
+    """Regression guard (ADR-0021 / spec-0017): ``$CLAUDE_TOOL_INPUT_*`` is not
+    an environment variable Claude Code defines — hook input arrives as JSON
+    on stdin. Every hook command in this file must read stdin (via
+    ``--hook``/``--emit-path`` or its own JSON parsing), never that dead
+    interpolation, or the protected-path/ruff-autofix hooks silently stop
+    firing again exactly as they did before this fix."""
+    all_commands = [
+        hook["command"]
+        for entries in _settings()["hooks"].values()
+        for entry in entries
+        for hook in entry["hooks"]
+    ]
+    assert all_commands, "expected at least one hook command to check"
+    assert not any("CLAUDE_TOOL_INPUT" in command for command in all_commands)
+
+
 # ── rtk-ai/rtk ────────────────────────────────────────────────────────────────
 
 
@@ -121,6 +148,19 @@ def test_rtk_env_flag_is_declared_in_shared_settings(env_var: str) -> None:
 
 def test_rtk_telemetry_is_disabled_by_default() -> None:
     assert _settings()["env"][RTK_TELEMETRY_DISABLED_ENV] == ENV_FLAG_ON
+
+
+# ── .claude/settings.local.json.example (ADR-0021 / spec-0017) ────────────────
+
+
+def test_settings_local_example_is_valid_json_with_the_documented_opt_outs() -> None:
+    """The committed template for a personal, gitignored
+    ``.claude/settings.local.json`` must actually work — a stale/broken
+    example would silently mislead the exact contributors it exists to
+    help. Every key it documents must be a real, current opt-out."""
+    example = _load_json(CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH)
+    assert RTK_DISABLE_ENV in example["env"]
+    assert HARNESS_CONFIG_AUDIT_MODE_ENV in example["env"]
 
 
 # ── .mcp.json ─────────────────────────────────────────────────────────────────

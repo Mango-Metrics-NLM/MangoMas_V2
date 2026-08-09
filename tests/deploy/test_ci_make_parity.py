@@ -95,6 +95,29 @@ def test_bridge_coverage_job_delegates_to_make() -> None:
     assert commands == ["make bridge-coverage"]
 
 
+def test_protected_paths_job_delegates_to_make() -> None:
+    """The protected-path gate (ADR-0021) has its own job, like bridge-coverage,
+    so a failure is attributable and the job needs no `pip install` step (the
+    script is stdlib-only by design — see spec-0017 R2)."""
+    job = _ci_jobs()["protected-paths"]
+    run_steps = [step["run"] for step in job["steps"] if "run" in step]
+    assert run_steps == [
+        "git fetch origin ${{ env.BASE_BRANCH }}",
+        "make protected-paths BASE_REF=origin/${{ env.BASE_BRANCH }}",
+    ]
+    assert not any(step.get("run", "").startswith("pip install") for step in job["steps"])
+    # BASE_BRANCH is a job-level env var, not repeated per-step — the two
+    # steps above template it rather than each hardcoding the trunk name.
+    assert job["env"]["BASE_BRANCH"] == "feat/initial-release"
+
+
+def test_scripts_coverage_job_delegates_to_make() -> None:
+    """scripts/ sits outside `--cov=mangomas`'s reach (ADR-0021 / spec-0017
+    A7), so it gets the same isolated-job treatment as bridge-coverage."""
+    commands = _step_run_commands(_ci_jobs()["scripts-coverage"])
+    assert commands == ["make scripts-coverage"]
+
+
 def test_global_coverage_floor_matches_pytest_addopts() -> None:
     """The one duplication that can't be structurally eliminated (pytest's
     own --cov-fail-under vs. scripts/check_coverage.py's authoritative
@@ -138,3 +161,14 @@ def test_bridge_coverage_uses_an_isolated_coverage_file() -> None:
     """
     body = _make_target_body("bridge-coverage")
     assert "COVERAGE_FILE=.coverage.bridge" in body
+
+
+def test_scripts_coverage_uses_an_isolated_coverage_file_and_addopts() -> None:
+    """Same isolation idiom as bridge-coverage (ADR-0021 / spec-0017 A7):
+    its own COVERAGE_FILE so `make gate`'s later `make coverage` still sees
+    the main suite's data, and `-o addopts=""` so the inherited
+    `--cov=mangomas` (which would measure the wrong package) doesn't apply.
+    """
+    body = _make_target_body("scripts-coverage")
+    assert "COVERAGE_FILE=.coverage.scripts" in body
+    assert '-o addopts=""' in body

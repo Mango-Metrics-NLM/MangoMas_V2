@@ -43,11 +43,11 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/lint_agent_frontmatter.py --check-protected-paths \"$CLAUDE_TOOL_INPUT_path\""
+            "command": "python scripts/lint_agent_frontmatter.py --hook pre-tool-use"
           }
         ]
       },
@@ -67,7 +67,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m ruff check --fix \"$CLAUDE_TOOL_INPUT_path\" 2>/dev/null || true"
+            "command": "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path | xargs -r python -m ruff check --fix 2>/dev/null || true"
           }
         ]
       }
@@ -79,6 +79,17 @@
           {
             "type": "command",
             "command": "python -m pytest -q --no-cov || true"
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "project_settings|local_settings",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/harness_config_audit.py"
           }
         ]
       }

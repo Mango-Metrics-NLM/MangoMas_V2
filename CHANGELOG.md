@@ -9,6 +9,74 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Protected-path governance contract — Spec-0017 / ADR-0021._
+
+### Fixed
+
+- **Protected-path `PreToolUse` hook was silently inert.** It read
+  `$CLAUDE_TOOL_INPUT_path`, an environment variable Claude Code does not
+  define (hook input arrives as JSON on stdin), so the check always resolved
+  to "no path" and returned `EXIT_OK`. Independently, importing `pydantic`
+  at module load time crashed the hook (exit 1, non-blocking) in an
+  interpreter without the dev extras installed. `scripts/lint_agent_frontmatter.py`
+  gains a stdlib-only `--hook pre-tool-use` mode reading the real stdin JSON,
+  with `pydantic`/`pyyaml` imports deferred so the mode never needs them.
+  The `PostToolUse` ruff-autofix hook had the identical defect; fixed the
+  same way via `--hook post-tool-use --emit-path`.
+- **Authoritative enforcement moved to CI.** `--check-protected-paths`
+  (staged-diff based) cannot be a complete gate at `PreToolUse` time — the
+  diff is empty before a file is staged, and the `Edit|Write` matcher never
+  covered `Bash`/MCP filesystem tool calls. New
+  `scripts/check_protected_paths.py` (`make protected-paths`, its own CI job)
+  reads `git diff`/`git log` between the PR base and head, requiring a
+  `BREAKING-CHANGE` marker in a **commit message**, not diff content (the old
+  check passed if the marker string appeared in a *deleted* diff line). The
+  `PreToolUse` hook is now advisory-only (`permissionDecision: "ask"`).
+- **Harness streaming span never covered token emission.**
+  `_HarnessOrchestrator.stream_dispatch` opened a span and returned an
+  unconsumed async generator from `Orchestrator.stream_dispatch` — the span
+  closed at iterator construction, before any token flowed. Rewritten as a
+  `_traced_stream` generator that opens the span once, attaches/detaches OTel
+  context per chunk (never across a `yield`, which would otherwise leak the
+  harness span into every span the consumer subsequently creates), and ends
+  the span on full drain, an upstream error, or early consumer abandonment
+  (`aclose()`) alike. `api/routes/agents.py`'s SSE endpoint now wraps its
+  consumer loop in `contextlib.aclosing` so a client disconnect closes the
+  stream promptly rather than eventually via GC.
+
+### Added
+
+- `[tool.mangomas.governance]` in `pyproject.toml` — the protected-path set
+  and `BREAKING-CHANGE` marker aliases, the single source of truth read (via
+  stdlib `tomllib`) by `scripts/check_protected_paths.py`,
+  `scripts/lint_agent_frontmatter.py`, and the new
+  `src/mangomas/harness/governance.py`.
+- `src/mangomas/harness/` package (`governance.py`, `config_audit.py`),
+  ported from `origin/main`'s harness-hardening layer and adapted to this
+  branch's governance model. `main`'s `coverage.py`/`harness_stop_gate.py`
+  were deliberately not ported — `read_coverage_floor` parses
+  `--cov-fail-under` out of `pyproject.toml` and feeds it back to a pytest
+  run whose addopts already set that value, a tautology given
+  `scripts/check_coverage.py` is already this branch's documented single
+  source of truth.
+- `scripts/harness_config_audit.py` — the `ConfigChange` hook, evaluating
+  `mangomas.harness.config_audit.evaluate_config_change` against the new
+  `HarnessSettings.config_audit_mode` (`MANGOMAS_HARNESS__CONFIG_AUDIT_MODE`,
+  default `off`). Its `mangomas.config`/`mangomas.telemetry` imports are
+  deferred so it degrades to the default mode rather than crashing when
+  `mangomas` isn't importable.
+- `make scripts-coverage` + its own CI job — `scripts/` sits outside
+  `--cov=mangomas`'s reach, so it was entirely unmeasured; floor set to the
+  measured actual (not an assumed 95 %) with a ratchet note.
+- `docs/adr/0021-protected-path-governance-contract.md` and
+  `docs/adr/0023-workflow-implementation-reconciliation.md` — the latter
+  resolves the ADR-number collision with `main` (`0007`/`0011`) and records
+  the disposition of the `main` ↔ `feat/initial-release` `workflow/`
+  divergence: this branch's bounded-tree implementation is kept; a future
+  `dag` node kind would compile to a `Sequence`/`FanOut` tree at load time
+  rather than embedding `main`'s runtime scheduler, which would violate
+  ADR-0011's acyclic-by-construction invariant.
+
 _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 
 ### Fixed
@@ -141,136 +209,6 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   `claude-hud`'s final disposition are tracked as pending in spec-0016.
 
 ### Removed
-
----
-
-## [0.1.0] — 2026-05-13
-
-### Fixed
-
-- `LMStudioClient`: wrap raw `httpx` exceptions into typed `LLMTimeout` /
-  `LLMUnavailable` / `LLMBadResponse` subclasses across `complete()`, `ping()`,
-  and `_stream_impl()` so API responses always carry the structured error
-  envelope and correct HTTP status mapping.
-- `SQLiteRepository`: serialise all access to the shared connection with a
-  `threading.Lock` to make concurrent writes from `dispatch_fan_out` safe.
-- `ToolCallParser`: bare `{...}` objects that fail JSON validation now return
-  `None` (treated as prose) instead of raising; only fenced ```json``` blocks
-  raise `LLMBadResponse` on malformed JSON.
-- `FileMemoryRepository`: use UTC for episodic file naming so filenames are
-  stable across timezones and cloud regions.
-- `SummarizeAgent`: include every message in each historical turn (not only
-  the first user message) so multi-message turns retain full context.
-- `AccessLogMiddleware`: wrap `call_next` in `try/except/finally` so failed
-  requests still emit an INFO access log with status `500` and latency.
-- `telemetry.configure_telemetry`: attach `TraceContextFilter` to the
-  configured handler (not the root logger) so `trace_id` / `span_id` are
-  injected into every log record from child loggers.
-- `api/app.py` lifespan: simplify shutdown checks; `ctx.repo.close()` is
-  protected by a `None` check rather than `hasattr`.
-- `Dockerfile`: create `/app/data` and `/data` and `chown` to the `mangomas`
-  user so the default SQLite path and compose volume are writable from the
-  non-root runtime user.
-
-### Added
-
-**Core platform**
-- `Agent` protocol with `handle(request, ctx)` contract; `StreamingAgent` extension protocol for token-level streaming.
-- `Orchestrator` with `dispatch` (buffered) and `stream_dispatch` (async-generator streaming) methods; lazy OpenTelemetry tracer (no module-level tracer capture).
-- `Registry[T]` — generic, reusable lookup store; drives both provider and agent wiring.
-- `AgentContext` — immutable context injected into every agent invocation (LLM client, turn repository, optional memory repository).
-
-**Agents**
-- `ChatAgent` — single-turn conversational agent with streaming fallback and warning log when the active LLM does not implement `StreamingLLMClient`.
-- `SummarizeAgent` — fetches recent conversation history and requests an LLM summary.
-- `ToolAgent` — multi-step control loop with tool-call parsing and execution.
-- `PlannerAgent` / `ReviewerAgent` — plan-then-review composition pattern.
-
-**Adapters**
-- `LMStudioClient` — OpenAI-compatible HTTP adapter targeting `/v1/chat/completions` and `/v1/models`; supports buffered completion, streaming, ping, and graceful close via `aclose()`.
-- `SQLiteRepository` — lightweight `TurnRepository` implementation backed by SQLite.
-- File-based memory provider.
-
-**API**
-- FastAPI application factory `create_app(orchestrator=None)` — lifespan manages startup/shutdown.
-- Routes: `GET /healthz`, `GET /health` (alias), `GET /readyz`, `GET /ready` (alias), `GET /agents`, `POST /agents/{name}/invoke`, `POST /agents/{name}/stream`.
-- JSON SSE envelope: `{"event": "token", "data": {"content": "..."}, "content": "..."}` with `{"event": "done"}` sentinel; top-level `content` field kept for backwards compatibility.
-- `AccessLogMiddleware` — per-request structured access log.
-- `TraceMiddleware` — OpenTelemetry span per request.
-- Structured error envelope `{"error": "...", "message": "...", "detail": "..."}` mapped from domain error classes via MRO-based `_error_status`.
-
-**CLI**
-- `mangomas chat` — interactive single-turn CLI backed by the full agent stack.
-
-**Composition**
-- `agent_registry: Registry[AgentFactory]` — seeded with `chat` and `summarize`; extensible without core changes.
-- `_llm_registry` and `_storage_registry` — provider registries for LLM and storage adapters.
-- `build_orchestrator(settings)` — assembles the full runtime from settings alone; no hardcoded class names outside `composition.py`.
-
-**Observability**
-- Structured logging throughout; `extra={}` fields on all error and warning paths.
-- OpenTelemetry tracing via `opentelemetry-sdk`; console exporter for local development.
-- `/readyz` aggregates LLM ping and DB connectivity into a `ReadinessReport`.
-
-**Infrastructure**
-- Multi-stage Dockerfile; runtime stage runs as non-root user `mangomas`, honours `$PORT`, and includes a `HEALTHCHECK` against `/healthz`.
-- `.github/workflows/ci.yml` — ruff check, ruff format --check, mypy --strict over `src tests scripts`, pytest with coverage, per-package coverage floors, codecov upload.
-- `pyproject.toml` — hatchling build, all dev tooling configured, `asyncio_mode = "auto"`, `lmstudio` and `integration` pytest markers registered.
-- `pyrightconfig.json` and minimal `typings/hypothesis` stubs for VS Code editor parity with CLI mypy.
-
-**Documentation**
-- `docs/adr/0001-cloud-targets.md` — cloud target swap matrix (ADR-001).
-
-### Changed
-
-- mypy strict gate widened from `src` only to `src tests scripts` (60 source files).
-- Provider wiring moved from ad-hoc class instantiation to registry-based composition; new providers require no changes to core or API layers.
-- `Orchestrator` tracer changed from module-level capture to lazy `trace.get_tracer(__name__)` call inside method bodies.
-
-### Security / Operations
-
-- Docker runtime uses a non-root user; no secrets or credentials in the image.
-- All configuration is env-driven via `MANGOMAS_*` prefix; no hardcoded endpoints, model ids, or credentials in source.
-- `.gitignore` excludes `.venv/`, `data/`, `memory/`, `.env`, coverage artefacts, caches, and generated files.
-- Request-scoped tracing without leaking spans across async contexts.
-
----
-
-## [0.3.1] — 2026-05-23
-
-### Added
-
-- **GCP swap-in implementation plan** (`docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md`):
-  Cherry-picked from PR #6 — 7-milestone roadmap covering Cloud Logging/Trace
-  exporter, Vertex AI provider hardening, Postgres parity, Cloud Run deployment,
-  and evaluation harness enhancements. Destructive code deletions in PR #6 were
-  rejected; only the plan document was merged.
-- **10 new mocked asyncpg unit tests** in `tests/test_postgres.py`:
-  `save_turn` / `list_turns` happy path + error translation, `aclose` / `close`
-  with injected pool, empty results, null timestamp handling. Postgres module
-  coverage 51 % → 80 %.
-
-### Fixed
-
-- **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
-  number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
-- **mypy `no-any-return`** in `src/mangomas/secrets/gcp.py`: replaced raw
-  `return self._client` with `cast("secretmanager.SecretManagerServiceClient",
-  self._client)` so the return type annotation is satisfied without a blanket
-  `type: ignore`.
-
-### Changed
-
-- Global test count 505 → 515; global coverage 96.95 % → 98.16 %.
-- `.gitignore` now excludes `.gemini/` workspace artifacts and stale
-  `docs/antigravity_reference.md`.
-
-### Removed
-
-- Stale `docs/antigravity_reference.md` (Antigravity workspace config that
-  should never have been committed).
-
-## [Unreleased]
 
 ### Fixed — Docker build context excluded a file the Dockerfile copies
 
@@ -868,6 +806,42 @@ the project's no-hard-coded-values and protocol-first rules.
   files (hierarchy is two-deep only) but absent-or-empty on parent
   files is valid.
 
+<!-- next release goes above this line -->
+
+## [0.3.1] — 2026-05-23
+
+### Added
+
+- **GCP swap-in implementation plan** (`docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md`):
+  Cherry-picked from PR #6 — 7-milestone roadmap covering Cloud Logging/Trace
+  exporter, Vertex AI provider hardening, Postgres parity, Cloud Run deployment,
+  and evaluation harness enhancements. Destructive code deletions in PR #6 were
+  rejected; only the plan document was merged.
+- **10 new mocked asyncpg unit tests** in `tests/test_postgres.py`:
+  `save_turn` / `list_turns` happy path + error translation, `aclose` / `close`
+  with injected pool, empty results, null timestamp handling. Postgres module
+  coverage 51 % → 80 %.
+
+### Fixed
+
+- **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
+  number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
+- **mypy `no-any-return`** in `src/mangomas/secrets/gcp.py`: replaced raw
+  `return self._client` with `cast("secretmanager.SecretManagerServiceClient",
+  self._client)` so the return type annotation is satisfied without a blanket
+  `type: ignore`.
+
+### Changed
+
+- Global test count 505 → 515; global coverage 96.95 % → 98.16 %.
+- `.gitignore` now excludes `.gemini/` workspace artifacts and stale
+  `docs/antigravity_reference.md`.
+
+### Removed
+
+- Stale `docs/antigravity_reference.md` (Antigravity workspace config that
+  should never have been committed).
+
 ## [0.3.0] — 2026-05-23
 
 The full GCP swap matrix from ADR-001 closes in v0.3.0: Vertex AI LLM,
@@ -1230,7 +1204,96 @@ accepted by code or configuration.
   in `docs/architecture/c3-component.md`. `RLock` (not `Lock`) so `scoped()`
   can call `get`/`register` under the same lock without deadlocking.
 
-<!-- next release goes above this line -->
+## [0.1.0] — 2026-05-13
+
+### Fixed
+
+- `LMStudioClient`: wrap raw `httpx` exceptions into typed `LLMTimeout` /
+  `LLMUnavailable` / `LLMBadResponse` subclasses across `complete()`, `ping()`,
+  and `_stream_impl()` so API responses always carry the structured error
+  envelope and correct HTTP status mapping.
+- `SQLiteRepository`: serialise all access to the shared connection with a
+  `threading.Lock` to make concurrent writes from `dispatch_fan_out` safe.
+- `ToolCallParser`: bare `{...}` objects that fail JSON validation now return
+  `None` (treated as prose) instead of raising; only fenced ```json``` blocks
+  raise `LLMBadResponse` on malformed JSON.
+- `FileMemoryRepository`: use UTC for episodic file naming so filenames are
+  stable across timezones and cloud regions.
+- `SummarizeAgent`: include every message in each historical turn (not only
+  the first user message) so multi-message turns retain full context.
+- `AccessLogMiddleware`: wrap `call_next` in `try/except/finally` so failed
+  requests still emit an INFO access log with status `500` and latency.
+- `telemetry.configure_telemetry`: attach `TraceContextFilter` to the
+  configured handler (not the root logger) so `trace_id` / `span_id` are
+  injected into every log record from child loggers.
+- `api/app.py` lifespan: simplify shutdown checks; `ctx.repo.close()` is
+  protected by a `None` check rather than `hasattr`.
+- `Dockerfile`: create `/app/data` and `/data` and `chown` to the `mangomas`
+  user so the default SQLite path and compose volume are writable from the
+  non-root runtime user.
+
+### Added
+
+**Core platform**
+- `Agent` protocol with `handle(request, ctx)` contract; `StreamingAgent` extension protocol for token-level streaming.
+- `Orchestrator` with `dispatch` (buffered) and `stream_dispatch` (async-generator streaming) methods; lazy OpenTelemetry tracer (no module-level tracer capture).
+- `Registry[T]` — generic, reusable lookup store; drives both provider and agent wiring.
+- `AgentContext` — immutable context injected into every agent invocation (LLM client, turn repository, optional memory repository).
+
+**Agents**
+- `ChatAgent` — single-turn conversational agent with streaming fallback and warning log when the active LLM does not implement `StreamingLLMClient`.
+- `SummarizeAgent` — fetches recent conversation history and requests an LLM summary.
+- `ToolAgent` — multi-step control loop with tool-call parsing and execution.
+- `PlannerAgent` / `ReviewerAgent` — plan-then-review composition pattern.
+
+**Adapters**
+- `LMStudioClient` — OpenAI-compatible HTTP adapter targeting `/v1/chat/completions` and `/v1/models`; supports buffered completion, streaming, ping, and graceful close via `aclose()`.
+- `SQLiteRepository` — lightweight `TurnRepository` implementation backed by SQLite.
+- File-based memory provider.
+
+**API**
+- FastAPI application factory `create_app(orchestrator=None)` — lifespan manages startup/shutdown.
+- Routes: `GET /healthz`, `GET /health` (alias), `GET /readyz`, `GET /ready` (alias), `GET /agents`, `POST /agents/{name}/invoke`, `POST /agents/{name}/stream`.
+- JSON SSE envelope: `{"event": "token", "data": {"content": "..."}, "content": "..."}` with `{"event": "done"}` sentinel; top-level `content` field kept for backwards compatibility.
+- `AccessLogMiddleware` — per-request structured access log.
+- `TraceMiddleware` — OpenTelemetry span per request.
+- Structured error envelope `{"error": "...", "message": "...", "detail": "..."}` mapped from domain error classes via MRO-based `_error_status`.
+
+**CLI**
+- `mangomas chat` — interactive single-turn CLI backed by the full agent stack.
+
+**Composition**
+- `agent_registry: Registry[AgentFactory]` — seeded with `chat` and `summarize`; extensible without core changes.
+- `_llm_registry` and `_storage_registry` — provider registries for LLM and storage adapters.
+- `build_orchestrator(settings)` — assembles the full runtime from settings alone; no hardcoded class names outside `composition.py`.
+
+**Observability**
+- Structured logging throughout; `extra={}` fields on all error and warning paths.
+- OpenTelemetry tracing via `opentelemetry-sdk`; console exporter for local development.
+- `/readyz` aggregates LLM ping and DB connectivity into a `ReadinessReport`.
+
+**Infrastructure**
+- Multi-stage Dockerfile; runtime stage runs as non-root user `mangomas`, honours `$PORT`, and includes a `HEALTHCHECK` against `/healthz`.
+- `.github/workflows/ci.yml` — ruff check, ruff format --check, mypy --strict over `src tests scripts`, pytest with coverage, per-package coverage floors, codecov upload.
+- `pyproject.toml` — hatchling build, all dev tooling configured, `asyncio_mode = "auto"`, `lmstudio` and `integration` pytest markers registered.
+- `pyrightconfig.json` and minimal `typings/hypothesis` stubs for VS Code editor parity with CLI mypy.
+
+**Documentation**
+- `docs/adr/0001-cloud-targets.md` — cloud target swap matrix (ADR-001).
+
+### Changed
+
+- mypy strict gate widened from `src` only to `src tests scripts` (60 source files).
+- Provider wiring moved from ad-hoc class instantiation to registry-based composition; new providers require no changes to core or API layers.
+- `Orchestrator` tracer changed from module-level capture to lazy `trace.get_tracer(__name__)` call inside method bodies.
+
+### Security / Operations
+
+- Docker runtime uses a non-root user; no secrets or credentials in the image.
+- All configuration is env-driven via `MANGOMAS_*` prefix; no hardcoded endpoints, model ids, or credentials in source.
+- `.gitignore` excludes `.venv/`, `data/`, `memory/`, `.env`, coverage artefacts, caches, and generated files.
+- Request-scoped tracing without leaking spans across async contexts.
+
 [0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0

@@ -54,9 +54,18 @@ thinking tool, not a gate.
 | [0011](0011-request-backpressure.md) | Request backpressure |
 | [0012](0012-conditional-branch-node.md) | Conditional branch node |
 | [0013](0013-composite-fan-out-branches.md) | Composite fan_out branches |
+| [0014](0014-code-hygiene-modularity.md) | Code hygiene & modularity overhaul |
+| [0015](0015-package-decomposition.md) | Package decomposition (deferred spec-0014 scope) |
+| [0016](0016-claude-code-ecosystem-tooling.md) | Claude Code ecosystem tooling integration |
+| [0017](0017-protected-path-governance.md) | Protected-path governance contract |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
 `docs/adr/` has no `0006`/`0007`. The `main` branch allocated those numbers
-differently — see the ADR-renumbering item in [`NEXT_STEPS.md`](../NEXT_STEPS.md)
-before reconciling the two lines.
+differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardening)
+— reconciled by `docs/adr/0021-protected-path-governance-contract.md` (supersedes
+`main`'s ADR-0011) and `docs/adr/0023-workflow-implementation-reconciliation.md`
+(supersedes `main`'s ADR-0007). Next free spec on this branch: **0018** (0018
+itself is reserved for the Claude Code corpus migration — see
+`docs/plans/20260809T143356Z-harness-corpus-decomposition-plan.md`); next free
+ADR: **0024**.

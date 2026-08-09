@@ -12,10 +12,29 @@ BRIDGE_SRC  ?= eval_harness_bridge/src
 BRIDGE_TESTS ?= tests/eval_harness_bridge
 BRIDGE_FLOOR ?= 100
 PYTEST_FLAGS ?= -q
+# Base ref for the protected-path governance gate (ADR-0021). This repo's
+# working trunk is `feat/initial-release`, not `main` — see CLAUDE.md.
+# Override for a one-off check against a different base: `make protected-paths
+# BASE_REF=origin/main`.
+BASE_REF    ?= origin/feat/initial-release
+SCRIPTS_SRC  ?= scripts
+SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session_start.py \
+                 tests/test_run_workflow_e2e.py tests/deploy/test_ci_make_parity.py \
+                 tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
+                 tests/test_scripts_shared_helpers.py tests/harness
+# Measured baseline (2026-08-09, this branch, after A1-A5 landed): 85% total
+# (check_coverage.py itself sits at 24% — imported only for its FLOORS/
+# GLOBAL_FLOOR constants by tests/deploy/test_ci_make_parity.py; its own
+# `_check`/`main` are never exercised by a script-level test). Set to the
+# measured actual minus a small safety margin, rather than an assumed 95
+# (see spec-0017 R7 and A7) — ratchet upward as scripts/ gains direct tests,
+# most obviously check_coverage.py's own `main()`/`_check()`.
+SCRIPTS_FLOOR ?= 84
 
 .DEFAULT_GOAL := help
-.PHONY: help install validate-config lint format format-check typecheck frontmatter test test-xml \
-        coverage bridge-coverage gate precommit serve clean \
+.PHONY: help install validate-config lint format format-check typecheck frontmatter \
+        protected-paths test test-xml \
+        coverage bridge-coverage scripts-coverage gate precommit serve clean \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse
 
 help: ## Show this help
@@ -27,9 +46,10 @@ install: ## Install the package with dev extras
 
 # ── Quality gate (mirrors .github/workflows/ci.yml) ──────────────────────────
 
-validate-config: ## Validate .mcp.json / .claude/settings.json JSON syntax
+validate-config: ## Validate .mcp.json / .claude/settings*.json JSON syntax
 	$(PYTHON) -m json.tool .mcp.json > /dev/null
 	$(PYTHON) -m json.tool .claude/settings.json > /dev/null
+	$(PYTHON) -m json.tool .claude/settings.local.json.example > /dev/null
 
 lint: ## ruff check
 	$(PYTHON) -m ruff check $(CODE_PATHS)
@@ -45,6 +65,9 @@ typecheck: ## mypy --strict
 
 frontmatter: ## Validate .agent.md / SKILL.md frontmatter
 	$(PYTHON) scripts/lint_agent_frontmatter.py
+
+protected-paths: ## Fail if a protected core contract changed without a BREAKING-CHANGE commit (ADR-0021)
+	$(PYTHON) scripts/check_protected_paths.py --base-ref $(BASE_REF)
 
 test: ## Full unit suite (addopts supply --cov and --cov-fail-under)
 	$(PYTHON) -m pytest $(PYTEST_FLAGS)
@@ -65,7 +88,15 @@ bridge-coverage: ## eval_harness_bridge isolated coverage gate
 	  $(BRIDGE_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.bridge $(PYTHON) -m coverage report --show-missing --fail-under=$(BRIDGE_FLOOR)
 
-gate: validate-config lint format-check typecheck frontmatter test coverage bridge-coverage ## Run the full pre-PR gate
+scripts-coverage: ## scripts/ isolated coverage gate (measured floor — see SCRIPTS_FLOOR above)
+	# Same isolation idiom as bridge-coverage: its own COVERAGE_FILE so it never
+	# clobbers the main suite's `.coverage`, and -o addopts="" sheds the
+	# inherited --cov=mangomas so this run measures only scripts/.
+	COVERAGE_FILE=.coverage.scripts $(PYTHON) -m coverage run --source=$(SCRIPTS_SRC) -m pytest \
+	  $(SCRIPTS_TESTS) -o addopts="" $(PYTEST_FLAGS)
+	COVERAGE_FILE=.coverage.scripts $(PYTHON) -m coverage report --show-missing --fail-under=$(SCRIPTS_FLOOR)
+
+gate: validate-config lint format-check typecheck frontmatter protected-paths test coverage bridge-coverage scripts-coverage ## Run the full pre-PR gate
 
 precommit: ## Run every pre-commit hook over the whole tree
 	pre-commit run --all-files

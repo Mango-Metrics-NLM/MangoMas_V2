@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import TYPE_CHECKING, Any
+from contextlib import aclosing
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
@@ -89,13 +90,30 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
         stream_iter: AsyncIterator[str] = await orch.stream_dispatch(name, request)
 
         async def _events() -> AsyncGenerator[bytes, None]:
-            async for chunk in stream_iter:
-                payload = {
-                    "event": "token",
-                    "data": {"content": chunk},
-                    "content": chunk,
-                }
-                yield f"data: {json.dumps(payload)}\n\n".encode()
+            # ``aclosing`` guarantees ``stream_iter.aclose()`` runs promptly
+            # (synchronously, as part of unwinding this generator) when the
+            # client disconnects mid-stream. Without it, a bare ``async for``
+            # does not close the iterable it's driving on early exit — Python
+            # would eventually run cleanup via the event loop's async-generator
+            # GC finalizer, but not deterministically, which would leave the
+            # harness's `harness.agent_invoke` span (see composition.py's
+            # `_traced_stream`) open until that eventual GC pass instead of
+            # ending it the moment the client actually disconnects.
+            #
+            # ``stream_dispatch`` is typed as the more general
+            # ``AsyncIterator[str]`` (the ``StreamingAgent.stream`` protocol
+            # doesn't guarantee ``aclose()``), but every concrete
+            # implementation on this path — ``Orchestrator._stream_agent`` and
+            # the harness's ``_traced_stream`` alike — is an async generator,
+            # which always has one.
+            async with aclosing(cast("AsyncGenerator[str, None]", stream_iter)):
+                async for chunk in stream_iter:
+                    payload = {
+                        "event": "token",
+                        "data": {"content": chunk},
+                        "content": chunk,
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n".encode()
             yield f"data: {json.dumps({'event': 'done'})}\n\n".encode()
 
         return StreamingResponse(
