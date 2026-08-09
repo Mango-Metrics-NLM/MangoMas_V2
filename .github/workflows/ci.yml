@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      - name: Validate Claude Code config JSON
+        run: make validate-config
+
       - name: Ruff check
         run: make lint
 

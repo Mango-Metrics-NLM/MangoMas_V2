@@ -131,6 +131,14 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
   keyword-only `max_tokens: int | None = None` parameter, implemented by the
   LM Studio and Vertex adapters (and `tests.fakes.FakeLLM`), so
   `AgentSettings.max_tokens` has somewhere to go.
+- Claude Code ecosystem tooling (spec-0016 / ADR-0020): `.mcp.json` registers
+  5 MCP servers (filesystem/git/fetch/sequential-thinking/repomix); `rtk`'s
+  `PreToolUse` hook added to `.claude/settings.json`, additive and
+  opt-out-gated via `MANGOMAS_DISABLE_RTK_HOOK`; `make validate-config` +
+  `check-json` pre-commit hook guard both config files' JSON syntax;
+  `docs/tooling/claude-code-ecosystem.md` catalogs all 7 evaluated tools,
+  including the `claude-context` rejection. `claude-mem`'s hooks and
+  `claude-hud`'s final disposition are tracked as pending in spec-0016.
 
 ### Removed
 

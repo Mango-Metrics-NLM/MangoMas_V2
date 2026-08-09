@@ -309,12 +309,16 @@ What ships in the harness:
 | Sub-agents (opt-in `sub_agents:` key) | `.github/agents/<parent>/<slug>.agent.md` | 15 specialised sub-agents |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
-| Project settings | `.claude/settings.json` | Allow/Deny + Stop/PostToolUse hooks |
+| Project settings | `.claude/settings.json` | Allow/Deny + SessionStart/PreToolUse/PostToolUse/Stop hooks |
+| MCP servers | `.mcp.json` | 5 servers: filesystem/git/fetch/sequential-thinking/repomix |
+| Cross-session memory (opt-in, local-only, pending) | external `~/.claude-mem/` | claude-mem |
 | PR template + secret-scan job | `.github/PULL_REQUEST_TEMPLATE.md` + `ci.yml` | Mandatory PR checklist |
 
 See `CLAUDE.md` for the full skill/sub-agent map and protected-path
-table; `docs/architecture/c2-container.md` and `c3-component.md` for
-where the harness sits in the C4 model.
+table; `docs/tooling/claude-code-ecosystem.md` for the full external
+tooling catalog (MCP servers, hooks, rejected/reference-only tools);
+`docs/architecture/c2-container.md` and `c3-component.md` for where the
+harness sits in the C4 model.
 
 ---
 
@@ -463,5 +467,6 @@ docs/
 - [Observability](docs/architecture/observability.md)
 - [Regression Baseline](docs/testing/regression.md)
 - [LM Studio E2E Scenario Plan](docs/testing/lmstudio-e2e.md)
+- [Claude Code Ecosystem Tooling](docs/tooling/claude-code-ecosystem.md)
 - [Changelog](CHANGELOG.md)
 - [Next Steps & Roadmap](NEXT_STEPS.md)

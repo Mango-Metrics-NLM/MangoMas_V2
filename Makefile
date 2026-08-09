@@ -14,7 +14,7 @@ BRIDGE_FLOOR ?= 100
 PYTEST_FLAGS ?= -q
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format format-check typecheck frontmatter test test-xml \
+.PHONY: help install validate-config lint format format-check typecheck frontmatter test test-xml \
         coverage bridge-coverage gate precommit serve clean \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse
 
@@ -26,6 +26,10 @@ install: ## Install the package with dev extras
 	$(PYTHON) -m pip install -e ".[dev]"
 
 # ── Quality gate (mirrors .github/workflows/ci.yml) ──────────────────────────
+
+validate-config: ## Validate .mcp.json / .claude/settings.json JSON syntax
+	$(PYTHON) -m json.tool .mcp.json > /dev/null
+	$(PYTHON) -m json.tool .claude/settings.json > /dev/null
 
 lint: ## ruff check
 	$(PYTHON) -m ruff check $(CODE_PATHS)
@@ -61,7 +65,7 @@ bridge-coverage: ## eval_harness_bridge isolated coverage gate
 	  $(BRIDGE_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.bridge $(PYTHON) -m coverage report --show-missing --fail-under=$(BRIDGE_FLOOR)
 
-gate: lint format-check typecheck frontmatter test coverage bridge-coverage ## Run the full pre-PR gate
+gate: validate-config lint format-check typecheck frontmatter test coverage bridge-coverage ## Run the full pre-PR gate
 
 precommit: ## Run every pre-commit hook over the whole tree
 	pre-commit run --all-files

@@ -240,3 +240,61 @@ TEST_PROMPT_SUFFIX: str = "Suffix block."
 # Vertex request-payload) tests.
 TEST_TEMPERATURE_OVERRIDE: float = 0.42
 TEST_MAX_TOKENS_OVERRIDE: int = 256
+
+# ── Claude Code ecosystem tooling (spec 0016 / ADR-0020) ─────────────────────
+# Repo-relative paths to the two shared Claude Code config files.
+CLAUDE_SETTINGS_RELPATH: str = ".claude/settings.json"
+MCP_CONFIG_RELPATH: str = ".mcp.json"
+
+# Hooks that predate the ecosystem-tooling integration, as
+# ``(event, matcher, command)``. Every `.claude/settings.json` edit must be
+# additive, so the contract test asserts each of these survives verbatim —
+# listing them here (rather than inline) keeps the expected hook contract in
+# one place and lets the test stay data-driven.
+PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
+    ("SessionStart", "*", "python scripts/harness_session_start.py"),
+    (
+        "PreToolUse",
+        "Edit|Write",
+        "python scripts/lint_agent_frontmatter.py "
+        '--check-protected-paths "$CLAUDE_TOOL_INPUT_path"',
+    ),
+    (
+        "PostToolUse",
+        "Edit|Write",
+        'python -m ruff check --fix "$CLAUDE_TOOL_INPUT_path" 2>/dev/null || true',
+    ),
+    ("Stop", "*", "python -m pytest -q --no-cov || true"),
+)
+
+# rtk (rtk-ai/rtk): Bash-output compaction, wired as a PreToolUse hook.
+RTK_HOOK_EVENT: str = "PreToolUse"
+RTK_HOOK_MATCHER: str = "Bash"
+RTK_HOOK_COMMAND_FRAGMENT: str = "rtk hook claude"
+# Presence guard. Without it the hook exits 127 ("rtk: not found") on every
+# Bash tool call for contributors who haven't installed the binary — Claude
+# Code treats that as non-blocking, so the call still runs, but it emits a
+# hook-error notice each time. The guard makes the skip silent.
+RTK_BINARY_GUARD_FRAGMENT: str = "command -v rtk"
+# Claude Code has no per-hook disable (``disableAllHooks`` would also drop the
+# PREEXISTING_HOOKS above), so an env-var gate is the only per-contributor
+# opt-out. ``env`` values layer across settings files; hook arrays do not.
+RTK_DISABLE_ENV: str = "MANGOMAS_DISABLE_RTK_HOOK"
+RTK_TELEMETRY_DISABLED_ENV: str = "RTK_TELEMETRY_DISABLED"
+# Shared truthy/falsey markers for the `env`-block flags above.
+ENV_FLAG_ON: str = "1"
+ENV_FLAG_OFF: str = "0"
+
+# MCP servers adopted by ADR-0020. Upstream `memory` (redundant with
+# claude-mem), `everything` (test/demo), and `time` (low value here) are
+# deliberately excluded — the test asserts an exact set so an unreviewed
+# addition fails.
+ADOPTED_MCP_SERVERS: frozenset[str] = frozenset(
+    {"filesystem", "git", "fetch", "sequential-thinking", "repomix"}
+)
+# Servers that take a path argument and must be pinned to the project root
+# rather than granted unscoped filesystem/git reach.
+PATH_SCOPED_MCP_SERVERS: tuple[str, ...] = ("filesystem", "git")
+# `${VAR:-default}` form: without the default an unset variable is passed
+# through as a literal string rather than failing, which is the dangerous case.
+MCP_PROJECT_DIR_SCOPE: str = "${CLAUDE_PROJECT_DIR:-.}"
