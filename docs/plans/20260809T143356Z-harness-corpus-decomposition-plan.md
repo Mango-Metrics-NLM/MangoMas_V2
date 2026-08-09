@@ -3,10 +3,13 @@
 - **Branch:** `claude/agents-mcps-implementation-plan-9bdtnt`
 - **Date:** 2026-08-09
 - **Target release:** `[Unreleased]` → next minor
-- **Status:** In progress — PR A done; PR B/C not started
-- **Specs:** `specs/0017-protected-path-governance.md`, `specs/0018-*` (PR B, TBA),
+- **Status:** In progress — PR A done; PR B split into B1–B4 (B1 in flight); PR C not started
+- **Specs:** `specs/0017-protected-path-governance.md`,
+  `specs/0018-live-claude-code-corpus.md`,
   `specs/0015-package-decomposition.md` (existing, amended)
-- **ADRs:** ADR-0021, ADR-0022 (PR B, TBA), ADR-0023, ADR-0019 (amended)
+- **ADRs:** ADR-0021, ADR-0023, ADR-0024 (PR B), ADR-0019 (amended). ADR-0022 was
+  forward-referenced by ADR-0021 for a "harness governance port" that ADR-0021
+  absorbed; it is a permanent gap, not the next free number.
 
 ## Executive summary
 
@@ -92,15 +95,28 @@ frontmatter protected-paths test coverage bridge-coverage scripts-coverage`), fu
 1234 passed / 25 skipped (gated), zero test-file edits to any pre-existing test beyond
 the documented `PREEXISTING_HOOKS` constant.
 
-## PR B — Live corpus (spec-0018 / ADR-0022)
+## PR B — Live corpus (spec-0018 / ADR-0024) — split into four
 
-Not yet scaffolded. Scope: migrate `.github/agents` + `.github/skills` to
-`.claude/agents/` + `.claude/skills/` (delete the Copilot mirror entirely — it targets
-invented, non-round-trippable keys), permission hardening (`permissionMode`/`hooks`
-rejected by schema, explicit `tools` per agent, staged rollout behind
-`permissions.deny`), a non-empty-glob guard so the frontmatter gate cannot silently
-validate zero files again, and three new skills (`mango-spec`, `mango-harness`,
-`mango-tenancy`).
+Four adversarial reviews resized this from one PR (~116 file touches, ~3× PR A — the
+same silhouette that forced spec-0014's mid-flight descope) into four, and corrected
+two load-bearing premises:
+
+- **The corpus is not an invented format.** `.github/agents/**/*.agent.md` and
+  `.github/skills/<name>/SKILL.md` are real, documented **GitHub Copilot** surfaces;
+  `read`/`edit`/`search`/`execute` are documented Copilot tool aliases. Since VS Code
+  Copilot *also* reads `.claude/agents/` and `.claude/skills/`, moving there serves both
+  tools and only gives up the github.com cloud-agent surface. CHANGELOG records this
+  under `Changed`, not `Removed`.
+- **The real duplication is agent↔skill, not agent↔CLAUDE.md** (measured at 6–16 %, not
+  the 50–60 % originally claimed). Agents that say *"use the X skill for the full recipe"*
+  then restate the recipe — including, in one case, the same stale pointer in both copies.
+
+| PR | Scope |
+|---|---|
+| **B1** | Skills go live: non-empty guard **first**, then a content-free `git mv`, skill roster test, doc sweep. ~20 files, no permission or routing design. |
+| **B2** | Agents go live: unwired validators, content-free `git mv`, schema + frontmatter + least-privilege `tools`, path-scoped `permissions.deny`, contract tests with citation repairs folded in. |
+| **B3** | Content: body sweep under the skill-owns-procedure rule (test-enforced), 3 new skills, 3 skill extensions. |
+| **B4** | Nested `CLAUDE.md`: fix all five stray `agent.md` files **first** — four contain content that is wrong, not stale (a `TurnRepository.save()` that does not exist; a CHANGELOG-heading rule that contradicts PR A's commit-trailer gate) — then rename. |
 
 ## PR C — Package decomposition (spec-0015, amended / ADR-0019, amended)
 

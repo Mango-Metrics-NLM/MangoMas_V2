@@ -70,5 +70,6 @@ call rather than attempting an unenforceable in-session block.
 
 - Code: `scripts/lint_agent_frontmatter.py`, `scripts/check_protected_paths.py`,
   `.claude/settings.json`, `pyproject.toml` `[tool.mangomas.governance]`
-- Related ADRs: ADR-0022 (harness governance port), supersedes `main`'s ADR-0011
-  (harness-hook-hardening, different decision on that branch — see spec-0017)
+- Related ADRs: supersedes `main`'s ADR-0011 (harness-hook-hardening, different
+  decision on that branch — see spec-0017). ADR-0024 (live corpus surface and
+  permission posture) builds on this contract's protected-path set.
