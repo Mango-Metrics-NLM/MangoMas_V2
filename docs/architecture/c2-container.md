@@ -16,7 +16,7 @@ C4Container
     Container(rag, "RAG Layer (opt-in)", "Python package (src/mangomas/rag/)", "Pure-domain retrieval-augmented generation: chunker, loader, IngestionPipeline, Retriever, RetrievalTool. Imports only the EmbeddingClient / VectorStoreRepository protocols. Surfaced via `mangomas rag ingest|query` and wired into ToolAgent via ctx.tools. Dormant unless MANGOMAS_EMBEDDINGS__ENABLED + MANGOMAS_VECTOR__ENABLED.")
     Container(workflow, "Workflow Graph Layer (opt-in)", "Python package (src/mangomas/workflow/)", "Declarative multi-agent topologies: a frozen WorkflowGraph (agent / sequence / fan_out / loop / branch) compiled to the Orchestrator's public dispatch primitives — every leaf is one dispatch call, so an all-agent sequence equals dispatch_pipeline. Surfaced via POST /workflows/run|validate and `mangomas workflow validate|run`. Dormant unless MANGOMAS_WORKFLOW__ENABLED or an explicit --definition.")
     Container(composition, "Composition Root", "Python module", "composition.py — wires LLM, storage, secrets, embeddings, vector, agent, and harness registries at startup. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
-    Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .github/agents and .claude/skills), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
+    Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .claude/agents and .claude/skills), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
   }
 
   System_Ext(lmstudio, "LM Studio", ":1234 — OpenAI-compatible LLM server (default)")
@@ -90,7 +90,7 @@ C4Container
 - The Claude Code harness container is opt-in: with
   `MANGOMAS_HARNESS__ENABLED=false` (the default), the
   `_HarnessOrchestrator` wrapper is never engaged and the box is
-  effectively absent. Skills, sub-agents, and the frontmatter linter
+  effectively absent. Skills, agents, and the frontmatter linter
   remain installed but inert at runtime — they're consumed by the
   Claude Code IDE/web client and CI, not the FastAPI process.
 - `memory/`, `eval-output/`, and harness scratch state

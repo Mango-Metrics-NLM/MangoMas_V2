@@ -1,6 +1,6 @@
 <!--
 Mango-Mas V2 pull-request template.
-Fill every section; the architect sub-agent reviews on these headings.
+Fill every section; the mango-architect agent reviews on these headings.
 -->
 
 ## Summary
@@ -38,7 +38,7 @@ n/a
 
 ## Sub-agent reviews
 
-<!-- Tick the parents whose domain this PR touches. The architect sub-agent
+<!-- Tick the routers whose domain this PR touches. The mango-architect agent
      will use these as the canonical review surfaces. -->
 
 - [ ] architect — protocol/layering/ADR audit

@@ -53,7 +53,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 ## Error Handling
 
 - Raise typed subclasses of `MangomasError` (never bare `Exception`)
-- HTTP status mapping lives exclusively in `api/app.py::_ERROR_STATUS`
+- HTTP status mapping lives exclusively in `api/errors.py::_ERROR_STATUS`
 - New error types require: class in `errors.py` + entry in `_ERROR_STATUS` + test in `test_errors.py`
 
 ---
@@ -74,18 +74,17 @@ tests/                   # Mirrors src/ structure; fakes.py + constants.py are s
 
 ## Claude Code Agents & Skills
 
-- Parent agents live at `.github/agents/<parent>.agent.md` (architect, backend,
-  test-engineer, api-dev).
-- Sub-agents are declared via the optional `sub_agents:` frontmatter key on a
-  parent and live at `.github/agents/<parent>/<name>.agent.md`. Parents without
-  the key remain valid.
+- Agents live at `.claude/agents/mango-<slug>.md` — 19 files in one flat
+  directory, no parent/child hierarchy. Four are routers (`mango-architect`,
+  `mango-backend`, `mango-api-dev`, `mango-test-engineer`) and carry `Use when:`
+  trigger conditions; the other 15 are named directly.
 - Skills live at `.claude/skills/<name>/SKILL.md` — VS Code Copilot reads that
   directory as well as the legacy `.github/` one, so a single tree serves
   Copilot and Claude Code (spec-0018). See `mango-testing` for the
   canonical layout; others cover adapter / agent-add / error / observability /
   config / topology / release workflows.
-- Use the most specific sub-agent when working in its domain; defer to the
-  parent for cross-cutting reviews.
+- Name the specific agent when working in its domain; use a router for
+  cross-cutting work or when the right specialist is unclear.
 
 ## PR Workflow
 
@@ -93,7 +92,7 @@ tests/                   # Mirrors src/ structure; fakes.py + constants.py are s
   (Summary, Changes, Test plan, ADR, CHANGELOG, Sub-agent reviews).
 - Architectural changes (new boundaries, provider swaps, composition-root edits,
   breaking contracts) require an ADR copied from `docs/adr/_template.md`.
-- The `pr-watcher` sub-agent (under architect) drives the documented
+- The `mango-pr-watcher` agent drives the documented
   `subscribe_pr_activity` flow for follow-up events.
 
 ---

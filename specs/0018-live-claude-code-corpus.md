@@ -27,9 +27,20 @@ both tools.
 |---|---|---|
 | `tools: [read, edit, search, execute]` | valid aliases | invalid — needs `Read`, `Edit`, `Bash`, … |
 | `model: Claude Sonnet 4.5 (copilot)` | real field, undocumented value | invalid — needs `sonnet`/`inherit`/full ID |
-| `sub_agents:` | near-miss (real key is `agents:`) | not a field — real form is `tools: Agent(a, b)` |
+| `sub_agents:` | near-miss (real key is `agents:`) | not a field — and there is no working replacement (see below) |
 | `argument-hint` on agents | valid in VS Code, ignored on github.com | not an agent field (skills only) |
 | nested `<parent>/<child>` | not discovered | discovered (recursive) |
+
+**Correction (recorded during implementation).** An earlier draft of the row
+above said the parent/child relationship could be re-expressed as
+`tools: Agent(a, b)`. It cannot: that scoping form works on the main thread's
+`--agent` flag and is **silently ignored inside a subagent definition** — the
+agent receives *unrestricted* delegation rather than the named subset — and
+`Agent` is absent from the background-subagent tool set, which is the default.
+The hierarchy therefore has no working replacement, so the corpus is flat and
+the four former parents became routers that advise rather than delegate. The
+frontmatter lint rejects the `Agent(...)` form outright, because a rule that
+looks like a restriction and is not is worse than no rule.
 
 Independently, the gate that is supposed to validate this corpus **cannot detect its own
 irrelevance**. `scripts/lint_agent_frontmatter.py::main` globs both trees and, when zero

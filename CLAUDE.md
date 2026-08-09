@@ -339,21 +339,55 @@ CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
 
 ---
 
-## Claude Code Sub-Agents
+## Claude Code Agents
 
-Each parent agent in `.github/agents/<parent>.agent.md` may declare specialised
-sub-agents via the optional `sub_agents:` frontmatter list. Sub-agent files
-live alongside the parent in `.github/agents/<parent>/<name>.agent.md`.
+19 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
+hierarchy. Claude Code resolves an agent by its `name:` field, which must equal
+the filename stem; the `mango-` prefix separates the committed corpus from
+personal agents `/agents` writes into the same directory.
 
-| Parent | Sub-agents |
-|--------|-----------|
-| `architect` | `protocol-auditor`, `layering-auditor`, `adr-author`, `pr-watcher` |
-| `backend` | `llm-adapter-dev`, `storage-adapter-dev`, `orchestrator-dev`, `error-taxonomy-dev`, `telemetry-exporter-dev`, `workflow-graph-dev` |
-| `test-engineer` | `fake-builder`, `hypothesis-fuzz`, `integration-runner` |
-| `api-dev` | `sse-streamer`, `schema-evolution` |
+**Four routers.** These carry `Use when:` trigger conditions, so they are what
+auto-delegation matches. They read and advise — deliberately no `Edit`, `Write`
+or `Bash`.
 
-The `sub_agents:` key is optional and backward-compatible — parents without it
-remain valid. Slugs are resolved to `<parent>/<slug>.agent.md`.
+| Router | Use when |
+|--------|----------|
+| `mango-architect` | Reviewing a PR, evaluating a design, checking protocol/layering violations, recording an ADR |
+| `mango-backend` | Backend work spanning core protocols, adapters, orchestrator, errors, telemetry, workflow or RAG |
+| `mango-api-dev` | Adding or changing an endpoint, evolving a request/response schema, API-layer integration |
+| `mango-test-engineer` | Adding or fixing tests, diagnosing a coverage gap, choosing a test surface |
+
+**Fifteen specialists**, invoked *by name*, not by topic match — their
+descriptions deliberately carry no trigger conditions, because auto-delegation
+matches the condition and never reads a modal verb like "invoke explicitly
+when". Name them directly:
+
+| Agent | Owns |
+|-------|------|
+| `mango-protocol-auditor` / `mango-layering-auditor` | Protocol back-compat / cross-layer import direction (read-only) |
+| `mango-adr-author` | ADRs in `docs/adr/` (writes markdown only) |
+| `mango-pr-watcher` | PR activity triage (read-only reporter) |
+| `mango-llm-adapter-dev` / `mango-storage-adapter-dev` | `adapters/llm/` / `adapters/storage/` |
+| `mango-orchestrator-dev` | `core/orchestrator.py` and the whole dispatch surface, incl. `stream_dispatch` |
+| `mango-error-taxonomy-dev` | `errors.py` + `api/errors.py::_ERROR_STATUS` |
+| `mango-telemetry-exporter-dev` | The OTel exporter seam in `telemetry.py` |
+| `mango-workflow-graph-dev` | `workflow/` — graph model, registry, predicates, executor |
+| `mango-schema-evolution` / `mango-sse-streamer` | HTTP DTO evolution / API-layer SSE framing |
+| `mango-fake-builder` / `mango-hypothesis-fuzz` / `mango-integration-runner` | `tests/fakes.py` / property tests / `tests/integration/` |
+
+**Agents vs skills.** They are different things and the tie-break matters:
+**skills own procedure** (the recipe for doing X), **agents own a surface** —
+its boundary, its invariants, and the shape of its output. An agent reaches for
+a skill for the how; a skill never delegates to an agent.
+
+Four agents own a **protected path** (`mango-error-taxonomy-dev`,
+`mango-orchestrator-dev`, `mango-schema-evolution`, `mango-hypothesis-fuzz`)
+and say so in their bodies: those edits need a `BREAKING-CHANGE` commit
+trailer, and the `PreToolUse` hook that warns about it is advisory only.
+
+To disable agent delegation project-wide, add `Agent` to `permissions.deny` in
+`.claude/settings.json`; for yourself only, use your gitignored
+`.claude/settings.local.json`.
 
 ## Claude Code Harness (opt-in)
 
@@ -402,14 +436,21 @@ of internal correctness, since `Bash`/MCP filesystem tool calls bypass its
 
 Four scripts in `scripts/` complete the harness:
 
-- `lint_agent_frontmatter.py` — Pydantic-validated lint of `*.agent.md`
-  / `SKILL.md` frontmatter and `sub_agents:` resolution (default, no-flag
-  mode; wired into CI as the `Frontmatter lint` step of the `lint` job,
-  invoked via `make frontmatter`). Each glob must match at least
+- `lint_agent_frontmatter.py` — Pydantic-validated lint of
+  `.claude/agents/mango-*.md` / `.claude/skills/*/SKILL.md` frontmatter
+  (default, no-flag mode; wired into CI as the `Frontmatter lint` step of the
+  `lint` job, invoked via `make frontmatter`). Rejects the Copilot agent
+  format field by field — `argument-hint`/`sub_agents` as wrong-here, and
+  `permissionMode`/`hooks` by a policy table rather than `extra="forbid"`,
+  which would report "Extra inputs are not permitted" for a field Claude Code
+  genuinely accepts. `tools` is **required**: omitting it makes an agent
+  inherit every tool. Each glob must match at least
   `MIN_AGENT_FILES` / `MIN_SKILL_FILES` files (overridable via
-  `--min-agents` / `--min-skills`): a glob matching zero files used to fall
-  through to `EXIT_OK`, so a corpus that moved produced a green gate that
-  validated nothing. Also serves two **stdlib-only** hook
+  `--min-agents` / `--min-skills`, which reject values below
+  `MIN_FLOOR_LOWER_BOUND` — a floor of 0 or less can never fail): a glob
+  matching zero files used to fall through to `EXIT_OK`, so a corpus that
+  moved produced a green gate that validated nothing. Also serves two
+  **stdlib-only** hook
   modes reading Claude Code's tool-call JSON from stdin (never a
   `$CLAUDE_TOOL_INPUT_*` env var — Claude Code does not define one):
   `--hook pre-tool-use` emits an advisory `permissionDecision: "ask"` for a
@@ -469,6 +510,7 @@ entirely and load them with no approval step** — see
 | `fetch` | Retrieving a URL's content directly (e.g. upstream library docs) |
 | `sequential-thinking` | Structured multi-step reasoning for planning-heavy tasks |
 | `repomix` | Pack a directory into one context-efficient bundle before a cross-cutting refactor |
+| `github` | PR/issue/CI reads via the official server. **Optional** — needs docker and a `GITHUB_PERSONAL_ACCESS_TOKEN`; without them it fails to start and the other five are unaffected |
 
 `rtk` (if installed locally) transparently compacts noisy Bash stdout via a
 `PreToolUse` hook; the hook guards on `command -v rtk`, so if the binary is

@@ -140,9 +140,9 @@ select = ["E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG"]
 ignore = ["PLR0913"]
 
 [tool.ruff.format]
-# ruff >= 0.16 formats code fences inside Markdown; the agent.md docs format
-# their example snippets for readability (multi-line JSON bodies), so keep
-# the formatter off Markdown.
+# ruff >= 0.16 formats code fences inside Markdown; the agent and skill docs
+# under .claude/ format their example snippets for readability (multi-line
+# JSON bodies), so keep the formatter off Markdown.
 exclude = ["*.md"]
 
 [tool.ruff.lint.per-file-ignores]

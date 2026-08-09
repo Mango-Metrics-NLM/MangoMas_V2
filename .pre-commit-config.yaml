@@ -47,7 +47,7 @@ repos:
 
   # ── Agent/skill frontmatter lint ────────────────────────────────────────────
   # Previously CI-only (the `frontmatter` job in ci.yml / `make frontmatter`),
-  # so a broken .agent.md or SKILL.md only surfaced after a push. This local
+  # so a broken agent or SKILL.md only surfaced after a push. This local
   # hook runs the identical full-repo validation before commit; `files:` only
   # decides whether the hook fires this run — the script itself always scans
   # the whole corpus (pass_filenames: false).
@@ -55,6 +55,9 @@ repos:
   # Path-anchored rather than filename-only: the previous
   # `(\.agent\.md|SKILL\.md)$` fired on any file with those names anywhere in
   # the tree, including test fixtures, while saying nothing about location.
+  # The agent half is scoped to the `mango-` prefix so a contributor's own
+  # agent, written into the same flat directory by `/agents`, does not trigger
+  # a corpus-wide lint on every commit that touches it.
   - repo: local
     hooks:
       - id: lint-agent-frontmatter
@@ -62,4 +65,4 @@ repos:
         entry: python scripts/lint_agent_frontmatter.py
         language: system
         pass_filenames: false
-        files: ^(\.claude/skills/.*/SKILL\.md|\.github/agents/.*\.agent\.md)$
+        files: ^\.claude/(skills/.*/SKILL\.md|agents/mango-.*\.md)$

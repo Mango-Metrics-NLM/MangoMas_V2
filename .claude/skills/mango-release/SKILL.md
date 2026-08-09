@@ -59,7 +59,7 @@ python scripts/lint_agent_frontmatter.py
 | Pre-commit parity | `pre-commit run --all-files` is the cheapest way to reproduce CI's lint/format/type gates locally. `ruff` and `mypy` are **exact-pinned** in `pyproject.toml`'s dev extra in lockstep with the hook `rev:`s in `.pre-commit-config.yaml` — bump both together, or the hook and CI disagree. The mypy hook is scoped to `src/`; CI type-checks `src tests scripts eval_harness_bridge/src`. |
 | Lint/type surface | CI runs ruff and mypy over `src tests scripts eval_harness_bridge/src`. Omitting `eval_harness_bridge/src` locally is the usual "green locally, red in CI" cause. |
 | Coverage gate | `scripts/check_coverage.py` is the single source of truth: global 95 % plus per-package floors ranging from 85 % (adapters) to 100 % (`errors.py`, `registry.py`, `core/*`). The pytest `--cov-fail-under=95` addopt in `pyproject.toml` mirrors the global floor. |
-| Frontmatter lint | `scripts/lint_agent_frontmatter.py` validates every `.agent.md` and `SKILL.md` (and gates protected-core paths on a `BREAKING-CHANGE` marker). Run before pushing. |
+| Frontmatter lint | `scripts/lint_agent_frontmatter.py` validates every `.claude/agents/mango-*.md` and `.claude/skills/*/SKILL.md` (and gates protected-core paths on a `BREAKING-CHANGE` marker). Run before pushing. |
 | Sub-agent review checkboxes | PR template lists each parent agent (architect, backend, test-engineer, api-dev); tick the ones whose domain you touched. |
 
 ---
@@ -140,14 +140,14 @@ python scripts/lint_agent_frontmatter.py
 4. Push to the feature branch.
 5. Open a draft PR using the template; fill every section.
 6. If architectural: open an ADR under `docs/adr/<NNN>-<slug>.md` using `_template.md`.
-7. Request reviews from the sub-agents whose domain the PR touches.
+7. Request reviews from the agents whose domain the PR touches.
 8. Mark the PR ready when all checks are green.
 
 ---
 
 ## Constraints
 
-- DO NOT skip the CHANGELOG entry — CI doesn't enforce it, but the architect sub-agent does on review.
+- DO NOT skip the CHANGELOG entry — CI doesn't enforce it, but the mango-architect agent does on review.
 - DO NOT bump the version without an explicit `chore(release): vX.Y.Z` commit.
 - DO NOT use `--no-verify` or `-c commit.gpgsign=false` to push past hooks.
 - DO NOT merge with the coverage gate failing — fix the gap, don't lower the floor.

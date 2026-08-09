@@ -111,8 +111,11 @@ def test_every_skill_has_a_skill_md(skill_dir: Path) -> None:
 # ── Documentation pointers ────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize(
+    "retired", [RETIRED_SKILLS_DIR_RELPATH, RETIRED_AGENTS_DIR_RELPATH], ids=["skills", "agents"]
+)
 @pytest.mark.parametrize("relpath", CORPUS_DOC_RELPATHS)
-def test_docs_do_not_reference_the_retired_skills_path(relpath: str) -> None:
+def test_docs_do_not_reference_a_retired_corpus_path(relpath: str, retired: str) -> None:
     """`CLAUDE.md` auto-loads into every session, so a stale pointer there is
     worse than one anywhere else in the repo — it is read before any work
     starts. Historical records (CHANGELOG, dated plans) are excluded by
@@ -122,7 +125,7 @@ def test_docs_do_not_reference_the_retired_skills_path(relpath: str) -> None:
     # green *skip*, so the doc it was meant to police went unchecked and the
     # suite still reported success.
     assert path.is_file(), f"{relpath} is listed in CORPUS_DOC_RELPATHS but does not exist"
-    assert RETIRED_SKILLS_DIR_RELPATH not in path.read_text(encoding="utf-8")
+    assert retired not in path.read_text(encoding="utf-8")
 
 
 # ── Agents (spec-0018 / ADR-0024) ─────────────────────────────────────────────
