@@ -58,6 +58,7 @@ thinking tool, not a gate.
 | [0015](0015-package-decomposition.md) | Package decomposition (deferred spec-0014 scope) |
 | [0016](0016-claude-code-ecosystem-tooling.md) | Claude Code ecosystem tooling integration |
 | [0017](0017-protected-path-governance.md) | Protected-path governance contract |
+| [0018](0018-live-claude-code-corpus.md) | Live Claude Code corpus (`.github/` → `.claude/`) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -65,7 +66,7 @@ within each directory), so the two sequences do not line up. On this branch
 differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardening)
 — reconciled by `docs/adr/0021-protected-path-governance-contract.md` (supersedes
 `main`'s ADR-0011) and `docs/adr/0023-workflow-implementation-reconciliation.md`
-(supersedes `main`'s ADR-0007). Next free spec on this branch: **0018** (0018
-itself is reserved for the Claude Code corpus migration — see
-`docs/plans/20260809T143356Z-harness-corpus-decomposition-plan.md`); next free
-ADR: **0024**.
+(supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
+forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
+ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
+than reused. Next free spec on this branch: **0019**; next free ADR: **0025**.

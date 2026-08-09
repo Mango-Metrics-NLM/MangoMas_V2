@@ -1,7 +1,7 @@
 """Frontmatter linter for Claude Code agents and skills — and its hook modes.
 
 Validates every ``.github/agents/**/*.agent.md`` and
-``.github/skills/**/SKILL.md`` against the project's Pydantic v2 frontmatter
+``.claude/skills/**/SKILL.md`` against the project's Pydantic v2 frontmatter
 schemas (the default, no-argument mode). Two independent hook modes live here
 too, both stdlib-only so neither depends on ``pydantic``/``pyyaml`` being
 installed — a ``PreToolUse``/``PostToolUse`` hook must work in an interpreter
@@ -31,7 +31,9 @@ Exit codes
     modes never fail the calling process — see module docstring above).
 ``EXIT_SCHEMA = 1``
     At least one file failed schema validation, sub_agents resolution, or
-    file-discovery.
+    file-discovery — the last of which includes a glob matching fewer files
+    than its floor (see ``MIN_AGENT_FILES`` / ``MIN_SKILL_FILES``), or a
+    ``--min-agents``/``--min-skills`` value below ``MIN_FLOOR_LOWER_BOUND``.
 ``EXIT_PROTECTED = 2``
     The legacy ``--check-protected-paths`` flag is set and the staged diff of
     the requested path lacks the breaking-change marker.
@@ -53,6 +55,7 @@ import logging
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Final, Literal
 
@@ -74,7 +77,27 @@ except ImportError:
 # ── Module-level constants (single source of truth, no magic literals) ────────
 
 AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
-SKILLS_GLOB: Final[str] = ".github/skills/**/SKILL.md"
+# Skills moved to .claude/ (spec-0018): Claude Code reads nothing from .github/,
+# and VS Code Copilot scans .claude/skills/ too, so one tree serves both.
+SKILLS_GLOB: Final[str] = ".claude/skills/**/SKILL.md"
+
+# Minimum files each glob must match before the lint can honestly claim to have
+# validated anything (spec-0018 R1). Deliberately 1, not the current roster size:
+# the claim this script makes is "a non-empty corpus was validated", not "the
+# roster we expect was validated". A floor of 1 catches the entire failure class
+# — a glob that silently matches nothing, which previously fell through to
+# EXIT_OK — while never needing a bump when the corpus legitimately grows. The
+# roster itself is asserted by set equality in tests/tooling/test_corpus_contract.py,
+# where a change names the file that appeared or vanished.
+MIN_AGENT_FILES: Final[int] = 1
+MIN_SKILL_FILES: Final[int] = 1
+
+# The lowest floor the --min-agents/--min-skills overrides may express. Zero is
+# rejected alongside negatives, and for the same reason: a floor of 0 (or -1)
+# means *no* file count can ever fail _below_floor, which restores exactly the
+# silently-passing gate spec-0018 R1 exists to kill. An override is for pointing
+# the floor at a different corpus size, never for switching the guard off.
+MIN_FLOOR_LOWER_BOUND: Final[int] = 1
 
 _DEFAULT_PYPROJECT_PATH: Final[Path] = Path("pyproject.toml")
 
@@ -411,6 +434,124 @@ def _configure_logging() -> None:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
+@dataclass(frozen=True)
+class LintResult:
+    """Outcome of one schema-lint run.
+
+    ``main()`` returns only an ``int``, so before this existed no test could
+    assert *how many* files were discovered — which is precisely the fact that
+    distinguishes "the corpus is clean" from "the globs matched nothing".
+    """
+
+    exit_code: int
+    skill_count: int
+    agent_count: int
+    failures: tuple[str, ...] = ()
+
+
+def _below_floor(label: str, paths: list[str], pattern: str, minimum: int) -> str | None:
+    """Return an error message when *paths* is under *minimum*, else ``None``."""
+    if len(paths) >= minimum:
+        return None
+    return (
+        f"{pattern!r} matched {len(paths)} {label} file(s), below the minimum of "
+        f"{minimum}. The gate would otherwise pass without validating anything — "
+        f"check the glob against the corpus location."
+    )
+
+
+def _invalid_floor(flag: str, value: int) -> str | None:
+    """Return an error message when a floor override is below its lower bound."""
+    if value >= MIN_FLOOR_LOWER_BOUND:
+        return None
+    return (
+        f"{flag}={value} is below the minimum of {MIN_FLOOR_LOWER_BOUND}. A floor "
+        f"of {value} can never fail, which would silently restore the gate that "
+        f"passes without validating anything. Use a value >= {MIN_FLOOR_LOWER_BOUND}."
+    )
+
+
+def run_schema_lint(
+    *,
+    min_agents: int = MIN_AGENT_FILES,
+    min_skills: int = MIN_SKILL_FILES,
+) -> LintResult:
+    """Validate every discovered skill and agent file; return a structured result."""
+    skill_paths = sorted(glob.glob(SKILLS_GLOB, recursive=True))
+    agent_paths = sorted(glob.glob(AGENTS_GLOB, recursive=True))
+
+    failures: list[str] = []
+    for message in (
+        _below_floor("skill", skill_paths, SKILLS_GLOB, min_skills),
+        _below_floor("agent", agent_paths, AGENTS_GLOB, min_agents),
+    ):
+        if message is not None:
+            failures.append(message)
+
+    for path in skill_paths:
+        failures.extend(_validate_skill(path))
+    for path in agent_paths:
+        failures.extend(_validate_agent(path, agent_paths))
+
+    exit_code = EXIT_SCHEMA if failures else EXIT_OK
+    return LintResult(
+        exit_code=exit_code,
+        skill_count=len(skill_paths),
+        agent_count=len(agent_paths),
+        failures=tuple(failures),
+    )
+
+
+def _schema_lint_mode(*, min_agents: int, min_skills: int) -> int:
+    """Run the default (no-flag) schema lint and return its exit code.
+
+    Split out of ``main()`` so the dispatcher stays a flat list of mode
+    branches, and so the floor/dependency preconditions live next to the run
+    they guard rather than among the argument definitions.
+    """
+    # Floors are validated here rather than via argparse's ``type=``: a type
+    # callable raises SystemExit(2), and 2 is already EXIT_PROTECTED, so a bad
+    # flag would be indistinguishable from a missing breaking-change marker.
+    # Checked before the dependency probe so the message appears even when the
+    # dev extras are not installed.
+    floor_errors = [
+        message
+        for message in (
+            _invalid_floor("--min-agents", min_agents),
+            _invalid_floor("--min-skills", min_skills),
+        )
+        if message is not None
+    ]
+    if floor_errors:
+        for message in floor_errors:
+            logger.error("Frontmatter lint failed: %s", message)
+        return EXIT_SCHEMA
+
+    if not _SCHEMA_DEPS_AVAILABLE:
+        logger.error(
+            "Schema-lint mode requires the 'dev' extra (pydantic, pyyaml); "
+            "run `pip install -e '.[dev]'`, or use --hook for a stdlib-only mode."
+        )
+        return EXIT_SCHEMA
+
+    result = run_schema_lint(min_agents=min_agents, min_skills=min_skills)
+
+    if result.failures:
+        for msg in result.failures:
+            logger.error("Frontmatter lint failed: %s", msg)
+        return result.exit_code
+
+    # Counts go in the message, not extra={}: the configured format string drops
+    # extra, so a "0 skills, 0 agents" run used to be indistinguishable from a
+    # healthy one in CI output.
+    logger.info(
+        "Frontmatter lint passed: %d skills, %d agents",
+        result.skill_count,
+        result.agent_count,
+    )
+    return result.exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     """Lint frontmatter, or run a hook mode; see the module docstring."""
     _configure_logging()
@@ -432,6 +573,24 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="With --hook post-tool-use, print the edited file's path for piping elsewhere.",
     )
+    parser.add_argument(
+        "--min-agents",
+        type=int,
+        default=MIN_AGENT_FILES,
+        help=(
+            f"Minimum agent files the glob must match "
+            f"(default: {MIN_AGENT_FILES}, minimum: {MIN_FLOOR_LOWER_BOUND})."
+        ),
+    )
+    parser.add_argument(
+        "--min-skills",
+        type=int,
+        default=MIN_SKILL_FILES,
+        help=(
+            f"Minimum skill files the glob must match "
+            f"(default: {MIN_SKILL_FILES}, minimum: {MIN_FLOOR_LOWER_BOUND})."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.hook == "pre-tool-use":
@@ -442,32 +601,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.protected_path is not None:
         return _check_protected_path(args.protected_path)
 
-    if not _SCHEMA_DEPS_AVAILABLE:
-        logger.error(
-            "Schema-lint mode requires the 'dev' extra (pydantic, pyyaml); "
-            "run `pip install -e '.[dev]'`, or use --hook for a stdlib-only mode."
-        )
-        return EXIT_SCHEMA
-
-    skill_paths = sorted(glob.glob(SKILLS_GLOB, recursive=True))
-    agent_paths = sorted(glob.glob(AGENTS_GLOB, recursive=True))
-
-    failures: list[str] = []
-    for path in skill_paths:
-        failures.extend(_validate_skill(path))
-    for path in agent_paths:
-        failures.extend(_validate_agent(path, agent_paths))
-
-    if failures:
-        for msg in failures:
-            logger.error("Frontmatter lint failed: %s", msg)
-        return EXIT_SCHEMA
-
-    logger.info(
-        "Frontmatter lint passed",
-        extra={"skills": len(skill_paths), "agents": len(agent_paths)},
-    )
-    return EXIT_OK
+    return _schema_lint_mode(min_agents=args.min_agents, min_skills=args.min_skills)
 
 
 if __name__ == "__main__":

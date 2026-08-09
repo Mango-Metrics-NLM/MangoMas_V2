@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from io import StringIO
@@ -30,6 +31,19 @@ def _arbitrary_protected_path() -> str:
 def _arbitrary_unprotected_path() -> str:
     """Return a path the linter is guaranteed to consider unprotected."""
     return "src/mangomas/agents/chat.py"
+
+
+def _glob_root(pattern: str) -> str:
+    """Return the fixed directory prefix of a recursive glob.
+
+    Fixture trees are built from the linter's own globs rather than from
+    hardcoded literals, so relocating a corpus root updates every test that
+    depends on it. A hardcoded fixture path does not merely go stale — under
+    the non-empty floor it keeps the test *passing for the wrong reason*
+    (zero files discovered still yields EXIT_SCHEMA), which is the silent
+    class of failure this whole spec exists to remove.
+    """
+    return pattern.split("/**", 1)[0]
 
 
 # ── Schema validation (skills) ────────────────────────────────────────────────
@@ -315,6 +329,133 @@ def test_main_returns_ok_on_clean_repo() -> None:
     assert linter.main([]) == linter.EXIT_OK
 
 
+# ── Non-empty corpus floor (spec-0018 R1/R2) ──────────────────────────────────
+#
+# The defect these guard: ``main()`` used to fall straight through to
+# "Frontmatter lint passed" and EXIT_OK when both globs matched ZERO files, and
+# the counts went into an ``extra={}`` the log format drops — so a corpus that
+# moved out from under the globs produced a green, silent, entirely vacuous gate.
+
+
+def test_run_schema_lint_reports_nonzero_counts_on_the_real_repo() -> None:
+    """The vacuity check ``test_main_returns_ok_on_clean_repo`` cannot make:
+    that the run actually discovered files rather than passing on an empty set."""
+    result = linter.run_schema_lint()
+    assert result.exit_code == linter.EXIT_OK
+    assert result.skill_count >= linter.MIN_SKILL_FILES
+    assert result.agent_count >= linter.MIN_AGENT_FILES
+    assert result.failures == ()
+
+
+def test_empty_corpus_fails_instead_of_passing_vacuously(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zero matched files must be a loud failure, not EXIT_OK."""
+    monkeypatch.chdir(tmp_path)
+    result = linter.run_schema_lint()
+    assert result.exit_code == linter.EXIT_SCHEMA
+    assert result.skill_count == 0
+    assert result.agent_count == 0
+    assert len(result.failures) == 2
+
+
+def test_floor_failure_names_the_offending_glob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare "0 files" error would send a reader hunting. The message must
+    name the glob, since a corpus that moved is the likeliest cause."""
+    monkeypatch.chdir(tmp_path)
+    failures = linter.run_schema_lint().failures
+    assert any(linter.SKILLS_GLOB in message for message in failures)
+    assert any(linter.AGENTS_GLOB in message for message in failures)
+
+
+def test_floor_is_a_minimum_not_an_equality(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A surplus over the floor must pass — otherwise every legitimate corpus
+    addition would break the gate and the floor would need constant bumping."""
+    skills_dir = tmp_path / _glob_root(linter.SKILLS_GLOB)
+    agents_dir = tmp_path / _glob_root(linter.AGENTS_GLOB)
+    for index in range(3):
+        skill = skills_dir / f"skill-{index}"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
+    agents_dir.mkdir(parents=True)
+    for index in range(3):
+        (agents_dir / f"agent-{index}.agent.md").write_text(
+            constants.VALID_AGENT_FRONTMATTER, encoding="utf-8"
+        )
+
+    monkeypatch.chdir(tmp_path)
+    result = linter.run_schema_lint(min_agents=1, min_skills=1)
+    assert result.exit_code == linter.EXIT_OK
+    assert (result.skill_count, result.agent_count) == (3, 3)
+
+
+def test_floors_are_overridable_via_cli_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tooling knobs get a script-level ``Final`` plus a flag, never a bare literal.
+
+    Overridability is demonstrated with a floor the corpus *fails* — the previous
+    version of this test passed ``0`` against an empty directory and asserted
+    ``EXIT_OK``, which proved only that a disabled guard stays quiet.
+    """
+    skills_dir = tmp_path / _glob_root(linter.SKILLS_GLOB)
+    agents_dir = tmp_path / _glob_root(linter.AGENTS_GLOB)
+    skill = skills_dir / "skill-0"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "agent-0.agent.md").write_text(
+        constants.VALID_AGENT_FRONTMATTER, encoding="utf-8"
+    )
+
+    monkeypatch.chdir(tmp_path)
+    assert linter.main(["--min-agents", "1", "--min-skills", "1"]) == linter.EXIT_OK
+    # The same corpus, one over the floor: the raised value is what changes the verdict.
+    assert linter.main(["--min-agents", "2", "--min-skills", "1"]) == linter.EXIT_SCHEMA
+
+
+@pytest.mark.parametrize("flag", ["--min-agents", "--min-skills"])
+@pytest.mark.parametrize("value", ["-1", "0"])
+def test_floor_below_lower_bound_is_rejected(
+    flag: str, value: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A floor of 0 or less can never fail, so accepting one silently restores the
+    gate that passes without validating anything. ``tmp_path`` is empty, so the
+    run would otherwise report EXIT_OK — proving the guard, not the corpus."""
+    monkeypatch.chdir(tmp_path)
+    assert linter.main([flag, value]) == linter.EXIT_SCHEMA
+
+
+def test_floor_rejection_names_the_flag_and_the_bound(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The error has to say which flag and what bound, or it can't be acted on."""
+    caplog.set_level(logging.ERROR, logger=linter.__name__)
+    monkeypatch.chdir(tmp_path)
+    assert linter.main(["--min-agents", "-1"]) == linter.EXIT_SCHEMA
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "--min-agents" in logged
+    assert str(linter.MIN_FLOOR_LOWER_BOUND) in logged
+
+
+def test_passing_log_message_carries_the_counts(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression guard: the counts previously went to ``extra={}``, which the
+    configured format string drops — so "0 skills, 0 agents" was invisible."""
+    caplog.set_level(logging.INFO, logger=linter.__name__)
+    assert linter.main([]) == linter.EXIT_OK
+    passed = [r for r in caplog.records if "Frontmatter lint passed" in r.getMessage()]
+    assert len(passed) == 1
+    message = passed[0].getMessage()
+    assert "skills" in message and "agents" in message
+    assert "0 skills" not in message
+
+
 def test_main_protected_mode_unprotected_path() -> None:
     """``--check-protected-paths`` against an unprotected path returns EXIT_OK."""
     assert linter.main(["--check-protected-paths", _arbitrary_unprotected_path()]) == linter.EXIT_OK
@@ -323,10 +464,17 @@ def test_main_protected_mode_unprotected_path() -> None:
 def test_main_schema_failure_returns_exit_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A malformed agent file makes ``main()`` exit with ``EXIT_SCHEMA``."""
-    agents_dir = tmp_path / ".github" / "agents"
+    """A malformed agent file makes ``main()`` exit with ``EXIT_SCHEMA``.
+
+    Fixture roots come from the globs (see :func:`_glob_root`): hardcoded ones
+    would keep this test green while discovering nothing, since an empty
+    corpus now also returns ``EXIT_SCHEMA``. The count assertions below pin
+    the distinction — the files must actually have been found and rejected on
+    their *schema*, not skipped and rejected on the floor.
+    """
+    agents_dir = tmp_path / _glob_root(linter.AGENTS_GLOB)
     agents_dir.mkdir(parents=True)
-    skills_dir = tmp_path / ".github" / "skills" / "broken"
+    skills_dir = tmp_path / _glob_root(linter.SKILLS_GLOB) / "broken"
     skills_dir.mkdir(parents=True)
 
     (skills_dir / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
@@ -335,6 +483,10 @@ def test_main_schema_failure_returns_exit_schema(
     )
 
     monkeypatch.chdir(tmp_path)
+    result = linter.run_schema_lint()
+    assert result.exit_code == linter.EXIT_SCHEMA
+    assert (result.skill_count, result.agent_count) == (1, 1)
+    assert any("schema violation" in failure for failure in result.failures)
     assert linter.main([]) == linter.EXIT_SCHEMA
 
 

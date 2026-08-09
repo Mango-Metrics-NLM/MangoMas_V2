@@ -405,7 +405,11 @@ Four scripts in `scripts/` complete the harness:
 - `lint_agent_frontmatter.py` — Pydantic-validated lint of `*.agent.md`
   / `SKILL.md` frontmatter and `sub_agents:` resolution (default, no-flag
   mode; wired into CI as the `Frontmatter lint` step of the `lint` job,
-  invoked via `make frontmatter`). Also serves two **stdlib-only** hook
+  invoked via `make frontmatter`). Each glob must match at least
+  `MIN_AGENT_FILES` / `MIN_SKILL_FILES` files (overridable via
+  `--min-agents` / `--min-skills`): a glob matching zero files used to fall
+  through to `EXIT_OK`, so a corpus that moved produced a green gate that
+  validated nothing. Also serves two **stdlib-only** hook
   modes reading Claude Code's tool-call JSON from stdin (never a
   `$CLAUDE_TOOL_INPUT_*` env var — Claude Code does not define one):
   `--hook pre-tool-use` emits an advisory `permissionDecision: "ask"` for a
@@ -426,7 +430,11 @@ Four scripts in `scripts/` complete the harness:
 
 ## Claude Code Skills
 
-Skills are workflow-scoped helpers under `.github/skills/<name>/SKILL.md`.
+Skills are workflow-scoped helpers under `.claude/skills/<name>/SKILL.md`
+(spec-0018 / ADR-0024). Claude Code loads only each skill's `description` at
+startup and the body on first use, so the corpus costs almost nothing until a
+skill is actually invoked. VS Code Copilot reads the same directory, so one
+tree serves both.
 
 | Skill | Use when |
 |-------|----------|

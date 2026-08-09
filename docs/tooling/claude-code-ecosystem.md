@@ -174,9 +174,10 @@ rationale before re-proposing it.
 A curated, actively-maintained link list — not installable software. Useful
 as a periodic-review discovery source (Skills, Status Lines, Memory &
 Context Persistence, Observability & Monitoring, Security categories are the
-most relevant to this repo's own `.claude/`/`.github/agents`/`.github/skills`
-surface), but every entry needs independent vetting before adoption; the
-list itself vouches for nothing.
+most relevant to this repo's own three surfaces: skills at `.claude/skills/`,
+agents at `.github/agents/`, and Claude Code configuration itself
+— `.claude/settings.json` plus `.mcp.json`), but every entry needs
+independent vetting before adoption; the list itself vouches for nothing.
 
 ## Verification
 

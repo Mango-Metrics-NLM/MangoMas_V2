@@ -252,6 +252,45 @@ MCP_CONFIG_RELPATH: str = ".mcp.json"
 # documentation-pointer assertion.
 HARNESS_CONFIG_AUDIT_MODE_ENV: str = "MANGOMAS_HARNESS__CONFIG_AUDIT_MODE"
 
+# ── Live Claude Code corpus (spec-0018 / ADR-0024) ───────────────────────────
+# Claude Code reads nothing from `.github/`; VS Code Copilot reads both roots,
+# so `.claude/` is the single home that serves each tool.
+CLAUDE_SKILLS_DIR_RELPATH: str = ".claude/skills"
+RETIRED_SKILLS_DIR_RELPATH: str = ".github/skills"
+
+# The roster, asserted by SET EQUALITY rather than by count: a count names
+# nothing, whereas a set difference names the skill that appeared or vanished,
+# and the one-line edit here is the review record for that change.
+EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
+    {
+        "mango-adapter",
+        "mango-agent-add",
+        "mango-config",
+        "mango-deploy",
+        "mango-error",
+        "mango-eval",
+        "mango-observability",
+        "mango-rag",
+        "mango-release",
+        "mango-testing",
+        "mango-topology",
+        "mango-workflow",
+    }
+)
+
+# Docs that describe the corpus and must not point at a retired path. Historical
+# records are excluded: CHANGELOG entries and dated plan documents describe the
+# state at the time they were written and are deliberately immutable.
+CORPUS_DOC_RELPATHS: tuple[str, ...] = (
+    "CLAUDE.md",
+    "README.md",
+    "NEXT_STEPS.md",
+    ".github/copilot-instructions.md",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    "docs/architecture/c2-container.md",
+    "docs/tooling/claude-code-ecosystem.md",
+)
+
 # Hooks that predate the ecosystem-tooling integration, as
 # ``(event, matcher, command)``. Every `.claude/settings.json` edit must be
 # additive, so the contract test asserts each of these survives verbatim —
@@ -296,6 +335,24 @@ RTK_TELEMETRY_DISABLED_ENV: str = "RTK_TELEMETRY_DISABLED"
 # Shared truthy/falsey markers for the `env`-block flags above.
 ENV_FLAG_ON: str = "1"
 ENV_FLAG_OFF: str = "0"
+
+# Claude Code permission rules in `.claude/settings.json`. Pinned by set
+# equality: nothing else in the suite asserted anything about `permissions`, so
+# a rule could be dropped, or added unreviewed, in total silence.
+EXPECTED_DENY_RULES: frozenset[str] = frozenset(
+    {"Bash(rm -rf:*)", "Bash(git push --force:*)", "Bash(git push -f:*)"}
+)
+# Claude Code honours exactly one wildcard in a Bash rule: a trailing `:*` after
+# the command prefix. An interior `*` is matched as a literal character, so
+# `Bash(python -m ruff *:*)` never matched `python -m ruff check --fix` and the
+# call prompted on every run — a dead allow-rule that looks live.
+BASH_RULE_PREFIX: str = "Bash("
+BASH_RULE_WILDCARD_SUFFIX: str = ":*"
+# Rule heads Claude Code accepts but never consults for a file write, emitting a
+# startup warning instead. Only `Edit(...)` is matched, and it already covers
+# Edit, Write and NotebookEdit — so a `Write(...)` rule is a non-control that
+# reads like one.
+INERT_FILE_RULE_PREFIXES: tuple[str, ...] = ("Write(", "NotebookEdit(")
 
 # MCP servers adopted by ADR-0020. Upstream `memory` (redundant with
 # claude-mem), `everything` (test/demo), and `time` (low value here) are

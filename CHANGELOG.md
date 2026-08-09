@@ -9,6 +9,49 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Live Claude Code corpus — Spec-0018 / ADR-0024._
+
+### Changed
+
+- **Skills moved from `.github/skills/` to `.claude/skills/`.** Claude Code
+  reads nothing from `.github/`, so all 12 skills were inert for the tool this
+  project uses. They are *not* an invented format — `.github/skills/<name>/SKILL.md`
+  is a real, documented GitHub Copilot surface and every skill was fully
+  conformant. Because VS Code Copilot also scans `.claude/skills/`, the single
+  tree now serves Claude Code **and** VS Code Copilot; only the github.com
+  cloud-agent surface is given up. Listed under `Changed` rather than `Removed`
+  because the capability moves rather than disappears. Recorded as pure renames
+  (100% similarity) so `git log --follow` and in-flight rebases survive.
+- `.pre-commit-config.yaml`'s frontmatter-hook `files:` pattern is now
+  path-anchored. The previous `(\.agent\.md|SKILL\.md)$` was filename-only and
+  unanchored, firing on any similarly-named file anywhere in the tree while
+  asserting nothing about location.
+- `.github/copilot-instructions.md` claimed a **85 %** coverage gate; the real
+  gate is 95 % global plus per-package floors, with `scripts/check_coverage.py`
+  as the authoritative source.
+
+### Added
+
+- `tests/tooling/test_corpus_contract.py` — the corpus had no test asserting it
+  existed, was non-empty, or lived anywhere in particular. Asserts the skill
+  roster by **set equality** (a count names nothing; a set difference names the
+  skill that appeared or vanished), that the retired tree stays deleted, that
+  each directory name matches its frontmatter `name`, and that no
+  contributor-facing doc points at a retired path.
+
+### Fixed
+
+- **The frontmatter gate could not detect its own irrelevance.**
+  `scripts/lint_agent_frontmatter.py::main` globbed both corpus trees and, when
+  zero files matched, fell through to `logger.info("Frontmatter lint passed")`
+  and returned `EXIT_OK`. The counts went into an `extra={}` the log format
+  drops, so they were never printed, and no test asserted a non-zero file
+  count — so relocating the corpus would have produced a green CI validating
+  nothing. Adds `MIN_AGENT_FILES`/`MIN_SKILL_FILES` floors (with
+  `--min-agents`/`--min-skills` overrides), a `run_schema_lint() -> LintResult`
+  seam so the counts are assertable at all, and count reporting in the log
+  message. Landed *before* the move, so the move is verified rather than assumed.
+
 _Protected-path governance contract — Spec-0017 / ADR-0021._
 
 ### Fixed
