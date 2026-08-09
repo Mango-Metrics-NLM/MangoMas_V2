@@ -78,6 +78,31 @@ jobs:
           file: coverage.xml
           fail_ci_if_error: false
 
+  protected-paths:
+    name: Protected-path governance gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history is required: the gate diffs against another branch's
+          # tip and walks the commit-message range between them, neither of
+          # which a shallow (default) checkout can resolve.
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # scripts/check_protected_paths.py is stdlib-only (tomllib) by design
+      # (ADR-0021) — it must run without `mangomas` installed, so there is no
+      # "Install dependencies" step in this job.
+      - name: Fetch base branch for protected-path diff
+        run: git fetch origin feat/initial-release
+
+      - name: Protected-path governance gate
+        run: make protected-paths BASE_REF=origin/feat/initial-release
+
   bridge-coverage:
     name: Bridge coverage gate
     runs-on: ubuntu-latest
@@ -101,6 +126,29 @@ jobs:
       # independent and each failure is attributable.
       - name: Bridge coverage (isolated, floor 100%)
         run: make bridge-coverage
+
+  scripts-coverage:
+    name: Scripts coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # scripts/ lives outside the mangomas package, so the --cov=mangomas
+      # gate never measures it (ADR-0021 / spec-0017 A7). Same isolation
+      # idiom as bridge-coverage: its own COVERAGE_FILE + -o addopts="".
+      # Floor is the measured actual (see Makefile's SCRIPTS_FLOOR comment),
+      # not an assumed 95 — scripts/check_coverage.py itself is the drag.
+      - name: Scripts coverage (isolated, measured floor)
+        run: make scripts-coverage
 
   secret-scan:
     name: Secret scan
