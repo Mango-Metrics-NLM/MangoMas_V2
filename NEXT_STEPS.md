@@ -330,17 +330,31 @@ defects and a further round of duplication clusters via a full-repo audit:
   lines 25–33), and its eval-var block names settings that do not exist. The
   file is read-protected in the authoring environment, so it needs a manual
   edit — this is the last live instance of that drift.
-- **`main` / `feat/initial-release` reconciliation.** The two branches have
-  genuinely diverged: `main` carries a harness-hardening layer
+- **`main` / `feat/initial-release` reconciliation — partially done.** The two
+  branches genuinely diverged: `main` carried a harness-hardening layer
   (`src/mangomas/harness/`, `scripts/harness_stop_gate.py`,
-  `scripts/harness_config_audit.py`) that this line lacks, and each branch
+  `scripts/harness_config_audit.py`) that this line lacked, and each branch
   implements `workflow/` differently (DAG + `WorkflowRunner` on `main`;
-  bounded tree + node registry here). **ADR-0011 names a different decision on
-  each branch**, and `main` allocates ADR-0007. Reconciliation needs its own
-  PR: pick one workflow implementation, renumber the colliding ADRs, and port
-  `main`'s stop-gate/config-audit hooks (they are stronger than this branch's
-  Stop hook — the gate reads the floor from `pyproject.toml` at runtime and
-  honours `stop_hook_active`).
+  bounded tree + node registry here). ✅ **ADR collision resolved**:
+  `docs/adr/0021-protected-path-governance-contract.md` supersedes `main`'s
+  ADR-0011 (harness-hook-hardening); `docs/adr/0023-workflow-implementation-reconciliation.md`
+  supersedes `main`'s ADR-0007 (declarative workflows) and records that this
+  line's bounded-tree implementation is kept — see that ADR for the reasoning
+  (`main`'s `WorkflowRunner` is a runtime scheduler that would violate
+  ADR-0011's acyclic-by-construction invariant; its level-synchronised
+  execution also isn't real per-edge DAG semantics). ✅ **Governance layer
+  ported**: `src/mangomas/harness/{governance,config_audit}.py` and
+  `scripts/harness_config_audit.py` (the `ConfigChange` hook) landed —
+  `governance.py` is adapted to read `pyproject.toml`'s
+  `[tool.mangomas.governance]` table rather than hardcoding the protected-path
+  set. **Deliberately not ported**: `main`'s `coverage.py` and
+  `harness_stop_gate.py` — `read_coverage_floor` parses
+  `--cov-fail-under` out of `pyproject.toml` and feeds it back to a pytest run
+  whose addopts already set that value, a tautology on this branch where
+  `scripts/check_coverage.py` is already the documented single source of
+  truth. **Still outstanding**: the `dag` node kind itself (ADR-0023 records
+  the design — compile to a `Sequence`/`FanOut` tree at load time, absorbing
+  only `main`'s `execution_levels()` algorithm — but does not implement it).
 - **Deferred tooling** — ruff `ASYNC`/`DTZ`/`C4`/`RET`/`PERF`/`C90` rule
   families, a `dependabot.yml`, a `pip-audit` job, a Python 3.13 matrix leg, a
   `verify` job gating `deploy.yml`, and a `pre-commit run --all-files` CI job.
@@ -366,8 +380,15 @@ branching** landed as the `branch` node (spec 0012 / ADR-0016). ✅ **Composite
 `fan_out` branches** landed (spec 0013 / ADR-0018): a `fan_out` branch may now be
 any `WorkflowStep` (nested `fan_out` / `loop` / `branch`), with an all-`agent`
 fan_out preserving byte-identical `dispatch_fan_out` parity. Remaining
-follow-ups: composite `loop` bodies (touches the protected `dispatch_loop`), and
-entry-point discovery of third-party node kinds.
+follow-ups: composite `loop` bodies (correction: there is no `dispatch_loop`
+method — the loop lives inside `Orchestrator.dispatch` via `acceptance_fn`/
+`max_steps`, and `LoopNodeExecutor` already just calls `orch.dispatch(...)`,
+so per the ADR-0018 `fan_out` precedent this needs **no protected-path edit**
+at all; the real blocker is that `WorkflowStep` excludes `SequenceNode`, so a
+composite loop body can't loop a sub-pipeline yet), and entry-point discovery
+of third-party node kinds (needs an additive `PluginNode` union member, since
+`WorkflowNode` is a closed `extra="forbid"` discriminated union — an unknown
+`kind` fails validation before any registry is consulted).
 
 ### Multi-tenancy
 

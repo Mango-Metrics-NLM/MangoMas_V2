@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "MANGOMAS_DISABLE_RTK_HOOK": "1",
+    "MANGOMAS_HARNESS__CONFIG_AUDIT_MODE": "off",
+    "RUN_INTEGRATION": "0"
+  }
+}

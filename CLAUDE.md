@@ -96,6 +96,9 @@ src/mangomas/
 │       ├── system.py   /health, /ready, /list_agents endpoints
 │       └── workflows.py /workflows/run, /workflows/validate endpoints
 ├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
+├── harness/        Claude Code harness/hook governance (opt-in; ADR-0021)
+│   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
+│   └── config_audit.py ConfigChange hook decision table
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
 ├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
 │                   LoopSettings, MemorySettings, EmbeddingSettings,
@@ -363,6 +366,7 @@ The enterprise harness layer is configured by `HarnessSettings` (env prefix
 | `MANGOMAS_HARNESS__METRICS_NAMESPACE` | `mangomas.harness` | OTel tracer namespace for harness spans |
 | `MANGOMAS_HARNESS__METRICS_EXPORTER` | `inherit` | Harness span exporter (`inherit`/`console`/`gcp`); `inherit` reuses the app exporter |
 | `MANGOMAS_HARNESS__HOOK_LOG_LEVEL` | `INFO` | Level for SessionStart-hook log records |
+| `MANGOMAS_HARNESS__CONFIG_AUDIT_MODE` | `off` | `ConfigChange` hook mode (`off`/`audit`/`block`) for `.claude/settings.json` / `settings.local.json` edits |
 | `MANGOMAS_TELEMETRY__EXPORTER` | `console` | Application span exporter (`console`/`gcp` Cloud Trace) |
 
 When enabled, `composition.py::build_orchestrator` returns
@@ -371,18 +375,51 @@ overrides both `dispatch` and `stream_dispatch` to add a
 `harness.agent_invoke` parent span with attributes `agent.name`,
 `harness.topology` (`dispatch` or `stream`), and `messages.count`.
 `dispatch_pipeline` and `dispatch_fan_out` inherit the wrap because
-they delegate through `dispatch`.
+they delegate through `dispatch`. `stream_dispatch`'s span is opened by a
+dedicated `_traced_stream` generator that attaches/detaches OTel context
+per chunk (never across a `yield`, which would leak the span into the
+consumer's own spans) and closes on full drain, an upstream error, or
+early consumer abandonment alike — see ADR-0021.
 
-Two scripts in `scripts/` complete the harness:
+`src/mangomas/harness/` (`governance.py`, `config_audit.py`) hosts the
+in-package governance logic: the protected-path set and `BREAKING-CHANGE`
+marker aliases (read from `pyproject.toml`'s `[tool.mangomas.governance]`
+table — the single source of truth, shared with `scripts/lint_agent_frontmatter.py`
+and `scripts/check_protected_paths.py`), and the `ConfigChange` hook's
+decision table.
+
+Protected core paths (`src/mangomas/core/agent.py`,
+`src/mangomas/core/orchestrator.py`, `src/mangomas/core/tools.py`,
+`src/mangomas/errors.py`, `src/mangomas/registry.py`) require a
+`BREAKING-CHANGE` marker (the legacy `# approved-breaking-change` form is
+still accepted) on at least one commit message when touched. The
+**authoritative** enforcement is `scripts/check_protected_paths.py`, a CI
+job (`make protected-paths`) that reads `git diff`/`git log` between the PR
+base and head — state an in-session agent cannot rewrite. The `PreToolUse`
+hook (below) is **advisory only**: it cannot be a complete gate regardless
+of internal correctness, since `Bash`/MCP filesystem tool calls bypass its
+`Edit|Write|NotebookEdit` matcher entirely.
+
+Four scripts in `scripts/` complete the harness:
 
 - `lint_agent_frontmatter.py` — Pydantic-validated lint of `*.agent.md`
-  / `SKILL.md` frontmatter and `sub_agents:` resolution. Also gates
-  protected core paths (`src/mangomas/core/agent.py`,
-  `src/mangomas/core/orchestrator.py`, `src/mangomas/core/tools.py`,
-  `src/mangomas/errors.py`, `src/mangomas/registry.py`) with a required
-  `BREAKING-CHANGE` marker on staged diffs (the legacy
-  `# approved-breaking-change` marker is still accepted). Wired into CI
-  as `frontmatter-lint`.
+  / `SKILL.md` frontmatter and `sub_agents:` resolution (default, no-flag
+  mode; wired into CI as the `Frontmatter lint` step of the `lint` job,
+  invoked via `make frontmatter`). Also serves two **stdlib-only** hook
+  modes reading Claude Code's tool-call JSON from stdin (never a
+  `$CLAUDE_TOOL_INPUT_*` env var — Claude Code does not define one):
+  `--hook pre-tool-use` emits an advisory `permissionDecision: "ask"` for a
+  protected-path edit, and `--hook post-tool-use --emit-path` prints the
+  edited file's path for piping into `ruff check --fix`. Neither mode
+  requires `pydantic`/`pyyaml` to be installed. The legacy
+  `--check-protected-paths <path>` flag (staged-diff based) remains for
+  pre-commit, where a staged diff genuinely exists.
+- `check_protected_paths.py` — the CI gate described above.
+- `harness_config_audit.py` — `ConfigChange` hook; evaluates
+  `mangomas.harness.config_audit.evaluate_config_change` against
+  `HarnessSettings.config_audit_mode`, deferring its `mangomas.config`/
+  `mangomas.telemetry` imports so it degrades to the default mode rather
+  than crashing when `mangomas` isn't installed.
 - `harness_session_start.py` — SessionStart hook for Claude Code on
   the web. Emits a single-line JSON probe report (venv + LM Studio)
   so a fresh session knows what's available. Always returns `EXIT_OK`.

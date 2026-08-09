@@ -73,7 +73,12 @@ being masked by a blanket `|| true`.
   lint, ruff autofix, and pytest-on-stop hooks). Set
   `MANGOMAS_DISABLE_RTK_HOOK=1` in your personal, gitignored
   `.claude/settings.local.json` `env` block instead — `env` values layer
-  across settings files even though hook arrays don't.
+  across settings files even though hook arrays don't. Copy
+  `.claude/settings.local.json.example` to `.claude/settings.local.json` to
+  start from a working template (also covers
+  `MANGOMAS_HARNESS__CONFIG_AUDIT_MODE` and `RUN_INTEGRATION`); the example
+  file is committed and JSON-validated by `make validate-config`, so it can't
+  silently rot.
 
 ## `claude-mem` — cross-session memory (pending)
 
