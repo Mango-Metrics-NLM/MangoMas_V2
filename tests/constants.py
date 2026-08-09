@@ -252,6 +252,45 @@ MCP_CONFIG_RELPATH: str = ".mcp.json"
 # documentation-pointer assertion.
 HARNESS_CONFIG_AUDIT_MODE_ENV: str = "MANGOMAS_HARNESS__CONFIG_AUDIT_MODE"
 
+# ── Live Claude Code corpus (spec-0018 / ADR-0024) ───────────────────────────
+# Claude Code reads nothing from `.github/`; VS Code Copilot reads both roots,
+# so `.claude/` is the single home that serves each tool.
+CLAUDE_SKILLS_DIR_RELPATH: str = ".claude/skills"
+RETIRED_SKILLS_DIR_RELPATH: str = ".github/skills"
+
+# The roster, asserted by SET EQUALITY rather than by count: a count names
+# nothing, whereas a set difference names the skill that appeared or vanished,
+# and the one-line edit here is the review record for that change.
+EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
+    {
+        "mango-adapter",
+        "mango-agent-add",
+        "mango-config",
+        "mango-deploy",
+        "mango-error",
+        "mango-eval",
+        "mango-observability",
+        "mango-rag",
+        "mango-release",
+        "mango-testing",
+        "mango-topology",
+        "mango-workflow",
+    }
+)
+
+# Docs that describe the corpus and must not point at a retired path. Historical
+# records are excluded: CHANGELOG entries and dated plan documents describe the
+# state at the time they were written and are deliberately immutable.
+CORPUS_DOC_RELPATHS: tuple[str, ...] = (
+    "CLAUDE.md",
+    "README.md",
+    "NEXT_STEPS.md",
+    ".github/copilot-instructions.md",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    "docs/architecture/c2-container.md",
+    "docs/tooling/claude-code-ecosystem.md",
+)
+
 # Hooks that predate the ecosystem-tooling integration, as
 # ``(event, matcher, command)``. Every `.claude/settings.json` edit must be
 # additive, so the contract test asserts each of these survives verbatim —

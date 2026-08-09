@@ -284,7 +284,7 @@ an unknown agent is `AgentNotFound` (404), and loop exhaustion is
 ## Claude Code harness (opt-in)
 
 The repository ships an enterprise Claude Code harness configured under
-`.github/agents/` (parents + sub-agents), `.github/skills/`, and
+`.claude/skills/`, `.github/agents/` (parents + sub-agents), and
 `.claude/settings.json`. It is **opt-in** — production callers behave
 identically until the switch is flipped:
 
@@ -304,7 +304,7 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.github/skills/<name>/SKILL.md` | 12 skills |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 12 skills — live in Claude Code and VS Code Copilot |
 | Parent agents | `.github/agents/<parent>.agent.md` | 4 parents |
 | Sub-agents (opt-in `sub_agents:` key) | `.github/agents/<parent>/<slug>.agent.md` | 15 specialised sub-agents |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |

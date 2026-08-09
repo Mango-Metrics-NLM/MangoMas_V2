@@ -33,6 +33,19 @@ def _arbitrary_unprotected_path() -> str:
     return "src/mangomas/agents/chat.py"
 
 
+def _glob_root(pattern: str) -> str:
+    """Return the fixed directory prefix of a recursive glob.
+
+    Fixture trees are built from the linter's own globs rather than from
+    hardcoded literals, so relocating a corpus root updates every test that
+    depends on it. A hardcoded fixture path does not merely go stale — under
+    the non-empty floor it keeps the test *passing for the wrong reason*
+    (zero files discovered still yields EXIT_SCHEMA), which is the silent
+    class of failure this whole spec exists to remove.
+    """
+    return pattern.split("/**", 1)[0]
+
+
 # ── Schema validation (skills) ────────────────────────────────────────────────
 
 
@@ -362,8 +375,8 @@ def test_floor_is_a_minimum_not_an_equality(
 ) -> None:
     """A surplus over the floor must pass — otherwise every legitimate corpus
     addition would break the gate and the floor would need constant bumping."""
-    skills_dir = tmp_path / ".github" / "skills"
-    agents_dir = tmp_path / ".github" / "agents"
+    skills_dir = tmp_path / _glob_root(linter.SKILLS_GLOB)
+    agents_dir = tmp_path / _glob_root(linter.AGENTS_GLOB)
     for index in range(3):
         skill = skills_dir / f"skill-{index}"
         skill.mkdir(parents=True)
@@ -410,10 +423,17 @@ def test_main_protected_mode_unprotected_path() -> None:
 def test_main_schema_failure_returns_exit_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A malformed agent file makes ``main()`` exit with ``EXIT_SCHEMA``."""
-    agents_dir = tmp_path / ".github" / "agents"
+    """A malformed agent file makes ``main()`` exit with ``EXIT_SCHEMA``.
+
+    Fixture roots come from the globs (see :func:`_glob_root`): hardcoded ones
+    would keep this test green while discovering nothing, since an empty
+    corpus now also returns ``EXIT_SCHEMA``. The count assertions below pin
+    the distinction — the files must actually have been found and rejected on
+    their *schema*, not skipped and rejected on the floor.
+    """
+    agents_dir = tmp_path / _glob_root(linter.AGENTS_GLOB)
     agents_dir.mkdir(parents=True)
-    skills_dir = tmp_path / ".github" / "skills" / "broken"
+    skills_dir = tmp_path / _glob_root(linter.SKILLS_GLOB) / "broken"
     skills_dir.mkdir(parents=True)
 
     (skills_dir / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
@@ -422,6 +442,10 @@ def test_main_schema_failure_returns_exit_schema(
     )
 
     monkeypatch.chdir(tmp_path)
+    result = linter.run_schema_lint()
+    assert result.exit_code == linter.EXIT_SCHEMA
+    assert (result.skill_count, result.agent_count) == (1, 1)
+    assert any("schema violation" in failure for failure in result.failures)
     assert linter.main([]) == linter.EXIT_SCHEMA
 
 

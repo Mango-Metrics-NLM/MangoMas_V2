@@ -39,7 +39,9 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 
 ## Testing Rules
 
-- Coverage gate: **85 % minimum** (enforced by `pytest --cov`)
+- Coverage gate: **95 % global minimum**, plus per-package floors — the
+  authoritative source is `scripts/check_coverage.py`, which pytest's
+  `--cov-fail-under` mirrors
 - Every new module gets a `tests/test_<module>.py`
 - Use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository` from `tests/fakes.py`
 - Constants from `tests/constants.py`; update file when adding new domain constants
@@ -77,7 +79,9 @@ tests/                   # Mirrors src/ structure; fakes.py + constants.py are s
 - Sub-agents are declared via the optional `sub_agents:` frontmatter key on a
   parent and live at `.github/agents/<parent>/<name>.agent.md`. Parents without
   the key remain valid.
-- Skills live at `.github/skills/<name>/SKILL.md`. See `mango-testing` for the
+- Skills live at `.claude/skills/<name>/SKILL.md` — VS Code Copilot reads that
+  directory as well as the legacy `.github/` one, so a single tree serves
+  Copilot and Claude Code (spec-0018). See `mango-testing` for the
   canonical layout; others cover adapter / agent-add / error / observability /
   config / topology / release workflows.
 - Use the most specific sub-agent when working in its domain; defer to the

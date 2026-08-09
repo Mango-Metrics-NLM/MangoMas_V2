@@ -49,10 +49,11 @@ End-to-end Claude Code harness landed as a non-breaking opt-in layer.
 Counts below are as-of the harness branch; the suite has since grown —
 see the skill and sub-agent tables in `CLAUDE.md` for the current set.
 
-- **8 skills** under `.github/skills/<name>/SKILL.md` covering
+- **8 skills** under `.claude/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
-  observability, config, release, and topology. _(Since grown — see the
-  skill table in `CLAUDE.md` for the current set.)_
+  observability, config, release, and topology. _(Since grown to 12, and
+  relocated to `.claude/` by spec-0018 — see the skill table in
+  `CLAUDE.md` for the current set.)_
 - **13 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
   grouped under the 4 parent agents (including `pr-watcher` under
   `architect`). The new `sub_agents:` frontmatter key is optional and
@@ -78,7 +79,7 @@ see the skill and sub-agent tables in `CLAUDE.md` for the current set.
   branch in `_staged_diff`). Global coverage 96.95 % across 505
   unit tests.
 
-See `.github/agents/`, `.github/skills/`, and the new `harness:`
+See `.github/agents/`, `.claude/skills/`, and the new `harness:`
 block in `Settings`. C4 diagrams in `docs/architecture/` (c2 + c3)
 describe where the harness sits.
 
@@ -241,7 +242,7 @@ The full RAG port landed as a non-breaking opt-in layer
   translation across the chat and embedding adapters.
 - New `rag` 95 % coverage floor; all floors met.
 
-See the `mango-rag` skill (`.github/skills/mango-rag/SKILL.md`) and the
+See the `mango-rag` skill (`.claude/skills/mango-rag/SKILL.md`) and the
 C4 diagrams in `docs/architecture/`.
 
 ---
