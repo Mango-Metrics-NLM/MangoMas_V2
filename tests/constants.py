@@ -179,14 +179,17 @@ Body content.
 
 MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS: str = """\
 ---
-name: BadExample
+name: bad-example
 description: A sufficiently descriptive blurb that satisfies the linter minimum length.
-model: Claude Sonnet 4.5 (copilot)
-argument-hint: "Pass an example argument"
+model: inherit
 ---
 
 Body content.
 """
+# Filename stem the fixtures above must be written under: Claude Code resolves
+# an agent by its `name` field, so the lint requires the two to agree.
+VALID_CLAUDE_AGENT_SLUG: str = "example-agent"
+MISSING_TOOLS_AGENT_SLUG: str = "bad-example"
 
 MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION: str = """\
 ---

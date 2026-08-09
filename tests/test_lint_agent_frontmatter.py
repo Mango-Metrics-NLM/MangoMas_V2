@@ -84,100 +84,79 @@ def test_missing_frontmatter_returns_error(tmp_path: Path) -> None:
 # ── Schema validation (agents) ────────────────────────────────────────────────
 
 
+def _write_agent(directory: Path, slug: str, text: str | None = None) -> Path:
+    """Write an agent fixture at the filename its ``name`` field requires.
+
+    Claude Code resolves an agent by its ``name``, so the lint requires name and
+    filename stem to agree; fixtures have to honour that or they exercise the
+    mismatch branch instead of the one under test.
+    """
+    body = text if text is not None else constants.VALID_CLAUDE_AGENT_FRONTMATTER
+    body = body.replace(f"name: {constants.VALID_CLAUDE_AGENT_SLUG}", f"name: {slug}")
+    path = directory / f"{slug}{linter.AGENT_FILE_SUFFIX}"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
 def test_valid_agent_frontmatter_returns_no_errors(tmp_path: Path) -> None:
-    parent_path = tmp_path / "parent.agent.md"
-    parent_path.write_text(constants.VALID_AGENT_FRONTMATTER, encoding="utf-8")
-    assert linter._validate_agent(str(parent_path), [str(parent_path)]) == []
+    path = _write_agent(tmp_path, constants.VALID_CLAUDE_AGENT_SLUG)
+    assert linter._validate_agent(str(path)) == []
 
 
 def test_missing_tools_agent_returns_error(tmp_path: Path) -> None:
-    parent_path = tmp_path / "parent.agent.md"
-    parent_path.write_text(constants.MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS, encoding="utf-8")
-    errors = linter._validate_agent(str(parent_path), [str(parent_path)])
+    """``tools`` is required: omitting it makes an agent inherit *every* tool,
+    so silence here would hand out full privilege."""
+    path = tmp_path / f"{constants.MISSING_TOOLS_AGENT_SLUG}{linter.AGENT_FILE_SUFFIX}"
+    path.write_text(constants.MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS, encoding="utf-8")
+    errors = linter._validate_agent(str(path))
     assert len(errors) == 1
     assert "schema violation" in errors[0]
 
 
 def test_agent_unknown_tool_returns_error(tmp_path: Path) -> None:
-    invalid = constants.VALID_AGENT_FRONTMATTER.replace("tools: [read, search]", "tools: [delete]")
-    parent_path = tmp_path / "parent.agent.md"
-    parent_path.write_text(invalid, encoding="utf-8")
-    errors = linter._validate_agent(str(parent_path), [str(parent_path)])
+    invalid = constants.VALID_CLAUDE_AGENT_FRONTMATTER.replace(
+        "tools: Read, Grep, Glob, Skill", "tools: Read, Delete"
+    )
+    path = _write_agent(tmp_path, constants.VALID_CLAUDE_AGENT_SLUG, invalid)
+    errors = linter._validate_agent(str(path))
     assert len(errors) == 1
-    assert "schema violation" in errors[0]
+    assert "unrecognised tool token" in errors[0]
 
 
-# ── sub_agents resolution ─────────────────────────────────────────────────────
-
-
-def test_sub_agents_resolves_to_existing_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Parent declaring ``sub_agents: [child]`` is valid when the child file exists."""
-    agents_dir = tmp_path / ".github" / "agents"
-    agents_dir.mkdir(parents=True)
-    parent_path = agents_dir / "myparent.agent.md"
-    child_dir = agents_dir / "myparent"
-    child_dir.mkdir()
-    child_path = child_dir / "mychild.agent.md"
-
-    parent_body = constants.VALID_AGENT_FRONTMATTER.replace(
-        "---\n\nBody content.\n", "sub_agents:\n  - mychild\n---\n\nBody.\n"
-    )
-    parent_path.write_text(parent_body, encoding="utf-8")
-    child_path.write_text(constants.VALID_AGENT_FRONTMATTER, encoding="utf-8")
-
-    monkeypatch.chdir(tmp_path)
-    errors = linter._validate_agent(
-        ".github/agents/myparent.agent.md",
-        [
-            ".github/agents/myparent.agent.md",
-            ".github/agents/myparent/mychild.agent.md",
-        ],
-    )
-    assert errors == []
-
-
-def test_sub_agents_missing_child_returns_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A parent declaring an unresolvable sub_agents slug returns ``missing file``."""
-    agents_dir = tmp_path / ".github" / "agents"
-    agents_dir.mkdir(parents=True)
-    parent_path = agents_dir / "myparent.agent.md"
-    parent_body = constants.VALID_AGENT_FRONTMATTER.replace(
-        "---\n\nBody content.\n", "sub_agents:\n  - ghost\n---\n\nBody.\n"
-    )
-    parent_path.write_text(parent_body, encoding="utf-8")
-
-    monkeypatch.chdir(tmp_path)
-    errors = linter._validate_agent(
-        ".github/agents/myparent.agent.md",
-        [".github/agents/myparent.agent.md"],
-    )
+def test_name_must_match_the_filename_stem(tmp_path: Path) -> None:
+    """A file whose ``name`` disagrees with its stem loads under a name that
+    does not match where it lives — findable only by reading the frontmatter."""
+    path = tmp_path / f"somewhere-else{linter.AGENT_FILE_SUFFIX}"
+    path.write_text(constants.VALID_CLAUDE_AGENT_FRONTMATTER, encoding="utf-8")
+    errors = linter._validate_agent(str(path))
     assert len(errors) == 1
-    assert "missing file" in errors[0]
+    assert "filename stem" in errors[0]
 
 
-def test_sub_agents_on_child_file_is_rejected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A child file declaring its own sub_agents is rejected — hierarchy is two-deep only."""
-    agents_dir = tmp_path / ".github" / "agents" / "myparent"
-    agents_dir.mkdir(parents=True)
-    child_path = agents_dir / "mychild.agent.md"
-    child_body = constants.VALID_AGENT_FRONTMATTER.replace(
-        "---\n\nBody content.\n", "sub_agents:\n  - grandchild\n---\n\nBody.\n"
+def test_legacy_copilot_agent_is_rejected_with_specific_messages(tmp_path: Path) -> None:
+    """A ``.agent.md`` resurrected from a rebase must not pass, and must say
+    *what* is wrong. ``extra="forbid"`` alone would emit one generic "Extra
+    inputs are not permitted" for ``argument-hint`` and stop there."""
+    path = tmp_path / f"parent{linter.AGENT_FILE_SUFFIX}"
+    path.write_text(constants.VALID_AGENT_FRONTMATTER, encoding="utf-8")
+    joined = " ".join(linter._validate_agent(str(path)))
+    assert "argument-hint" in joined
+    assert "unrecognised tool token" in joined
+    assert "Extra inputs are not permitted" not in joined
+
+
+def test_invalid_yaml_frontmatter_is_reported_not_raised(tmp_path: Path) -> None:
+    """An unquoted description containing a colon raises ``yaml.ScannerError``,
+    which is not a ``ValueError`` — it used to escape the caller's handler and
+    surface as a traceback instead of a message naming the file."""
+    path = tmp_path / f"broken{linter.AGENT_FILE_SUFFIX}"
+    path.write_text(
+        "---\nname: broken\ndescription: Routing for X: routers, DTOs and more text here\n---\n",
+        encoding="utf-8",
     )
-    child_path.write_text(child_body, encoding="utf-8")
-
-    monkeypatch.chdir(tmp_path)
-    errors = linter._validate_agent(
-        ".github/agents/myparent/mychild.agent.md",
-        [".github/agents/myparent/mychild.agent.md"],
-    )
+    errors = linter._validate_agent(str(path))
     assert len(errors) == 1
-    assert "only valid on parent" in errors[0]
+    assert "invalid YAML" in errors[0]
 
 
 # ── Protected-path enforcement ────────────────────────────────────────────────
@@ -393,9 +372,7 @@ def test_floor_is_a_minimum_not_an_equality(
         (skill / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
     agents_dir.mkdir(parents=True)
     for index in range(3):
-        (agents_dir / f"agent-{index}.agent.md").write_text(
-            constants.VALID_AGENT_FRONTMATTER, encoding="utf-8"
-        )
+        _write_agent(agents_dir, f"agent-{index}")
 
     monkeypatch.chdir(tmp_path)
     result = linter.run_schema_lint(min_agents=1, min_skills=1)
@@ -418,9 +395,7 @@ def test_floors_are_overridable_via_cli_flags(
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
     agents_dir.mkdir(parents=True)
-    (agents_dir / "agent-0.agent.md").write_text(
-        constants.VALID_AGENT_FRONTMATTER, encoding="utf-8"
-    )
+    _write_agent(agents_dir, "agent-0")
 
     monkeypatch.chdir(tmp_path)
     assert linter.main(["--min-agents", "1", "--min-skills", "1"]) == linter.EXIT_OK
@@ -488,9 +463,10 @@ def test_main_schema_failure_returns_exit_schema(
     skills_dir.mkdir(parents=True)
 
     (skills_dir / "SKILL.md").write_text(constants.VALID_SKILL_FRONTMATTER, encoding="utf-8")
-    (agents_dir / "broken.agent.md").write_text(
-        constants.MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS, encoding="utf-8"
-    )
+    # Named for its `name` field so it fails on the missing `tools` — the
+    # schema violation under test — rather than on the name/stem mismatch.
+    broken = agents_dir / f"{constants.MISSING_TOOLS_AGENT_SLUG}{linter.AGENT_FILE_SUFFIX}"
+    broken.write_text(constants.MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS, encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
     result = linter.run_schema_lint()

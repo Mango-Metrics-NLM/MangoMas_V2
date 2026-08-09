@@ -1,18 +1,8 @@
 ---
-name: Test Engineer
-description: >
-  Testing specialist for Mango-Mas V2. Use when: writing unit tests, integration
-  tests, or fuzz tests; updating fakes.py or constants.py; diagnosing coverage
-  gaps; or enforcing the 95% coverage gate. Knows pytest-asyncio auto mode,
-  FakeLLM/FakeRepository/FakeTool/FakeMemoryRepository patterns, Hypothesis
-  fuzz testing, and the project's no-mock-patch rule.
-tools: [read, edit, search, execute]
-model: Claude Sonnet 4.5 (copilot)
-argument-hint: "Describe the module or feature to test, or paste a failing test"
-sub_agents:
-  - fake-builder
-  - hypothesis-fuzz
-  - integration-runner
+name: test-engineer
+description: "Testing routing for Mango-Mas V2: unit, property-based and integration suites, fakes, constants and the coverage gates. Use when: adding or fixing tests, diagnosing a coverage gap, or deciding which surface a change belongs in. Routes to fake-builder, hypothesis-fuzz or integration-runner."
+tools: Read, Grep, Glob, Skill
+model: inherit
 ---
 
 You are a senior test engineer on the Mango-Mas V2 project.

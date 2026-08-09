@@ -58,7 +58,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Final, Literal
+from typing import IO, Final
 
 import _governance
 import _stdin_json
@@ -77,7 +77,13 @@ except ImportError:
 
 # ── Module-level constants (single source of truth, no magic literals) ────────
 
-AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
+# Root and suffix are the single source of truth; the glob is derived from them.
+# They used to be independent literals — the glob here, plus a `.agent.md`
+# `removesuffix` and a `.github/agents/` prefix buried in the resolver — so a
+# relocation could update one and leave the others silently wrong.
+AGENTS_ROOT: Final[str] = ".github/agents"
+AGENT_FILE_SUFFIX: Final[str] = ".agent.md"
+AGENTS_GLOB: Final[str] = f"{AGENTS_ROOT}/**/*{AGENT_FILE_SUFFIX}"
 # Skills moved to .claude/ (spec-0018): Claude Code reads nothing from .github/,
 # and VS Code Copilot scans .claude/skills/ too, so one tree serves both.
 SKILLS_GLOB: Final[str] = ".claude/skills/**/SKILL.md"
@@ -158,9 +164,9 @@ BREAKING_CHANGE_MARKER: Final[str] = "BREAKING-CHANGE"
 FRONTMATTER_DELIMITER: Final[str] = "---"
 FRONTMATTER_SPLIT_PARTS: Final[int] = 3  # [pre, frontmatter, body]
 DESCRIPTION_MIN_LENGTH: Final[int] = 30
-# Allowed tool tokens are enforced by the ``Literal`` annotation on
-# ``AgentFrontmatter.tools`` — the Pydantic model is the live source of truth,
-# no parallel constant required.
+# Allowed tool tokens are checked by ``_invalid_tool_tokens`` rather than a
+# ``Literal`` annotation: an MCP tool's name depends on the caller's
+# ``.mcp.json`` and cannot be enumerated ahead of time.
 
 EXIT_OK: Final[int] = 0
 EXIT_SCHEMA: Final[int] = 1
@@ -357,16 +363,25 @@ if _SCHEMA_DEPS_AVAILABLE:
         argument_hint: str = Field(alias="argument-hint", min_length=1)
 
     class AgentFrontmatter(BaseModel):
-        """Frontmatter schema for ``.github/agents/**/*.agent.md``."""
+        """Frontmatter schema for a Claude Code agent (spec-0018 / ADR-0024).
+
+        ``extra="forbid"`` rather than ``allow``: under ``allow`` a typo'd
+        ``toolz:`` passes silently, and since omitting ``tools`` makes an agent
+        inherit *every* tool, the result is a fully-privileged agent nobody
+        asked for. Bounded-and-loud beats unbounded-and-invisible.
+
+        ``tools`` is required for the same reason, and is not a ``Literal``:
+        an MCP tool name depends on the caller's ``.mcp.json`` and cannot be
+        enumerated here. Token validity is checked by ``_invalid_agent_fields``
+        before this model runs.
+        """
 
         model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
         name: str = Field(min_length=1)
         description: str = Field(min_length=DESCRIPTION_MIN_LENGTH)
-        tools: list[Literal["read", "edit", "search", "execute"]] = Field(min_length=1)
+        tools: str | list[str]
         model: str = Field(min_length=1)
-        argument_hint: str = Field(alias="argument-hint", min_length=1)
-        sub_agents: list[str] | None = None
 
 
 # ── Parsing helpers ───────────────────────────────────────────────────────────
@@ -382,7 +397,14 @@ def _split_frontmatter(text: str) -> dict[str, object]:
     if len(parts) < FRONTMATTER_SPLIT_PARTS:
         raise ValueError("missing frontmatter (expected leading ---)")
     raw = parts[1]
-    loaded = yaml.safe_load(raw)
+    try:
+        loaded = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        # Translated rather than propagated: a YAMLError is not a ValueError,
+        # so an unquoted `description:` containing a colon used to escape the
+        # callers' `except (OSError, ValueError)` and surface as a raw
+        # traceback instead of a lint message naming the file.
+        raise ValueError(f"invalid YAML in frontmatter: {exc}") from exc
     if not isinstance(loaded, dict):
         raise ValueError("frontmatter is not a YAML mapping")
     return loaded
@@ -394,18 +416,6 @@ def _normalize_path(p: str) -> str:
     if normalized.startswith("./"):
         normalized = normalized[2:]
     return normalized
-
-
-_MIN_SUBAGENT_PATH_DEPTH = 3  # .github/agents/<parent>/<child>.agent.md
-
-
-def _parent_slug_of(agent_path: str) -> str | None:
-    """Return the parent slug for *agent_path* or ``None`` if it is a parent file."""
-    normalized = _normalize_path(agent_path)
-    parts = normalized.split("/")
-    if len(parts) <= _MIN_SUBAGENT_PATH_DEPTH:
-        return None
-    return parts[-2]
 
 
 # ── Validators ────────────────────────────────────────────────────────────────
@@ -425,38 +435,38 @@ def _validate_skill(path: str) -> list[str]:
     return []
 
 
-def _validate_agent(path: str, all_agent_paths: list[str]) -> list[str]:
-    """Return a list of error messages (empty when valid)."""
-    errors: list[str] = []
-    normalized_path = _normalize_path(path)
-    normalized_all = [_normalize_path(p) for p in all_agent_paths]
+def _validate_agent(path: str) -> list[str]:
+    """Return a list of error messages (empty when valid).
+
+    Field-level policy runs *before* Pydantic so each rejected field gets a
+    message saying why it is wrong here. ``extra="forbid"`` would otherwise
+    report "Extra inputs are not permitted" for ``permissionMode`` — a field
+    Claude Code genuinely accepts — and send the reader hunting a typo.
+    """
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
         fm = _split_frontmatter(text)
-        agent = AgentFrontmatter.model_validate(fm)
-    except ValidationError as exc:
-        return [f"{path}: schema violation: {exc}"]
     except (OSError, ValueError) as exc:
         return [f"{path}: {exc}"]
 
-    if agent.sub_agents is None:
-        return []
+    field_errors = [f"{path}: {message}" for message in _invalid_agent_fields(fm)]
+    if field_errors:
+        return field_errors
 
-    parent_slug = _parent_slug_of(normalized_path)
-    if parent_slug is not None:
-        # Sub-agents declaring further sub-agents is intentionally disallowed
-        # to keep the hierarchy two-deep and predictable.
-        errors.append(f"{path}: sub_agents is only valid on parent agent files")
-        return errors
+    expected_slug = os.path.basename(_normalize_path(path)).removesuffix(AGENT_FILE_SUFFIX)
+    if fm.get("name") != expected_slug:
+        return [
+            f"{path}: name {fm.get('name')!r} must equal the filename stem "
+            f"{expected_slug!r} — Claude Code resolves an agent by its name field, so a "
+            f"mismatch makes the file's location misleading"
+        ]
 
-    parent_filename = os.path.basename(normalized_path)
-    parent_name_slug = parent_filename.removesuffix(".agent.md")
-    for child_slug in agent.sub_agents:
-        expected = f".github/agents/{parent_name_slug}/{child_slug}.agent.md"
-        if expected not in normalized_all:
-            errors.append(f"{path}: sub_agents references missing file {expected!r}")
-    return errors
+    try:
+        AgentFrontmatter.model_validate(fm)
+    except ValidationError as exc:
+        return [f"{path}: schema violation: {exc}"]
+    return []
 
 
 # ── Protected-path enforcement (legacy: staged-diff based, pre-commit only) ───
@@ -664,7 +674,7 @@ def run_schema_lint(
     for path in skill_paths:
         failures.extend(_validate_skill(path))
     for path in agent_paths:
-        failures.extend(_validate_agent(path, agent_paths))
+        failures.extend(_validate_agent(path))
 
     exit_code = EXIT_SCHEMA if failures else EXIT_OK
     return LintResult(
