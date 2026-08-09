@@ -53,6 +53,7 @@ import glob
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -164,6 +165,178 @@ DESCRIPTION_MIN_LENGTH: Final[int] = 30
 EXIT_OK: Final[int] = 0
 EXIT_SCHEMA: Final[int] = 1
 EXIT_PROTECTED: Final[int] = 2
+
+# ── Claude Code agent-format validators (spec-0018 / ADR-0024) ────────────────
+#
+# Unwired on purpose in this commit: defined, tested, and called by nothing.
+# The schema swap that calls them is a separate, near-mechanical diff, so the
+# logic lands where it can be reviewed on its own.
+
+# Agent identity. Kebab-case, matching the filename stem. The `mango-` prefix
+# that scopes the shared roster is asserted by a corpus contract test rather
+# than here — this pattern also has to accept a contributor's own local agent.
+AGENT_SLUG_PATTERN: Final[str] = r"^[a-z0-9]+(-[a-z0-9]+)*$"
+_AGENT_SLUG_RE: Final[re.Pattern[str]] = re.compile(AGENT_SLUG_PATTERN)
+
+# Tool tokens Claude Code actually recognises. The previous corpus used
+# Copilot's aliases (`read`/`edit`/`search`/`execute`), which are valid *there*
+# and meaningless here — and because omitting `tools` inherits every tool, an
+# unrecognised list is the dangerous kind of wrong.
+_CLAUDE_CODE_TOOL_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        "Bash",
+        "BashOutput",
+        "Edit",
+        "ExitPlanMode",
+        "Glob",
+        "Grep",
+        "KillShell",
+        "NotebookEdit",
+        "Read",
+        "Skill",
+        "SlashCommand",
+        "Task",
+        "WebFetch",
+        "WebSearch",
+        "Write",
+    }
+)
+# Tools provided by an MCP server are namespaced and cannot be enumerated here —
+# they depend on the caller's `.mcp.json`. Accept the shape, not the name.
+_MCP_TOOL_PREFIX: Final[str] = "mcp__"
+
+# `Agent(child-a, child-b)` / `Task(...)`: a delegation-scoping form that works
+# on the main thread's `--agent` flag and is **silently ignored inside a
+# subagent definition** — the subagent gets unrestricted delegation instead of
+# the named subset. Rejected rather than accepted-and-ignored, because a rule
+# that looks like a restriction and isn't is worse than no rule.
+_AGENT_SCOPED_TOOL_RE: Final[re.Pattern[str]] = re.compile(r"^(Agent|Task)\s*\(")
+
+# Fields Claude Code itself accepts, which this project declines to use. These
+# cannot be left to `extra="forbid"`: it would report "Extra inputs are not
+# permitted" for a field that is, in fact, permitted by the tool — sending the
+# reader to look for a typo that isn't there.
+_POLICY_REJECTED_FIELDS: Final[dict[str, str]] = {
+    "permissionMode": (
+        "per-agent permissionMode is not used here; permissions are governed "
+        "centrally in .claude/settings.json so one file describes the whole posture"
+    ),
+    "hooks": (
+        "per-agent hooks are not used here; hooks are declared once in "
+        ".claude/settings.json where they can be reviewed together"
+    ),
+}
+
+# Fields carried over from the GitHub Copilot agent format. Valid there, wrong
+# here — and worth their own message, since every file in the migrating corpus
+# has at least one.
+_LEGACY_FORMAT_FIELDS: Final[dict[str, str]] = {
+    "argument-hint": (
+        "argument-hint is a Copilot agent field with no Claude Code equivalent; "
+        "fold the guidance into the description or the body"
+    ),
+    "sub_agents": (
+        "sub_agents was this repo's own parent/child convention and is not a "
+        "Claude Code field; agents are a flat namespace, so drop it"
+    ),
+}
+
+
+def _normalize_tools(raw: object) -> list[str] | None:
+    """Return *raw* as a list of tool tokens, or ``None`` if it isn't one.
+
+    Accepts both the comma-separated string Claude Code documents and a YAML
+    list, so a contributor writing either gets validated rather than skipped.
+    """
+    if isinstance(raw, str):
+        return [token.strip() for token in raw.split(",") if token.strip()]
+    if isinstance(raw, list) and all(isinstance(token, str) for token in raw):
+        return [token.strip() for token in raw if token.strip()]
+    return None
+
+
+def _invalid_tool_tokens(tokens: list[str]) -> list[str]:
+    """Return the tokens Claude Code would not recognise as tools."""
+    return [
+        token
+        for token in tokens
+        if token not in _CLAUDE_CODE_TOOL_NAMES and not token.startswith(_MCP_TOOL_PREFIX)
+    ]
+
+
+def _scoped_delegation_tokens(tokens: list[str]) -> list[str]:
+    """Return tokens using the silently-ignored ``Agent(...)`` scoping form."""
+    return [token for token in tokens if _AGENT_SCOPED_TOOL_RE.match(token)]
+
+
+def _policy_rejected_fields(fm: dict[str, object]) -> list[str]:
+    """Return messages for fields Claude Code allows but this project does not."""
+    return [
+        f"{field!r} is not allowed: {reason}"
+        for field, reason in _POLICY_REJECTED_FIELDS.items()
+        if field in fm
+    ]
+
+
+def _legacy_format_fields(fm: dict[str, object]) -> list[str]:
+    """Return messages for fields left over from the Copilot agent format."""
+    return [
+        f"{field!r} is not a Claude Code agent field: {reason}"
+        for field, reason in _LEGACY_FORMAT_FIELDS.items()
+        if field in fm
+    ]
+
+
+def _model_value_is_valid(value: str) -> bool:
+    """Return whether *value* is a plausible Claude Code model selector.
+
+    Claude Code takes an alias (``sonnet``/``opus``/``haiku``/``inherit``) or a
+    model id. Both are lowercase and unspaced, so rejecting whitespace and
+    uppercase retires the whole ``Claude Sonnet 4.5 (copilot)`` class of value
+    in one rule, without this script having to track a live model list.
+    """
+    return bool(value) and value == value.lower() and not any(ch.isspace() for ch in value)
+
+
+def _invalid_agent_fields(fm: dict[str, object]) -> list[str]:
+    """Return every policy/format problem in *fm*, before schema validation.
+
+    Runs ahead of the Pydantic model so each rejected field gets a message
+    explaining *why it is wrong here*, rather than ``extra="forbid"``'s generic
+    "Extra inputs are not permitted".
+    """
+    errors = _policy_rejected_fields(fm) + _legacy_format_fields(fm)
+
+    name = fm.get("name")
+    if isinstance(name, str) and not _AGENT_SLUG_RE.match(name):
+        errors.append(f"name {name!r} is not a kebab-case slug matching {AGENT_SLUG_PATTERN}")
+
+    model = fm.get("model")
+    if isinstance(model, str) and not _model_value_is_valid(model):
+        errors.append(
+            f"model {model!r} is not a Claude Code model selector; expected an "
+            f"alias (sonnet/opus/haiku/inherit) or a model id, lowercase and unspaced"
+        )
+
+    if "tools" in fm:
+        tokens = _normalize_tools(fm["tools"])
+        if tokens is None:
+            errors.append("tools must be a comma-separated string or a list of strings")
+        else:
+            errors.extend(
+                f"tool {token!r} uses the Agent(...) scoping form, which Claude Code "
+                f"ignores inside a subagent definition — the agent would get "
+                f"unrestricted delegation, not the named subset"
+                for token in _scoped_delegation_tokens(tokens)
+            )
+            unknown = _invalid_tool_tokens(tokens)
+            if unknown:
+                errors.append(
+                    f"unrecognised tool token(s) {unknown!r}; expected Claude Code tool "
+                    f"names or an {_MCP_TOOL_PREFIX}* MCP tool"
+                )
+    return errors
+
 
 # PreToolUse advisory-decision constants (ADR-0021).
 _HOOK_EVENT_NAME: Final[str] = "PreToolUse"

@@ -131,6 +131,42 @@ argument-hint: "Pass an example argument"
 Body content.
 """
 
+# Claude Code agent format (spec-0018 / ADR-0024). Kept beside the legacy
+# Copilot fixture above rather than replacing it: the migration needs both, so
+# tests can assert the new format passes *and* that the old one is rejected with
+# a message naming the specific field rather than a generic "extra inputs".
+VALID_CLAUDE_AGENT_FRONTMATTER: str = """\
+---
+name: example-agent
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+tools: Read, Grep, Glob, Skill
+model: inherit
+---
+"""
+
+# Field values that must be rejected, each standing for a real defect in the
+# migrating corpus. Kept as data so a new rejection rule adds a row, not a test.
+INVALID_AGENT_MODEL_VALUES: tuple[str, ...] = (
+    "Claude Sonnet 4.5 (copilot)",  # every one of the 19 agents carried this
+    "Opus",
+    "claude opus 5",
+)
+# Copilot tool aliases: valid in that tool, meaningless to Claude Code — and
+# because omitting `tools` inherits everything, an unrecognised list is the
+# dangerous kind of wrong rather than a harmless one.
+INVALID_AGENT_TOOL_TOKENS: tuple[str, ...] = ("read", "edit", "search", "execute")
+VALID_AGENT_TOOL_TOKENS: tuple[str, ...] = ("Read", "Grep", "Glob", "Skill", "Edit", "Write")
+# An MCP tool name cannot be enumerated ahead of time — it depends on the
+# caller's .mcp.json — so the validator accepts the shape.
+VALID_MCP_TOOL_NAME: str = "mcp__github__pull_request_read"
+# Delegation scoping that Claude Code ignores inside a subagent definition: the
+# agent gets unrestricted delegation, not the named subset.
+SCOPED_DELEGATION_TOOL_SPEC: str = "Agent(protocol-auditor, layering-auditor)"
+# Fields Claude Code accepts and this project declines, vs fields carried over
+# from the Copilot format. The two get different messages on purpose.
+POLICY_REJECTED_AGENT_FIELDS: tuple[str, ...] = ("permissionMode", "hooks")
+LEGACY_AGENT_FIELDS: tuple[str, ...] = ("argument-hint", "sub_agents")
+
 VALID_SKILL_FRONTMATTER: str = """\
 ---
 name: example-skill

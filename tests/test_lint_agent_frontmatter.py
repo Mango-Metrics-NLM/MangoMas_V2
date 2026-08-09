@@ -46,6 +46,16 @@ def _glob_root(pattern: str) -> str:
     return pattern.split("/**", 1)[0]
 
 
+def _frontmatter_of(text: str) -> dict[str, object]:
+    """Parse a fixture's frontmatter with the linter's own splitter.
+
+    Reusing ``_split_frontmatter`` rather than a second YAML load keeps the
+    field-level tests exercising the same parse the lint performs.
+    """
+    parsed: dict[str, object] = linter._split_frontmatter(text)
+    return parsed
+
+
 # ── Schema validation (skills) ────────────────────────────────────────────────
 
 
@@ -687,3 +697,119 @@ def test_subprocess_default_schema_lint_mode_still_requires_pydantic(tmp_path: P
     )
     assert result.returncode == linter.EXIT_SCHEMA
     assert "dev' extra" in (result.stdout + result.stderr)
+
+
+# ── Claude Code agent-format validators (spec-0018 / ADR-0024) ────────────────
+#
+# These helpers are unwired in this commit — defined and tested, called by
+# nothing. The schema swap that calls them is a separate, near-mechanical diff.
+
+
+def test_valid_claude_agent_frontmatter_has_no_field_errors() -> None:
+    """The positive case, so every rejection test below is a real signal rather
+    than a fixture that could never pass."""
+    fm = _frontmatter_of(constants.VALID_CLAUDE_AGENT_FRONTMATTER)
+    assert linter._invalid_agent_fields(fm) == []
+
+
+@pytest.mark.parametrize("model", constants.INVALID_AGENT_MODEL_VALUES)
+def test_uppercase_or_spaced_model_is_rejected(model: str) -> None:
+    """One rule retires the whole ``Claude Sonnet 4.5 (copilot)`` class that all
+    19 agents carried, without this script tracking a live model list."""
+    assert not linter._model_value_is_valid(model)
+
+
+@pytest.mark.parametrize("model", ["inherit", "sonnet", "opus", "claude-opus-5"])
+def test_alias_and_model_id_are_accepted(model: str) -> None:
+    assert linter._model_value_is_valid(model)
+
+
+def test_copilot_tool_aliases_are_rejected() -> None:
+    """`read`/`edit`/`search`/`execute` are valid Copilot aliases and meaningless
+    to Claude Code. Since omitting ``tools`` inherits *every* tool, an
+    unrecognised list is the dangerous kind of wrong, not a harmless one."""
+    invalid = linter._invalid_tool_tokens(list(constants.INVALID_AGENT_TOOL_TOKENS))
+    assert invalid == list(constants.INVALID_AGENT_TOOL_TOKENS)
+
+
+def test_real_tool_names_and_mcp_tools_are_accepted() -> None:
+    tokens = [*constants.VALID_AGENT_TOOL_TOKENS, constants.VALID_MCP_TOOL_NAME]
+    assert linter._invalid_tool_tokens(tokens) == []
+
+
+def test_scoped_delegation_form_is_rejected() -> None:
+    """``Agent(a, b)`` is ignored inside a subagent definition — the agent gets
+    unrestricted delegation rather than the named subset. A rule that looks like
+    a restriction and isn't is worse than no rule, so it fails the lint."""
+    tokens = [constants.SCOPED_DELEGATION_TOOL_SPEC]
+    assert linter._scoped_delegation_tokens(tokens) == tokens
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["Read, Grep, Glob", ["Read", "Grep", "Glob"]],
+    ids=["comma-string", "yaml-list"],
+)
+def test_tools_accepts_both_documented_shapes(raw: object) -> None:
+    assert linter._normalize_tools(raw) == ["Read", "Grep", "Glob"]
+
+
+@pytest.mark.parametrize("raw", [42, None, {"Read": True}, ["Read", 7]])
+def test_tools_rejects_shapes_that_are_not_token_lists(raw: object) -> None:
+    assert linter._normalize_tools(raw) is None
+
+
+@pytest.mark.parametrize("field", constants.POLICY_REJECTED_AGENT_FIELDS)
+def test_policy_rejected_field_explains_the_project_policy(field: str) -> None:
+    """These are valid Claude Code fields, so ``extra="forbid"`` would say
+    "Extra inputs are not permitted" — sending the reader to hunt a typo that
+    isn't there. The message has to say *this project declines it*."""
+    errors = linter._policy_rejected_fields({field: "whatever"})
+    assert len(errors) == 1
+    assert field in errors[0]
+    assert ".claude/settings.json" in errors[0]
+
+
+@pytest.mark.parametrize("field", constants.LEGACY_AGENT_FIELDS)
+def test_legacy_copilot_field_is_named_as_such(field: str) -> None:
+    """Every file in the migrating corpus carries at least one of these, so this
+    is among the most-read messages of the migration."""
+    errors = linter._legacy_format_fields({field: "whatever"})
+    assert len(errors) == 1
+    assert field in errors[0]
+
+
+def test_policy_and_legacy_messages_are_distinguishable() -> None:
+    """A rejected-by-policy field and a wrong-format field must not read the
+    same — they call for different fixes."""
+    policy = linter._policy_rejected_fields({"permissionMode": "acceptEdits"})[0]
+    legacy = linter._legacy_format_fields({"argument-hint": "x"})[0]
+    assert policy != legacy
+    assert "not a Claude Code agent field" in legacy
+    assert "not a Claude Code agent field" not in policy
+
+
+@pytest.mark.parametrize("name", ["Example", "mango_agent", "Mango-Agent", "agent!"])
+def test_non_kebab_name_is_rejected(name: str) -> None:
+    fm = {"name": name}
+    assert any("kebab-case" in error for error in linter._invalid_agent_fields(fm))
+
+
+@pytest.mark.parametrize("name", ["backend", "mango-orchestrator-dev", "sse-streamer"])
+def test_kebab_name_is_accepted(name: str) -> None:
+    fm = {"name": name}
+    assert linter._invalid_agent_fields(fm) == []
+
+
+def test_legacy_corpus_fixture_fails_on_every_axis() -> None:
+    """The fixture the 19 agents actually used, run through the new validator:
+    Copilot tool aliases, a spaced/uppercase model, a Title-Case name, and
+    ``argument-hint``. Proves the migration's error output is useful rather
+    than one generic complaint."""
+    fm = _frontmatter_of(constants.VALID_AGENT_FRONTMATTER)
+    errors = linter._invalid_agent_fields(fm)
+    joined = " ".join(errors)
+    assert "argument-hint" in joined
+    assert "kebab-case" in joined
+    assert "model" in joined
+    assert "unrecognised tool token" in joined
