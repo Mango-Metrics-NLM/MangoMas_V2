@@ -11,7 +11,6 @@ from mangomas.harness import governance
 _VALID_GOVERNANCE_TOML = """
 [tool.mangomas.governance]
 protected_paths = ["src/mangomas/core/agent.py"]
-breaking_change_marker = "BREAKING-CHANGE"
 breaking_change_marker_aliases = ["BREAKING-CHANGE", "# approved-breaking-change"]
 """
 _MISSING_TABLE_TOML = "[tool.mangomas]\n# no governance table\n"

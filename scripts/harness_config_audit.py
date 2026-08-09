@@ -49,10 +49,11 @@ Run::
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from typing import Final
+
+import _stdin_json
 
 from mangomas.harness.config_audit import ConfigChangeMode, evaluate_config_change
 
@@ -91,6 +92,9 @@ def _configure_logging() -> None:
         )
     except Exception:
         logging.basicConfig(level=logging.INFO)
+        logger.warning(
+            "Structured telemetry setup failed; falling back to basicConfig", exc_info=True
+        )
 
 
 def _resolve_mode() -> ConfigChangeMode:
@@ -112,18 +116,11 @@ def _resolve_mode() -> ConfigChangeMode:
 def _read_stdin_payload() -> dict[str, object]:
     """Return the hook's stdin JSON, or ``{}`` on any parse failure.
 
-    A hook must never crash a session over its own plumbing — malformed or
+    Thin wrapper around the shared ``scripts/_stdin_json.py`` reader — a
+    hook must never crash a session over its own plumbing, so malformed or
     empty stdin degrades to "no recognized source" rather than raising.
     """
-    raw = sys.stdin.read()
-    if not raw.strip():
-        return {}
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("ConfigChange hook received non-JSON stdin; ignoring")
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return _stdin_json.read_json_payload(sys.stdin, logger=logger)
 
 
 def _extract_source(payload: dict[str, object]) -> str | None:

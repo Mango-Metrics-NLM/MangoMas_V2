@@ -15,13 +15,17 @@ state, so a local edit that hasn't been committed cannot pass or fail this gate)
    the protected set change on this branch?
 2. If so, ``git log --format=%B <base>..<head>`` (the commits unique to this
    branch) must contain a ``BREAKING-CHANGE`` marker (or its accepted legacy
-   alias) *somewhere in a commit message* in that range. Checking commit
-   messages rather than diff content closes the gap the old (broken)
-   ``PreToolUse`` hook had even in its intended design: a diff-content check
-   passes when the marker line is *deleted*, since a deletion still contains
-   the string in the diff's ``-`` context. A commit message can't be edited
-   after the fact without rewriting history, which this gate would then also
-   see.
+   alias) as its own line or a ``Marker:``-style trailer, *somewhere in a
+   commit message* in that range (see
+   ``_governance.find_breaking_change_marker`` — line-anchored, not a bare
+   substring test, so a message explaining a change is *not* breaking, e.g.
+   "This is NOT a BREAKING-CHANGE, just an internal cleanup.", is not
+   mistaken for an approval). Checking commit messages rather than diff
+   content closes the gap the old (broken) ``PreToolUse`` hook had even in
+   its intended design: a diff-content check passes when the marker line is
+   *deleted*, since a deletion still contains the string in the diff's ``-``
+   context. A commit message can't be edited after the fact without
+   rewriting history, which this gate would then also see.
 
 Both the protected-path set and the marker aliases live in ``pyproject.toml``
 under ``[tool.mangomas.governance]`` — read via stdlib ``tomllib`` so neither
@@ -48,9 +52,10 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from typing import Final
+
+import _governance
 
 DEFAULT_PYPROJECT_PATH: Final[Path] = Path("pyproject.toml")
 DEFAULT_HEAD_REF: Final[str] = "HEAD"
@@ -61,36 +66,23 @@ EXIT_GIT_ERROR: Final[int] = 2
 
 
 class GovernanceConfigError(Exception):
-    """Raised when ``[tool.mangomas.governance]`` is missing or malformed."""
+    """Raised when ``[tool.mangomas.governance]`` is missing/malformed, or a
+    git command this script depends on fails."""
 
 
 def _load_governance(pyproject_path: Path) -> tuple[frozenset[str], frozenset[str]]:
     """Return ``(protected_paths, marker_aliases)`` from *pyproject_path*.
 
-    Raises :class:`GovernanceConfigError` on any malformed/missing config —
-    this script must fail loudly on a config problem rather than silently
-    gating nothing.
+    Thin wrapper around the shared ``scripts/_governance.py`` loader,
+    re-raising as this module's own :class:`GovernanceConfigError` (the
+    same type ``_run_git`` raises on a git-command failure) so :func:`check`
+    has exactly one exception type to catch. This script must fail loudly
+    on a config problem rather than silently gating nothing.
     """
     try:
-        raw = pyproject_path.read_bytes()
-    except OSError as exc:
-        raise GovernanceConfigError(f"cannot read {pyproject_path}: {exc}") from exc
-    try:
-        doc = tomllib.loads(raw.decode("utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise GovernanceConfigError(f"malformed TOML in {pyproject_path}: {exc}") from exc
-
-    try:
-        governance = doc["tool"]["mangomas"]["governance"]
-        protected_paths = frozenset(governance["protected_paths"])
-        marker_aliases = frozenset(governance["breaking_change_marker_aliases"])
-    except KeyError as exc:
-        raise GovernanceConfigError(
-            f"[tool.mangomas.governance] missing required key {exc}"
-        ) from exc
-    if not protected_paths or not marker_aliases:
-        raise GovernanceConfigError("[tool.mangomas.governance] tables must be non-empty")
-    return protected_paths, marker_aliases
+        return _governance.load_governance(pyproject_path)
+    except _governance.GovernanceLoadError as exc:
+        raise GovernanceConfigError(str(exc)) from exc
 
 
 def _run_git(args: list[str]) -> str:
@@ -143,7 +135,7 @@ def check(base_ref: str, head_ref: str, pyproject_path: Path) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT_GIT_ERROR
 
-    matched_marker = next((marker for marker in marker_aliases if marker in messages), None)
+    matched_marker = _governance.find_breaking_change_marker(messages, marker_aliases)
     print("Protected core contracts changed on this branch:")
     for path in touched_protected:
         print(f"  - {path}")

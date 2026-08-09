@@ -99,13 +99,16 @@ def test_protected_paths_job_delegates_to_make() -> None:
     """The protected-path gate (ADR-0021) has its own job, like bridge-coverage,
     so a failure is attributable and the job needs no `pip install` step (the
     script is stdlib-only by design — see spec-0017 R2)."""
-    steps = _ci_jobs()["protected-paths"]["steps"]
-    run_steps = [step["run"] for step in steps if "run" in step]
+    job = _ci_jobs()["protected-paths"]
+    run_steps = [step["run"] for step in job["steps"] if "run" in step]
     assert run_steps == [
-        "git fetch origin feat/initial-release",
-        "make protected-paths BASE_REF=origin/feat/initial-release",
+        "git fetch origin ${{ env.BASE_BRANCH }}",
+        "make protected-paths BASE_REF=origin/${{ env.BASE_BRANCH }}",
     ]
-    assert not any(step.get("run", "").startswith("pip install") for step in steps)
+    assert not any(step.get("run", "").startswith("pip install") for step in job["steps"])
+    # BASE_BRANCH is a job-level env var, not repeated per-step — the two
+    # steps above template it rather than each hardcoding the trunk name.
+    assert job["env"]["BASE_BRANCH"] == "feat/initial-release"
 
 
 def test_scripts_coverage_job_delegates_to_make() -> None:

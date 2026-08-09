@@ -125,7 +125,6 @@ protected_paths = [
     "src/mangomas/errors.py",
     "src/mangomas/registry.py",
 ]
-breaking_change_marker = "BREAKING-CHANGE"
 breaking_change_marker_aliases = ["BREAKING-CHANGE", "# approved-breaking-change"]
 
 [tool.ruff]
@@ -164,7 +163,7 @@ exclude = ["*.md"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-mypy_path = "src:eval_harness_bridge/src"
+mypy_path = "src:eval_harness_bridge/src:scripts"
 packages = ["mangomas"]
 explicit_package_bases = true
 warn_unused_ignores = true

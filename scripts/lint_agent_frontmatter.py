@@ -53,9 +53,11 @@ import logging
 import os
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from typing import IO, Final, Literal
+
+import _governance
+import _stdin_json
 
 # ``pydantic``/``pyyaml`` are deferred into the schema-lint code path (the
 # module-level ``if`` below), not imported unconditionally at the top of the
@@ -75,6 +77,10 @@ AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
 SKILLS_GLOB: Final[str] = ".github/skills/**/SKILL.md"
 
 _DEFAULT_PYPROJECT_PATH: Final[Path] = Path("pyproject.toml")
+
+# Defined before _load_governance() (called below, at import time) needs it
+# for its fallback-path warning.
+logger = logging.getLogger(__name__)
 
 # Fallback governance values, used only if pyproject.toml's
 # [tool.mangomas.governance] table (the single source of truth — see
@@ -100,21 +106,21 @@ def _load_governance(
 ) -> tuple[frozenset[str], frozenset[str]]:
     """Return ``(protected_paths, marker_aliases)`` from *pyproject_path*.
 
-    Stdlib-only (``tomllib``). Falls back to the documented defaults on any
+    Thin wrapper around the shared ``scripts/_governance.py`` loader.
+    Falls back to the documented defaults (with a logged warning) on any
     read/parse/shape failure rather than raising — this feeds both the
     schema-lint module constants (import time) and the hook modes (must
     never crash a session).
     """
     try:
-        doc = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-        governance = doc["tool"]["mangomas"]["governance"]
-        protected = frozenset(governance["protected_paths"])
-        aliases = frozenset(governance["breaking_change_marker_aliases"])
-        if protected and aliases:
-            return protected, aliases
-    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError):
-        pass
-    return _FALLBACK_PROTECTED_PATHS, _FALLBACK_BREAKING_CHANGE_MARKER_ALIASES
+        return _governance.load_governance(pyproject_path)
+    except _governance.GovernanceLoadError as exc:
+        logger.warning(
+            "Could not read [tool.mangomas.governance] from %s; using fallback defaults (%s)",
+            pyproject_path,
+            exc,
+        )
+        return _FALLBACK_PROTECTED_PATHS, _FALLBACK_BREAKING_CHANGE_MARKER_ALIASES
 
 
 # Stable core contracts gated by the protected-path hook. Kept in lock-step with
@@ -139,8 +145,6 @@ EXIT_PROTECTED: Final[int] = 2
 # PreToolUse advisory-decision constants (ADR-0021).
 _HOOK_EVENT_NAME: Final[str] = "PreToolUse"
 _HOOK_PERMISSION_ASK: Final[str] = "ask"
-
-logger = logging.getLogger(__name__)
 
 
 # ── Pydantic v2 schemas (schema-lint mode only — see module docstring) ────────
@@ -296,9 +300,7 @@ def _check_protected_path(path: str) -> int:
     if normalised not in PROTECTED_PATHS:
         return EXIT_OK
     diff = _staged_diff(normalised)
-    matched_marker = next(
-        (marker for marker in BREAKING_CHANGE_MARKER_ALIASES if marker in diff), None
-    )
+    matched_marker = _governance.find_breaking_change_marker(diff, BREAKING_CHANGE_MARKER_ALIASES)
     if matched_marker is not None:
         logger.info(
             "Protected path has approved breaking-change marker",
@@ -331,17 +333,11 @@ def _check_protected_path(path: str) -> int:
 def _read_hook_payload(stream: IO[str]) -> dict[str, object]:
     """Return the hook's stdin JSON, or ``{}`` on any parse failure.
 
-    A hook must never crash a session over its own plumbing — malformed or
+    Thin wrapper around the shared ``scripts/_stdin_json.py`` reader — a
+    hook must never crash a session over its own plumbing, so malformed or
     empty stdin degrades to "nothing to report" rather than raising.
     """
-    raw = stream.read()
-    if not raw.strip():
-        return {}
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return _stdin_json.read_json_payload(stream, logger=logger)
 
 
 def _extract_tool_path(payload: dict[str, object]) -> str | None:

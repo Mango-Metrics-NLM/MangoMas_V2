@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -456,6 +457,43 @@ async def test_harness_stream_span_ends_on_early_consumer_abandonment(
     finished = exporter.get_finished_spans()
     assert len(finished) == 1
     assert finished[0].name == "harness.agent_invoke"
+
+
+async def test_harness_stream_span_ends_on_task_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sibling test above drives GeneratorExit via an explicit
+    ``.aclose()`` — the ``except (GeneratorExit, asyncio.CancelledError)``
+    branch's other half was previously untested. Cancelling the *task*
+    consuming the stream while ``_traced_stream`` is itself suspended
+    inside ``await inner.__anext__()`` throws ``CancelledError`` into that
+    exact point, distinct from an external ``aclose()`` call."""
+    exporter = InMemorySpanExporter()
+    wrapper, request = _make_traced_stream_wrapper(
+        monkeypatch, exporter, namespace=f"{_HARNESS_STREAM_SPAN_NAMESPACE}.cancelled"
+    )
+
+    resumed_after_first_chunk = asyncio.Event()
+
+    async def _slow_inner() -> AsyncGenerator[str, None]:
+        yield "first"
+        resumed_after_first_chunk.set()
+        await asyncio.sleep(10)
+        yield "second"  # pragma: no cover -- unreachable, cancelled before this resumes
+
+    async def _consume() -> None:
+        async for _chunk in wrapper._traced_stream(DEFAULT_AGENT_NAME, request, _slow_inner()):
+            pass
+
+    task = asyncio.create_task(_consume())
+    await resumed_after_first_chunk.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    finished = exporter.get_finished_spans()
+    assert len(finished) == 1
+    assert finished[0].status.status_code != StatusCode.ERROR
 
 
 async def test_harness_traced_stream_records_exception_and_reraises(

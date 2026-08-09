@@ -358,6 +358,14 @@ defects and a further round of duplication clusters via a full-repo audit:
 - **Deferred tooling** — ruff `ASYNC`/`DTZ`/`C4`/`RET`/`PERF`/`C90` rule
   families, a `dependabot.yml`, a `pip-audit` job, a Python 3.13 matrix leg, a
   `verify` job gating `deploy.yml`, and a `pre-commit run --all-files` CI job.
+- **Protected-paths CI job is not yet a required status check.** Spec-0017 R1
+  intends the `protected-paths` job to be a merge-blocking required status
+  check, but GitHub branch-protection settings are a repo-admin action under
+  Settings → Branches, not something any file in this repo can express or a
+  session can configure. Until an admin adds `protected-paths` (and the other
+  gate jobs) to the required-checks list, a PR that edits a protected core
+  contract without a `BREAKING-CHANGE` trailer will show the check red but is
+  not actually blocked from merging.
 
 ---
 

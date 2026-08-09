@@ -53,3 +53,27 @@ def test_block_mode_blocks_a_governed_source() -> None:
 def test_block_mode_blocks_project_settings_too() -> None:
     decision = evaluate_config_change("project_settings", "block")
     assert decision.action == "block"
+
+
+@pytest.mark.parametrize("mode", ["audit", "block"])
+def test_empty_string_source_is_not_treated_as_missing(mode: str) -> None:
+    """An empty-string source is NOT equivalent to a missing (``None``)
+    source: ``resolved_source = source or _UNKNOWN_SOURCE_LABEL`` treats
+    both as falsy for *display*, but the fail-open branch below it checks
+    ``source is None`` specifically — so ``source=""`` (the field present
+    but empty, as opposed to absent) falls through to the same
+    audit/block behavior as any other non-empty, unrecognized source
+    rather than failing open. This test locks in that distinction so a
+    future refactor (e.g. switching the fail-open check to `not source`)
+    doesn't silently change hook behavior for a real-but-unlikely payload
+    shape."""
+    decision = evaluate_config_change("", mode)  # type: ignore[arg-type]
+    assert decision.action == mode
+    assert decision.source == "<unknown>"
+
+
+def test_missing_source_still_fails_open_unlike_empty_string() -> None:
+    """Direct contrast with the test above, same mode: only ``None``
+    fails open; ``""`` does not."""
+    decision = evaluate_config_change(None, "block")
+    assert decision.action == "allow"

@@ -21,7 +21,7 @@ SCRIPTS_SRC  ?= scripts
 SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session_start.py \
                  tests/test_run_workflow_e2e.py tests/deploy/test_ci_make_parity.py \
                  tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
-                 tests/harness
+                 tests/test_scripts_shared_helpers.py tests/harness
 # Measured baseline (2026-08-09, this branch, after A1-A5 landed): 85% total
 # (check_coverage.py itself sits at 24% — imported only for its FLOORS/
 # GLOBAL_FLOOR constants by tests/deploy/test_ci_make_parity.py; its own

@@ -97,6 +97,19 @@ def test_read_stdin_payload_returns_empty_dict_on_empty_stdin() -> None:
         sys.stdin = sys_stdin_backup
 
 
+@pytest.mark.parametrize("stdin_json", ["[1, 2, 3]", '"just a string"', "42", "null"])
+def test_read_stdin_payload_returns_empty_dict_on_non_object_json(stdin_json: str) -> None:
+    """Valid JSON that isn't an object (an array, a bare string, a number,
+    ``null``) must degrade to ``{}`` the same as malformed JSON — the
+    sibling ``lint_agent_frontmatter.py`` hook has the identical guard."""
+    sys_stdin_backup = sys.stdin
+    try:
+        sys.stdin = StringIO(stdin_json)
+        assert hook._read_stdin_payload() == {}
+    finally:
+        sys.stdin = sys_stdin_backup
+
+
 def test_resolve_mode_reads_the_real_settings_default() -> None:
     assert hook._resolve_mode() == DEFAULT_HARNESS_CONFIG_AUDIT_MODE
 

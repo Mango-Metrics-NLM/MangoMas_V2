@@ -23,10 +23,19 @@ _UNPROTECTED_FILE: Final[str] = "src/mangomas/agents/chat.py"
 _GOVERNANCE_TOML: Final[str] = f"""
 [tool.mangomas.governance]
 protected_paths = ["{_PROTECTED_FILE}"]
-breaking_change_marker = "BREAKING-CHANGE"
 breaking_change_marker_aliases = ["BREAKING-CHANGE", "# approved-breaking-change"]
 """
 _MALFORMED_GOVERNANCE_TOML: Final[str] = "[tool.mangomas]\n# no governance table\n"
+_EMPTY_PROTECTED_PATHS_TOML: Final[str] = """
+[tool.mangomas.governance]
+protected_paths = []
+breaking_change_marker_aliases = ["BREAKING-CHANGE"]
+"""
+_EMPTY_MARKER_ALIASES_TOML: Final[str] = f"""
+[tool.mangomas.governance]
+protected_paths = ["{_PROTECTED_FILE}"]
+breaking_change_marker_aliases = []
+"""
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -142,6 +151,21 @@ def test_marker_only_in_diff_body_not_commit_message_still_fails(
     assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_MISSING_MARKER
 
 
+def test_marker_text_embedded_in_prose_does_not_count_as_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression guard: a bare substring test (``marker in messages``) would
+    treat a commit message explaining that a change is *not* breaking as an
+    approval, since the literal marker text still appears mid-sentence —
+    exactly the phrasing a developer would naturally write. Matching must be
+    anchored to the start of a line (a ``Marker:``-style trailer), not any
+    occurrence anywhere in the message."""
+    repo = _init_repo(tmp_path)
+    message = "refactor core agent\n\nThis is NOT a BREAKING-CHANGE, just an internal cleanup."
+    _commit_touching(repo, _PROTECTED_FILE, message)
+    assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_MISSING_MARKER
+
+
 def test_unresolvable_base_ref_returns_git_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -157,6 +181,30 @@ def test_missing_governance_table_returns_git_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _init_repo(tmp_path, governance=_MALFORMED_GOVERNANCE_TOML)
+    _commit_touching(repo, _PROTECTED_FILE, "refactor core agent")
+    assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_GIT_ERROR
+
+
+def test_present_but_empty_protected_paths_returns_git_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A *present-but-empty* ``protected_paths = []`` is a distinct failure
+    mode from the table being missing entirely (test above) — both must
+    fail loudly rather than silently gating nothing, since an empty set
+    would make every branch pass regardless of what it touches."""
+    repo = _init_repo(tmp_path, governance=_EMPTY_PROTECTED_PATHS_TOML)
+    _commit_touching(repo, _PROTECTED_FILE, "refactor core agent")
+    assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_GIT_ERROR
+
+
+def test_present_but_empty_marker_aliases_returns_git_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Symmetric case: an empty ``breaking_change_marker_aliases = []``
+    would make no commit message ever qualify as an approval, silently
+    turning the gate into a permanent, unresolvable block instead of a
+    loud config error."""
+    repo = _init_repo(tmp_path, governance=_EMPTY_MARKER_ALIASES_TOML)
     _commit_touching(repo, _PROTECTED_FILE, "refactor core agent")
     assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_GIT_ERROR
 
@@ -190,6 +238,54 @@ def test_main_wires_cli_args_through(tmp_path: Path, monkeypatch: pytest.MonkeyP
         ["--base-ref", "base", "--head-ref", "HEAD", "--pyproject", "pyproject.toml"]
     )
     assert exit_code == check_protected_paths.EXIT_OK
+
+
+def test_main_wires_a_non_default_pyproject_path_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The test above passes '--pyproject pyproject.toml', identical to the
+    script's own default — it would pass even if --pyproject were silently
+    ignored. Renaming the governance file and pointing --pyproject at the
+    new name proves the CLI argument is actually threaded through, not
+    coincidentally satisfied by the default."""
+    repo = _init_repo(tmp_path)
+    (repo / "pyproject.toml").rename(repo / "governance.toml")
+    _commit_touching(repo, _UNPROTECTED_FILE, "touch unprotected file only")
+    monkeypatch.chdir(repo)
+    exit_code = check_protected_paths.main(
+        ["--base-ref", "base", "--head-ref", "HEAD", "--pyproject", "governance.toml"]
+    )
+    assert exit_code == check_protected_paths.EXIT_OK
+
+
+def test_check_prints_distinct_diagnostics_for_each_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No test in this file previously captured stdout/stderr — ``check()``
+    prints meaningfully different diagnostic text for situations that share
+    an exit code space (a passing run vs. an approved protected change both
+    return EXIT_OK), so an assertion on exit code alone can't distinguish a
+    passing check for the *right* reason from one that degraded silently."""
+    repo = _init_repo(tmp_path)
+
+    _commit_touching(repo, _UNPROTECTED_FILE, "touch unprotected file only")
+    assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_OK
+    assert "No protected core contracts changed. OK." in capsys.readouterr().out
+
+    _commit_touching(repo, _PROTECTED_FILE, "refactor core agent\n\nBREAKING-CHANGE: widened")
+    assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_OK
+    out = capsys.readouterr().out
+    assert "Protected core contracts changed on this branch:" in out
+    assert _PROTECTED_FILE in out
+    assert "Found approval marker 'BREAKING-CHANGE' in a commit message. OK." in out
+
+    repo2_base = tmp_path / "repo2"
+    repo2_base.mkdir()
+    repo2 = _init_repo(repo2_base)
+    _commit_touching(repo2, _PROTECTED_FILE, "refactor core agent, no marker")
+    assert _run_in_repo(monkeypatch, repo2) == check_protected_paths.EXIT_MISSING_MARKER
+    err = capsys.readouterr().err
+    assert "FAIL: no commit in this range carries a BREAKING-CHANGE marker." in err
 
 
 def test_real_repo_pyproject_has_governance_table() -> None:

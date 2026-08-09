@@ -247,6 +247,11 @@ CLAUDE_SETTINGS_RELPATH: str = ".claude/settings.json"
 CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH: str = ".claude/settings.local.json.example"
 MCP_CONFIG_RELPATH: str = ".mcp.json"
 
+# ADR-0021 / spec-0017: the ConfigChange hook's opt-out env var, referenced
+# by both the settings.local.json.example contract test and its
+# documentation-pointer assertion.
+HARNESS_CONFIG_AUDIT_MODE_ENV: str = "MANGOMAS_HARNESS__CONFIG_AUDIT_MODE"
+
 # Hooks that predate the ecosystem-tooling integration, as
 # ``(event, matcher, command)``. Every `.claude/settings.json` edit must be
 # additive, so the contract test asserts each of these survives verbatim —

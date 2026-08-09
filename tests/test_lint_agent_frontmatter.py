@@ -245,6 +245,50 @@ def test_protected_path_windows_backslash_with_marker_returns_ok(
     assert linter._check_protected_path(windows_path) == linter.EXIT_OK
 
 
+def test_protected_path_marker_embedded_in_prose_is_not_approved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard mirroring check_protected_paths.py's: a bare
+    substring test would treat a diff line explaining a change is *not*
+    breaking as an approval, since the literal marker text still appears
+    mid-sentence."""
+
+    def fake_diff(_path: str) -> str:
+        return "This is NOT a BREAKING-CHANGE, just an internal cleanup.\n"
+
+    monkeypatch.setattr(linter, "_staged_diff", fake_diff)
+    assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_PROTECTED
+
+
+def test_protected_path_marker_on_an_added_diff_line_is_approved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real ``git diff`` output prefixes every content line with ``+``/``-``/
+    a context space — unlike the other tests in this file, which use a bare
+    marker line as a simplifying fake. An *added* line (``+``-prefixed)
+    must still be recognized."""
+
+    def fake_diff(_path: str) -> str:
+        return f"+{linter.BREAKING_CHANGE_MARKER}: widened protocol\n"
+
+    monkeypatch.setattr(linter, "_staged_diff", fake_diff)
+    assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_OK
+
+
+def test_protected_path_marker_on_a_deleted_diff_line_is_not_approved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A *deleted* marker line (``-``-prefixed real diff output) must not
+    count as an approval — the change being staged removes the marker, it
+    doesn't add it."""
+
+    def fake_diff(_path: str) -> str:
+        return f"-{linter.BREAKING_CHANGE_MARKER}: no longer breaking\n"
+
+    monkeypatch.setattr(linter, "_staged_diff", fake_diff)
+    assert linter._check_protected_path(_arbitrary_protected_path()) == linter.EXIT_PROTECTED
+
+
 def test_staged_diff_returns_empty_on_git_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -369,6 +413,16 @@ def test_pre_tool_use_empty_stdin_returns_ok_silently(capsys: pytest.CaptureFixt
 def test_pre_tool_use_payload_missing_tool_input_returns_ok() -> None:
     result = linter._pre_tool_use_hook(StringIO(json.dumps({"tool_name": "Edit"})))
     assert result == linter.EXIT_OK
+
+
+@pytest.mark.parametrize("stdin_json", ["[1, 2, 3]", '"just a string"', "42", "null"])
+def test_read_hook_payload_rejects_non_dict_json(stdin_json: str) -> None:
+    """``_read_hook_payload``'s ``isinstance(payload, dict)`` guard is
+    exercised elsewhere only against non-JSON stdin; valid JSON that
+    decodes to something other than an object (an array, a bare string, a
+    number, ``null``) must degrade to ``{}`` the same way, not raise or
+    propagate a non-dict value downstream."""
+    assert linter._read_hook_payload(StringIO(stdin_json)) == {}
 
 
 def test_post_tool_use_emit_path_prints_the_path(capsys: pytest.CaptureFixture[str]) -> None:

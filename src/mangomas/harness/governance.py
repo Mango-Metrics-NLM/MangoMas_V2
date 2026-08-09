@@ -12,16 +12,19 @@ That last point is why this module is **not** imported by either script:
 both must work in an interpreter without ``mangomas`` installed (the
 ``PreToolUse`` hook in particular must run before ``pip install -e .`` has
 ever happened), so each keeps its own small, self-contained TOML-reading
-helper rather than depending on this package. This module exists for
-in-package consumers instead — e.g. ``config_audit.py`` in this same
-package — and for coverage visibility: logic left only in ``scripts/`` is
-invisible to the ``--cov=mangomas`` gate (``pyproject.toml``'s
+helper (``scripts/_governance.py``) rather than depending on this package.
+This module currently has no in-package functional consumer either — its
+symbols are re-exported via ``harness/__init__.py`` for external/API-surface
+use and exercised only by ``tests/harness/test_governance.py`` — and it
+exists in ``src/mangomas/`` for coverage visibility: logic left only in
+``scripts/`` is invisible to the ``--cov=mangomas`` gate (``pyproject.toml``'s
 ``[tool.coverage.run] source = ["mangomas"]``).
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import tomllib
 from pathlib import Path
@@ -60,10 +63,11 @@ def _load_governance(
         aliases = frozenset(governance["breaking_change_marker_aliases"])
         if protected and aliases:
             return protected, aliases
-    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError):
+    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as exc:
         logger.warning(
-            "Could not read [tool.mangomas.governance] from %s; using fallback defaults",
+            "Could not read [tool.mangomas.governance] from %s; using fallback defaults (%s)",
             pyproject_path,
+            exc,
         )
     return _FALLBACK_PROTECTED_PATHS, _FALLBACK_BREAKING_CHANGE_MARKER_ALIASES
 
@@ -86,8 +90,25 @@ def is_protected_path(path: str) -> bool:
 
 
 def has_breaking_change_marker(diff_text: str) -> str | None:
-    """Return the first matching marker alias found in *diff_text*, or ``None``."""
-    return next((marker for marker in BREAKING_CHANGE_MARKER_ALIASES if marker in diff_text), None)
+    """Return the first marker alias found as its own line, a
+    ``Marker:``-style trailer, or an *added* diff line (an optional leading
+    ``+``), in *diff_text*, or ``None``.
+
+    A bare substring test (``marker in diff_text``) would treat e.g. "This
+    is NOT a BREAKING-CHANGE, just an internal cleanup." as a match, since
+    the literal marker text still appears mid-sentence — and would also
+    accept a *deleted* marker line (``-BREAKING-CHANGE...``), since a
+    deletion still contains the string in the diff's ``-`` context.
+    Anchoring to the start of an added or unprefixed line closes both.
+    Mirrors ``scripts/_governance.py``'s ``find_breaking_change_marker`` —
+    duplicated rather than imported, since ``scripts/`` must stay
+    independent of ``mangomas`` (see this module's own docstring).
+    """
+    for marker in BREAKING_CHANGE_MARKER_ALIASES:
+        pattern = re.compile(rf"^\+?[ \t]*{re.escape(marker)}[ \t]*(:|$)", re.MULTILINE)
+        if pattern.search(diff_text):
+            return marker
+    return None
 
 
 def read_staged_diff(path: str) -> str:

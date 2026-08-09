@@ -23,6 +23,7 @@ from tests.constants import (
     CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH,
     CLAUDE_SETTINGS_RELPATH,
     ENV_FLAG_ON,
+    HARNESS_CONFIG_AUDIT_MODE_ENV,
     MCP_CONFIG_RELPATH,
     MCP_PROJECT_DIR_SCOPE,
     PATH_SCOPED_MCP_SERVERS,
@@ -159,7 +160,7 @@ def test_settings_local_example_is_valid_json_with_the_documented_opt_outs() -> 
     help. Every key it documents must be a real, current opt-out."""
     example = _load_json(CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH)
     assert RTK_DISABLE_ENV in example["env"]
-    assert "MANGOMAS_HARNESS__CONFIG_AUDIT_MODE" in example["env"]
+    assert HARNESS_CONFIG_AUDIT_MODE_ENV in example["env"]
 
 
 # ── .mcp.json ─────────────────────────────────────────────────────────────────

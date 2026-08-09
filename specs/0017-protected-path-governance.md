@@ -37,7 +37,10 @@ PreToolUse hook to an advisory prompt for the human.
   `git diff --name-only $BASE_REF...HEAD` against the protected-path set and require
   a `BREAKING-CHANGE` trailer in at least one commit message
   (`git log --format=%B $BASE_REF..HEAD`) on any branch that touches one. Fails the
-  build (non-zero) otherwise. Registered as a required status check.
+  build (non-zero) otherwise. Intended to be registered as a required status check —
+  that registration is a GitHub branch-protection setting, a repo-admin action no
+  file in this repo can express or verify; see `NEXT_STEPS.md`'s outstanding-actions
+  list.
 - R2 — The protected-path set moves to `pyproject.toml` under
   `[tool.mangomas.governance]` (stdlib `tomllib`, no new dependency) so both the CI
   script and the hook read one definition without importing `mangomas.harness` (which

@@ -389,6 +389,7 @@ class _HarnessOrchestrator(Orchestrator):
                 # below, or the harness span leaks (never exported).
                 logger.warning(
                     "Error closing inner stream while ending the harness span",
+                    extra={"agent_name": agent_name},
                     exc_info=True,
                 )
             finally:
