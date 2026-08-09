@@ -1,5 +1,5 @@
 ---
-name: error-taxonomy-dev
+name: mango-error-taxonomy-dev
 description: "Owns src/mangomas/errors.py, the HTTP status table at api/errors.py::_ERROR_STATUS and the tests/test_errors.py contract. errors.py is a protected path: a change there needs a BREAKING-CHANGE commit trailer. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

@@ -13,6 +13,29 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Changed
 
+- **All 19 agents are now live at `.claude/agents/mango-<slug>.md`** — one flat
+  directory, no parent/child hierarchy. This is the capability change: agents
+  are discoverable, auto-delegated from their descriptions, and bounded by
+  explicit `tools:` lists. Flattening also retires an unverified premise —
+  ADR-0024's stated benefit assumed VS Code Copilot recurses the agents
+  directory, which spec-0018 never established. A flat directory cannot
+  reproduce the nesting defect in either tool.
+- **`permissions.deny` gains `Edit(/.claude/settings.json)` and
+  `Edit(/.claude/settings.local.json)`** — the two settings files, deliberately
+  not `.claude/**`. Nothing legitimately needs Claude Code to rewrite its own
+  permissions mid-session; a whole-tree rule would additionally have blocked
+  every edit to `.claude/skills/`, which is ordinary authoring work. Cheap and
+  partial rather than airtight: neither rule stops a `Bash` heredoc or `>`
+  redirect.
+- **The agent roster is scoped to tracked files.** Claude Code's `/agents`
+  writes personal agents into `.claude/agents/`, so a glob-based roster would
+  have red-lighted `make gate` for a contributor who did nothing wrong.
+- **`.mcp.json` gains a sixth server, `github`**, pinned to
+  `ghcr.io/github/github-mcp-server:v0.20.1`. It is **optional**: without docker
+  and a `GITHUB_PERSONAL_ACCESS_TOKEN` it fails to start and the other five are
+  unaffected. The npm `@modelcontextprotocol/server-github` package — which
+  would have matched the npx form of every other server — is **deprecated
+  upstream** and was deliberately not used.
 - **All 19 agents converted to the Claude Code frontmatter schema**, in place at
   `.github/agents/` while the corpus is still inert. The move that makes them
   live is deliberately a separate change: Claude Code globs
@@ -63,6 +86,12 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Added
 
+- Permission-rule guards: deny set-equality, path-scoped rules must be
+  `/`-anchored (an unanchored rule is cwd-relative and silently stops matching
+  from a subdirectory), and no MCP `env` value may be a literal — every
+  credential must arrive as a `${VAR}` interpolation. The old
+  "no MCP server declares an API key" assertion is retired: the property worth
+  keeping was never "no secrets" but "no *unreviewed* secrets".
 - **Agent contract tests** (`tests/tooling/test_corpus_contract.py`), parametrised
   off the linter's own glob so they survive the pending move without edits.
   Assert the roster by set equality, that write capability matches a reviewed

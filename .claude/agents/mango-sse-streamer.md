@@ -1,6 +1,6 @@
 ---
-name: sse-streamer
-description: "Owns API-layer SSE framing: the stream route in api/routes/agents.py and the agents/_streaming.py fallback. Orchestrator changes, including stream_dispatch, belong to orchestrator-dev. Invoked by name, not by topic match."
+name: mango-sse-streamer
+description: "Owns API-layer SSE framing: the stream route in api/routes/agents.py and the agents/_streaming.py fallback. Orchestrator changes, including stream_dispatch, belong to mango-orchestrator-dev. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---

@@ -1,5 +1,5 @@
 ---
-name: workflow-graph-dev
+name: mango-workflow-graph-dev
 description: "Owns src/mangomas/workflow/ — the frozen WorkflowGraph model, node registry, predicate compiler and the executor that compiles graphs down to public dispatch calls. Must not edit protected core files. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

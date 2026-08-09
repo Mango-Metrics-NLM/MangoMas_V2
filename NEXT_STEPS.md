@@ -47,17 +47,17 @@ default preserves ADR-002. See ADR-0010, spec 0003.
 
 End-to-end Claude Code harness landed as a non-breaking opt-in layer.
 Counts below are as-of the harness branch; the suite has since grown —
-see the skill and sub-agent tables in `CLAUDE.md` for the current set.
+see the skill and agent tables in `CLAUDE.md` for the current set.
 
 - **8 skills** under `.claude/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
   observability, config, release, and topology. _(Since grown to 12, and
   relocated to `.claude/` by spec-0018 — see the skill table in
   `CLAUDE.md` for the current set.)_
-- **13 sub-agents** under `.github/agents/<parent>/<slug>.agent.md`
+- **19 agents** under `.claude/agents/mango-<slug>.md` (4 routers + 15 specialists)
   grouped under the 4 parent agents (including `pr-watcher` under
-  `architect`). The new `sub_agents:` frontmatter key is optional and
-  backwards-compatible. _(Since grown — see the sub-agent table in
+  `architect`). _(Since superseded: the parent/child hierarchy and its
+  `sub_agents:` key are gone — see the agent tables in
   `CLAUDE.md`.)_
 - **`HarnessSettings`** (env prefix `MANGOMAS_HARNESS__`,
   `enabled=False` default) drives whether `build_orchestrator`
@@ -65,7 +65,7 @@ see the skill and sub-agent tables in `CLAUDE.md` for the current set.
   `harness.agent_invoke` parent span over `dispatch` *and*
   `stream_dispatch`. Pipeline + fan-out topologies inherit the wrap.
 - **`scripts/lint_agent_frontmatter.py`** enforces frontmatter
-  schemas (Pydantic), resolves `sub_agents:` slugs, and gates
+  schemas (Pydantic), enforces the Claude Code agent format, and gates
   protected core paths via a `BREAKING-CHANGE` marker. Wired into
   CI as `frontmatter-lint`.
 - **`scripts/harness_session_start.py`** emits a single-line JSON
@@ -79,7 +79,7 @@ see the skill and sub-agent tables in `CLAUDE.md` for the current set.
   branch in `_staged_diff`). Global coverage 96.95 % across 505
   unit tests.
 
-See `.github/agents/`, `.claude/skills/`, and the new `harness:`
+See `.claude/agents/`, `.claude/skills/`, and the new `harness:`
 block in `Settings`. C4 diagrams in `docs/architecture/` (c2 + c3)
 describe where the harness sits.
 

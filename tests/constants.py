@@ -376,54 +376,68 @@ ENV_FLAG_ON: str = "1"
 ENV_FLAG_OFF: str = "0"
 
 # ── Agent corpus contract (spec-0018 / ADR-0024) ──────────────────────────────
+# Shared prefix on every tracked agent. It is what separates the committed
+# corpus from a contributor's own agents in the same flat directory, and what
+# keeps agent and skill names from colliding as both corpora grow.
+AGENT_SLUG_PREFIX: str = "mango-"
+CLAUDE_AGENTS_DIR_RELPATH: str = ".claude/agents"
+RETIRED_AGENTS_DIR_RELPATH: str = ".github/agents"
+
 # The 19 agents, by slug. Set equality, so a change names what appeared or
 # vanished and editing this tuple is the review record.
 EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
-    "adr-author",
-    "api-dev",
-    "architect",
-    "backend",
-    "error-taxonomy-dev",
-    "fake-builder",
-    "hypothesis-fuzz",
-    "integration-runner",
-    "layering-auditor",
-    "llm-adapter-dev",
-    "orchestrator-dev",
-    "pr-watcher",
-    "protocol-auditor",
-    "schema-evolution",
-    "sse-streamer",
-    "storage-adapter-dev",
-    "telemetry-exporter-dev",
-    "test-engineer",
-    "workflow-graph-dev",
+    "mango-adr-author",
+    "mango-api-dev",
+    "mango-architect",
+    "mango-backend",
+    "mango-error-taxonomy-dev",
+    "mango-fake-builder",
+    "mango-hypothesis-fuzz",
+    "mango-integration-runner",
+    "mango-layering-auditor",
+    "mango-llm-adapter-dev",
+    "mango-orchestrator-dev",
+    "mango-pr-watcher",
+    "mango-protocol-auditor",
+    "mango-schema-evolution",
+    "mango-sse-streamer",
+    "mango-storage-adapter-dev",
+    "mango-telemetry-exporter-dev",
+    "mango-test-engineer",
+    "mango-workflow-graph-dev",
 )
 # Routers are the only agents that carry trigger conditions, so they are the
 # only descriptions auto-delegation can match. They cannot write.
-ROUTER_AGENT_SLUGS: frozenset[str] = frozenset({"architect", "backend", "api-dev", "test-engineer"})
+ROUTER_AGENT_SLUGS: frozenset[str] = frozenset(
+    {"mango-architect", "mango-backend", "mango-api-dev", "mango-test-engineer"}
+)
 # Agents holding Edit and/or Write. A reviewed-change gate, NOT a substitute
 # for a deny rule: it covers 12 of 19 and only fails when the set changes.
 WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
-        "adr-author",
-        "error-taxonomy-dev",
-        "fake-builder",
-        "hypothesis-fuzz",
-        "integration-runner",
-        "llm-adapter-dev",
-        "orchestrator-dev",
-        "schema-evolution",
-        "sse-streamer",
-        "storage-adapter-dev",
-        "telemetry-exporter-dev",
-        "workflow-graph-dev",
+        "mango-adr-author",
+        "mango-error-taxonomy-dev",
+        "mango-fake-builder",
+        "mango-hypothesis-fuzz",
+        "mango-integration-runner",
+        "mango-llm-adapter-dev",
+        "mango-orchestrator-dev",
+        "mango-schema-evolution",
+        "mango-sse-streamer",
+        "mango-storage-adapter-dev",
+        "mango-telemetry-exporter-dev",
+        "mango-workflow-graph-dev",
     }
 )
 # Agents whose declared surface includes a protected core contract. Each must
 # say so, because the CI trailer gate will otherwise fail their first commit.
 PROTECTED_PATH_OWNER_SLUGS: frozenset[str] = frozenset(
-    {"error-taxonomy-dev", "orchestrator-dev", "schema-evolution", "hypothesis-fuzz"}
+    {
+        "mango-error-taxonomy-dev",
+        "mango-orchestrator-dev",
+        "mango-schema-evolution",
+        "mango-hypothesis-fuzz",
+    }
 )
 # The description is the entire routing surface and loads at every session
 # start. 320 binds on the corpus as written; 400 would bind on nothing.
@@ -447,8 +461,30 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 # equality: nothing else in the suite asserted anything about `permissions`, so
 # a rule could be dropped, or added unreviewed, in total silence.
 EXPECTED_DENY_RULES: frozenset[str] = frozenset(
-    {"Bash(rm -rf:*)", "Bash(git push --force:*)", "Bash(git push -f:*)"}
+    {
+        "Bash(rm -rf:*)",
+        "Bash(git push --force:*)",
+        "Bash(git push -f:*)",
+        # The two settings files, not `.claude/**`. The rationale for denying
+        # anything here is that nothing legitimately needs Claude Code to
+        # rewrite its own permissions mid-session — and that argues for these
+        # two files, not the whole tree. A `.claude/**` rule would also block
+        # every edit to `.claude/skills/`, which is ordinary authoring work and
+        # is exactly what the next planned change does.
+        "Edit(/.claude/settings.json)",
+        # Gitignored, still loaded, and able to add `permissions.allow` entries
+        # — so it is the more useful of the two to deny.
+        "Edit(/.claude/settings.local.json)",
+    }
 )
+# Deny rules Claude Code consults for a *file write*. `Edit(...)` covers Edit,
+# Write and NotebookEdit; nothing here stops a `Bash` heredoc or `>` redirect,
+# so these rules are cheap and partial rather than airtight.
+PATH_SCOPED_DENY_RULE_PREFIX: str = "Edit("
+# A leading `/` anchors a rule at the settings file's directory (the project
+# root). Without it the rule is cwd-relative and silently stops matching when
+# a session starts from a subdirectory.
+ANCHORED_RULE_PATH_PREFIX: str = "/"
 # Claude Code honours exactly one wildcard in a Bash rule: a trailing `:*` after
 # the command prefix. An interior `*` is matched as a literal character, so
 # `Bash(python -m ruff *:*)` never matched `python -m ruff check --fix` and the
@@ -466,8 +502,18 @@ INERT_FILE_RULE_PREFIXES: tuple[str, ...] = ("Write(", "NotebookEdit(")
 # deliberately excluded — the test asserts an exact set so an unreviewed
 # addition fails.
 ADOPTED_MCP_SERVERS: frozenset[str] = frozenset(
-    {"filesystem", "git", "fetch", "sequential-thinking", "repomix"}
+    {"filesystem", "git", "fetch", "sequential-thinking", "repomix", "github"}
 )
+# The only adopted server needing a credential, and the only one that is
+# optional: without docker or a token it fails to start and the other five are
+# unaffected. The npm `@modelcontextprotocol/server-github` package was NOT
+# used — upstream deprecated it ("Package no longer supported"), so the npx
+# form every other server here uses is not available for this one.
+CREDENTIALED_MCP_SERVERS: frozenset[str] = frozenset({"github"})
+# Any secret an MCP server needs must arrive as a `${VAR}` interpolation. A
+# literal value in this shared, checked-in file would be a committed
+# credential, and cloud sessions load it with no approval prompt.
+ENV_INTERPOLATION_PREFIX: str = "${"
 # Servers that take a path argument and must be pinned to the project root
 # rather than granted unscoped filesystem/git reach.
 PATH_SCOPED_MCP_SERVERS: tuple[str, ...] = ("filesystem", "git")

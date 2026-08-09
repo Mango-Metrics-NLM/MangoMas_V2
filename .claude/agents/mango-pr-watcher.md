@@ -1,5 +1,5 @@
 ---
-name: pr-watcher
+name: mango-pr-watcher
 description: "Owns the subscribe_pr_activity flow: triaging CI failures, review comments and merge-state notices on a pull request, then reporting fix / ask / skip with a rationale. Read-only reporter, proposes changes but never pushes them. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, mcp__github__pull_request_read
 model: inherit

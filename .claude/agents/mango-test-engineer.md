@@ -1,6 +1,6 @@
 ---
-name: test-engineer
-description: "Testing routing for Mango-Mas V2: unit, property-based and integration suites, fakes, constants and the coverage gates. Use when: adding or fixing tests, diagnosing a coverage gap, or deciding which surface a change belongs in. Routes to fake-builder, hypothesis-fuzz or integration-runner."
+name: mango-test-engineer
+description: "Testing routing for Mango-Mas V2: unit, property-based and integration suites, fakes, constants and the coverage gates. Use when: adding or fixing tests, diagnosing a coverage gap, or deciding which surface a change belongs in. Routes to mango-fake-builder, mango-hypothesis-fuzz or mango-integration-runner."
 tools: Read, Grep, Glob, Skill
 model: inherit
 ---

@@ -1,5 +1,5 @@
 ---
-name: storage-adapter-dev
+name: mango-storage-adapter-dev
 description: "Implements TurnRepository and MemoryRepository adapters under src/mangomas/adapters/storage/, covering new persistence backends and concurrency or durability fixes. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

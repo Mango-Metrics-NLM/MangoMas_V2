@@ -11,6 +11,7 @@ decision record.
 | Tool | Disposition |
 |---|---|
 | `modelcontextprotocol/servers` (filesystem/git/fetch/sequential-thinking) | Adopted, shared (`.mcp.json`) |
+| `github/github-mcp-server` | Adopted, shared (`.mcp.json`), optional — needs docker + a PAT |
 | `yamadashy/repomix` | Adopted, shared (`.mcp.json`) |
 | `rtk-ai/rtk` | Adopted, shared (`.claude/settings.json` hook), opt-out available |
 | `thedotmack/claude-mem` | Adopted, shared (`.claude/settings.json` hooks), opt-out available — **pending** (see below) |
@@ -28,8 +29,9 @@ decision record.
 
 ## MCP servers (`.mcp.json`)
 
-Five servers, none requiring an API key, `filesystem`/`git` scoped to
-`${CLAUDE_PROJECT_DIR:-.}` so they can't reach outside this repo:
+Six servers, `filesystem`/`git` scoped to `${CLAUDE_PROJECT_DIR:-.}` so they
+can't reach outside this repo. Five need no credential; `github` is the
+exception and is **optional** — see the note under the table:
 
 | Server | Use for |
 |---|---|
@@ -38,6 +40,7 @@ Five servers, none requiring an API key, `filesystem`/`git` scoped to
 | `fetch` | Retrieving a URL's content directly (e.g. upstream library docs) |
 | `sequential-thinking` | Structured multi-step reasoning for planning-heavy tasks |
 | `repomix` | Pack a directory into one context-efficient bundle before a cross-cutting refactor |
+| `github` | PR/issue/CI reads via the official server. **Optional** — needs docker and a `GITHUB_PERSONAL_ACCESS_TOKEN`; without them it fails to start and the other five are unaffected |
 
 Deliberately **not** included from the upstream `modelcontextprotocol/servers`
 set: `memory` (redundant with `claude-mem`, below), `everything` (an
@@ -47,7 +50,7 @@ re-proposing these without reading this note first.
 **Cloud/Agent-SDK sessions get no approval prompt.** Claude Code's
 interactive trust dialog for project-scoped `.mcp.json` servers only exists
 for a human running `claude` at a terminal — `claude -p`, Agent SDK sessions,
-and cloud sessions load these 5 servers with no per-session approval step at
+and cloud sessions load these servers with no per-session approval step at
 all. If one ever needs to be pulled without waiting for a settings-file edit
 to propagate everywhere, the control surface is `disabledMcpjsonServers`
 (blocks a named server in every mode), not the approval flow.
@@ -175,7 +178,7 @@ A curated, actively-maintained link list — not installable software. Useful
 as a periodic-review discovery source (Skills, Status Lines, Memory &
 Context Persistence, Observability & Monitoring, Security categories are the
 most relevant to this repo's own three surfaces: skills at `.claude/skills/`,
-agents at `.github/agents/`, and Claude Code configuration itself
+agents at `.claude/agents/`, and Claude Code configuration itself
 — `.claude/settings.json` plus `.mcp.json`), but every entry needs
 independent vetting before adoption; the list itself vouches for nothing.
 

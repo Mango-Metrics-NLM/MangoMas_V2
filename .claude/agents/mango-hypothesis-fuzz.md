@@ -1,5 +1,5 @@
 ---
-name: hypothesis-fuzz
+name: mango-hypothesis-fuzz
 description: "Writes Hypothesis property-based tests for parsers, validators and pure functions. Targets core/tools.py and core/agent.py, both protected paths: changes there need a BREAKING-CHANGE commit trailer. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit

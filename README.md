@@ -284,7 +284,7 @@ an unknown agent is `AgentNotFound` (404), and loop exhaustion is
 ## Claude Code harness (opt-in)
 
 The repository ships an enterprise Claude Code harness configured under
-`.claude/skills/`, `.github/agents/` (parents + sub-agents), and
+`.claude/skills/`, `.claude/agents/`, and
 `.claude/settings.json`. It is **opt-in** — production callers behave
 identically until the switch is flipped:
 
@@ -305,8 +305,7 @@ What ships in the harness:
 | Surface | Path | Status |
 |---|---|---|
 | Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 12 skills — live in Claude Code and VS Code Copilot |
-| Parent agents | `.github/agents/<parent>.agent.md` | 4 parents |
-| Sub-agents (opt-in `sub_agents:` key) | `.github/agents/<parent>/<slug>.agent.md` | 15 specialised sub-agents |
+| Agents | `.claude/agents/mango-<slug>.md` | 19, flat: 4 routers + 15 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
 | Project settings | `.claude/settings.json` | Allow/Deny + SessionStart/PreToolUse/PostToolUse/Stop hooks |
@@ -314,7 +313,7 @@ What ships in the harness:
 | Cross-session memory (per-contributor, user-scoped) | external `~/.claude-mem/` | claude-mem — no shared config |
 | PR template + secret-scan job | `.github/PULL_REQUEST_TEMPLATE.md` + `ci.yml` | Mandatory PR checklist |
 
-See `CLAUDE.md` for the full skill/sub-agent map and protected-path
+See `CLAUDE.md` for the full skill/agent map and protected-path
 table; `docs/tooling/claude-code-ecosystem.md` for the full external
 tooling catalog (MCP servers, hooks, rejected/reference-only tools);
 `docs/architecture/c2-container.md` and `c3-component.md` for where the

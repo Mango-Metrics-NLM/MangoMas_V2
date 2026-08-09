@@ -98,7 +98,7 @@ unchanged.
 ## Extending
 
 Add a node kind with the `mango-workflow` skill or the
-`backend/workflow-graph-dev` sub-agent: define a frozen model in `graph.py` (add
+`mango-workflow-graph-dev` agent: define a frozen model in `graph.py` (add
 it to the `WorkflowNode` union), write an executor under `workflow/nodes/` that
 delegates to a public dispatch method, register it in one line via
 `make_node_factory` from `workflow/nodes/_factory.py` (which supplies the shared

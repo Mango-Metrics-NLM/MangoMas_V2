@@ -1,6 +1,6 @@
 ---
-name: backend
-description: "Backend routing for Mango-Mas V2: core protocols, adapters, orchestrator, errors, telemetry, workflow, RAG. Use when: work spans several of those or the specialist is unclear. Routes to llm-adapter-dev, storage-adapter-dev, orchestrator-dev, error-taxonomy-dev, telemetry-exporter-dev, workflow-graph-dev."
+name: mango-backend
+description: "Backend routing for Mango-Mas V2: core protocols, adapters, orchestrator, errors, telemetry, workflow, RAG. Use when: work spans several of those or the specialist is unclear. Routes to the matching mango-*-dev agent: llm-adapter, storage-adapter, orchestrator, error-taxonomy, telemetry-exporter, workflow-graph."
 tools: Read, Grep, Glob, Skill
 model: inherit
 ---

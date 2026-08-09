@@ -63,7 +63,7 @@ format-check: ## ruff format --check
 typecheck: ## mypy --strict
 	$(PYTHON) -m mypy --strict $(CODE_PATHS)
 
-frontmatter: ## Validate .agent.md / SKILL.md frontmatter
+frontmatter: ## Validate .claude/agents + .claude/skills frontmatter
 	$(PYTHON) scripts/lint_agent_frontmatter.py
 
 protected-paths: ## Fail if a protected core contract changed without a BREAKING-CHANGE commit (ADR-0021)

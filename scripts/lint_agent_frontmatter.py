@@ -81,8 +81,12 @@ except ImportError:
 # They used to be independent literals — the glob here, plus a `.agent.md`
 # `removesuffix` and a `.github/agents/` prefix buried in the resolver — so a
 # relocation could update one and leave the others silently wrong.
-AGENTS_ROOT: Final[str] = ".github/agents"
-AGENT_FILE_SUFFIX: Final[str] = ".agent.md"
+# Agents moved to .claude/ (spec-0018) and flattened: Claude Code reads nothing
+# from .github/, and the `mango-<slug>` filenames already carry every bit of
+# grouping the old <parent>/<child> directories did. Flat also sidesteps the
+# unverified question of whether VS Code Copilot recurses this directory.
+AGENTS_ROOT: Final[str] = ".claude/agents"
+AGENT_FILE_SUFFIX: Final[str] = ".md"
 AGENTS_GLOB: Final[str] = f"{AGENTS_ROOT}/**/*{AGENT_FILE_SUFFIX}"
 # Skills moved to .claude/ (spec-0018): Claude Code reads nothing from .github/,
 # and VS Code Copilot scans .claude/skills/ too, so one tree serves both.

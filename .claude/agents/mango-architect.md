@@ -1,6 +1,6 @@
 ---
-name: architect
-description: "Architecture and code-quality review for Mango-Mas V2. Use when: reviewing a PR, evaluating a design against project principles, checking protocol or layering violations, or recording an ADR. Routes to protocol-auditor, layering-auditor, adr-author or pr-watcher; reads and advises, never edits."
+name: mango-architect
+description: "Architecture and code-quality review for Mango-Mas V2. Use when: reviewing a PR, evaluating a design against project principles, checking protocol or layering violations, or recording an ADR. Routes to mango-protocol-auditor, mango-layering-auditor, mango-adr-author or mango-pr-watcher; reads and advises, never edits."
 tools: Read, Grep, Glob, Skill
 model: inherit
 ---
