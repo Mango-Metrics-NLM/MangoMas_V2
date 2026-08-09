@@ -76,7 +76,9 @@ except ImportError:
 # ── Module-level constants (single source of truth, no magic literals) ────────
 
 AGENTS_GLOB: Final[str] = ".github/agents/**/*.agent.md"
-SKILLS_GLOB: Final[str] = ".github/skills/**/SKILL.md"
+# Skills moved to .claude/ (spec-0018): Claude Code reads nothing from .github/,
+# and VS Code Copilot scans .claude/skills/ too, so one tree serves both.
+SKILLS_GLOB: Final[str] = ".claude/skills/**/SKILL.md"
 
 # Minimum files each glob must match before the lint can honestly claim to have
 # validated anything (spec-0018 R1). Deliberately 1, not the current roster size:

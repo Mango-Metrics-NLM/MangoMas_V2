@@ -50,7 +50,11 @@ repos:
   # so a broken .agent.md or SKILL.md only surfaced after a push. This local
   # hook runs the identical full-repo validation before commit; `files:` only
   # decides whether the hook fires this run — the script itself always scans
-  # the whole .github/agents / .github/skills tree (pass_filenames: false).
+  # the whole corpus (pass_filenames: false).
+  #
+  # Path-anchored rather than filename-only: the previous
+  # `(\.agent\.md|SKILL\.md)$` fired on any file with those names anywhere in
+  # the tree, including test fixtures, while saying nothing about location.
   - repo: local
     hooks:
       - id: lint-agent-frontmatter
@@ -58,4 +62,4 @@ repos:
         entry: python scripts/lint_agent_frontmatter.py
         language: system
         pass_filenames: false
-        files: (\.agent\.md|SKILL\.md)$
+        files: ^(\.claude/skills/.*/SKILL\.md|\.github/agents/.*\.agent\.md)$
