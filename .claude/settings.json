@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$MANGOMAS_DISABLE_RTK_HOOK\" = \"1\" ] || rtk hook claude"
+            "command": "if [ \"$MANGOMAS_DISABLE_RTK_HOOK\" != \"1\" ] && command -v rtk >/dev/null 2>&1; then rtk hook claude; fi"
           }
         ]
       }

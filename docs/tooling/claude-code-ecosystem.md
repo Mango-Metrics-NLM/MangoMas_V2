@@ -54,10 +54,13 @@ to propagate everywhere, the control surface is `disabledMcpjsonServers`
 
 ## `rtk` — Bash output compaction
 
-Wired as a `PreToolUse`/`Bash` hook in `.claude/settings.json`. Fails open:
-if the `rtk` binary isn't installed, the hook produces a non-blocking error
-and Bash tool calls proceed normally (Claude Code's `PreToolUse` contract
-only blocks on exit code 2).
+Wired as a `PreToolUse`/`Bash` hook in `.claude/settings.json`. The hook
+guards on `command -v rtk`, so if the binary isn't installed it is skipped
+silently and Bash tool calls behave exactly as before — no per-call
+hook-error noise. Claude Code's `PreToolUse` contract (only exit code 2
+blocks) is the backstop beneath that. A genuine `rtk` failure — installed but
+erroring — is deliberately *not* swallowed, so it stays visible rather than
+being masked by a blanket `|| true`.
 
 - **Install:** `brew install rtk` (macOS/Linux). No winget/scoop package for
   Windows — download the release zip, extract, and add to `PATH` manually;

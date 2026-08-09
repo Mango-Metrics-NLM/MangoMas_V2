@@ -426,8 +426,9 @@ entirely and load them with no approval step** — see
 | `repomix` | Pack a directory into one context-efficient bundle before a cross-cutting refactor |
 
 `rtk` (if installed locally) transparently compacts noisy Bash stdout via a
-`PreToolUse` hook; if the binary is absent, Bash tool calls work exactly as
-before (fails open — see ADR-0020). A contributor can opt out individually
+`PreToolUse` hook; the hook guards on `command -v rtk`, so if the binary is
+absent it is skipped silently and Bash tool calls work exactly as before
+(see ADR-0020). A contributor can opt out individually
 with `MANGOMAS_DISABLE_RTK_HOOK=1` in their personal
 `.claude/settings.local.json`, since Claude Code has no per-hook disable.
 
