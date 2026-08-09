@@ -67,7 +67,7 @@ python -m pytest --tb=short -q
 | `src/mangomas/agents/tool_agent.py` | `ToolAgent` — inner tool-execution loop |
 | `src/mangomas/agents/_streaming.py` | Shared streaming fallback for non-`StreamingLLMClient` backends |
 | `src/mangomas/agents/__init__.py` | Re-export new agents so `composition.py` can import them |
-| `src/mangomas/composition.py` lines 102-106 | Where the 5 built-in agents are registered — pattern to follow |
+| `src/mangomas/composition.py` (`agent_registry.register` calls) | Where the 5 built-in agents are registered — pattern to follow |
 | `tests/test_agent.py` | Reference test layout for new agents |
 
 ---

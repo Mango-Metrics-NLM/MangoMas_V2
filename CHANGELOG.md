@@ -13,6 +13,37 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Changed
 
+- **All 19 agents converted to the Claude Code frontmatter schema**, in place at
+  `.github/agents/` while the corpus is still inert. The move that makes them
+  live is deliberately a separate change: Claude Code globs
+  `.claude/agents/**/*.md`, and `.agent.md` *is* `.md`, so a move-first sequence
+  would have made 19 agents live carrying `tools: [read, edit, search, execute]`
+  (Copilot aliases Claude Code does not recognise) and
+  `model: Claude Sonnet 4.5 (copilot)` — with `make gate` green either way,
+  since it never exercises Claude Code's loader.
+- **Agent identities are now kebab-case slugs** matching their filename stems,
+  replacing Title Case names (`Backend Developer` → `backend`,
+  `Schema Evolver` → `schema-evolution`). This renames every agent as a human
+  refers to it. Claude Code resolves an agent by its `name` field, and the lint
+  now requires name and filename stem to agree.
+- **`argument-hint` is dropped from all 19 agents.** It is a valid VS Code
+  Copilot field with no Claude Code equivalent; recorded as a loss rather than
+  a cleanup.
+- **Descriptions rewritten around routing.** Four routers keep a `Use when:`
+  trigger list, name the agents they route to, and cannot write. The other 15
+  carry ownership statements with **no trigger conditions at all** — phrasing
+  like "invoke explicitly when X" is not a control, because auto-delegation
+  matches X and never reads the modal verb. Capped at 320 characters, which
+  binds on `backend`; total drops from 6,180 to ~4,600.
+- **Stale citations repaired in both trees.** 13 `api/app.py` references across
+  five agents, and seven in `.claude/skills/mango-error/SKILL.md` — live since
+  B1 and carrying the identical wrong pointer. `_ERROR_STATUS` now lives in
+  `api/errors.py`; `app.py` still re-exports it, so path-existence checks could
+  never have caught this. `mango-agent-add/SKILL.md` cited
+  `composition.py lines 102-106`; the registrations are at 240–244. No prose
+  line-number citation remains in either tree.
+- `_register_workflow_routes` → `build_workflow_router` in `api-dev`.
+
 - **Skills moved from `.github/skills/` to `.claude/skills/`.** Claude Code
   reads nothing from `.github/`, so all 12 skills were inert for the tool this
   project uses. They are *not* an invented format — `.github/skills/<name>/SKILL.md`
@@ -32,6 +63,20 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Added
 
+- **Agent contract tests** (`tests/tooling/test_corpus_contract.py`), parametrised
+  off the linter's own glob so they survive the pending move without edits.
+  Assert the roster by set equality, that write capability matches a reviewed
+  set (12 of 19 — a reviewed-change gate, not a deny-list substitute), that
+  routers hold no `Edit`/`Write`/`Bash`, that only routers carry trigger
+  conditions, and that the four protected-path owners name the
+  `BREAKING-CHANGE` trailer — none of the 19 mentioned it before.
+- **Claude Code agent-format validators** in `scripts/lint_agent_frontmatter.py`.
+  `permissionMode`/`hooks` are rejected by a policy table rather than
+  `extra="forbid"`, which would report "Extra inputs are not permitted" for a
+  field Claude Code genuinely accepts; `argument-hint`/`sub_agents` get a
+  separate "not a Claude Code agent field" message. `Agent(a, b)` tool scoping
+  is rejected outright: it is silently ignored inside a subagent definition, so
+  the agent would receive unrestricted delegation rather than the named subset.
 - `tests/tooling/test_corpus_contract.py` — the corpus had no test asserting it
   existed, was non-empty, or lived anywhere in particular. Asserts the skill
   roster by **set equality** (a count names nothing; a set difference names the
@@ -40,6 +85,25 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
   contributor-facing doc points at a retired path.
 
 ### Fixed
+
+- **`--min-agents`/`--min-skills` accepted values that defeat the floor.** Bare
+  `type=int` meant `--min-agents -1` passed and `_below_floor` could never fire,
+  reinstating the silently-passing gate spec-0018 R1 exists to kill. Zero is
+  rejected for the same reason. The test that covered the flags had *enshrined*
+  the bug: it passed `0` against an empty directory and asserted `EXIT_OK`.
+- **`Bash(python -m ruff *:*)` was a dead allow rule.** Claude Code honours only
+  a trailing `:*` in a Bash rule, so the interior `*` was a literal and
+  `ruff check --fix` prompted on every run. `tests/tooling/test_claude_code_settings.py`
+  had zero assertions about `permissions`, so all three deny rules could have
+  been dropped silently; deny set-equality, trailing-wildcard and
+  inert-`Write(`/`NotebookEdit(`-head guards now cover it.
+- **A YAML syntax error in frontmatter surfaced as a traceback.** `ScannerError`
+  is not a `ValueError`, so an unquoted `description:` containing a colon
+  escaped the caller's handler instead of being reported against the file.
+- A green *skip* in the doc-pointer test: a typo'd or renamed entry in
+  `CORPUS_DOC_RELPATHS` left that document unchecked while the suite still
+  reported success.
+
 
 - **The frontmatter gate could not detect its own irrelevance.**
   `scripts/lint_agent_frontmatter.py::main` globbed both corpus trees and, when

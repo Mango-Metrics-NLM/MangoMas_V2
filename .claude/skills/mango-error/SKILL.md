@@ -5,7 +5,7 @@ description: >
   a new MangomasError subclass, mapping it to an HTTP status, ensuring the
   existing _ERROR_STATUS contract holds, or updating CHANGELOG for an
   error-surface change. Covers the three-file lock-step (errors.py +
-  api/app.py::_ERROR_STATUS + tests/test_errors.py) that every new error
+  api/errors.py::_ERROR_STATUS + tests/test_errors.py) that every new error
   must respect.
 argument-hint: "Describe the failure mode to model (e.g. 'rate limit exceeded') or paste the traceback"
 ---
@@ -45,7 +45,7 @@ python -m pytest --tb=short -q
 |------|--------|
 | Single root | All errors subclass `MangomasError` (never bare `Exception`). |
 | `code` attribute | Each subclass sets a unique `code` string. Used in JSON error envelopes. |
-| HTTP mapping centralised | The `_ERROR_STATUS` dict in `api/app.py` is the ONLY place errors map to HTTP status. |
+| HTTP mapping centralised | The `_ERROR_STATUS` dict in `api/errors.py` is the ONLY place errors map to HTTP status. |
 | Walk-the-MRO resolution | `_error_status()` walks the exception's MRO, so subclasses inherit their parent's mapping unless overridden. |
 | 100% coverage floor | `errors.py` is at 100%. Every constructor branch must be tested. |
 | No leaky messages | Exception messages are safe to surface to clients; never embed internal paths, SQL, or secrets. |
@@ -57,7 +57,7 @@ python -m pytest --tb=short -q
 | File | Role |
 |------|------|
 | `src/mangomas/errors.py` | The full error hierarchy + `__all__` export list |
-| `src/mangomas/api/app.py` | `_ERROR_STATUS` mapping and `_error_status()` walker (around line 45-75) |
+| `src/mangomas/api/errors.py` | `_ERROR_STATUS` mapping and the `_error_status()` walker |
 | `tests/test_errors.py` | Constructor + code-string + MRO-resolution tests |
 | `tests/test_api.py` | HTTP integration tests for the mapping |
 | `CHANGELOG.md` | Where every new error type must be announced |
@@ -99,7 +99,7 @@ class RateLimitExceeded(LLMError):
         self.retry_after_seconds = retry_after_seconds
 ```
 
-Add to `__all__` at the top of `errors.py`. Add to `_ERROR_STATUS` in `api/app.py`:
+Add to `__all__` at the top of `errors.py`. Add to `_ERROR_STATUS` in `api/errors.py`:
 
 ```python
 _ERROR_STATUS: dict[type[MangomasError], int] = {
@@ -130,7 +130,7 @@ Append a CHANGELOG entry under `### Added`.
 2. Subclass it (or `MangomasError` if no parent fits).
 3. Set `code` and any structured fields in `__init__`.
 4. Add to `__all__` at the top of `errors.py`.
-5. Add the HTTP mapping in `api/app.py::_ERROR_STATUS`.
+5. Add the HTTP mapping in `api/errors.py::_ERROR_STATUS`.
 6. Write a constructor test in `tests/test_errors.py`.
 7. Write an HTTP-mapping test in `tests/test_api.py`.
 8. Update `CHANGELOG.md`.
@@ -141,7 +141,7 @@ Append a CHANGELOG entry under `### Added`.
 ## Constraints
 
 - DO NOT raise bare `Exception` or `RuntimeError` in `src/` — always use a `MangomasError` subclass.
-- DO NOT put HTTP status decisions outside `api/app.py::_ERROR_STATUS`.
+- DO NOT put HTTP status decisions outside `api/errors.py::_ERROR_STATUS`.
 - DO NOT skip the test in `tests/test_errors.py` — the 100% coverage floor will fail CI.
 - DO NOT embed secrets, file paths, or SQL in the exception message — they are surfaced to clients.
 
@@ -152,4 +152,4 @@ Append a CHANGELOG entry under `### Added`.
 1. New error returns `500` instead of expected code → not yet added to `_ERROR_STATUS`.
 2. Coverage gate fails for `errors.py` → constructor branch (e.g. optional kwarg) not tested.
 3. Existing test breaks after re-mapping → check `tests/test_api.py` for hardcoded status numbers; replace with `tests.constants` references.
-4. mypy complains about `Type[MangomasError]` in `_ERROR_STATUS` → ensure the new class is exported in `__all__` and imported in `api/app.py`.
+4. mypy complains about `Type[MangomasError]` in `_ERROR_STATUS` → ensure the new class is exported in `__all__` and imported in `api/errors.py`.

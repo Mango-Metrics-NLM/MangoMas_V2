@@ -131,6 +131,42 @@ argument-hint: "Pass an example argument"
 Body content.
 """
 
+# Claude Code agent format (spec-0018 / ADR-0024). Kept beside the legacy
+# Copilot fixture above rather than replacing it: the migration needs both, so
+# tests can assert the new format passes *and* that the old one is rejected with
+# a message naming the specific field rather than a generic "extra inputs".
+VALID_CLAUDE_AGENT_FRONTMATTER: str = """\
+---
+name: example-agent
+description: A sufficiently descriptive blurb that satisfies the linter minimum length.
+tools: Read, Grep, Glob, Skill
+model: inherit
+---
+"""
+
+# Field values that must be rejected, each standing for a real defect in the
+# migrating corpus. Kept as data so a new rejection rule adds a row, not a test.
+INVALID_AGENT_MODEL_VALUES: tuple[str, ...] = (
+    "Claude Sonnet 4.5 (copilot)",  # every one of the 19 agents carried this
+    "Opus",
+    "claude opus 5",
+)
+# Copilot tool aliases: valid in that tool, meaningless to Claude Code — and
+# because omitting `tools` inherits everything, an unrecognised list is the
+# dangerous kind of wrong rather than a harmless one.
+INVALID_AGENT_TOOL_TOKENS: tuple[str, ...] = ("read", "edit", "search", "execute")
+VALID_AGENT_TOOL_TOKENS: tuple[str, ...] = ("Read", "Grep", "Glob", "Skill", "Edit", "Write")
+# An MCP tool name cannot be enumerated ahead of time — it depends on the
+# caller's .mcp.json — so the validator accepts the shape.
+VALID_MCP_TOOL_NAME: str = "mcp__github__pull_request_read"
+# Delegation scoping that Claude Code ignores inside a subagent definition: the
+# agent gets unrestricted delegation, not the named subset.
+SCOPED_DELEGATION_TOOL_SPEC: str = "Agent(protocol-auditor, layering-auditor)"
+# Fields Claude Code accepts and this project declines, vs fields carried over
+# from the Copilot format. The two get different messages on purpose.
+POLICY_REJECTED_AGENT_FIELDS: tuple[str, ...] = ("permissionMode", "hooks")
+LEGACY_AGENT_FIELDS: tuple[str, ...] = ("argument-hint", "sub_agents")
+
 VALID_SKILL_FRONTMATTER: str = """\
 ---
 name: example-skill
@@ -143,14 +179,17 @@ Body content.
 
 MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS: str = """\
 ---
-name: BadExample
+name: bad-example
 description: A sufficiently descriptive blurb that satisfies the linter minimum length.
-model: Claude Sonnet 4.5 (copilot)
-argument-hint: "Pass an example argument"
+model: inherit
 ---
 
 Body content.
 """
+# Filename stem the fixtures above must be written under: Claude Code resolves
+# an agent by its `name` field, so the lint requires the two to agree.
+VALID_CLAUDE_AGENT_SLUG: str = "example-agent"
+MISSING_TOOLS_AGENT_SLUG: str = "bad-example"
 
 MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION: str = """\
 ---
@@ -335,6 +374,74 @@ RTK_TELEMETRY_DISABLED_ENV: str = "RTK_TELEMETRY_DISABLED"
 # Shared truthy/falsey markers for the `env`-block flags above.
 ENV_FLAG_ON: str = "1"
 ENV_FLAG_OFF: str = "0"
+
+# ── Agent corpus contract (spec-0018 / ADR-0024) ──────────────────────────────
+# The 19 agents, by slug. Set equality, so a change names what appeared or
+# vanished and editing this tuple is the review record.
+EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
+    "adr-author",
+    "api-dev",
+    "architect",
+    "backend",
+    "error-taxonomy-dev",
+    "fake-builder",
+    "hypothesis-fuzz",
+    "integration-runner",
+    "layering-auditor",
+    "llm-adapter-dev",
+    "orchestrator-dev",
+    "pr-watcher",
+    "protocol-auditor",
+    "schema-evolution",
+    "sse-streamer",
+    "storage-adapter-dev",
+    "telemetry-exporter-dev",
+    "test-engineer",
+    "workflow-graph-dev",
+)
+# Routers are the only agents that carry trigger conditions, so they are the
+# only descriptions auto-delegation can match. They cannot write.
+ROUTER_AGENT_SLUGS: frozenset[str] = frozenset({"architect", "backend", "api-dev", "test-engineer"})
+# Agents holding Edit and/or Write. A reviewed-change gate, NOT a substitute
+# for a deny rule: it covers 12 of 19 and only fails when the set changes.
+WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
+    {
+        "adr-author",
+        "error-taxonomy-dev",
+        "fake-builder",
+        "hypothesis-fuzz",
+        "integration-runner",
+        "llm-adapter-dev",
+        "orchestrator-dev",
+        "schema-evolution",
+        "sse-streamer",
+        "storage-adapter-dev",
+        "telemetry-exporter-dev",
+        "workflow-graph-dev",
+    }
+)
+# Agents whose declared surface includes a protected core contract. Each must
+# say so, because the CI trailer gate will otherwise fail their first commit.
+PROTECTED_PATH_OWNER_SLUGS: frozenset[str] = frozenset(
+    {"error-taxonomy-dev", "orchestrator-dev", "schema-evolution", "hypothesis-fuzz"}
+)
+# The description is the entire routing surface and loads at every session
+# start. 320 binds on the corpus as written; 400 would bind on nothing.
+AGENT_DESCRIPTION_MAX_CHARS: int = 320
+# Ceiling on token overlap between two *router* descriptions. Routers are the
+# only auto-delegated agents, so they are the only pair that can compete. A
+# ratchet, stated honestly: the observed maximum is 0.208, so this binds on
+# nothing today and exists to stop drift.
+MAX_ROUTER_DESCRIPTION_JACCARD: float = 0.30
+# Trigger-condition wording. Banned outside routers: "invoke explicitly when X"
+# is not a control, because auto-delegation matches X and ignores the verb.
+AGENT_TRIGGER_PHRASE_PATTERN: str = r"use when|when you|whenever"
+# Wording retired with the parent/child hierarchy.
+RETIRED_AGENT_PREFIX: str = "Sub-agent of"
+# Minimum ADR/spec references across the corpus. Set from what the corpus
+# actually contains (ADR-0013/0014/0016 and `spec 0012`) rather than an
+# aspiration — note the space in `spec 0012`, which a `spec-\\d{4}` regex misses.
+MIN_CORPUS_TRACEABILITY_REFS: int = 4
 
 # Claude Code permission rules in `.claude/settings.json`. Pinned by set
 # equality: nothing else in the suite asserted anything about `permissions`, so
