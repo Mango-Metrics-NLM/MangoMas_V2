@@ -80,22 +80,60 @@ being masked by a blanket `|| true`.
   file is committed and JSON-validated by `make validate-config`, so it can't
   silently rot.
 
-## `claude-mem` — cross-session memory (pending)
+## `claude-mem` — cross-session memory (per-contributor only)
 
-**Not yet wired in.** Per spec-0016/ADR-0020, `claude-mem`'s hook JSON must
-come from an observed `npx claude-mem install` diff, never hand-authored —
-its installer determines the exact commands for its `SessionStart`/
-`UserPromptSubmit`/`PostToolUse`/`Stop`/`SessionEnd` hooks. Running that
-installer executes third-party code and needs the user's explicit go-ahead
-first (a disposable container bounds the blast radius; it doesn't substitute
-for authorization). Once run:
+**Nothing to commit — install it yourself if you want it:**
 
-1. Confirm the diff only *appends* to the existing hook arrays.
-2. During setup, explicitly select the **local-only** memory provider —
-   decline the "CMEM Pro" hosted-tier default-nudge.
-3. Confirm `~/.claude-mem/` (SQLite + local Chroma) has no cloud-sync URL set.
-4. Wrap each hook command in the same `MANGOMAS_DISABLE_CLAUDE_MEM_HOOKS`
-   opt-out pattern as `rtk` above before committing.
+```bash
+npx claude-mem install       # then: npx claude-mem start
+```
+
+Spec-0016 originally assumed this tool's hooks would be merged into the
+shared `.claude/settings.json` and wrapped in a `MANGOMAS_DISABLE_CLAUDE_MEM_HOOKS`
+gate. **That assumption was wrong**, and the installer was run in an isolated
+sandbox (throwaway `HOME`, throwaway project copy) to settle it. As of
+v13.14.0 `claude-mem` installs as a **user-scoped Claude Code plugin**, not
+project configuration:
+
+- The project's `.claude/settings.json` was **byte-identical** (same sha256)
+  before and after the install — the installer never touches it.
+- Its six hooks (`Setup`, `SessionStart`, `UserPromptSubmit`, `PostToolUse`,
+  `PreToolUse`, `Stop`) ship in the plugin's own `hooks.json` manifest,
+  resolved at runtime from `~/.claude/plugins/cache/thedotmack/claude-mem/`.
+- User-level `~/.claude/settings.json` gains only
+  `{"enabledPlugins": {"claude-mem@thedotmack": true}}`; `installed_plugins.json`
+  records `"scope": "user"`.
+
+So there is **no shared-config diff, and no `MANGOMAS_DISABLE_*` gate** — that
+pattern exists for hooks committed to this repo, and claude-mem has none. To
+opt out, don't install the plugin, or set its `enabledPlugins` entry to
+`false` in your own user settings.
+
+**Local-only by default, verified:** the install produced
+`~/.claude-mem/settings.json` = `{"CLAUDE_MEM_RUNTIME": "worker"}` with no
+cloud-sync hub URL, and `telemetry.json` with an empty `decidedAt` (consent
+undecided, nothing enabled). The interactive provider prompt — where the
+hosted "CMEM Pro" tier is offered first — is **skipped in a non-TTY**; on a
+real terminal, decline it to stay local-only.
+
+**Understand what it captures before installing.** Its `PostToolUse` hook
+matches `*`, so *every* tool call's output is captured — and tool output
+routinely contains secrets: a CLI echoing a token, an env dump, a database
+connection string, a decrypted config. Those land in `~/.claude-mem/`
+(SQLite + Chroma) in whatever form they were printed; nothing in this repo's
+`gitleaks` job or `.gitignore` protects a directory outside the repo. Treat
+`~/.claude-mem/` as sensitive at rest, and prefer not to print secrets in a
+session you are recording.
+
+"Local" is the **default, not an invariant** — the same settings file
+accepts `CLAUDE_MEM_CLOUD_SYNC_HUB_URL` (sync to a hosted hub) and
+`CLAUDE_MEM_CHROMA_HOST` / `CLAUDE_MEM_CHROMA_API_KEY` (point the vector
+store at a remote Chroma). Both are unset out of the box; setting either
+turns captured tool output into outbound data, so treat those two knobs as
+the review boundary.
+
+It also runs a **local background worker** (HTTP listener on
+`127.0.0.1:37700`).
 
 `claude-mem`'s memory is entirely separate from this repo's own memory
 systems (`MANGOMAS_MEMORY__ENABLED` file-memory, and the RAG/vector layer at

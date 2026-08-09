@@ -311,7 +311,7 @@ What ships in the harness:
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
 | Project settings | `.claude/settings.json` | Allow/Deny + SessionStart/PreToolUse/PostToolUse/Stop hooks |
 | MCP servers | `.mcp.json` | 5 servers: filesystem/git/fetch/sequential-thinking/repomix |
-| Cross-session memory (opt-in, local-only, pending) | external `~/.claude-mem/` | claude-mem |
+| Cross-session memory (per-contributor, user-scoped) | external `~/.claude-mem/` | claude-mem — no shared config |
 | PR template + secret-scan job | `.github/PULL_REQUEST_TEMPLATE.md` + `ci.yml` | Mandatory PR checklist |
 
 See `CLAUDE.md` for the full skill/sub-agent map and protected-path
