@@ -380,9 +380,19 @@ class _HarnessOrchestrator(Orchestrator):
             raise
         finally:
             maybe_aclose = getattr(inner, "aclose", None)
-            if maybe_aclose is not None:
-                await maybe_aclose()
-            span.end()
+            try:
+                if maybe_aclose is not None:
+                    await maybe_aclose()
+            except Exception:
+                # inner is an arbitrary AsyncIterator per the StreamingAgent.stream
+                # protocol — a failure while closing it must not suppress span.end()
+                # below, or the harness span leaks (never exported).
+                logger.warning(
+                    "Error closing inner stream while ending the harness span",
+                    exc_info=True,
+                )
+            finally:
+                span.end()
 
 
 def build_orchestrator(settings: Settings | None = None) -> Orchestrator:

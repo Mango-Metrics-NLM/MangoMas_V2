@@ -130,14 +130,18 @@ def _extract_source(payload: dict[str, object]) -> str | None:
     """Return the changed config source named in *payload*, or ``None``.
 
     The real stdin field name is unconfirmed (see module docstring); this
-    tries each candidate key and logs the raw payload at DEBUG so the real
-    key can be confirmed on first live firing.
+    tries each candidate key. On a miss, only the payload's *keys* are
+    logged at DEBUG — never the values, since a ConfigChange payload can
+    plausibly carry config content or env values that shouldn't reach logs.
     """
     for key in _SOURCE_KEY_CANDIDATES:
         value = payload.get(key)
         if isinstance(value, str):
             return value
-    logger.debug("ConfigChange payload had no recognized source key", extra={"payload": payload})
+    logger.debug(
+        "ConfigChange payload had no recognized source key",
+        extra={"payload_keys": sorted(payload)},
+    )
     return None
 
 

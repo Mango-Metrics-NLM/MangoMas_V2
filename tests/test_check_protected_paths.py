@@ -161,6 +161,27 @@ def test_missing_governance_table_returns_git_error(
     assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_GIT_ERROR
 
 
+def test_missing_git_executable_returns_git_error_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``subprocess.run`` raises ``FileNotFoundError`` (an ``OSError``) when
+    the ``git`` executable itself can't be found — a different failure mode
+    than git running and exiting non-zero. Both must land on
+    ``EXIT_GIT_ERROR``, not an uncaught exception that crashes the gate."""
+    repo = _init_repo(tmp_path)
+    _commit_touching(repo, _PROTECTED_FILE, "refactor core agent")
+
+    real_run = subprocess.run
+
+    def _raise_file_not_found(args, **kwargs):
+        if args[0] == "git":
+            raise FileNotFoundError("git: command not found")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(check_protected_paths.subprocess, "run", _raise_file_not_found)
+    assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_GIT_ERROR
+
+
 def test_main_wires_cli_args_through(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _init_repo(tmp_path)
     _commit_touching(repo, _UNPROTECTED_FILE, "touch unprotected file only")

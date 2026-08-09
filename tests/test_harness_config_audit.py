@@ -9,6 +9,7 @@ rigor applied to the ``lint_agent_frontmatter.py --hook`` fixes.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -51,6 +52,22 @@ def test_extract_source_tries_each_candidate_key() -> None:
 
 def test_extract_source_returns_none_when_no_candidate_key_matches() -> None:
     assert hook._extract_source({"unrelated": "value"}) is None
+
+
+def test_extract_source_debug_log_omits_raw_payload_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression guard: a ConfigChange payload can plausibly carry config
+    content or env values in fields other than the recognized source keys.
+    The DEBUG log on a miss must carry only the payload's key names, never
+    the values, so enabling DEBUG logging can't leak secrets."""
+    caplog.set_level(logging.DEBUG, logger=hook.__name__)
+    hook._extract_source({"unrelated": "super-secret-value", "another": "also-secret"})
+
+    records = [r for r in caplog.records if "no recognized source key" in r.message]
+    assert len(records) == 1
+    assert not hasattr(records[0], "payload")
+    assert getattr(records[0], "payload_keys", None) == ["another", "unrelated"]
 
 
 def test_read_stdin_payload_parses_valid_json() -> None:

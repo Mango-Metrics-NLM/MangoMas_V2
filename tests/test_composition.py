@@ -521,6 +521,43 @@ async def test_harness_traced_stream_handles_inner_without_aclose(
     assert len(finished) == 1
 
 
+async def test_harness_traced_stream_ends_span_even_when_inner_aclose_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``inner.aclose()`` is called unconditionally in the ``finally`` block,
+    including on a normal full drain. If it raises (a misbehaving custom
+    ``AsyncIterator``), that failure must not suppress ``span.end()`` — else
+    the harness span leaks (never exported) — and must not mask the stream's
+    otherwise-successful result for the consumer."""
+    exporter = InMemorySpanExporter()
+    wrapper, request = _make_traced_stream_wrapper(
+        monkeypatch, exporter, namespace=f"{_HARNESS_STREAM_SPAN_NAMESPACE}.aclose_raises"
+    )
+
+    class _RaisingAcloseIterator:
+        def __init__(self, items: list[str]) -> None:
+            self._items = iter(items)
+
+        def __aiter__(self) -> _RaisingAcloseIterator:
+            return self
+
+        async def __anext__(self) -> str:
+            try:
+                return next(self._items)
+            except StopIteration:
+                raise StopAsyncIteration from None
+
+        async def aclose(self) -> None:
+            raise RuntimeError("aclose boom")
+
+    stream = wrapper._traced_stream(DEFAULT_AGENT_NAME, request, _RaisingAcloseIterator(["a", "b"]))
+    received = [chunk async for chunk in stream]
+    assert received == ["a", "b"]
+
+    finished = exporter.get_finished_spans()
+    assert len(finished) == 1
+
+
 async def test_harness_stream_dispatch_agent_not_found_raises_before_any_span(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -94,13 +94,22 @@ def _load_governance(pyproject_path: Path) -> tuple[frozenset[str], frozenset[st
 
 
 def _run_git(args: list[str]) -> str:
-    """Return *args*' stdout. Raises ``GovernanceConfigError`` on failure."""
-    result = subprocess.run(
-        ["git", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    """Return *args*' stdout. Raises ``GovernanceConfigError`` on failure.
+
+    ``subprocess.run`` itself raises ``OSError`` (e.g. ``FileNotFoundError``)
+    when the ``git`` executable can't be found at all, distinct from git
+    running and exiting non-zero — both must land on ``EXIT_GIT_ERROR``
+    rather than an uncaught traceback.
+    """
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise GovernanceConfigError(f"git {' '.join(args)} failed to start: {exc}") from exc
     if result.returncode != 0:
         raise GovernanceConfigError(
             f"git {' '.join(args)} failed: {result.stderr.strip() or '(no stderr)'}"

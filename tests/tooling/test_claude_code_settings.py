@@ -88,8 +88,8 @@ def test_preexisting_hook_survives_verbatim(event: str, matcher: str, command: s
 
 
 def test_config_change_hook_is_scoped_to_governed_sources() -> None:
-    """ADR-0021 / spec-0017: the ConfigChange hook must matcher-scope to only
-    the two sources this repo governs — Claude Code cannot block
+    """ADR-0021 / spec-0017: the ConfigChange hook's matcher must scope it to
+    only the two sources this repo governs — Claude Code cannot block
     policy_settings regardless, and user_settings/skills are out of scope."""
     commands = _hook_commands("ConfigChange", "project_settings|local_settings")
     assert commands == ["python scripts/harness_config_audit.py"]
