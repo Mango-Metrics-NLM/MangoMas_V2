@@ -111,6 +111,23 @@ mangomas = "mangomas.cli.main:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mangomas"]
 
+# Protected-core-contract set (ADR-0021 / spec-0017). Single source of truth,
+# read via stdlib tomllib by both scripts/check_protected_paths.py (the CI
+# gate) and scripts/lint_agent_frontmatter.py (the PreToolUse advisory hook) —
+# neither may depend on `mangomas` being installed. An edit to one of these
+# paths requires a `BREAKING-CHANGE` trailer on at least one commit in the PR;
+# see docs/adr/0021-protected-path-governance-contract.md.
+[tool.mangomas.governance]
+protected_paths = [
+    "src/mangomas/core/agent.py",
+    "src/mangomas/core/orchestrator.py",
+    "src/mangomas/core/tools.py",
+    "src/mangomas/errors.py",
+    "src/mangomas/registry.py",
+]
+breaking_change_marker = "BREAKING-CHANGE"
+breaking_change_marker_aliases = ["BREAKING-CHANGE", "# approved-breaking-change"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
