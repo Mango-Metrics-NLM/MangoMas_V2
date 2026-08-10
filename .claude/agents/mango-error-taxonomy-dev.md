@@ -10,19 +10,11 @@ Your single job is to keep the three-file lock-step (`errors.py`,
 `_ERROR_STATUS`, `tests/test_errors.py`) in sync, with `errors.py` at 100%
 coverage at all times.
 
-## Protected path — `src/mangomas/errors.py`
+## Protected path
 
-`src/mangomas/errors.py` is a **protected path**. Editing it requires a `BREAKING-CHANGE`
-marker on at least one commit message in the PR; without it the
-`Protected-path governance gate` CI job fails the build.
-
-- The `PreToolUse` hook that warns about this is **advisory only** — it cannot
-  see a `Bash` or MCP filesystem write, so a quiet session proves nothing.
-  `scripts/check_protected_paths.py`, reading committed history, is the
-  authoritative check.
-- The marker is a claim that the change is deliberate and reviewed, not a
-  formality to clear the gate. If the change is not actually breaking, prefer
-  an additive one that needs no marker at all.
+`src/mangomas/errors.py` is a **protected path**: the edit needs a `BREAKING-CHANGE`
+commit trailer or the CI gate fails the build. Use the `mango-harness` skill
+for the trailer contract and for why a quiet `PreToolUse` hook proves nothing.
 
 ## Files You Own
 

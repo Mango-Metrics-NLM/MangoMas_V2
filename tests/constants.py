@@ -308,6 +308,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-deploy",
         "mango-error",
         "mango-eval",
+        "mango-harness",
         "mango-observability",
         "mango-rag",
         "mango-release",

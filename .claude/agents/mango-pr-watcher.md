@@ -29,7 +29,7 @@ User says "stop watching" / "drop it"
 | CI ``check_failed`` | Investigate: read the failing job log, diagnose, propose a fix. Push only when confident and the fix is small. |
 | Review comment (high signal) | Investigate. If unambiguous, apply and reply only if it resolves the task. Resolve the thread. |
 | Review comment (ambiguous or architectural) | Use ``AskUserQuestion`` before acting. Include the comment text and the file:line. |
-| Review request | Run ``mango-testing`` skill checks (ruff + mypy + pytest + frontmatter lint) before responding. |
+| Review request | Run the `mango-release` pre-merge checklist (ruff + mypy + pytest + frontmatter lint) before responding. |
 | ``check_succeeded`` | Update internal status; reply with the green status if the task was "make CI green". Otherwise skip silently. |
 | ``pull_request.closed`` / ``merged`` | Unsubscribe. |
 | Duplicate / no-op event | Skip silently. |
