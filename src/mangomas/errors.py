@@ -1,7 +1,7 @@
 """Structured error hierarchy for Mango-Mas.
 
 Every public function that can fail raises a subclass of ``MangomasError``.
-All subclasses map to HTTP status codes via ``_ERROR_STATUS`` in ``api/app.py``.
+All subclasses map to HTTP status codes via ``_ERROR_STATUS`` in ``api/errors.py``.
 """
 
 from __future__ import annotations

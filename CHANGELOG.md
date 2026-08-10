@@ -13,6 +13,17 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Changed
 
+- **Skills own procedure; agents own a surface** (spec-0018 R7), now enforced by
+  four tests rather than by review. The agent corpus carried seven skill
+  references in total, twelve agents cited none, and the worst offender
+  duplicated 70 % of its body from the skill it named. Agent corpus 1230 → 1031
+  lines; skill references 7 → 26. Agent heading vocabulary collapses from 56
+  distinct headings to 9 — ad-hoc names are where a duplicated section hides.
+- **New `mango-harness` skill** owning protected-path governance: the
+  `BREAKING-CHANGE` trailer, and the advisory-hook-vs-authoritative-gate
+  distinction. It absorbs a block that was byte-identical across four agents.
+- **Two nested `CLAUDE.md` files** (`tests/`, `src/mangomas/core/`) replace five
+  stray `agent.md` files; the other three were deleted as skill duplicates.
 - **All 19 agents are now live at `.claude/agents/mango-<slug>.md`** — one flat
   directory, no parent/child hierarchy. This is the capability change: agents
   are discoverable, auto-delegated from their descriptions, and bounded by
@@ -114,6 +125,20 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
   contributor-facing doc points at a retired path.
 
 ### Fixed
+
+- **The corpus said things that were not true.** `mango-error`'s live SKILL.md
+  and five agents pointed at `api/app.py::_ERROR_STATUS`, which moved to
+  `api/errors.py`; `src/mangomas/errors.py`'s own module docstring said the same.
+  `mango-pr-watcher` credited the frontmatter-lint checklist to `mango-testing`,
+  where it does not exist — it is `mango-release`'s. Five dormant `agent.md`
+  files documented a `TurnRepository.save()` and a `Turn` type that exist
+  nowhere in `src/`, an SSE wire format a client could not parse, and a
+  prompt-injection code block no agent implements.
+- **A CHANGELOG convention nobody followed.** `### Breaking Changes` was
+  prescribed in four places and used here zero times; it is not a Keep a
+  Changelog section either. Replaced by what is actually enforced — a
+  `BREAKING-CHANGE` commit trailer, plus `### Changed` with a
+  backwards-compatibility note.
 
 - **`--min-agents`/`--min-skills` accepted values that defeat the floor.** Bare
   `type=int` meant `--min-agents -1` passed and `_below_floor` could never fire,

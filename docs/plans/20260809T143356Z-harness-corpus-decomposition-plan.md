@@ -3,7 +3,7 @@
 - **Branch:** `claude/agents-mcps-implementation-plan-9bdtnt`
 - **Date:** 2026-08-09
 - **Target release:** `[Unreleased]` → next minor
-- **Status:** In progress — PR A done; PR B split into B1–B4 (B1 in flight); PR C not started
+- **Status:** In progress — PR A done; PR B complete (B1/B2a/B2b/B3+B4 merged or in review); PR C not started
 - **Specs:** `specs/0017-protected-path-governance.md`,
   `specs/0018-live-claude-code-corpus.md`,
   `specs/0015-package-decomposition.md` (existing, amended)
@@ -115,8 +115,8 @@ two load-bearing premises:
 |---|---|
 | **B1** | Skills go live: non-empty guard **first**, then a content-free `git mv`, skill roster test, doc sweep. ~20 files, no permission or routing design. |
 | **B2** | Agents go live: unwired validators, content-free `git mv`, schema + frontmatter + least-privilege `tools`, path-scoped `permissions.deny`, contract tests with citation repairs folded in. |
-| **B3** | Content: body sweep under the skill-owns-procedure rule (test-enforced), 3 new skills, 3 skill extensions. |
-| **B4** | Nested `CLAUDE.md`: fix all five stray `agent.md` files **first** — four contain content that is wrong, not stale (a `TurnRepository.save()` that does not exist; a CHANGELOG-heading rule that contradicts PR A's commit-trailer gate) — then rename. |
+| **B3+B4** | Content correctness, shipped as one PR. R7 enforced by four tests; 199 duplicated lines removed; the `mango-harness` skill absorbs governance prose that was byte-identical in four agents; the dead `### Breaking Changes` convention retired; two stray `agent.md` files promoted to nested `CLAUDE.md`, three deleted. **Superseded the original sketch**: measurement showed the gap was missing *owners*, not missing skills — the four unreferenced skills document surfaces no agent owns. Tracked as B5. |
+| **B5** | Owner agents for the unowned surfaces: `eval/` (21 modules), `rag/` + `adapters/embeddings/` + `adapters/vector/`, `config.py`, `src/mangomas/agents/`, `secrets/`, `cli/`, `harness/`. Four mature skills already document these with no agent to reach for them. Additive capability change, deliberately kept out of the correctness PR. |
 
 ## PR C — Package decomposition (spec-0015, amended / ADR-0019, amended)
 

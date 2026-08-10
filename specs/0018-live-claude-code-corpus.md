@@ -1,6 +1,6 @@
 # Spec-0018: Live Claude Code corpus
 
-- **Status:** In progress
+- **Status:** Implemented
 - **Linked ADR:** ADR-0024 (Live corpus: surface choice and permission posture)
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Changed`
 
@@ -115,10 +115,10 @@ behaviour — consistent with spec-0016's stance that pure dev-tooling config st
 
 ## Acceptance criteria
 
-- [ ] The frontmatter gate fails when its globs match zero files, and a test proves it.
-- [ ] `make frontmatter` prints non-zero skill and agent counts in its message.
-- [ ] Every skill resolves under `.claude/skills/<name>/SKILL.md`; `.github/skills` is gone.
-- [ ] Roster set-equality holds, and deleting one corpus file fails a *named* test.
-- [ ] No documentation references a corpus path that no longer exists.
-- [ ] `ruff`, `mypy`, `pytest` (95 % gate), `frontmatter-lint` all clean — `make gate` green.
-- [ ] CHANGELOG updated; ADR-0024 accepted.
+- [x] The frontmatter gate fails when its globs match zero files, and a test proves it.
+- [x] `make frontmatter` prints non-zero skill and agent counts in its message.
+- [x] Every skill resolves under `.claude/skills/<name>/SKILL.md`; `.github/skills` is gone.
+- [x] Roster set-equality holds, and deleting one corpus file fails a *named* test.
+- [x] No documentation references a corpus path that no longer exists.
+- [x] `ruff`, `mypy`, `pytest` (95 % gate), `frontmatter-lint` all clean — `make gate` green.
+- [x] CHANGELOG updated; ADR-0024 accepted.
