@@ -24,18 +24,24 @@ import pytest
 from tests._script_loader import load_script_module
 from tests.constants import (
     AGENT_DESCRIPTION_MAX_CHARS,
+    AGENT_SECTION_HEADINGS,
+    AGENT_SKILL_OWNERS,
     AGENT_SLUG_PREFIX,
     AGENT_TRIGGER_PHRASE_PATTERN,
     CLAUDE_SKILLS_DIR_RELPATH,
     CORPUS_DOC_RELPATHS,
     EXPECTED_AGENT_SLUGS,
     EXPECTED_SKILL_SLUGS,
+    HARNESS_SKILL_SLUG,
     MAX_ROUTER_DESCRIPTION_JACCARD,
     MIN_CORPUS_TRACEABILITY_REFS,
+    PROCEDURE_SECTION_HEADING,
     PROTECTED_PATH_OWNER_SLUGS,
     RETIRED_AGENT_PREFIX,
     RETIRED_AGENTS_DIR_RELPATH,
+    RETIRED_CHANGELOG_HEADING,
     RETIRED_SKILLS_DIR_RELPATH,
+    RETIRED_STRAY_AGENT_FILENAME,
     ROUTER_AGENT_SLUGS,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
@@ -309,3 +315,95 @@ def test_tracked_agents_carry_the_shared_prefix(slug: str) -> None:
     contributor's own agents in the same directory, and what keeps agent and
     skill names from colliding as both corpora grow."""
     assert slug.startswith(AGENT_SLUG_PREFIX)
+
+
+# ── R7: skills own procedure, agents own a surface ────────────────────────────
+
+
+def _agent_body(slug: str) -> str:
+    """Return an agent file's body, excluding its frontmatter block."""
+    path = next(p for p in _agent_paths() if _agent_frontmatter(p)["name"] == slug)
+    text = path.read_text(encoding="utf-8")
+    _, _, rest = text.partition("---")
+    _, _, body = rest.partition("---")
+    return body
+
+
+@pytest.mark.parametrize("slug", sorted(AGENT_SKILL_OWNERS))
+def test_mapped_agent_references_its_skill(slug: str) -> None:
+    """An agent whose surface a skill documents must name that skill.
+
+    Before this, the entire agent corpus contained seven skill references, and
+    `mango-telemetry-exporter-dev` had copied ~26 lines of `mango-deploy` while
+    citing nothing — the duplication and the missing pointer are the same
+    defect seen from two sides.
+    """
+    body = _agent_body(slug)
+    missing = [skill for skill in AGENT_SKILL_OWNERS[slug] if skill not in body]
+    assert missing == [], f"{slug} does not reference {missing}"
+
+
+@pytest.mark.parametrize("slug", sorted(AGENT_SKILL_OWNERS))
+def test_mapped_agent_has_no_procedure_section(slug: str) -> None:
+    """A mapped agent's recipe belongs to its skill.
+
+    Deliberately scoped to mapped agents. A blanket ban would delete good
+    content: the routers' and auditors' numbered steps are their own operating
+    loop, not a recipe any skill owns.
+    """
+    assert PROCEDURE_SECTION_HEADING not in _agent_body(slug)
+
+
+@pytest.mark.parametrize("slug", sorted(EXPECTED_AGENT_SLUGS))
+def test_agent_headings_use_the_canonical_vocabulary(slug: str) -> None:
+    """56 distinct headings existed across 19 agents, including three spellings
+    of "surface you own". Beyond being unscannable, ad-hoc headings let a
+    duplicated section hide under a new name."""
+    headings = [line for line in _agent_body(slug).splitlines() if line.startswith("## ")]
+    unknown = [h for h in headings if h not in AGENT_SECTION_HEADINGS]
+    assert unknown == [], f"{slug} uses non-canonical headings: {unknown}"
+
+
+def test_protected_path_governance_is_single_sourced() -> None:
+    """The advisory-hook caveat lives in `mango-harness` alone. It was
+    byte-identical across four agents until that skill absorbed it."""
+    carriers = [
+        p.relative_to(_REPO_ROOT).as_posix()
+        for p in sorted(_REPO_ROOT.glob(".claude/**/*.md"))
+        if "advisory only" in p.read_text(encoding="utf-8")
+    ]
+    assert carriers == [f".claude/skills/{HARNESS_SKILL_SLUG}/SKILL.md"], carriers
+
+
+@pytest.mark.parametrize("slug", sorted(PROTECTED_PATH_OWNER_SLUGS))
+def test_protected_path_owners_point_at_the_governance_skill(slug: str) -> None:
+    """Having moved the prose out, each owner must still lead a reader to it."""
+    assert HARNESS_SKILL_SLUG in _agent_body(slug)
+
+
+def test_no_corpus_file_prescribes_the_retired_changelog_heading() -> None:
+    """`### Breaking Changes` was prescribed in four places and appears in
+    CHANGELOG.md zero times — it is not a Keep a Changelog section, which is the
+    format the CHANGELOG declares. The enforced mechanism is the commit
+    trailer, so a corpus file naming the heading sends a contributor to a
+    convention the repo does not use."""
+    offenders = [
+        p.relative_to(_REPO_ROOT).as_posix()
+        for p in sorted(_REPO_ROOT.glob(".claude/**/*.md"))
+        if RETIRED_CHANGELOG_HEADING in p.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+
+
+def test_no_stray_agent_md_files_remain() -> None:
+    """Five dormant `agent.md` files sat in the source tree, referenced by
+    nothing and wrong in ways only a reader would discover — a fictional
+    `TurnRepository.save()`, an SSE format a client could not parse. Two earned
+    promotion to a nested `CLAUDE.md`; the rest were skill duplicates. A file
+    nothing loads cannot be kept honest, so the convention stays retired."""
+    strays = [
+        p.relative_to(_REPO_ROOT).as_posix()
+        for p in _REPO_ROOT.rglob(RETIRED_STRAY_AGENT_FILENAME)
+        if ".git/" not in p.as_posix()
+    ]
+    assert strays == []

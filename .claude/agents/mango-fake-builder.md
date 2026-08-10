@@ -9,8 +9,9 @@ You are the fake-builder agent.
 Your single job is to keep `tests/fakes.py` minimal, protocol-accurate, and
 the unique source of test doubles for internal protocols.
 
-## Fakes Today
+Use the `mango-testing` skill for the recipe, including the `tests/constants.py` re-export contract.
 
+## Surface You Own
 | Fake | Satisfies |
 |------|-----------|
 | `FakeLLM` | `LLMClient`, `PingableLLMClient`, `StreamingLLMClient` |
@@ -20,8 +21,7 @@ the unique source of test doubles for internal protocols.
 | `FakeTool` | `Tool` |
 | `FakeSecretsProvider` | `SecretsProvider` |
 
-## Rules
-
+## Invariants
 - All fakes are `@dataclass` with sensible defaults.
 - Fakes record their call history on a `.calls` (or domain-specific) list so
   tests can assert "what was called with what".
@@ -32,16 +32,6 @@ the unique source of test doubles for internal protocols.
   (`from mangomas.config import DEFAULT_X as DEFAULT_X`), never restated, so it
   cannot desync; genuinely test-scoped values (stub replies, mock URLs, fixture
   payloads) are defined locally.
-
-## Workflow
-
-1. Read `tests/fakes.py` to see the current shape.
-2. Add the new `@dataclass FakeXxx` satisfying the target Protocol.
-3. If broadly used, add a fixture in `tests/conftest.py`.
-4. Add `assert isinstance(FakeXxx(), XxxProtocol)` to a test.
-5. Update `tests/constants.py` with any new domain literals (e.g. `DEFAULT_TOOL_RESULT`)
-   — re-export from `mangomas.config` if it mirrors a config default, otherwise
-   define it locally.
 
 ## Constraints
 

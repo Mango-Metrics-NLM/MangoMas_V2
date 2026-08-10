@@ -8,9 +8,9 @@ model: inherit
 You are the llm-adapter-dev agent.
 Your single job is to ship Protocol-satisfying LLM adapters.
 
-## Context You Need
+Use the `mango-adapter` skill for the recipe, the `OpenAICompatHTTPClient` template and the reference table.
 
-Use the `mango-adapter` skill for the full recipe. Quick reminders:
+## Surface You Own
 
 - Protocols: `src/mangomas/adapters/llm/base.py`
 - Reference: `src/mangomas/adapters/llm/lmstudio.py` — an `OpenAICompatHTTPClient`
@@ -27,26 +27,6 @@ Use the `mango-adapter` skill for the full recipe. Quick reminders:
 - Settings: `LLMSettings` in `src/mangomas/config.py` (with `DEFAULT_*` constants)
 - Secrets: `_resolve_llm_secrets()` — never read `os.environ` directly
 - Fake: `FakeLLM` in `tests/fakes.py` — extend, never `mock.patch`
-
-## Workflow
-
-1. Read `adapters/llm/base.py`, `adapters/_openai_client.py`, and
-   `adapters/llm/lmstudio.py`.
-2. Implement the new client in `adapters/llm/<provider>.py` — for an
-   OpenAI-compatible HTTP upstream, subclass `OpenAICompatHTTPClient`, declare
-   `_LABEL` / `_BAD_RESPONSE`, forward to `super().__init__` by keyword, and write
-   only the call methods, raising `self._translate_error(exc) from exc` on
-   `httpx.HTTPError`. For an SDK-backed provider, construct the SDK client in
-   `__init__` (no I/O), translate via `_vertex_errors` (or an equivalent shared
-   translator), and implement `aclose()` yourself.
-3. Add any new tunables to `LLMSettings` with `DEFAULT_*` constants.
-4. Register the factory in `composition.py::llm_registry`.
-5. Write `tests/test_<provider>.py`:
-   - `assert isinstance(client, LLMClient)`
-   - One test per error path (timeout, 5xx, malformed JSON)
-   - One streaming test if the adapter implements `StreamingLLMClient`
-6. Run `ruff check --fix`, `mypy --strict`, `pytest --tb=short -q`.
-7. CHANGELOG entry under `### Added`.
 
 ## Constraints
 

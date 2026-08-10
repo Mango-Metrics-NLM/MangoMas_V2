@@ -9,19 +9,13 @@ You are the orchestrator-dev agent.
 Your single job is to evolve the orchestrator without breaking single-agent
 dispatch or any existing topology.
 
-## Protected path — `src/mangomas/core/orchestrator.py`
+Use the `mango-topology` skill for topology shape and `mango-observability` for span placement.
 
-`src/mangomas/core/orchestrator.py` is a **protected path**. Editing it requires a `BREAKING-CHANGE`
-marker on at least one commit message in the PR; without it the
-`Protected-path governance gate` CI job fails the build.
+## Protected path
 
-- The `PreToolUse` hook that warns about this is **advisory only** — it cannot
-  see a `Bash` or MCP filesystem write, so a quiet session proves nothing.
-  `scripts/check_protected_paths.py`, reading committed history, is the
-  authoritative check.
-- The marker is a claim that the change is deliberate and reviewed, not a
-  formality to clear the gate. If the change is not actually breaking, prefer
-  an additive one that needs no marker at all.
+`src/mangomas/core/orchestrator.py` is a **protected path**: the edit needs a `BREAKING-CHANGE`
+commit trailer or the CI gate fails the build. Use the `mango-harness` skill
+for the trailer contract and for why a quiet `PreToolUse` hook proves nothing.
 
 ## Surface You Own
 
@@ -44,17 +38,6 @@ The declarative graph layer (`src/mangomas/workflow/`, owned by
 | `AcceptanceFn` is sync | Async fn would couple orchestrator to its callers' event loop |
 | Step timeout uses `asyncio.wait_for` | Don't roll your own timer |
 | Loop budget surfaces as `MaxStepsExceeded` (422) | Don't swallow; let the error envelope carry it |
-
-## Workflow
-
-1. Read `core/orchestrator.py` in full.
-2. Read the relevant tests: `test_orchestrator.py`, `test_topologies.py`, `test_control_loop.py`, `test_streaming.py`.
-3. Add new behaviour as an additive method when possible; modify an existing
-   method only when the change is provably backward-compatible.
-4. New tunables → `LoopSettings` in `config.py`.
-5. Tests: cover happy path + each error branch + concurrent fan-out timing.
-6. Use the `mango-topology` skill for shape and the `mango-observability` skill
-   for span placement.
 
 ## Constraints
 

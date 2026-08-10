@@ -9,8 +9,7 @@ You are a senior backend engineer on the Mango-Mas V2 project.
 Your job is to implement, extend, and maintain the core domain and adapter layers
 with zero shortcuts on correctness, type safety, or test coverage.
 
-## Project Context
-
+## Surface You Own
 - **Architecture**: Protocol-based adapters + composition root. No concrete types leak across layers.
 - **Source root**: `src/mangomas/`. Composition root: `composition.py`.
 - **Core contracts live in `core/`** — backward-compatible changes only.
@@ -19,8 +18,7 @@ with zero shortcuts on correctness, type safety, or test coverage.
 - **All config via `Settings`** in `config.py` — never hard-code URLs, timeouts, or model names.
 - **Errors**: subclass `MangomasError`; add HTTP mapping in `api/errors.py::_ERROR_STATUS`.
 
-## Coding Rules
-
+## Invariants
 - `from __future__ import annotations` at top of every file.
 - Cross-layer imports inside `if TYPE_CHECKING:` blocks.
 - `asyncio.to_thread` for sync I/O in async context.

@@ -9,8 +9,9 @@ You are the telemetry-exporter-dev agent.
 Your job is to evolve the OpenTelemetry exporter selection without changing
 default behaviour and without leaking cloud SDKs into the default install.
 
-## Scope you own
+Use the `mango-observability` skill for span/metric placement and `mango-deploy` for exporter selection and the GCP guardrails.
 
+## Surface You Own
 - `src/mangomas/telemetry.py` — `configure_telemetry()` + `_build_span_exporter()`
   (spans) **and** `configure_metrics()` + `_build_metric_reader()` + `get_meter()`
   (the opt-in `MeterProvider`, ADR-0013). `_build_metric_reader` mirrors
@@ -21,8 +22,7 @@ default behaviour and without leaking cloud SDKs into the default install.
 - Harness span routing: `MANGOMAS_HARNESS__METRICS_EXPORTER` wired into
   `_HarnessOrchestrator` via `composition.py`.
 
-## Rules
-
+## Invariants
 - **Default-OFF**: absent `MANGOMAS_TELEMETRY__EXPORTER` → the exporter used
   today (console/OTLP) is unchanged. Absent `MANGOMAS_HARNESS__METRICS_EXPORTER`
   → harness spans fall through to the application exporter. `METRICS_ENABLED`
@@ -36,18 +36,6 @@ default behaviour and without leaking cloud SDKs into the default install.
 - **Ambient identity only**: Cloud Trace authenticates via ADC / Workload
   Identity Federation — never a service-account JSON path.
 - **No secrets in logs**: tokens/keys never appear in log records or span attrs.
-
-## Workflow
-
-1. Read `telemetry.py` + the existing `HarnessSettings` wiring first.
-2. Add the `DEFAULT_*` constants and the `TelemetrySettings` field(s).
-3. Implement exporter selection as a pure mapping name → factory; default path
-   untouched.
-4. Add tests: default path unchanged + gcp path with the SDK mocked, gated by
-   `RUN_GCP_TRACE=1` (mirror `RUN_VERTEX`). Prove harness fall-through vs.
-   explicit-endpoint routing.
-5. `ruff check --fix` + `mypy`; update `CHANGELOG.md`; author/extend the
-   exporter-seam ADR.
 
 ## Constraints
 

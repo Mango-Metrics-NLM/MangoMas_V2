@@ -50,5 +50,6 @@ Authoring notes (delete before merging):
 3. Keep the ADR under 400 words. Longer ADRs are usually a sign the discussion
    isn't ready.
 4. Reference this ADR from CHANGELOG.md under `### Added` or
-   `### Breaking Changes`.
+   `### Changed`, flagged **Breaking**, with a backwards-compatibility note.
+   A protected-path change also needs a `BREAKING-CHANGE` commit trailer.
 -->

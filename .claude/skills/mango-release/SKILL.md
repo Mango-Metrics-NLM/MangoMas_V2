@@ -54,13 +54,13 @@ python scripts/lint_agent_frontmatter.py
 |------|--------|
 | Conventional commits | `feat:`, `fix:`, `test:`, `refactor:`, `docs:`, `chore:`, `ci:`. Breaking changes prefixed with `!` (e.g. `feat!:`). |
 | CHANGELOG-first | Every user-visible change has a CHANGELOG entry under `## [Unreleased]` before merge. |
-| Section ordering | `### Added`, `### Changed`, `### Fixed`, `### Breaking Changes`, `### Deprecated`, `### Removed`. |
+| Section ordering | `### Added`, `### Changed`, `### Fixed`, `### Deprecated`, `### Removed`, `### Security / Operations` — the Keep a Changelog set this file actually uses. A breaking change goes under `### Changed` with an explicit backwards-compatibility note. |
 | ADR for architecture | Any change that introduces a new boundary, swaps a provider, or alters the composition root needs an ADR in `docs/adr/`. |
 | Pre-commit parity | `pre-commit run --all-files` is the cheapest way to reproduce CI's lint/format/type gates locally. `ruff` and `mypy` are **exact-pinned** in `pyproject.toml`'s dev extra in lockstep with the hook `rev:`s in `.pre-commit-config.yaml` — bump both together, or the hook and CI disagree. The mypy hook is scoped to `src/`; CI type-checks `src tests scripts eval_harness_bridge/src`. |
 | Lint/type surface | CI runs ruff and mypy over `src tests scripts eval_harness_bridge/src`. Omitting `eval_harness_bridge/src` locally is the usual "green locally, red in CI" cause. |
 | Coverage gate | `scripts/check_coverage.py` is the single source of truth: global 95 % plus per-package floors ranging from 85 % (adapters) to 100 % (`errors.py`, `registry.py`, `core/*`). The pytest `--cov-fail-under=95` addopt in `pyproject.toml` mirrors the global floor. |
 | Frontmatter lint | `scripts/lint_agent_frontmatter.py` validates every `.claude/agents/mango-*.md` and `.claude/skills/*/SKILL.md` (and gates protected-core paths on a `BREAKING-CHANGE` marker). Run before pushing. |
-| Sub-agent review checkboxes | PR template lists each parent agent (architect, backend, test-engineer, api-dev); tick the ones whose domain you touched. |
+| Agent review checkboxes | The PR template lists the four routers (`mango-architect`, `mango-backend`, `mango-test-engineer`, `mango-api-dev`); tick the ones whose domain you touched. |
 
 ---
 
@@ -89,12 +89,10 @@ python scripts/lint_agent_frontmatter.py
 
 ### Changed
 - ...
+- `<what broke>`. **Breaking.** Migration: `<one-line guide>`. See ADR-NNNN.
 
 ### Fixed
 - ...
-
-### Breaking Changes
-- `<what broke>`. Migration: `<one-line guide>`. See ADR-NNN.
 ```
 
 ---
@@ -124,10 +122,10 @@ python scripts/lint_agent_frontmatter.py
 <link to the new entry>
 
 ## Sub-agent reviews
-- [ ] architect — reviewed
-- [ ] backend — reviewed
-- [ ] test-engineer — reviewed
-- [ ] api-dev — reviewed
+- [ ] architect — protocol/layering/ADR audit
+- [ ] backend — adapters / orchestrator / errors
+- [ ] test-engineer — fakes / hypothesis / integration
+- [ ] api-dev — HTTP surface / streaming / schema
 ```
 
 ---
@@ -151,7 +149,9 @@ python scripts/lint_agent_frontmatter.py
 - DO NOT bump the version without an explicit `chore(release): vX.Y.Z` commit.
 - DO NOT use `--no-verify` or `-c commit.gpgsign=false` to push past hooks.
 - DO NOT merge with the coverage gate failing — fix the gap, don't lower the floor.
-- DO NOT release breaking changes without an ADR and a `### Breaking Changes` block.
+- DO NOT release a breaking change without an ADR and, when it touches a protected
+  path, a `BREAKING-CHANGE` commit trailer — that trailer is the enforced gate
+  (`scripts/check_protected_paths.py`), not a CHANGELOG heading. See `mango-harness`.
 
 ---
 

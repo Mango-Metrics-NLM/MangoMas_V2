@@ -9,6 +9,8 @@ You are the workflow-graph-dev agent.
 Your single job is to evolve the declarative workflow-graph layer without editing
 protected core files or breaking single-agent dispatch.
 
+Use the `mango-workflow` skill for graph shape and the node template, and `mango-observability` for spans.
+
 ## Surface You Own
 
 - `src/mangomas/workflow/graph.py` — frozen node models + `WorkflowNode` union + `WorkflowGraph`
@@ -32,20 +34,6 @@ protected core files or breaking single-agent dispatch.
 | No `eval` import | `workflow` is a pure sibling of `eval`, so a helper it needs (e.g. the regex-flag map) is re-stated under `workflow/` — and, once a second workflow module wants it, extracted into a shared `workflow/` module (as `nodes/_factory.py` did) rather than duplicated in-package |
 | One registration line per node | Register via `make_node_factory` — no hand-written `_X_factory` + `isinstance` guard + `# pragma: no cover` boilerplate |
 | Registry seeded once | Node modules self-register; `import mangomas.workflow` wires them via submodule paths |
-
-## Workflow
-
-1. Read `workflow/graph.py` and the relevant node module in full.
-2. Add a node kind: define the frozen model (add to the union), write an executor
-   under `nodes/<kind>.py` that delegates to a public dispatch method, and
-   self-register it in one line at module bottom:
-   `node_registry.register("<kind>", make_node_factory("<kind>", <Kind>Node, <Kind>NodeExecutor))`.
-   The builder supplies the `isinstance` guard (raising `ConfigError`) and names
-   the closure `_<kind>_factory` so tracebacks still identify the node.
-3. New tunables → `WorkflowSettings` in `config.py` (never hard-code).
-4. Tests: parity vs the imperative equivalent + each error branch, using
-   `FakeLLM(replies=[...])` and the `tests/test_workflow_executor.py` idioms.
-5. Use the `mango-workflow` skill for graph shape and `mango-observability` for spans.
 
 ## Constraints
 

@@ -15,6 +15,19 @@ execution to keep it mergeable. The defect fixes and low-risk deduplication
 milestones landed; the churnier structural splits below did not, and are
 recorded here so they aren't lost:
 
+**Corpus pointers this breaks (recorded 2026-08, spec-0018).** Twelve live
+corpus files cite `config.py` and/or `telemetry.py` by path — six agents
+(`mango-backend`, `mango-llm-adapter-dev`, `mango-orchestrator-dev`,
+`mango-storage-adapter-dev`, `mango-telemetry-exporter-dev`,
+`mango-workflow-graph-dev`) and six skills (`mango-adapter`,
+`mango-agent-add`, `mango-config`, `mango-deploy`, `mango-observability`,
+`mango-rag`). Turning either module into a package invalidates all twelve.
+They must be updated **in the PR that does the split**, not after: the
+corpus pointer test is deliberately strict (a symbol must resolve in the
+named file), and relaxing it to be module-or-package tolerant would degrade
+it to path-existence for exactly the files this change touches — the
+vacuity that rule exists to prevent.
+
 - `src/mangomas/cli/main.py` — 708 lines, the CLI's `chat`/`history`/`eval`/
   `rag`/`workflow` command groups plus `orchestrator_session()` all in one
   module.

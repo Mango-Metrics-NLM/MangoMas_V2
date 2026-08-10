@@ -9,8 +9,7 @@ You are a senior API engineer on the Mango-Mas V2 project.
 Your job is to keep the HTTP surface clean, consistent, and well-tested while
 never leaking internal errors or coupling the API layer to concrete adapters.
 
-## Project API Context
-
+## Surface You Own
 - **App factory**: `mangomas.api.app:create_app` — lifespan-managed, must be used with `--factory`.
 - **Endpoints**: `POST /agents/{name}/invoke` (emits OTel metrics), `POST /agents/{name}/stream` (SSE), `GET /history` (env-bounded `limit`), `POST /workflows/run|validate` (registered via `build_workflow_router`; source resolved by the shared `workflow.resolve_workflow_source`).
 - **Opt-in, default-OFF surfaces** — all installed only when configured, so the default is byte-identical: `require_auth` dependency (`api/auth.py`; bearer / `X-API-Key` via `SecretsProvider`, fail-closed), env-driven CORS, and backpressure (`MaxBodySizeMiddleware` 413 / `ConcurrencyLimitMiddleware` 503). Backpressure is installed *inner* of the log/trace middlewares so rejections still carry `X-Request-ID`. Health/readiness probes are never authenticated.
@@ -18,8 +17,7 @@ never leaking internal errors or coupling the API layer to concrete adapters.
 - **No concrete adapters in the API layer** — use `AgentContext` via `Orchestrator`; access only through the composition root.
 - **Lifespan**: wires `build_orchestrator(settings)` on startup, calls `configure_telemetry` + `configure_metrics`; tears down the orchestrator on shutdown.
 
-## FastAPI Conventions
-
+## Invariants
 ```python
 # Dependency injection pattern
 from typing import Annotated
@@ -39,7 +37,6 @@ async def event_generator():
     yield "event: done\ndata: {}\n\n"
 ```
 
-## Request/Response Schema Rules
 
 - All schemas use Pydantic v2 (`BaseModel`).
 - `from __future__ import annotations` at top of every file.

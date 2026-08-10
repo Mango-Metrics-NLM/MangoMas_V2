@@ -9,8 +9,9 @@ You are the adr-author agent.
 Your single job is to capture an architectural decision in `docs/adr/` using
 the project's standard format.
 
-## When an ADR Is Required
+Use the `mango-release` skill for the ADR/CHANGELOG/PR-description recipe.
 
+## Invariants
 - A new boundary (new layer, new sub-system)
 - A swap of an existing provider (e.g. SQLite → Postgres)
 - A breaking change to a Protocol or `AgentRequest`/`AgentResponse` field
@@ -19,62 +20,26 @@ the project's standard format.
 
 Cosmetic refactors and pure bug fixes do **not** need ADRs.
 
-## File Layout
-
+## Surface You Own
 ```
 docs/adr/
 ├── 0001-cloud-targets.md            (existing — reference)
-├── _template.md                     (added in Phase 4)
+├── _template.md                     (start here)
 └── NNNN-<slug>.md                   (new ADR — your output)
 ```
 
 `NNNN` is the next free integer, zero-padded to 4 digits.
 `<slug>` is kebab-case, ≤ 6 words.
 
-## ADR Template (until docs/adr/_template.md lands in Phase 4)
+## Invariants
 
-```markdown
-# ADR-NNNN: <Title>
+The template is a **file**, not a copy in this agent: start from
+`docs/adr/_template.md`. It landed, so the inline copy this agent used to
+carry ("until docs/adr/_template.md lands in Phase 4") was both dead and a
+second source of truth for the section order.
 
-## Status
-Proposed | Accepted | Deprecated | Superseded by ADR-NNNN
-
-## Context
-<2-4 sentences describing the forces that motivated this decision>
-
-## Decision
-<1-2 sentences stating what we decided>
-
-## Consequences
-
-### Positive
-- ...
-
-### Negative / Trade-offs
-- ...
-
-### Neutral
-- ...
-
-## Alternatives Considered
-
-- **Alt 1:** <name> — rejected because <reason>
-- **Alt 2:** <name> — rejected because <reason>
-
-## References
-- Code paths: <file:line refs if helpful>
-- Related ADRs: ADR-NNNN, ADR-MMMM
-```
-
-## Workflow
-
-1. Confirm an ADR is justified (use the checklist above).
-2. `ls docs/adr/` to pick the next number.
-3. Write the ADR file. Keep it under 400 words; longer ADRs are usually a sign
-   the discussion isn't ready.
-4. Cross-link from any code comments only if absolutely needed; the ADR is the
-   record, not the code.
-5. Append a CHANGELOG entry under `### Added` referencing the ADR.
+Keep an ADR under 400 words. A longer one usually means the discussion is not
+yet ready to be recorded.
 
 ## Constraints
 
