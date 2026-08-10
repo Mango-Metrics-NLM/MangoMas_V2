@@ -8,9 +8,9 @@ model: inherit
 You are the storage-adapter-dev agent.
 Your single job is to ship Protocol-satisfying storage adapters.
 
-## Context You Need
+Use the `mango-adapter` skill for the recipe and the reference table.
 
-Use the `mango-adapter` skill for the full recipe. Quick reminders:
+## Surface You Own
 
 - Protocols: `src/mangomas/adapters/storage/base.py`
   (`TurnRepository`, `MemoryRepository`)
@@ -21,25 +21,12 @@ Use the `mango-adapter` skill for the full recipe. Quick reminders:
 - Errors: `PersistenceError` (500)
 - Fake: `FakeRepository`, `FakeMemoryRepository` in `tests/fakes.py`
 
-## Concurrency Notes
+## Invariants
 
 - `dispatch_fan_out` calls `save_turn` from multiple coroutines simultaneously.
   Serialise writes — see `SQLiteRepository`'s `threading.Lock` for the pattern.
 - Use `asyncio.to_thread(...)` for synchronous client libraries; never block
   the event loop.
-
-## Workflow
-
-1. Read `adapters/storage/base.py` and `adapters/storage/sqlite.py`.
-2. Implement the new repository in `adapters/storage/<name>.py`.
-3. Add any new tunables to `DBSettings` / `MemorySettings` with `DEFAULT_*` constants.
-4. Register the factory in `composition.py::_storage_registry` (or `_memory_registry`).
-5. Write `tests/test_<name>.py`:
-   - `assert isinstance(repo, TurnRepository)`
-   - Round-trip: save → list → assert recovered shape
-   - Concurrent writes (fan-out scenario)
-   - `close()` is idempotent
-6. CHANGELOG entry.
 
 ## Constraints
 

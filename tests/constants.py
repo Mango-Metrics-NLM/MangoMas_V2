@@ -458,6 +458,62 @@ RETIRED_AGENT_PREFIX: str = "Sub-agent of"
 # aspiration — note the space in `spec 0012`, which a `spec-\\d{4}` regex misses.
 MIN_CORPUS_TRACEABILITY_REFS: int = 4
 
+# ── R7: skills own procedure, agents own a surface (spec-0018) ────────────────
+# Agents whose surface an existing skill already documents. Such an agent must
+# name its skill and must not restate the recipe: before this mapping,
+# mango-llm-adapter-dev duplicated ~45 of its 64 body lines from mango-adapter,
+# and mango-telemetry-exporter-dev had copied ~26 lines of mango-deploy while
+# citing no skill at all.
+#
+# Authored, not derived — a reviewer should check the pairings rather than
+# trust them. Routers and auditors are deliberately absent: their numbered
+# steps are their own operating loop, not a recipe a skill owns.
+AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
+    "mango-adr-author": ("mango-release",),
+    "mango-error-taxonomy-dev": ("mango-error",),
+    "mango-fake-builder": ("mango-testing",),
+    "mango-hypothesis-fuzz": ("mango-testing",),
+    "mango-integration-runner": ("mango-testing",),
+    "mango-llm-adapter-dev": ("mango-adapter",),
+    "mango-orchestrator-dev": ("mango-topology", "mango-observability"),
+    "mango-pr-watcher": ("mango-release",),
+    "mango-schema-evolution": ("mango-agent-add",),
+    "mango-sse-streamer": ("mango-topology",),
+    "mango-storage-adapter-dev": ("mango-adapter",),
+    "mango-telemetry-exporter-dev": ("mango-observability", "mango-deploy"),
+    "mango-workflow-graph-dev": ("mango-workflow", "mango-observability"),
+}
+# The four protected-path owners additionally reference the governance skill.
+HARNESS_SKILL_SLUG: str = "mango-harness"
+# Heading a mapped agent may not carry: its procedure belongs to its skill.
+# Unmapped agents keep theirs.
+PROCEDURE_SECTION_HEADING: str = "## Workflow"
+# Canonical `##` vocabulary for agent bodies. 56 distinct headings existed
+# before this, including three spellings of "surface you own", which made the
+# corpus unscannable and let duplicated sections hide under new names.
+# Nine, not seven: agents whose surface is a *process* rather than a file tree
+# (the auditors, mango-pr-watcher) need `## Checklist` and `## Decision Table`
+# to say what they actually do. Each of the nine has a distinct meaning, which
+# is the property that matters — an ad-hoc name is where a duplicated section
+# hides.
+AGENT_SECTION_HEADINGS: frozenset[str] = frozenset(
+    {
+        "## Surface You Own",
+        "## Protected path",
+        "## Invariants",
+        "## Constraints",
+        "## Checklist",
+        "## Decision Table",
+        "## Diagnosing Failures",
+        "## Output Format",
+        "## Workflow",
+    }
+)
+# `### Breaking Changes` was prescribed in four places and used in CHANGELOG.md
+# zero times — it is not a Keep a Changelog section, which is the format the
+# CHANGELOG declares. The enforced mechanism is the commit trailer.
+RETIRED_CHANGELOG_HEADING: str = "### Breaking Changes"
+
 # Claude Code permission rules in `.claude/settings.json`. Pinned by set
 # equality: nothing else in the suite asserted anything about `permissions`, so
 # a rule could be dropped, or added unreviewed, in total silence.

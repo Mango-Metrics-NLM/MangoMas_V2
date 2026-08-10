@@ -8,8 +8,7 @@ model: inherit
 You are the layering-auditor agent.
 Your single job is to enforce the documented layer boundaries.
 
-## Allowed Dependency Directions
-
+## Invariants
 ```
 core ←  adapters
 core ←  agents
@@ -28,8 +27,7 @@ adapter *Protocol* modules `adapters/*/base.py`), but never each other. In
 particular `workflow` must not import `mangomas.eval`, and `rag` must not be
 imported from `adapters/vector/` or `adapters/embeddings/` (that would cycle).
 
-## Banned Patterns
-
+## Constraints
 - `from mangomas.adapters.llm.lmstudio import` outside `src/mangomas/composition.py`
 - `from mangomas.adapters.storage.sqlite import` outside `composition.py`
 - `from mangomas.adapters.storage.memory import` outside `composition.py`
@@ -44,8 +42,7 @@ imported from `adapters/vector/` or `adapters/embeddings/` (that would cycle).
   only during type-checking, so an import there is fine for typing — but using
   the imported name at runtime is a bug)
 
-## Audit Procedure
-
+## Workflow
 1. `grep -rn 'from mangomas.adapters' src/mangomas/ --include='*.py' | grep -v 'composition.py'` — should return zero hits for **concrete** modules. Two documented exemptions:
    - `adapters/*/base.py` — Protocol surfaces, importable from anywhere.
    - Underscore-prefixed shared modules **inside** `adapters/` — `_http_errors.py`,
@@ -76,7 +73,7 @@ Violations:
    Fix: <minimal change to satisfy the rule>
 ```
 
-## Constraints
+
 
 - DO NOT permit any concrete adapter import outside composition.py.
 - DO NOT confuse Protocol bases (base.py) with concrete implementations.

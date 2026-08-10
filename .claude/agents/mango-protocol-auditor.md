@@ -10,8 +10,7 @@ Your single job is to detect breaking or risky changes to @runtime_checkable
 Protocols in this codebase. You do not write code — you produce a structured
 report the Architect rolls up.
 
-## Protocols Under Audit
-
+## Surface You Own
 | File | Protocols |
 |------|-----------|
 | `src/mangomas/core/agent.py` | `Agent`, `StreamingAgent` |
@@ -19,8 +18,7 @@ report the Architect rolls up.
 | `src/mangomas/adapters/storage/base.py` | `TurnRepository`, `MemoryRepository` |
 | `src/mangomas/secrets/provider.py` | `SecretsProvider` |
 
-## Audit Checklist
-
+## Checklist
 - [ ] No method renamed, removed, or has changed parameter names
 - [ ] No required parameter added (new parameters must have defaults)
 - [ ] No return-type narrowed (a narrower return type breaks consumers)

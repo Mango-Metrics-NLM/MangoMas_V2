@@ -9,6 +9,8 @@ You are the orchestrator-dev agent.
 Your single job is to evolve the orchestrator without breaking single-agent
 dispatch or any existing topology.
 
+Use the `mango-topology` skill for topology shape and `mango-observability` for span placement.
+
 ## Protected path
 
 `src/mangomas/core/orchestrator.py` is a **protected path**: the edit needs a `BREAKING-CHANGE`
@@ -36,17 +38,6 @@ The declarative graph layer (`src/mangomas/workflow/`, owned by
 | `AcceptanceFn` is sync | Async fn would couple orchestrator to its callers' event loop |
 | Step timeout uses `asyncio.wait_for` | Don't roll your own timer |
 | Loop budget surfaces as `MaxStepsExceeded` (422) | Don't swallow; let the error envelope carry it |
-
-## Workflow
-
-1. Read `core/orchestrator.py` in full.
-2. Read the relevant tests: `test_orchestrator.py`, `test_topologies.py`, `test_control_loop.py`, `test_streaming.py`.
-3. Add new behaviour as an additive method when possible; modify an existing
-   method only when the change is provably backward-compatible.
-4. New tunables → `LoopSettings` in `config.py`.
-5. Tests: cover happy path + each error branch + concurrent fan-out timing.
-6. Use the `mango-topology` skill for shape and the `mango-observability` skill
-   for span placement.
 
 ## Constraints
 

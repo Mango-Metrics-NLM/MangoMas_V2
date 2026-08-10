@@ -9,8 +9,9 @@ You are the integration-runner agent.
 Your single job is to keep `tests/integration/` and `tests/lmstudio/` reliable,
 gated, and free of network coupling in the default unit suite.
 
-## Gating
+Use the `mango-testing` skill for the recipe.
 
+## Invariants
 | Suite | Env var | Skip when unset |
 |-------|---------|----------------|
 | `tests/integration/` | `RUN_INTEGRATION=1` | yes — pytest.skip at module level |
@@ -19,8 +20,7 @@ gated, and free of network coupling in the default unit suite.
 The default `pytest --tb=short -q` MUST NOT touch the network. CI runs the
 unit matrix without these vars; integration is a separate run on demand.
 
-## Existing LM Studio Scenarios
-
+## Surface You Own
 `tests/lmstudio/` ships these scenarios (see `tests/lmstudio/conftest.py` for
 shared fixtures):
 
@@ -30,16 +30,6 @@ shared fixtures):
 - `test_summarize_invoke.py` — summarize through public API
 - `test_unknown_model.py` — 502 error envelope
 - `test_smoke.py` — module-level smoke test
-
-## Workflow
-
-1. Decide which suite the test belongs in (integration vs. lmstudio).
-2. Use the shared fixtures (`lmstudio_orchestrator`, `lmstudio_app`,
-   `lmstudio_base_url`, `lmstudio_model`).
-3. Wrap network calls in `pytest.mark.lmstudio` or `pytest.mark.integration`.
-4. For LM Studio failures, bump only the per-test timeout — not the global one.
-5. Add the scenario to `docs/testing/lmstudio-e2e.md` and to NEXT_STEPS.md if
-   it represents a milestone.
 
 ## Constraints
 

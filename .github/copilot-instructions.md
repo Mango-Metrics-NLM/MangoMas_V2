@@ -101,4 +101,5 @@ tests/                   # Mirrors src/ structure; fakes.py + constants.py are s
 
 - Conventional commits: `feat:`, `fix:`, `test:`, `refactor:`, `chore:`
 - Every feature PR includes: implementation + tests + CHANGELOG entry
-- Breaking changes documented in CHANGELOG under `### Breaking Changes`
+- Breaking changes go under `### Changed` with a backwards-compatibility note; a
+  protected-path change also needs a `BREAKING-CHANGE` commit trailer
