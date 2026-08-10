@@ -41,6 +41,7 @@ from tests.constants import (
     RETIRED_AGENTS_DIR_RELPATH,
     RETIRED_CHANGELOG_HEADING,
     RETIRED_SKILLS_DIR_RELPATH,
+    RETIRED_STRAY_AGENT_FILENAME,
     ROUTER_AGENT_SLUGS,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
@@ -392,3 +393,17 @@ def test_no_corpus_file_prescribes_the_retired_changelog_heading() -> None:
         if RETIRED_CHANGELOG_HEADING in p.read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+def test_no_stray_agent_md_files_remain() -> None:
+    """Five dormant `agent.md` files sat in the source tree, referenced by
+    nothing and wrong in ways only a reader would discover — a fictional
+    `TurnRepository.save()`, an SSE format a client could not parse. Two earned
+    promotion to a nested `CLAUDE.md`; the rest were skill duplicates. A file
+    nothing loads cannot be kept honest, so the convention stays retired."""
+    strays = [
+        p.relative_to(_REPO_ROOT).as_posix()
+        for p in _REPO_ROOT.rglob(RETIRED_STRAY_AGENT_FILENAME)
+        if ".git/" not in p.as_posix()
+    ]
+    assert strays == []

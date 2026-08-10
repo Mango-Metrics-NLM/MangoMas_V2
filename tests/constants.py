@@ -329,6 +329,11 @@ CORPUS_DOC_RELPATHS: tuple[str, ...] = (
     ".github/PULL_REQUEST_TEMPLATE.md",
     "docs/architecture/c2-container.md",
     "docs/tooling/claude-code-ecosystem.md",
+    # Nested CLAUDE.md files. Claude Code auto-loads one when work happens
+    # in its directory, so a stale pointer here is read before any work
+    # starts — the same argument that puts the root CLAUDE.md on this list.
+    "tests/CLAUDE.md",
+    "src/mangomas/core/CLAUDE.md",
 )
 
 # Hooks that predate the ecosystem-tooling integration, as
@@ -383,6 +388,11 @@ ENV_FLAG_OFF: str = "0"
 AGENT_SLUG_PREFIX: str = "mango-"
 CLAUDE_AGENTS_DIR_RELPATH: str = ".claude/agents"
 RETIRED_AGENTS_DIR_RELPATH: str = ".github/agents"
+# Five dormant `agent.md` files sat in the source tree, all containing claims
+# that were false rather than stale. Two earned promotion to a nested
+# CLAUDE.md; the other three were deleted as skill duplicates. Nothing may
+# reintroduce the convention — a file nothing loads cannot be kept honest.
+RETIRED_STRAY_AGENT_FILENAME: str = "agent.md"
 
 # The 19 agents, by slug. Set equality, so a change names what appeared or
 # vanished and editing this tuple is the review record.
