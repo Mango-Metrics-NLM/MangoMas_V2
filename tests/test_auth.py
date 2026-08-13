@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 from fastapi import FastAPI
@@ -231,3 +232,43 @@ def test_ensure_secrets_provider_ignores_the_env_backend(
     ensure_secrets_provider(get_settings().secrets)
 
     assert clean_secrets_registry.available() == []
+
+
+@pytest.mark.usefixtures("clean_secrets_registry")
+def test_unregistered_provider_logs_before_failing_closed(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failing closed must not fail silently.
+
+    This branch rejects every request for the life of the process. It used to
+    emit nothing, which is why a provider-ordering bug that 401'd a correctly
+    configured deployment was invisible until someone read the code.
+    """
+    monkeypatch.setenv("MANGOMAS_AUTH__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_AUTH__SECRET_REF", AUTH_SECRET_REF_ENV)
+    monkeypatch.setenv("MANGOMAS_SECRETS__PROVIDER", "gcp")
+    get_settings.cache_clear()
+    caplog.set_level(logging.ERROR, logger="mangomas.api.auth")
+
+    state = resolve_auth_state(get_settings())
+
+    assert state.expected_token is None
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "not registered" in logged
+    assert any(getattr(r, "secrets_provider", None) == "gcp" for r in caplog.records)
+
+
+def test_unresolvable_secret_ref_logs_before_failing_closed(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other silent path: the provider exists but the ref resolves to None."""
+    monkeypatch.setenv("MANGOMAS_AUTH__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_AUTH__SECRET_REF", "UNSET_TOKEN_VAR_XYZ")
+    monkeypatch.delenv("UNSET_TOKEN_VAR_XYZ", raising=False)
+    get_settings.cache_clear()
+    caplog.set_level(logging.ERROR, logger="mangomas.api.auth")
+
+    state = resolve_auth_state(get_settings())
+
+    assert state.expected_token is None
+    assert "resolved to nothing" in " ".join(r.getMessage() for r in caplog.records)
