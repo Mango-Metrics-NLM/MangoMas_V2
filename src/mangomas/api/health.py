@@ -8,6 +8,7 @@ from http import HTTPStatus
 from typing import Any
 
 from mangomas.adapters.llm.base import PingableLLMClient
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,9 @@ async def check_ready(orchestrator: Orchestrator) -> ReadinessReport:
             report.checks.append(CheckResult(name="llm", status=_STATUS_OK))
             logger.debug("Readiness: LLM ping OK")
         except Exception as exc:  # broad: any ping failure degrades readiness
-            detail = str(exc)
+            # Truncated: /readyz is unauthenticated, so an upstream driver
+            # message must not stream unbounded text into a public body.
+            detail = str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE]
             report.checks.append(CheckResult(name="llm", status=_STATUS_ERROR, detail=detail))
             logger.warning("Readiness: LLM ping failed: %s", detail)
     else:
@@ -111,7 +114,9 @@ async def check_ready(orchestrator: Orchestrator) -> ReadinessReport:
             report.checks.append(CheckResult(name="db", status=_STATUS_OK))
             logger.debug("Readiness: DB probe OK")
         except Exception as exc:  # broad: any DB error degrades readiness
-            detail = str(exc)
+            # Truncated: /readyz is unauthenticated, so an upstream driver
+            # message must not stream unbounded text into a public body.
+            detail = str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE]
             report.checks.append(CheckResult(name="db", status=_STATUS_ERROR, detail=detail))
             logger.warning("Readiness: DB probe failed: %s", detail)
 

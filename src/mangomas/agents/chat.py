@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING
 
-from mangomas.agents._prompt import build_messages, resolve_system_prompt
+from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_system_prompt
 from mangomas.agents._streaming import stream_with_buffered_fallback
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse
 
@@ -29,8 +29,7 @@ class ChatAgent:
     ) -> None:
         # Per-agent settings override the constructor arg when provided.
         self._system_prompt: str | None = resolve_system_prompt(system_prompt, settings)
-        self._temperature: float | None = settings.temperature if settings is not None else None
-        self._max_tokens: int | None = settings.max_tokens if settings is not None else None
+        self._temperature, self._max_tokens = resolve_sampling(settings)
 
     async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
         """Send the messages to the LLM and wrap the reply."""

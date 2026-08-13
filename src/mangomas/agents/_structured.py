@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from mangomas.agents._prompt import build_messages, resolve_system_prompt
+from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_system_prompt
 from mangomas.agents._streaming import stream_with_buffered_fallback
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import build_structured_prompt
@@ -71,8 +71,7 @@ class StructuredOutputAgent:
             )
             or schema_prompt
         )
-        self._temperature: float | None = settings.temperature if settings is not None else None
-        self._max_tokens: int | None = settings.max_tokens if settings is not None else None
+        self._temperature, self._max_tokens = resolve_sampling(settings)
 
     def _build_messages(self, request: AgentRequest) -> list[Message]:
         """Prepend the schema-aware system prompt when absent from the request."""

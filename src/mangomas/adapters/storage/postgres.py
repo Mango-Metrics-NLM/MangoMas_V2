@@ -30,7 +30,7 @@ from urllib.parse import urlparse
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DBSettings
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
-from mangomas.tenancy import get_tenant
+from mangomas.tenancy import DEFAULT_TENANT, get_tenant
 
 if TYPE_CHECKING:  # pragma: no cover
     import asyncpg
@@ -38,21 +38,21 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
-_PG_SCHEMA: str = """
+_PG_SCHEMA: str = f"""
 CREATE TABLE IF NOT EXISTS turns (
     id        BIGSERIAL    PRIMARY KEY,
     ts        TIMESTAMPTZ  NOT NULL,
     agent     TEXT         NOT NULL,
     request   JSONB        NOT NULL,
     response  JSONB        NOT NULL,
-    tenant    TEXT         NOT NULL DEFAULT 'default'
+    tenant    TEXT         NOT NULL DEFAULT '{DEFAULT_TENANT}'
 );
 """
 
 # Idempotent migration for a table created before multi-tenancy (ADR-0017);
 # existing rows adopt the column default. No-op on a fresh table.
 _PG_TENANT_MIGRATION: str = (
-    "ALTER TABLE turns ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default'"
+    f"ALTER TABLE turns ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT '{DEFAULT_TENANT}'"
 )
 
 
@@ -166,8 +166,14 @@ class PostgresRepository:
                     "VALUES ($1, $2, $3, $4, $5) RETURNING id",
                     datetime.now(UTC),
                     agent,
-                    request.model_dump_json(),
-                    response.model_dump_json(),
+                    # model_dump(mode="json"), not model_dump_json(): the jsonb
+                    # codec registered in _ensure_pool applies json.dumps on the
+                    # way out, so handing it an already-serialised string stored
+                    # a JSON *scalar* and read back a str — while SQLiteRepository
+                    # returns a dict. That broke the row-shape parity the codec
+                    # comment claims, and no test covered the shape.
+                    request.model_dump(mode="json"),
+                    response.model_dump(mode="json"),
                     tenant,
                 )
             int_id = int(row_id)

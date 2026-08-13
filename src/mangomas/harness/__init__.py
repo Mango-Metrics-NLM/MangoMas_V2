@@ -8,6 +8,8 @@ the documented single source of truth for coverage floors and
 ``pyproject.toml``'s ``--cov-fail-under``. See spec-0017 R7.
 """
 
+from __future__ import annotations
+
 from mangomas.harness.config_audit import (
     ConfigAuditDecision,
     ConfigChangeAction,

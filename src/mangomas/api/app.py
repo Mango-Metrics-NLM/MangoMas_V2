@@ -42,7 +42,7 @@ from mangomas.api.routes import (
     build_workflow_router,
 )
 from mangomas.api.tracing import TraceMiddleware
-from mangomas.composition import build_orchestrator
+from mangomas.composition import build_orchestrator, ensure_secrets_provider
 from mangomas.config import get_settings
 from mangomas.telemetry import configure_metrics, configure_telemetry
 
@@ -159,7 +159,15 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     _install_tenancy(app)
 
     # Resolve the expected API token once (default-OFF → a no-op pass-through).
-    app.state.auth = resolve_auth_state(get_settings())
+    #
+    # The provider must be registered *first*. This runs during app
+    # construction, strictly before the lifespan calls ``build_orchestrator``,
+    # so relying on that call to register a cloud backend left this lookup
+    # failing closed to ``expected_token=None`` — a 401 on every request of a
+    # correctly configured GCP + auth deployment.
+    _settings = get_settings()
+    ensure_secrets_provider(_settings.secrets)
+    app.state.auth = resolve_auth_state(_settings)
 
     # This module's logger keeps the historical "mangomas.api.app" record name.
     register_error_handler(app, handler_logger=logger)

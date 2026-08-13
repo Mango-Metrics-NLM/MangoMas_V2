@@ -7,7 +7,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import typer
 
@@ -16,7 +16,7 @@ import mangomas.eval.sinks
 import mangomas.eval.sources
 import mangomas.eval.targets  # noqa: F401 — registers built-in targets
 from mangomas.composition import build_orchestrator
-from mangomas.config import get_settings
+from mangomas.config import DEFAULT_API_HISTORY_DEFAULT_LIMIT, get_settings
 from mangomas.core import AgentRequest, Message
 from mangomas.errors import ConfigError, MangomasError
 from mangomas.eval import (
@@ -120,7 +120,7 @@ def chat(
 
 @app.command()
 def history(
-    limit: int = typer.Option(10, "--limit", "-n"),
+    limit: int = typer.Option(DEFAULT_API_HISTORY_DEFAULT_LIMIT, "--limit", "-n"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Print recent persisted turns as JSON lines."""
@@ -142,15 +142,19 @@ def history(
     rows = asyncio.run(_run())
     if rows is None:
         typer.echo("No repository configured.", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=EXIT_RUNTIME_ERROR)
 
     for row in rows:
         typer.echo(json.dumps(row, ensure_ascii=False))
 
 
-# Exit code raised when the quality gate fails — distinct from 1 (runtime) and
-# 2 (config) so CI can react specifically to a quality regression.
-EVAL_GATE_EXIT_CODE = 3
+# Exit codes. The gate code is distinct from the other two so CI can react
+# specifically to a quality regression; all three are named because the comment
+# that defined their semantics used to sit above a single constant while the
+# other two were repeated as bare literals at nine call sites.
+EXIT_RUNTIME_ERROR: Final[int] = 1
+EXIT_CONFIG_ERROR: Final[int] = 2
+EVAL_GATE_EXIT_CODE: Final[int] = 3
 
 
 def _build_sinks(
@@ -302,7 +306,7 @@ def _resolve_gating(
 
     Returns ``(gating_engaged, min_mean, min_pass, fail_on_error)``. An explicit
     ``--no-gate`` disables gating even when thresholds / ``fail_on_error`` are
-    configured via settings/env. Raises ``typer.Exit(2)`` on an out-of-range
+    configured via settings/env. Raises ``typer.Exit(EXIT_CONFIG_ERROR)`` on an out-of-range
     threshold (these bypass the ``EvalSettings`` validator) — but only when
     gating is engaged, since an unused threshold should not block a run.
     """
@@ -327,7 +331,7 @@ def _resolve_gating(
                     f"Eval configuration error: {label} must be in [0.0, 1.0]; got {val}",
                     err=True,
                 )
-                raise typer.Exit(code=2)
+                raise typer.Exit(code=EXIT_CONFIG_ERROR)
     return gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error
 
 
@@ -357,7 +361,7 @@ def _finish_eval(
     """Surface the run outcome: sink error (exit 1), confirmation, gate (exit 3)."""
     if sink_error is not None:
         typer.echo(f"Eval sink error: {sink_error}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=EXIT_RUNTIME_ERROR)
     # Preserve the pre-sink-refactor confirmation line so existing
     # ``--output-json`` scripts still see "Report written to ...".
     if output_json:
@@ -504,7 +508,7 @@ def eval_cmd(
     except MangomasError as exc:
         detail = f" ({exc.detail})" if exc.detail else ""
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
-        raise typer.Exit(code=2) from exc
+        raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
 
     orch = _build()
     runner = EvalRunner(
@@ -538,7 +542,7 @@ def eval_cmd(
         _report, gate_result, sink_error = asyncio.run(_run_eval())
     except MangomasError as exc:
         typer.echo(f"Eval run failed: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=EXIT_RUNTIME_ERROR) from exc
 
     _finish_eval(output_json=output_json, sink_error=sink_error, gate_result=gate_result)
 
@@ -556,7 +560,7 @@ def _require_rag(orch: Orchestrator) -> tuple[EmbeddingClient, VectorStoreReposi
             "MANGOMAS_VECTOR__ENABLED=true.",
             err=True,
         )
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=EXIT_CONFIG_ERROR)
     return ctx.embeddings, ctx.vector_store
 
 
@@ -647,7 +651,7 @@ def _resolve_workflow_source(definition: str | None) -> str:
         return resolve_workflow_source(definition, get_settings().workflow)
     except MangomasError as exc:
         typer.echo(f"Workflow configuration error: {exc}", err=True)
-        raise typer.Exit(code=2) from exc
+        raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
 
 
 def _load_workflow_or_exit(source: str) -> WorkflowGraph:
@@ -656,7 +660,7 @@ def _load_workflow_or_exit(source: str) -> WorkflowGraph:
         return load_workflow(source)
     except MangomasError as exc:
         typer.echo(f"Workflow configuration error: {exc}", err=True)
-        raise typer.Exit(code=2) from exc
+        raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
 
 
 @workflow_app.command(name="validate")
@@ -701,7 +705,7 @@ def workflow_run(
         typer.echo(asyncio.run(_run()))
     except MangomasError as exc:
         typer.echo(f"Workflow run failed: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+        raise typer.Exit(code=EXIT_RUNTIME_ERROR) from exc
 
 
 if __name__ == "__main__":  # pragma: no cover

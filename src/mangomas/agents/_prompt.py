@@ -103,3 +103,16 @@ def build_messages(request: AgentRequest, system_prompt: str | None) -> list[Mes
     if system_prompt and not any(m.role == "system" for m in messages):
         messages.insert(0, Message(role="system", content=system_prompt))
     return messages
+
+
+def resolve_sampling(settings: AgentSettings | None) -> tuple[float | None, int | None]:
+    """Return ``(temperature, max_tokens)`` from *settings*, or ``(None, None)``.
+
+    Extracted because the identical two-line pair was repeated verbatim in four
+    agent constructors (`chat`, `summarize`, `tool_agent`, `_structured`). A
+    fifth sampling knob would otherwise mean five more edits; now it means one.
+    Both stay ``None`` when unset so the LLM adapter keeps its own default.
+    """
+    if settings is None:
+        return None, None
+    return settings.temperature, settings.max_tokens

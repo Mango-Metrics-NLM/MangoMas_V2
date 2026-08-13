@@ -128,3 +128,33 @@ def test_read_staged_diff_returns_real_diff_output() -> None:
     """Smoke test against the real repo — proves the happy path end to end."""
     result = governance.read_staged_diff("pyproject.toml")
     assert isinstance(result, str)
+
+
+@pytest.mark.parametrize(
+    ("text", "expect_match"),
+    [
+        ("BREAKING-CHANGE: widened protocol", True),
+        ("BREAKING-CHANGE", True),
+        ("# approved-breaking-change", True),
+        # An *added* diff line carries the marker; a *deleted* one does not.
+        ("+BREAKING-CHANGE: widened protocol", True),
+        ("-BREAKING-CHANGE: widened protocol", False),
+        # The two cases a bare `marker in text` substring check gets wrong, and
+        # which this module's own docstring promises it handles.
+        ("This is NOT a BREAKING-CHANGE, just an internal cleanup.", False),
+        ("BREAKING-CHANGEFOO: not the marker", False),
+        ("just an ordinary message", False),
+    ],
+)
+def test_has_breaking_change_marker_matches_the_documented_cases(
+    text: str, expect_match: bool
+) -> None:
+    """The in-package copy must honour the same eight cases as its ``scripts/``
+    twin. It previously had only two positive assertions, so the two invariants
+    its docstring actually claims — rejecting a deleted diff line and rejecting
+    the marker mid-sentence — were untested here while being covered in
+    ``tests/test_scripts_shared_helpers.py``. The duplication between the two
+    implementations is deliberate (``scripts/`` must not import ``mangomas``);
+    the asymmetry in their tests was not.
+    """
+    assert (governance.has_breaking_change_marker(text) is not None) is expect_match

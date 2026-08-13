@@ -19,7 +19,11 @@ from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
 from typing import TYPE_CHECKING, Any, Final
 
 from mangomas.adapters._vertex_errors import translate_vertex_error
-from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
+from mangomas.config import (
+    DEFAULT_ERROR_DETAIL_TRUNCATE,
+    DEFAULT_LLM_TEMPERATURE,
+    DEFAULT_LLM_TIMEOUT_SECONDS,
+)
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
 
@@ -185,7 +189,7 @@ class VertexClient:
             except json.JSONDecodeError as exc:
                 raise VertexError(
                     "credentials_json is not valid JSON",
-                    detail=str(exc)[:200],
+                    detail=str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
                 ) from exc
             return cred_cls.from_service_account_info(info)
         if credentials_path:
