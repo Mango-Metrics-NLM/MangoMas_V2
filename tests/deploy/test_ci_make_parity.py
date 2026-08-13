@@ -87,7 +87,10 @@ def test_lint_job_delegates_every_step_to_make() -> None:
 
 def test_test_job_delegates_to_make() -> None:
     commands = _step_run_commands(_ci_jobs()["test"])
-    assert commands == ["make test-xml", "make coverage"]
+    # `gated-suites` runs tests/integration + tests/rag: env-gated so a plain
+    # `pytest` stays fast, but needing no service, extra or network. They were
+    # absent from CI purely because nothing set the gate.
+    assert commands == ["make test-xml", "make coverage", "make gated-suites"]
 
 
 def test_bridge_coverage_job_delegates_to_make() -> None:

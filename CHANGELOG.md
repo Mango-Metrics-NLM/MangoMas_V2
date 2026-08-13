@@ -126,6 +126,42 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Fixed
 
+- **A GCP + auth deployment rejected every request.** `create_app` resolves the
+  expected API token during app *construction*, but the `gcp` secrets provider
+  was registered only inside `build_orchestrator`, which the FastAPI lifespan
+  calls strictly later. `resolve_auth_state` looked up an unregistered provider
+  and took its fail-closed branch, yielding `expected_token=None`. The lazy
+  registration is now the public, idempotent
+  `composition.ensure_secrets_provider`, called from both entry points. Local
+  runs never hit it: the `env` backend is seeded at import time.
+- **Postgres returned `str` where SQLite returns `dict`.** The jsonb codec
+  registers `encoder=json.dumps`, but `save_turn` bound `model_dump_json()` —
+  already serialised — so the value was encoded twice and `list_turns` read back
+  a string, breaking the row-shape parity the codec's own comment promises. Now
+  binds `model_dump(mode="json")`. No test covered the shape, and the suite that
+  would have is gated behind `RUN_POSTGRES=1`, which CI never sets.
+- `/readyz` is unauthenticated and emitted unbounded `str(exc)` from a driver
+  into the public body; both sites now truncate to
+  `DEFAULT_ERROR_DETAIL_TRUNCATE`.
+- `harness/__init__.py` was the one file of 133 missing
+  `from __future__ import annotations`. `ruff`'s `required-imports` now enforces
+  the rule that was previously prose in `CLAUDE.md`.
+- The CLI's `history --limit` hardcoded `10` while its documented HTTP twin read
+  `api.history_default_limit`, so the env override worked on only one surface.
+
+### Changed
+
+- **CI now runs the two gated suites that need no external service** —
+  `tests/integration/` (ASGI in-process) and `tests/rag/` (fakes only), 38 tests
+  that were excluded purely because nothing set their env gate. `make rag` is
+  split from a new `make embeddings-local` target, which is the half that
+  genuinely needs an extra.
+- The tenant column default is interpolated from `DEFAULT_TENANT` rather than
+  repeating the literal `'default'` across four DDL sites; rendered SQL is
+  unchanged.
+- `agents/_prompt.resolve_sampling` replaces the same two-line `AgentSettings`
+  extraction duplicated in four agent constructors.
+
 - **The corpus said things that were not true.** `mango-error`'s live SKILL.md
   and five agents pointed at `api/app.py::_ERROR_STATUS`, which moved to
   `api/errors.py`; `src/mangomas/errors.py`'s own module docstring said the same.

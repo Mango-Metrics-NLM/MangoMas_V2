@@ -19,7 +19,7 @@ from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
-from mangomas.tenancy import get_tenant
+from mangomas.tenancy import DEFAULT_TENANT, get_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +33,14 @@ _path_from_url = path_from_sqlite_url
 class SQLiteRepository:
     """Persists conversation turns. One row per dispatch."""
 
-    _SCHEMA = """
+    _SCHEMA = f"""
     CREATE TABLE IF NOT EXISTS turns (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
         ts        TEXT    NOT NULL,
         agent     TEXT    NOT NULL,
         request   TEXT    NOT NULL,
         response  TEXT    NOT NULL,
-        tenant    TEXT    NOT NULL DEFAULT 'default'
+        tenant    TEXT    NOT NULL DEFAULT '{DEFAULT_TENANT}'
     );
     """
 
@@ -69,7 +69,7 @@ class SQLiteRepository:
         columns = {row[1] for row in self._conn.execute("PRAGMA table_info(turns)")}
         if "tenant" not in columns:
             self._conn.execute(
-                "ALTER TABLE turns ADD COLUMN tenant TEXT NOT NULL DEFAULT 'default'"
+                f"ALTER TABLE turns ADD COLUMN tenant TEXT NOT NULL DEFAULT '{DEFAULT_TENANT}'"
             )
 
     async def save_turn(

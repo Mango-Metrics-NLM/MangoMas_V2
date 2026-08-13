@@ -224,6 +224,26 @@ def _build_gcp_secrets_provider(cfg: SecretsSettings) -> Any:
     )
 
 
+def ensure_secrets_provider(cfg: SecretsSettings) -> None:
+    """Register the configured secrets backend if it is not already present.
+
+    Idempotent, and public because **two** entry points need it, not one.
+    ``build_orchestrator`` runs inside the FastAPI lifespan, but
+    ``create_app`` resolves the expected API token during app *construction* —
+    strictly earlier. Registering only in ``build_orchestrator`` therefore left
+    ``resolve_auth_state`` looking up an unregistered ``gcp`` provider, which
+    fails closed to ``expected_token=None`` and 401s every request on a
+    correctly configured GCP + auth deployment.
+
+    Only cloud backends need this: ``env`` is seeded at import time by
+    :mod:`mangomas.secrets.registry`. Keeps the registry's "stored as instance,
+    not factory" contract.
+    """
+    if cfg.provider == "gcp" and "gcp" not in secrets_registry.available():
+        logger.info("Registering GCP secrets provider", extra={"project_id": cfg.project_id})
+        secrets_registry.register("gcp", _build_gcp_secrets_provider(cfg))
+
+
 # Seed registries — add more providers here when needed.
 llm_registry.register("lmstudio", _lmstudio_factory)
 llm_registry.register("vertex", _vertex_factory)
@@ -415,10 +435,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         },
     )
 
-    # Lazy-register the GCP secrets provider if selected. Idempotent — keeps
-    # the env backend's "stored as instance, not factory" registry contract.
-    if cfg.secrets.provider == "gcp" and "gcp" not in secrets_registry.available():
-        secrets_registry.register("gcp", _build_gcp_secrets_provider(cfg.secrets))
+    ensure_secrets_provider(cfg.secrets)
 
     llm_cfg = _resolve_llm_secrets(cfg.llm, cfg.secrets.provider)
     llm = llm_registry.get(llm_cfg.provider)(llm_cfg)

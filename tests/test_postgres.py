@@ -6,6 +6,7 @@ lazy-pool invariant that ``__init__`` performs no I/O.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -162,8 +163,12 @@ class FakeConnection:
     fetch_return: list[dict[str, Any]] = field(default_factory=list)
     fetchval_side_effect: Exception | None = None
     fetch_side_effect: Exception | None = None
+    #: Parameters bound by the most recent ``fetchval`` call, so a test can
+    #: assert what was actually handed to the jsonb codec.
+    fetchval_args: tuple[Any, ...] = ()
 
-    async def fetchval(self, _query: str, *_args: Any) -> Any:
+    async def fetchval(self, _query: str, *args: Any) -> Any:
+        self.fetchval_args = args
         if self.fetchval_side_effect is not None:
             raise self.fetchval_side_effect
         return self.fetchval_return
@@ -358,3 +363,37 @@ def test_close_idempotent_after_terminate() -> None:
     repo.close()
     repo.close()  # second call — pool is None, should no-op
     assert repo._pool is None
+
+
+# ── jsonb row-shape parity with SQLite (regression) ───────────────────────────
+
+
+async def test_save_turn_binds_json_objects_not_pre_serialised_strings() -> None:
+    """``save_turn`` must bind dicts so the jsonb codec produces a JSON object.
+
+    Regression. ``_ensure_pool`` registers ``encoder=json.dumps`` for jsonb with
+    the comment "Decode jsonb columns into dicts to match SQLiteRepository's row
+    shape". ``save_turn`` then bound ``model_dump_json()`` — already a string —
+    so the encoder serialised it a *second* time. The column held a JSON scalar
+    and ``list_turns`` returned ``str`` where SQLite returns ``dict``.
+
+    Asserted here rather than in ``tests/postgres/`` because that suite is gated
+    behind ``RUN_POSTGRES=1``, which CI never sets — the defect shipped with a
+    green pipeline. This test needs no database: it checks the values bound, then
+    round-trips them through the codec functions the pool actually registers.
+    """
+    pool = FakePool()
+    repo = PostgresRepository(_make_cfg())
+    _inject_pool(repo, pool)
+
+    request, response = _make_request(), _make_response()
+    await repo.save_turn("chat", request, response)
+
+    # Positional order: ts, agent, request, response, tenant.
+    bound_request, bound_response = pool.conn.fetchval_args[2], pool.conn.fetchval_args[3]
+    assert isinstance(bound_request, dict), f"bound a {type(bound_request).__name__}, not a dict"
+    assert isinstance(bound_response, dict)
+
+    # The codec round-trip must yield the same dicts SQLiteRepository returns.
+    for bound, model in ((bound_request, request), (bound_response, response)):
+        assert json.loads(json.dumps(bound)) == model.model_dump(mode="json")

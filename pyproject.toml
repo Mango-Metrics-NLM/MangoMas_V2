@@ -139,6 +139,13 @@ select = ["E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG"]
 # silent positional-parameter reorder in a shared base class.
 ignore = ["PLR0913"]
 
+[tool.ruff.lint.isort]
+# CLAUDE.md requires `from __future__ import annotations` in every source file.
+# It was prose until now: a sweep found exactly one violation in 133 files
+# (harness/__init__.py), which nothing would have caught. ruff adds it on
+# --fix and fails the lint without.
+required-imports = ["from __future__ import annotations"]
+
 [tool.ruff.format]
 # ruff >= 0.16 formats code fences inside Markdown; the agent and skill docs
 # under .claude/ format their example snippets for readability (multi-line

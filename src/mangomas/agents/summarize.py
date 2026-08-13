@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from mangomas.agents._prompt import resolve_system_prompt
+from mangomas.agents._prompt import resolve_sampling, resolve_system_prompt
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -73,8 +73,7 @@ class SummarizeAgent:
             resolve_system_prompt(system_prompt, settings) or _DEFAULT_SYSTEM_PROMPT
         )
         self._history_limit: int = history_limit
-        self._temperature: float | None = settings.temperature if settings is not None else None
-        self._max_tokens: int | None = settings.max_tokens if settings is not None else None
+        self._temperature, self._max_tokens = resolve_sampling(settings)
 
     async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
         """Fetch recent history and ask the LLM to summarise it."""

@@ -1,8 +1,11 @@
 """Module-level :class:`Registry` of :class:`SecretsProvider` implementations.
 
-Seeded with the env-var backend at import time. Cloud backends (GCP Secret
-Manager, Vault, etc.) register themselves here in their own composition
-modules — none ship in this release.
+Seeded with the env-var backend at import time. The GCP Secret Manager backend
+(:mod:`mangomas.secrets.gcp`) *does* ship: it is registered lazily by
+:func:`mangomas.composition.ensure_secrets_provider` when
+``MANGOMAS_SECRETS__PROVIDER=gcp``, keeping its SDK import behind the ``gcp``
+extra. Unlike the provider registries in ``composition``, this one stores
+provider **instances**, not factories.
 """
 
 from __future__ import annotations

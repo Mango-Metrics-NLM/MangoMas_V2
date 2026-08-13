@@ -9,6 +9,7 @@ pass-through, and health/readiness probes are never guarded.
 
 from __future__ import annotations
 
+import logging
 import secrets as _secrets
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -17,6 +18,8 @@ from fastapi import Request
 
 from mangomas.errors import MangomasError
 from mangomas.secrets import secrets_registry
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import Settings
@@ -52,8 +55,28 @@ def resolve_auth_state(settings: Settings) -> AuthState:
     try:
         provider = secrets_registry.get(settings.secrets.provider)
     except MangomasError:
+        # Fail closed, but never silently: this branch rejects every request for
+        # the rest of the process's life, and it used to emit nothing at all. A
+        # provider-ordering bug that 401'd a correctly configured deployment was
+        # invisible for exactly this reason.
+        logger.error(
+            "Auth enabled but the secrets provider is not registered — every "
+            "request will be rejected",
+            extra={
+                "secrets_provider": settings.secrets.provider,
+                "available_providers": secrets_registry.available(),
+            },
+        )
         return AuthState(enabled=True, expected_token=None)
-    return AuthState(enabled=True, expected_token=provider.get(auth_cfg.secret_ref))
+
+    expected = provider.get(auth_cfg.secret_ref)
+    if expected is None:
+        logger.error(
+            "Auth enabled but the secret reference resolved to nothing — every "
+            "request will be rejected",
+            extra={"secrets_provider": settings.secrets.provider},
+        )
+    return AuthState(enabled=True, expected_token=expected)
 
 
 def _extract_token(request: Request) -> str | None:

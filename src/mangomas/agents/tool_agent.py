@@ -6,7 +6,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from mangomas.agents._prompt import build_messages, resolve_system_prompt
+from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_system_prompt
 from mangomas.config import DEFAULT_TOOL_MAX_STEPS
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolCallParser, build_tool_system_prompt
@@ -45,8 +45,7 @@ class ToolAgent:
         self._system_prompt: str | None = (
             resolved_prompt.strip() or None if resolved_prompt is not None else None
         )
-        self._temperature: float | None = settings.temperature if settings is not None else None
-        self._max_tokens: int | None = settings.max_tokens if settings is not None else None
+        self._temperature, self._max_tokens = resolve_sampling(settings)
         if max_tool_steps is not None:
             self._max_tool_steps = max_tool_steps
         elif settings is not None and settings.max_tool_steps is not None:

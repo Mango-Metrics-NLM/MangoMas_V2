@@ -8,7 +8,7 @@ C4Component
   title Mango-Mas V2 — FastAPI Application Components
 
   Container_Boundary(api_boundary, "FastAPI Application (src/mangomas/api/)") {
-    Component(app_factory, "create_app()", "FastAPI factory function", "Constructs and configures the FastAPI app. Wires middleware, exception handlers, and routes. Invokes build_orchestrator() during lifespan unless an orchestrator is injected (test mode).")
+    Component(app_factory, "create_app()", "FastAPI factory function", "Constructs and configures the FastAPI app. Wires middleware, exception handlers, and routes. Calls ensure_secrets_provider() and then resolve_auth_state() during construction — the provider must be registered first, because the lifespan's build_orchestrator() runs strictly later. Invokes build_orchestrator() during lifespan unless an orchestrator is injected (test mode).")
     Component(access_log, "AccessLogMiddleware", "Starlette middleware", "Emits structured access-log records. Reads/echoes X-Request-ID, sets the correlation_id ContextVar, and pushes the value into OTel baggage as 'mangomas.correlation_id'.")
     Component(correlation, "correlation.py", "ContextVar + logging filter", "ContextVar carrying the per-request correlation id; CorrelationFilter injects it into every log record.")
     Component(trace_mw, "TraceMiddleware", "Starlette middleware / OTel", "Opens and closes an OpenTelemetry span per request. Tracer is obtained lazily via trace.get_tracer() to avoid capturing NoopTracer at import time.")

@@ -72,6 +72,14 @@ jobs:
       - name: Per-package coverage floors
         run: make coverage
 
+      # Both suites are gated by an env var so a normal `pytest` run stays fast,
+      # but neither needs a service, an extra, or the network — `tests/rag` is
+      # fakes-only and `tests/integration` drives the app over ASGI in-process.
+      # They were excluded from CI purely because nothing set the gate, which is
+      # how a Postgres row-shape defect shipped behind a green pipeline.
+      - name: Gated suites that need no external service
+        run: make gated-suites
+
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
         with:
