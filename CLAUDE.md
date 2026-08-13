@@ -489,6 +489,7 @@ tree serves both.
 | `mango-workflow` | Declarative workflow graphs: schema, nodes, predicates, `workflow` CLI |
 | `mango-rag` | Embeddings/vector/RAG: ingestion, retrieval, RetrievalTool wiring |
 | `mango-eval` | Evaluation harness: scorers, sinks, targets, sources, gate/baseline |
+| `mango-harness` | Protected-path governance, the `BREAKING-CHANGE` trailer, hooks |
 | `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
 

@@ -115,7 +115,12 @@ vertex: ## Vertex AI E2E (needs ADC)
 postgres: ## Postgres suite (needs Docker for testcontainers)
 	RUN_POSTGRES=1 $(PYTHON) -m pytest tests/postgres --no-cov $(PYTEST_FLAGS)
 
-rag: ## RAG + local-embedding suites (needs the rag/embeddings-local extras)
+rag: ## RAG domain suite (fakes only — no extras, no network; CI-safe)
+	RUN_RAG=1 $(PYTHON) -m pytest tests/rag --no-cov $(PYTEST_FLAGS)
+
+gated-suites: integration rag ## Gated suites needing no service, extra or network (CI runs this)
+
+embeddings-local: ## Local sentence-transformers suite (needs the embeddings-local extra)
 	RUN_EMBEDDINGS_LOCAL=1 RUN_RAG=1 $(PYTHON) -m pytest tests/rag --no-cov $(PYTEST_FLAGS)
 
 # The next three suites are gated by marker (not directory — the tests live
