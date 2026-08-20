@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import pytest
+
 from mangomas.agents.summarize import SummarizeAgent, _format_turns
-from mangomas.config import AgentSettings
+from mangomas.config import AgentSettings, Settings
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Message
+from tests.constants import (
+    DEFAULT_SUMMARIZE_HISTORY_LIMIT,
+    SUMMARIZE_HISTORY_LIMIT_ENV,
+    TEST_HISTORY_LIMIT,
+    TEST_HISTORY_LIMIT_OVERRIDE,
+    TEST_HISTORY_SEEDED_TURNS,
+)
 from tests.fakes import FakeLLM, FakeRepository
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -143,18 +152,85 @@ async def test_summarize_agent_empty_request_message() -> None:
     assert result.content == "OK"
 
 
-async def test_summarize_agent_history_limit() -> None:
-    """history_limit caps the number of turns fetched."""
+async def _seeded_repo(turns: int = TEST_HISTORY_SEEDED_TURNS) -> FakeRepository:
+    """Return a repository holding *turns* saved chat turns."""
     repo = FakeRepository()
-    llm = FakeLLM(reply="summary")
-    # Insert 5 turns
-    for i in range(5):
+    for i in range(turns):
         req = AgentRequest(messages=[Message(role="user", content=f"msg {i}")])
         resp = AgentResponse(content=f"reply {i}", agent="chat")
         await repo.save_turn("chat", req, resp)
+    return repo
 
-    agent = SummarizeAgent(history_limit=2)
+
+def _replies_in_prompt(llm: FakeLLM) -> int:
+    """Count how many persisted turns actually reached the LLM prompt.
+
+    ``list_turns(limit=n)`` slices, so this is a real observation of the
+    resolved window rather than a restatement of the input.
+    """
+    return " ".join(m.content for m in llm.calls[0]).count("reply")
+
+
+async def test_summarize_agent_history_limit() -> None:
+    """history_limit caps the number of turns fetched."""
+    repo = await _seeded_repo()
+    llm = FakeLLM(reply="summary")
+
+    agent = SummarizeAgent(history_limit=TEST_HISTORY_LIMIT)
     await _invoke(agent, _make_request(), llm=llm, repo=repo)
-    # list_turns(limit=2) only returns 2 turns → only 2 appear in the prompt
-    combined = " ".join(m.content for m in llm.calls[0])
-    assert combined.count("reply") == 2
+    assert _replies_in_prompt(llm) == TEST_HISTORY_LIMIT
+
+
+# ── history_limit resolution: constructor > settings > DEFAULT ────────────────
+# Mirrors the max_tool_steps block in tests/test_tool_agent.py — the same
+# three-tier precedence, so the same five assertions apply.
+
+
+async def test_summarize_agent_uses_settings_history_limit() -> None:
+    repo = await _seeded_repo()
+    llm = FakeLLM(reply="summary")
+    agent = SummarizeAgent(settings=AgentSettings(history_limit=TEST_HISTORY_LIMIT))
+    await _invoke(agent, _make_request(), llm=llm, repo=repo)
+    assert _replies_in_prompt(llm) == TEST_HISTORY_LIMIT
+
+
+async def test_summarize_agent_constructor_arg_overrides_settings() -> None:
+    repo = await _seeded_repo()
+    llm = FakeLLM(reply="summary")
+    agent = SummarizeAgent(
+        history_limit=TEST_HISTORY_LIMIT_OVERRIDE,
+        settings=AgentSettings(history_limit=TEST_HISTORY_LIMIT),
+    )
+    await _invoke(agent, _make_request(), llm=llm, repo=repo)
+    assert _replies_in_prompt(llm) == TEST_HISTORY_LIMIT_OVERRIDE
+
+
+@pytest.mark.parametrize("settings", [None, AgentSettings()])
+async def test_summarize_agent_defaults_to_config_constant(
+    settings: AgentSettings | None,
+) -> None:
+    """Both halves of the ``settings is not None and ... is not None`` guard.
+
+    ``None`` covers the missing-settings arm; ``AgentSettings()`` covers
+    settings-present-but-field-unset, which a single ``None`` case would leave
+    as a partial branch arc under ``branch = true``.
+    """
+    # Seed more turns than the default so a too-large window is observable.
+    repo = await _seeded_repo(DEFAULT_SUMMARIZE_HISTORY_LIMIT + 2)
+    llm = FakeLLM(reply="summary")
+    agent = SummarizeAgent(settings=settings)
+    await _invoke(agent, _make_request(), llm=llm, repo=repo)
+    assert _replies_in_prompt(llm) == DEFAULT_SUMMARIZE_HISTORY_LIMIT
+
+
+def test_agent_settings_history_limit_env_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The only assertion proving the value parses through ``dict[str, AgentSettings]``."""
+    monkeypatch.setenv(SUMMARIZE_HISTORY_LIMIT_ENV, str(TEST_HISTORY_LIMIT))
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.agents["summarize"].history_limit == TEST_HISTORY_LIMIT
+
+
+def test_agent_settings_history_limit_defaults_to_none() -> None:
+    assert AgentSettings().history_limit is None

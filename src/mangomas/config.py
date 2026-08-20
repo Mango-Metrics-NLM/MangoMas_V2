@@ -71,6 +71,11 @@ DEFAULT_LOOP_STEP_TIMEOUT: float = 30.0
 # per agent via ``MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS`` (AgentSettings).
 DEFAULT_TOOL_MAX_STEPS: int = 5
 
+# SummarizeAgent: how many persisted turns to pull into the summary context.
+# Overridable per agent via ``MANGOMAS_AGENTS__<NAME>__HISTORY_LIMIT``
+# (AgentSettings), mirroring DEFAULT_TOOL_MAX_STEPS above.
+DEFAULT_SUMMARIZE_HISTORY_LIMIT: int = 10
+
 DEFAULT_MEMORY_PROVIDER: str = "file"
 DEFAULT_MEMORY_DIR: str = "memory"
 DEFAULT_MEMORY_INDEX: str = "MEMORY.md"
@@ -418,6 +423,11 @@ class AgentSettings(BaseModel):
     # ``None`` (the default) falls back to ``DEFAULT_TOOL_MAX_STEPS``, so
     # existing environments see no behaviour change.
     max_tool_steps: int | None = None
+    # SummarizeAgent only: how many persisted turns to load into the summary
+    # context. ``None`` (the default) falls back to
+    # ``DEFAULT_SUMMARIZE_HISTORY_LIMIT``, so existing environments see no
+    # behaviour change.
+    history_limit: int | None = None
 
 
 class LoopSettings(BaseModel):

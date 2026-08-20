@@ -34,6 +34,9 @@ from mangomas.config import (
     DEFAULT_RAG_MIN_CHUNK_WORDS as DEFAULT_RAG_MIN_CHUNK_WORDS,
 )
 from mangomas.config import (
+    DEFAULT_SUMMARIZE_HISTORY_LIMIT as DEFAULT_SUMMARIZE_HISTORY_LIMIT,
+)
+from mangomas.config import (
     DEFAULT_VECTOR_COLLECTION as DEFAULT_VECTOR_COLLECTION,
 )
 from mangomas.config import (
@@ -117,6 +120,16 @@ TEST_TOOL_MAX_STEPS_OVERRIDE: int = 3
 TEST_TOOL_SYSTEM_PROMPT: str = "Answer like a pirate."
 # Env var driving AgentSettings.max_tool_steps for the "tool" agent.
 TOOL_MAX_STEPS_ENV: str = "MANGOMAS_AGENTS__TOOL__MAX_TOOL_STEPS"
+
+# ── SummarizeAgent history window ─────────────────────────────────────────────
+# Turn-window values used by tests (distinct from the config default so an
+# override is observable), mirroring the TEST_TOOL_MAX_STEPS pair above.
+TEST_HISTORY_LIMIT: int = 2
+TEST_HISTORY_LIMIT_OVERRIDE: int = 3
+# Number of turns seeded before asserting the window actually caps the fetch.
+TEST_HISTORY_SEEDED_TURNS: int = 5
+# Env var driving AgentSettings.history_limit for the "summarize" agent.
+SUMMARIZE_HISTORY_LIMIT_ENV: str = "MANGOMAS_AGENTS__SUMMARIZE__HISTORY_LIMIT"
 
 # ── Harness frontmatter linter fixtures ───────────────────────────────────────
 VALID_AGENT_FRONTMATTER: str = """\

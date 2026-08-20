@@ -199,7 +199,8 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` | `5` (`DEFAULT_TOOL_MAX_STEPS`) | `ToolAgent`-only: cap on total LLM calls per request |
-| `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Reserved — not read by any agent yet; per-agent model selection needs a composition-layer change (spec-0015) |
+| `MANGOMAS_AGENTS__<NAME>__HISTORY_LIMIT` | `10` (`DEFAULT_SUMMARIZE_HISTORY_LIMIT`) | `SummarizeAgent`-only: persisted turns loaded into the summary context |
+| `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Reserved — not read by any agent yet; per-agent model selection needs a composition-layer change (a per-agent `LLMClient` rather than one shared `ctx.llm`), recorded in spec-0014 R4 |
 
 ---
 
