@@ -97,6 +97,39 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Added
 
+- **Four owner agents close the deferred "B5" gap** (spec-0019):
+  `mango-rag-dev`, `mango-eval-dev`, `mango-secrets-dev` and
+  `mango-agent-impl-dev`. The 2026-08-09 delivery plan named seven unowned
+  surfaces and deferred them; `eval/` (38 files, four plugin registries) and the
+  RAG stack (14 files) were the two largest subsystems in the tree with a mature
+  skill and no agent, so `mango-backend` — whose own description lists RAG in
+  scope — routed that work to nobody. Roster 19 → 23, write-capable 12 → 16.
+  `config.py` and `cli/main.py`, the other two B5 surfaces, are deliberately
+  **not** included: both are spec-0015 decomposition targets, so an owner
+  authored now would describe a shape about to change.
+- `mango-secrets-dev` maps to **two** skills, `mango-adapter` **and**
+  `mango-config`. `mango-adapter` alone is not merely thin here, it is wrong in
+  two places: its "register the factory" rule contradicts `secrets/registry.py`,
+  which stores provider *instances*, and its "all public methods are `async def`"
+  rule contradicts `secrets/provider.py`, which is sync-only by design. Both
+  contradictions are recorded as invariants in the agent body so a reader who
+  follows the skill is corrected rather than misled.
+- **Tenancy is documented in the corpus for the first time.** `tenancy.py` and
+  `TenancyMiddleware` are a complete ADR-0017 subsystem with a 100% coverage
+  floor and had **zero mentions across all 19 agents and 13 skills**.
+  `mango-storage-adapter-dev` — which owns both files implementing the tenant
+  row filter — now states that scoping is a row filter rather than a signature
+  change, and that a new backend needs the idempotent column migration.
+  `mango-api-dev` names `TenancyMiddleware` alongside the three opt-in
+  middlewares it already listed.
+- New agents cite settings by dotted import path (`mangomas.config`) rather than
+  bare filename, so spec-0015's package split cannot invalidate them.
+- No file is claimed by two write-capable agents: `agents/_streaming.py` stays
+  with `mango-sse-streamer` (which already claimed it in both its description
+  and its Surface table) and `ExecutionPlan`/`ReviewResult` stay with
+  `mango-schema-evolution`. `mango-agent-impl-dev` names those owners instead.
+
+
 - Permission-rule guards: deny set-equality, path-scoped rules must be
   `/`-anchored (an unanchored rule is cwd-relative and silently stops matching
   from a subdirectory), and no MCP `env` value may be a literal — every

@@ -345,7 +345,7 @@ CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
 
 ## Claude Code Agents
 
-19 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
+23 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
 hierarchy. Claude Code resolves an agent by its `name:` field, which must equal
 the filename stem; the `mango-` prefix separates the committed corpus from
 personal agents `/agents` writes into the same directory.
@@ -361,7 +361,7 @@ or `Bash`.
 | `mango-api-dev` | Adding or changing an endpoint, evolving a request/response schema, API-layer integration |
 | `mango-test-engineer` | Adding or fixing tests, diagnosing a coverage gap, choosing a test surface |
 
-**Fifteen specialists**, invoked *by name*, not by topic match — their
+**Nineteen specialists**, invoked *by name*, not by topic match — their
 descriptions deliberately carry no trigger conditions, because auto-delegation
 matches the condition and never reads a modal verb like "invoke explicitly
 when". Name them directly:
@@ -378,6 +378,10 @@ when". Name them directly:
 | `mango-workflow-graph-dev` | `workflow/` — graph model, registry, predicates, executor |
 | `mango-schema-evolution` / `mango-sse-streamer` | HTTP DTO evolution / API-layer SSE framing |
 | `mango-fake-builder` / `mango-hypothesis-fuzz` / `mango-integration-runner` | `tests/fakes.py` / property tests / `tests/integration/` |
+| `mango-rag-dev` | `rag/` + the `adapters/embeddings/` and `adapters/vector/` seams |
+| `mango-eval-dev` | The `eval/` spine — runner, gates, registries, payload, discovery |
+| `mango-secrets-dev` | `secrets/` — protocol, env/GCP backends, strict-mode semantics |
+| `mango-agent-impl-dev` | The built-in agents under `agents/` + `_prompt` / `_structured` / discovery |
 
 **Agents vs skills.** They are different things and the tie-break matters:
 **skills own procedure** (the recipe for doing X), **agents own a surface** —

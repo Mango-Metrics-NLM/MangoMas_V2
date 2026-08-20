@@ -407,14 +407,16 @@ RETIRED_AGENTS_DIR_RELPATH: str = ".github/agents"
 # reintroduce the convention — a file nothing loads cannot be kept honest.
 RETIRED_STRAY_AGENT_FILENAME: str = "agent.md"
 
-# The 19 agents, by slug. Set equality, so a change names what appeared or
+# The 23 agents, by slug. Set equality, so a change names what appeared or
 # vanished and editing this tuple is the review record.
 EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-adr-author",
+    "mango-agent-impl-dev",
     "mango-api-dev",
     "mango-architect",
     "mango-backend",
     "mango-error-taxonomy-dev",
+    "mango-eval-dev",
     "mango-fake-builder",
     "mango-hypothesis-fuzz",
     "mango-integration-runner",
@@ -423,7 +425,9 @@ EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-orchestrator-dev",
     "mango-pr-watcher",
     "mango-protocol-auditor",
+    "mango-rag-dev",
     "mango-schema-evolution",
+    "mango-secrets-dev",
     "mango-sse-streamer",
     "mango-storage-adapter-dev",
     "mango-telemetry-exporter-dev",
@@ -436,17 +440,21 @@ ROUTER_AGENT_SLUGS: frozenset[str] = frozenset(
     {"mango-architect", "mango-backend", "mango-api-dev", "mango-test-engineer"}
 )
 # Agents holding Edit and/or Write. A reviewed-change gate, NOT a substitute
-# for a deny rule: it covers 12 of 19 and only fails when the set changes.
+# for a deny rule: it covers 16 of 23 and only fails when the set changes.
 WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adr-author",
+        "mango-agent-impl-dev",
         "mango-error-taxonomy-dev",
+        "mango-eval-dev",
         "mango-fake-builder",
         "mango-hypothesis-fuzz",
         "mango-integration-runner",
         "mango-llm-adapter-dev",
         "mango-orchestrator-dev",
+        "mango-rag-dev",
         "mango-schema-evolution",
+        "mango-secrets-dev",
         "mango-sse-streamer",
         "mango-storage-adapter-dev",
         "mango-telemetry-exporter-dev",
@@ -493,14 +501,23 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 # steps are their own operating loop, not a recipe a skill owns.
 AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
+    "mango-agent-impl-dev": ("mango-agent-add",),
     "mango-error-taxonomy-dev": ("mango-error",),
+    "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
     "mango-hypothesis-fuzz": ("mango-testing",),
     "mango-integration-runner": ("mango-testing",),
     "mango-llm-adapter-dev": ("mango-adapter",),
     "mango-orchestrator-dev": ("mango-topology", "mango-observability"),
     "mango-pr-watcher": ("mango-release",),
+    "mango-rag-dev": ("mango-rag",),
     "mango-schema-evolution": ("mango-agent-add",),
+    # Two skills, deliberately: `mango-adapter` supplies the Protocol-first
+    # contract and the fake pattern, but its "register the factory" rule and
+    # its async-methods rule are both wrong for this surface (the secrets
+    # registry stores instances, and the protocol is sync-only). `mango-config`
+    # is what actually documents the SecretsProvider seam.
+    "mango-secrets-dev": ("mango-adapter", "mango-config"),
     "mango-sse-streamer": ("mango-topology",),
     "mango-storage-adapter-dev": ("mango-adapter",),
     "mango-telemetry-exporter-dev": ("mango-observability", "mango-deploy"),
