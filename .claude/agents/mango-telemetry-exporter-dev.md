@@ -24,15 +24,20 @@ Use the `mango-observability` skill for span/metric placement and `mango-deploy`
 
 ## Invariants
 - **Default-OFF**: absent `MANGOMAS_TELEMETRY__EXPORTER` → the exporter used
-  today (console/OTLP) is unchanged. Absent `MANGOMAS_HARNESS__METRICS_EXPORTER`
+  today (`console`) is unchanged. The only valid tokens are `console` and
+  `gcp` (`_VALID_APP_EXPORTERS` in `telemetry.py`); anything else raises
+  `ConfigError`. Absent `MANGOMAS_HARNESS__METRICS_EXPORTER`
   → harness spans fall through to the application exporter. `METRICS_ENABLED`
   defaults `False` → no `MeterProvider` installed, so the global provider stays
   the OTel no-op and every `record_*` call is free.
 - **Lazy SDK**: `opentelemetry-exporter-gcp-trace` imported inside a factory
   helper (`# noqa: PLC0415`, `# pragma: no cover - requires extra`) behind the
   `gcp` extra. The module must import without the extra installed.
-- **No hard-coded values**: endpoints, sample rates, project/location are
-  `DEFAULT_*` constants surfaced through `TelemetrySettings` / `HarnessSettings`.
+- **No hard-coded values**: any tunable this seam grows is a `DEFAULT_*`
+  constant surfaced through `TelemetrySettings` / `HarnessSettings`. Today
+  that surface is deliberately small — `TelemetrySettings` carries only
+  `exporter` and `metrics_enabled`; Cloud Trace takes project and credentials
+  from ADC, so no endpoint, sample-rate or project field exists here.
 - **Ambient identity only**: Cloud Trace authenticates via ADC / Workload
   Identity Federation — never a service-account JSON path.
 - **No secrets in logs**: tokens/keys never appear in log records or span attrs.

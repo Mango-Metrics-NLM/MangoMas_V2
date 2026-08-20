@@ -28,14 +28,23 @@ async def get_orchestrator(request: Request) -> Orchestrator:
 
 OrchestratorDep = Annotated[Orchestrator, Depends(get_orchestrator)]
 
-# Streaming SSE pattern
+# Streaming SSE pattern — every frame is one `data:` line of JSON.
+# The event name lives INSIDE the payload; there are no `event:` lines.
 from fastapi.responses import StreamingResponse
 
 async def event_generator():
-    async for token in agent.stream(...):
-        yield f"event: token\ndata: {token}\n\n"
-    yield "event: done\ndata: {}\n\n"
+    async for token in stream_iter:
+        payload = {"event": "token", "data": {"content": token}, "content": token}
+        yield f"data: {json.dumps(payload)}\n\n".encode()
+    yield f"data: {json.dumps({'event': 'done'})}\n\n".encode()
 ```
+
+The duplicated top-level `content` is backwards compatibility for consumers
+predating the `event`/`data` structure — see the README's "SSE streaming
+envelope". No error frame exists: `AgentNotFound` is raised before streaming
+starts (so it gets a real status code and a JSON envelope), and a mid-stream
+failure ends the response without a `done` frame. `mango-sse-streamer` owns
+the framing itself.
 
 
 - All schemas use Pydantic v2 (`BaseModel`).

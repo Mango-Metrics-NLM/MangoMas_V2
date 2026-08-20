@@ -37,8 +37,9 @@ pre-commit run --all-files
 ```
 
 Every CI command is also wrapped as a `Makefile` target — `make gate` runs the
-whole pipeline (lint, format-check, typecheck, frontmatter, test, per-package
-coverage, bridge coverage) in CI's order; `make help` lists the rest. Prefer it
+whole pipeline (validate-config, lint, format-check, typecheck, frontmatter,
+protected-paths, test, per-package coverage, bridge coverage, scripts coverage)
+in CI's order — note `protected-paths` runs locally too, not only in CI; `make help` lists the rest. Prefer it
 over retyping paths: CI's lint surface is
 `src tests scripts eval_harness_bridge/src`, which is wider than the
 `src tests` shown above.
@@ -67,7 +68,7 @@ src/mangomas/
 │   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
 │   ├── _openai_client.py OpenAICompatHTTPClient — shared httpx lifecycle base
 │   │                    (_request / _log_and_translate: POST/GET → raise → log → translate)
-│   ├── llm/            LLMClient protocol + LMStudioAdapter + VertexClient
+│   ├── llm/            LLMClient protocol + LMStudioClient + VertexClient
 │   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
 │   │                   (_shared.py: embed / aclose mixins — backends write embed_batch only)
 │   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
@@ -89,13 +90,13 @@ src/mangomas/
 ├── api/
 │   ├── app.py          FastAPI app factory (lifespan, middleware installation)
 │   ├── errors.py       Error-status mapping, error-envelope builder
-│   ├── models.py       DTO models (WorkflowRunRequest, ValidateRequest/Response)
+│   ├── models.py       DTO models (WorkflowRunRequest, WorkflowValidateRequest/Response)
 │   ├── middleware.py   MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
 │   └── routes/         Endpoint routers by resource
 │       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
-│       ├── system.py   /health, /ready, /list_agents endpoints
+│       ├── system.py   /healthz + /health, /readyz + /ready, GET /agents
 │       └── workflows.py /workflows/run, /workflows/validate endpoints
-├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
+├── cli/main.py     Typer CLI (agents, chat, history, eval + rag/workflow sub-apps)
 ├── harness/        Claude Code harness/hook governance (opt-in; ADR-0021)
 │   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
 │   └── config_audit.py ConfigChange hook decision table
@@ -105,7 +106,7 @@ src/mangomas/
 │                   VectorSettings, RagSettings
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
-├── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
+├── telemetry.py    OpenTelemetry setup (console or gcp Cloud Trace exporter)
 ├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
 ├── _entry_points.py Shared entry-point iteration for eval plugin discovery
 └── metrics.py      Instrumentation registry (singleton, double-checked lock)
@@ -306,13 +307,15 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
 - **Coverage gate**: `scripts/check_coverage.py` is the single source of truth —
   95 % global minimum plus per-package floors
-  (`errors`/`registry`/`core`/`secrets`/`correlation` = 100 %,
-  `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
+  (`errors`/`registry`/`core`/`secrets`/`correlation`/`tenancy`/`_headers`
+  = 100 %, `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
   `pyproject.toml` mirrors the global floor.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
 - **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
-- **Hypothesis fuzz** tests live in `test_tools.py`
+- **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
+  and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
+  since `hypothesis` is an optional dev dependency)
 - **Integration tests** in `tests/integration/`; gated by `RUN_INTEGRATION=1`
 
 ---
@@ -559,7 +562,10 @@ Off by default (`MANGOMAS_WORKFLOW__ENABLED=false`), so existing deployments see
 no change. A `WorkflowGraph` (JSON) is a bounded tree compiled to the imperative
 dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop` / `branch`
 (predicate-routed selection; spec 0012 / ADR-0016), where every leaf is one public
-dispatch call (no reimplemented loop/gather). See spec 0005 / ADR-0011 and
+dispatch call and the acceptance loop is never reimplemented. A `fan_out` branch
+may itself be a composite (spec 0013 / ADR-0018): the all-agent case delegates to
+`dispatch_fan_out` verbatim, while a composite branch runs via `resolve_executor`
+under `asyncio.gather`. See spec 0005 / ADR-0011 and
 `docs/workflow/graphs.md`.
 
 - **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;

@@ -14,15 +14,24 @@ report the Architect rolls up.
 | File | Protocols |
 |------|-----------|
 | `src/mangomas/core/agent.py` | `Agent`, `StreamingAgent` |
+| `src/mangomas/core/tools.py` | `Tool` |
 | `src/mangomas/adapters/llm/base.py` | `LLMClient`, `PingableLLMClient`, `StreamingLLMClient` |
-| `src/mangomas/adapters/storage/base.py` | `TurnRepository`, `MemoryRepository` |
+| `src/mangomas/adapters/storage/base.py` | `TurnRepository`, `AsyncCloseableRepository`, `MemoryRepository` |
+| `src/mangomas/adapters/embeddings/base.py` | `EmbeddingClient` |
+| `src/mangomas/adapters/vector/base.py` | `VectorStoreRepository` |
 | `src/mangomas/secrets/provider.py` | `SecretsProvider` |
+
+`core/agent.py` and `core/tools.py` are protected paths — a change to either
+needs a `BREAKING-CHANGE` commit trailer (see the `mango-harness` skill).
 
 ## Checklist
 - [ ] No method renamed, removed, or has changed parameter names
 - [ ] No required parameter added (new parameters must have defaults)
 - [ ] No return-type narrowed (a narrower return type breaks consumers)
 - [ ] `@runtime_checkable` decorator still present
+- [ ] Signature drift is checked **by reading**, not by an `isinstance` test —
+  `runtime_checkable` compares member *presence* only, so no `isinstance`
+  assertion anywhere can detect a changed parameter list
 - [ ] All methods remain `async def` where they were before
 - [ ] New optional Protocol extensions (e.g. another `Streaming*`) live in their
   own class — never bolted onto the base Protocol

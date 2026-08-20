@@ -259,9 +259,12 @@ down to the existing `dispatch_pipeline` / `dispatch_fan_out` / acceptance-loop
 primitives. Every leaf is one public dispatch call, so an all-agent `sequence` is
 identical to the imperative `dispatch_pipeline`. The `branch` node (spec 0012 /
 ADR-0016) routes on the threaded content via a predicate, enabling
-`planner → route → specialised agent`. Graphs are also runnable over HTTP
-(`POST /workflows/run|validate`). See `docs/workflow/graphs.md`, specs 0005/0008/0012,
-and ADRs 0011/0012/0016.
+`planner → route → specialised agent`. A `fan_out` branch may itself be a
+composite (spec 0013 / ADR-0018) — an all-agent fan_out keeps byte-identical
+`dispatch_fan_out` parity, while a composite branch runs through its own
+executor. Graphs are also runnable over HTTP (`POST /workflows/run|validate`).
+See `docs/workflow/graphs.md`, specs 0005/0008/0012/0013, and ADRs
+0011/0012/0016/0018.
 
 ```bash
 export MANGOMAS_WORKFLOW__ENABLED=true
@@ -304,12 +307,12 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 12 skills — live in Claude Code and VS Code Copilot |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 13 skills — live in Claude Code and VS Code Copilot |
 | Agents | `.claude/agents/mango-<slug>.md` | 19, flat: 4 routers + 15 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
 | Project settings | `.claude/settings.json` | Allow/Deny + SessionStart/PreToolUse/PostToolUse/Stop hooks |
-| MCP servers | `.mcp.json` | 5 servers: filesystem/git/fetch/sequential-thinking/repomix |
+| MCP servers | `.mcp.json` | 6 servers: filesystem/git/fetch/sequential-thinking/repomix + optional github |
 | Cross-session memory (per-contributor, user-scoped) | external `~/.claude-mem/` | claude-mem — no shared config |
 | PR template + secret-scan job | `.github/PULL_REQUEST_TEMPLATE.md` + `ci.yml` | Mandatory PR checklist |
 
@@ -342,7 +345,8 @@ All gates must pass before merging. The `Makefile` wraps the exact commands
 CI runs, so one target reproduces the whole pipeline locally:
 
 ```powershell
-make gate     # lint + format-check + typecheck + frontmatter + test + coverage + bridge-coverage
+make gate     # validate-config + lint + format-check + typecheck + frontmatter
+              # + protected-paths + test + coverage + bridge-coverage + scripts-coverage
 make help     # list every target
 ```
 
@@ -361,8 +365,8 @@ make precommit       # pre-commit run --all-files
 ```
 
 Per-package floors (`scripts/check_coverage.py` — the authoritative gate):
-`errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy` at
-**100 %**; `composition`, `agents`, `api`, `cli`, `eval`, `rag`, `workflow`
+`errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy`, `_headers`
+at **100 %**; `composition`, `agents`, `api`, `cli`, `eval`, `rag`, `workflow`
 at **95 %**; `adapters` at **85 %**; global at **95 %**. The
 `--cov-fail-under` in `pyproject.toml` mirrors the global floor for local
 runs.
@@ -427,6 +431,9 @@ src/mangomas/
   correlation.py  Per-request correlation id ContextVar + filter
   tenancy.py    Opt-in tenant ContextVar for tenant-scoped storage
   errors.py     Typed error hierarchy (MangomasError subclasses)
+  harness/      Claude Code harness governance (protected paths, ConfigChange audit)
+  _headers.py   Shared HTTP header sanitization (correlation, tenancy)
+  _entry_points.py Shared entry-point iteration for eval plugin discovery
   registry.py   Generic, protocol-checked provider store
   metrics.py    Opt-in OTel MeterProvider + agent metrics
   telemetry.py  OpenTelemetry configuration

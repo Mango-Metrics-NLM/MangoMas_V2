@@ -78,8 +78,15 @@ MangomasError                          → 500
 ├── ToolExecutionError                 → 502
 ├── ToolNotFound                       → 400
 ├── MaxStepsExceeded                   → 422
+├── SecretsResolutionError             → 503   (strict mode only; ADR-0010)
 └── PersistenceError                   → 500
 ```
+
+One more error is mapped in `_ERROR_STATUS` but is **not** in `errors.py`:
+`AuthenticationError` → 401, defined in `api/auth.py` because it is a purely
+API-layer concern (ADR-0014). It is still a `MangomasError` subclass and still
+obeys the same mapping rule — the three-file lock-step below applies to it too,
+with `api/auth.py` standing in for `errors.py`.
 
 ---
 
