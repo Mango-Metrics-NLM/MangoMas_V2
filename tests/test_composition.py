@@ -354,7 +354,7 @@ def _make_traced_stream_wrapper(
     order rather than anything this milestone changed.
     """
     telemetry_module.configure_telemetry()
-    monkeypatch.setattr(telemetry_module, "_build_span_exporter", lambda _exp: exporter)
+    monkeypatch.setattr(telemetry_module.exporters, "_build_span_exporter", lambda _exp: exporter)
 
     llm = FakeLLM(reply=STUB_REPLY, chunks=["hel", "lo", "!"])
     repo = FakeRepository()

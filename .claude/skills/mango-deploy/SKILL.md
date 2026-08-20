@@ -18,7 +18,7 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
 
 - Author/change `deploy/` (Cloud Run service YAML or Terraform, `deploy/README.md`)
 - Author/change `.github/workflows/deploy.yml` (Artifact Registry push + deploy)
-- Add/select a telemetry exporter in `src/mangomas/telemetry.py` via a new
+- Add/select a telemetry exporter in `mangomas.telemetry.exporters` via a new
   `TelemetrySettings` group (`MANGOMAS_TELEMETRY__*`)
 - Route harness `harness.agent_invoke` spans separately via
   `MANGOMAS_HARNESS__METRICS_EXPORTER`

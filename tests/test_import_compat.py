@@ -33,6 +33,14 @@ import mangomas.config as facade
 # Decomposed packages and the group modules their facade re-exports from.
 # Extend this as spec-0015 proceeds through telemetry/ and cli/.
 _FACADES: dict[str, tuple[str, ...]] = {
+    "mangomas.telemetry": (
+        "_state",
+        "exporters",
+        "logs",
+        "meters",
+        "scoped",
+        "tracing",
+    ),
     "mangomas.config": (
         "_root",
         "_shared",
@@ -91,6 +99,31 @@ def _owned_names(package: str, submodule: str) -> list[str]:
 
 
 # ── Self-guards ───────────────────────────────────────────────────────────────
+
+
+# Private names that are deliberately part of a facade's contract because
+# something outside the package reaches them. These are invisible to the
+# public-surface tests above (which filter leading underscores), so a broken
+# re-export here would go unnoticed — and two of them are load-bearing at
+# runtime, not just in tests:
+#
+#   `_state`          — `tests/test_telemetry.py` runs `t._state.configured` in
+#                       a subprocess; two instances would defeat
+#                       `configure_telemetry`'s idempotency guard.
+#   `_scoped_tracers` — cleared between tests by `_reset()`. A facade that
+#                       rebuilt the dict rather than re-exporting the same
+#                       object would leave stale cached providers behind and
+#                       fail order-dependently: green alone, red in a full run.
+_PRIVATE_FACADE_CONTRACT: dict[str, dict[str, str]] = {
+    "mangomas.telemetry": {
+        "_state": "_state",
+        "_scoped_tracers": "_state",
+        "_build_span_exporter": "exporters",
+        "_build_metric_reader": "exporters",
+        "_lazy_cloud_trace_exporter": "exporters",
+        "_lazy_cloud_monitoring_exporter": "exporters",
+    },
+}
 
 
 def test_facade_registry_is_populated() -> None:
@@ -183,3 +216,77 @@ def test_group_modules_do_not_import_the_root() -> None:
             if "config._root" in handle.read():
                 offenders.append(submodule)
     assert offenders == [], f"group modules importing _root: {offenders}"
+
+
+# ── Telemetry facade (spec-0015 R3) ───────────────────────────────────────────
+
+
+@pytest.mark.parametrize("submodule", _FACADES["mangomas.telemetry"])
+def test_telemetry_facade_reexports_are_identical_objects(submodule: str) -> None:
+    facade_mod = importlib.import_module("mangomas.telemetry")
+    home = importlib.import_module(f"mangomas.telemetry.{submodule}")
+    for name in _owned_names("mangomas.telemetry", submodule):
+        if not hasattr(facade_mod, name):
+            continue
+        assert getattr(facade_mod, name) is getattr(home, name), (
+            f"mangomas.telemetry.{name} is not the same object as "
+            f"mangomas.telemetry.{submodule}.{name}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "home"), sorted(_PRIVATE_FACADE_CONTRACT["mangomas.telemetry"].items())
+)
+def test_telemetry_private_contract_names_are_identical(name: str, home: str) -> None:
+    """Private names outside code reaches, asserted by identity.
+
+    `_scoped_tracers` in particular must be the *same dict*: the suite clears it
+    between tests, and clearing a copy would silently leave cached providers
+    live.
+    """
+    facade_mod = importlib.import_module("mangomas.telemetry")
+    home_mod = importlib.import_module(f"mangomas.telemetry.{home}")
+    assert hasattr(facade_mod, name), f"mangomas.telemetry no longer re-exports {name!r}"
+    assert getattr(facade_mod, name) is getattr(home_mod, name)
+
+
+def test_telemetry_base_modules_do_not_import_siblings() -> None:
+    """`_state`, `logs` and `exporters` are the base layer: nothing local.
+
+    Stricter than the config equivalent because telemetry is a layered DAG
+    rather than a flat partition. If a base module grows a sibling import, the
+    layering claim in the package docstring stops being true.
+    """
+    offenders: list[str] = []
+    for submodule in ("_state", "logs", "exporters"):
+        mod = importlib.import_module(f"mangomas.telemetry.{submodule}")
+        source = getattr(mod, "__file__", None)
+        assert source is not None
+        text = Path(source).read_text(encoding="utf-8")
+        if "from mangomas.telemetry" in text or "import mangomas.telemetry" in text:
+            offenders.append(submodule)
+    assert offenders == [], f"base modules importing a sibling: {offenders}"
+
+
+def test_no_telemetry_module_imports_a_cloud_sdk_at_module_scope() -> None:
+    """The `gcp` extra must stay optional: importing the package must not need it.
+
+    `exporters.py` is now the only module allowed to name a cloud SDK, and only
+    inside its `_lazy_*` helpers. A module literally called `exporters` reads
+    like the natural home for such an import, so this is enforced rather than
+    left to review.
+    """
+    package = importlib.import_module("mangomas.telemetry")
+    pkg_dir = Path(str(package.__file__)).parent
+    offenders: list[str] = []
+    for path in sorted(pkg_dir.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:  # module scope only — nested imports are the lazy ones
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            if any(n.startswith("opentelemetry.exporter") for n in names):
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == [], f"cloud SDK imported at module scope: {offenders}"

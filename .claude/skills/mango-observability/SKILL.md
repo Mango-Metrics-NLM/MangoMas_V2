@@ -5,7 +5,7 @@ description: >
   adding a new span around a code path, attaching structured fields to a
   log line, propagating correlation IDs, switching log format
   (text vs json), or diagnosing a missing/duplicate span in the OTel
-  console exporter. Covers the existing telemetry.py bootstrap,
+  console exporter. Covers the existing `mangomas.telemetry` bootstrap,
   TraceContextFilter, CorrelationFilter, and orchestrator span conventions.
 argument-hint: "Describe the code path to instrument or paste a log line that needs more context"
 ---
@@ -53,7 +53,7 @@ RUN_LMSTUDIO=1 python -m pytest tests/lmstudio/test_chat_invoke.py -v -s
 | Set attributes, not log lines | Span attributes: `agent.name`, `messages.count`, `tool.name`, `error.code`. Use `span.set_attribute(...)`. |
 | Structured logs | Always `logger.info(msg, extra={"key": value})`. Never f-string the context into the message. |
 | Correlation propagation | Use `set_correlation_id(...)` from `mangomas.correlation` — `CorrelationFilter` picks it up automatically. |
-| No new exporter | Reuse the singleton bootstrap in `telemetry.py::configure_telemetry`. Do not create a parallel `TracerProvider`. |
+| No new exporter | Reuse the singleton bootstrap in `mangomas.telemetry.tracing::configure_telemetry`. Do not create a parallel `TracerProvider`. |
 | Idempotent setup | `configure_telemetry()` is safe to call multiple times — first call wins, locked via `_TelemetryState`. |
 
 ---
@@ -76,7 +76,13 @@ Spans are always on; **metrics are opt-in** (`MANGOMAS_TELEMETRY__METRICS_ENABLE
 
 | File | Role |
 |------|------|
-| `src/mangomas/telemetry.py` | `get_tracer`, `configure_telemetry`, `configure_metrics`, `get_meter`, `_build_metric_reader`, `JsonFormatter`, `TraceContextFilter` |
+| `mangomas.telemetry` | Facade — every name below stays importable from here (ADR-0019 / spec-0015) |
+| `mangomas.telemetry.tracing` | `configure_telemetry`, `get_tracer` |
+| `mangomas.telemetry.meters` | `configure_metrics`, `get_meter` |
+| `mangomas.telemetry.exporters` | `_build_span_exporter`, `_build_metric_reader`, the `EXPORTER_*` tokens, and the only place a cloud SDK may be named |
+| `mangomas.telemetry.logs` | `JsonFormatter`, `TraceContextFilter` |
+| `mangomas.telemetry.scoped` | `build_scoped_tracer` (harness) |
+| `mangomas.telemetry._state` | Every process-global singleton, including the scoped-tracer cache |
 | `src/mangomas/metrics.py` | Opt-in metric record helpers (`record_agent_invocation` / `_error` / `_duration`) |
 | `src/mangomas/correlation.py` | Correlation `ContextVar` + `CorrelationFilter` (picked up by both formatters) |
 | `src/mangomas/core/orchestrator.py` | Reference span usage in `dispatch`, `dispatch_pipeline`, `dispatch_fan_out`, `stream_dispatch` |

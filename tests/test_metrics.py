@@ -190,7 +190,7 @@ def test_configure_metrics_builds_reader_from_exporter(monkeypatch: pytest.Monke
         builder_calls.append(token)
         return reader
 
-    monkeypatch.setattr(telemetry, "_build_metric_reader", _fake_builder)
+    monkeypatch.setattr(telemetry.exporters, "_build_metric_reader", _fake_builder)
     monkeypatch.setattr(otel_metrics, "set_meter_provider", lambda p: captured.setdefault("p", p))
     telemetry._state.metrics_configured = False
 
@@ -217,7 +217,9 @@ def test_build_metric_reader_unknown_raises() -> None:
 
 
 def test_build_metric_reader_gcp_uses_lazy_exporter(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(telemetry, "_lazy_cloud_monitoring_exporter", ConsoleMetricExporter)
+    monkeypatch.setattr(
+        telemetry.exporters, "_lazy_cloud_monitoring_exporter", ConsoleMetricExporter
+    )
     assert telemetry._build_metric_reader(telemetry.EXPORTER_GCP) is not None
 
 

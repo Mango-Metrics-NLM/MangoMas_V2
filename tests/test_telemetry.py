@@ -68,7 +68,7 @@ def test_build_span_exporter_console_default() -> None:
 def test_build_span_exporter_gcp_uses_lazy_helper(monkeypatch: pytest.MonkeyPatch) -> None:
     """The gcp token delegates to the lazy Cloud Trace helper (no SDK needed)."""
     sentinel = object()
-    monkeypatch.setattr(telemetry, "_lazy_cloud_trace_exporter", lambda: sentinel)
+    monkeypatch.setattr(telemetry.exporters, "_lazy_cloud_trace_exporter", lambda: sentinel)
     assert telemetry._build_span_exporter(telemetry.EXPORTER_GCP) is sentinel
 
 
@@ -88,7 +88,7 @@ def test_configure_telemetry_gcp_exporter_builds_exporter(
         called.append(True)
         return InMemorySpanExporter()
 
-    monkeypatch.setattr(telemetry, "_lazy_cloud_trace_exporter", _fake_lazy)
+    monkeypatch.setattr(telemetry.exporters, "_lazy_cloud_trace_exporter", _fake_lazy)
     _reset()
     telemetry.configure_telemetry(service_name="t", exporter=telemetry.EXPORTER_GCP)
     assert called == [True]
@@ -108,7 +108,7 @@ def test_build_scoped_tracer_routes_to_dedicated_exporter(
 ) -> None:
     """A non-inherit exporter builds a dedicated provider that receives the spans."""
     exporter = InMemorySpanExporter()
-    monkeypatch.setattr(telemetry, "_build_span_exporter", lambda _token: exporter)
+    monkeypatch.setattr(telemetry.exporters, "_build_span_exporter", lambda _token: exporter)
     _reset()
     tracer = telemetry.build_scoped_tracer("harness.test", exporter=telemetry.EXPORTER_CONSOLE)
     with tracer.start_as_current_span("harness.span"):

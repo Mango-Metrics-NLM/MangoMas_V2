@@ -107,7 +107,9 @@ src/mangomas/
 │                   evaluation, harness, workflow, _root (Settings aggregate)
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
-├── telemetry.py    OpenTelemetry setup (console or gcp Cloud Trace exporter)
+├── telemetry/      OpenTelemetry, one module per dependency layer behind a
+│                   permanent facade: _state, logs, exporters (console|gcp),
+│                   tracing, meters, scoped
 ├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
 ├── _entry_points.py Shared entry-point iteration for eval plugin discovery
 └── metrics.py      Instrumentation registry (singleton, double-checked lock)
@@ -375,7 +377,7 @@ when". Name them directly:
 | `mango-llm-adapter-dev` / `mango-storage-adapter-dev` | `adapters/llm/` / `adapters/storage/` |
 | `mango-orchestrator-dev` | `core/orchestrator.py` and the whole dispatch surface, incl. `stream_dispatch` |
 | `mango-error-taxonomy-dev` | `errors.py` + `api/errors.py::_ERROR_STATUS` |
-| `mango-telemetry-exporter-dev` | The OTel exporter seam in `telemetry.py` |
+| `mango-telemetry-exporter-dev` | The OTel exporter seam in `mangomas.telemetry` |
 | `mango-workflow-graph-dev` | `workflow/` — graph model, registry, predicates, executor |
 | `mango-schema-evolution` / `mango-sse-streamer` | HTTP DTO evolution / API-layer SSE framing |
 | `mango-fake-builder` / `mango-hypothesis-fuzz` / `mango-integration-runner` | `tests/fakes.py` / property tests / `tests/integration/` |

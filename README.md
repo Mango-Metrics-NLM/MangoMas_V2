@@ -437,7 +437,8 @@ src/mangomas/
   _entry_points.py Shared entry-point iteration for eval plugin discovery
   registry.py   Generic, protocol-checked provider store
   metrics.py    Opt-in OTel MeterProvider + agent metrics
-  telemetry.py  OpenTelemetry configuration
+  telemetry/    OpenTelemetry configuration, one module per dependency layer
+                behind a permanent re-export facade
 
 tests/
   (root)         Unit tests, named after the module under test
