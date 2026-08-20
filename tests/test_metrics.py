@@ -162,13 +162,46 @@ def test_configure_metrics_idempotent() -> None:
 
 
 def test_configure_metrics_builds_reader_from_exporter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The exporter token reaches `_build_metric_reader`, whose reader is installed.
+
+    Asserts the patched builder was **called**, not merely that some provider
+    was installed. The weaker form (`assert "p" in captured`) passed whether or
+    not the patch landed: `configure_metrics` installs a provider either way,
+    so a broken seam left the test green while quietly constructing a real
+    `PeriodicExportingMetricReader(ConsoleMetricExporter())` — spawning a
+    background export thread that prints metrics to stdout for the rest of the
+    run.
+
+    That matters most for the spec-0015 split: once `_build_metric_reader`
+    moves to `telemetry/exporters.py` and this caller to `telemetry/meters.py`,
+    a facade preserves the function's identity but not the caller's name
+    binding. Recording the call is what makes that failure loud.
+
+    Call recording is deliberately used in preference to inspecting the
+    provider's readers — `MeterProvider._metric_readers` is private SDK state
+    that could be renamed by an OTel upgrade, whereas "our builder ran, with
+    our token" is the seam's actual contract.
+    """
     reader = InMemoryMetricReader()
     captured: dict[str, Any] = {}
-    monkeypatch.setattr(telemetry, "_build_metric_reader", lambda _tok: reader)
-    # telemetry uses the same module object, so patching it here patches the call.
+    builder_calls: list[str] = []
+
+    def _fake_builder(token: str) -> InMemoryMetricReader:
+        builder_calls.append(token)
+        return reader
+
+    monkeypatch.setattr(telemetry, "_build_metric_reader", _fake_builder)
     monkeypatch.setattr(otel_metrics, "set_meter_provider", lambda p: captured.setdefault("p", p))
     telemetry._state.metrics_configured = False
-    telemetry.configure_metrics(enabled=True)  # reader=None → else branch builds one
+
+    telemetry.configure_metrics(
+        enabled=True, exporter=telemetry.EXPORTER_GCP
+    )  # reader=None → else branch builds one
+
+    assert builder_calls == [telemetry.EXPORTER_GCP], (
+        "the patched _build_metric_reader was not reached — configure_metrics "
+        "resolved the name somewhere this patch does not cover"
+    )
     assert "p" in captured
     telemetry._state.metrics_configured = False
 
