@@ -27,19 +27,29 @@ class Floor(NamedTuple):
     label: str
 
 
+# Every directory-scoped floor uses ``**/*.py``, never a flat ``*.py``.
+#
+# ``coverage report --include`` treats ``**`` as "zero or more directories", so
+# the recursive form matches the same top-level files a flat glob does *plus*
+# anything in a subpackage — verified against the live data file, where
+# ``api/*.py`` matches 8 files and ``api/**/*.py`` matches 12.
+#
+# This matters because the failure mode is **fail-open, not fail-closed**: a
+# flat glob that stops matching still reports a percentage and still passes.
+# When ``api/`` grew a ``routes/`` subpackage the flat glob silently stopped
+# measuring it, and ``cli/`` is next — spec-0015 decomposes ``cli/main.py``
+# into a command package. ``tests/test_check_coverage.py`` pins the rule so a
+# flat glob cannot be reintroduced by hand.
 FLOORS: list[Floor] = [
     Floor("src/mangomas/errors.py", 100, "errors"),
     Floor("src/mangomas/registry.py", 100, "registry"),
-    Floor("src/mangomas/core/*.py", 100, "core"),
+    Floor("src/mangomas/core/**/*.py", 100, "core"),
     Floor("src/mangomas/composition.py", 95, "composition"),
-    Floor("src/mangomas/agents/*.py", 95, "agents"),
-    # ``**/*.py`` (not ``*.py``) so the ``api/routes/`` subpackage is measured
-    # too — a flat ``*.py`` glob is non-recursive and would silently exclude
-    # any file added under a new subdirectory.
+    Floor("src/mangomas/agents/**/*.py", 95, "agents"),
     Floor("src/mangomas/api/**/*.py", 95, "api"),
-    Floor("src/mangomas/cli/*.py", 95, "cli"),
+    Floor("src/mangomas/cli/**/*.py", 95, "cli"),
     Floor("src/mangomas/adapters/**/*.py", 85, "adapters"),
-    Floor("src/mangomas/secrets/*.py", 100, "secrets"),
+    Floor("src/mangomas/secrets/**/*.py", 100, "secrets"),
     Floor("src/mangomas/correlation.py", 100, "correlation"),
     Floor("src/mangomas/tenancy.py", 100, "tenancy"),
     Floor("src/mangomas/_headers.py", 100, "headers"),
