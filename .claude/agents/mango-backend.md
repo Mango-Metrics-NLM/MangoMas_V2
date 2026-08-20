@@ -17,7 +17,7 @@ with zero shortcuts on correctness, type safety, or test coverage.
   (`llm/`, `storage/`, `embeddings/`, `vector/`). RAG work belongs to `mango-rag-dev`,
   the eval spine to `mango-eval-dev`, `secrets/` to `mango-secrets-dev`, and the
   shipped agents under `agents/` to `mango-agent-impl-dev`.
-- **All config via `Settings`** in `config.py` — never hard-code URLs, timeouts, or model names.
+- **All config via `Settings`** in `mangomas.config` — never hard-code URLs, timeouts, or model names. The package is one module per domain behind a permanent facade (ADR-0019); cite the dotted import path, not a filename.
 - **Errors**: subclass `MangomasError`; add HTTP mapping in `api/errors.py::_ERROR_STATUS`.
 
 ## Invariants

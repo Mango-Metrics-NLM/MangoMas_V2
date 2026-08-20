@@ -426,7 +426,8 @@ src/mangomas/
   cli/          Typer CLI (chat, history, eval, rag, workflow subcommands)
   eval/         Offline evaluation harness — Scorer protocol, registry, runner, scorers, sinks
   secrets/      SecretsProvider seam (env-var backend; cloud backends pluggable)
-  config.py     Pydantic-settings — all config is env-driven (MANGOMAS_*)
+  config/       Pydantic-settings, one module per domain behind a permanent
+                re-export facade — all config is env-driven (MANGOMAS_*)
   composition.py  Composition root — wires registries at startup
   correlation.py  Per-request correlation id ContextVar + filter
   tenancy.py    Opt-in tenant ContextVar for tenant-scoped storage

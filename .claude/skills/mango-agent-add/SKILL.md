@@ -48,7 +48,7 @@ python -m pytest --tb=short -q
 | Protocol-first | Satisfy `Agent` in `src/mangomas/core/agent.py`. Streaming agents additionally satisfy `StreamingAgent`. |
 | Stateless | All state lives in `AgentContext` (LLM, repo, memory, tools). Never store request-scoped data on the agent instance. |
 | Single registration point | Register via `agent_registry.register("<name>", factory)` in `composition.py` only. |
-| Config-driven settings | Per-agent settings (system prompt, temperature override) live in `AgentSettings` in `config.py`, read at construction time. |
+| Config-driven settings | Per-agent settings (system prompt, temperature override) live in `AgentSettings` (`mangomas.config`, defined in `config/agents.py`), read at construction time. |
 | Structured output | Use Pydantic v2 models for any structured output (see `PlannerAgent.ExecutionPlan`, `ReviewerAgent.ReviewResult`). |
 | Telemetry | Open a span via `get_tracer(__name__).start_as_current_span("agent.<name>.execute")`. |
 | Errors typed | Raise subclasses of `MangomasError` only. Never bare `Exception`. |

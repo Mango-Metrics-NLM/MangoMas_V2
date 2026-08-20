@@ -101,9 +101,10 @@ src/mangomas/
 │   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
 │   └── config_audit.py ConfigChange hook decision table
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
-├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
-│                   LoopSettings, MemorySettings, EmbeddingSettings,
-│                   VectorSettings, RagSettings
+├── config/         Pydantic-settings, one module per domain behind a
+│                   permanent re-export facade (ADR-0019 / spec-0015):
+│                   llm, storage, api, rag, observability, agents, secrets,
+│                   evaluation, harness, workflow, _root (Settings aggregate)
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
 ├── telemetry.py    OpenTelemetry setup (console or gcp Cloud Trace exporter)

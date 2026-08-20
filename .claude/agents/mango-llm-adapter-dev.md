@@ -24,7 +24,7 @@ Use the `mango-adapter` skill for the recipe, the `OpenAICompatHTTPClient` templ
   for HTTP backends, `_vertex_errors.translate_vertex_error(exc, *, project, bad_request_error)`
   for Vertex — these are the mapping, do not restate it in the adapter
 - Registry: `llm_registry` in `src/mangomas/composition.py`
-- Settings: `LLMSettings` in `src/mangomas/config.py` (with `DEFAULT_*` constants)
+- Settings: `LLMSettings` in `mangomas.config` (defined in `config/llm.py`, with its `DEFAULT_*` constants)
 - Secrets: `_resolve_llm_secrets()` — never read `os.environ` directly
 - Fake: `FakeLLM` in `tests/fakes.py` — extend, never `mock.patch`
 

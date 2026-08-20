@@ -62,7 +62,7 @@ rag/                   models, chunker, loader, pipeline, retrieval (imports pro
 | No secrets in logs | `api_key` / bearer tokens never appear in log records or error detail. |
 | Teardown | `Orchestrator.aclose()` closes `ctx.embeddings` and `ctx.vector_store` (fault-tolerant, idempotent) so the LM Studio httpx client and Chroma client don't leak per CLI run. |
 | Async I/O | Wrap sync chromadb / sentence-transformers / file reads in `asyncio.to_thread`. |
-| No hard-coded values | All tunables are `DEFAULT_*` constants in `config.py` (`EmbeddingSettings` / `VectorSettings` / `RagSettings`). |
+| No hard-coded values | All tunables are `DEFAULT_*` constants in `mangomas.config` — this domain's live in `config/rag.py` alongside `EmbeddingSettings` / `VectorSettings` / `RagSettings`. |
 
 ---
 
