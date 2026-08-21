@@ -68,6 +68,6 @@ discovery machinery (groups `mangomas.eval.targets` /
 
 - Code: `src/mangomas/eval/target.py`, `eval/target_registry.py`,
   `eval/targets/`, `eval/runner.py` (`EvalRunner.run`, `_resolve_target`);
-  `eval/dataset_source.py`, `eval/sources/`, `cli/main.py`
+  `eval/dataset_source.py`, `eval/sources/`, `cli/commands/_eval_config.py`
   (`_build_target`, `_build_dataset_source`).
 - Related ADRs: ADR-0003 (eval harness adopt-vs-build).

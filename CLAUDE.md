@@ -96,7 +96,13 @@ src/mangomas/
 │       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
 │       ├── system.py   /healthz + /health, /readyz + /ready, GET /agents
 │       └── workflows.py /workflows/run, /workflows/validate endpoints
-├── cli/main.py     Typer CLI (agents, chat, history, eval + rag/workflow sub-apps)
+├── cli/            Typer CLI, one module per dependency layer behind a
+│                   permanent facade (ADR-0019 / spec-0015 R1):
+│   ├── main.py         FACADE — re-exports + the `python -m` entry block
+│   ├── _app.py         Assembly root: builds `app`, the only registration site
+│   ├── _runtime.py     _build / _close_orchestrator seam + win32 stdout
+│   ├── exit_codes.py   EXIT_RUNTIME_ERROR / EXIT_CONFIG_ERROR / EVAL_GATE_EXIT_CODE
+│   └── commands/       chat (agents/chat/history), eval + _eval_config, rag, workflow
 ├── harness/        Claude Code harness/hook governance (opt-in; ADR-0021)
 │   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
 │   └── config_audit.py ConfigChange hook decision table

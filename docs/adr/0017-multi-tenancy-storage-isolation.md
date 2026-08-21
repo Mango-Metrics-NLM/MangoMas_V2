@@ -65,7 +65,7 @@ everything as `"default"` — byte-identical to today. Per-tenant `AgentSettings
 ## References
 
 - Code: `src/mangomas/tenancy.py`, `src/mangomas/api/middleware.py`
-  (`TenancyMiddleware`), `src/mangomas/config.py::TenancySettings`,
+  (`TenancyMiddleware`), `src/mangomas/config/api.py::TenancySettings`,
   `src/mangomas/adapters/storage/{sqlite.py,postgres.py}`. Pattern cloned from
   `src/mangomas/correlation.py`.
 - Related: spec `specs/0007-multi-tenancy.md`; ADR-0002 (secrets error semantics,

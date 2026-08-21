@@ -13,6 +13,12 @@ changed. The remaining decompositions this ADR scopes —
 (spec-0015) rather than bundled into this one; see that spec for the
 up-to-date remaining scope.
 
+Three of those four have since landed under spec-0015: `config/` (12 domain
+modules), `telemetry/` (6 dependency layers) and `cli/` (a command package
+behind `cli/main.py`). The protected-path `core/tools.py` / `errors.py` batch
+remains deferred. Applying the pattern three more times surfaced one thing the
+"Neutral" note below did not anticipate — see **Amendment** at the end.
+
 ## Context
 
 Spec-0014 decomposes four oversized modules (`cli/main.py`, `config.py`,
@@ -54,6 +60,38 @@ importing `config`.
 - A package shadowing its former module name (`config/`, `telemetry/`) makes
   the facade automatic; flat splits (`cli/`) need explicit named re-exports.
 
+## Amendment — what a facade does *not* preserve
+
+Recorded after applying the pattern to `config/`, `telemetry/` and `cli/`,
+because the original "existing tests pass unmodified and thereby prove the
+facades" claim is true only for a partition and misleading for anything else.
+
+**A facade preserves object identity, not module-global name binding.**
+`monkeypatch.setattr(facade, "helper", ...)` rebinds the name in the facade
+alone; a submodule that calls `helper()` through its own globals never sees it.
+So a patch seam is not carried across a split by the facade — it has to be
+converted, by making the patched callable reachable through a *module object*
+(`_runtime._build()`, `exporters._build_span_exporter(...)`) so one patch point
+still reaches every consumer.
+
+Three splits, three different shapes, and the difference is what decides how
+much work each needs:
+
+| Split | Shape | Seam sites | Consequence |
+|---|---|---|---|
+| `config/` | partition — domains genuinely disjoint | 0 | suite passed unmodified |
+| `telemetry/` | layered DAG over shared mutable state | 6 (1 silent) | needed a pre-split safety commit |
+| `cli/` | one root plus four command groups | 15 (**13 silent**) | needed a guard landed first |
+
+"Silent" is the load-bearing word: a test whose patch does not reach its
+consumer keeps passing, because it asserts something the *real* system also
+produces. Green is not evidence the facade worked. Convert the seam and prove
+the conversion — with a mutation, not an assertion — before moving any code.
+
+`tests/test_import_compat.py` is where the identity half of the contract lives,
+and its `_PRIVATE_FACADE_CONTRACT` exists for exactly this reason: the names a
+seam depends on are private, so the public-surface tests cannot see them.
+
 ## Alternatives Considered
 
 - **Deprecation-warning shims** — rejected: there are no external consumers to
@@ -63,7 +101,10 @@ importing `config`.
 
 ## References
 
-- Code: `src/mangomas/config.py`, `src/mangomas/telemetry.py`,
-  `src/mangomas/cli/main.py`, `src/mangomas/core/tools.py`
+- Code: `src/mangomas/config/`, `src/mangomas/telemetry/`,
+  `src/mangomas/cli/` (all three landed), `src/mangomas/core/tools.py`
+  (deferred)
+- Contract: `tests/test_import_compat.py`, `tests/test_cli_surface.py`,
+  `tests/_seam_guards.py`
 - Related: Spec-0014; `scripts/lint_agent_frontmatter.py` (protected paths)
 - Related ADRs: ADR-0011 (workflow layering), ADR-0015 (backpressure)
