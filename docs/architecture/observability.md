@@ -66,7 +66,7 @@ client ──► X-Request-ID: abc12345 ──► │ AccessLogMiddleware       
   `X-Request-ID`, sets the ContextVar, attaches OTel baggage, and detaches
   cleanly in the `finally` block so the ContextVar does not leak across
   requests.
-- **`src/mangomas/telemetry.py`** — `configure_telemetry()` attaches both
+- **`mangomas.telemetry`** — `configure_telemetry()` attaches both
   `TraceContextFilter` and `CorrelationFilter` to the configured handler,
   so every log record across the codebase carries all three identifiers.
 - **`src/mangomas/api/tracing.py`** — separate `TraceMiddleware` opens a

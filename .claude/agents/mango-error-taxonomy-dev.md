@@ -27,12 +27,20 @@ for the trailer contract and for why a quiet `PreToolUse` hook proves nothing.
 | Error | HTTP |
 |-------|------|
 | `UnknownProvider`, `ConfigError`, `ToolNotFound` | 400 |
+| `AuthenticationError` | 401 |
 | `AgentNotFound` | 404 |
 | `MaxStepsExceeded` | 422 |
 | `PersistenceError`, `MangomasError` | 500 |
 | `LLMBadResponse`, `LLMError`, `ToolExecutionError` | 502 |
-| `LLMUnavailable` | 503 |
+| `LLMUnavailable`, `SecretsResolutionError` | 503 |
 | `LLMTimeout` | 504 |
+
+`AuthenticationError` is the one entry that does **not** live in `errors.py` —
+it is defined in `api/auth.py` (ADR-0014) because it is a purely API-layer
+concern, but it still must appear in `_ERROR_STATUS` like every other
+`MangomasError`. `SecretsResolutionError` shares 503 with `LLMUnavailable`:
+both mean "a dependency this request needed is unreachable right now"
+(ADR-0010).
 
 ## Constraints
 

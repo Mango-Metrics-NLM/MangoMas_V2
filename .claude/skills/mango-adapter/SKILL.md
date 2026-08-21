@@ -52,7 +52,7 @@ python -m pytest --tb=short -q
 |------|--------|
 | Protocol-first | Implement against `@runtime_checkable Protocol` in `adapters/*/base.py`. Never import a concrete adapter from `core/` or `agents/`. |
 | Composition-root registration | Register the factory in `composition.py` via `llm_registry.register("name", factory)` / `_storage_registry.register(...)` / `_memory_registry.register(...)`. No other module registers adapters. |
-| Config-driven | New tunables go in `LLMSettings`, `DBSettings`, `MemorySettings`, or `SecretsSettings` in `config.py`. Never hard-code URLs, model IDs, or timeouts. |
+| Config-driven | New tunables go in `LLMSettings`, `DBSettings`, `MemorySettings`, or `SecretsSettings` in `mangomas.config`. Never hard-code URLs, model IDs, or timeouts. |
 | Secrets seam | API keys / credentials resolve through `_resolve_llm_secrets()` in `composition.py`; do NOT call `os.environ` directly inside the adapter. |
 | Errors typed | Surface failures as `LLMTimeout`, `LLMUnavailable`, `LLMBadResponse`, `LLMError`, or `PersistenceError` — never bare `Exception`. Do not hand-roll the mapping: HTTP backends call `_http_errors.translate_httpx_error`, Vertex backends call `_vertex_errors.translate_vertex_error`. |
 | Reuse the shared base | An OpenAI-compatible HTTP upstream subclasses `adapters/_openai_client.py::OpenAICompatHTTPClient` rather than re-implementing base-URL normalisation, bearer-auth client construction, injected-vs-owned client tracking, and `aclose()`. |
@@ -174,7 +174,7 @@ Activate via `MANGOMAS_LLM__PROVIDER=<provider>`.
    (error translation), `embeddings/_shared.py` (embedding `embed` / `aclose` mixins).
 3. Implement the adapter class in a new file under the matching adapter directory —
    subclass the shared base where one applies; only backend-specific calls are new code.
-4. Add any new tunables to `config.py` (`LLMSettings`/`DBSettings`/etc.) with `DEFAULT_*` constants.
+4. Add any new tunables to `mangomas.config` (`LLMSettings` in `config/llm.py`, `DBSettings` in `config/storage.py`, etc.) with `DEFAULT_*` constants.
 4. Register the factory in `composition.py` only.
 5. Write `tests/test_<adapter>.py` — assert `isinstance(instance, Protocol)` and exercise success + each error path.
 6. If the adapter needs a test double, extend `tests/fakes.py` (don't duplicate inline).

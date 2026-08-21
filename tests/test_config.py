@@ -14,6 +14,25 @@ def _clear_cache() -> None:
     config_module.get_settings.cache_clear()
 
 
+# The config group modules, in dependency order (`_root` last — it imports the
+# others). Derived from the package rather than hard-coded so a new group
+# module is covered by the reload test the moment it is added.
+_CONFIG_SUBMODULES: tuple[str, ...] = (
+    "_shared",
+    "llm",
+    "storage",
+    "api",
+    "rag",
+    "observability",
+    "agents",
+    "secrets",
+    "evaluation",
+    "harness",
+    "workflow",
+    "_root",
+)
+
+
 def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MANGOMAS_LLM__BASE_URL", raising=False)
     s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
@@ -40,8 +59,33 @@ def test_get_settings_is_cached() -> None:
 
 
 def test_module_reimport_safe() -> None:
+    """Re-executing the config modules leaves a usable `Settings`.
+
+    Reloads every group module *and* the facade, in dependency order. Reloading
+    the package alone would not be enough since the spec-0015 split: a package
+    reload re-executes only `__init__.py`, and its `from ... import` statements
+    resolve the submodules straight out of `sys.modules` without re-running
+    them. That would leave this test green while exercising nothing — so the
+    submodules are reloaded explicitly, which is what the original flat module
+    got for free.
+    """
+    for submodule in _CONFIG_SUBMODULES:
+        importlib.reload(importlib.import_module(f"mangomas.config.{submodule}"))
     importlib.reload(config_module)
     assert config_module.get_settings().env in {"local", "dev", "prod"}
+
+
+def test_facade_reload_alone_does_not_reexecute_submodules() -> None:
+    """Pins the semantics the test above compensates for.
+
+    If a future Python or import-system change made a package reload cascade to
+    its submodules, this fails and the explicit loop above becomes redundant —
+    which is worth knowing rather than discovering by accident.
+    """
+    root = importlib.import_module("mangomas.config._root")
+    before = root.get_settings
+    importlib.reload(config_module)
+    assert importlib.import_module("mangomas.config._root").get_settings is before
 
 
 # ── LoopSettings ──────────────────────────────────────────────────────────────

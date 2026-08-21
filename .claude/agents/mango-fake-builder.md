@@ -20,13 +20,23 @@ Use the `mango-testing` skill for the recipe, including the `tests/constants.py`
 | `FakeMemoryRepository` | `MemoryRepository` |
 | `FakeTool` | `Tool` |
 | `FakeSecretsProvider` | `SecretsProvider` |
+| `FakeEmbeddingClient` | `EmbeddingClient` |
+| `FakeVectorStore` | `VectorStoreRepository` |
+| `FakeSink` | `Sink` (eval) |
+| `FakeOrchestrator` | the `Orchestrator` surface an eval target calls |
+| `FakeVertexGenerativeModel` | the injected Vertex SDK seam — an *instance* double, not a factory, so it cannot observe a per-call model change |
 
 ## Invariants
 - All fakes are `@dataclass` with sensible defaults.
 - Fakes record their call history on a `.calls` (or domain-specific) list so
   tests can assert "what was called with what".
 - A fake must satisfy `isinstance(fake, Protocol)` at runtime — add this as a
-  guard test in `tests/test_fakes.py` (if absent) or `test_<module>.py`.
+  guard test in the relevant `test_<module>.py` (there is no `tests/test_fakes.py`;
+  the `LLMClient` guards live in `tests/agents/test_prompt.py`).
+- `isinstance` proves **member presence only** — `@runtime_checkable` never
+  compares signatures. So a protocol guard cannot catch a fake whose method
+  drifted from the protocol's parameters; mypy under `make typecheck` is what
+  actually catches that, because `AgentContext.llm` is typed `LLMClient`.
 - Constants used by fakes live in `tests/constants.py`, not inline literals. That
   file has two halves: a default mirroring `mangomas.config` is **re-exported**
   (`from mangomas.config import DEFAULT_X as DEFAULT_X`), never restated, so it

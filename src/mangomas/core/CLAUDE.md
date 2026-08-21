@@ -1,7 +1,8 @@
 # Core — `src/mangomas/core/`
 
-The stable domain contracts. **Three of the four files here are protected
-paths**, which is the fact worth knowing before you edit anything in this
+The stable domain contracts. **Three of the four modules here are protected
+paths** (`agent.py`, `orchestrator.py`, `tools.py`; `loop.py` is not, and
+`__init__.py` is a re-export facade), which is the fact worth knowing before you edit anything in this
 directory and the one thing you cannot see from inside it.
 
 | File | Protected? | Holds |
@@ -38,9 +39,11 @@ skill for the dispatch surface's shape.
 
 ## Invariants
 
-- `AgentContext` is additive-only. It carries seven optional fields today
-  (`llm`, `repo`, `extras`, `tools`, `memory`, `embeddings`, `vector_store`);
-  adding an eighth must not break a caller constructing it positionally.
+- `AgentContext` is additive-only. It carries seven fields today — `llm` and
+  `repo` are required (no defaults), and five are optional (`extras`, `tools`,
+  `memory`, `embeddings`, `vector_store`). An eighth must be optional and must
+  not break a caller constructing it positionally. `extras` is the sanctioned
+  escape hatch for per-request data that does not deserve a field.
 - `AcceptanceFn` is **sync**. An async one would couple the orchestrator to its
   callers' event loop.
 - `core/` imports only `mangomas.errors` and `mangomas.registry` — never

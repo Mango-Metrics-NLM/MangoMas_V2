@@ -12,7 +12,7 @@ never leaking internal errors or coupling the API layer to concrete adapters.
 ## Surface You Own
 - **App factory**: `mangomas.api.app:create_app` — lifespan-managed, must be used with `--factory`.
 - **Endpoints**: `POST /agents/{name}/invoke` (emits OTel metrics), `POST /agents/{name}/stream` (SSE), `GET /history` (env-bounded `limit`), `POST /workflows/run|validate` (registered via `build_workflow_router`; source resolved by the shared `workflow.resolve_workflow_source`).
-- **Opt-in, default-OFF surfaces** — all installed only when configured, so the default is byte-identical: `require_auth` dependency (`api/auth.py`; bearer / `X-API-Key` via `SecretsProvider`, fail-closed), env-driven CORS, and backpressure (`MaxBodySizeMiddleware` 413 / `ConcurrencyLimitMiddleware` 503). Backpressure is installed *inner* of the log/trace middlewares so rejections still carry `X-Request-ID`. Health/readiness probes are never authenticated.
+- **Opt-in, default-OFF surfaces** — all installed only when configured, so the default is byte-identical: `require_auth` dependency (`api/auth.py`; bearer / `X-API-Key` via `SecretsProvider`, fail-closed), env-driven CORS, backpressure (`MaxBodySizeMiddleware` 413 / `ConcurrencyLimitMiddleware` 503), and `TenancyMiddleware` (ADR-0017 — reads `MANGOMAS_TENANCY__HEADER`, default `X-Tenant-ID`, into a `ContextVar` the storage layer filters on; no route signature changes). Backpressure is installed *inner* of the log/trace middlewares so rejections still carry `X-Request-ID`. Health/readiness probes are never authenticated.
 - **Error mapping**: ALL error → HTTP status mappings live in `api/errors.py::_ERROR_STATUS`. Prefer adding new `MangomasError` subclasses to `errors.py`; a purely api-layer error (e.g. `AuthenticationError`) may live in the api layer but must still be mapped here (see ADR-0014).
 - **No concrete adapters in the API layer** — use `AgentContext` via `Orchestrator`; access only through the composition root.
 - **Lifespan**: wires `build_orchestrator(settings)` on startup, calls `configure_telemetry` + `configure_metrics`; tears down the orchestrator on shutdown.
@@ -28,14 +28,23 @@ async def get_orchestrator(request: Request) -> Orchestrator:
 
 OrchestratorDep = Annotated[Orchestrator, Depends(get_orchestrator)]
 
-# Streaming SSE pattern
+# Streaming SSE pattern — every frame is one `data:` line of JSON.
+# The event name lives INSIDE the payload; there are no `event:` lines.
 from fastapi.responses import StreamingResponse
 
 async def event_generator():
-    async for token in agent.stream(...):
-        yield f"event: token\ndata: {token}\n\n"
-    yield "event: done\ndata: {}\n\n"
+    async for token in stream_iter:
+        payload = {"event": "token", "data": {"content": token}, "content": token}
+        yield f"data: {json.dumps(payload)}\n\n".encode()
+    yield f"data: {json.dumps({'event': 'done'})}\n\n".encode()
 ```
+
+The duplicated top-level `content` is backwards compatibility for consumers
+predating the `event`/`data` structure — see the README's "SSE streaming
+envelope". No error frame exists: `AgentNotFound` is raised before streaming
+starts (so it gets a real status code and a JSON envelope), and a mid-stream
+failure ends the response without a `done` frame. `mango-sse-streamer` owns
+the framing itself.
 
 
 - All schemas use Pydantic v2 (`BaseModel`).

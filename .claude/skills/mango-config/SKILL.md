@@ -49,7 +49,7 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 |------|--------|
 | Env prefix | All env vars use `MANGOMAS_` prefix. |
 | Nested delimiter | Use `__` between group and field: `MANGOMAS_LLM__BASE_URL`, `MANGOMAS_HARNESS__ENABLED`. |
-| `DEFAULT_*` module constants | Every default value is a module-level `DEFAULT_*` constant at the top of `config.py` — the single source of truth. |
+| `DEFAULT_*` module constants | Every default value is a module-level `DEFAULT_*` constant in the group module that owns it (`config/llm.py`, `config/rag.py`, ...) — the single source of truth. |
 | Constants re-export, not restate | `tests/constants.py` re-exports config-mirroring defaults from `mangomas.config` (`from mangomas.config import DEFAULT_X as DEFAULT_X`), so a config change can never silently desync the tests. Genuinely test-scoped values (mock URLs, env-var names, fixtures) stay as literals there. |
 | BaseModel sub-groups | Each settings group is a `BaseModel` (not `BaseSettings`) attached to root `Settings` via `Field(default_factory=...)`. |
 | Backwards-compatible | New fields must have defaults. Renames go through deprecation alias. |
@@ -62,7 +62,9 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 
 | File | Role |
 |------|------|
-| `src/mangomas/config.py` | All Settings classes + module-level `DEFAULT_*` constants |
+| `src/mangomas/config/` | One module per settings domain; each holds its `*Settings` class and the `DEFAULT_*` constants it reads |
+| `src/mangomas/config/__init__.py` | Permanent re-export facade — `from mangomas.config import X` keeps working for every name (ADR-0019 / spec-0015) |
+| `src/mangomas/config/_root.py` | The top-level `Settings` aggregate and `get_settings` |
 | `.env.example` | Documented env vars with defaults |
 | `src/mangomas/secrets/provider.py` | `SecretsProvider` Protocol |
 | `src/mangomas/secrets/env.py` | `EnvSecretsProvider` (default) |
@@ -76,7 +78,7 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 ## Template — Add a New Tunable
 
 ```python
-# src/mangomas/config.py — top section
+# src/mangomas/config/<group>.py — with the class that reads it
 DEFAULT_LLM_RETRY_COUNT: int = 3
 
 # Inside the LLMSettings class
@@ -110,7 +112,7 @@ def test_llm_retry_count_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 ## Template — Add a New Settings Group
 
 ```python
-# src/mangomas/config.py
+# src/mangomas/config/<group>.py
 DEFAULT_FEATURE_ENABLED: bool = False
 DEFAULT_FEATURE_MODE: Literal["a", "b"] = "a"
 
@@ -133,7 +135,7 @@ Env vars: `MANGOMAS_FEATURE__ENABLED=true`, `MANGOMAS_FEATURE__MODE=b`.
 ## Removing an Unused `DEFAULT_*`
 
 A `DEFAULT_*` whose field was dropped is dead weight, but it may still be
-referenced from outside `config.py`. Before deleting:
+referenced from outside the `config/` package. Before deleting:
 
 1. Search every consumer, not just `src/`:
    `grep -rn 'DEFAULT_<NAME>' src tests scripts docs .env.example` — a live hit
@@ -161,7 +163,7 @@ referenced from outside `config.py`. Before deleting:
 ## Constraints
 
 - DO NOT hardcode the default value inside the model — use `DEFAULT_*` constants.
-- DO NOT read `os.environ` directly in any module other than `config.py` and `secrets/env.py`.
+- DO NOT read `os.environ` directly in any module other than the `config/` package and `secrets/env.py`.
 - DO NOT break backwards compatibility — new fields require defaults; renames require alias.
 - DO NOT forget `get_settings.cache_clear()` in tests that set env vars.
 

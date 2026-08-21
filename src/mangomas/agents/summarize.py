@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from mangomas.agents._prompt import resolve_sampling, resolve_system_prompt
+from mangomas.config import DEFAULT_SUMMARIZE_HISTORY_LIMIT
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -18,7 +19,6 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Given a series of conversation turns, produce a short, clear summary of "
     "the key topics discussed and any outcomes or action items identified."
 )
-_DEFAULT_HISTORY_LIMIT: int = 10
 
 
 def _format_turns(turns: list[dict[str, Any]]) -> str:
@@ -56,6 +56,8 @@ class SummarizeAgent:
         Override the default summarization system prompt.
     history_limit:
         Maximum number of past turns to include in the summary context.
+        Precedence: this argument, then ``settings.history_limit``, then
+        :data:`~mangomas.config.DEFAULT_SUMMARIZE_HISTORY_LIMIT`.
     settings:
         Optional per-agent :class:`~mangomas.config.AgentSettings`; its
         ``system_prompt`` field takes precedence over *system_prompt* when set.
@@ -66,13 +68,18 @@ class SummarizeAgent:
     def __init__(
         self,
         system_prompt: str | None = None,
-        history_limit: int = _DEFAULT_HISTORY_LIMIT,
+        history_limit: int | None = None,
         settings: AgentSettings | None = None,
     ) -> None:
         self._system_prompt: str = (
             resolve_system_prompt(system_prompt, settings) or _DEFAULT_SYSTEM_PROMPT
         )
-        self._history_limit: int = history_limit
+        if history_limit is not None:
+            self._history_limit = history_limit
+        elif settings is not None and settings.history_limit is not None:
+            self._history_limit = settings.history_limit
+        else:
+            self._history_limit = DEFAULT_SUMMARIZE_HISTORY_LIMIT
         self._temperature, self._max_tokens = resolve_sampling(settings)
 
     async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:

@@ -66,7 +66,7 @@ python -m pytest --tb=short -q
 | `src/mangomas/core/loop.py` | `AcceptanceFn` type alias |
 | `src/mangomas/agents/_streaming.py` | Shared streaming-fallback helper |
 | `src/mangomas/agents/planner.py` | Structured output for use in pipelines |
-| `src/mangomas/agents/reviewer.py` | Acceptance-loop pattern (`ReviewResult.passes`) |
+| `src/mangomas/agents/reviewer.py` | Acceptance-loop pattern (`ReviewResult.passed`) |
 | `tests/test_topologies.py` | Reference pipeline + fan-out tests |
 | `tests/test_streaming.py` | Reference streaming tests (including fallback) |
 | `tests/test_control_loop.py` | Reference acceptance-loop tests |

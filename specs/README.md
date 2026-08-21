@@ -59,6 +59,7 @@ thinking tool, not a gate.
 | [0016](0016-claude-code-ecosystem-tooling.md) | Claude Code ecosystem tooling integration |
 | [0017](0017-protected-path-governance.md) | Protected-path governance contract |
 | [0018](0018-live-claude-code-corpus.md) | Live Claude Code corpus (`.github/` → `.claude/`) |
+| [0019](0019-corpus-ownership-completion.md) | Corpus ownership completion (the deferred "B5" agents) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -69,4 +70,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0019**; next free ADR: **0025**.
+than reused. Next free spec on this branch: **0020**; next free ADR: **0025**.

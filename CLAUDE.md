@@ -37,8 +37,9 @@ pre-commit run --all-files
 ```
 
 Every CI command is also wrapped as a `Makefile` target — `make gate` runs the
-whole pipeline (lint, format-check, typecheck, frontmatter, test, per-package
-coverage, bridge coverage) in CI's order; `make help` lists the rest. Prefer it
+whole pipeline (validate-config, lint, format-check, typecheck, frontmatter,
+protected-paths, test, per-package coverage, bridge coverage, scripts coverage)
+in CI's order — note `protected-paths` runs locally too, not only in CI; `make help` lists the rest. Prefer it
 over retyping paths: CI's lint surface is
 `src tests scripts eval_harness_bridge/src`, which is wider than the
 `src tests` shown above.
@@ -67,7 +68,7 @@ src/mangomas/
 │   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
 │   ├── _openai_client.py OpenAICompatHTTPClient — shared httpx lifecycle base
 │   │                    (_request / _log_and_translate: POST/GET → raise → log → translate)
-│   ├── llm/            LLMClient protocol + LMStudioAdapter + VertexClient
+│   ├── llm/            LLMClient protocol + LMStudioClient + VertexClient
 │   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
 │   │                   (_shared.py: embed / aclose mixins — backends write embed_batch only)
 │   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
@@ -89,23 +90,26 @@ src/mangomas/
 ├── api/
 │   ├── app.py          FastAPI app factory (lifespan, middleware installation)
 │   ├── errors.py       Error-status mapping, error-envelope builder
-│   ├── models.py       DTO models (WorkflowRunRequest, ValidateRequest/Response)
+│   ├── models.py       DTO models (WorkflowRunRequest, WorkflowValidateRequest/Response)
 │   ├── middleware.py   MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
 │   └── routes/         Endpoint routers by resource
 │       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
-│       ├── system.py   /health, /ready, /list_agents endpoints
+│       ├── system.py   /healthz + /health, /readyz + /ready, GET /agents
 │       └── workflows.py /workflows/run, /workflows/validate endpoints
-├── cli/main.py     Typer CLI (chat, history, eval, rag, workflow commands)
+├── cli/main.py     Typer CLI (agents, chat, history, eval + rag/workflow sub-apps)
 ├── harness/        Claude Code harness/hook governance (opt-in; ADR-0021)
 │   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
 │   └── config_audit.py ConfigChange hook decision table
 ├── composition.py  Composition root — wires settings → adapters → orchestrator
-├── config.py       Pydantic-settings: Settings, LLMSettings, DBSettings,
-│                   LoopSettings, MemorySettings, EmbeddingSettings,
-│                   VectorSettings, RagSettings
+├── config/         Pydantic-settings, one module per domain behind a
+│                   permanent re-export facade (ADR-0019 / spec-0015):
+│                   llm, storage, api, rag, observability, agents, secrets,
+│                   evaluation, harness, workflow, _root (Settings aggregate)
 ├── errors.py       Typed error hierarchy (MangomasError subclasses)
 ├── registry.py     Registry[T] — generic, protocol-checked provider store
-├── telemetry.py    OpenTelemetry setup (OTLP or console exporter)
+├── telemetry/      OpenTelemetry, one module per dependency layer behind a
+│                   permanent facade: _state, logs, exporters (console|gcp),
+│                   tracing, meters, scoped
 ├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
 ├── _entry_points.py Shared entry-point iteration for eval plugin discovery
 └── metrics.py      Instrumentation registry (singleton, double-checked lock)
@@ -198,7 +202,8 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` | `5` (`DEFAULT_TOOL_MAX_STEPS`) | `ToolAgent`-only: cap on total LLM calls per request |
-| `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Reserved — not read by any agent yet; per-agent model selection needs a composition-layer change (spec-0015) |
+| `MANGOMAS_AGENTS__<NAME>__HISTORY_LIMIT` | `10` (`DEFAULT_SUMMARIZE_HISTORY_LIMIT`) | `SummarizeAgent`-only: persisted turns loaded into the summary context |
+| `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Reserved — not read by any agent yet; per-agent model selection needs a composition-layer change (a per-agent `LLMClient` rather than one shared `ctx.llm`), recorded in spec-0014 R4 |
 
 ---
 
@@ -306,13 +311,15 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
 - **Coverage gate**: `scripts/check_coverage.py` is the single source of truth —
   95 % global minimum plus per-package floors
-  (`errors`/`registry`/`core`/`secrets`/`correlation` = 100 %,
-  `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
+  (`errors`/`registry`/`core`/`secrets`/`correlation`/`tenancy`/`_headers`
+  = 100 %, `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
   `pyproject.toml` mirrors the global floor.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
 - **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
-- **Hypothesis fuzz** tests live in `test_tools.py`
+- **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
+  and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
+  since `hypothesis` is an optional dev dependency)
 - **Integration tests** in `tests/integration/`; gated by `RUN_INTEGRATION=1`
 
 ---
@@ -341,7 +348,7 @@ CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
 
 ## Claude Code Agents
 
-19 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
+23 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
 hierarchy. Claude Code resolves an agent by its `name:` field, which must equal
 the filename stem; the `mango-` prefix separates the committed corpus from
 personal agents `/agents` writes into the same directory.
@@ -357,7 +364,7 @@ or `Bash`.
 | `mango-api-dev` | Adding or changing an endpoint, evolving a request/response schema, API-layer integration |
 | `mango-test-engineer` | Adding or fixing tests, diagnosing a coverage gap, choosing a test surface |
 
-**Fifteen specialists**, invoked *by name*, not by topic match — their
+**Nineteen specialists**, invoked *by name*, not by topic match — their
 descriptions deliberately carry no trigger conditions, because auto-delegation
 matches the condition and never reads a modal verb like "invoke explicitly
 when". Name them directly:
@@ -370,10 +377,14 @@ when". Name them directly:
 | `mango-llm-adapter-dev` / `mango-storage-adapter-dev` | `adapters/llm/` / `adapters/storage/` |
 | `mango-orchestrator-dev` | `core/orchestrator.py` and the whole dispatch surface, incl. `stream_dispatch` |
 | `mango-error-taxonomy-dev` | `errors.py` + `api/errors.py::_ERROR_STATUS` |
-| `mango-telemetry-exporter-dev` | The OTel exporter seam in `telemetry.py` |
+| `mango-telemetry-exporter-dev` | The OTel exporter seam in `mangomas.telemetry` |
 | `mango-workflow-graph-dev` | `workflow/` — graph model, registry, predicates, executor |
 | `mango-schema-evolution` / `mango-sse-streamer` | HTTP DTO evolution / API-layer SSE framing |
 | `mango-fake-builder` / `mango-hypothesis-fuzz` / `mango-integration-runner` | `tests/fakes.py` / property tests / `tests/integration/` |
+| `mango-rag-dev` | `rag/` + the `adapters/embeddings/` and `adapters/vector/` seams |
+| `mango-eval-dev` | The `eval/` spine — runner, gates, registries, payload, discovery |
+| `mango-secrets-dev` | `secrets/` — protocol, env/GCP backends, strict-mode semantics |
+| `mango-agent-impl-dev` | The built-in agents under `agents/` + `_prompt` / `_structured` / discovery |
 
 **Agents vs skills.** They are different things and the tie-break matters:
 **skills own procedure** (the recipe for doing X), **agents own a surface** —
@@ -559,7 +570,10 @@ Off by default (`MANGOMAS_WORKFLOW__ENABLED=false`), so existing deployments see
 no change. A `WorkflowGraph` (JSON) is a bounded tree compiled to the imperative
 dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop` / `branch`
 (predicate-routed selection; spec 0012 / ADR-0016), where every leaf is one public
-dispatch call (no reimplemented loop/gather). See spec 0005 / ADR-0011 and
+dispatch call and the acceptance loop is never reimplemented. A `fan_out` branch
+may itself be a composite (spec 0013 / ADR-0018): the all-agent case delegates to
+`dispatch_fan_out` verbatim, while a composite branch runs via `resolve_executor`
+under `asyncio.gather`. See spec 0005 / ADR-0011 and
 `docs/workflow/graphs.md`.
 
 - **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;

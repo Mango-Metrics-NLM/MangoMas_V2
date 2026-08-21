@@ -34,6 +34,9 @@ from mangomas.config import (
     DEFAULT_RAG_MIN_CHUNK_WORDS as DEFAULT_RAG_MIN_CHUNK_WORDS,
 )
 from mangomas.config import (
+    DEFAULT_SUMMARIZE_HISTORY_LIMIT as DEFAULT_SUMMARIZE_HISTORY_LIMIT,
+)
+from mangomas.config import (
     DEFAULT_VECTOR_COLLECTION as DEFAULT_VECTOR_COLLECTION,
 )
 from mangomas.config import (
@@ -117,6 +120,16 @@ TEST_TOOL_MAX_STEPS_OVERRIDE: int = 3
 TEST_TOOL_SYSTEM_PROMPT: str = "Answer like a pirate."
 # Env var driving AgentSettings.max_tool_steps for the "tool" agent.
 TOOL_MAX_STEPS_ENV: str = "MANGOMAS_AGENTS__TOOL__MAX_TOOL_STEPS"
+
+# ── SummarizeAgent history window ─────────────────────────────────────────────
+# Turn-window values used by tests (distinct from the config default so an
+# override is observable), mirroring the TEST_TOOL_MAX_STEPS pair above.
+TEST_HISTORY_LIMIT: int = 2
+TEST_HISTORY_LIMIT_OVERRIDE: int = 3
+# Number of turns seeded before asserting the window actually caps the fetch.
+TEST_HISTORY_SEEDED_TURNS: int = 5
+# Env var driving AgentSettings.history_limit for the "summarize" agent.
+SUMMARIZE_HISTORY_LIMIT_ENV: str = "MANGOMAS_AGENTS__SUMMARIZE__HISTORY_LIMIT"
 
 # ── Harness frontmatter linter fixtures ───────────────────────────────────────
 VALID_AGENT_FRONTMATTER: str = """\
@@ -394,14 +407,16 @@ RETIRED_AGENTS_DIR_RELPATH: str = ".github/agents"
 # reintroduce the convention — a file nothing loads cannot be kept honest.
 RETIRED_STRAY_AGENT_FILENAME: str = "agent.md"
 
-# The 19 agents, by slug. Set equality, so a change names what appeared or
+# The 23 agents, by slug. Set equality, so a change names what appeared or
 # vanished and editing this tuple is the review record.
 EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-adr-author",
+    "mango-agent-impl-dev",
     "mango-api-dev",
     "mango-architect",
     "mango-backend",
     "mango-error-taxonomy-dev",
+    "mango-eval-dev",
     "mango-fake-builder",
     "mango-hypothesis-fuzz",
     "mango-integration-runner",
@@ -410,7 +425,9 @@ EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-orchestrator-dev",
     "mango-pr-watcher",
     "mango-protocol-auditor",
+    "mango-rag-dev",
     "mango-schema-evolution",
+    "mango-secrets-dev",
     "mango-sse-streamer",
     "mango-storage-adapter-dev",
     "mango-telemetry-exporter-dev",
@@ -423,17 +440,21 @@ ROUTER_AGENT_SLUGS: frozenset[str] = frozenset(
     {"mango-architect", "mango-backend", "mango-api-dev", "mango-test-engineer"}
 )
 # Agents holding Edit and/or Write. A reviewed-change gate, NOT a substitute
-# for a deny rule: it covers 12 of 19 and only fails when the set changes.
+# for a deny rule: it covers 16 of 23 and only fails when the set changes.
 WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adr-author",
+        "mango-agent-impl-dev",
         "mango-error-taxonomy-dev",
+        "mango-eval-dev",
         "mango-fake-builder",
         "mango-hypothesis-fuzz",
         "mango-integration-runner",
         "mango-llm-adapter-dev",
         "mango-orchestrator-dev",
+        "mango-rag-dev",
         "mango-schema-evolution",
+        "mango-secrets-dev",
         "mango-sse-streamer",
         "mango-storage-adapter-dev",
         "mango-telemetry-exporter-dev",
@@ -480,14 +501,23 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 # steps are their own operating loop, not a recipe a skill owns.
 AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
+    "mango-agent-impl-dev": ("mango-agent-add",),
     "mango-error-taxonomy-dev": ("mango-error",),
+    "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
     "mango-hypothesis-fuzz": ("mango-testing",),
     "mango-integration-runner": ("mango-testing",),
     "mango-llm-adapter-dev": ("mango-adapter",),
     "mango-orchestrator-dev": ("mango-topology", "mango-observability"),
     "mango-pr-watcher": ("mango-release",),
+    "mango-rag-dev": ("mango-rag",),
     "mango-schema-evolution": ("mango-agent-add",),
+    # Two skills, deliberately: `mango-adapter` supplies the Protocol-first
+    # contract and the fake pattern, but its "register the factory" rule and
+    # its async-methods rule are both wrong for this surface (the secrets
+    # registry stores instances, and the protocol is sync-only). `mango-config`
+    # is what actually documents the SecretsProvider seam.
+    "mango-secrets-dev": ("mango-adapter", "mango-config"),
     "mango-sse-streamer": ("mango-topology",),
     "mango-storage-adapter-dev": ("mango-adapter",),
     "mango-telemetry-exporter-dev": ("mango-observability", "mango-deploy"),
@@ -587,3 +617,77 @@ PATH_SCOPED_MCP_SERVERS: tuple[str, ...] = ("filesystem", "git")
 # `${VAR:-default}` form: without the default an unset variable is passed
 # through as a literal string rather than failing, which is the dangerous case.
 MCP_PROJECT_DIR_SCOPE: str = "${CLAUDE_PROJECT_DIR:-.}"
+
+# ── CLI public surface (tests/test_cli_surface.py) ────────────────────────────
+# `mangomas` is a console script (`pyproject.toml` -> `mangomas.cli.main:app`),
+# so its command tree and flags are a user-facing contract. Recorded from the
+# live app and then reviewed — editing these tuples is the review record for a
+# surface change, exactly like EXPECTED_AGENT_SLUGS is for the corpus.
+EXPECTED_CLI_ROOT_COMMANDS: tuple[str, ...] = (
+    "agents",
+    "chat",
+    "eval",
+    "history",
+    "rag",
+    "workflow",
+)
+EXPECTED_CLI_COMMANDS: tuple[str, ...] = (
+    "agents",
+    "chat",
+    "eval",
+    "history",
+    "rag",
+    "rag ingest",
+    "rag query",
+    "workflow",
+    "workflow run",
+    "workflow validate",
+)
+# Long-form options plus positional arguments, per command. Short aliases (-a,
+# -v) are deliberately excluded: they are conveniences, and pinning them would
+# make the set churn without protecting anything a script depends on.
+EXPECTED_CLI_PARAMS: dict[str, tuple[str, ...]] = {
+    "agents": (),
+    "chat": ("--agent", "--system", "--verbose", "<message>"),
+    "eval": (
+        "--agent",
+        "--allow-new-failures",
+        "--baseline",
+        "--dataset",
+        "--dataset-source",
+        "--fail-fast",
+        "--fail-on-error",
+        "--gate",
+        "--max-mean-score-drop",
+        "--max-pass-rate-drop",
+        "--min-mean-score",
+        "--min-pass-rate",
+        "--no-allow-new-failures",
+        "--no-fail-fast",
+        "--no-fail-on-error",
+        "--no-gate",
+        "--output-json",
+        "--parallelism",
+        "--scorer",
+        "--target",
+        "--verbose",
+    ),
+    "history": ("--limit", "--verbose"),
+    "rag": (),
+    "rag ingest": ("--verbose", "<path>"),
+    "rag query": ("--top-k", "--verbose", "<text>"),
+    "workflow": (),
+    "workflow run": ("--definition", "--verbose", "<message>"),
+    "workflow validate": ("--definition", "--verbose"),
+}
+
+# `--help` listing order, per group. Registration order, NOT alphabetical:
+# the root is agents/chat/history/eval/rag/workflow and `workflow` is
+# validate/run. Typer emits registered_commands before registered_groups, so
+# sub-apps always follow root commands; the order within each bucket is a
+# deliberate choice and a user-visible surface.
+EXPECTED_CLI_HELP_ORDER: dict[str, tuple[str, ...]] = {
+    "<root>": ("agents", "chat", "history", "eval", "rag", "workflow"),
+    "rag": ("ingest", "query"),
+    "workflow": ("validate", "run"),
+}

@@ -4,7 +4,7 @@ description: >
   Cloud deployment and telemetry-exporter release workflow for Mango-Mas V2.
   Use when: authoring the Cloud Run service definition, the deploy/ env-var
   contract, or the GitHub Actions deploy workflow; selecting an OpenTelemetry
-  exporter (console vs OTLP vs Cloud Trace) via MANGOMAS_TELEMETRY__EXPORTER;
+  exporter (console vs gcp Cloud Trace) via MANGOMAS_TELEMETRY__EXPORTER;
   routing harness spans via MANGOMAS_HARNESS__METRICS_EXPORTER; or reviewing a
   container for Cloud Run readiness (non-root, $PORT-aware, /healthz probe).
   Covers ADR-0001's swap matrix, Workload Identity Federation (no service-account
@@ -18,7 +18,7 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
 
 - Author/change `deploy/` (Cloud Run service YAML or Terraform, `deploy/README.md`)
 - Author/change `.github/workflows/deploy.yml` (Artifact Registry push + deploy)
-- Add/select a telemetry exporter in `src/mangomas/telemetry.py` via a new
+- Add/select a telemetry exporter in `mangomas.telemetry.exporters` via a new
   `TelemetrySettings` group (`MANGOMAS_TELEMETRY__*`)
 - Route harness `harness.agent_invoke` spans separately via
   `MANGOMAS_HARNESS__METRICS_EXPORTER`
@@ -44,7 +44,7 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
 |------|--------|
 | Additive & default-OFF | Absent `MANGOMAS_TELEMETRY__EXPORTER` → identical exporter as today. Absent `MANGOMAS_HARNESS__METRICS_EXPORTER` → harness spans fall through to the app exporter. |
 | Lazy SDK | `opentelemetry-exporter-gcp-trace` imported inside a factory helper (`# noqa: PLC0415`, `# pragma: no cover - requires extra`) behind the `gcp` extra. Module imports without the extra. |
-| No hard-coded values | Endpoints, sample rates, project/location are `DEFAULT_*` constants surfaced via `TelemetrySettings` / `HarnessSettings`. |
+| No hard-coded values | Any tunable this seam grows is a `DEFAULT_*` constant surfaced via `TelemetrySettings` / `HarnessSettings`. That surface is deliberately small today: `TelemetrySettings` carries only `exporter` and `metrics_enabled`, since Cloud Trace takes project and credentials from ADC. |
 | Gated tests | Real Cloud Trace export is unit-tested with the SDK mocked and gated by `RUN_GCP_TRACE=1`, mirroring `RUN_VERTEX` / `RUN_GCP_SECRETS`. End-to-end cloud deploy is **not** claimed in this repo. |
 | No cloud provisioning | This repo creates no GCP resources (ADR-0001); `deploy/` provides artifacts + contract only. |
 
@@ -52,8 +52,10 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
 
 ## Configuration
 
-`MANGOMAS_TELEMETRY__EXPORTER` (`console` | `otlp` | `gcp`), plus exporter
-endpoint/sample-rate fields on `TelemetrySettings`.
+`MANGOMAS_TELEMETRY__EXPORTER` (`console` | `gcp`) — those are the only two
+valid tokens; any other value raises `ConfigError`. There are no exporter
+endpoint or sample-rate fields: `TelemetrySettings` is `exporter` +
+`metrics_enabled` only.
 `MANGOMAS_HARNESS__METRICS_EXPORTER` selects a separate exporter for
 `harness.agent_invoke` spans; default falls through to the application exporter.
 Cloud Run runtime reads the standard `MANGOMAS_*` groups (LLM, DB, SECRETS,

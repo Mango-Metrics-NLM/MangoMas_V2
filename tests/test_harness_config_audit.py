@@ -32,16 +32,22 @@ _SCRIPT_PATH: Final[Path] = _REPO_ROOT / "scripts" / "harness_config_audit.py"
 # `get_settings.cache_clear()` before every test; tests below that change an
 # env var mid-test still call it again inline so the new value is observed.
 #
-# Accessed as `config_module.get_settings`, never imported by name: this
-# module is collected (imported once) well before any test runs, but
-# `tests/test_config.py::test_module_reimport_safe` calls
-# `importlib.reload(mangomas.config)` during the *run* phase, which rebinds
-# `mangomas.config.get_settings` to a brand-new function with its own
-# separate `lru_cache`. A name-imported `get_settings` here would go stale
-# at that point — `.cache_clear()` on it would no longer affect what
-# `harness_config_audit.py`'s own `from mangomas.config import get_settings`
-# (evaluated fresh, at call time) actually resolves to. Module-attribute
-# access always reads whatever is currently in `sys.modules`.
+# Accessed as `config_module.get_settings`, never imported by name, so that
+# `.cache_clear()` here always reaches whatever `harness_config_audit.py`'s own
+# call-time `from mangomas.config import get_settings` resolves to. Module
+# attribute access reads current `sys.modules` state; a name bound at import
+# time would not.
+#
+# Corrected after the spec-0015 split (this used to say reload "rebinds
+# `get_settings` to a brand-new function with its own separate `lru_cache`"):
+# `mangomas.config` is now a package, and reloading it re-executes only
+# `__init__.py`, whose `from ... import` pulls `_root` out of `sys.modules`
+# without re-running it. Reload therefore rebinds the *same* function object
+# with the *same* cache. `tests/test_config.py::test_module_reimport_safe`
+# reloads the group modules explicitly to restore the old guarantee, and a
+# companion test pins the package-reload semantics this paragraph describes.
+# Module-attribute access remains the right call either way — it is correct
+# under both behaviours, which is precisely why it should stay.
 
 
 def test_extract_source_tries_each_candidate_key() -> None:

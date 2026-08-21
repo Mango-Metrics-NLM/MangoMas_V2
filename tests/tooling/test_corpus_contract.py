@@ -212,7 +212,7 @@ def test_agent_and_skill_namespaces_are_disjoint() -> None:
 
 def test_write_capable_agents_match_the_reviewed_set() -> None:
     """A reviewed-change gate, deliberately not a deny-list substitute: it
-    covers 12 of 19 and only fires when the set changes. Granting Edit or Write
+    covers 16 of 23 and only fires when the set changes. Granting Edit or Write
     to another agent should be a decision someone made, not a diff someone
     skimmed."""
     write_capable = {

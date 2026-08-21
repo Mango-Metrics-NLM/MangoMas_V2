@@ -46,8 +46,8 @@ mangomas workflow run "ship it" -f graph.json
 
 | Rule | Detail |
 |------|--------|
-| Bounded tree | Composition lives only in `sequence`; `fan_out` fans to agents; `loop` wraps one agent; `branch` selects one child. Acyclic by construction — no cycles. |
-| Every leaf is one dispatch call | `agent`→`dispatch`, `fan_out`→`dispatch_fan_out`+join, `loop`→`dispatch(acceptance_fn=…, max_steps=…)`. `branch` runs the first matching case's child via `resolve_executor` (no dispatch of its own). |
+| Bounded tree | `sequence` threads steps; `fan_out` fans to any `WorkflowStep` (agent **or** composite, per ADR-0018); `loop` wraps one agent *name*; `branch` selects one child. `SequenceNode` is excluded from `WorkflowStep`, which keeps nesting bounded and acyclic by construction. |
+| Every leaf is one dispatch call | `agent`→`dispatch`, `fan_out`→`dispatch_fan_out`+join, `loop`→`dispatch(acceptance_fn=…, max_steps=…)`. `branch` runs the first matching case's child via `resolve_executor` (no dispatch of its own). **One deliberate relaxation** (ADR-0018): an all-`agent` fan_out keeps the `dispatch_fan_out` parity fast-path, but a *composite* fan_out runs its branches through `resolve_executor` under `asyncio.gather`, because `dispatch_fan_out` is name-based and cannot take a node. |
 | Sequence threading | A step's `content` becomes the next step's user message; `metadata` threads too — identical to `Orchestrator.dispatch_pipeline`. |
 | Metadata-transparent | An all-agent `sequence` result **equals** `dispatch_pipeline([names], request)` (full model, incl. metadata). |
 | Fan-out reduce | `first` returns the first branch verbatim; `concat` newline-joins `content` (`agent="fan_out"`, empty metadata). |
@@ -132,7 +132,9 @@ mangomas workflow run "ship it" -f graph.json
   needs is re-stated under `workflow/` (and, if more than one workflow module wants
   it, extracted into a shared `workflow/` module such as `nodes/_factory.py` — never
   duplicated within the package).
-- DO NOT nest a `sequence` inside a `sequence`, or a composite inside `fan_out`/`loop` (v1 bounds nesting).
+- DO NOT nest a `sequence` inside a `sequence`, or a composite inside `loop`
+  (`LoopNode.agent` is an agent *name*, not a node). A composite **is** allowed
+  inside `fan_out` — that shipped in ADR-0018 / spec 0013.
 
 ---
 

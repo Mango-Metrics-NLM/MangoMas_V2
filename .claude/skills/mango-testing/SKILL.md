@@ -70,7 +70,7 @@ mypy
 ```python
 # tests/fakes.py
 FakeLLM(reply="text", replies=["step1", "step2"])  # .calls: list[list[Message]]
-FakeRepository()        # .turns: list; satisfies TurnRepository
+FakeRepository()        # ._turns: list; satisfies TurnRepository
 FakeTool(name="echo", result="echo-result")  # satisfies Tool protocol
 FakeMemoryRepository()  # .episodic_entries, .index_content, .closed
 ```
@@ -101,7 +101,7 @@ def test_<scenario>_<expected_outcome>() -> None:
 
 @pytest.mark.asyncio  # NOTE: omit this — asyncio_mode=auto handles it
 async def test_<async_scenario>() -> None:
-    llm = FakeLLM(reply=constants.DEFAULT_LLM_REPLY)
+    llm = FakeLLM(reply=constants.STUB_REPLY)
     ctx = AgentContext(llm=llm, repo=None)
     ...
 ```

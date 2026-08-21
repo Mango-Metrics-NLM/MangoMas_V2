@@ -17,7 +17,9 @@ Use the `mango-adapter` skill for the recipe and the reference table.
 - Reference: `src/mangomas/adapters/storage/sqlite.py`,
   `src/mangomas/adapters/storage/memory.py`
 - Registry: `_storage_registry`, `_memory_registry` in `composition.py`
-- Settings: `DBSettings`, `MemorySettings` in `config.py`
+- Settings: `DBSettings`, `MemorySettings`, `TenancySettings` in `mangomas.config`
+- Tenancy: the `tenant` column and its `WHERE tenant = ?` row filter in both
+  `sqlite.py` and `postgres.py` (ADR-0017 / spec 0007)
 - Errors: `PersistenceError` (500)
 - Fake: `FakeRepository`, `FakeMemoryRepository` in `tests/fakes.py`
 
@@ -27,6 +29,14 @@ Use the `mango-adapter` skill for the recipe and the reference table.
   Serialise writes — see `SQLiteRepository`'s `threading.Lock` for the pattern.
 - Use `asyncio.to_thread(...)` for synchronous client libraries; never block
   the event loop.
+- Tenant scoping is a **row filter, not a signature change**. `save_turn` and
+  `list_turns` read the tenant from a `ContextVar` (`mangomas.tenancy`), so the
+  `TurnRepository` protocol is untouched and a single-tenant deployment is
+  byte-identical. Every new query in a tenant-aware backend must carry the
+  filter, or it silently reads across tenants.
+- A pre-tenancy table is migrated in place: `_ensure_tenant_column` adds the
+  column idempotently, defaulting existing rows to `DEFAULT_TENANT`. A new
+  backend needs the equivalent, or enabling tenancy breaks its existing data.
 
 ## Constraints
 
