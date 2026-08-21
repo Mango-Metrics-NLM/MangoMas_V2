@@ -25,7 +25,10 @@ below are what that skill does not cover: the shape of this code.
 - `HarnessSettings` in `mangomas.config`
 - Tests: `tests/harness/`, `tests/test_check_protected_paths.py`,
   `tests/test_lint_agent_frontmatter.py`, `tests/test_harness_config_audit.py`,
-  `tests/test_harness_session_start.py`
+  `tests/test_harness_session_start.py`, `tests/tooling/test_corpus_contract.py`
+  (only its live-corpus schema-lint and `AGENT_SKILL_OWNERS` resolution
+  tests — the rest of that file is the corpus roster/identity contract, not
+  this agent's surface)
 
 `_HarnessOrchestrator` and the `harness.agent_invoke` span live in
 `composition.py` and belong to `mango-telemetry-exporter-dev`.
