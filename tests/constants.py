@@ -384,8 +384,8 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # could not do before, so drift surfaced only at `make gate`. `-I{}`
         # replaces the bare `xargs` so both commands see the same argument.
         "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path "
-        "| xargs -r -I{} sh -c 'python -m ruff check --fix \"{}\" >/dev/null 2>&1; "
-        "python -m ruff format \"{}\" >/dev/null 2>&1' || true",
+        '| xargs -r -I{} sh -c \'python -m ruff check --fix "{}" >/dev/null 2>&1; '
+        'python -m ruff format "{}" >/dev/null 2>&1\' || true',
     ),
     (
         # spec-0020: `make typecheck format-check` added ahead of the suite.
