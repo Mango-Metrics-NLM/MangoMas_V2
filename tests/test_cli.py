@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 from typer.testing import CliRunner
@@ -56,11 +57,19 @@ def test_chat_command_with_system(runner: CliRunner) -> None:
     assert result.exit_code == 0
 
 
-def test_chat_command_verbose(runner: CliRunner) -> None:
-    """--verbose flag sets logging to DEBUG without crashing."""
+def test_chat_command_verbose_requests_debug_logging(
+    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+) -> None:
+    """`--verbose` asks for DEBUG logging, and the command still succeeds.
+
+    The assertion on `basic_config_calls` is the part that makes the name true.
+    Without it this passed with the `if verbose:` branch deleted — the docstring
+    used to claim "sets logging to DEBUG" while checking only an exit code.
+    """
     result = runner.invoke(cli_main.app, ["chat", "hello", "--verbose"])
     assert result.exit_code == 0
     assert STUB_REPLY in result.stdout
+    assert basic_config_calls == [{"level": logging.DEBUG}]
 
 
 def test_history_command(runner: CliRunner) -> None:
@@ -75,10 +84,18 @@ def test_history_command(runner: CliRunner) -> None:
     assert parsed["agent"] == "chat"
 
 
-def test_history_verbose(runner: CliRunner) -> None:
+def test_history_verbose_requests_debug_logging(
+    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+) -> None:
+    """`history --verbose` asks for DEBUG logging.
+
+    The seeding `chat` invocation runs without `--verbose`, so it contributes
+    nothing to the recording — which is itself the negative half of the check.
+    """
     runner.invoke(cli_main.app, ["chat", "hello"])
     result = runner.invoke(cli_main.app, ["history", "--verbose"])
     assert result.exit_code == 0
+    assert basic_config_calls == [{"level": logging.DEBUG}]
 
 
 def test_history_no_repo_exits_nonzero(
