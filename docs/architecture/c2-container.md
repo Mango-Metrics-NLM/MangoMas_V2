@@ -11,7 +11,7 @@ C4Container
 
   Container_Boundary(mangomas_boundary, "Mango-Mas V2") {
     Container(api, "FastAPI Application", "Python / FastAPI", "Exposes REST endpoints. Factory: create_app(). Middleware: AccessLogMiddleware, TraceMiddleware. Manages lifespan: startup wires adapters, shutdown closes clients.")
-    Container(cli, "Typer CLI", "Python / Typer", "mangomas chat (single-turn), mangomas history (turn log), mangomas eval (offline harness), mangomas rag ingest|query, mangomas workflow validate|run. Shares the same composition root as the API.")
+    Container(cli, "Typer CLI", "Python / Typer", "A package behind a permanent re-export facade (ADR-0019 / spec-0015 R1) — main.py is the facade the console script resolves. mangomas chat (single-turn), mangomas history (turn log), mangomas eval (offline harness), mangomas rag ingest|query, mangomas workflow validate|run. Shares the same composition root as the API.")
     Container(eval_harness, "Evaluation Harness", "Python package (src/mangomas/eval/)", "Drives a JSONL dataset through the orchestrator and aggregates per-row Scorer results. In-process; no extra runtime dependency. Surfaced via the CLI's `eval` subcommand.")
     Container(rag, "RAG Layer (opt-in)", "Python package (src/mangomas/rag/)", "Pure-domain retrieval-augmented generation: chunker, loader, IngestionPipeline, Retriever, RetrievalTool. Imports only the EmbeddingClient / VectorStoreRepository protocols. Surfaced via `mangomas rag ingest|query` and wired into ToolAgent via ctx.tools. Dormant unless MANGOMAS_EMBEDDINGS__ENABLED + MANGOMAS_VECTOR__ENABLED.")
     Container(workflow, "Workflow Graph Layer (opt-in)", "Python package (src/mangomas/workflow/)", "Declarative multi-agent topologies: a frozen WorkflowGraph (agent / sequence / fan_out / loop / branch) compiled to the Orchestrator's public dispatch primitives — every leaf is one dispatch call, so an all-agent sequence equals dispatch_pipeline. Surfaced via POST /workflows/run|validate and `mangomas workflow validate|run`. Dormant unless MANGOMAS_WORKFLOW__ENABLED or an explicit --definition.")
@@ -60,6 +60,11 @@ C4Container
 
 - `api`, `cli`, and `eval_harness` share the same `composition.py` wiring;
   no duplicated adapter construction.
+- `cli/` follows the same permanent re-export facade pattern as `config/` and
+  `telemetry/` (ADR-0019 / spec-0015): `main.py` re-exports the assembled
+  `app` and the private seams tests patch (`_build`, `_close_orchestrator`),
+  so `mangomas = "mangomas.cli.main:app"` resolves unchanged while
+  `_app.py`/`_runtime.py`/`exit_codes.py`/`commands/` do the work underneath.
 - The `composition` container is a module, not a separate process. It is shown
   separately to emphasise that all provider-specific code is isolated there.
 - The LLM provider is chosen at runtime through `MANGOMAS_LLM__PROVIDER`.
