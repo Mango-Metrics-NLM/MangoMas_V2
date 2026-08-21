@@ -16,6 +16,8 @@ Use the `mango-topology` skill for `stream_dispatch` and the streaming recipe.
   and its `_events()` generator
 - `src/mangomas/agents/_streaming.py` — shared buffered-fallback helper for
   agents whose LLM client doesn't satisfy `StreamingLLMClient`
+- `src/mangomas/_headers.py` — shared HTTP header sanitisation for the
+  correlation and tenancy headers. Carries a 100% coverage floor
 
 `core/orchestrator.py::stream_dispatch` is **not** yours — it is a protected
 path owned by `mango-orchestrator-dev`. You consume the iterator it returns.

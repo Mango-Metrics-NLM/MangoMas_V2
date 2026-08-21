@@ -25,6 +25,10 @@ the verification loop.
   `target.py`, `_options.py`, `_langfuse.py`
 - `EvalSettings` in `mangomas.config`; the `eval` command and its
   `_resolve_*` / `_build_*` / `_emit_sinks` / `_finish_eval` helpers in the CLI
+- `src/mangomas/_entry_points.py` — `load_entry_point_factory`, the shared
+  never-raise plugin loader. Consumed by `eval/discovery.py` and
+  `agents/discovery.py`; it returns the error rather than logging, because
+  the two callers need different event names
 - Tests: `tests/eval/`
 
 Concrete `scorers/`, `sinks/`, `targets/` and `sources/` are **not** yours —

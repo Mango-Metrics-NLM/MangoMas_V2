@@ -24,6 +24,9 @@ Use the `mango-observability` skill for span/metric placement and `mango-deploy`
   `_build_span_exporter`, reusing the same `console`/`gcp` tokens.
 - `src/mangomas/metrics.py` — the lazily-bound record helpers
   (`record_agent_invocation` / `_error` / `_duration`).
+- `src/mangomas/correlation.py` — the correlation-id `ContextVar` and
+  `CorrelationFilter`, which is what puts the id on every log record.
+  Carries a 100% coverage floor.
 - `TelemetrySettings` (`MANGOMAS_TELEMETRY__*`, incl. `METRICS_ENABLED`) in `mangomas.config` (defined in `config/observability.py`).
 - Harness span routing: `MANGOMAS_HARNESS__METRICS_EXPORTER` wired into
   `_HarnessOrchestrator` via `composition.py`.
