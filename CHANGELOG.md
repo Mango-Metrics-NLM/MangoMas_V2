@@ -9,6 +9,59 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_CI/Makefile parity and corpus-validation completion — Spec-0021._
+
+### Fixed
+
+- **CI's `pull_request` trigger named branches that don't apply here.**
+  `branches: ["main", "develop"]` — `develop` doesn't exist anywhere in this
+  repository (checked against local and remote branches), and `main` has
+  genuinely diverged from trunk (100 commits one way, 11 the other; full
+  reconciliation is tracked separately in NEXT_STEPS.md). Every other base-ref
+  in this repo — the Makefile's `BASE_REF`, the `protected-paths` job's
+  hardcoded `BASE_BRANCH` — already treats `feat/initial-release` as trunk;
+  the PR trigger was the one place still pointing elsewhere, so a PR opened
+  against the real trunk got no `pull_request`-triggered CI at all. Fixed to
+  `["feat/initial-release"]`, locked by
+  `test_pull_request_trigger_targets_the_real_trunk`.
+- **`secret-scan` was the one CI job with no Makefile target.** `lint`, `test`,
+  `protected-paths`, `bridge-coverage` and `scripts-coverage` each run
+  `make <target>` — a parity `tests/deploy/test_ci_make_parity.py` already
+  asserted for all five. `secret-scan` instead ran raw inline `curl`/`gitleaks`
+  shell, with `GITLEAKS_VERSION` hardcoded only in the YAML — falsifying
+  README's own claim that "the Makefile wraps the exact commands CI runs, so
+  one target reproduces the whole pipeline locally." Fixed with a new
+  `make secret-scan` target (`GITLEAKS_VERSION ?= 8.21.2`) that `ci.yml` now
+  calls as its one step, locked by `test_secret_scan_job_delegates_to_make`.
+  Deliberately **no** skip-if-cached guard: checking only executability, not
+  version, would let a future `GITLEAKS_VERSION` bump silently keep running a
+  stale cached binary — a correctness bug specifically dangerous for a secret
+  scanner. The target always re-fetches, matching CI's ephemeral-runner
+  behaviour exactly.
+- **`AGENT_SKILL_OWNERS` values were never checked against the live skill
+  roster.** The existing test only asserted a mapped skill name is a substring
+  of the owning agent's body prose — a renamed or retired skill cited only in
+  stale prose still passed. `test_agent_skill_owners_resolve_to_a_real_skill`
+  now resolves every mapped value against `EXPECTED_SKILL_SLUGS` directly.
+- **The live `.claude/` corpus's full Pydantic schema never ran under
+  pytest.** `run_schema_lint()` — exactly what `make frontmatter` calls — was
+  previously exercised only as a separate non-pytest step, or against
+  synthetic fixtures. A corrupted skill/agent frontmatter file would pass all
+  27 pre-existing `test_corpus_contract.py` checks; mutation-proving the new
+  `test_live_corpus_passes_schema_lint` confirmed exactly that gap — every
+  other test in the file stayed green while the corruption slipped past it,
+  until this test caught it with a named, readable failure.
+
+### Changed
+
+- **`docs/architecture/c2-container.md` and `README.md` catch up to the
+  `cli/` package split** landed on trunk by PR #35 (spec-0015 / ADR-0019).
+  Both now name the permanent re-export facade pattern the way `config/` and
+  `telemetry/`'s entries already do, matching `CLAUDE.md`'s architecture tree.
+  README also gains a note that `make secret-scan` is CI-only and
+  deliberately outside `make gate` — every other gate step runs fully
+  offline, and downloading a pinned release binary is the one exception.
+
 _Gate integrity and corpus completion — Spec-0020._
 
 ### Fixed
