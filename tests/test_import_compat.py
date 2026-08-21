@@ -31,6 +31,12 @@ import pytest
 
 import mangomas.config as facade
 
+# Resolved from `__file__`, not the CWD. `pytest` can be invoked from anywhere,
+# and this suite itself contains a `monkeypatch.chdir` — a relative
+# `Path("pyproject.toml")` reads whatever directory the process happens to be
+# in. Same idiom as `tests/test_check_coverage.py`, at the same depth.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 # Decomposed packages and the group modules their facade re-exports from.
 # spec-0015 is complete at three: config/, telemetry/ and cli/.
 _FACADES: dict[str, tuple[str, ...]] = {
@@ -440,5 +446,5 @@ def test_console_script_entry_point_matches_the_facade() -> None:
     point at `mangomas.cli._app:app` would work perfectly for users and quietly
     make this whole file's guarantees irrelevant to what actually ships.
     """
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["scripts"]["mangomas"] == "mangomas.cli.main:app"
