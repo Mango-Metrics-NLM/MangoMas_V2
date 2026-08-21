@@ -260,9 +260,25 @@ source = ["mangomas"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+# The two ellipsis patterns are anchored to the *end* of a line, which is where
+# a Protocol stub body puts one. `src/` uses both stub forms — 30 on their own
+# line, 3 inline after the signature — so both need a pattern.
+#
+# Unanchored (`"\\.\\.\\."`, as it was) the pattern matched any line containing
+# three dots, including every `typer.Argument(..., help="…")` in a CLI command
+# signature. Coverage excludes the whole block when the excluded line belongs to
+# a `def` header, so entire command bodies vanished from measurement:
+# `cli/commands/rag.py` reported 16 statements where coverage's own parser sees
+# 53, and two untested `--verbose` branches sat inside the invisible region
+# while the file reported 100%. An over-matching exclusion is silent and it
+# makes the percentage go *up*, so nothing flags it.
+#
+# `tests/test_check_coverage.py` guards both directions: no pattern may match
+# real source, and a stub of either form must still match one.
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
-    "\\.\\.\\.",
+    "^\\s*\\.\\.\\.$",
+    ": \\.\\.\\.$",
 ]

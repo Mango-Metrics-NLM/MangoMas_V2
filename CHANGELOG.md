@@ -57,12 +57,30 @@ _Package decomposition — Spec-0015 / ADR-0019._
   registry contains `chat`). `tests/_seam_guards.forbid_real_orchestrator` makes
   that failure loud, and resolves its target through `_build.__module__` so it
   followed the function into `_runtime.py` with no edit.
-- **Four coverage gaps the `cli` package aggregate was hiding.** 97% across the
+- **Six coverage gaps the `cli` package aggregate was hiding.** 97% across the
   package looked healthy; per module it was `_runtime` at 88% — including
   `_build()`, the one line no test executed because every suite replaces it —
   plus `_finish_eval`'s untested exit-1 sink-error path, the `--output-json`
-  override branch, and `--verbose` on two commands. All closed; `cli` is at 100%
-  statements and 100% branches.
+  override branch, and `--verbose` on four commands. All closed; `cli` reaches a
+  measured 100% statements and 100% branches — measured being the operative
+  word, see the exclusion fix below.
+- **`exclude_lines` silently deleted whole CLI command bodies from coverage.**
+  `"\\.\\.\\."` is there for Protocol stub bodies, but unanchored it matches any
+  line with three dots — including every `typer.Argument(..., help="…")` in a
+  command signature. Coverage drops the entire block when the excluded line
+  belongs to a `def` header, so `cli/commands/rag.py` reported **16 statements
+  where coverage's own parser sees 53**, and two `--verbose` branches that no
+  test invokes sat inside the invisible region while the file reported 100%.
+  Now anchored to the end of a line, in the two forms `src/` actually uses: 30
+  bare-line stubs and 3 inline (`def get(...) -> str | None: ...`), the latter
+  found because dropping it broke the `secrets` package's 100% floor. Honest
+  measurement *raises* the global figure — 98.53% → 99% — because the
+  newly-visible command bodies were mostly well tested; the danger was never a
+  low number, it was a number computed over the wrong denominator. Pre-existing,
+  not introduced by the decomposition. `tests/test_check_coverage.py` guards
+  both directions by matching the configured patterns against real source lines
+  rather than asserting their shape, which any differently-worded bad regex
+  would pass.
 - `logging.getLogger` in the eval command is pinned to the pre-split
   `"mangomas.cli.main"` rather than `__name__`. A refactor promising no
   behaviour change must not rename a field operators filter on.
