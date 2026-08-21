@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from mangomas.cli import main as cli_main
 from mangomas.config import get_settings
 from mangomas.core import Orchestrator
+from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import STUB_REPLY, WORKFLOW_CONFIG_EXIT_CODE, WORKFLOW_RUNTIME_EXIT_CODE
 
 _AGENT_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "chat"}})
@@ -23,6 +24,7 @@ def runner() -> CliRunner:
 
 @pytest.fixture(autouse=True)
 def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) -> None:
+    forbid_real_orchestrator(monkeypatch)
     monkeypatch.setattr(cli_main, "_build", lambda: orchestrator)
 
     async def _noop_close(_orch: Orchestrator) -> None:

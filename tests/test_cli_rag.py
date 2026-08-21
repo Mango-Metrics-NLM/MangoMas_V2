@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from mangomas.agents import ChatAgent
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
+from tests._seam_guards import forbid_real_orchestrator
 from tests.fakes import FakeEmbeddingClient, FakeLLM, FakeVectorStore
 
 
@@ -21,6 +22,8 @@ def runner() -> CliRunner:
 
 @pytest.fixture(autouse=True)
 def _noop_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    forbid_real_orchestrator(monkeypatch)
+
     async def _close(_orch: Orchestrator) -> None:
         return None
 

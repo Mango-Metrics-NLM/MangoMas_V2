@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from mangomas.agents import ChatAgent
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
+from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import STUB_REPLY
 from tests.fakes import FakeLLM
 
@@ -21,6 +22,7 @@ def runner() -> CliRunner:
 
 @pytest.fixture(autouse=True)
 def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) -> None:
+    forbid_real_orchestrator(monkeypatch)
     monkeypatch.setattr(cli_main, "_build", lambda: orchestrator)
 
     # In production each CLI invocation spawns a fresh process; the test

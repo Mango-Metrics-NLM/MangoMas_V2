@@ -18,6 +18,7 @@ from mangomas.config import get_settings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
+from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import EVAL_GATE_EXIT_CODE, EVAL_THRESHOLD_LENIENT, EVAL_THRESHOLD_STRICT
 from tests.fakes import FakeLLM, FakeRepository, FakeSink
 
@@ -38,6 +39,7 @@ def _stub_cli_orchestrator(
     """Replace ``_build()`` with a fake orchestrator so the CLI test never
     tries to reach the configured LLM provider (LM Studio is not running in
     the unit-test environment)."""
+    forbid_real_orchestrator(monkeypatch)
     monkeypatch.setattr(cli_main, "_build", lambda: eval_orchestrator)
 
 
