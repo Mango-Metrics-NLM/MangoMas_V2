@@ -186,7 +186,12 @@ exclude = ["*.md"]
 python_version = "3.11"
 strict = true
 mypy_path = "src:eval_harness_bridge/src:scripts"
-packages = ["mangomas"]
+# `files` mirrors the Makefile's CODE_PATHS so a bare `mypy` checks exactly what
+# `make typecheck` and CI check. Without it, `packages = ["mangomas"]` alone
+# limited a bare run to src/ — 155 files against CI's 324 — so a contributor
+# following CLAUDE.md got a weaker check than the gate and only found out on
+# push. `tests/deploy/test_ci_make_parity.py` locks the two lists together.
+files = ["src", "tests", "scripts", "eval_harness_bridge/src"]
 explicit_package_bases = true
 warn_unused_ignores = true
 disallow_untyped_decorators = false
