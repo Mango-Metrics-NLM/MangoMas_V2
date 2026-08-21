@@ -379,10 +379,28 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # identical defect.
         "PostToolUse",
         "Edit|Write",
+        # spec-0020: `ruff format` runs beside `check --fix` on the same emitted
+        # path. Formatting is the one thing a per-file autofix hook genuinely
+        # could not do before, so drift surfaced only at `make gate`. `-I{}`
+        # replaces the bare `xargs` so both commands see the same argument.
         "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path "
-        "| xargs -r python -m ruff check --fix 2>/dev/null || true",
+        "| xargs -r -I{} sh -c 'python -m ruff check --fix \"{}\" >/dev/null 2>&1; "
+        "python -m ruff format \"{}\" >/dev/null 2>&1' || true",
     ),
-    ("Stop", "*", "python -m pytest -q --no-cov || true"),
+    (
+        # spec-0020: `make typecheck format-check` added ahead of the suite.
+        # Measured at 0.3s warm, and mypy catches cross-file type breakage that
+        # neither the per-file ruff hook nor pytest sees.
+        #
+        # `--cov` was considered and rejected: it costs +14s per turn end
+        # (20.6s -> 35.0s) and would not have caught any of the three coverage
+        # defects this repo has hit. Two were glob problems visible only in the
+        # config, and the exclusion bug made the percentage go *up*. Delegates
+        # to `make` for the same reason CI does — one definition of each check.
+        "Stop",
+        "*",
+        "make typecheck format-check || true ; python -m pytest -q --no-cov || true",
+    ),
 )
 
 # rtk (rtk-ai/rtk): Bash-output compaction, wired as a PreToolUse hook.
