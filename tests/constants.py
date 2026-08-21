@@ -7,6 +7,14 @@ config change can never silently desync the tests.
 
 from __future__ import annotations
 
+# The CLI's three exit codes are re-exported the same way. `cli.exit_codes` is a
+# pure-constant leaf importing only `typing`, so this costs nothing at import
+# time — unlike `cli.main`, which would pull the whole command tree and the four
+# eval-registry side-effect imports into every module that reads a constant.
+from mangomas.cli.exit_codes import EVAL_GATE_EXIT_CODE as EVAL_GATE_EXIT_CODE
+from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR as EXIT_CONFIG_ERROR
+from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR as EXIT_RUNTIME_ERROR
+
 # Defaults that mirror ``mangomas.config`` are re-exported (``X as X``) rather
 # than restated, so the config remains the single source of truth.
 from mangomas.config import (
@@ -228,9 +236,6 @@ GCP_SECRETS_SECRET_NAME_ENV: str = "GCP_SECRETS_SECRET_NAME"  # noqa: S105  env-
 FAKE_SINK_NAME: str = "fake"
 EVAL_SINK_CONSOLE: str = "console"
 EVAL_SINK_JSON_FILE: str = "json_file"
-# Exit code the CLI raises when the quality gate fails (mirrors
-# mangomas.cli.main.EVAL_GATE_EXIT_CODE).
-EVAL_GATE_EXIT_CODE: int = 3
 EVAL_THRESHOLD_STRICT: float = 0.99
 EVAL_THRESHOLD_LENIENT: float = 0.0
 EVAL_SCHEMA_VERSION_CURRENT: int = 1
@@ -250,9 +255,11 @@ EVAL_SQLITE_URL_PREFIX: str = "sqlite:///"
 WORKFLOW_NODE_KINDS: tuple[str, ...] = ("agent", "branch", "fan_out", "loop", "sequence")
 WORKFLOW_SCHEMA_VERSION_CURRENT: int = 1
 WORKFLOW_LOOP_SENTINEL: str = "DONE"
-# Exit code the CLI raises for a workflow *config* error (mirrors eval's exit 2).
-WORKFLOW_CONFIG_EXIT_CODE: int = 2
-WORKFLOW_RUNTIME_EXIT_CODE: int = 1
+# The workflow CLI reuses the shared config/runtime exit codes rather than
+# defining its own, so these alias the imported constants instead of restating
+# 2 and 1 — a divergence would then be a failing test, not a stale comment.
+WORKFLOW_CONFIG_EXIT_CODE: int = EXIT_CONFIG_ERROR
+WORKFLOW_RUNTIME_EXIT_CODE: int = EXIT_RUNTIME_ERROR
 
 # Workflow HTTP routes (spec 0008).
 WORKFLOW_RUN_ROUTE: str = "/workflows/run"

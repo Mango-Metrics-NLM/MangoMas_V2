@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -13,12 +14,20 @@ from typer.testing import CliRunner
 # Importing the CLI module also wires the scorer registry.
 import mangomas.cli.main as cli_main
 from mangomas.agents import ChatAgent
+from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli.main import app
 from mangomas.config import get_settings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
-from tests.constants import EVAL_GATE_EXIT_CODE, EVAL_THRESHOLD_LENIENT, EVAL_THRESHOLD_STRICT
+from tests._seam_guards import forbid_real_orchestrator
+from tests.constants import (
+    EVAL_GATE_EXIT_CODE,
+    EVAL_SINK_JSON_FILE,
+    EVAL_THRESHOLD_LENIENT,
+    EVAL_THRESHOLD_STRICT,
+    EXIT_RUNTIME_ERROR,
+)
 from tests.fakes import FakeLLM, FakeRepository, FakeSink
 
 
@@ -38,7 +47,8 @@ def _stub_cli_orchestrator(
     """Replace ``_build()`` with a fake orchestrator so the CLI test never
     tries to reach the configured LLM provider (LM Studio is not running in
     the unit-test environment)."""
-    monkeypatch.setattr(cli_main, "_build", lambda: eval_orchestrator)
+    forbid_real_orchestrator(monkeypatch)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: eval_orchestrator)
 
 
 def test_eval_cli_runs_against_fixture(fixtures_dir: Path) -> None:
@@ -143,7 +153,7 @@ def test_eval_cli_bad_scorer_option_exits_2_before_any_row_runs(
     fake_llm = FakeLLM()
     orch = Orchestrator(AgentContext(llm=fake_llm, repo=FakeRepository()))
     orch.register(ChatAgent())
-    monkeypatch.setattr(cli_main, "_build", lambda: orch)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orch)
     monkeypatch.setenv("MANGOMAS_EVAL__SCORER_OPTIONS", '{"required_keys": "not-a-list"}')
     runner = CliRunner()
     result = runner.invoke(
@@ -465,3 +475,93 @@ def test_emit_sinks_returns_none_when_all_succeed() -> None:
     sinks: list[Sink] = [FakeSink(name="a"), FakeSink(name="b")]
     exc = asyncio.run(cli_main._emit_sinks(sinks, _report(), None))
     assert exc is None
+
+
+def test_eval_verbose_requests_debug_logging(
+    fixtures_dir: Path, basic_config_calls: list[dict[str, object]]
+) -> None:
+    """`eval --verbose` asks for DEBUG logging — see the workflow twin."""
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--verbose",
+        ],
+    )
+    assert result.exit_code == 0
+    assert basic_config_calls == [{"level": logging.DEBUG}]
+
+
+def test_eval_cli_sink_failure_exits_runtime_code(fixtures_dir: Path, tmp_path: Path) -> None:
+    """A sink that raises is exit 1, and the run still completes.
+
+    `test_emit_sinks_isolates_failures` above proves `_emit_sinks` *returns* the
+    exception; nothing proved the CLI acted on it. The failure is produced by a
+    real `json_file` sink pointed at a path whose parent is a regular file —
+    `mkdir(parents=True)` cannot create a directory there — rather than by
+    registering a throwing stub, so this exercises the same sink an operator
+    would have typo'd their way into.
+    """
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--output-json",
+            str(blocker / "report.json"),
+        ],
+    )
+
+    assert result.exit_code == EXIT_RUNTIME_ERROR
+    assert "sink error" in (result.stdout + result.stderr).lower()
+
+
+def test_output_json_overrides_a_configured_json_file_path(
+    fixtures_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI flag beats settings when `json_file` is *already* configured.
+
+    The documented precedence is ``--output-json`` > ``sink_options[json_file]
+    [path]``, and the branch where the sink is already in `sinks` (so
+    `--output-json` overrides rather than injects) had no test — it is the one
+    partial branch `_eval_config.py` reports. Asserting the configured path
+    stays *empty* is the half that matters: writing both files would satisfy a
+    naive "the override landed" check.
+    """
+    configured = tmp_path / "from-settings.json"
+    override = tmp_path / "from-flag.json"
+    monkeypatch.setenv("MANGOMAS_EVAL__SINKS", json.dumps([EVAL_SINK_JSON_FILE]))
+    monkeypatch.setenv(
+        "MANGOMAS_EVAL__SINK_OPTIONS",
+        json.dumps({EVAL_SINK_JSON_FILE: {"path": str(configured)}}),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--output-json",
+            str(override),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert override.is_file(), "--output-json path was not written"
+    assert not configured.exists(), "the settings path was written despite the CLI override"

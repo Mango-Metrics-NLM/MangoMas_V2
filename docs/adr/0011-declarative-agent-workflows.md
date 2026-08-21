@@ -58,7 +58,7 @@ metadata-transparent, so an all-agent `sequence` equals `dispatch_pipeline`.
 ## References
 
 - Code: `src/mangomas/workflow/` (`graph.py`, `predicate.py`, `registry.py`,
-  `executor.py`, `loader.py`, `nodes/`), `src/mangomas/config.py::WorkflowSettings`,
-  `src/mangomas/cli/main.py` (`workflow` sub-app).
+  `executor.py`, `loader.py`, `nodes/`), `src/mangomas/config/workflow.py::WorkflowSettings`,
+  `src/mangomas/cli/commands/workflow.py` (`workflow` sub-app).
 - Related: spec `specs/0005-declarative-agent-workflows.md`; ADR-0004
   (eval target/source indirection — the pattern mirrored here).

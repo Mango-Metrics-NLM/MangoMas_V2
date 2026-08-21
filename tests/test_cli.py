@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 from typer.testing import CliRunner
 
 from mangomas.agents import ChatAgent
+from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
+from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import STUB_REPLY
 from tests.fakes import FakeLLM
 
@@ -21,7 +24,8 @@ def runner() -> CliRunner:
 
 @pytest.fixture(autouse=True)
 def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) -> None:
-    monkeypatch.setattr(cli_main, "_build", lambda: orchestrator)
+    forbid_real_orchestrator(monkeypatch)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orchestrator)
 
     # In production each CLI invocation spawns a fresh process; the test
     # scaffold shares ONE orchestrator across multiple ``runner.invoke``
@@ -31,7 +35,7 @@ def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) ->
     async def _noop_close(_orch: Orchestrator) -> None:
         return None
 
-    monkeypatch.setattr(cli_main, "_close_orchestrator", _noop_close)
+    monkeypatch.setattr(cli_runtime, "_close_orchestrator", _noop_close)
 
 
 def test_agents_command(runner: CliRunner) -> None:
@@ -53,11 +57,19 @@ def test_chat_command_with_system(runner: CliRunner) -> None:
     assert result.exit_code == 0
 
 
-def test_chat_command_verbose(runner: CliRunner) -> None:
-    """--verbose flag sets logging to DEBUG without crashing."""
+def test_chat_command_verbose_requests_debug_logging(
+    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+) -> None:
+    """`--verbose` asks for DEBUG logging, and the command still succeeds.
+
+    The assertion on `basic_config_calls` is the part that makes the name true.
+    Without it this passed with the `if verbose:` branch deleted — the docstring
+    used to claim "sets logging to DEBUG" while checking only an exit code.
+    """
     result = runner.invoke(cli_main.app, ["chat", "hello", "--verbose"])
     assert result.exit_code == 0
     assert STUB_REPLY in result.stdout
+    assert basic_config_calls == [{"level": logging.DEBUG}]
 
 
 def test_history_command(runner: CliRunner) -> None:
@@ -72,10 +84,18 @@ def test_history_command(runner: CliRunner) -> None:
     assert parsed["agent"] == "chat"
 
 
-def test_history_verbose(runner: CliRunner) -> None:
+def test_history_verbose_requests_debug_logging(
+    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+) -> None:
+    """`history --verbose` asks for DEBUG logging.
+
+    The seeding `chat` invocation runs without `--verbose`, so it contributes
+    nothing to the recording — which is itself the negative half of the check.
+    """
     runner.invoke(cli_main.app, ["chat", "hello"])
     result = runner.invoke(cli_main.app, ["history", "--verbose"])
     assert result.exit_code == 0
+    assert basic_config_calls == [{"level": logging.DEBUG}]
 
 
 def test_history_no_repo_exits_nonzero(
@@ -85,7 +105,7 @@ def test_history_no_repo_exits_nonzero(
     """history exits with code 1 when no repository is configured."""
     no_repo_orch = Orchestrator(AgentContext(llm=FakeLLM(), repo=None))
     no_repo_orch.register(ChatAgent())
-    monkeypatch.setattr(cli_main, "_build", lambda: no_repo_orch)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: no_repo_orch)
 
     result = runner.invoke(cli_main.app, ["history"])
     assert result.exit_code == 1

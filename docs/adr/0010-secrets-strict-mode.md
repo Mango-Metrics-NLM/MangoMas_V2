@@ -51,7 +51,7 @@ absent secret is not a failure. The default (`False`) preserves ADR-002 exactly.
 
 - Code: `src/mangomas/secrets/gcp.py` (`_raise_if_strict`),
   `src/mangomas/errors.py` (`SecretsResolutionError`),
-  `src/mangomas/api/app.py` (`_ERROR_STATUS` → 503),
-  `src/mangomas/config.py` (`SecretsSettings.strict`)
+  `src/mangomas/api/errors.py` (`_ERROR_STATUS` → 503),
+  `src/mangomas/config/secrets.py` (`SecretsSettings.strict`)
 - Spec: `specs/0003-secrets-strict-mode.md`
 - Related ADRs: ADR-002 (amended), ADR-0001 (cloud targets)

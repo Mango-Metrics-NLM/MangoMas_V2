@@ -1,11 +1,12 @@
 # Spec-0015: Package decomposition (deferred spec-0014 scope)
 
-- **Status:** In progress
+- **Status:** In progress — R1–R3 implemented (`cli/`, `config/`,
+  `telemetry/`); R4 (`core/structured.py`) deferred, see below
 - **Linked ADR:** ADR-0019 (re-export facade decomposition — Accepted, proven
   by the `api/app.py` split; this spec applies the same pattern to the
   remaining oversized modules)
-- **Linked CHANGELOG entry:** _none yet — this is a stub written to record
-  scope, not a landed change_
+- **Linked CHANGELOG entry:** `[Unreleased]` → _Package decomposition —
+  Spec-0015 / ADR-0019_
 
 ## Problem
 
@@ -60,6 +61,31 @@ agents already follow this, so they need no edit here.
   group) plus a shared `orchestrator_session()` context manager, with
   `mangomas.cli.main` re-exporting the assembled Typer `app` so the
   `mangomas.cli.main:app` console-script entry point is unaffected.
+
+  **Amendment — `orchestrator_session()` is deferred, deliberately.** R1
+  reached for a context manager to solve the patch-seam problem, and
+  module-attribute resolution solves it more directly: commands call
+  `_runtime._build()` through the module object, so one
+  `monkeypatch.setattr(mangomas.cli._runtime, "_build", ...)` reaches every
+  command at once. Introducing the context manager as well would move `_build()`
+  out of sync scope and into the event loop and rewrite seven command bodies,
+  turning the split into something other than a pure move — and a pure move is
+  precisely what made the `telemetry/` split reviewable. The landed cut is by
+  dependency layer rather than by command group alone, because `_build`,
+  `_close_orchestrator` and the exit codes are needed by every group:
+
+      exit_codes            three exit codes (pure leaf)
+      _runtime              _build / _close_orchestrator / win32 stdout (base)
+      commands/chat         agents, chat, history
+      commands/_eval_config flag-over-settings precedence for `eval`
+      commands/eval         the eval run itself      -> _eval_config
+      commands/rag          the `rag` sub-app
+      commands/workflow     the `workflow` sub-app
+      _app                  assembly: builds `app` -> every commands/ module
+      main                  the facade
+
+  A follow-up may still add `orchestrator_session()` as an ordinary
+  refactor; nothing in the landed shape blocks it.
 - R2 — `config.py` becomes a `config/` package; `mangomas.config` re-exports
   every `*Settings` class and `DEFAULT_*` constant so no import in `src/` or
   `tests/` changes.
@@ -142,10 +168,33 @@ The corrected bar:
 
 ## Acceptance criteria
 
-- [ ] `cli/main.py`, `config.py`, `telemetry.py` decomposed with permanent
-      re-export facades; `tests/test_import_compat.py` proves identity.
+- [x] `cli/main.py`, `config.py`, `telemetry.py` decomposed with permanent
+      re-export facades; `tests/test_import_compat.py` proves identity for all
+      three, public and private surface alike.
 - [ ] `core/structured.py` extracted; `core/tools.py` + `errors.py` land in
-      one `BREAKING-CHANGE`-marked commit; dead code removed.
-- [ ] `ruff`, `mypy --strict`, `frontmatter-lint`, `pytest` (95% gate +
-      per-package floors), bridge coverage all clean.
-- [ ] CHANGELOG updated; this spec's status moves to Implemented.
+      one `BREAKING-CHANGE`-marked commit; dead code removed. **Deferred** —
+      `core/tools.py` and `errors.py` are protected paths, and the ownership
+      question they raise (`harness/governance.py` defines `PROTECTED_PATHS`)
+      is unsettled. It is a backwards-compatibility audit, not a mechanical
+      split, and does not belong in the same PR as one.
+- [x] `ruff`, `mypy --strict`, `frontmatter-lint`, `pytest` (95% gate +
+      per-package floors), bridge coverage all clean — `make gate` green at
+      every landing commit, not only the last.
+- [x] CHANGELOG updated. Status stays **In progress** until R4 lands.
+
+### What the split measured
+
+The 21 patch seams predicted above were real, and worse than the count implies:
+of the 15 CLI sites, **13 passed whether or not their patch landed**, because
+they asserted things a real orchestrator also produces (`test_agents_command`
+checks only that `chat` appears in the output, which the real registry
+provides). Those tests were building live orchestrators and opening `httpx`
+connections while reporting success. `tests/_seam_guards.forbid_real_orchestrator`
+converts that class of failure into a loud one, and was landed *before* the
+seam moved so the conversion is verified rather than assumed.
+
+Splitting also made per-module coverage visible for the first time: the `cli`
+package's 97% aggregate was concealing four gaps, including `_runtime._build()`
+— the one line no test executed, since every suite replaces it — and
+`_finish_eval`'s exit-1 sink-error path. All four are closed; `cli` is now at
+100% statements and branches.

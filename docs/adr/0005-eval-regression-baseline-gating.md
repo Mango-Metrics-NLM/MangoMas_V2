@@ -56,6 +56,6 @@ existing exit-3 path covers either.
 
 - Code: `src/mangomas/eval/baseline.py` (`load_baseline`, `diff_reports`,
   `ReportDiff`), `eval/gate.py` (`evaluate_regression_gate`,
-  `merge_gate_results`), `cli/main.py` (`_evaluate_run_gates`,
-  `_resolve_regression`).
+  `merge_gate_results`), `cli/commands/eval.py` (`_evaluate_run_gates`) and
+  `cli/commands/_eval_config.py` (`_resolve_regression`).
 - Related ADRs: ADR-0003 (eval harness), ADR-0004 (target/source indirection).

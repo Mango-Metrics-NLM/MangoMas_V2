@@ -3,7 +3,7 @@
 - **Branch:** `claude/agents-mcps-implementation-plan-9bdtnt`
 - **Date:** 2026-08-09
 - **Target release:** `[Unreleased]` → next minor
-- **Status:** In progress — PR A done; PR B complete (B1/B2a/B2b/B3+B4 merged or in review); PR C not started
+- **Status:** In progress — PR A done; PR B complete (B1/B2a/B2b/B3+B4/B5 merged); PR C landed for R1–R3 (`config/`, `telemetry/`, `cli/`), R4 still deferred
 - **Specs:** `specs/0017-protected-path-governance.md`,
   `specs/0018-live-claude-code-corpus.md`,
   `specs/0015-package-decomposition.md` (existing, amended)
@@ -120,12 +120,29 @@ two load-bearing premises:
 
 ## PR C — Package decomposition (spec-0015, amended / ADR-0019, amended)
 
-Not yet started. Amends spec-0015's acceptance bar (a facade preserves object identity,
-not module-global name bindings — `cli/main.py`'s `_build` and `telemetry.py`'s lazy
-exporters need object-attribute seams, not bare functions, before the split). Sequences
-`config/` first (safest, zero monkeypatch risk) rather than last. Keeps `parse_tool_call`
-as a delegation rather than deleting it (it is not dead — `tests/test_tools.py` exercises
-it).
+R1–R3 landed; R4 still deferred. Amended spec-0015's acceptance bar (a facade preserves
+object identity, not module-global name bindings — `cli/main.py`'s `_build` and
+`telemetry.py`'s lazy exporters need object-attribute seams, not bare functions, before
+the split). Sequenced `config/` first (safest, zero monkeypatch risk) rather than last.
+Keeps `parse_tool_call` as a delegation rather than deleting it (it is not dead —
+`tests/test_tools.py` exercises it).
+
+| Split | Shape | Seam sites | What it needed |
+|---|---|---|---|
+| `config/` → 12 domain modules | partition (AST-verified disjoint) | 0 | nothing — suite passed unmodified |
+| `telemetry/` → 6 layers | layered DAG over shared mutable state | 6 (1 silent) | a pre-split safety commit |
+| `cli/` → command package | one root, four command groups | 15 (**13 silent**) | a seam guard landed first |
+
+The seam counts were predicted; the *silent* counts were measured, by neutralising each
+patch and counting `build_orchestrator` calls. Thirteen CLI tests were building live
+orchestrators and passing anyway. That is the finding worth carrying forward: on a split
+of anything that is not a clean partition, a green suite is not evidence the facade
+worked.
+
+R4 (`core/structured.py`, plus the protected `core/tools.py` / `errors.py` batch) stays
+deferred — it is a backwards-compatibility audit rather than a mechanical split, and it
+is entangled with the unsettled question of who owns `harness/governance.py`, which
+defines `PROTECTED_PATHS`.
 
 ## Verification
 

@@ -9,6 +9,82 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Package decomposition — Spec-0015 / ADR-0019._
+
+### Changed
+
+- **Three oversized modules are now packages behind permanent re-export
+  facades** (ADR-0019). `config.py` (593 lines, the repo's #1 churn file) →
+  `config/` as 12 domain modules; `telemetry.py` (337) → `telemetry/` cut by
+  dependency layer rather than by telemetry signal, which would have split the
+  shared exporter vocabulary across tracing and metrics; `cli/main.py` (682) →
+  `cli/commands/` plus `_runtime`, `exit_codes` and an `_app` assembly root.
+  **No import changes**: `from mangomas.config import Settings`,
+  `from mangomas.telemetry import get_tracer` and
+  `from mangomas.cli.main import app` all resolve to the same objects they did
+  before, and `tests/test_import_compat.py` asserts identity — not equality —
+  for each. The console script is untouched; `mangomas --help` renders the same
+  commands in the same order, which `tests/test_cli_surface.py` now pins,
+  including the order (Typer lists in *registration* order, so an import
+  reshuffle could otherwise have rewritten it silently).
+- The CLI cut is by **dependency layer, not command group**: `_build`,
+  `_close_orchestrator` and the three exit codes are needed by every group, so
+  a per-group split would have orphaned them and forced command modules to
+  import each other. `commands/_eval_config.py` is a second cut inside the eval
+  group — without it `commands/eval.py` lands at ~395 lines and is still the
+  largest module in `src/`.
+- **`orchestrator_session()` (spec-0015 R1) is deliberately not included.**
+  Module-attribute resolution solves the patch-seam problem it was reaching for,
+  and adding it would have moved `_build()` into the event loop and rewritten
+  seven command bodies — turning the split into something other than a pure
+  move. Recorded as an amendment in the spec, not dropped.
+- `tests/constants.py` re-exports the three CLI exit codes from
+  `mangomas.cli.exit_codes` instead of restating `3`, `2` and `1` as literals
+  under a comment promising they match. Only possible after the split: the codes
+  used to live in `cli/main.py`, and importing that from the constants hub would
+  pull the whole command tree and four eval-registry side-effect imports into
+  every module that reads a constant.
+
+### Fixed
+
+- **Thirteen CLI tests were passing against the wrong system.** Measured, not
+  suspected: with the orchestrator patches neutralised and a counter on
+  `build_orchestrator`, 13 of 15 `monkeypatch` sites turned out to have no
+  effect. Those tests were constructing *real* orchestrators — opening `httpx`
+  connections to `localhost:1234` and creating SQLite files — and passing
+  anyway, because they asserted things the real system also produces
+  (`test_agents_command` checks that `chat` appears in the output; the real
+  registry contains `chat`). `tests/_seam_guards.forbid_real_orchestrator` makes
+  that failure loud, and resolves its target through `_build.__module__` so it
+  followed the function into `_runtime.py` with no edit.
+- **Six coverage gaps the `cli` package aggregate was hiding.** 97% across the
+  package looked healthy; per module it was `_runtime` at 88% — including
+  `_build()`, the one line no test executed because every suite replaces it —
+  plus `_finish_eval`'s untested exit-1 sink-error path, the `--output-json`
+  override branch, and `--verbose` on four commands. All closed; `cli` reaches a
+  measured 100% statements and 100% branches — measured being the operative
+  word, see the exclusion fix below.
+- **`exclude_lines` silently deleted whole CLI command bodies from coverage.**
+  `"\\.\\.\\."` is there for Protocol stub bodies, but unanchored it matches any
+  line with three dots — including every `typer.Argument(..., help="…")` in a
+  command signature. Coverage drops the entire block when the excluded line
+  belongs to a `def` header, so `cli/commands/rag.py` reported **16 statements
+  where coverage's own parser sees 53**, and two `--verbose` branches that no
+  test invokes sat inside the invisible region while the file reported 100%.
+  Now anchored to the end of a line, in the two forms `src/` actually uses: 30
+  bare-line stubs and 3 inline (`def get(...) -> str | None: ...`), the latter
+  found because dropping it broke the `secrets` package's 100% floor. Honest
+  measurement *raises* the global figure — 98.53% → 99% — because the
+  newly-visible command bodies were mostly well tested; the danger was never a
+  low number, it was a number computed over the wrong denominator. Pre-existing,
+  not introduced by the decomposition. `tests/test_check_coverage.py` guards
+  both directions by matching the configured patterns against real source lines
+  rather than asserting their shape, which any differently-worded bad regex
+  would pass.
+- `logging.getLogger` in the eval command is pinned to the pre-split
+  `"mangomas.cli.main"` rather than `__name__`. A refactor promising no
+  behaviour change must not rename a field operators filter on.
+
 _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Changed

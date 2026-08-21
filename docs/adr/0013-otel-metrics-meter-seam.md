@@ -57,8 +57,9 @@ the recording calls compile away to nothing.
 
 ## References
 
-- Code: `src/mangomas/telemetry.py` (`configure_metrics`, `_build_metric_reader`,
-  `get_meter`), `src/mangomas/metrics.py`, `src/mangomas/api/app.py`
-  (`/agents/{name}/invoke`), `src/mangomas/config.py::TelemetrySettings`.
+- Code: `src/mangomas/telemetry/meters.py` (`configure_metrics`, `get_meter`),
+  `telemetry/exporters.py` (`_build_metric_reader`), `src/mangomas/metrics.py`,
+  `src/mangomas/api/routes/agents.py` (`/agents/{name}/invoke`),
+  `src/mangomas/config/observability.py::TelemetrySettings`.
 - Related: ADR-0009 (telemetry-exporter seam — the pattern mirrored here);
   spec `specs/0009-otel-metrics.md`.

@@ -55,9 +55,12 @@ harness tracer's spans are routed independently. Selected by
 
 ## References
 
-- Code: `src/mangomas/telemetry.py` (`_build_span_exporter`,
-  `configure_telemetry`, `build_scoped_tracer`), `src/mangomas/composition.py`
-  (`_HarnessOrchestrator`), `src/mangomas/config.py` (`TelemetrySettings`,
-  `HarnessSettings.metrics_exporter`)
+- Code: `src/mangomas/telemetry/exporters.py` (`_build_span_exporter`),
+  `telemetry/tracing.py` (`configure_telemetry`), `telemetry/scoped.py`
+  (`build_scoped_tracer`), `src/mangomas/composition.py`
+  (`_HarnessOrchestrator`), `src/mangomas/config/observability.py`
+  (`TelemetrySettings`), `config/harness.py`
+  (`HarnessSettings.metrics_exporter`). Every name also stays importable from
+  `mangomas.telemetry` / `mangomas.config` (ADR-0019 facades).
 - Specs: `specs/0001-telemetry-exporter.md`, `specs/0002-harness-metrics-exporter.md`
 - Related ADRs: ADR-0001 (cloud targets)

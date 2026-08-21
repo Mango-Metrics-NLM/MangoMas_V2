@@ -58,5 +58,5 @@ and the disabled/unset path raises `ConfigError` (HTTP 400) through the existing
 
 - Code: `src/mangomas/api/app.py` (`/workflows/*` routes, `_ERROR_STATUS`
   L46–60), `src/mangomas/workflow/__init__.py` (`execute_workflow`,
-  `load_workflow`), `src/mangomas/cli/main.py::_resolve_workflow_source` (mirrored).
+  `load_workflow`), `src/mangomas/cli/commands/workflow.py::_resolve_workflow_source` (mirrored).
 - Related: spec `specs/0008-workflow-http-endpoint.md`; ADR-0011 (workflow graphs).

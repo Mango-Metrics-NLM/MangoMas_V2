@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -155,3 +156,33 @@ def orchestrator(fake_llm: FakeLLM, repo: SQLiteRepository) -> Orchestrator:
     orch = Orchestrator(ctx)
     orch.register(ChatAgent())
     return orch
+
+
+# ── `--verbose` assertion seam ────────────────────────────────────────────────
+
+
+@pytest.fixture
+def basic_config_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Record `logging.basicConfig` calls so a `--verbose` test can assert one.
+
+    **Why a spy and not an observed log level.** In CPython, `basicConfig`'s
+    `root.setLevel(level)` sits inside `if len(root.handlers) == 0:`, and under
+    pytest the root logger already carries four handlers (the live-log null
+    handler, a file handler, and two `LogCaptureHandler`s). So
+    `basicConfig(level=DEBUG)` is a complete no-op here — `root.level` stays at
+    `WARNING`. Asserting on the level, or on captured DEBUG output, would pass
+    for a reason unrelated to the code under test, which is the exact defect
+    these tests were written to fix.
+
+    Asserting the call tests what the command actually promises: that `--verbose`
+    *requests* debug logging. It is mutation-sensitive by construction — an
+    invocation without the flag records nothing, which is precisely what the
+    deleted branch would produce.
+
+    Every command module does `import logging` then `logging.basicConfig(...)`,
+    an attribute lookup on the module object, so one patch reaches all of them —
+    the same seam shape as `mangomas.cli._runtime`.
+    """
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(logging, "basicConfig", lambda **kw: calls.append(kw))
+    return calls

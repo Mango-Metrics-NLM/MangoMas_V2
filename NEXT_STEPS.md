@@ -316,13 +316,17 @@ defects and a further round of duplication clusters via a full-repo audit:
 - **CI/Makefile parity locked** — `ci.yml`'s lint/test/bridge-coverage jobs
   invoke `make` targets instead of duplicating commands, pinned by
   `tests/deploy/test_ci_make_parity.py`.
-- **Deferred to `specs/0015-package-decomposition.md`** — decomposing
-  `cli/main.py` (708 lines), `config.py` (593 lines, the repo's #1 churn
-  file), and `telemetry.py` into packages, plus the protected-path
-  `core/structured.py` extraction from `core/tools.py` + `errors.py`. These
-  were in spec-0014's original scope but were descoped mid-execution to keep
-  PR #24 mergeable rather than open-ended; see that spec for the full
-  rationale.
+- **Deferred to `specs/0015-package-decomposition.md`, and now mostly landed** —
+  `config.py` (593 lines, the repo's #1 churn file) → `config/`,
+  `telemetry.py` → `telemetry/`, and `cli/main.py` → `cli/commands/` all ship
+  behind permanent re-export facades (spec-0015 R1–R3). These were in
+  spec-0014's original scope but were descoped mid-execution to keep PR #24
+  mergeable rather than open-ended. **Still outstanding: R4** — the
+  `core/structured.py` extraction from `core/tools.py` + `errors.py`. Both are
+  protected paths, so it needs a `BREAKING-CHANGE` trailer and a real
+  backwards-compatibility audit rather than a mechanical split; it is also
+  entangled with who owns `harness/governance.py`, which defines
+  `PROTECTED_PATHS`.
 
 ### Follow-ups this branch deliberately did not take
 
