@@ -617,3 +617,66 @@ PATH_SCOPED_MCP_SERVERS: tuple[str, ...] = ("filesystem", "git")
 # `${VAR:-default}` form: without the default an unset variable is passed
 # through as a literal string rather than failing, which is the dangerous case.
 MCP_PROJECT_DIR_SCOPE: str = "${CLAUDE_PROJECT_DIR:-.}"
+
+# ── CLI public surface (tests/test_cli_surface.py) ────────────────────────────
+# `mangomas` is a console script (`pyproject.toml` -> `mangomas.cli.main:app`),
+# so its command tree and flags are a user-facing contract. Recorded from the
+# live app and then reviewed — editing these tuples is the review record for a
+# surface change, exactly like EXPECTED_AGENT_SLUGS is for the corpus.
+EXPECTED_CLI_ROOT_COMMANDS: tuple[str, ...] = (
+    "agents",
+    "chat",
+    "eval",
+    "history",
+    "rag",
+    "workflow",
+)
+EXPECTED_CLI_COMMANDS: tuple[str, ...] = (
+    "agents",
+    "chat",
+    "eval",
+    "history",
+    "rag",
+    "rag ingest",
+    "rag query",
+    "workflow",
+    "workflow run",
+    "workflow validate",
+)
+# Long-form options plus positional arguments, per command. Short aliases (-a,
+# -v) are deliberately excluded: they are conveniences, and pinning them would
+# make the set churn without protecting anything a script depends on.
+EXPECTED_CLI_PARAMS: dict[str, tuple[str, ...]] = {
+    "agents": (),
+    "chat": ("--agent", "--system", "--verbose", "<message>"),
+    "eval": (
+        "--agent",
+        "--allow-new-failures",
+        "--baseline",
+        "--dataset",
+        "--dataset-source",
+        "--fail-fast",
+        "--fail-on-error",
+        "--gate",
+        "--max-mean-score-drop",
+        "--max-pass-rate-drop",
+        "--min-mean-score",
+        "--min-pass-rate",
+        "--no-allow-new-failures",
+        "--no-fail-fast",
+        "--no-fail-on-error",
+        "--no-gate",
+        "--output-json",
+        "--parallelism",
+        "--scorer",
+        "--target",
+        "--verbose",
+    ),
+    "history": ("--limit", "--verbose"),
+    "rag": (),
+    "rag ingest": ("--verbose", "<path>"),
+    "rag query": ("--top-k", "--verbose", "<text>"),
+    "workflow": (),
+    "workflow run": ("--definition", "--verbose", "<message>"),
+    "workflow validate": ("--definition", "--verbose"),
+}
