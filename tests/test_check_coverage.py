@@ -9,6 +9,26 @@ That already happened once. `api/*.py` was flat when `api/` grew a `routes/`
 subpackage, so the new routers went unmeasured while the gate stayed green.
 `cli/` is next in line — spec-0015 decomposes `cli/main.py` into a command
 package — so the rule is pinned here rather than left to review.
+
+## The invariant this module owns (spec-0020 R2)
+
+Four defects of one shape have been found in this repo's gates:
+
+1. the flat `api/*.py` glob above;
+2. a non-recursive `cli` glob, ahead of the spec-0015 split;
+3. an unanchored `"\.\.\."` in `exclude_lines`, which matched
+   `typer.Argument(...)` and dropped whole command bodies from measurement;
+4. no guard that the floor list covers every package at all.
+
+They share one signature: **a gate config that stops covering something and
+reports success anyway.** A green gate cannot distinguish "we checked everything
+and it passed" from "we checked less than you think and it passed." Defect 3 is
+the sharpest — an over-matching exclusion makes the percentage go *up*, because
+the lines it swallows are the untested ones, so the symptom looks like an
+improvement.
+
+Every guard for that class lives in this module, so the fifth instance has an
+obvious home instead of being rediscovered. When you add one, add it here.
 """
 
 from __future__ import annotations
@@ -164,4 +184,62 @@ def test_protocol_stub_bodies_are_still_excluded(line: str) -> None:
     assert any(re.search(p, line) for p in _exclude_patterns()), (
         f"no exclude_lines pattern matches a bare ellipsis stub:\n  {line}\n"
         f"Every Protocol `base.py` body would now count as uncovered."
+    )
+
+
+# ── Floor completeness (spec-0020 R1) ─────────────────────────────────────────
+#
+# The fourth instance of the class named in this module's docstring, and the one
+# with the widest blast radius: the other three break a floor that exists, this
+# one is about a floor that never gets written. Add a package to
+# `src/mangomas/`, forget its floor, and only the 95% global applies — a package
+# can sit at 60% indefinitely without any gate objecting.
+
+# Entries that deliberately carry no floor of their own.
+_FLOOR_EXEMPT = frozenset(
+    {
+        "__init__.py",  # re-export surface; measured by whichever floor imports it
+        "__pycache__",
+        "py.typed",  # PEP 561 marker, not code
+    }
+)
+
+
+def _floor_roots() -> set[str]:
+    """The path each floor anchors on, with the glob tail removed."""
+    return {f.include.split("*", 1)[0].rstrip("/") for f in _all_floors()}
+
+
+def _top_level_source_entries() -> list[str]:
+    src = _REPO_ROOT / "src" / "mangomas"
+    return sorted(
+        p.name for p in src.iterdir() if p.name not in _FLOOR_EXEMPT and not p.name.startswith(".")
+    )
+
+
+def test_source_tree_is_non_empty() -> None:
+    """Self-guard: an empty listing would make the completeness check vacuous —
+    the same failure this module exists to catch, one level up."""
+    assert _top_level_source_entries()
+
+
+@pytest.mark.parametrize("entry", _top_level_source_entries())
+def test_every_top_level_source_path_has_a_floor(entry: str) -> None:
+    """Every package and module under `src/mangomas/` is named by some floor.
+
+    Without this, a new package inherits only the 95% global backstop, and
+    nothing says so. The global is an *average*: a small package at 40% moves it
+    by a fraction of a point and the gate stays green, which is precisely the
+    fail-open signature — less was checked than the reader believes.
+
+    A floor is a deliberate statement about what a surface is worth. Adding one
+    should be a decision, not something a contributor can skip by accident.
+    """
+    roots = _floor_roots()
+    expected = f"src/mangomas/{entry}"
+    assert expected in roots, (
+        f"{expected!r} has no entry in scripts/check_coverage.py::FLOORS. "
+        f"Add one (choose the floor deliberately — 100% for a small pure "
+        f"module, 95% to match its siblings), or add it to _FLOOR_EXEMPT with "
+        f"a reason."
     )

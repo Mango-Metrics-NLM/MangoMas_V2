@@ -92,7 +92,7 @@ _keys = st.lists(st.text(min_size=1, max_size=8), min_size=1, max_size=6, unique
 @settings(max_examples=200)
 @given(_keys)
 def test_json_keys_full_object_always_scores_one(keys: list[str]) -> None:
-    obj = {k: 1 for k in keys}
+    obj = dict.fromkeys(keys, 1)
     scorer = JsonKeysScorer(required_keys=keys)
     result = asyncio.run(scorer.score(json.dumps(obj), ""))
     assert result.score == 1.0
@@ -107,7 +107,7 @@ def test_json_keys_score_in_unit_interval_and_never_raises(
 ) -> None:
     # Drop a random subset of keys from the prediction; score must stay graded.
     subset = data.draw(st.lists(st.sampled_from(keys), unique=True))
-    obj = {k: 1 for k in subset}
+    obj = dict.fromkeys(subset, 1)
     scorer = JsonKeysScorer(required_keys=keys)
     result = asyncio.run(scorer.score(json.dumps(obj), ""))
     assert 0.0 <= result.score <= 1.0

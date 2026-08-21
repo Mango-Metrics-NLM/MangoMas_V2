@@ -9,6 +9,59 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Gate integrity and corpus completion — Spec-0020._
+
+### Fixed
+
+- **The coverage floor list had no completeness guard.** 19 floors covered every
+  top-level path under `src/mangomas/` except `_entry_points.py`, and nothing
+  asserted it — a package added tomorrow would inherit only the 95% global,
+  which is an *average*, so a small module at 40% moves it by a fraction of a
+  point and the gate stays green. This is the fourth defect of one shape, after
+  a flat `api/*.py` glob, a non-recursive `cli` glob, and an over-matching
+  ellipsis exclusion. `tests/test_check_coverage.py` now names that invariant
+  class in its docstring and owns every guard for it, so the fifth instance
+  lands somewhere obvious instead of being rediscovered.
+- **`mypy` checked a different surface for developers than for CI.** A bare
+  `python -m mypy` covered **155** files (`packages = ["mangomas"]`) while
+  `make typecheck` covered **324**. CLAUDE.md documents the bare command, so
+  following the docs gave a weaker check than the gate, with tests, scripts and
+  the eval bridge untyped locally. Fixed in configuration rather than
+  documented as a caveat — a `files` list mirroring the Makefile's `CODE_PATHS`
+  — and locked by two assertions in `tests/deploy/test_ci_make_parity.py`,
+  separate because a leftover `packages` key would re-narrow the surface even
+  with `files` correct.
+
+### Changed
+
+- **Nine ruff rule families adopted as a ratchet**: `LOG`, `G`, `ASYNC`, `ERA`,
+  `DTZ`, `TID`, `C4`, `PTH`, `T20`. Every family was measured across all four
+  lint paths first and eight were already at zero, so this locks in properties
+  the code already has rather than demanding a cleanup. Three real hits, all
+  semantics-preserving. **`ASYNC240` is excluded by name**: it recommends
+  `trio.Path`/`anyio.path`, this project is asyncio-only, and all four hits are
+  synchronous `Path.read_text()` in async *test assertions* — obeying it would
+  mean taking a dependency to satisfy a linter. `N`, `TRY` and `FBT` are
+  recorded as deliberate non-goals; `N818` alone would demand renaming
+  `AgentNotFound` and four siblings on a protected path.
+- **Two owner agents** — `mango-cli-dev` and `mango-harness-dev` — close the
+  last five surfaces with no write-capable owner. spec-0019 deferred `cli/`
+  because its shape was about to change; it has now settled.
+  `_entry_points.py`, `correlation.py` and `_headers.py` join existing owners
+  rather than getting agents of their own. Roster 23 → 25.
+- **Two skills from procedures that produced findings**:
+  `mango-mutation-proof` (a green test proves nothing unless you know what
+  makes it red — including how to pick a mutation that *discriminates*) and
+  `mango-coverage-audit` (compare coverage's own parser against its report; an
+  over-matching exclusion makes the percentage go *up*, so the symptom looks
+  like success). Roster 13 → 15.
+- **Hooks**: `ruff format` now runs beside `check --fix` on edit — the one check
+  a per-file hook could not do — and `make typecheck format-check` (0.3s warm)
+  runs ahead of the Stop suite, catching cross-file type breakage that neither
+  the ruff hook nor pytest sees. Adding `--cov` there was measured and rejected:
+  +14s per turn end for a signal that would not have caught any of the three
+  coverage defects above.
+
 _Package decomposition — Spec-0015 / ADR-0019._
 
 ### Changed

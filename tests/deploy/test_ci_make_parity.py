@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import yaml
@@ -175,3 +175,54 @@ def test_scripts_coverage_uses_an_isolated_coverage_file_and_addopts() -> None:
     body = _make_target_body("scripts-coverage")
     assert "COVERAGE_FILE=.coverage.scripts" in body
     assert '-o addopts=""' in body
+
+
+def _makefile_variable(name: str) -> str:
+    """Return a `NAME ?= value` (or `NAME = value`) assignment from the Makefile.
+
+    Companion to `_make_target_body`: the parity assertions below compare a
+    Makefile *variable* rather than a target body.
+    """
+    match = re.search(
+        rf"^{re.escape(name)}\s*\??=\s*(.+)$", _MAKEFILE.read_text(encoding="utf-8"), re.M
+    )
+    assert match is not None, f"Makefile does not define {name}"
+    return match.group(1).strip()
+
+
+def _mypy_config() -> dict[str, Any]:
+    pyproject = tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))
+    return cast("dict[str, Any]", pyproject["tool"]["mypy"])
+
+
+def test_mypy_checked_surface_matches_the_makefile() -> None:
+    """A bare `mypy` must check exactly what `make typecheck` does.
+
+    Before this, `[tool.mypy]` declared `packages = ["mangomas"]`, so a bare
+    `mypy` covered **155** files while `make typecheck` — and therefore CI —
+    covered **324**. A contributor running the command CLAUDE.md documents got a
+    weaker check than the gate, and only found out on push.
+
+    Fixed in configuration rather than documented as a caveat, so the documented
+    command is simply correct. This binds the two lists: `CODE_PATHS` is the
+    source of truth and `files` must mirror it.
+    """
+    code_paths = _makefile_variable("CODE_PATHS").split()
+    files = _mypy_config()["files"]
+    assert files == code_paths, (
+        f"[tool.mypy] files={files} but the Makefile's CODE_PATHS={code_paths}. "
+        f"A bare `mypy` would check a different surface than `make typecheck`."
+    )
+
+
+def test_mypy_does_not_narrow_the_surface_with_packages() -> None:
+    """`packages` alongside `files` would silently re-narrow the surface.
+
+    Asserted separately from the list comparison because it is a different
+    failure: `files` could mirror `CODE_PATHS` exactly while a leftover
+    `packages` key still limited what actually got checked.
+    """
+    assert "packages" not in _mypy_config(), (
+        "[tool.mypy] declares `packages`, which narrows a bare `mypy` back to "
+        "that package regardless of `files` — the drift this test exists to stop"
+    )

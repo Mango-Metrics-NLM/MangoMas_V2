@@ -60,6 +60,7 @@ thinking tool, not a gate.
 | [0017](0017-protected-path-governance.md) | Protected-path governance contract |
 | [0018](0018-live-claude-code-corpus.md) | Live Claude Code corpus (`.github/` → `.claude/`) |
 | [0019](0019-corpus-ownership-completion.md) | Corpus ownership completion (the deferred "B5" agents) |
+| [0020](0020-gate-integrity-and-corpus-completion.md) | Gate integrity and corpus completion |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch

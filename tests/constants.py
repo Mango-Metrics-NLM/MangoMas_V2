@@ -325,10 +325,12 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-adapter",
         "mango-agent-add",
         "mango-config",
+        "mango-coverage-audit",
         "mango-deploy",
         "mango-error",
         "mango-eval",
         "mango-harness",
+        "mango-mutation-proof",
         "mango-observability",
         "mango-rag",
         "mango-release",
@@ -377,10 +379,28 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # identical defect.
         "PostToolUse",
         "Edit|Write",
+        # spec-0020: `ruff format` runs beside `check --fix` on the same emitted
+        # path. Formatting is the one thing a per-file autofix hook genuinely
+        # could not do before, so drift surfaced only at `make gate`. `-I{}`
+        # replaces the bare `xargs` so both commands see the same argument.
         "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path "
-        "| xargs -r python -m ruff check --fix 2>/dev/null || true",
+        '| xargs -r -I{} sh -c \'python -m ruff check --fix "{}" >/dev/null 2>&1; '
+        'python -m ruff format "{}" >/dev/null 2>&1\' || true',
     ),
-    ("Stop", "*", "python -m pytest -q --no-cov || true"),
+    (
+        # spec-0020: `make typecheck format-check` added ahead of the suite.
+        # Measured at 0.3s warm, and mypy catches cross-file type breakage that
+        # neither the per-file ruff hook nor pytest sees.
+        #
+        # `--cov` was considered and rejected: it costs +14s per turn end
+        # (20.6s -> 35.0s) and would not have caught any of the three coverage
+        # defects this repo has hit. Two were glob problems visible only in the
+        # config, and the exclusion bug made the percentage go *up*. Delegates
+        # to `make` for the same reason CI does — one definition of each check.
+        "Stop",
+        "*",
+        "make typecheck format-check || true ; python -m pytest -q --no-cov || true",
+    ),
 )
 
 # rtk (rtk-ai/rtk): Bash-output compaction, wired as a PreToolUse hook.
@@ -414,7 +434,7 @@ RETIRED_AGENTS_DIR_RELPATH: str = ".github/agents"
 # reintroduce the convention — a file nothing loads cannot be kept honest.
 RETIRED_STRAY_AGENT_FILENAME: str = "agent.md"
 
-# The 23 agents, by slug. Set equality, so a change names what appeared or
+# The 25 agents, by slug. Set equality, so a change names what appeared or
 # vanished and editing this tuple is the review record.
 EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-adr-author",
@@ -422,9 +442,11 @@ EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-api-dev",
     "mango-architect",
     "mango-backend",
+    "mango-cli-dev",
     "mango-error-taxonomy-dev",
     "mango-eval-dev",
     "mango-fake-builder",
+    "mango-harness-dev",
     "mango-hypothesis-fuzz",
     "mango-integration-runner",
     "mango-layering-auditor",
@@ -447,14 +469,16 @@ ROUTER_AGENT_SLUGS: frozenset[str] = frozenset(
     {"mango-architect", "mango-backend", "mango-api-dev", "mango-test-engineer"}
 )
 # Agents holding Edit and/or Write. A reviewed-change gate, NOT a substitute
-# for a deny rule: it covers 16 of 23 and only fails when the set changes.
+# for a deny rule: it covers 18 of 25 and only fails when the set changes.
 WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adr-author",
         "mango-agent-impl-dev",
+        "mango-cli-dev",
         "mango-error-taxonomy-dev",
         "mango-eval-dev",
         "mango-fake-builder",
+        "mango-harness-dev",
         "mango-hypothesis-fuzz",
         "mango-integration-runner",
         "mango-llm-adapter-dev",
@@ -512,6 +536,9 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-error-taxonomy-dev": ("mango-error",),
     "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
+    # `mango-cli-dev` is deliberately absent: no skill documents the CLI
+    # surface, so its workflow is its own rather than a restated recipe.
+    "mango-harness-dev": ("mango-harness",),
     "mango-hypothesis-fuzz": ("mango-testing",),
     "mango-integration-runner": ("mango-testing",),
     "mango-llm-adapter-dev": ("mango-adapter",),

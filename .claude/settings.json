@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path | xargs -r python -m ruff check --fix 2>/dev/null || true"
+            "command": "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path | xargs -r -I{} sh -c 'python -m ruff check --fix \"{}\" >/dev/null 2>&1; python -m ruff format \"{}\" >/dev/null 2>&1' || true"
           }
         ]
       }
@@ -80,7 +80,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m pytest -q --no-cov || true"
+            "command": "make typecheck format-check || true ; python -m pytest -q --no-cov || true"
           }
         ]
       }
