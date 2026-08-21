@@ -7,6 +7,7 @@ import json
 import pytest
 from typer.testing import CliRunner
 
+from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.config import get_settings
 from mangomas.core import Orchestrator
@@ -25,12 +26,12 @@ def runner() -> CliRunner:
 @pytest.fixture(autouse=True)
 def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) -> None:
     forbid_real_orchestrator(monkeypatch)
-    monkeypatch.setattr(cli_main, "_build", lambda: orchestrator)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orchestrator)
 
     async def _noop_close(_orch: Orchestrator) -> None:
         return None
 
-    monkeypatch.setattr(cli_main, "_close_orchestrator", _noop_close)
+    monkeypatch.setattr(cli_runtime, "_close_orchestrator", _noop_close)
     # Feature is OFF by default in this process (no MANGOMAS_WORKFLOW__ env).
     get_settings.cache_clear()
 

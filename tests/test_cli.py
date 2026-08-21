@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mangomas.agents import ChatAgent
+from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
 from tests._seam_guards import forbid_real_orchestrator
@@ -23,7 +24,7 @@ def runner() -> CliRunner:
 @pytest.fixture(autouse=True)
 def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) -> None:
     forbid_real_orchestrator(monkeypatch)
-    monkeypatch.setattr(cli_main, "_build", lambda: orchestrator)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orchestrator)
 
     # In production each CLI invocation spawns a fresh process; the test
     # scaffold shares ONE orchestrator across multiple ``runner.invoke``
@@ -33,7 +34,7 @@ def _patch_build(monkeypatch: pytest.MonkeyPatch, orchestrator: Orchestrator) ->
     async def _noop_close(_orch: Orchestrator) -> None:
         return None
 
-    monkeypatch.setattr(cli_main, "_close_orchestrator", _noop_close)
+    monkeypatch.setattr(cli_runtime, "_close_orchestrator", _noop_close)
 
 
 def test_agents_command(runner: CliRunner) -> None:
@@ -87,7 +88,7 @@ def test_history_no_repo_exits_nonzero(
     """history exits with code 1 when no repository is configured."""
     no_repo_orch = Orchestrator(AgentContext(llm=FakeLLM(), repo=None))
     no_repo_orch.register(ChatAgent())
-    monkeypatch.setattr(cli_main, "_build", lambda: no_repo_orch)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: no_repo_orch)
 
     result = runner.invoke(cli_main.app, ["history"])
     assert result.exit_code == 1

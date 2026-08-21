@@ -165,7 +165,20 @@ exclude = ["*.md"]
 # typer command whose options must stay positional parameters. Narrow ignores
 # keep PLR0917 active as a guard everywhere else.
 "src/mangomas/adapters/llm/lmstudio.py" = ["PLR0917"]
-"src/mangomas/cli/main.py" = ["PLR0917"]
+"src/mangomas/cli/main.py" = ["PLR0917", "PLC0414", "SLF001"]
+# PLC0414: `mangomas.cli.main` is a permanent re-export facade (ADR-0019 /
+# spec-0015), and `X as X` is the explicit re-export idiom mypy's
+# --no-implicit-reexport requires. Ruff exempts `__init__.py` from this rule
+# automatically; `main.py` is a facade that is not one, because the console
+# script in [project.scripts] resolves `mangomas.cli.main:app`. Same idiom, and
+# same reason, as the `tests/constants.py` ignore above.
+# SLF001: the command layer calls `_runtime._build()` / `_close_orchestrator()`
+# through the module object rather than a bound name. That is deliberate — it
+# is what lets one `monkeypatch.setattr` on `mangomas.cli._runtime` reach every
+# command at once, where bound names would need a separate patch target per
+# module and the one that got missed would fail silently (measured: 13 of 15
+# such sites did). The names stay underscore-private because they are a test
+# seam, not API.
 
 [tool.mypy]
 python_version = "3.11"

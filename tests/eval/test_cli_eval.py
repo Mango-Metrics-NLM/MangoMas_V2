@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 # Importing the CLI module also wires the scorer registry.
 import mangomas.cli.main as cli_main
 from mangomas.agents import ChatAgent
+from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli.main import app
 from mangomas.config import get_settings
 from mangomas.core import AgentContext, Orchestrator
@@ -40,7 +41,7 @@ def _stub_cli_orchestrator(
     tries to reach the configured LLM provider (LM Studio is not running in
     the unit-test environment)."""
     forbid_real_orchestrator(monkeypatch)
-    monkeypatch.setattr(cli_main, "_build", lambda: eval_orchestrator)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: eval_orchestrator)
 
 
 def test_eval_cli_runs_against_fixture(fixtures_dir: Path) -> None:
@@ -145,7 +146,7 @@ def test_eval_cli_bad_scorer_option_exits_2_before_any_row_runs(
     fake_llm = FakeLLM()
     orch = Orchestrator(AgentContext(llm=fake_llm, repo=FakeRepository()))
     orch.register(ChatAgent())
-    monkeypatch.setattr(cli_main, "_build", lambda: orch)
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orch)
     monkeypatch.setenv("MANGOMAS_EVAL__SCORER_OPTIONS", '{"required_keys": "not-a-list"}')
     runner = CliRunner()
     result = runner.invoke(

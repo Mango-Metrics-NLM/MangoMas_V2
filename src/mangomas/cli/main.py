@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import typer
 
@@ -15,7 +14,12 @@ import mangomas.eval.scorers  # registers built-in scorers (side-effect import)
 import mangomas.eval.sinks
 import mangomas.eval.sources
 import mangomas.eval.targets  # noqa: F401 — registers built-in targets
-from mangomas.composition import build_orchestrator
+from mangomas.cli import _runtime
+from mangomas.cli._runtime import _build as _build
+from mangomas.cli._runtime import _close_orchestrator as _close_orchestrator
+from mangomas.cli.exit_codes import EVAL_GATE_EXIT_CODE as EVAL_GATE_EXIT_CODE
+from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR as EXIT_CONFIG_ERROR
+from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR as EXIT_RUNTIME_ERROR
 from mangomas.config import DEFAULT_API_HISTORY_DEFAULT_LIMIT, get_settings
 from mangomas.core import AgentRequest, Message
 from mangomas.errors import ConfigError, MangomasError
@@ -44,46 +48,21 @@ if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval import DatasetSource, GateResult, Sink, Target
     from mangomas.workflow import WorkflowGraph
 
-# Windows default console codec is cp1252; LLM replies routinely contain
-# em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
-# typer.echo. Reconfigure to UTF-8 with replacement so output never crashes.
-if sys.platform == "win32":  # pragma: no cover — platform-gated
-    for _stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(_stream, "reconfigure", None)
-        if reconfigure is not None:
-            reconfigure(encoding="utf-8", errors="replace")
-
 app = typer.Typer(help="Mango-Mas V2 CLI", no_args_is_help=True)
 
 logger = logging.getLogger(__name__)
 
 
-def _build() -> Orchestrator:
-    """Construct the orchestrator with full settings + adapter wiring."""
-    return build_orchestrator()
-
-
-async def _close_orchestrator(orch: Orchestrator) -> None:
-    """Release adapter resources cleanly via :meth:`Orchestrator.aclose`.
-
-    Retained as a thin wrapper so existing tests can monkeypatch the CLI's
-    close path without reaching into core. The real teardown logic lives on
-    :class:`~mangomas.core.Orchestrator` so every entry point (CLI, FastAPI
-    lifespan, demo scripts) shares one tested code path.
-    """
-    await orch.aclose()
-
-
 @app.command()
 def agents() -> None:
     """List registered agents."""
-    orch = _build()
+    orch = _runtime._build()
 
     async def _run() -> list[str]:
         try:
             return list(orch.list_agents())
         finally:
-            await _close_orchestrator(orch)
+            await _runtime._close_orchestrator(orch)
 
     for name in asyncio.run(_run()):
         typer.echo(name)
@@ -100,7 +79,7 @@ def chat(
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
 
-    orch = _build()
+    orch = _runtime._build()
     messages: list[Message] = []
     if system:
         messages.append(Message(role="system", content=system))
@@ -113,7 +92,7 @@ def chat(
             response = await orch.dispatch(agent, request)
             return response.content
         finally:
-            await _close_orchestrator(orch)
+            await _runtime._close_orchestrator(orch)
 
     typer.echo(asyncio.run(_run()))
 
@@ -127,7 +106,7 @@ def history(
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
 
-    orch = _build()
+    orch = _runtime._build()
 
     async def _run() -> list[dict[str, object]] | None:
         """Return rows, or ``None`` to signal "no repository configured"."""
@@ -137,7 +116,7 @@ def history(
                 return None
             return await repo.list_turns(limit=limit)
         finally:
-            await _close_orchestrator(orch)
+            await _runtime._close_orchestrator(orch)
 
     rows = asyncio.run(_run())
     if rows is None:
@@ -146,15 +125,6 @@ def history(
 
     for row in rows:
         typer.echo(json.dumps(row, ensure_ascii=False))
-
-
-# Exit codes. The gate code is distinct from the other two so CI can react
-# specifically to a quality regression; all three are named because the comment
-# that defined their semantics used to sit above a single constant while the
-# other two were repeated as bare literals at nine call sites.
-EXIT_RUNTIME_ERROR: Final[int] = 1
-EXIT_CONFIG_ERROR: Final[int] = 2
-EVAL_GATE_EXIT_CODE: Final[int] = 3
 
 
 def _build_sinks(
@@ -510,7 +480,7 @@ def eval_cmd(
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
         raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
 
-    orch = _build()
+    orch = _runtime._build()
     runner = EvalRunner(
         orch,
         scorer_instance,
@@ -523,7 +493,7 @@ def eval_cmd(
             dataset = await source_instance.load()
             report = await runner.run(dataset, target=target_instance)
         finally:
-            await _close_orchestrator(orch)
+            await _runtime._close_orchestrator(orch)
         gate_result = await _evaluate_run_gates(
             report,
             gating_engaged=gating_engaged,
@@ -574,7 +544,7 @@ def rag_ingest(
         logging.basicConfig(level=logging.DEBUG)
 
     cfg = get_settings()
-    orch = _build()
+    orch = _runtime._build()
 
     async def _run() -> IngestReport:
         try:
@@ -587,7 +557,7 @@ def rag_ingest(
             )
             return await pipeline.ingest(path)
         finally:
-            await _close_orchestrator(orch)
+            await _runtime._close_orchestrator(orch)
 
     report = asyncio.run(_run())
     typer.echo(
@@ -607,7 +577,7 @@ def rag_query(
         logging.basicConfig(level=logging.DEBUG)
 
     cfg = get_settings()
-    orch = _build()
+    orch = _runtime._build()
 
     async def _run() -> list[str]:
         try:
@@ -623,7 +593,7 @@ def rag_query(
                 for i, r in enumerate(results)
             ]
         finally:
-            await _close_orchestrator(orch)
+            await _runtime._close_orchestrator(orch)
 
     lines = asyncio.run(_run())
     if not lines:
@@ -691,7 +661,7 @@ def workflow_run(
         logging.basicConfig(level=logging.DEBUG)
 
     graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
-    orch = _build()
+    orch = _runtime._build()
     request = AgentRequest(messages=[Message(role="user", content=message)])
 
     async def _run() -> str:
@@ -699,7 +669,7 @@ def workflow_run(
             response = await execute_workflow(graph, request, orch=orch)
             return response.content
         finally:
-            await _close_orchestrator(orch)
+            await _runtime._close_orchestrator(orch)
 
     try:
         typer.echo(asyncio.run(_run()))
