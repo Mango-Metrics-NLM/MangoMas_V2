@@ -4,7 +4,7 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: ["main", "develop"]
+    branches: ["feat/initial-release"]
 
 # Least-privilege token: CI only needs to read the repo. codecov upload uses its
 # own token, not GITHUB_TOKEN.

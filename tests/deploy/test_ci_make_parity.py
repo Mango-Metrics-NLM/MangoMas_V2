@@ -114,6 +114,24 @@ def test_protected_paths_job_delegates_to_make() -> None:
     assert job["env"]["BASE_BRANCH"] == "feat/initial-release"
 
 
+def test_pull_request_trigger_targets_the_real_trunk() -> None:
+    """CI's PR trigger must name this repo's actual trunk.
+
+    `feat/initial-release` is trunk here — the Makefile's `BASE_REF` default
+    and the `protected-paths` job's `BASE_BRANCH` above both say so — not
+    `main` (a real but permanently-diverged branch; see NEXT_STEPS.md) and not
+    `develop` (which does not exist in this repository at all, checked against
+    both local and remote branches). A PR opened against the actual trunk got
+    no `pull_request`-triggered CI before this.
+
+    PyYAML's default (YAML 1.1) resolver reads the unquoted ``on:`` key as the
+    boolean ``True`` rather than the string ``"on"`` — the same reason
+    `_ci_jobs()` above only ever indexes `doc["jobs"]`.
+    """
+    doc = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
+    assert doc[True]["pull_request"]["branches"] == ["feat/initial-release"]
+
+
 def test_scripts_coverage_job_delegates_to_make() -> None:
     """scripts/ sits outside `--cov=mangomas`'s reach (ADR-0021 / spec-0017
     A7), so it gets the same isolated-job treatment as bridge-coverage."""
