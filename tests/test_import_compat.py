@@ -251,9 +251,8 @@ def test_group_modules_do_not_import_the_root() -> None:
         source = getattr(mod, "__file__", None)
         if source is None:  # pragma: no cover - namespace package, not expected
             continue
-        with open(source, encoding="utf-8") as handle:
-            if "config._root" in handle.read():
-                offenders.append(submodule)
+        if "config._root" in Path(source).read_text(encoding="utf-8"):
+            offenders.append(submodule)
     assert offenders == [], f"group modules importing _root: {offenders}"
 
 

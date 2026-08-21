@@ -133,11 +133,47 @@ target-version = "py311"
 src = ["src", "tests", "eval_harness_bridge/src"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG"]
+# The second row (spec-0020 R4) was adopted as a ratchet, not a cleanup: every
+# family was measured across all four lint paths first, and eight of the nine
+# were already at zero. Locking in a property the code already has costs
+# nothing and stops it eroding.
+#   LOG, G      no f-strings or eager formatting in log calls
+#   ASYNC       no blocking work inside `async def` (see ASYNC240 below)
+#   ERA         no commented-out code
+#   DTZ         no naive datetimes
+#   TID         no banned or relative imports
+#   C4          comprehension hygiene            (2 hits, auto-fixed)
+#   PTH         pathlib over os.path             (1 hit in tests, fixed)
+#   T20         no stray print() in library code (0 in src and tests)
+select = [
+    "E", "F", "I", "B", "UP", "SIM", "PL", "RUF", "S", "SLF", "ARG",
+    "LOG", "G", "ASYNC", "ERA", "DTZ", "TID", "C4", "PTH", "T20",
+]
 # PLR0913: constructors and typer CLI commands are argument-heavy by design.
 # PLR0917 (positional-count) stays ON globally — it is the guard against a
 # silent positional-parameter reorder in a shared base class.
-ignore = ["PLR0913"]
+#
+# ASYNC240 tells you to replace `pathlib` inside `async def` with `trio.Path` or
+# `anyio.path`. This project is asyncio-only and depends on neither. All four
+# hits were synchronous `Path.read_text()` in async *test assertions*, which is
+# correct code — obeying the rule would mean taking a dependency to satisfy a
+# linter. Excluded by name so the reason survives.
+ignore = ["PLR0913", "ASYNC240"]
+
+# Deliberately NOT selected (spec-0020 F5), recorded so they are not
+# re-proposed without the reasoning:
+#
+#   N     (9)  — N818 demands renaming `AgentNotFound` and four siblings to an
+#                `...Error` suffix. That is a breaking change to the public
+#                error taxonomy, on a protected path (`src/mangomas/errors.py`),
+#                mapped in `api/errors.py::_ERROR_STATUS` and documented in
+#                CLAUDE.md, in exchange for a naming convention. N806 also
+#                fires on `Content`/`Part` in `adapters/llm/vertex.py`, which
+#                are lazily-imported *classes* bound to locals — correctly
+#                capitalised.
+#   TRY  (96)  — real churn, no defect behind it.
+#   FBT  (18)  — same. Revisit either only alongside a change that already
+#                touches those call sites.
 
 [tool.ruff.lint.isort]
 # CLAUDE.md requires `from __future__ import annotations` in every source file.
@@ -158,7 +194,15 @@ exclude = ["*.md"]
 # PLC0414: the constants hub re-exports config defaults via the explicit
 # ``X as X`` idiom so they read as re-exports, not unused imports.
 "tests/constants.py" = ["PLC0414"]
-"scripts/*" = ["S603", "S607"]
+# T201/PTH: `scripts/` are operator-facing CLI entry points and Claude Code
+# hooks whose entire contract is what they print on stdout, and several must
+# run on a bare interpreter with no `mangomas` installed — `os.path` keeps them
+# dependency-free and obvious. Both rules stay active for `src/` and `tests/`,
+# where a stray `print()` really is a defect.
+"scripts/*" = ["S603", "S607", "T201", "PTH"]
+# Same reasoning: the eval bridge is a decoupled black-box client whose output
+# is its interface.
+"eval_harness_bridge/*" = ["T201"]
 # PLR0917: these two signatures are fixed by external contract, not by choice.
 # `LMStudioClient.__init__` is a public adapter constructor frozen for
 # backwards compatibility (its shared base is keyword-only); `eval_cmd` is a
