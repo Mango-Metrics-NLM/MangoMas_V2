@@ -343,6 +343,21 @@ def test_mapped_agent_references_its_skill(slug: str) -> None:
     assert missing == [], f"{slug} does not reference {missing}"
 
 
+def test_agent_skill_owners_resolve_to_a_real_skill() -> None:
+    """Every `AGENT_SKILL_OWNERS` value must still be a real skill.
+
+    `test_mapped_agent_references_its_skill` above only checks the skill name
+    is a substring of the agent's body prose — a renamed or retired skill
+    mentioned only in stale prose still passes that check. This checks the
+    mapping's *target* against the live roster instead, so a rename that
+    updates the constant's key but leaves a retired slug in its value fails by
+    name here, rather than silently validating a skill that no longer exists.
+    """
+    referenced = {skill for skills in AGENT_SKILL_OWNERS.values() for skill in skills}
+    unresolved = sorted(referenced - set(EXPECTED_SKILL_SLUGS))
+    assert unresolved == [], f"AGENT_SKILL_OWNERS references retired/renamed skill(s): {unresolved}"
+
+
 @pytest.mark.parametrize("slug", sorted(AGENT_SKILL_OWNERS))
 def test_mapped_agent_has_no_procedure_section(slug: str) -> None:
     """A mapped agent's recipe belongs to its skill.
