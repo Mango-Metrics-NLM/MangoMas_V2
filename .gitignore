@@ -21,6 +21,12 @@ coverage.xml
 .mypy_cache/
 .ruff_cache/
 
+# Secret scanning — downloaded release binary + archive (make secret-scan).
+# CI downloads fresh into an ephemeral runner and discards it; a local run
+# leaves both sitting in the repo root.
+gitleaks
+gitleaks.tar.gz
+
 # Env / secrets
 .env
 .env.*

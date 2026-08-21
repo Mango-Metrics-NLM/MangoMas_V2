@@ -139,6 +139,17 @@ def test_scripts_coverage_job_delegates_to_make() -> None:
     assert commands == ["make scripts-coverage"]
 
 
+def test_secret_scan_job_delegates_to_make() -> None:
+    """gitleaks lives in exactly one place: the `secret-scan` Makefile target.
+
+    Before this, `secret-scan` was the one CI job with no Makefile target —
+    raw inline `curl`/`gitleaks` shell, which made README's "the Makefile
+    wraps the exact commands CI runs" claim false for exactly this job.
+    """
+    commands = _step_run_commands(_ci_jobs()["secret-scan"])
+    assert commands == ["make secret-scan"]
+
+
 def test_global_coverage_floor_matches_pytest_addopts() -> None:
     """The one duplication that can't be structurally eliminated (pytest's
     own --cov-fail-under vs. scripts/check_coverage.py's authoritative

@@ -170,18 +170,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      # We invoke the open-source ``gitleaks`` binary directly rather than the
-      # ``gitleaks/gitleaks-action@v2`` wrapper, which requires a paid licence
-      # for organisation accounts. The binary itself is MIT-licensed and free.
-      - name: Install gitleaks
-        run: |
-          set -euo pipefail
-          GITLEAKS_VERSION="8.21.2"
-          curl -fsSL -o gitleaks.tar.gz \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          tar -xzf gitleaks.tar.gz gitleaks
-          chmod +x gitleaks
-          ./gitleaks version
-
-      - name: Scan repository
-        run: ./gitleaks detect --no-banner --redact --exit-code 1 --source .
+      # The download-and-scan recipe (and the reasoning for invoking the raw
+      # binary instead of the paid gitleaks-action wrapper) now lives in
+      # exactly one place: `make secret-scan`. This job just calls it, like
+      # every job above.
+      - name: Gitleaks secret scan
+        run: make secret-scan
