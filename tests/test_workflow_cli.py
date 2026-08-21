@@ -67,3 +67,16 @@ def test_validate_ok(runner: CliRunner) -> None:
 def test_validate_disabled_by_default_exits_config_code(runner: CliRunner) -> None:
     result = runner.invoke(cli_main.app, ["workflow", "validate"])
     assert result.exit_code == WORKFLOW_CONFIG_EXIT_CODE
+
+
+def test_validate_verbose_enables_debug_logging(runner: CliRunner) -> None:
+    """`--verbose` is a real branch, not decoration.
+
+    Every command carries this flag and only `chat`'s was exercised. Splitting
+    `cli/main.py` made the per-module numbers visible and this was the single
+    uncovered statement in `commands/workflow.py` — invisible while the whole
+    CLI reported one aggregate percentage.
+    """
+    result = runner.invoke(cli_main.app, ["workflow", "validate", "-f", _AGENT_GRAPH, "--verbose"])
+    assert result.exit_code == 0
+    assert "name=t" in result.stdout

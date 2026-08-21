@@ -20,7 +20,13 @@ from mangomas.core import AgentContext, Orchestrator
 from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
 from tests._seam_guards import forbid_real_orchestrator
-from tests.constants import EVAL_GATE_EXIT_CODE, EVAL_THRESHOLD_LENIENT, EVAL_THRESHOLD_STRICT
+from tests.constants import (
+    EVAL_GATE_EXIT_CODE,
+    EVAL_SINK_JSON_FILE,
+    EVAL_THRESHOLD_LENIENT,
+    EVAL_THRESHOLD_STRICT,
+    EXIT_RUNTIME_ERROR,
+)
 from tests.fakes import FakeLLM, FakeRepository, FakeSink
 
 
@@ -468,3 +474,90 @@ def test_emit_sinks_returns_none_when_all_succeed() -> None:
     sinks: list[Sink] = [FakeSink(name="a"), FakeSink(name="b")]
     exc = asyncio.run(cli_main._emit_sinks(sinks, _report(), None))
     assert exc is None
+
+
+def test_eval_verbose_enables_debug_logging(fixtures_dir: Path) -> None:
+    """`--verbose` is a real branch on this command too — see the workflow twin."""
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--verbose",
+        ],
+    )
+    assert result.exit_code == 0
+
+
+def test_eval_cli_sink_failure_exits_runtime_code(fixtures_dir: Path, tmp_path: Path) -> None:
+    """A sink that raises is exit 1, and the run still completes.
+
+    `test_emit_sinks_isolates_failures` above proves `_emit_sinks` *returns* the
+    exception; nothing proved the CLI acted on it. The failure is produced by a
+    real `json_file` sink pointed at a path whose parent is a regular file —
+    `mkdir(parents=True)` cannot create a directory there — rather than by
+    registering a throwing stub, so this exercises the same sink an operator
+    would have typo'd their way into.
+    """
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--output-json",
+            str(blocker / "report.json"),
+        ],
+    )
+
+    assert result.exit_code == EXIT_RUNTIME_ERROR
+    assert "sink error" in (result.stdout + result.stderr).lower()
+
+
+def test_output_json_overrides_a_configured_json_file_path(
+    fixtures_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI flag beats settings when `json_file` is *already* configured.
+
+    The documented precedence is ``--output-json`` > ``sink_options[json_file]
+    [path]``, and the branch where the sink is already in `sinks` (so
+    `--output-json` overrides rather than injects) had no test — it is the one
+    partial branch `_eval_config.py` reports. Asserting the configured path
+    stays *empty* is the half that matters: writing both files would satisfy a
+    naive "the override landed" check.
+    """
+    configured = tmp_path / "from-settings.json"
+    override = tmp_path / "from-flag.json"
+    monkeypatch.setenv("MANGOMAS_EVAL__SINKS", json.dumps([EVAL_SINK_JSON_FILE]))
+    monkeypatch.setenv(
+        "MANGOMAS_EVAL__SINK_OPTIONS",
+        json.dumps({EVAL_SINK_JSON_FILE: {"path": str(configured)}}),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--output-json",
+            str(override),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert override.is_file(), "--output-json path was not written"
+    assert not configured.exists(), "the settings path was written despite the CLI override"

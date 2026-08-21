@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import tomllib
 from pathlib import Path
 from types import ModuleType
 
@@ -31,8 +32,18 @@ import pytest
 import mangomas.config as facade
 
 # Decomposed packages and the group modules their facade re-exports from.
-# Extend this as spec-0015 proceeds through telemetry/ and cli/.
+# spec-0015 is complete at three: config/, telemetry/ and cli/.
 _FACADES: dict[str, tuple[str, ...]] = {
+    "mangomas.cli": (
+        "_app",
+        "_runtime",
+        "commands._eval_config",
+        "commands.chat",
+        "commands.eval",
+        "commands.rag",
+        "commands.workflow",
+        "exit_codes",
+    ),
     "mangomas.telemetry": (
         "_state",
         "exporters",
@@ -56,6 +67,17 @@ _FACADES: dict[str, tuple[str, ...]] = {
         "workflow",
     ),
 }
+
+
+# The module that *is* the facade. For `config` and `telemetry` that is the
+# package itself, but `cli`'s facade is `cli/main.py`: `[project.scripts]`
+# resolves `mangomas.cli.main:app`, so the entry point — not `cli/__init__.py` —
+# is the path that must keep working.
+_FACADE_MODULES: dict[str, str] = {"mangomas.cli": "mangomas.cli.main"}
+
+
+def _facade_of(package: str) -> ModuleType:
+    return importlib.import_module(_FACADE_MODULES.get(package, package))
 
 
 # Module-level infrastructure that is public by naming convention but is not
@@ -114,7 +136,18 @@ def _owned_names(package: str, submodule: str) -> list[str]:
 #                       rebuilt the dict rather than re-exporting the same
 #                       object would leave stale cached providers behind and
 #                       fail order-dependently: green alone, red in a full run.
+#   `_build` /
+#   `_close_orchestrator` — the orchestrator patch seam. Every CLI suite
+#                       replaces these; a facade that rebound rather than
+#                       re-exported would leave the real ones reachable and
+#                       the tests would build live orchestrators while passing.
+#   `_emit_sinks`     — asserted directly by `tests/eval/test_cli_eval.py`.
 _PRIVATE_FACADE_CONTRACT: dict[str, dict[str, str]] = {
+    "mangomas.cli": {
+        "_build": "_runtime",
+        "_close_orchestrator": "_runtime",
+        "_emit_sinks": "commands.eval",
+    },
     "mangomas.telemetry": {
         "_state": "_state",
         "_scoped_tracers": "_state",
@@ -290,3 +323,122 @@ def test_no_telemetry_module_imports_a_cloud_sdk_at_module_scope() -> None:
             if any(n.startswith("opentelemetry.exporter") for n in names):
                 offenders.append(f"{path.name}:{node.lineno}")
     assert offenders == [], f"cloud SDK imported at module scope: {offenders}"
+
+
+# ── CLI facade (spec-0015 R1) ─────────────────────────────────────────────────
+
+
+def _module_scope_imports(module: str) -> list[str]:
+    """Every module name *module* imports, as dotted strings.
+
+    AST-based rather than a substring scan, which the config and telemetry
+    guards above could get away with and this one cannot: the command modules'
+    docstrings name `mangomas.cli._app` precisely to explain why they must not
+    import it, and a text search would read the explanation as the offence.
+
+    Walks the whole tree, not just module scope, so a deferred import inside a
+    function counts too — that is still a cycle, just one that fires on call
+    rather than on import.
+    """
+    mod = importlib.import_module(module)
+    source = getattr(mod, "__file__", None)
+    assert source is not None, f"{module} has no source file"
+    tree = ast.parse(Path(source).read_text(encoding="utf-8"))
+
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.append(node.module)
+            names.extend(f"{node.module}.{alias.name}" for alias in node.names)
+    return names
+
+
+@pytest.mark.parametrize("submodule", _FACADES["mangomas.cli"])
+def test_cli_facade_reexports_are_identical_objects(submodule: str) -> None:
+    """`main.X is home.X` for every public name a CLI group module owns.
+
+    `app` is the one that would hurt: `[project.scripts]` resolves
+    `mangomas.cli.main:app`, so a facade re-exporting a *different* Typer
+    instance would give the console script an app with no commands on it while
+    every import in the suite still succeeded.
+    """
+    facade_mod = _facade_of("mangomas.cli")
+    home = importlib.import_module(f"mangomas.cli.{submodule}")
+    for name in _owned_names("mangomas.cli", submodule):
+        if not hasattr(facade_mod, name):
+            continue
+        assert getattr(facade_mod, name) is getattr(home, name), (
+            f"mangomas.cli.main.{name} is not the same object as mangomas.cli.{submodule}.{name}"
+        )
+
+
+def test_every_owned_cli_name_reaches_the_facade() -> None:
+    """No public name may be stranded in a command module.
+
+    Unlike the config equivalent this does **not** skip underscore-prefixed
+    group modules: `_app` is where `app` itself is defined, so skipping it by
+    naming convention would skip the single most load-bearing re-export in the
+    package.
+    """
+    stranded: list[str] = []
+    facade_mod = _facade_of("mangomas.cli")
+    for submodule in _FACADES["mangomas.cli"]:
+        for name in _owned_names("mangomas.cli", submodule):
+            if not hasattr(facade_mod, name):
+                stranded.append(f"{submodule}.{name}")
+    assert stranded == [], f"public names not re-exported by mangomas.cli.main: {sorted(stranded)}"
+
+
+@pytest.mark.parametrize(("name", "home"), sorted(_PRIVATE_FACADE_CONTRACT["mangomas.cli"].items()))
+def test_cli_private_contract_names_are_identical(name: str, home: str) -> None:
+    facade_mod = _facade_of("mangomas.cli")
+    home_mod = importlib.import_module(f"mangomas.cli.{home}")
+    assert hasattr(facade_mod, name), f"mangomas.cli.main no longer re-exports {name!r}"
+    assert getattr(facade_mod, name) is getattr(home_mod, name)
+
+
+def test_cli_command_modules_do_not_import_the_assembly_root() -> None:
+    """Dependency direction: `_app` imports the commands, never the reverse.
+
+    `cli/__init__.py` does `from mangomas.cli.main import app`, so the package
+    already has a live import cycle that the split widens: a command module
+    importing `_app` or `main` would be reached mid-initialisation, at which
+    point `app` may not exist yet. That failure depends on which module the
+    process imports first, so it can hide from a suite that always enters
+    through the same door.
+    """
+    offenders: list[str] = []
+    for submodule in _FACADES["mangomas.cli"]:
+        if not submodule.startswith("commands."):
+            continue
+        for imported in _module_scope_imports(f"mangomas.cli.{submodule}"):
+            if imported in {"mangomas.cli._app", "mangomas.cli.main"}:
+                offenders.append(f"{submodule} -> {imported}")
+    assert offenders == [], f"command modules importing the assembly root: {offenders}"
+
+
+def test_cli_base_modules_import_nothing_from_their_own_package() -> None:
+    """`exit_codes` and `_runtime` are the base layer.
+
+    Every command module depends on both, so a local import here — even a
+    sibling one — would put them inside the cycle instead of underneath it.
+    """
+    offenders: list[str] = []
+    for submodule in ("exit_codes", "_runtime"):
+        for imported in _module_scope_imports(f"mangomas.cli.{submodule}"):
+            if imported.startswith("mangomas.cli"):
+                offenders.append(f"{submodule} -> {imported}")
+    assert offenders == [], f"base modules importing from mangomas.cli: {offenders}"
+
+
+def test_console_script_entry_point_matches_the_facade() -> None:
+    """`pyproject.toml` names the facade, and the facade is what tests patch.
+
+    Pinned because the two could drift apart silently: repointing the entry
+    point at `mangomas.cli._app:app` would work perfectly for users and quietly
+    make this whole file's guarantees irrelevant to what actually ships.
+    """
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    assert pyproject["project"]["scripts"]["mangomas"] == "mangomas.cli.main:app"
