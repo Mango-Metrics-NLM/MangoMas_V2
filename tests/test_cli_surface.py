@@ -22,17 +22,22 @@ stable across those upgrades.
 from __future__ import annotations
 
 import importlib
-from typing import Any
+from typing import Any, cast
 
+import click
 import pytest
 from typer.main import get_command
 
 from mangomas.cli.main import app
 from tests.constants import (
     EXPECTED_CLI_COMMANDS,
+    EXPECTED_CLI_HELP_ORDER,
     EXPECTED_CLI_PARAMS,
     EXPECTED_CLI_ROOT_COMMANDS,
 )
+
+# Key used by EXPECTED_CLI_HELP_ORDER for the root group, which has no path.
+_ROOT_PATH = "<root>"
 
 
 def _subcommands(command: Any) -> dict[str, Any]:
@@ -46,6 +51,20 @@ def _subcommands(command: Any) -> dict[str, Any]:
     """
     children = getattr(command, "commands", None)
     return dict(children) if children else {}
+
+
+def _listed_commands(command: Any) -> list[str]:
+    """Return a group's children in `--help` order.
+
+    Companion to `_subcommands`, and duck-typed for the same reason: Typer's
+    `get_command` is typed as returning `Command`, and `list_commands` lives on
+    the group. `click.Context` is likewise typed against `click.core.Command`
+    while Typer passes `typer._click.core.Command`, so the cast keeps both the
+    runtime call and `--strict` honest without weakening either.
+    """
+    ctx = click.Context(cast("click.Command", command))
+    listed: list[str] = list(command.list_commands(ctx))
+    return listed
 
 
 def _walk(command: Any, prefix: str = "") -> dict[str, Any]:
@@ -100,6 +119,7 @@ def test_expected_surface_constants_are_populated() -> None:
     assert EXPECTED_CLI_COMMANDS
     assert EXPECTED_CLI_ROOT_COMMANDS
     assert EXPECTED_CLI_PARAMS
+    assert EXPECTED_CLI_HELP_ORDER
 
 
 # ── The contract ──────────────────────────────────────────────────────────────
@@ -125,6 +145,32 @@ def test_root_commands_are_all_registered() -> None:
     assert root == set(EXPECTED_CLI_ROOT_COMMANDS), (
         f"unexpected: {sorted(root - set(EXPECTED_CLI_ROOT_COMMANDS))}; "
         f"missing: {sorted(set(EXPECTED_CLI_ROOT_COMMANDS) - root)}"
+    )
+
+
+@pytest.mark.parametrize("path", sorted(EXPECTED_CLI_HELP_ORDER))
+def test_help_listing_order_is_unchanged(path: str) -> None:
+    """`--help` lists commands in **registration order**, not alphabetically.
+
+    Verified against the live app: the root renders
+    `agents, chat, history, eval, rag, workflow` and `workflow` renders
+    `validate, run` — neither is sorted. Typer builds the group from
+    `registered_commands` then `registered_groups`, so sub-apps always follow
+    root commands and only the order *within* each bucket is a free choice
+    someone made.
+
+    The set-equality tests above cannot see a reorder, and this is the property
+    most at risk from the spec-0015 split: registration would move into an
+    assembly module, and `ruff`'s isort (`I` is in `select`) is free to permute
+    imports. If registration rode on import side effects, `ruff --fix` could
+    silently rewrite the user-facing `--help` listing. `list_commands` is
+    literally what `--help` renders, so this asserts the rendered order without
+    depending on Rich formatting or terminal width.
+    """
+    node = get_command(app) if path == _ROOT_PATH else _tree()[path]
+    listed = _listed_commands(node)
+    assert listed == list(EXPECTED_CLI_HELP_ORDER[path]), (
+        f"{path}: --help order changed from {list(EXPECTED_CLI_HELP_ORDER[path])} to {listed}"
     )
 
 

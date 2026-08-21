@@ -680,3 +680,14 @@ EXPECTED_CLI_PARAMS: dict[str, tuple[str, ...]] = {
     "workflow run": ("--definition", "--verbose", "<message>"),
     "workflow validate": ("--definition", "--verbose"),
 }
+
+# `--help` listing order, per group. Registration order, NOT alphabetical:
+# the root is agents/chat/history/eval/rag/workflow and `workflow` is
+# validate/run. Typer emits registered_commands before registered_groups, so
+# sub-apps always follow root commands; the order within each bucket is a
+# deliberate choice and a user-visible surface.
+EXPECTED_CLI_HELP_ORDER: dict[str, tuple[str, ...]] = {
+    "<root>": ("agents", "chat", "history", "eval", "rag", "workflow"),
+    "rag": ("ingest", "query"),
+    "workflow": ("validate", "run"),
+}
