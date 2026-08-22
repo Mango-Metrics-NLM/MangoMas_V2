@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -478,7 +477,7 @@ def test_emit_sinks_returns_none_when_all_succeed() -> None:
 
 
 def test_eval_verbose_requests_debug_logging(
-    fixtures_dir: Path, basic_config_calls: list[dict[str, object]]
+    fixtures_dir: Path, cli_logging_calls: list[dict[str, object]]
 ) -> None:
     """`eval --verbose` asks for DEBUG logging — see the workflow twin."""
     runner = CliRunner()
@@ -494,7 +493,7 @@ def test_eval_verbose_requests_debug_logging(
         ],
     )
     assert result.exit_code == 0
-    assert basic_config_calls == [{"level": logging.DEBUG}]
+    assert cli_logging_calls == [{"verbose": True}]
 
 
 def test_eval_cli_sink_failure_exits_runtime_code(fixtures_dir: Path, tmp_path: Path) -> None:

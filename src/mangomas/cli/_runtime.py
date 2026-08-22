@@ -17,10 +17,13 @@ this module is imported by every command path.
 
 from __future__ import annotations
 
+import logging
 import sys
 from typing import TYPE_CHECKING
 
 from mangomas.composition import build_orchestrator
+from mangomas.config import get_settings
+from mangomas.telemetry import configure_telemetry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -49,3 +52,48 @@ async def _close_orchestrator(orch: Orchestrator) -> None:
     lifespan, demo scripts) shares one tested code path.
     """
     await orch.aclose()
+
+
+# Level applied when a command is run with ``--verbose``/``-v``. Named rather
+# than inlined so every command shares one definition of "verbose".
+VERBOSE_LOG_LEVEL: str = "DEBUG"
+
+
+def configure_cli_logging(*, verbose: bool = False) -> None:
+    """Bootstrap logging + tracing for a CLI command. Idempotent.
+
+    Commands used to call ``logging.basicConfig(level=DEBUG)`` directly, which
+    was silently undone mid-run: the first ``get_tracer()`` deep in the
+    dispatch path lazily calls :func:`configure_telemetry` with its *default*
+    ``log_level="INFO"`` and ``force=True``, replacing the root handler and
+    resetting the level. Every ``logger.debug`` after that point vanished — so
+    ``--verbose`` stopped working exactly where the interesting work happens.
+    Routing through :func:`configure_telemetry` first also means a CLI run
+    honours ``MANGOMAS_LOG__FORMAT``, ``MANGOMAS_LOG_LEVEL`` and
+    ``MANGOMAS_TELEMETRY__EXPORTER`` instead of hard-coded defaults, and gets
+    the ``TraceContextFilter``/``CorrelationFilter`` that carry ``trace_id``
+    and ``correlation_id`` onto every record.
+
+    Failures here never abort a command: observability setup must not be the
+    reason a CLI invocation dies.
+    """
+    cfg = get_settings()
+    try:
+        configure_telemetry(
+            log_level=VERBOSE_LOG_LEVEL if verbose else cfg.log_level,
+            log_format=cfg.log.format,
+            exporter=cfg.telemetry.exporter,
+        )
+    except Exception:  # pragma: no cover -- never fail a command over logging setup
+        logging.basicConfig(level=VERBOSE_LOG_LEVEL if verbose else cfg.log_level)
+        logging.getLogger(__name__).warning(
+            "Telemetry not configured; falling back to basicConfig",
+            exc_info=True,
+        )
+        return
+    if verbose:
+        # configure_telemetry is idempotent: if something already configured
+        # telemetry at INFO (an earlier command in-process, or a lazy
+        # get_tracer), the call above returned without touching the level.
+        # Raise it explicitly so --verbose is honoured either way.
+        logging.getLogger().setLevel(VERBOSE_LOG_LEVEL)

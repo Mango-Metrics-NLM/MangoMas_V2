@@ -62,3 +62,66 @@ async def test_build_is_not_a_singleton(tmp_path: Path, monkeypatch: pytest.Monk
     finally:
         await _runtime._close_orchestrator(first)
         await _runtime._close_orchestrator(second)
+
+
+# ── configure_cli_logging (spec-0023 R1) ──────────────────────────────────────
+
+
+def _reset_telemetry_state() -> None:
+    """Drop the idempotency latch so each test configures from scratch."""
+    from mangomas.telemetry import _state  # noqa: PLC0415 -- test-local reset
+
+    _state.configured = False
+
+
+def test_verbose_survives_a_lazy_get_tracer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--verbose` must still emit DEBUG after the tracer bootstraps.
+
+    The regression this pins: commands used to call
+    `logging.basicConfig(level=DEBUG)` themselves, and the first `get_tracer()`
+    deep in the dispatch path then lazily called `configure_telemetry()` with
+    its default `log_level="INFO"` and `force=True` — replacing the root
+    handler and resetting the level. Every `logger.debug` after that point was
+    dropped, so `--verbose` went dead exactly where the interesting work
+    happens. Mutation proof: revert `configure_cli_logging` to a bare
+    `basicConfig(level=DEBUG)` and this test fails on the post-tracer assert.
+    """
+    import logging  # noqa: PLC0415 -- exercising real logging state
+
+    from mangomas.telemetry import get_tracer  # noqa: PLC0415
+
+    _reset_telemetry_state()
+    monkeypatch.delenv("MANGOMAS_LOG_LEVEL", raising=False)
+
+    _runtime.configure_cli_logging(verbose=True)
+    assert logging.getLogger().getEffectiveLevel() == logging.DEBUG
+
+    # The lazy bootstrap that used to clobber the level.
+    get_tracer("mangomas.probe")
+
+    assert logging.getLogger().getEffectiveLevel() == logging.DEBUG
+
+
+def test_non_verbose_honours_configured_log_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without `--verbose` the level comes from Settings, not a hard-coded INFO."""
+    import logging  # noqa: PLC0415
+
+    from mangomas.config import get_settings  # noqa: PLC0415
+
+    _reset_telemetry_state()
+    monkeypatch.setenv("MANGOMAS_LOG_LEVEL", "WARNING")
+    get_settings.cache_clear()
+
+    _runtime.configure_cli_logging(verbose=False)
+    assert logging.getLogger().getEffectiveLevel() == logging.WARNING
+
+
+def test_configure_cli_logging_is_idempotent() -> None:
+    """Two commands in one process must not stack handlers."""
+    import logging  # noqa: PLC0415
+
+    _reset_telemetry_state()
+    _runtime.configure_cli_logging(verbose=False)
+    first = list(logging.getLogger().handlers)
+    _runtime.configure_cli_logging(verbose=False)
+    assert logging.getLogger().handlers == first

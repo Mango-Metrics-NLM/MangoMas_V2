@@ -222,8 +222,7 @@ def eval_cmd(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Run the configured scorer over a JSONL dataset, emit to sinks, and gate."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    _runtime.configure_cli_logging(verbose=verbose)
 
     settings = get_settings()
     cfg = settings.eval

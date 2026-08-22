@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 
 import pytest
 from typer.testing import CliRunner
@@ -58,18 +57,18 @@ def test_chat_command_with_system(runner: CliRunner) -> None:
 
 
 def test_chat_command_verbose_requests_debug_logging(
-    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+    runner: CliRunner, cli_logging_calls: list[dict[str, object]]
 ) -> None:
     """`--verbose` asks for DEBUG logging, and the command still succeeds.
 
-    The assertion on `basic_config_calls` is the part that makes the name true.
+    The assertion on `cli_logging_calls` is the part that makes the name true.
     Without it this passed with the `if verbose:` branch deleted — the docstring
     used to claim "sets logging to DEBUG" while checking only an exit code.
     """
     result = runner.invoke(cli_main.app, ["chat", "hello", "--verbose"])
     assert result.exit_code == 0
     assert STUB_REPLY in result.stdout
-    assert basic_config_calls == [{"level": logging.DEBUG}]
+    assert cli_logging_calls == [{"verbose": True}]
 
 
 def test_history_command(runner: CliRunner) -> None:
@@ -85,17 +84,20 @@ def test_history_command(runner: CliRunner) -> None:
 
 
 def test_history_verbose_requests_debug_logging(
-    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+    runner: CliRunner, cli_logging_calls: list[dict[str, object]]
 ) -> None:
     """`history --verbose` asks for DEBUG logging.
 
-    The seeding `chat` invocation runs without `--verbose`, so it contributes
-    nothing to the recording — which is itself the negative half of the check.
+    Every command configures logging (so a non-verbose run still honours
+    ``MANGOMAS_LOG_LEVEL`` / ``MANGOMAS_LOG__FORMAT`` and installs the
+    correlation + trace filters), so the seeding `chat` invocation records
+    ``verbose=False``. Asserting both entries in order is the negative half of
+    the check: only the flagged invocation may request DEBUG.
     """
     runner.invoke(cli_main.app, ["chat", "hello"])
     result = runner.invoke(cli_main.app, ["history", "--verbose"])
     assert result.exit_code == 0
-    assert basic_config_calls == [{"level": logging.DEBUG}]
+    assert cli_logging_calls == [{"verbose": False}, {"verbose": True}]
 
 
 def test_history_no_repo_exits_nonzero(

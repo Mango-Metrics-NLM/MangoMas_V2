@@ -13,7 +13,7 @@ push a fix, ask the user, or skip — following the project's documented
 ## Invariants
 ```
 PR opened (draft or ready)
-  └─> subscribe_pr_activity(PR#) via mcp__github__subscribe_pr_activity
+  └─> subscribe_pr_activity(PR#) — a Claude Code platform tool
        Events flow as <github-webhook-activity> messages.
 PR closed / merged
   └─> unsubscribe_pr_activity(PR#)
@@ -64,7 +64,13 @@ CI: <green | failing — link to job>
 
 ## Surface You Own
 - ``mcp__github__pull_request_read`` — checks, comments, reviews, status.
-- ``mcp__github__subscribe_pr_activity`` / ``mcp__github__unsubscribe_pr_activity`` — lifecycle.
+  Requires the optional ``github`` MCP server (docker + a
+  ``GITHUB_PERSONAL_ACCESS_TOKEN``). Without it this agent can still read the
+  worktree, but every ``mcp__github__*`` call below is unavailable — say so
+  rather than reporting an empty result as "no activity".
+- ``subscribe_pr_activity`` / ``unsubscribe_pr_activity`` — lifecycle. These are
+  Claude Code platform tools, NOT ``mcp__github__*`` tools; they work with no
+  MCP server configured.
 - ``mcp__github__add_issue_comment`` / ``mcp__github__add_reply_to_pull_request_comment`` — replies.
 - ``mcp__github__resolve_review_thread`` — once a thread is addressed.
 

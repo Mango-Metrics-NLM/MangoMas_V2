@@ -154,9 +154,14 @@ referenced from outside the `config/` package. Before deleting:
 2. Add the `DEFAULT_*` module-level constant first (single source of truth).
 3. Add the field on the BaseModel, defaulting to the constant.
 4. Update `.env.example` with a one-line comment + default.
-5. Add two tests: default value + env override.
-6. If new group: add a single integration test in `tests/test_composition.py` confirming wiring doesn't break.
-7. Run `ruff check --fix`, `mypy --strict`, `pytest`.
+5. Add a row to CLAUDE.md's `## Configuration` table (variable, default,
+   purpose). Both directions are CI-enforced by
+   `tests/deploy/test_env_example_contract.py` (spec-0022 R12): a documented
+   name that resolves to nothing fails, and so does a declared field that
+   CLAUDE.md omits. Skipping this step turns the suite red.
+6. Add two tests: default value + env override.
+7. If new group: add a single integration test in `tests/test_composition.py` confirming wiring doesn't break.
+8. Run `ruff check --fix`, `mypy --strict`, `pytest`.
 
 ---
 
@@ -166,6 +171,8 @@ referenced from outside the `config/` package. Before deleting:
 - DO NOT read `os.environ` directly in any module other than the `config/` package and `secrets/env.py`.
 - DO NOT break backwards compatibility — new fields require defaults; renames require alias.
 - DO NOT forget `get_settings.cache_clear()` in tests that set env vars.
+- DO NOT add a `Settings` field without its CLAUDE.md row — the reverse
+  drift test (`test_claude_md_documents_every_settings_field`) fails on it.
 
 ---
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 
 import typer
 
@@ -40,8 +39,7 @@ def chat(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Send a one-shot message to an agent and print the reply."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    _runtime.configure_cli_logging(verbose=verbose)
 
     orch = _runtime._build()
     messages: list[Message] = []
@@ -66,8 +64,7 @@ def history(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Print recent persisted turns as JSON lines."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    _runtime.configure_cli_logging(verbose=verbose)
 
     orch = _runtime._build()
 

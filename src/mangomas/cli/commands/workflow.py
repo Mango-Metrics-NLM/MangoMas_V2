@@ -8,7 +8,6 @@ adds the group.
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING
 
 import typer
@@ -60,8 +59,7 @@ def workflow_validate(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Parse and validate a workflow graph without running it (no LLM I/O)."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    _runtime.configure_cli_logging(verbose=verbose)
 
     graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
     typer.echo(f"ok name={graph.name} root={graph.root.kind}")
@@ -76,8 +74,7 @@ def workflow_run(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Execute a declarative workflow graph and print the final node's response."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    _runtime.configure_cli_logging(verbose=verbose)
 
     graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
     orch = _runtime._build()

@@ -44,7 +44,7 @@ GITLEAKS_SHA256 ?= 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e
         protected-paths test test-xml \
         coverage bridge-coverage scripts-coverage gate precommit serve clean \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        secret-scan
+        gated-suites embeddings-local secret-scan
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \

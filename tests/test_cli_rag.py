@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from pathlib import Path
 
 import pytest
@@ -75,7 +74,7 @@ def test_rag_ingest_verbose_requests_debug_logging(
     monkeypatch: pytest.MonkeyPatch,
     runner: CliRunner,
     tmp_path: Path,
-    basic_config_calls: list[dict[str, object]],
+    cli_logging_calls: list[dict[str, object]],
 ) -> None:
     """`rag ingest --verbose` asks for DEBUG logging."""
     orch = _rag_orch(enabled=True)
@@ -85,13 +84,13 @@ def test_rag_ingest_verbose_requests_debug_logging(
 
     result = runner.invoke(cli_main.app, ["rag", "ingest", str(doc), "--verbose"])
     assert result.exit_code == 0
-    assert basic_config_calls == [{"level": logging.DEBUG}]
+    assert cli_logging_calls == [{"verbose": True}]
 
 
 def test_rag_query_verbose_requests_debug_logging(
     monkeypatch: pytest.MonkeyPatch,
     runner: CliRunner,
-    basic_config_calls: list[dict[str, object]],
+    cli_logging_calls: list[dict[str, object]],
 ) -> None:
     """`rag query --verbose` — a branch nothing exercised until now.
 
@@ -106,7 +105,7 @@ def test_rag_query_verbose_requests_debug_logging(
 
     result = runner.invoke(cli_main.app, ["rag", "query", "anything", "--verbose"])
     assert result.exit_code == 0
-    assert basic_config_calls == [{"level": logging.DEBUG}]
+    assert cli_logging_calls == [{"verbose": True}]
 
 
 async def _ingest(orch: Orchestrator, text: str, source: str) -> None:
