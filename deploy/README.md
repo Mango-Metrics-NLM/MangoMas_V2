@@ -67,12 +67,23 @@ Recommended production baseline: `MANGOMAS_ENV=prod`,
 ## Deploy
 
 Triggered automatically on a published GitHub release, or manually via
-`workflow_dispatch`. To deploy locally instead:
+`workflow_dispatch`. The workflow applies `deploy/service.yaml` in full
+(spec-0024) — an image-only `gcloud run deploy` would drop every env var,
+`secretKeyRef`, probe, resource limit and autoscaling bound above — and then
+smoke-probes `/healthz` + `/readyz` on the deployed revision with an identity
+token (the service is private: `services replace` never creates an `allUsers`
+invoker binding). To deploy locally instead, mirror the workflow:
 
 ```bash
 IMAGE="us-central1-docker.pkg.dev/PROJECT_ID/mangomas/mangomas:$(git rev-parse --short HEAD)"
 docker build -t "$IMAGE" .
 docker push "$IMAGE"
-gcloud run deploy mangomas --image "$IMAGE" --region us-central1 \
-  --platform managed --no-allow-unauthenticated
+sed -E "s|^([[:space:]]*)- image: .*$|\1- image: ${IMAGE}|" \
+  deploy/service.yaml > rendered-service.yaml
+gcloud run services replace rendered-service.yaml --region us-central1
+
+URL="$(gcloud run services describe mangomas --region us-central1 --format 'value(status.url)')"
+TOKEN="$(gcloud auth print-identity-token)"   # caller needs roles/run.invoker
+curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/healthz"
+curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/readyz"
 ```

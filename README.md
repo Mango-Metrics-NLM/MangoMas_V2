@@ -240,7 +240,7 @@ mangomas eval --scorer embedding -d data.jsonl   # real cosine scores
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
-| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Intended to drop trailing fragments shorter than this — **currently inert**: the drop guard is unreachable (see the caveat in `CLAUDE.md`; pinned by `test_fuzz_min_words_never_changes_the_output`) |
 
 The Chroma collection is created in cosine space (`hnsw:space=cosine`) and
 similarity is reported as `1 - distance / 2`, so `VectorMatch.score` stays in

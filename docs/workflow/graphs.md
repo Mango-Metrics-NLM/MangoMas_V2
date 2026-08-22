@@ -53,6 +53,23 @@ pure, **synchronous** `AcceptanceFn`:
 }
 ```
 
+### Canonical example
+
+The repo ships the canonical planner → tool → reviewer pipeline as
+[`examples/workflows/plan-execute-review.json`](../../examples/workflows/plan-execute-review.json):
+an all-`agent` `sequence`, so it is byte-identical to
+`dispatch_pipeline(["planner", "tool", "reviewer"], request)`. The planner and
+reviewer emit schema-constrained JSON (`ExecutionPlan` / `ReviewResult`); set
+`MANGOMAS_AGENTS__PLANNER__VALIDATE_OUTPUT=true` and
+`MANGOMAS_AGENTS__REVIEWER__VALIDATE_OUTPUT=true` to have each agent reject
+malformed output with `LLMBadResponse` instead of passing it downstream.
+Pinned loadable by `tests/test_plan_execute_review.py`.
+
+```bash
+mangomas workflow validate -f examples/workflows/plan-execute-review.json
+mangomas workflow run "ship the release" -f examples/workflows/plan-execute-review.json
+```
+
 ## Configuration
 
 | Env var | Default | Purpose |
@@ -83,7 +100,7 @@ failure).
 ```python
 from mangomas.workflow import execute_workflow, load_workflow
 
-graph = load_workflow("graph.json")          # path or inline JSON string
+graph = load_workflow("graph.json")  # path or inline JSON string
 response = await execute_workflow(graph, request, orch=orchestrator)
 ```
 

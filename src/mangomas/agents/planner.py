@@ -32,7 +32,12 @@ class PlannerAgent(StructuredOutputAgent):
 
     The system prompt includes the ``ExecutionPlan`` JSON schema so the LLM
     knows the exact output shape expected.  The raw content is returned as-is;
-    callers are responsible for parsing via ``ExecutionPlan.model_validate_json()``.
+    callers parse it via :meth:`parse` (inherited from
+    :class:`~mangomas.agents._structured.StructuredOutputAgent`), which returns
+    an :class:`ExecutionPlan` or raises
+    :class:`~mangomas.errors.LLMBadResponse`. Setting
+    ``MANGOMAS_AGENTS__PLANNER__VALIDATE_OUTPUT=true`` makes ``handle`` run
+    that validation itself and reject malformed output.
     """
 
     def __init__(

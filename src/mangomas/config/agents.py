@@ -17,6 +17,14 @@ DEFAULT_TOOL_MAX_STEPS: int = 5
 DEFAULT_SUMMARIZE_HISTORY_LIMIT: int = 10
 
 
+# Structured-output agents (planner/reviewer): validate the LLM's JSON reply
+# against the agent's schema after each ``handle`` call, raising
+# ``LLMBadResponse`` on mismatch. Off by default so existing deployments see
+# no behaviour change. Overridable per agent via
+# ``MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT`` (AgentSettings).
+DEFAULT_VALIDATE_OUTPUT: bool = False
+
+
 class AgentSettings(BaseModel):
     """Per-agent overrides loaded from ``MANGOMAS_AGENTS__<NAME>__*`` env vars."""
 
@@ -37,6 +45,12 @@ class AgentSettings(BaseModel):
     # ``DEFAULT_SUMMARIZE_HISTORY_LIMIT``, so existing environments see no
     # behaviour change.
     history_limit: int | None = None
+    # Structured-output agents (planner/reviewer) only: when True,
+    # ``StructuredOutputAgent.handle`` validates the LLM's JSON reply against
+    # the agent's schema and raises ``LLMBadResponse`` on mismatch. Defaults
+    # to ``DEFAULT_VALIDATE_OUTPUT`` (off), preserving the raw pass-through
+    # contract for existing environments.
+    validate_output: bool = DEFAULT_VALIDATE_OUTPUT
 
 
 DEFAULT_LOOP_MAX_STEPS: int = 1

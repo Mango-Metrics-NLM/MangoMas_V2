@@ -165,6 +165,28 @@ jobs:
       - name: Scripts coverage (isolated, measured floor)
         run: make scripts-coverage
 
+  pip-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # The pinned-tool install and the audit invocation live in exactly one
+      # place: `make pip-audit` (supply-chain baseline, roadmap item 0.3).
+      # Like `secret-scan`, it needs the network (PyPI advisory DB), which is
+      # why it is a CI job here and not part of the offline `make gate` chain.
+      - name: pip-audit installed environment
+        run: make pip-audit
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

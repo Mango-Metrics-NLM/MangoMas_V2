@@ -85,9 +85,18 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
         name: str, request: AgentRequest, http_request: Request
     ) -> StreamingResponse:
         orch: Orchestrator = http_request.app.state.orchestrator
-        # AgentNotFound is raised here (before streaming begins) so the
-        # exception handler can return a proper 404 JSON response.
-        stream_iter: AsyncIterator[str] = await orch.stream_dispatch(name, request)
+        start = time.perf_counter()
+        try:
+            # Computed before streaming begins: it raises AgentNotFound in the
+            # same pre-stream window as stream_dispatch's own check, so the
+            # exception handler can still return a proper 404 JSON response.
+            degraded = not orch.agent_supports_streaming(name)
+            stream_iter: AsyncIterator[str] = await orch.stream_dispatch(name, request)
+        except MangomasError as exc:
+            # Pre-stream failure: mirror invoke's metrics-then-envelope path.
+            record_agent_invocation(name, "error")
+            record_agent_error(name, exc.code)
+            raise
 
         async def _events() -> AsyncGenerator[bytes, None]:
             # ``aclosing`` guarantees ``stream_iter.aclose()`` runs promptly
@@ -106,14 +115,35 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
             # implementation on this path — ``Orchestrator._stream_agent`` and
             # the harness's ``_traced_stream`` alike — is an async generator,
             # which always has one.
-            async with aclosing(cast("AsyncGenerator[str, None]", stream_iter)):
-                async for chunk in stream_iter:
-                    payload = {
-                        "event": "token",
-                        "data": {"content": chunk},
-                        "content": chunk,
-                    }
-                    yield f"data: {json.dumps(payload)}\n\n".encode()
+            chunks = 0
+            try:
+                async with aclosing(cast("AsyncGenerator[str, None]", stream_iter)):
+                    async for chunk in stream_iter:
+                        chunks += 1
+                        payload = {
+                            "event": "token",
+                            "data": {"content": chunk},
+                            "content": chunk,
+                        }
+                        yield f"data: {json.dumps(payload)}\n\n".encode()
+            except MangomasError as exc:
+                # Mid-drain failure: the 200 + text/event-stream headers are
+                # already on the wire, so no error envelope can run — the SSE
+                # stream simply ends (no `done` frame, spec-0022 R14). Record
+                # the error metrics, then re-raise so the truncation contract
+                # is unchanged.
+                record_agent_invocation(name, "error")
+                record_agent_error(name, exc.code)
+                raise
+            # Full drain (client abandonment raises GeneratorExit above and
+            # records nothing — symmetry: full drain <=> persisted <=> counted).
+            record_agent_invocation(name, "ok")
+            record_agent_duration(name, time.perf_counter() - start)
+            metadata = {
+                "event": "metadata",
+                "data": {"agent": name, "degraded": degraded, "chunks": chunks},
+            }
+            yield f"data: {json.dumps(metadata)}\n\n".encode()
             yield f"data: {json.dumps({'event': 'done'})}\n\n".encode()
 
         return StreamingResponse(

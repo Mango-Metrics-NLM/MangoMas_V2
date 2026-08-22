@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 
 import pytest
@@ -146,3 +147,27 @@ def test_lifespan_startup_and_shutdown(
     # After TestClient.__exit__ the lifespan finaliser has run.
     assert fake_llm.closed is True
     assert fake_repo.closed is True
+
+
+# ── App version (OpenAPI info.version) ─────────────────────────────────────────
+
+
+def test_app_version_matches_installed_distribution(orchestrator: Orchestrator) -> None:
+    """`info.version` is derived from package metadata, so it can never drift
+    behind a pyproject.toml version bump again (it sat at 0.1.0 for two minors)."""
+    app = create_app(orchestrator=orchestrator)
+    assert app.version == importlib.metadata.version("mangomas")
+
+
+def test_app_version_falls_back_when_distribution_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    orchestrator: Orchestrator,
+) -> None:
+    """Uninstalled-distribution path: the fallback constant, not a crash."""
+
+    def _raise(name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(app_module, "_distribution_version", _raise)
+    app = create_app(orchestrator=orchestrator)
+    assert app.version == app_module.DEFAULT_APP_VERSION

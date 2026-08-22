@@ -9,6 +9,136 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Streaming turn persistence + metrics — Spec-0025 / ADR-0025 (governed
+Batch B-a, `BREAKING-CHANGE`-trailered protected-path edit)._
+
+### Fixed
+
+- **Streamed conversations are no longer invisible.** `stream_dispatch`
+  persisted nothing and the stream route recorded no metrics, so every SSE
+  conversation was missing from `GET /history`, `SummarizeAgent`'s window,
+  tenancy-scoped storage, and the agent instruments. `_stream_agent` now
+  accumulates chunks and persists the turn on **full drain only**
+  (abandonment and upstream errors persist nothing — a half-drained stream
+  is not a turn; rule recorded in ADR-0025), and the stream route records
+  the same invocation/error/duration metrics as invoke (full drain ⇔
+  persisted ⇔ counted). The silent single-chunk degradation of
+  non-streaming agents now logs a warning and is labelled.
+
+### Added
+
+- **SSE `metadata` terminal event** — `{"event": "metadata", "data":
+  {"agent", "degraded", "chunks"}}` emitted after the token stream and
+  before the byte-identical `done` frame (snapshot-tested), so consumers
+  can detect degraded streams without any change to existing token events.
+- **`Orchestrator.agent_supports_streaming(name)`** — the single additive
+  public method (raises `AgentNotFound` for unknown names) letting
+  transport layers label degraded streams without widening the protected
+  `AsyncIterator[str]` contract. All dispatch signatures unchanged;
+  persistence + abandonment guards mutation-proven; `core/orchestrator.py`
+  and `api/routes/agents.py` at 100% branch coverage; harness
+  `_traced_stream` composition covered.
+
+---
+
+_Structured-output validation + the shipped planner→tool→reviewer pipeline —
+roadmap Phase 1 item 1.3._
+
+### Added
+
+- **`StructuredOutputAgent.parse()`** — the caller the planner/reviewer
+  docstrings always promised: validates the agent's JSON reply against its
+  own Pydantic schema and raises the existing `LLMBadResponse` (no new error
+  type, no protected-path edit) with a truncated, content-free detail; the
+  error log carries length + bounded head only, never user content.
+- **`MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT`** (default `false`,
+  `DEFAULT_VALIDATE_OUTPUT`) — opt-in per-agent validation: `handle()`
+  validates after the LLM call and returns the raw JSON unchanged when
+  valid, so the response contract is byte-identical for valid output and
+  fully backwards-compatible when off. Streaming is deliberately untouched.
+- **`examples/workflows/plan-execute-review.json`** — the canonical
+  planner → tool → reviewer `WorkflowGraph`, loader-validated and executed
+  end-to-end in tests (with validation on, including the failure path);
+  documented in `docs/workflow/graphs.md`. The advertised multi-agent loop
+  now ships instead of living only in documentation. Hypothesis fuzz proves
+  `parse()` total over arbitrary text (nothing but `LLMBadResponse` or a
+  model instance). Key guards mutation-proven.
+
+---
+
+_Deploy integrity + supply-chain baseline — Spec-0024 / roadmap Phase 0._
+
+### Fixed
+
+- **`deploy.yml` now applies `deploy/service.yaml`.** The deploy job
+  previously ran an image-only `gcloud run deploy`, so none of the manifest's
+  env vars, secret refs, probes, limits, or autoscaling bounds ever reached
+  the service — a real deploy would have run with library defaults (auth off,
+  SQLite, console exporter). The job now renders the manifest (image
+  substitution proven in-job) and applies it with `gcloud run services
+  replace`, gated by a new `verify` job (`make test` + `make coverage`,
+  absorbing the deferred NEXT_STEPS item) and followed by an
+  identity-token-authenticated smoke probe of `/healthz` + `/readyz`.
+  Four new contract tests in `tests/deploy/test_deploy_contract.py` tie the
+  workflow to the manifest in both directions — all mutation-proven.
+  `deploy/README.md`'s local snippet taught the old image-only defect and is
+  corrected. (Spec-0024.)
+- **`eval-gate.yml` no longer defaults its external `ianshank/Agents` install
+  to the moving `main` ref** — the job now fails closed with a clear error
+  when `AGENTS_HARNESS_REF` is unset; pinned by
+  `test_eval_gate_external_install_has_no_floating_default_ref`.
+- **The FastAPI app version no longer drifts from the package** —
+  `create_app` derives it from `importlib.metadata` (was hardcoded `0.1.0`
+  against a `0.3.1` package), with a fallback constant for uninstalled
+  checkouts and guard tests for both branches.
+- **`rag/pipeline.py`'s "no chunks" warning no longer misattributes the skip
+  to `min_chunk_words`** (the knob is provably inert); the message names the
+  real cause (empty/whitespace-only document) and the pinning test was
+  mutation-proven. README's `MIN_CHUNK_WORDS` row now mirrors CLAUDE.md's
+  honest "currently inert" wording.
+
+### Added
+
+- **Supply-chain baseline** (roadmap 0.3): `requirements.lock` — the full
+  pinned transitive runtime closure compiled by pip-compile under the image's
+  Python 3.11, consumed as a pip constraints file by the Docker runtime
+  stage; both Dockerfile `FROM` lines digest-pinned to the registry-verified
+  `python:3.11-slim` index digest; a `pip` Dependabot ecosystem; a pinned
+  `make pip-audit` target in the network group with a dedicated CI job —
+  placement (out of `gate`, delegated to make) two-sidedly tested.
+- **Docs/ledger truth sweep** (roadmap 0.4): specs 0019–0023 acceptance
+  boxes adjudicated against the shipped tree with dated notes (spec-0021 →
+  Implemented); stale Cloud-Trace "deferred" passages in
+  `docs/architecture/observability.md` / `cloud-providers.md` rewritten;
+  CLAUDE.md history rows now name the shipped `GET /history` route;
+  spec-0019's plan-file reference fixed; the stale `.env.example`-drift
+  record in NEXT_STEPS.md corrected (the drift was already fixed).
+
+---
+
+_Next-steps roadmap — a peer-reviewed case for the development program._
+
+### Added
+
+- **`docs/analysis/20260822-next-steps-roadmap-analysis.md`** — full-repo
+  strategic review (three parallel surveys; load-bearing claims verified
+  against source; adversarially peer-reviewed by `mango-architect`,
+  verdict approve-with-changes, corrections folded in). Establishes the
+  Phase 0–3 program — deploy integrity before the v0.4.0 cut, the governed
+  protected-path batches, the shipped planner→tool→reviewer flow — plus the
+  D1–D9 sponsor-decision register and an execution map onto the repo's own
+  agent/skill corpus.
+- **Spec-0024** (deploy-manifest application + post-deploy smoke) and
+  **spec-0025** (streaming turn persistence + metrics, governed Batch B-a,
+  reserving ADR-0025) — the two Phase 0/1 items that change shipped
+  contracts, drafted per the spec-before-code convention; `specs/README.md`
+  index and next-free counters updated.
+- **`NEXT_STEPS.md`** gains a forward "peer-reviewed development program"
+  section linking the tranches to the analysis doc, replacing ad-hoc
+  forward ordering.
+
+---
+
 _Post-review hardening (peer review of spec-0022) — Spec-0023._
 
 ### Fixed

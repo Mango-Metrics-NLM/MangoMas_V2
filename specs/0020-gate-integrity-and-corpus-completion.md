@@ -116,17 +116,19 @@ pinned by `tests/tooling/test_corpus_contract.py`.
 
 ## Acceptance criteria
 
-- [ ] R1: a new top-level package with no floor fails the suite (mutation-proven).
-- [ ] R2: the invariant class is named once, where its guards live.
-- [ ] R3: bare `python -m mypy` and `make typecheck` report the same file count.
-- [ ] R4: the nine families are clean across all four lint paths;
+- [x] R1: a new top-level package with no floor fails the suite (mutation-proven).
+- [x] R2: the invariant class is named once, where its guards live.
+- [x] R3: bare `python -m mypy` and `make typecheck` report the same file count.
+- [x] R4: the nine families are clean across all four lint paths;
       `ASYNC240`'s exclusion is load-bearing (removing it re-surfaces 4 hits).
 - [ ] R5: every surface under `src/mangomas/` has exactly one write-capable owner.
-- [ ] R6: both skills validate against `make frontmatter` and the corpus contract.
-- [ ] `ruff`, `mypy`, `pytest` (95% gate + per-package floors),
+- [x] R6: both skills validate against `make frontmatter` and the corpus contract.
+- [x] `ruff`, `mypy`, `pytest` (95% gate + per-package floors),
       `frontmatter-lint`, `protected-paths` all clean — `make gate` green at
       every commit, not only the last.
-- [ ] CHANGELOG updated. No ADR required (no boundary changed).
+- [x] CHANGELOG updated. No ADR required (no boundary changed).
+
+> Acceptance adjudicated 2026-08-22 against the shipped tree (roadmap Phase 0.4); unchecked boxes remain genuinely open.
 
 ## Deliberate non-goals
 

@@ -34,6 +34,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import yaml
+
 from tests.deploy import _workflows
 
 _EXPECTED_WORKFLOW_COUNT = 4
@@ -135,6 +137,52 @@ def test_third_party_action_set_is_the_reviewed_one() -> None:
     """Adding a third-party action is a reviewed event, not a silent one."""
     names = {_action_name(u) for _, u in _workflows.uses_refs() if not _is_first_party(u)}
     assert names == _EXPECTED_THIRD_PARTY_ACTIONS
+
+
+# ── Supply-chain baseline (roadmap item 0.3) ─────────────────────────────────
+
+# The one non-first-party, non-action code source a workflow installs: the
+# ianshank/Agents eval harness, installed straight from git.
+_EXTERNAL_INSTALL_MARKER = "github.com/ianshank/Agents"
+_EVAL_GATE_WORKFLOW = "eval-gate.yml"
+_DEPENDABOT = _workflows.REPO_ROOT / ".github" / "dependabot.yml"
+# Both halves of the dependency surface: the actions the workflows run, and
+# the Python packages the project itself resolves.
+_EXPECTED_DEPENDABOT_ECOSYSTEMS = frozenset({"github-actions", "pip"})
+
+
+def test_eval_gate_external_install_has_no_floating_default_ref() -> None:
+    """The external harness install must fail closed, never default to `main`.
+
+    ``AGENTS_REF`` used to fall back to the moving ``main`` branch of
+    ianshank/Agents, so an unconfigured repo installed whatever that branch
+    held at run time. The env expression must carry no branch-name fallback,
+    and the run body must refuse an empty ref outright (the fallback's absence
+    alone would otherwise install ``Agents@`` — git's syntax error — with a
+    message pointing nowhere useful).
+    """
+    steps = _workflows.jobs(_EVAL_GATE_WORKFLOW)["eval-gate"]["steps"]
+    install = [s for s in steps if _EXTERNAL_INSTALL_MARKER in str(s.get("run", ""))]
+    assert len(install) == 1, f"expected exactly one external-install step: {install!r}"
+    step = install[0]
+    assert "'main'" not in step["env"]["AGENTS_REF"], (
+        "AGENTS_REF falls back to the moving 'main' branch — pin via AGENTS_HARNESS_REF instead"
+    )
+    assert 'if [ -z "${AGENTS_REF}" ]' in step["run"], (
+        "the install step must refuse an empty AGENTS_REF with a clear error"
+    )
+
+
+def test_dependabot_covers_actions_and_python_ecosystems() -> None:
+    """Dependabot must watch both halves of the pinned dependency surface.
+
+    The SHA-pinned actions rot without the ``github-actions`` entry; the
+    ``requirements.lock`` pins and pyproject ranges rot without ``pip``.
+    Asserted as a superset so adding an ecosystem is not a failure.
+    """
+    doc = yaml.safe_load(_DEPENDABOT.read_text(encoding="utf-8"))
+    ecosystems = {entry["package-ecosystem"] for entry in doc["updates"]}
+    assert ecosystems >= _EXPECTED_DEPENDABOT_ECOSYSTEMS, ecosystems
 
 
 # A job that reports a scheduled run's failure somewhere a human will see.

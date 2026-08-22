@@ -8,6 +8,48 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Next: the peer-reviewed development program (2026-08-22)
+
+The forward roadmap now lives in
+[`docs/analysis/20260822-next-steps-roadmap-analysis.md`](docs/analysis/20260822-next-steps-roadmap-analysis.md)
+— a full-repo review (three parallel surveys, source-verified claims,
+adversarially peer-reviewed by `mango-architect` before presentation). Its
+thesis: verification engineering here is exceptional, delivery engineering is
+immature, and the advertised planner→tool→reviewer loop is not actually
+shipped. Program order: **stop the repo misdescribing itself → make the
+advertised product real → extend.** Tranche summary (argumentation, evidence,
+and the D1–D9 sponsor-decision register live in the analysis doc):
+
+- **Phase 0 — truth, deploy integrity, release (P0, mechanical).**
+  Make `deploy.yml` actually apply `deploy/service.yaml` + post-deploy smoke +
+  contract tie (spec [0024](specs/0024-deploy-manifest-application.md)) —
+  **before** cutting v0.4.0, because the deploy workflow triggers on
+  `release: published`; then the v0.4.0 cut with the app version derived from
+  package metadata; supply-chain baseline (lockfile, pip Dependabot,
+  `pip-audit`, pinned eval-gate ref, digest-pinned base image); docs/ledger
+  truth sweep (specs 0019–0023 acceptance boxes, `MIN_CHUNK_WORDS` README fix,
+  stale architecture docs, `.env.example`).
+- **Phase 1 — make the advertised product real (governed tranche).**
+  Batch A: spec-0015 R4 `core/structured.py` extraction (after the
+  `harness/governance.py` ownership decision; new file joins
+  `protected_paths`). Batch B, split into ≥3 governed PRs: (a) streaming turn
+  persistence + metrics + SSE metadata (P0; spec
+  [0025](specs/0025-streaming-turn-persistence.md) + ADR-0025); (b)
+  orchestrator metrics per ADR-0013 + `LoopSettings` wiring (the per-step
+  timeout); (c) acceptance/max-steps threading + fan-out partial results.
+  Plus: structured-output validation + a shipped planner→tool→reviewer flow
+  (P0, no protected paths); rate limiting (P1, posture decision D5);
+  `MODEL_OVERRIDE` wiring.
+- **Phase 2 — verification honesty + adoption surface.** Executing homes for
+  the feasibly-runnable gated suites + a parity meta-test; container
+  scan + SBOM; Ollama adapter; `mangomas serve`; RAG/workflow-stream HTTP
+  endpoints; pgvector; perf smoke.
+- **Phase 3 — backlog (sequenced).** Composite `loop` bodies → `dag` node
+  (ADR-0023 design) → tenancy Phase 2. Explicitly not now: `PluginNode`,
+  OIDC auth, GCP provisioning from this repo, distributed orchestration.
+
+---
+
 ## Near term
 
 _(All cloud adapters (Vertex AI, Postgres, GCP Secret Manager) and the
@@ -397,11 +439,11 @@ defects and a further round of duplication clusters via a full-repo audit:
 
 ### Follow-ups this branch deliberately did not take
 
-- **`.env.example` still documents `MANGOMAS_LLM__PROJECT` and
-  `MANGOMAS_LLM__MAX_OUTPUT_TOKENS`** in a duplicated Vertex block (roughly
-  lines 25–33), and its eval-var block names settings that do not exist. The
-  file is read-protected in the authoring environment, so it needs a manual
-  edit — this is the last live instance of that drift.
+- ✅ **`.env.example` drift — resolved** (verified 2026-08-22, roadmap Phase
+  0.4): the file no longer documents `MANGOMAS_LLM__PROJECT` or
+  `MANGOMAS_LLM__MAX_OUTPUT_TOKENS`, carries no duplicated Vertex block, and
+  `tests/deploy/test_env_example_contract.py` passes unchanged. The earlier
+  "read-protected, needs a manual edit" record was stale.
 - **`main` / `feat/initial-release` reconciliation — partially done.** The two
   branches genuinely diverged: `main` carried a harness-hardening layer
   (`src/mangomas/harness/`, `scripts/harness_stop_gate.py`,

@@ -176,12 +176,17 @@ adding such a path would require a new ADR justifying it.
 
 ## Adding a fourth provider
 
-The rule-of-three threshold for extracting a shared lazy-SDK base class
-or shared error-translation helper has not yet been met — the three
-provider bodies are sufficiently different (asyncpg vs. Google SDK; raise
-vs. return-None semantics) that a base class would be one empty hook.
-Re-evaluate this when the Cloud Logging / Cloud Trace exporter (v0.4.0)
-lands as the fourth GCP-target adapter.
+The Cloud Trace exporter has since landed
+(`MANGOMAS_TELEMETRY__EXPORTER=gcp`, lazy `CloudTraceSpanExporter` in
+`telemetry/exporters.py`) — as an exporter seam inside `telemetry/`, not
+as a fourth adapter, so it added no pressure toward a shared adapter base
+class. Where the rule-of-three threshold *was* met, shared helpers were
+extracted: `adapters/_openai_client.py` (`OpenAICompatHTTPClient`, the
+shared httpx lifecycle for the OpenAI-compatible clients),
+`adapters/_http_errors.py` (httpx → typed-error translation), and
+`adapters/_vertex_errors.py` (the Vertex qualname error matrix shared by
+llm + embeddings). Provider bodies that remained sufficiently different
+(asyncpg vs. Google SDK; raise vs. return-None semantics) stay separate.
 
 To add a new provider today:
 

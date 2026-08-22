@@ -153,3 +153,5 @@ truncation bound and `adapters/storage`'s triplicated `list_turns` limit.
 - [x] Widening the header charset to admit CR/LF fails a property test.
 - [x] `ruff`, `mypy`, `pytest` (95% gate), `frontmatter-lint` all clean.
 - [x] CHANGELOG updated; no ADR needed (no boundary changed).
+
+> Acceptance adjudicated 2026-08-22 against the shipped tree (roadmap Phase 0.4); unchecked boxes remain genuinely open.

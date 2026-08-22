@@ -283,6 +283,25 @@ class Orchestrator:
 
     # ── Streaming ─────────────────────────────────────────────────────────────
 
+    def agent_supports_streaming(self, agent_name: str) -> bool:
+        """Return whether the named agent implements :class:`StreamingAgent`.
+
+        Raises :class:`~mangomas.errors.AgentNotFound` for an unknown name,
+        mirroring :meth:`stream_dispatch`'s eager pre-check (same window: a
+        transport layer calls this before it starts streaming, so the 4xx
+        envelope can still run).
+
+        This exists so transport layers can label a degraded stream — one
+        served by the buffered ``handle()`` fallback — without widening the
+        iterator contract: :meth:`stream_dispatch` keeps yielding plain
+        ``str`` chunks, and the degradation flag travels out-of-band (e.g. as
+        an SSE metadata event) instead of being injected into the token
+        stream.
+        """
+        if agent_name not in self._agents:
+            raise AgentNotFound(agent_name)
+        return isinstance(self._agents[agent_name], StreamingAgent)
+
     async def stream_dispatch(
         self,
         agent_name: str,
@@ -296,7 +315,13 @@ class Orchestrator:
 
         If the agent implements :class:`~mangomas.core.agent.StreamingAgent`
         its ``stream()`` method is used; otherwise ``handle()`` is called and
-        the single response is yielded as one chunk.
+        the single response is yielded as one chunk (with a warning logged —
+        the stream is degraded).
+
+        On a **full drain** the accumulated turn is persisted via
+        ``ctx.repo.save_turn`` exactly like :meth:`dispatch` (spec-0025 /
+        ADR-0025). A half-drained stream — early consumer abandonment or an
+        upstream error — is not a turn and is never persisted.
         """
         if agent_name not in self._agents:
             logger.error(
@@ -315,16 +340,48 @@ class Orchestrator:
         agent_name: str,
         request: AgentRequest,
     ) -> AsyncIterator[str]:
-        """Internal async generator — yields tokens from the agent."""
+        """Internal async generator — yields tokens from the agent.
+
+        Persistence deliberately sits *after* the token loop, in the
+        normal-completion path — **not** in a ``finally``. In an async
+        generator the code after the last ``yield`` only runs when the
+        consumer drains to exhaustion; abandonment (``aclose()`` →
+        ``GeneratorExit`` thrown in at the suspended ``yield``) and upstream
+        exceptions both unwind past it, so a half-drained stream can never be
+        saved as a turn (spec-0025's persist-only-on-full-drain rule).
+        """
         with trace.get_tracer(__name__).start_as_current_span(
             "orchestrator.stream_dispatch"
         ) as span:
             span.set_attribute("agent.name", agent_name)
             span.set_attribute("messages.count", len(request.messages))
 
+            degraded = not isinstance(agent, StreamingAgent)
+            span.set_attribute("stream.degraded", degraded)
+
+            chunks: list[str] = []
             if isinstance(agent, StreamingAgent):
                 async for chunk in await agent.stream(request, self._ctx):
+                    chunks.append(chunk)
                     yield chunk
             else:
+                logger.warning(
+                    "Streaming requested but agent %r does not implement "
+                    "StreamingAgent; output was buffered into a single chunk",
+                    agent_name,
+                    extra={"agent": agent_name},
+                )
                 response = await agent.handle(request, self._ctx)
+                chunks.append(response.content)
                 yield response.content
+
+            # Full drain: only reached when the consumer exhausts the stream.
+            span.set_attribute("stream.chunks", len(chunks))
+            if self._ctx.repo is not None:
+                streamed_response = AgentResponse(
+                    content="".join(chunks),
+                    agent=agent_name,
+                    metadata={"stream": {"chunks": len(chunks), "degraded": degraded}},
+                )
+                await self._ctx.repo.save_turn(agent_name, request, streamed_response)
+                logger.debug("Persisted streamed turn for agent %r", agent_name)

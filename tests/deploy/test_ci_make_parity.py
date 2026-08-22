@@ -153,6 +153,31 @@ def test_secret_scan_job_delegates_to_make() -> None:
     assert commands == ["make secret-scan"]
 
 
+def test_pip_audit_job_delegates_to_make() -> None:
+    """The dependency-CVE audit lives in exactly one place: `make pip-audit`.
+
+    Same one-place rule as secret-scan: the pinned tool version and the audit
+    invocation are Makefile text, and the CI job just calls the target
+    (supply-chain baseline, roadmap item 0.3).
+    """
+    commands = _step_run_commands(_ci_jobs()["pip-audit"])
+    assert commands == ["make pip-audit"]
+
+
+def test_pip_audit_installs_a_pinned_tool_version_and_stays_out_of_gate() -> None:
+    """Two properties of the target itself, both directions of its placement.
+
+    The scanner is version-pinned via the `PIP_AUDIT_VERSION` variable (a
+    floating `pip install pip-audit` would make the audit itself a moving
+    supply-chain input), and the target must never join the `gate` chain —
+    every target in `gate` runs offline by recorded decision, and pip-audit
+    downloads the PyPI advisory DB.
+    """
+    body = _make_target_body("pip-audit")
+    assert "pip-audit==$(PIP_AUDIT_VERSION)" in body
+    assert "pip-audit" not in _make_target_body("gate")
+
+
 def test_secret_scan_runs_both_gitleaks_passes() -> None:
     """The scan must cover the working tree AND committed history (spec-0022 R1).
 

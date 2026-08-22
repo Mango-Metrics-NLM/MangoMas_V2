@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
+from typing import cast
 
 import pytest
 
 from mangomas.agents import ChatAgent
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Message, Orchestrator
 from mangomas.errors import AgentNotFound
-from tests.fakes import FakeLLM
+from tests.fakes import FakeLLM, FakeRepository
 
 
 class _DummyAgent:
@@ -166,3 +168,104 @@ async def test_stream_dispatch_non_streaming_agent_yields_content() -> None:
     async for chunk in await orch.stream_dispatch("dummy", req):
         chunks.append(chunk)
     assert "".join(chunks) == "got:1"
+
+
+# ── stream_dispatch persistence (spec-0025 / ADR-0025) ────────────────────────
+
+
+def _streaming_orchestrator(llm: FakeLLM, repo: FakeRepository | None) -> Orchestrator:
+    ctx = AgentContext(llm=llm, repo=repo)
+    orch = Orchestrator(ctx)
+    orch.register(ChatAgent())
+    return orch
+
+
+async def test_stream_dispatch_full_drain_persists_turn() -> None:
+    """A fully-drained stream is saved as one turn: joined content + stream metadata."""
+    repo = FakeRepository()
+    orch = _streaming_orchestrator(FakeLLM(chunks=["a", "b", "c"]), repo)
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    chunks = [chunk async for chunk in await orch.stream_dispatch("chat", req)]
+    assert chunks == ["a", "b", "c"]
+    rows = await repo.list_turns()
+    assert len(rows) == 1
+    assert rows[0]["agent"] == "chat"
+    assert rows[0]["response"]["content"] == "abc"
+    assert rows[0]["response"]["metadata"]["stream"] == {"chunks": 3, "degraded": False}
+
+
+async def test_stream_dispatch_abandonment_does_not_persist() -> None:
+    """Early consumer abandonment (aclose) never saves a half-drained turn."""
+    repo = FakeRepository()
+    orch = _streaming_orchestrator(FakeLLM(chunks=["a", "b", "c"]), repo)
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    stream = await orch.stream_dispatch("chat", req)
+    first = await stream.__anext__()
+    assert first == "a"
+    # ``stream_dispatch`` is typed AsyncIterator[str]; the concrete value is
+    # always an async generator, which is exactly what's under test here.
+    await cast("AsyncGenerator[str, None]", stream).aclose()
+    assert await repo.list_turns() == []
+
+
+async def test_stream_dispatch_upstream_error_does_not_persist() -> None:
+    """A mid-stream upstream failure propagates and persists nothing."""
+    repo = FakeRepository()
+    llm = FakeLLM(chunks=["a", "b"], raise_on_stream=RuntimeError("boom"), raise_after_chunks=1)
+    orch = _streaming_orchestrator(llm, repo)
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    received: list[str] = []
+    with pytest.raises(RuntimeError, match="boom"):
+        async for chunk in await orch.stream_dispatch("chat", req):
+            received.append(chunk)
+    assert received == ["a"]
+    assert await repo.list_turns() == []
+
+
+async def test_stream_dispatch_degraded_fallback_warns_and_persists(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Non-StreamingAgent fallback: warning logged, one chunk, turn saved degraded=True."""
+    repo = FakeRepository()
+    ctx = AgentContext(llm=FakeLLM(reply="unused"), repo=repo)
+    orch = Orchestrator(ctx)
+    orch.register(_DummyAgent())
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    with caplog.at_level(logging.WARNING, logger="mangomas.core.orchestrator"):
+        chunks = [chunk async for chunk in await orch.stream_dispatch("dummy", req)]
+    assert chunks == ["got:1"]
+    assert "'dummy'" in caplog.text
+    assert "buffered into a single chunk" in caplog.text
+    rows = await repo.list_turns()
+    assert len(rows) == 1
+    assert rows[0]["response"]["content"] == "got:1"
+    assert rows[0]["response"]["metadata"]["stream"] == {"chunks": 1, "degraded": True}
+
+
+async def test_stream_dispatch_without_repo_drains_without_persisting() -> None:
+    """repo=None: full drain works and nothing is (or could be) persisted."""
+    orch = _streaming_orchestrator(FakeLLM(chunks=["x", "y"]), None)
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    chunks = [chunk async for chunk in await orch.stream_dispatch("chat", req)]
+    assert chunks == ["x", "y"]
+
+
+# ── agent_supports_streaming ──────────────────────────────────────────────────
+
+
+async def test_agent_supports_streaming_true_for_streaming_agent() -> None:
+    orch = _streaming_orchestrator(FakeLLM(), None)
+    assert orch.agent_supports_streaming("chat") is True
+
+
+async def test_agent_supports_streaming_false_for_non_streaming_agent() -> None:
+    ctx = AgentContext(llm=FakeLLM(), repo=None)
+    orch = Orchestrator(ctx)
+    orch.register(_DummyAgent())
+    assert orch.agent_supports_streaming("dummy") is False
+
+
+async def test_agent_supports_streaming_unknown_agent_raises() -> None:
+    orch = _streaming_orchestrator(FakeLLM(), None)
+    with pytest.raises(AgentNotFound):
+        orch.agent_supports_streaming("nope")

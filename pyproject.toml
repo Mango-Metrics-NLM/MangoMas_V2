@@ -23,6 +23,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    # Floor, not a runtime dep: hosted runners bake a vulnerable setuptools
+    # into the toolcache (79.0.1, PYSEC-2026-3447, fixed in 83.0.0), and the
+    # `make pip-audit` gate audits the installed environment — remediating
+    # here fixes every environment that installs [dev] instead of
+    # suppressing the finding at the audit layer.
+    "setuptools>=83.0.0",
     "pytest>=8.2",
     # Exact-pinned together: coverage measurement semantics (branch arcs,
     # exclude_lines handling) are the denominator scripts/check_coverage.py

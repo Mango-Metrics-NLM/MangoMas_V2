@@ -47,13 +47,17 @@ GITLEAKS_SHA256 ?= 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e
 # a config at the repo root when a scan path is given, so omitting the flag
 # silently reverts to the built-in rules and drops the connection-string rule.
 GITLEAKS_CONFIG ?= .gitleaks.toml
+# pip-audit is a scanner, not a project dependency, so — mirroring the
+# gitleaks pattern above — its version is pinned here rather than in
+# pyproject. Update deliberately; the pin is the review record.
+PIP_AUDIT_VERSION ?= 2.10.1
 
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck frontmatter \
         protected-paths test test-xml \
         coverage bridge-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        gated-suites embeddings-local secret-scan
+        gated-suites embeddings-local secret-scan pip-audit
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -180,6 +184,16 @@ secret-scan: ## Gitleaks secret scan (downloads a pinned, checksum-verified rele
 	# catches a password in MANGOMAS_DB__URL (which no built-in rule sees).
 	./gitleaks dir --no-banner --redact --exit-code 1 -c $(GITLEAKS_CONFIG) .
 	./gitleaks git --no-banner --redact --exit-code 1 -c $(GITLEAKS_CONFIG) .
+
+pip-audit: ## Audit installed dependencies for known CVEs (downloads the advisory DB; needs network, not part of gate)
+	$(PYTHON) -m pip install --quiet "pip-audit==$(PIP_AUDIT_VERSION)"
+	# Audits the *installed environment* (CI runs this after `pip install -e
+	# ".[dev]"`), not a requirements file: the environment is what CI actually
+	# tests and what the runtime wheel resolves against, and it covers the dev
+	# pins and extras a runtime-only lockfile audit would never see.
+	# --skip-editable excludes the local editable mangomas checkout itself,
+	# which is not on PyPI and would otherwise fail resolution.
+	$(PYTHON) -m pip_audit --skip-editable
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 
