@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter
@@ -124,28 +126,6 @@ def test_build_scoped_tracer_caches_by_namespace_and_exporter() -> None:
     assert first is second
 
 
-def test_importing_app_does_not_configure_telemetry_at_import() -> None:
-    """Regression: importing the app must NOT configure telemetry at import time.
-
-    A module-level ``get_tracer()`` in an import-chain module would auto-call
-    ``configure_telemetry()`` with defaults, making the FastAPI lifespan's
-    configured exporter / log format a silent no-op. Run in a fresh interpreter
-    so an already-configured in-process singleton can't mask the regression.
-    """
-    code = (
-        "import mangomas.telemetry as t;"
-        "import mangomas.api.app;"
-        "assert t._state.configured is False, 'telemetry configured at import time'"
-    )
-    result = subprocess.run(  # noqa: S603 -- trusted: fixed code string + sys.executable
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-
-
 @pytest.mark.gcp_trace
 def test_gcp_trace_exporter_constructs_with_real_sdk() -> None:
     """Gated: build the real Cloud Trace exporter (requires the gcp extra + ADC)."""
@@ -232,3 +212,121 @@ def test_json_formatter_severity_levels(level: str, expected_severity: str) -> N
     )
     parsed = json.loads(fmt.format(record))
     assert parsed["severity"] == expected_severity
+
+
+# ── D8: no module-level auto-configuring tracer ───────────────────────────────
+
+_SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "mangomas"
+
+# `mangomas.telemetry.get_tracer` self-bootstraps: on first use it calls
+# `configure_telemetry()` with *hard-coded* defaults (INFO / text / console)
+# and `logging.basicConfig(force=True)`. Because `configure_telemetry` is
+# idempotent, whoever calls it first wins — so a module-level binding latches
+# the whole process at those defaults the moment its module is imported, and
+# every later caller with real settings (the FastAPI lifespan,
+# `cli._runtime.configure_cli_logging`) silently becomes a no-op.
+#
+# `tracing.py` itself is exempt: it defines `get_tracer`.
+_TRACER_SCAN_EXEMPT = {_SRC_ROOT / "telemetry" / "tracing.py"}
+
+# Non-vacuity floor. The package has far more modules than this; the guard
+# exists so a moved `src/` layout fails loudly instead of scanning zero files
+# and reporting a green "no violations".
+_MIN_SCANNED_MODULES = 50
+
+
+def _import_time_get_tracer_calls(tree: ast.Module) -> list[int]:
+    """Line numbers of import-time `get_tracer(...)` calls in ``tree``.
+
+    "Import time" means anything not inside a function body — module scope,
+    class bodies, and `if`/`try`/`with` blocks all run on import. Calls inside
+    a `def`/`async def` are exactly the lazy pattern this test wants, so they
+    are not reported.
+
+    `trace.get_tracer(...)` (raw OpenTelemetry) is deliberately *not* flagged:
+    it returns a `ProxyTracer` that resolves the global provider on each span,
+    so it configures nothing and works correctly whenever telemetry is set up.
+    """
+    hits: list[int] = []
+
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue  # a call in here is the lazy pattern — that is the fix
+            if isinstance(child, ast.Call):
+                func = child.func
+                if (isinstance(func, ast.Name) and func.id == "get_tracer") or (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "get_tracer"
+                    and not (isinstance(func.value, ast.Name) and func.value.id == "trace")
+                ):
+                    hits.append(child.lineno)
+            visit(child)
+
+    visit(tree)
+    return hits
+
+
+def test_no_module_configures_telemetry_at_import() -> None:
+    """D8: no module under ``src/mangomas`` may call ``get_tracer`` at import time.
+
+    This is the mechanical form of a rule the codebase already stated in prose
+    and enforced only per-import-chain (``mangomas.api.app``). Four modules had
+    drifted past that narrower check — `eval/gate.py`, `eval/baseline.py`,
+    `eval/sinks/langfuse.py` and `rag/pipeline.py` — none of which the app
+    imports, but all of which the **CLI** does. The result was that every
+    `mangomas ...` invocation had telemetry latched at defaults before
+    `configure_cli_logging()` ran, so `MANGOMAS_LOG__FORMAT` and
+    `MANGOMAS_TELEMETRY__EXPORTER` could never take effect.
+
+    The fix in every case is the house idiom: acquire the tracer *inside* the
+    function, via the raw ``opentelemetry.trace.get_tracer``.
+    """
+    scanned = 0
+    violations: list[str] = []
+    for path in sorted(_SRC_ROOT.rglob("*.py")):
+        if path in _TRACER_SCAN_EXEMPT:
+            continue
+        scanned += 1
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        violations.extend(
+            f"{path.relative_to(_SRC_ROOT.parent.parent)}:{lineno}"
+            for lineno in _import_time_get_tracer_calls(tree)
+        )
+
+    assert scanned >= _MIN_SCANNED_MODULES, (
+        f"only scanned {scanned} modules under {_SRC_ROOT} — the layout moved and "
+        "this guard is measuring nothing"
+    )
+    assert not violations, (
+        "import-time get_tracer() call(s) — these latch telemetry at hard-coded "
+        "defaults and make every later configure_telemetry() a no-op. Move the "
+        "call inside the function and use `opentelemetry.trace.get_tracer`:\n  "
+        + "\n  ".join(violations)
+    )
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["mangomas.api.app", "mangomas.cli.main", "mangomas.eval", "mangomas.rag"],
+)
+def test_importing_entry_point_does_not_configure_telemetry(module: str) -> None:
+    """Runtime counterpart to the AST scan, over each real entry-point chain.
+
+    The AST scan cannot see indirect routes (a third-party import that
+    configures telemetry, a dynamic `getattr` call). This runs each chain in a
+    fresh interpreter, so an already-configured in-process singleton — pytest
+    itself configures telemetry — cannot mask the regression.
+    """
+    code = (
+        "import mangomas.telemetry as t;"
+        f"import {module};"
+        "assert t._state.configured is False, 'telemetry configured at import time'"
+    )
+    result = subprocess.run(  # noqa: S603 -- trusted: fixed code string + sys.executable
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

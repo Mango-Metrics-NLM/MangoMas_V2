@@ -28,6 +28,20 @@ CI/build, no scheduled automation at all).
 - R1: a CLI command's `--verbose` must still emit DEBUG after the tracer
   bootstraps, and a CLI run must honour `MANGOMAS_LOG_LEVEL`,
   `MANGOMAS_LOG__FORMAT` and `MANGOMAS_TELEMETRY__EXPORTER`.
+- R1a (added in review): **no module under `src/mangomas` may call
+  `mangomas.telemetry.get_tracer` at import time.** R1's settings half was
+  unreachable without this. `get_tracer` self-bootstraps `configure_telemetry()`
+  with hard-coded defaults, and `configure_telemetry` is idempotent — so a
+  module-level `_tracer = get_tracer(__name__)` latches the whole process the
+  moment its module is imported. Four modules did exactly that
+  (`eval/gate.py`, `eval/baseline.py`, `eval/sinks/langfuse.py`,
+  `rag/pipeline.py`); the CLI imports all four, so `configure_cli_logging` was
+  always the *second* caller and its format + exporter were silently discarded.
+  The rule existed in prose and was enforced only against the
+  `mangomas.api.app` import chain, which imports none of the four. It is now a
+  totality scan over `src/`. The log *level* is additionally re-applied after
+  the idempotent call, so it survives a latch this scan cannot prevent (a
+  third-party import, a prior in-process command).
 - R2: `rag/` must log its ingestion decisions — start, finish, per-batch
   progress, and the two silent-failure paths (empty path, document dropped
   for producing no chunks) — under an `rag.ingest` span.
@@ -86,6 +100,11 @@ truncation bound and `adapters/storage`'s triplicated `list_turns` limit.
   `get_tracer()` THEN DEBUG records still emit; WHEN it runs without
   `--verbose` THEN the level comes from `MANGOMAS_LOG_LEVEL`, not a
   hard-coded `INFO`.
+- WHEN any module under `src/mangomas` binds a tracer at import time THEN the
+  scan names the file and line; WHEN `MANGOMAS_LOG__FORMAT=json` is set and a
+  CLI command runs THEN its log lines are JSON; WHEN telemetry was already
+  configured at DEBUG and a command runs without `--verbose` THEN the level
+  drops back to the configured one.
 - WHEN a workflow `run:` body contains `${{github.event.x}}` with any
   whitespace THEN the guard fails; WHEN it contains `${{ env.BASE_BRANCH }}`
   THEN it passes.
@@ -103,7 +122,8 @@ truncation bound and `adapters/storage`'s triplicated `list_turns` limit.
 
 ## Test plan
 
-- Unit: `tests/test_cli_runtime.py` (R1), `tests/rag/test_pipeline.py` (R2),
+- Unit: `tests/test_cli_runtime.py` (R1/R1a), `tests/test_telemetry.py` (R1a),
+  `tests/rag/test_pipeline.py` (R2),
   `tests/deploy/test_env_example_contract.py` (R3),
   `tests/deploy/test_workflow_hardening.py` + `_workflows.py` (R4),
   `tests/test_check_coverage.py` (R5), `tests/test_headers_properties.py` +
@@ -120,6 +140,8 @@ truncation bound and `adapters/storage`'s triplicated `list_turns` limit.
 
 - [x] `${{github.event.x}}` (no space) fails the injection guard.
 - [x] `--verbose` still emits DEBUG after a lazy `get_tracer()`.
+- [x] A module-level `get_tracer()` anywhere under `src/` fails the scan.
+- [x] A CLI run honours `MANGOMAS_LOG__FORMAT=json` end to end.
 - [x] A CLAUDE.md default that disagrees with `Settings` fails CI.
 - [x] `scripts/check_coverage.py` reaches 100%; the floor ratchets.
 - [x] Widening the header charset to admit CR/LF fails a property test.

@@ -81,22 +81,32 @@ def configure_cli_logging(*, verbose: bool = False) -> None:
     (``EXIT_CONFIG_ERROR``) instead of being masked as a logging problem.
     """
     cfg = get_settings()
+    level = VERBOSE_LOG_LEVEL if verbose else cfg.log_level
     try:
         configure_telemetry(
-            log_level=VERBOSE_LOG_LEVEL if verbose else cfg.log_level,
+            log_level=level,
             log_format=cfg.log.format,
             exporter=cfg.telemetry.exporter,
         )
     except Exception:
-        logging.basicConfig(level=VERBOSE_LOG_LEVEL if verbose else cfg.log_level)
+        logging.basicConfig(level=level)
         logging.getLogger(__name__).warning(
             "Telemetry not configured; falling back to basicConfig",
             exc_info=True,
         )
         return
-    if verbose:
-        # configure_telemetry is idempotent: if something already configured
-        # telemetry at INFO (an earlier command in-process, or a lazy
-        # get_tracer), the call above returned without touching the level.
-        # Raise it explicitly so --verbose is honoured either way.
-        logging.getLogger().setLevel(VERBOSE_LOG_LEVEL)
+    # configure_telemetry is idempotent: if anything already configured
+    # telemetry (an earlier command in-process, a test, or a lazy get_tracer),
+    # the call above returned without touching the level. Re-apply it
+    # unconditionally so the resolved level wins either way — the non-verbose
+    # path needs this as much as `--verbose` does, since a latched DEBUG would
+    # otherwise leave a plain run spewing debug output, and a latched INFO
+    # would swallow a configured `MANGOMAS_LOG_LEVEL=DEBUG`.
+    #
+    # Only the *level* is recoverable this way. Log format and span exporter
+    # are baked into the handler/provider that the first caller installed, so
+    # they are honoured only when this really is the first call — which is why
+    # `tests/test_telemetry.py::test_no_module_configures_telemetry_at_import`
+    # forbids module-level `mangomas.telemetry.get_tracer` bindings anywhere
+    # under `src/`.
+    logging.getLogger().setLevel(getattr(logging, level.upper(), logging.INFO))

@@ -116,6 +116,78 @@ def test_non_verbose_honours_configured_log_level(monkeypatch: pytest.MonkeyPatc
     assert logging.getLogger().getEffectiveLevel() == logging.WARNING
 
 
+def test_non_verbose_level_wins_over_a_latched_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A already-configured telemetry singleton must not pin the CLI's level.
+
+    `configure_telemetry` is idempotent, so when *anything* configured it first
+    the call inside `configure_cli_logging` returns having touched nothing.
+    The level is re-applied unconditionally afterwards precisely for that case.
+    Before the fix only the `verbose=True` branch re-applied it, so a plain run
+    inherited whatever level the earlier caller had latched — here DEBUG, which
+    would leave a non-verbose CLI invocation spewing debug output.
+
+    Mutation proof: put the final `setLevel` back under `if verbose:` and this
+    test fails with DEBUG != WARNING.
+    """
+    import logging  # noqa: PLC0415
+
+    from mangomas.config import get_settings  # noqa: PLC0415
+    from mangomas.telemetry import configure_telemetry  # noqa: PLC0415
+
+    _reset_telemetry_state()
+    configure_telemetry(log_level="DEBUG")  # the latch, e.g. a lazy get_tracer
+    assert logging.getLogger().getEffectiveLevel() == logging.DEBUG
+
+    monkeypatch.setenv("MANGOMAS_LOG_LEVEL", "WARNING")
+    get_settings.cache_clear()
+    _runtime.configure_cli_logging(verbose=False)
+
+    assert logging.getLogger().getEffectiveLevel() == logging.WARNING
+
+
+def test_cli_import_chain_leaves_log_format_configurable() -> None:
+    """End-to-end: `MANGOMAS_LOG__FORMAT` still takes effect after the CLI imports.
+
+    Unlike the log *level*, the format is baked into the handler that the first
+    `configure_telemetry` call installs — it cannot be re-applied afterwards.
+    So this only holds while nothing in the `mangomas.cli.main` import chain
+    configures telemetry first. It did: four modules bound
+    `mangomas.telemetry.get_tracer` at module scope, and the CLI imported all
+    of them, so every `mangomas ...` run was pinned to the default `text`
+    format regardless of settings.
+
+    Run in a fresh interpreter: pytest has long since configured telemetry
+    in-process, which would mask the regression entirely.
+    """
+    import json as _json  # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    code = (
+        "import mangomas.cli.main;"  # the full CLI import chain, first
+        "import logging;"
+        "from mangomas.cli._runtime import configure_cli_logging;"
+        "configure_cli_logging();"
+        "logging.getLogger('probe').warning('hello')"
+    )
+    env = {**os.environ, "MANGOMAS_LOG__FORMAT": "json", "MANGOMAS_LOG_LEVEL": "INFO"}
+    result = subprocess.run(  # noqa: S603 -- trusted: fixed code string + sys.executable
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    line = result.stderr.strip().splitlines()[-1]
+    record = _json.loads(line)  # a `text`-formatted line is not JSON at all
+    assert record["message"] == "hello"
+    assert record["severity"] == "WARNING"
+
+
 def test_configure_cli_logging_is_idempotent() -> None:
     """Two commands in one process must not stack handlers."""
     import logging  # noqa: PLC0415

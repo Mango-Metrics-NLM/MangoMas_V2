@@ -25,14 +25,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from mangomas.telemetry import get_tracer
+from opentelemetry import trace
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.baseline import ReportDiff
     from mangomas.eval.runner import EvalReport
 
 logger = logging.getLogger(__name__)
-_tracer = get_tracer(__name__)
 
 
 @dataclass(frozen=True)
@@ -190,7 +189,7 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
 
 
 def _log_regression(result: GateResult, diff: ReportDiff) -> None:
-    with _tracer.start_as_current_span("eval.regression_gate") as span:
+    with trace.get_tracer(__name__).start_as_current_span("eval.regression_gate") as span:
         span.set_attribute("gate.passed", result.passed)
         span.set_attribute("gate.mean_score_delta", diff.mean_score_delta)
         span.set_attribute("gate.pass_rate_delta", diff.pass_rate_delta)
@@ -209,7 +208,7 @@ def _log_regression(result: GateResult, diff: ReportDiff) -> None:
 
 
 def _log(result: GateResult) -> None:
-    with _tracer.start_as_current_span("eval.gate") as span:
+    with trace.get_tracer(__name__).start_as_current_span("eval.gate") as span:
         span.set_attribute("gate.passed", result.passed)
         span.set_attribute("gate.mean_score", result.actual_mean_score)
         span.set_attribute("gate.pass_rate", result.actual_pass_rate)

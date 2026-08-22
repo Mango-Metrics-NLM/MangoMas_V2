@@ -27,9 +27,26 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   deep in dispatch then lazily called `configure_telemetry()` with its
   default `log_level="INFO"` and `force=True`, replacing the root handler.
   Every `logger.debug` after that vanished — exactly where the interesting
-  work happens. `MANGOMAS_LOG__FORMAT`, `MANGOMAS_LOG_LEVEL` and
-  `MANGOMAS_TELEMETRY__EXPORTER` were ignored on every CLI path for the same
-  reason. Fixed by one reusable seam, `_runtime.configure_cli_logging`.
+  work happens. Fixed by one reusable seam,
+  `_runtime.configure_cli_logging`, pinned by `tests/test_cli_runtime.py`.
+- **No CLI run had ever honoured `MANGOMAS_LOG__FORMAT` or
+  `MANGOMAS_TELEMETRY__EXPORTER`** — and the seam above did not, by itself,
+  fix that. `mangomas.telemetry.get_tracer` self-bootstraps
+  `configure_telemetry()` with hard-coded defaults (INFO / text / console),
+  and `configure_telemetry` is idempotent, so whoever calls it first wins.
+  Four modules bound `_tracer = get_tracer(__name__)` at module scope —
+  `eval/gate.py`, `eval/baseline.py`, `eval/sinks/langfuse.py` and
+  `rag/pipeline.py` — and the CLI imports all four, so telemetry was latched
+  at defaults before `main()` ran. The codebase already stated this rule and
+  already tested it, but only against the `mangomas.api.app` import chain,
+  which imports none of the four; that is why the drift went unseen. All four
+  now use the house idiom (`opentelemetry.trace.get_tracer` inside the
+  function, which returns a provider-deferring proxy), and
+  `test_no_module_configures_telemetry_at_import` replaces the per-chain
+  check with an AST scan over every module under `src/`. The log *level* is
+  additionally re-applied after the idempotent call — the non-verbose path
+  needed that as much as `--verbose` did — so it survives a latch the scan
+  cannot prevent, such as a prior command in the same process.
 - **`rag/` was silent on the longest-running operation in the product.** No
   logger anywhere in the package, including a branch that drops a document
   from the index without a word — the "my file did not get indexed and I

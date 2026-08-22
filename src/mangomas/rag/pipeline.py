@@ -17,9 +17,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from opentelemetry import trace
+
 from mangomas.rag.chunker import chunk_text
 from mangomas.rag.loader import load_documents
-from mangomas.telemetry import get_tracer
 
 if TYPE_CHECKING:
     from mangomas.adapters.embeddings.base import EmbeddingClient
@@ -30,7 +31,6 @@ if TYPE_CHECKING:
 __all__ = ["IngestReport", "IngestionPipeline"]
 
 logger = logging.getLogger(__name__)
-_tracer = get_tracer(__name__)
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,7 @@ class IngestionPipeline:
         calls), and it is normally driven from the CLI, where a silent run and
         a broken run look identical.
         """
-        with _tracer.start_as_current_span("rag.ingest") as span:
+        with trace.get_tracer(__name__).start_as_current_span("rag.ingest") as span:
             span.set_attribute("rag.path", path)
             docs = await load_documents(path)
             span.set_attribute("rag.documents", len(docs))
@@ -154,7 +154,7 @@ class IngestionPipeline:
         batches = 0
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]
-            with _tracer.start_as_current_span("rag.embed_batch") as span:
+            with trace.get_tracer(__name__).start_as_current_span("rag.embed_batch") as span:
                 span.set_attribute("rag.source", source)
                 span.set_attribute("rag.batch_size", len(batch))
                 embeddings = await self._embeddings.embed_batch(batch)
