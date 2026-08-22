@@ -457,6 +457,7 @@ EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-api-dev",
     "mango-architect",
     "mango-backend",
+    "mango-ci-dev",
     "mango-cli-dev",
     "mango-error-taxonomy-dev",
     "mango-eval-dev",
@@ -489,6 +490,7 @@ WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adr-author",
         "mango-agent-impl-dev",
+        "mango-ci-dev",
         "mango-cli-dev",
         "mango-error-taxonomy-dev",
         "mango-eval-dev",

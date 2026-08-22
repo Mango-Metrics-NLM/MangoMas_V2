@@ -88,6 +88,52 @@ the command *without* `--verbose` is exactly what the deleted branch produces,
 so a test asserting "no call recorded" proves mutation-sensitivity without ever
 editing source. Prefer this when it is available.
 
+## Mechanising the Loop (subprocess meta-tests)
+
+The loop above is manual: you mutate, watch the guard fail, restore. When a
+guard is *load-bearing* — the collection gate, a hook, the coverage gate —
+mechanise it so the proof runs on every CI run instead of once, in someone's
+terminal, on the day it was written.
+
+The pattern: build a throwaway tree in `tmp_path`, run a real subprocess
+against it, and assert on the exit code.
+
+```python
+def _run_pytest(tree: Path, extra_env: dict[str, str] | None = None):
+    # Import the REAL hooks, never a copy — a copied gate proves nothing
+    # about the shipped one.
+    (tree / "conftest.py").write_text(
+        "from tests.conftest import pytest_collection_modifyitems, pytest_sessionfinish\n"
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith("RUN_")}
+    env["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    env.update(extra_env or {})
+    return subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "pytest", str(tree), "-q",
+         "-p", "no:cacheprovider", "-o", "addopts="],
+        env=env, cwd=tree, capture_output=True, text=True, check=False,
+    )
+```
+
+Non-obvious parts, each learned the hard way:
+
+- **`-o addopts=""`** sheds the inherited `--cov`/`--cov-fail-under`, which
+  would otherwise fail the mini-suite for having no coverage.
+- **`-p no:cacheprovider`** keeps the throwaway tree from writing a cache.
+- **Scrub the gating env** (`RUN_*` here) or the parent's environment decides
+  the outcome you are trying to assert.
+- **Assert the exit code, not just stdout.** For a guard that mutates
+  `session.exitstatus`, the exit code *is* the contract — and it is the part
+  a pytest upgrade could silently break.
+- **Prove both directions**: the guard fires on the bad tree AND stays quiet
+  on the good one. A one-sided subprocess test is the same vacuous pass this
+  skill exists to prevent, just more expensive.
+
+Live examples: `tests/tooling/test_collection_gate.py` (gate + zero-skip
+guard), `tests/test_harness_session_start.py::test_bare_interpreter_exits_ok`
+(stub modules on `PYTHONPATH` to fake an absent dependency), and
+`tests/test_lint_agent_frontmatter.py`'s hook-mode subprocess block.
+
 ## Checklist
 
 - [ ] Baseline green before mutating.
