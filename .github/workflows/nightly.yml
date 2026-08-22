@@ -55,3 +55,39 @@ jobs:
 
       - name: Secret scan
         run: make secret-scan
+
+  # A scheduled run nobody watches is a gate that reports to no one. GitHub
+  # emails only the account that last touched the cron, and only for the
+  # *first* failure in a run of consecutive ones, so a suite that breaks and
+  # stays broken goes quiet after night one — the exact shape of the Postgres
+  # defect this workflow exists to catch.
+  #
+  # Deduped by title: at most one open issue at a time, with a comment per
+  # subsequent failure, so a week of red produces one thread rather than seven
+  # issues. `gh` and GITHUB_TOKEN are both already on the runner, so this needs
+  # no action to pin and no secret to provision.
+  notify:
+    name: File a tracking issue on failure
+    runs-on: ubuntu-latest
+    needs: [postgres, secret-scan]
+    if: failure()
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TITLE: "Nightly workflow is failing"
+    steps:
+      - name: Open or update the tracking issue
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$REPO" --state open \
+            --search "$TITLE in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty")"
+          body="The nightly workflow failed: $RUN_URL"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$body"
+          fi

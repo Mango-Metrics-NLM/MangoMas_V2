@@ -134,3 +134,39 @@ def test_third_party_action_set_is_the_reviewed_one() -> None:
     """Adding a third-party action is a reviewed event, not a silent one."""
     names = {_action_name(u) for _, u in _workflows.uses_refs() if not _is_first_party(u)}
     assert names == _EXPECTED_THIRD_PARTY_ACTIONS
+
+
+# A job that reports a scheduled run's failure somewhere a human will see.
+# Recognised by its `if:` guard rather than its name, so renaming the job is
+# fine and deleting the guard is not.
+_FAILURE_GUARD = "failure()"
+
+
+def _scheduled_workflows() -> list[str]:
+    return [name for name in _workflows.workflow_docs() if "schedule" in _workflows.triggers(name)]
+
+
+def test_every_scheduled_workflow_reports_its_own_failure() -> None:
+    """A scheduled run nobody watches is a gate that reports to no one.
+
+    Push-triggered workflows surface on the PR; a cron run surfaces nowhere.
+    GitHub emails only the account that last touched the cron, and only on the
+    *first* failure of a consecutive run — so a suite that breaks and stays
+    broken goes quiet after night one, which is exactly the shape of the
+    long-lived defect a nightly suite exists to catch.
+
+    Checked by the `if:` guard, so the reporting job can be renamed or
+    reimplemented freely; only removing the failure path fails this.
+    """
+    scheduled = _scheduled_workflows()
+    assert scheduled, "no scheduled workflow found — has the cron trigger moved?"
+    for name in scheduled:
+        guarded = [
+            job
+            for job, spec in _workflows.jobs(name).items()
+            if _FAILURE_GUARD in str(spec.get("if", ""))
+        ]
+        assert guarded, (
+            f"{name} runs on a schedule but no job is guarded by `if: {_FAILURE_GUARD}`, "
+            "so a failing nightly run notifies nobody"
+        )

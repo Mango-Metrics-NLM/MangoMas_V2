@@ -82,6 +82,17 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   ever. `nightly.yml` runs the Postgres suite (Docker is all it needs — and
   ci.yml already records that a row-shape defect shipped behind a green
   pipeline "purely because nothing set the gate") and both gitleaks passes.
+- **A failure path for the nightly run.** A scheduled workflow surfaces
+  nowhere: GitHub emails only the account that last touched the cron, and only
+  on the *first* failure of a consecutive run, so a suite that breaks and stays
+  broken goes quiet after night one — the exact shape of the long-lived defect
+  a nightly suite exists to catch. A `if: failure()` job now files one tracking
+  issue, deduped by title so a week of red is one thread rather than seven
+  issues, using the `gh` CLI and `GITHUB_TOKEN` already on the runner (no
+  action to pin, no secret to provision).
+  `test_every_scheduled_workflow_reports_its_own_failure` checks the guard
+  rather than the job name, so the reporting job can be reimplemented freely
+  and only deleting the failure path fails.
 - **Tests for the coverage gate itself.** `scripts/check_coverage.py` sat at
   24%: a defect in `_check`/`main` would pass the whole per-package gate
   while measuring nothing, and no coverage number could reveal it. Now 100%,
