@@ -6,7 +6,8 @@ orchestrator-level plumbing they share; it is now a package cut by *dependency
 layer*, the same cut as `config/` and `telemetry/`:
 
     exit_codes            three exit codes (pure leaf, no local imports)
-    _runtime              _build / _close_orchestrator / win32 stdout (base)
+    _runtime              _build / _close_orchestrator / configure_cli_logging
+                          / win32 stdout (base)
     commands/chat         agents, chat, history
     commands/_eval_config flag-over-settings precedence for `eval`
     commands/eval         the eval run itself      -> _eval_config
@@ -37,8 +38,10 @@ from mangomas.cli import _runtime as _runtime
 from mangomas.cli import commands as commands
 from mangomas.cli import exit_codes as exit_codes
 from mangomas.cli._app import app as app
+from mangomas.cli._runtime import VERBOSE_LOG_LEVEL as VERBOSE_LOG_LEVEL
 from mangomas.cli._runtime import _build as _build
 from mangomas.cli._runtime import _close_orchestrator as _close_orchestrator
+from mangomas.cli._runtime import configure_cli_logging as configure_cli_logging
 from mangomas.cli.commands._eval_config import _build_dataset_source as _build_dataset_source
 from mangomas.cli.commands._eval_config import _build_sinks as _build_sinks
 from mangomas.cli.commands._eval_config import _build_target as _build_target

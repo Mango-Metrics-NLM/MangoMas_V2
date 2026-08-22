@@ -20,9 +20,9 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import yaml
 
 from tests._script_loader import load_script_module
+from tests.deploy import _workflows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
@@ -45,8 +45,9 @@ _OPT_IN_TARGETS = (
 
 
 def _ci_jobs() -> dict[str, Any]:
-    doc = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
-    return dict(doc["jobs"])
+    # Parsing lives in tests/deploy/_workflows.py so this suite and
+    # test_workflow_hardening.py cannot drift in what they can see.
+    return _workflows.jobs(_CI_WORKFLOW.name)
 
 
 def _step_run_commands(job: dict[str, Any]) -> list[str]:
@@ -130,9 +131,7 @@ def test_pull_request_trigger_targets_the_real_trunk() -> None:
     keeps this guard correct even if a future PyYAML default ever stopped
     resolving the bare word to a boolean (YAML 1.2 keeps it a string).
     """
-    doc = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
-    triggers = doc.get("on", doc.get(True))
-    assert triggers is not None, "ci.yml has no `on:` trigger section"
+    triggers = _workflows.triggers(_CI_WORKFLOW.name)
     assert triggers["pull_request"]["branches"] == ["feat/initial-release"]
 
 
@@ -166,7 +165,7 @@ def test_secret_scan_runs_both_gitleaks_passes() -> None:
     body = _make_target_body("secret-scan")
     assert "gitleaks dir" in body
     assert "gitleaks git" in body
-    assert "detect" not in body
+    assert "gitleaks detect" not in body
 
 
 def test_global_coverage_floor_matches_pytest_addopts() -> None:
@@ -274,3 +273,43 @@ def test_mypy_does_not_narrow_the_surface_with_packages() -> None:
         "[tool.mypy] declares `packages`, which narrows a bare `mypy` back to "
         "that package regardless of `files` — the drift this test exists to stop"
     )
+
+
+def test_isolated_coverage_floors_are_pinned() -> None:
+    """`SCRIPTS_FLOOR` / `BRIDGE_FLOOR` are the only floors living in Makefile text.
+
+    Every `src/mangomas` floor is a `Floor(...)` in `scripts/check_coverage.py`
+    and is parametrised over by `tests/test_check_coverage.py`; the global one
+    is asserted equal to pytest's addopt above. These two are `?=` Makefile
+    variables that nothing checked — so a quiet edit lowering either would
+    weaken an isolated gate with no review record. Bumping a floor is fine;
+    doing it invisibly is not, and updating this line is the record.
+    """
+    assert int(_makefile_variable("SCRIPTS_FLOOR")) == 92
+    assert int(_makefile_variable("BRIDGE_FLOOR")) == 100
+
+
+def test_nightly_jobs_delegate_to_make() -> None:
+    """The scheduled suites obey the same one-place rule as push CI.
+
+    `nightly.yml` exists because seven opt-in suites ran nowhere and
+    `secret-scan` only ever fired on push — but a scheduled job that inlines
+    its commands would reintroduce exactly the drift `make`-delegation
+    prevents, and nobody reads a nightly log until it matters.
+    """
+    jobs = _workflows.jobs("nightly.yml")
+    assert _step_run_commands(jobs["postgres"]) == ["make postgres"]
+    assert _step_run_commands(jobs["secret-scan"]) == [
+        "make secret-scan",
+        # Non-vacuity proof for the step above, using the binary it just
+        # downloaded: a scan configured down to nothing exits 0 exactly like a
+        # clean tree, so the green above is only meaningful alongside this.
+        "make gitleaks-selftest",
+    ]
+
+
+def test_nightly_is_scheduled_and_manually_dispatchable() -> None:
+    """A schedule nobody can trigger by hand is untestable until it fires."""
+    triggers = _workflows.triggers("nightly.yml")
+    assert triggers["schedule"], "nightly.yml must carry a cron schedule"
+    assert "workflow_dispatch" in triggers

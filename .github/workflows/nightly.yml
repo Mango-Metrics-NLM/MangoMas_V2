@@ -1,0 +1,110 @@
+name: Nightly
+
+# The repo had zero scheduled automation. Two gaps that only a schedule closes:
+#
+#  * `make secret-scan` runs on push only, so a credential committed to a
+#    branch nobody has pushed to since is never re-examined. It is deliberately
+#    excluded from `make gate` (that chain is fully offline), which makes the
+#    push job its only trigger.
+#  * Seven opt-in suites run nowhere, ever. `postgres` needs only Docker, which
+#    GitHub runners provide — and ci.yml already records why that matters:
+#    "excluded from CI purely because nothing set the gate, which is how a
+#    Postgres row-shape defect shipped behind a green pipeline."
+#
+# The remaining gated suites (lmstudio, vertex, gcp-*, langfuse,
+# embeddings-local) need a service, cloud credentials or an extra that vanilla
+# runners do not have, so they stay manual.
+
+on:
+  schedule:
+    # 03:17 UTC — off the hour, so this does not pile onto the top-of-hour
+    # surge that GitHub's shared runners see.
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    name: Postgres suite (testcontainers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Postgres suite
+        run: make postgres
+
+  secret-scan:
+    name: Secret scan (working tree + history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The `git` pass scans committed history, so it needs all of it.
+          fetch-depth: 0
+
+      - name: Secret scan
+        run: make secret-scan
+
+      # `make secret-scan` exiting 0 proves nothing on its own — a scanner
+      # configured down to zero rules is indistinguishable from a clean tree.
+      # This runs the same pinned binary, downloaded by the step above, against
+      # planted secrets and requires it to still fail. It lives here rather
+      # than in the unit suite because that suite is fully offline.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Prove the secret scan can still fail
+        run: make gitleaks-selftest
+
+  # A scheduled run nobody watches is a gate that reports to no one. GitHub
+  # emails only the account that last touched the cron, and only for the
+  # *first* failure in a run of consecutive ones, so a suite that breaks and
+  # stays broken goes quiet after night one — the exact shape of the Postgres
+  # defect this workflow exists to catch.
+  #
+  # Deduped by title: at most one open issue at a time, with a comment per
+  # subsequent failure, so a week of red produces one thread rather than seven
+  # issues. `gh` and GITHUB_TOKEN are both already on the runner, so this needs
+  # no action to pin and no secret to provision.
+  notify:
+    name: File a tracking issue on failure
+    runs-on: ubuntu-latest
+    needs: [postgres, secret-scan]
+    if: failure()
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TITLE: "Nightly workflow is failing"
+    steps:
+      - name: Open or update the tracking issue
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$REPO" --state open \
+            --search "$TITLE in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty")"
+          body="The nightly workflow failed: $RUN_URL"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$body"
+          fi

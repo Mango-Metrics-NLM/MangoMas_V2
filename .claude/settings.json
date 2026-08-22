@@ -94,7 +94,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "make typecheck format-check || true ; python -m pytest -q --no-cov || true"
+            "command": "make typecheck format-check || exit 1 ; python -m pytest -q --no-cov || exit 1"
           }
         ]
       }

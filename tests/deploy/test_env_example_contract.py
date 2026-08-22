@@ -15,11 +15,13 @@ that quietly does nothing, not one that explodes.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
+from pydantic_core import PydanticUndefined
 
 from mangomas.config import AgentSettings, Settings
 
@@ -227,3 +229,123 @@ def test_env_file_is_not_read_during_these_assertions() -> None:
     """
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert set(type(settings).model_fields) == set(Settings.model_fields)
+
+
+# ── Documented defaults must match the model (spec-0023 R3) ───────────────────
+#
+# CLAUDE.md's Key Design Rules cite this file as the mechanical enforcement for
+# "No hard-coded values". Until now both directions were **name-only**: ~96
+# rows carry a `| Default |` column that nothing compared against
+# `Settings`. Defaults are precisely what rots — a field's default changes in
+# code and the auto-loaded doc keeps asserting the old one to every session.
+
+_ROW_RE = re.compile(r"^\|\s*`(MANGOMAS_[A-Z0-9_]+)`\s*\|\s*(.+?)\s*\|", re.MULTILINE)
+# Rows whose Default cell is prose rather than a value.
+_NOT_A_VALUE = frozenset({"_(none)_", "—", "-", ""})
+# Per-agent rows document the *effective* default an agent falls back to when
+# the field is unset (`AgentSettings.max_tool_steps` is None; `ToolAgent`
+# supplies DEFAULT_TOOL_MAX_STEPS). Comparing those to the field default would
+# compare two different things. Listed explicitly because they were previously
+# skipped by accident — `Settings.agents` is a `dict`, not a nested model, so
+# the walk below never emitted them and nothing recorded why.
+_EFFECTIVE_NOT_FIELD_DEFAULT: frozenset[str] = frozenset(
+    {
+        f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}MAX_TOOL_STEPS",
+        f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}HISTORY_LIMIT",
+    }
+)
+
+
+def _documented_defaults() -> dict[str, str]:
+    text = _PLACEHOLDER_RE.sub(_PLACEHOLDER_SLUG, _CLAUDE_MD.read_text(encoding="utf-8"))
+    found: dict[str, str] = {}
+    for name, raw_cell in _ROW_RE.findall(text):
+        cell = raw_cell.strip()
+        if cell in _NOT_A_VALUE:
+            continue
+        # Strip markdown code fencing and any trailing prose after the value.
+        match = re.match(r"`([^`]*)`", cell)
+        if match is not None:
+            found[_normalize(name)] = match.group(1)
+    return found
+
+
+def _field_default(field: object) -> object:
+    """Return a field's *declared* default, resolving a default_factory."""
+    default = getattr(field, "default", PydanticUndefined)
+    if default is not PydanticUndefined:
+        return default
+    factory = getattr(field, "default_factory", None)
+    return factory() if factory is not None else PydanticUndefined
+
+
+def _model_defaults() -> dict[str, str]:
+    """Flatten Settings into ``MANGOMAS_GROUP__FIELD -> rendered default``.
+
+    Reads the **declared** defaults off ``model_fields``, never a constructed
+    ``Settings()``. An instance absorbs ``os.environ`` even with
+    ``_env_file=None`` — and this repo's own ``.claude/settings.json`` exports
+    ``MANGOMAS_LOG__FORMAT=json`` into every Claude Code session, so an
+    instance-based reader reported the session's value as "the default": green
+    locally, red in CI, and masking a genuinely wrong doc row. A contract test
+    whose verdict depends on the ambient environment is not a contract test.
+    """
+    flat: dict[str, str] = {}
+    for name, field in Settings.model_fields.items():
+        annotation = field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            for sub, sub_field in annotation.model_fields.items():
+                value = _field_default(sub_field)
+                if value is not PydanticUndefined:
+                    key = f"{_PREFIX}{name.upper()}{_NESTED_DELIMITER}{sub.upper()}"
+                    flat[key] = _render(value)
+        else:
+            value = _field_default(field)
+            if value is not PydanticUndefined:
+                flat[f"{_PREFIX}{name.upper()}"] = _render(value)
+    return flat
+
+
+def _render(value: object) -> str:
+    """Render a live default the way the docs write it."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list | dict):
+        return json.dumps(value, separators=(",", ":"))
+    return str(value)
+
+
+def _normalise_documented(value: str) -> str:
+    """Collapse doc formatting that carries no semantic difference."""
+    return value.replace('"', "").replace(" ", "").lower()
+
+
+def test_claude_md_documented_defaults_match_the_model() -> None:
+    """Every documented default must equal the field's real default.
+
+    Rows whose Default cell is `_(none)_` are skipped (an unset optional), as
+    are rows carrying a `DEFAULT_*` constant name in prose — both say "look at
+    the code", which is the honest thing for them to say.
+    """
+    model = _model_defaults()
+    documented = _documented_defaults()
+    assert documented, "parsed zero default cells from CLAUDE.md"
+
+    unexplained = sorted(
+        name
+        for name in documented
+        if name not in model and name not in _EFFECTIVE_NOT_FIELD_DEFAULT
+    )
+    assert unexplained == [], (
+        "documented default for a name the model walk does not emit — either a "
+        f"typo or an unrecorded exemption: {unexplained}"
+    )
+
+    mismatches = [
+        (name, doc_value, model[name])
+        for name, doc_value in documented.items()
+        if name in model and _normalise_documented(doc_value) != _normalise_documented(model[name])
+    ]
+    assert mismatches == [], (
+        f"CLAUDE.md documents a default that differs from the Settings field: {mismatches}"
+    )

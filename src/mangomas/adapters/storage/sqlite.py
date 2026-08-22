@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from mangomas.adapters.storage._url import path_from_sqlite_url
-from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_STORAGE_LIST_TURNS_LIMIT
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
@@ -116,7 +116,9 @@ class SQLiteRepository:
 
         return await asyncio.to_thread(_write)
 
-    async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
+    async def list_turns(
+        self, limit: int = DEFAULT_STORAGE_LIST_TURNS_LIMIT
+    ) -> list[dict[str, Any]]:
         """Return the most recent turns for the active tenant, newest first."""
         tenant = get_tenant()
 

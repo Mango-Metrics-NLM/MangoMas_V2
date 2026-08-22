@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+import pytest
 
 from mangomas.config import RagSettings
 from mangomas.rag.pipeline import IngestionPipeline, IngestReport
@@ -118,3 +121,53 @@ async def test_batch_size_floored_at_one(tmp_path: Path) -> None:
     # batch_size 0 is clamped to 1 → one batch per chunk.
     assert result.batches == 2
     assert [len(c) for c in emb.calls] == [1, 1]
+
+
+# ── Observability of the silent-failure paths (spec-0023 R2) ──────────────────
+#
+# Both assert on the structured ``extra=`` fields via ``caplog.records`` rather
+# than ``caplog.text``: the default formatter renders only the message, so a
+# text assertion would pass even if every structured field were dropped —
+# which is exactly the regression these guard.
+
+
+def _events(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [getattr(r, "event", "") for r in caplog.records]
+
+
+async def test_document_producing_no_chunks_warns(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A document that yields no chunks must warn, not vanish silently.
+
+    This is the "my file did not get indexed and I have no idea why" case: the
+    pipeline skips the document, the report still counts it under
+    ``documents``, and before this there was no output at any level.
+    """
+    f = tmp_path / "empty.txt"
+    f.write_text("   \n  ", encoding="utf-8")
+    pipeline = _pipeline(FakeEmbeddingClient(), FakeVectorStore(), batch_size=2)
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.rag.pipeline"):
+        report = await pipeline.ingest(str(f))
+
+    assert report.documents == 1
+    assert report.chunks == 0
+    assert "rag_document_skipped" in _events(caplog)
+    skipped = next(r for r in caplog.records if getattr(r, "event", "") == "rag_document_skipped")
+    # getattr: LogRecord has no static schema for `extra=` fields.
+    assert getattr(skipped, "source", None) == str(f)
+    assert getattr(skipped, "min_chunk_words", None) == _SETTINGS.min_chunk_words
+
+
+async def test_empty_path_warns_rather_than_reporting_zero_silently(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An empty directory (or a path typo) must say so, not just report 0."""
+    pipeline = _pipeline(FakeEmbeddingClient(), FakeVectorStore(), batch_size=2)
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.rag.pipeline"):
+        report = await pipeline.ingest(str(tmp_path))
+
+    assert report == IngestReport(documents=0, chunks=0, batches=0, deleted_sources=0)
+    assert "rag_ingest_empty" in _events(caplog)

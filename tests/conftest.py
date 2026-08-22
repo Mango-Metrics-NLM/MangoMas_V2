@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 from collections.abc import Iterator
@@ -12,6 +11,7 @@ import pytest
 
 from mangomas.adapters.storage import SQLiteRepository
 from mangomas.agents import ChatAgent
+from mangomas.cli import _runtime
 from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.secrets import secrets_registry
@@ -73,6 +73,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(skip["RUN_RAG"])
         if "langfuse" in item.keywords and not enabled["RUN_LANGFUSE"]:
             item.add_marker(skip["RUN_LANGFUSE"])
+        if "gitleaks" in item.keywords and not enabled["RUN_GITLEAKS"]:
+            item.add_marker(skip["RUN_GITLEAKS"])
 
 
 # ── Zero-skip session guard (spec-0022 R8) ────────────────────────────────────
@@ -89,6 +91,12 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 # ``exitstatus == 0``. tests/tooling/test_collection_gate.py proves both
 # directions in a subprocess, including that mutating ``session.exitstatus``
 # here actually changes the process exit code.
+#
+# NOT xdist-safe: under `-n auto` these hooks run on workers, and an
+# exitstatus set in a worker's sessionfinish does not reach the controller's
+# process exit code — the guard would fail OPEN, silently. pytest-xdist is not
+# a dev dependency today; adding one means moving this accounting to a
+# controller-side hook.
 
 _UNSANCTIONED_OUTCOMES: list[str] = []
 _SANCTIONED_SKIP_REASONS = frozenset(ENV_GATE_SKIP_REASONS.values())
@@ -106,7 +114,14 @@ def _skip_reason(report: pytest.TestReport | pytest.CollectReport) -> str:
 
 
 def _reason_is_sanctioned(reason: str) -> bool:
-    return reason in _SANCTIONED_SKIP_REASONS or bool(_GATED_RUNTIME_SKIP_RE.match(reason))
+    return reason in _SANCTIONED_SKIP_REASONS or bool(_GATED_RUNTIME_SKIP_RE.fullmatch(reason))
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:  # noqa: ARG001 -- pytest hook signature
+    # Repeated in-process sessions (pytest.main() twice, pytester) would
+    # otherwise inherit the previous session's outcomes and fail for a skip
+    # that did not happen in this one.
+    _UNSANCTIONED_OUTCOMES.clear()
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
@@ -216,27 +231,27 @@ def orchestrator(fake_llm: FakeLLM, repo: SQLiteRepository) -> Orchestrator:
 
 
 @pytest.fixture
-def basic_config_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
-    """Record `logging.basicConfig` calls so a `--verbose` test can assert one.
+def cli_logging_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Record `_runtime.configure_cli_logging` calls so a `--verbose` test can assert one.
 
-    **Why a spy and not an observed log level.** In CPython, `basicConfig`'s
-    `root.setLevel(level)` sits inside `if len(root.handlers) == 0:`, and under
-    pytest the root logger already carries four handlers (the live-log null
-    handler, a file handler, and two `LogCaptureHandler`s). So
-    `basicConfig(level=DEBUG)` is a complete no-op here — `root.level` stays at
-    `WARNING`. Asserting on the level, or on captured DEBUG output, would pass
-    for a reason unrelated to the code under test, which is the exact defect
-    these tests were written to fix.
+    **Why a spy and not an observed log level.** The real seam calls
+    `configure_telemetry`, which does `logging.basicConfig(..., force=True)` —
+    that rips out pytest's own root handlers (the live-log null handler and the
+    two `LogCaptureHandler`s), breaking `caplog` for every test that follows.
+    Command tests therefore assert the *wiring* (the flag reaches the seam);
+    the seam's real behaviour — that DEBUG survives a lazy `get_tracer()`, and
+    that a non-verbose run honours `MANGOMAS_LOG_LEVEL` — is covered directly
+    in `tests/test_cli_runtime.py`.
 
     Asserting the call tests what the command actually promises: that `--verbose`
     *requests* debug logging. It is mutation-sensitive by construction — an
-    invocation without the flag records nothing, which is precisely what the
-    deleted branch would produce.
+    invocation without the flag records `verbose=False`, and a deleted call
+    records nothing at all.
 
-    Every command module does `import logging` then `logging.basicConfig(...)`,
-    an attribute lookup on the module object, so one patch reaches all of them —
-    the same seam shape as `mangomas.cli._runtime`.
+    Every command module calls it as `_runtime.configure_cli_logging(...)`, an
+    attribute lookup on the module object, so one patch reaches all of them —
+    the same seam shape as the rest of `mangomas.cli._runtime`.
     """
     calls: list[dict[str, object]] = []
-    monkeypatch.setattr(logging, "basicConfig", lambda **kw: calls.append(kw))
+    monkeypatch.setattr(_runtime, "configure_cli_logging", lambda **kw: calls.append(kw))
     return calls

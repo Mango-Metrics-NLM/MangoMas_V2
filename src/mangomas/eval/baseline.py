@@ -18,15 +18,15 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from opentelemetry import trace
+
 from mangomas.errors import ConfigError
 from mangomas.eval.runner import EvalReport, EvalRowResult
-from mangomas.telemetry import get_tracer
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
-_tracer = get_tracer(__name__)
 
 _ROW_FIELDS = {f.name for f in fields(EvalRowResult)}
 
@@ -95,7 +95,7 @@ def diff_reports(baseline: EvalReport, current: EvalReport) -> ReportDiff:
 
 
 def _log_diff(diff: ReportDiff) -> None:
-    with _tracer.start_as_current_span("eval.diff") as span:
+    with trace.get_tracer(__name__).start_as_current_span("eval.diff") as span:
         span.set_attribute("diff.mean_score_delta", diff.mean_score_delta)
         span.set_attribute("diff.pass_rate_delta", diff.pass_rate_delta)
         span.set_attribute("diff.regressed_count", len(diff.regressed_rows))

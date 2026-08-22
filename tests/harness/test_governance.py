@@ -158,3 +158,49 @@ def test_has_breaking_change_marker_matches_the_documented_cases(
     the asymmetry in their tests was not.
     """
     assert (governance.has_breaking_change_marker(text) is not None) is expect_match
+
+
+# ── Fallbacks must not drift from the real table (spec-0023 R6) ───────────────
+
+
+def _pyproject_governance() -> dict[str, list[str]]:
+    import tomllib  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    root = Path(__file__).resolve().parents[2]
+    doc = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    table = doc["tool"]["mangomas"]["governance"]
+    return {
+        "protected_paths": list(table["protected_paths"]),
+        "aliases": list(table["breaking_change_marker_aliases"]),
+    }
+
+
+def test_package_fallback_matches_the_pyproject_table() -> None:
+    """The hand-maintained fallback must equal the single source of truth.
+
+    `_load_governance` resolves `pyproject.toml` **relative to the cwd** and
+    falls back on `OSError`, so importing `mangomas.harness` from anywhere but
+    the repo root makes the fallback authoritative — silently, because the
+    warning it logs fires at import time, usually before logging is
+    configured. A drifted fallback would then under-protect (or over-protect)
+    with nothing to catch it.
+    """
+    table = _pyproject_governance()
+    assert frozenset(table["protected_paths"]) == governance._FALLBACK_PROTECTED_PATHS
+    assert frozenset(table["aliases"]) == governance._FALLBACK_BREAKING_CHANGE_MARKER_ALIASES
+
+
+def test_scripts_fallback_matches_the_pyproject_table() -> None:
+    """Same pin for the deliberately-duplicated `scripts/` copy.
+
+    `scripts/` must run before `pip install -e .`, so it cannot import
+    `mangomas` and keeps its own fallback. The duplication is intentional; the
+    two silently disagreeing would not be.
+    """
+    from tests._script_loader import load_script_module  # noqa: PLC0415
+
+    linter = load_script_module("lint_agent_frontmatter.py")
+    table = _pyproject_governance()
+    assert frozenset(table["protected_paths"]) == linter._FALLBACK_PROTECTED_PATHS
+    assert frozenset(table["aliases"]) == linter._FALLBACK_BREAKING_CHANGE_MARKER_ALIASES

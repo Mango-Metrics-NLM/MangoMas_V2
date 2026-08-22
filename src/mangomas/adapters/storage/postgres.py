@@ -27,7 +27,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DBSettings
+from mangomas.config import (
+    DEFAULT_ERROR_DETAIL_TRUNCATE,
+    DEFAULT_STORAGE_LIST_TURNS_LIMIT,
+    DBSettings,
+)
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
@@ -196,7 +200,9 @@ class PostgresRepository:
                 detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
 
-    async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
+    async def list_turns(
+        self, limit: int = DEFAULT_STORAGE_LIST_TURNS_LIMIT
+    ) -> list[dict[str, Any]]:
         """Return the most recent turns for the active tenant, newest first."""
         import asyncpg  # noqa: PLC0415
 

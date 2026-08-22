@@ -18,17 +18,17 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from opentelemetry import trace
+
 from mangomas.eval._langfuse import build_langfuse_client
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
-from mangomas.telemetry import get_tracer
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.gate import GateResult
     from mangomas.eval.runner import EvalReport
 
 logger = logging.getLogger(__name__)
-_tracer = get_tracer(__name__)
 
 _OWNER = "langfuse sink"
 
@@ -56,7 +56,7 @@ class LangfuseSink:
         *,
         gate_result: GateResult | None = None,
     ) -> None:
-        with _tracer.start_as_current_span("eval.sink.langfuse") as span:
+        with trace.get_tracer(__name__).start_as_current_span("eval.sink.langfuse") as span:
             span.set_attribute("eval.scorer", report.scorer)
             span.set_attribute("eval.agent", report.agent_name)
             await asyncio.to_thread(self._publish, report, gate_result)

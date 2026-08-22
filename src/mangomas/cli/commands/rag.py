@@ -9,7 +9,6 @@ it. That keeps the `ingest, query` listing order pinned by statement order.
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING
 
 import typer
@@ -46,8 +45,7 @@ def rag_ingest(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Chunk, embed and upsert documents into the vector store."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    _runtime.configure_cli_logging(verbose=verbose)
 
     cfg = get_settings()
     orch = _runtime._build()
@@ -79,8 +77,7 @@ def rag_query(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Embed a query, search the vector store, and print ranked context."""
-    if verbose:
-        logging.basicConfig(level=logging.DEBUG)
+    _runtime.configure_cli_logging(verbose=verbose)
 
     cfg = get_settings()
     orch = _runtime._build()

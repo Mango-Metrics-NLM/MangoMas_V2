@@ -307,14 +307,17 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 13 skills — live in Claude Code and VS Code Copilot |
-| Agents | `.claude/agents/mango-<slug>.md` | 23, flat: 4 routers + 19 specialists |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 15 skills — live in Claude Code and VS Code Copilot |
+| Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
 | Project settings | `.claude/settings.json` | Allow/Deny + SessionStart/PreToolUse/PostToolUse/Stop hooks |
 | MCP servers | `.mcp.json` | 6 servers: filesystem/git/fetch/sequential-thinking/repomix + optional github |
 | Cross-session memory (per-contributor, user-scoped) | external `~/.claude-mem/` | claude-mem — no shared config |
-| PR template + secret-scan job | `.github/PULL_REQUEST_TEMPLATE.md` + `ci.yml` | Mandatory PR checklist |
+| Secret scan | `.gitleaks.toml` + `make secret-scan` | Declared ruleset; working tree + history; proved non-vacuous nightly |
+| Scheduled automation | `.github/workflows/nightly.yml` | Postgres suite + secret scan; files a tracking issue on failure |
+| Dependency updates | `.github/dependabot.yml` | Monthly `github-actions` bumps, keeping the SHA pins fresh |
+| PR template | `.github/PULL_REQUEST_TEMPLATE.md` | Mandatory PR checklist |
 
 See `CLAUDE.md` for the full skill/agent map and protected-path
 table; `docs/tooling/claude-code-ecosystem.md` for the full external
@@ -451,9 +454,14 @@ tests/
   (root)         Unit tests, named after the module under test
   adapters/      Adapter unit tests incl. the shared error/client helpers
   agents/        Agent unit tests
-  deploy/        Deploy-manifest and Docker build-context contract tests
+  deploy/        CI/Makefile parity, workflow hardening, deploy manifests,
+                 Docker build context, and the gitleaks ruleset contract
   eval/          Evaluation-harness tests (in-process)
+  harness/       Protected-path governance + ConfigChange decision table
   rag/           RAG domain tests
+  tooling/       Corpus contracts (agents/skills/settings/.mcp.json),
+                 the C4 architecture contract, and the collection-gate meta-test
+  eval_harness_bridge/  Black-box bridge tests; own 100% floor, own constants.py
   integration/   ASGITransport-based; set RUN_INTEGRATION=1
   lmstudio/      Real-server tests; set RUN_LMSTUDIO=1
   vertex/        Real Vertex project tests; set RUN_VERTEX=1
@@ -464,11 +472,18 @@ tests/
 docs/
   adr/           Architecture Decision Records
   adapters/      Per-adapter usage docs (vertex.md)
+  analysis/      One-off assessments (dated; historical records, not live docs)
   architecture/  C4 diagrams (Mermaid) + observability + cloud providers
   eval/          Evaluation harness usage (harness.md)
   workflow/      Declarative workflow-graph usage (graphs.md)
   plans/         Multi-milestone delivery sequencing
   testing/       Regression baseline and per-suite scenario plans
+  tooling/       Claude Code ecosystem catalog (MCP servers, hooks, rejections)
+
+specs/           One thin spec per non-trivial feature, written before the code
+scripts/         Coverage gate, frontmatter lint, and the harness hook entry points
+.claude/         Agents, skills and settings — the live Claude Code corpus
+.github/         CI, deploy, eval-gate and nightly workflows + dependabot
 ```
 
 ---
@@ -482,6 +497,8 @@ docs/
 - [Observability](docs/architecture/observability.md)
 - [Regression Baseline](docs/testing/regression.md)
 - [LM Studio E2E Scenario Plan](docs/testing/lmstudio-e2e.md)
+- [Declarative Workflow Graphs](docs/workflow/graphs.md)
 - [Claude Code Ecosystem Tooling](docs/tooling/claude-code-ecosystem.md)
+- [Specs index](specs/README.md) — spec-before-code, one file per feature
 - [Changelog](CHANGELOG.md)
 - [Next Steps & Roadmap](NEXT_STEPS.md)

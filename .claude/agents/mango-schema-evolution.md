@@ -26,6 +26,14 @@ for the trailer contract and for why a quiet `PreToolUse` hook proves nothing.
 - `src/mangomas/agents/reviewer.py::ReviewResult`
 
 ## Invariants
+
+- The wire surface is pinned by `tests/test_openapi_snapshot.py` — a
+  normalized projection (paths → methods → operationId, plus each component
+  schema's property and `required` sets). A deliberate change regenerates it
+  with `python -m tests.test_openapi_snapshot`; that diff is the review
+  record. It is a projection, not the raw document, so it survives
+  fastapi/pydantic minor bumps but does **not** pin property types, enums or
+  response codes — those still need a targeted test.
 | Change | Allowed? |
 |--------|----------|
 | Add a new optional field with default | YES |

@@ -197,7 +197,7 @@ access** (this repo's sandboxed CI/agent sessions can reach `registry.npmjs.org`
 `pypi.org` but not `github.com`/`api.github.com`/`formulae.brew.sh`):
 
 ```bash
-claude mcp list                                # all 5 servers connect
+claude mcp list                                # all 6 servers listed (github needs docker + a PAT)
 claude mcp get filesystem                       # ${CLAUDE_PROJECT_DIR:-.} resolved, not literal
 MANGOMAS_DISABLE_RTK_HOOK=1 <run a Bash tool call>   # rtk goes quiet, other hooks still fire
 ```

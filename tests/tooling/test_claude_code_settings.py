@@ -13,6 +13,7 @@ See docs/adr/0020-claude-code-ecosystem-tooling.md.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -169,19 +170,6 @@ def test_rtk_telemetry_is_disabled_by_default() -> None:
 # ── Bash protected-path advisory (spec-0022 R11) ──────────────────────────────
 
 
-def test_bash_advisory_hook_is_registered() -> None:
-    """The pre-tool-use linter mode must also run under the Bash matcher.
-
-    The Edit|Write|NotebookEdit matcher never sees a shell write (the gap
-    ADR-0021 concedes); registering the same stdin-JSON mode under Bash lets
-    it emit a mention-level `ask` for protected paths. The command string is
-    identical to the Edit-matcher one — the mode discriminates by payload
-    shape, so PREEXISTING_HOOKS pins both registrations.
-    """
-    commands = _hook_commands("PreToolUse", "Bash")
-    assert "python scripts/lint_agent_frontmatter.py --hook pre-tool-use" in commands
-
-
 def test_mcp_deny_rules_name_adopted_servers() -> None:
     """A deny rule naming a nonexistent server is silently inert (spec-0022 R4).
 
@@ -271,6 +259,29 @@ def test_mcp_servers_match_the_adopted_set() -> None:
     """Exactly the servers ADR-0020 adopted — no upstream extras, and nothing
     left over from local experimentation."""
     assert set(_mcp_servers()) == set(ADOPTED_MCP_SERVERS)
+
+
+# Any "all N servers" claim in the ecosystem doc. Written as a pattern rather
+# than a single known line so a second claim added later is also pinned.
+_SERVER_COUNT_CLAIM_RE = re.compile(r"all (\d+) servers\b")
+_ECOSYSTEM_DOC = "docs/tooling/claude-code-ecosystem.md"
+
+
+def test_documented_server_count_matches_the_adopted_set() -> None:
+    """A prose server count must agree with `.mcp.json`.
+
+    This drifted: the doc's verification block said "all 5 servers" after
+    `github` was adopted as the sixth, so the one command a human is told to
+    run to check the MCP wiring would have looked correct while listing an
+    unexpected server. A count nothing compares is a claim, not a check.
+    """
+    text = (_REPO_ROOT / _ECOSYSTEM_DOC).read_text(encoding="utf-8")
+    claims = [int(match) for match in _SERVER_COUNT_CLAIM_RE.findall(text)]
+    assert claims, f"no server-count claim found in {_ECOSYSTEM_DOC} — has the wording changed?"
+    assert all(count == len(ADOPTED_MCP_SERVERS) for count in claims), (
+        f"{_ECOSYSTEM_DOC} claims {claims} server(s); .mcp.json adopts "
+        f"{len(ADOPTED_MCP_SERVERS)}: {sorted(ADOPTED_MCP_SERVERS)}"
+    )
 
 
 @pytest.mark.parametrize("server", PATH_SCOPED_MCP_SERVERS)

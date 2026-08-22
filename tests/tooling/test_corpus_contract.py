@@ -33,6 +33,7 @@ from tests.constants import (
     EXPECTED_AGENT_SLUGS,
     EXPECTED_SKILL_SLUGS,
     HARNESS_SKILL_SLUG,
+    LIVE_CORPUS_COUNT_DOCS,
     MAX_ROUTER_DESCRIPTION_JACCARD,
     MIN_CORPUS_TRACEABILITY_REFS,
     PROCEDURE_SECTION_HEADING,
@@ -43,6 +44,10 @@ from tests.constants import (
     RETIRED_SKILLS_DIR_RELPATH,
     RETIRED_STRAY_AGENT_FILENAME,
     ROUTER_AGENT_SLUGS,
+    SKILL_UNMAPPED_AGENT_SLUGS,
+    SPELLED_NUMBERS,
+    SUBSET_COUNT_CLAIMS,
+    UNOWNED_SOURCE_SURFACES,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
 
@@ -367,6 +372,178 @@ def test_mapped_agent_references_its_skill(slug: str) -> None:
     body = _agent_body(slug)
     missing = [skill for skill in AGENT_SKILL_OWNERS[slug] if skill not in body]
     assert missing == [], f"{slug} does not reference {missing}"
+
+
+_SRC_ROOT = _REPO_ROOT / "src" / "mangomas"
+# An agent may name a surface as a path (`src/mangomas/api/app.py`) or as a
+# module (`mangomas.telemetry`); both spellings appear in the corpus and both
+# are legitimate, so ownership is read from either.
+_SURFACE_PATH_RE = re.compile(r"src/mangomas/([A-Za-z0-9_]+)")
+_SURFACE_MODULE_RE = re.compile(r"\bmangomas\.([A-Za-z0-9_]+)")
+_SURFACE_SECTION_RE = re.compile(r"^## Surface You Own\n(.*?)(?=\n## |\Z)", re.S | re.M)
+
+
+def _claimed_source_surfaces() -> dict[str, set[str]]:
+    """Map each top-level `src/mangomas` entry to the agents claiming it.
+
+    Derived from the agent bodies rather than a hand-written table: a second
+    table would be a second source of truth, and the failure it is meant to
+    catch — an agent's claims and the roster disagreeing — is exactly what a
+    duplicate cannot see.
+    """
+    claimed: dict[str, set[str]] = {}
+    for slug in sorted(WRITE_CAPABLE_AGENT_SLUGS):
+        section = _SURFACE_SECTION_RE.search(_agent_body(slug))
+        if section is None:
+            continue
+        text = section.group(1)
+        for name in _SURFACE_PATH_RE.findall(text) + _SURFACE_MODULE_RE.findall(text):
+            claimed.setdefault(name, set()).add(slug)
+    return claimed
+
+
+def test_every_source_surface_has_a_write_capable_owner() -> None:
+    """Every top-level `src/mangomas` entry is claimed, or recorded as unowned.
+
+    The corpus asserted that its agents cover the codebase and nothing checked
+    it. The whole FastAPI assembly layer — `create_app` and its middleware
+    install order, `middleware.py`, `auth.py`, `health.py`, `tracing.py`, and
+    the system + workflow routers — had no write-capable owner at all:
+    `mango-api-dev` is a router and cannot edit, while `mango-sse-streamer`,
+    `mango-schema-evolution` and `mango-error-taxonomy-dev` each own one slice
+    and correctly decline the rest. `mango-api-impl-dev` closes it; this test
+    is what stops the next one opening unnoticed.
+    """
+    entries = sorted(
+        path.name for path in _SRC_ROOT.iterdir() if path.name not in {"__pycache__", "__init__.py"}
+    )
+    assert len(entries) > 10, f"only {len(entries)} entries under {_SRC_ROOT} — layout moved?"
+
+    claimed = _claimed_source_surfaces()
+    assert claimed, "no agent declares a `## Surface You Own` section — parsing broke"
+
+    unowned = sorted(
+        entry
+        for entry in entries
+        if entry not in UNOWNED_SOURCE_SURFACES and claimed.get(entry.removesuffix(".py")) is None
+    )
+    assert unowned == [], (
+        f"no write-capable agent claims: {unowned}. Name the path under an "
+        "agent's `## Surface You Own`, or add it to UNOWNED_SOURCE_SURFACES "
+        "with why no single owner is right."
+    )
+
+    stale = sorted(UNOWNED_SOURCE_SURFACES - set(entries))
+    assert stale == [], f"UNOWNED_SOURCE_SURFACES names entries that no longer exist: {stale}"
+
+    claimed_entries = {e for e in entries if claimed.get(e.removesuffix(".py"))}
+    conflicting = sorted(UNOWNED_SOURCE_SURFACES & claimed_entries)
+    assert conflicting == [], (
+        f"recorded as unowned but an agent claims it: {conflicting} — drop it from "
+        "UNOWNED_SOURCE_SURFACES"
+    )
+
+
+# `**23**` / `23` / `twenty-three`, followed by a corpus noun. Bold markers are
+# stripped because the docs use them inside tables and bullets.
+_COUNT_CLAIM_RE = re.compile(
+    r"\*{0,2}(?P<count>\d+|" + "|".join(sorted(SPELLED_NUMBERS, key=len, reverse=True)) + r")"
+    r"\*{0,2}\s+(?P<noun>agents?|skills?|routers?|specialists?)\b",
+    re.IGNORECASE,
+)
+
+
+def _corpus_rosters() -> dict[str, int]:
+    """The live counts a prose claim must agree with."""
+    agents = len(_agent_paths())
+    routers = len(ROUTER_AGENT_SLUGS)
+    return {
+        "agent": agents,
+        "skill": len(_skill_dirs()),
+        "router": routers,
+        "specialist": agents - routers,
+    }
+
+
+def _subset_roster_size(name: str) -> int:
+    sizes = {"PROTECTED_PATH_OWNER_SLUGS": len(PROTECTED_PATH_OWNER_SLUGS)}
+    assert name in sizes, f"SUBSET_COUNT_CLAIMS names an unknown roster: {name}"
+    return sizes[name]
+
+
+def test_prose_corpus_counts_match_the_live_corpus() -> None:
+    """A number in a current-state doc must agree with the tree it describes.
+
+    Prose counts rot silently and nothing here compared them: the README's
+    "What ships in the harness" table claimed 13 skills and 23 agents
+    (4 routers + 19 specialists) against a tree holding 15 and 27. A reader
+    checking whether the corpus is what the docs say gets a wrong answer, and
+    the corpus is the whole routing surface.
+
+    Scoped to `LIVE_CORPUS_COUNT_DOCS`. `NEXT_STEPS.md`, `docs/adr/` and
+    `docs/plans/` are dated records whose counts are correct as of their
+    milestone; rewriting those would falsify history rather than fix drift.
+
+    A subset count (four agents own a protected path) is not exempted — it is
+    registered in `SUBSET_COUNT_CLAIMS` and checked against the real subset.
+    """
+    rosters = _corpus_rosters()
+    checked = 0
+    wrong: list[str] = []
+
+    for relpath in LIVE_CORPUS_COUNT_DOCS:
+        path = _REPO_ROOT / relpath
+        assert path.exists(), f"{relpath} is listed as a live corpus doc but does not exist"
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            subset = next((v for k, v in SUBSET_COUNT_CLAIMS.items() if k in line), None)
+            for match in _COUNT_CLAIM_RE.finditer(line):
+                raw = match.group("count").lower()
+                claimed = int(raw) if raw.isdigit() else SPELLED_NUMBERS[raw]
+                noun = match.group("noun").lower().rstrip("s")
+                expected = _subset_roster_size(subset) if subset else rosters[noun]
+                checked += 1
+                if claimed != expected:
+                    wrong.append(
+                        f"{relpath}:{lineno} claims {claimed} {noun}(s), tree has {expected}"
+                        f"  |  {line.strip()[:90]}"
+                    )
+
+    assert checked >= len(LIVE_CORPUS_COUNT_DOCS), (
+        f"only {checked} count claim(s) found across {list(LIVE_CORPUS_COUNT_DOCS)} — "
+        "the wording changed and this guard is measuring almost nothing"
+    )
+    assert wrong == [], "corpus counts disagree with the tree:\n  " + "\n  ".join(wrong)
+
+
+def test_every_agent_is_mapped_or_recorded_unmapped() -> None:
+    """`AGENT_SKILL_OWNERS` + `SKILL_UNMAPPED_AGENT_SLUGS` must partition the corpus.
+
+    Without this, "does a skill document this agent's surface?" is answered
+    only for agents someone remembered to answer it for. A new agent simply
+    fell out of both halves: `mango-ci-dev` shipped citing `mango-deploy` and
+    `mango-mutation-proof` in its body, but was in neither set, so neither
+    `test_mapped_agent_references_its_skill` nor
+    `test_mapped_agent_has_no_procedure_section` applied to it — the corpus's
+    two skill-duplication guards were simply off for that agent, silently.
+
+    Disjointness matters as much as coverage: a slug in both sets would claim
+    both that a skill owns its procedure and that none does.
+    """
+    mapped = set(AGENT_SKILL_OWNERS)
+    unmapped = set(SKILL_UNMAPPED_AGENT_SLUGS)
+
+    overlap = sorted(mapped & unmapped)
+    assert overlap == [], f"agent(s) both mapped and recorded unmapped: {overlap}"
+
+    unclassified = sorted(set(EXPECTED_AGENT_SLUGS) - mapped - unmapped)
+    assert unclassified == [], (
+        f"agent(s) in neither set: {unclassified}. Add each to AGENT_SKILL_OWNERS "
+        "with the skill(s) documenting its procedure, or to "
+        "SKILL_UNMAPPED_AGENT_SLUGS with why none does."
+    )
+
+    stale = sorted((mapped | unmapped) - set(EXPECTED_AGENT_SLUGS))
+    assert stale == [], f"set(s) name retired/renamed agent(s): {stale}"
 
 
 def test_agent_skill_owners_resolve_to_a_real_skill() -> None:

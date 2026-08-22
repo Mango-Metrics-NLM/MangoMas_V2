@@ -17,12 +17,33 @@ C4Component
     Component(agent_routes, "Agent + history routes", "FastAPI routes", "GET /agents; POST /agents/{name}/invoke (emits invocation/error/duration metrics); POST /agents/{name}/stream; GET /history (bounded limit). Delegates to Orchestrator.")
     Component(workflow_routes, "Workflow routes (opt-in)", "FastAPI routes", "POST /workflows/run|validate. Resolve the graph source via the shared resolve_workflow_source, then load_workflow + execute_workflow. Reuse the MangomasError envelope (ConfigError 400 / AgentNotFound 404 / MaxStepsExceeded 422).")
     Component(backpressure_mw, "Backpressure + CORS + auth (opt-in)", "Middleware / dependency", "Default-OFF: MaxBodySizeMiddleware (413), ConcurrencyLimitMiddleware (503, reject-don't-queue), env-driven CORSMiddleware, and require_auth (bearer / X-API-Key via SecretsProvider, fail-closed). Backpressure sits inner of log/trace so rejections are still logged.")
+    Component(tenancy_mw, "TenancyMiddleware (opt-in)", "Starlette middleware", "ADR-0017. Reads MANGOMAS_TENANCY__HEADER (default X-Tenant-ID) into the tenancy ContextVar; the storage adapters filter rows on it, so no route signature changes. Not installed when MANGOMAS_TENANCY__ENABLED=false, in which case every row uses the implicit 'default' tenant. Header values pass through the shared sanitize_header_token, the same log-injection / SQL-parameter defence the correlation header uses.")
+  }
+
+  Container_Boundary(telemetry_boundary, "Telemetry (src/mangomas/telemetry/ + metrics.py)") {
+    Component(telemetry_bootstrap, "configure_telemetry()", "Idempotent bootstrap", "Installs the log handler (text | json), the TraceContext + Correlation filters, the W3C propagator and a TracerProvider. Idempotent by a process-global latch, so the FIRST caller wins — which is why no module may bind mangomas.telemetry.get_tracer at import time (spec-0023 R1a). Exporter selected by MANGOMAS_TELEMETRY__EXPORTER: console or gcp Cloud Trace (ADR-0009).")
+    Component(meters, "configure_metrics() + record_* helpers", "OTel MeterProvider (opt-in)", "ADR-0013. Default-OFF behind MANGOMAS_TELEMETRY__METRICS_ENABLED. Emits agent invocation, error and duration instruments from the invoke route; metrics.py holds the lazily-bound record helpers so an un-configured process pays nothing.")
+    Component(scoped_tracer, "build_scoped_tracer()", "Dedicated TracerProvider", "Routes harness spans to their own exporter when MANGOMAS_HARNESS__METRICS_EXPORTER != inherit. Cached by (namespace, exporter) so repeated build_orchestrator calls reuse one provider rather than leaking a SpanProcessor each time.")
+  }
+
+  Container_Boundary(eval_boundary, "Evaluation harness (src/mangomas/eval/) — opt-in") {
+    Component(eval_runner, "EvalRunner", "Domain service", "Runs each dataset row through a Target, scores it with a Scorer, and aggregates an EvalReport. mean_score averages non-errored rows only; pass_rate keeps errored rows in the denominator. Bounded concurrency via MANGOMAS_EVAL__PARALLELISM.")
+    Component(eval_registries, "Four registries", "Registry[T]", "scorer_registry, target_registry, sink_registry, dataset_source_registry — the same Registry[T] the agent/LLM/storage seams use. Built-ins self-register at import; entry-point plugins load only when MANGOMAS_DISCOVERY_ENABLED=true.")
+    Component(eval_gate, "evaluate_gate + evaluate_regression_gate", "Pure functions", "Threshold verdict over an EvalReport, and a regression verdict over a diff against a baseline report. Both pure; the CLI maps a failing verdict to exit code 3 (distinct from 1=runtime, 2=config) and only after sinks have emitted.")
+    Component(eval_sinks, "Sinks", "Sink impls", "console, json_file, sqlite_results, webhook, and the optional langfuse sink. Composed under per-sink fault isolation, so one failing sink cannot lose the others' output.")
+  }
+
+  Container_Boundary(harness_boundary, "Harness governance (src/mangomas/harness/ + scripts/) — opt-in") {
+    Component(governance, "governance.py", "Policy module", "PROTECTED_PATHS and the BREAKING-CHANGE marker aliases, read from pyproject.toml's [tool.mangomas.governance] table — one source of truth shared with both scripts below.")
+    Component(config_audit, "config_audit.py", "Decision table", "Evaluates a ConfigChange hook event against MANGOMAS_HARNESS__CONFIG_AUDIT_MODE (off | audit | block) for edits to .claude/settings*.json.")
+    Component(protected_paths_gate, "check_protected_paths.py", "CI gate — authoritative", "Reads git diff/log between the PR base and head, state an in-session agent cannot rewrite. This is the real enforcement of the BREAKING-CHANGE trailer.")
+    Component(frontmatter_lint, "lint_agent_frontmatter.py", "Linter + hook modes", "Pydantic-validated lint of .claude/agents and .claude/skills frontmatter, plus stdlib-only PreToolUse (advisory 'ask' on a protected-path edit) and PostToolUse (--emit-path for ruff) hook modes. The hook is ADVISORY only: Bash and MCP filesystem calls bypass its matcher entirely, which is why the CI gate above is the authoritative one (ADR-0021).")
   }
 
   Container_Boundary(secrets_boundary, "Secrets (src/mangomas/secrets/)") {
     Component(secrets_provider, "SecretsProvider", "Protocol", "get(name) -> str | None. Resolves a secret reference at orchestrator-build time. Cloud backends plug in via secrets_registry.")
     Component(env_secrets, "EnvSecretsProvider", "SecretsProvider impl", "Reads secrets from os.environ. Used when LLMSettings.secret_ref is set.")
-    Component(gcp_secrets, "GCPSecretManagerProvider", "SecretsProvider impl", "Resolves secrets via google-cloud-secret-manager + ADC. Collapses all failure modes into None per ADR-002. Activated by MANGOMAS_SECRETS__PROVIDER=gcp.")
+    Component(gcp_secrets, "GCPSecretManagerProvider", "SecretsProvider impl", "Resolves secrets via google-cloud-secret-manager + ADC. Fails soft to None by default (ADR-002); with MANGOMAS_SECRETS__STRICT=true it raises SecretsResolutionError instead, mapped to 503 — so a broken secret backend cannot masquerade as an unset secret (spec-0003). Activated by MANGOMAS_SECRETS__PROVIDER=gcp.")
   }
 
   Container_Boundary(core_boundary, "Core (src/mangomas/core/)") {
@@ -68,6 +89,17 @@ C4Component
   Rel(app_factory, health_routes, "mounts routes")
   Rel(app_factory, agent_routes, "mounts routes")
   Rel(app_factory, workflow_routes, "mounts routes (opt-in)")
+  Rel(app_factory, tenancy_mw, "adds middleware (opt-in, ADR-0017)")
+  Rel(app_factory, telemetry_bootstrap, "lifespan calls configure_telemetry() with the configured exporter + log format")
+  Rel(trace_mw, telemetry_bootstrap, "spans resolve against the TracerProvider it installed")
+  Rel(agent_routes, meters, "record_agent_invocation / _error / _duration (opt-in)")
+  Rel(harness_orch, scoped_tracer, "harness.agent_invoke spans (dedicated exporter when != inherit)")
+  Rel(eval_runner, eval_registries, "resolves target / scorer / sink / dataset source by name")
+  Rel(eval_runner, eval_gate, "report → GateResult; CLI exit 3 on failure")
+  Rel(eval_runner, eval_sinks, "emits the report to every configured sink")
+  Rel(eval_runner, orchestrator, "the agent / pipeline / fan_out targets dispatch through the public surface")
+  Rel(frontmatter_lint, governance, "reads PROTECTED_PATHS + marker aliases")
+  Rel(protected_paths_gate, governance, "reads PROTECTED_PATHS + marker aliases")
   Rel(app_factory, backpressure_mw, "installs when configured")
   Rel(agent_routes, orchestrator, "dispatch() / stream_dispatch() (or _HarnessOrchestrator when harness.enabled=true)")
   Rel(workflow_routes, execute_workflow, "load_workflow() then execute_workflow()")

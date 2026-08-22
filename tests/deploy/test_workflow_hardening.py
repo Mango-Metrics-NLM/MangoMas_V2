@@ -12,99 +12,211 @@ Two injection/supply-chain rules that were previously held only by convention:
   action's owner (or an account takeover — codecov's 2021 uploader compromise
   is the case study) silently swap the code CI runs with repo credentials.
   First-party ``actions/*`` stay tag-pinned by recorded policy (GitHub-owned,
-  lower blast radius) — this split is asserted, not implied, so a Dependabot
-  or human edit that flips it fails here by name.
+  lower blast radius) — this split is asserted, not implied.
 
-Discovery is guarded (file and run-body counts) so a moved workflow directory
-degrades to a loud failure, never a vacuously green pass — the same fail-open
-defect class ``tests/deploy/test_env_example_contract.py`` documents.
+**The forbidden-expression check must be a regex, not a substring.** The first
+version of this file tested for the literal ``"${{ github.event."``. GitHub
+accepts arbitrary whitespace inside ``${{ }}``, so ``${{github.event.x}}`` —
+the very line this test exists to forbid, minus one space — sailed through it.
+A guard that a one-character edit defeats is worse than none, because it reads
+as protection. The pattern below tolerates any whitespace and covers the whole
+attacker-influenced family, not just the one instance that was fixed.
+
+Discovery is guarded (file, run-body and uses counts) so a moved or renamed
+workflow directory degrades to a loud failure rather than a vacuously green
+pass — the same fail-open defect class ``test_env_example_contract.py``
+documents. Parsing lives in ``tests/deploy/_workflows.py`` so this suite and
+``test_ci_make_parity.py`` cannot drift apart in what they can see.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
-import yaml
+from tests.deploy import _workflows
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKFLOWS_DIR = _REPO_ROOT / ".github" / "workflows"
-
-_EXPECTED_WORKFLOW_COUNT = 3
+_EXPECTED_WORKFLOW_COUNT = 4
+# Vacuity floors: low enough that a legitimate change never trips them, high
+# enough that a glob matching nothing (or a workflow losing every step) fails
+# loudly. Deliberately not the exact counts — see the module docstring.
 _MIN_RUN_BODIES = 10
-_MIN_THIRD_PARTY_USES = 3
-_FIRST_PARTY_PREFIX = "actions/"
-_SHA_REF_RE = re.compile(r"[0-9a-f]{40}")
+_MIN_THIRD_PARTY_USES = 1
+_FIRST_PARTY_OWNER = "actions"
+# A commit SHA is 40 hex digits; GitHub accepts either case in `uses:`.
+_SHA_HEX_LENGTH = 40
+_SHA_REF_RE = re.compile(rf"[0-9a-fA-F]{{{_SHA_HEX_LENGTH}}}")
 
-# Expression fragments that must never appear inside a run: body. Anything
-# under github.event.* is webhook payload; head_ref is attacker-named on
-# fork PRs; a ${{ secrets.* }} inlined into a command line can leak through
-# argv/process listings and invites the same injection shape.
-_FORBIDDEN_RUN_FRAGMENTS = (
-    "${{ github.event.",
-    "${{ github.head_ref",
-    "${{ secrets.",
+# Every context whose value an outside contributor can influence, plus
+# `secrets.` (which must reach a shell through `env:`, never argv). Whitespace
+# inside `${{ }}` is optional and unbounded, hence `\s*`.
+_FORBIDDEN_RUN_EXPRESSION_RE = re.compile(
+    r"\$\{\{\s*(?:github\.event\b|github\.head_ref\b|github\.ref_name\b|inputs\b|secrets\b)"
+)
+
+# The third-party actions this repo has reviewed and pinned. Asserted as a set
+# so *adding* one is the reviewed event, rather than a count that silently
+# tolerates a swap.
+_EXPECTED_THIRD_PARTY_ACTIONS = frozenset(
+    {
+        "codecov/codecov-action",
+        "google-github-actions/auth",
+        "google-github-actions/setup-gcloud",
+    }
 )
 
 
-def _workflow_docs() -> dict[str, dict[str, Any]]:
-    # PyYAML parses the top-level `on:` key as boolean True (YAML 1.1) — only
-    # `jobs` is indexed here, so that quirk is irrelevant but worth noting for
-    # the next editor (see test_ci_make_parity.py for the full story).
-    return {
-        path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
-        for path in sorted(_WORKFLOWS_DIR.glob("*.yml"))
-    }
+def _action_name(ref: str) -> str:
+    return ref.partition("@")[0]
 
 
-def _run_bodies() -> list[tuple[str, str]]:
-    bodies: list[tuple[str, str]] = []
-    for name, doc in _workflow_docs().items():
-        for job_name, job in doc["jobs"].items():
-            for step in job.get("steps", []):
-                if "run" in step:
-                    bodies.append((f"{name}:{job_name}", str(step["run"])))
-    return bodies
-
-
-def _uses_refs() -> list[tuple[str, str]]:
-    refs: list[tuple[str, str]] = []
-    for name, doc in _workflow_docs().items():
-        for job_name, job in doc["jobs"].items():
-            for step in job.get("steps", []):
-                if "uses" in step:
-                    refs.append((f"{name}:{job_name}", str(step["uses"])))
-    return refs
+def _is_first_party(ref: str) -> bool:
+    return _action_name(ref).startswith(f"{_FIRST_PARTY_OWNER}/")
 
 
 def test_workflows_were_discovered() -> None:
     """Vacuity guard: an empty glob would green-light every rule below."""
-    docs = _workflow_docs()
+    docs = _workflows.workflow_docs()
     assert len(docs) == _EXPECTED_WORKFLOW_COUNT, sorted(docs)
-    assert len(_run_bodies()) >= _MIN_RUN_BODIES
+    assert len(_workflows.run_bodies()) >= _MIN_RUN_BODIES
+    assert len(_workflows.uses_refs()) >= _MIN_THIRD_PARTY_USES
+
+
+def test_every_workflow_declares_at_least_one_run_or_uses_step() -> None:
+    """Per-file guard: the aggregate floor above cannot see one file emptying.
+
+    Without this, `deploy.yml` and `eval-gate.yml` could lose every step and
+    the forbidden-expression rule would still pass by scanning `ci.yml` alone.
+    """
+    seen = {where.split(":", 1)[0] for where, _ in _workflows.run_bodies()}
+    seen |= {where.split(":", 1)[0] for where, _ in _workflows.uses_refs()}
+    assert seen == set(_workflows.workflow_docs())
 
 
 def test_no_run_body_interpolates_forbidden_expressions() -> None:
     """Event payload and secrets reach shells via env: bindings, never ${{ }}."""
     offenders = [
-        (where, fragment)
-        for where, body in _run_bodies()
-        for fragment in _FORBIDDEN_RUN_FRAGMENTS
-        if fragment in body
+        (where, match.group(0))
+        for where, body in _workflows.run_bodies()
+        for match in [_FORBIDDEN_RUN_EXPRESSION_RE.search(body)]
+        if match is not None
     ]
     assert offenders == []
 
 
+def test_forbidden_expression_pattern_is_whitespace_insensitive() -> None:
+    """Mutation proof for the guard itself (the bug this file shipped with).
+
+    The original substring check missed `${{github.event.x}}`. If the pattern
+    is ever narrowed back to a literal, this fails — so the guard's own
+    weakness is now a tested property rather than a latent bypass.
+    """
+    for probe in (
+        "IMAGE=${{github.event.release.tag_name}}",
+        "IMAGE=${{  github.event.release.tag_name }}",
+        "TAG=${{ github.ref_name }}",
+        "X=${{ inputs.thing }}",
+        "K=${{ secrets.TOKEN }}",
+    ):
+        assert _FORBIDDEN_RUN_EXPRESSION_RE.search(probe) is not None, probe
+    # And it must not fire on a workflow-defined literal, which is safe.
+    assert _FORBIDDEN_RUN_EXPRESSION_RE.search("git fetch ${{ env.BASE_BRANCH }}") is None
+
+
 def test_third_party_actions_are_sha_pinned() -> None:
     """Every non-actions/* `uses:` ref must be a full 40-hex commit SHA."""
-    third_party = [
-        (where, uses) for where, uses in _uses_refs() if not uses.startswith(_FIRST_PARTY_PREFIX)
-    ]
+    third_party = [(w, u) for w, u in _workflows.uses_refs() if not _is_first_party(u)]
     assert len(third_party) >= _MIN_THIRD_PARTY_USES, third_party
-    unpinned = [
-        (where, uses)
-        for where, uses in third_party
-        if not _SHA_REF_RE.fullmatch(uses.partition("@")[2])
-    ]
+    unpinned = [(w, u) for w, u in third_party if not _SHA_REF_RE.fullmatch(u.partition("@")[2])]
     assert unpinned == []
+
+
+def test_third_party_action_set_is_the_reviewed_one() -> None:
+    """Adding a third-party action is a reviewed event, not a silent one."""
+    names = {_action_name(u) for _, u in _workflows.uses_refs() if not _is_first_party(u)}
+    assert names == _EXPECTED_THIRD_PARTY_ACTIONS
+
+
+# A job that reports a scheduled run's failure somewhere a human will see.
+# Recognised by its `if:` guard rather than its name, so renaming the job is
+# fine and deleting the guard is not.
+_FAILURE_GUARD = "failure()"
+
+
+def _scheduled_workflows() -> list[str]:
+    return [name for name in _workflows.workflow_docs() if "schedule" in _workflows.triggers(name)]
+
+
+def test_every_scheduled_workflow_reports_its_own_failure() -> None:
+    """A scheduled run nobody watches is a gate that reports to no one.
+
+    Push-triggered workflows surface on the PR; a cron run surfaces nowhere.
+    GitHub emails only the account that last touched the cron, and only on the
+    *first* failure of a consecutive run — so a suite that breaks and stays
+    broken goes quiet after night one, which is exactly the shape of the
+    long-lived defect a nightly suite exists to catch.
+
+    Checked by the `if:` guard, so the reporting job can be renamed or
+    reimplemented freely; only removing the failure path fails this.
+    """
+    scheduled = _scheduled_workflows()
+    assert scheduled, "no scheduled workflow found — has the cron trigger moved?"
+    for name in scheduled:
+        guarded = [
+            job
+            for job, spec in _workflows.jobs(name).items()
+            if _FAILURE_GUARD in str(spec.get("if", ""))
+        ]
+        assert guarded, (
+            f"{name} runs on a schedule but no job is guarded by `if: {_FAILURE_GUARD}`, "
+            "so a failing nightly run notifies nobody"
+        )
+
+
+# A shallow checkout is the default. The `git` gitleaks pass walks committed
+# history, so on `fetch-depth: 1` it scans a single commit, finds nothing, and
+# exits 0 — the same fail-open shape as every other defect on this branch.
+_FULL_HISTORY = 0
+_HISTORY_SCANNING_STEP = "make secret-scan"
+
+
+def _jobs_running(command: str) -> list[tuple[str, str, dict[str, Any]]]:
+    """Every (workflow, job name, job spec) whose steps run ``command``."""
+    found = []
+    for workflow, doc in _workflows.workflow_docs().items():
+        for name, spec in (doc.get("jobs") or {}).items():
+            runs = [str(step.get("run", "")) for step in (spec.get("steps") or [])]
+            if any(command in run for run in runs):
+                found.append((workflow, name, spec))
+    return found
+
+
+def test_history_scanning_jobs_check_out_full_history() -> None:
+    """`make secret-scan`'s git pass needs every commit, not just the tip.
+
+    Nothing asserted this. A `fetch-depth` left at its default turns the
+    history pass into a one-commit scan that reports "no leaks found" and goes
+    green, which is indistinguishable from a clean history — and the pass
+    exists precisely because a credential can be committed and then removed
+    from the working tree.
+    """
+    jobs = _jobs_running(_HISTORY_SCANNING_STEP)
+    assert jobs, f"no job runs {_HISTORY_SCANNING_STEP!r} — has the target been renamed?"
+
+    shallow = []
+    for workflow, name, spec in jobs:
+        checkouts = [
+            step
+            for step in (spec.get("steps") or [])
+            if str(step.get("uses", "")).startswith("actions/checkout")
+        ]
+        assert checkouts, f"{workflow}:{name} scans history without checking anything out"
+        for step in checkouts:
+            depth = (step.get("with") or {}).get("fetch-depth")
+            if depth != _FULL_HISTORY:
+                shallow.append(f"{workflow}:{name} (fetch-depth={depth!r})")
+
+    assert shallow == [], (
+        "history-scanning job(s) use a shallow checkout, so the gitleaks `git` "
+        f"pass would scan one commit and pass vacuously: {shallow}"
+    )

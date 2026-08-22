@@ -25,6 +25,15 @@ argument-hint: "Describe the change being released (e.g. 'new Vertex AI adapter'
 
 ## Quick Commands
 
+If a change moves the HTTP surface (a route, or a DTO's property/required
+set), regenerate the committed projection and review the diff — it is the
+review record for a wire-contract change:
+
+```bash
+python -m tests.test_openapi_snapshot   # rewrites tests/snapshots/openapi.json
+```
+
+
 ```powershell
 # Pre-merge checklist (must all pass)
 pre-commit run --all-files  # ruff + ruff-format + mypy(src) + file hygiene

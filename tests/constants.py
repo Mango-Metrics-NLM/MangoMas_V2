@@ -363,6 +363,11 @@ CORPUS_DOC_RELPATHS: tuple[str, ...] = (
 # additive, so the contract test asserts each of these survives verbatim —
 # listing them here (rather than inline) keeps the expected hook contract in
 # one place and lets the test stay data-driven.
+# One command string, two registrations: the same stdin-JSON mode is wired
+# under both the Edit-family matcher and Bash (it discriminates by payload
+# shape). Named so the two tuples below cannot drift apart.
+PRE_TOOL_USE_HOOK_COMMAND: str = "python scripts/lint_agent_frontmatter.py --hook pre-tool-use"
+
 PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
     ("SessionStart", "*", "python scripts/harness_session_start.py"),
     (
@@ -372,7 +377,7 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # mode, and widened the matcher to cover NotebookEdit.
         "PreToolUse",
         "Edit|Write|NotebookEdit",
-        "python scripts/lint_agent_frontmatter.py --hook pre-tool-use",
+        PRE_TOOL_USE_HOOK_COMMAND,
     ),
     (
         # Same stdin-JSON fix applied to the ruff-autofix hook, which had the
@@ -388,6 +393,19 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         'python -m ruff format "{}" >/dev/null 2>&1\' || true',
     ),
     (
+        # spec-0023 R8: `|| exit 1` replaced `|| true`. The recorded rationale
+        # for swallowing ("so a failure never strands a session") did not hold:
+        # only exit code 2 blocks a Stop hook, so any other non-zero was
+        # already a *visible, non-blocking* notice. What `|| true` actually did
+        # was downgrade that notice to a transcript-only line — and once the
+        # zero-skip guard landed (spec-0022 R8, which turns a green run red by
+        # mutating session.exitstatus) it was swallowing precisely the signal
+        # the guard exists to raise. `exit 1` rather than bare propagation
+        # because pytest exits 2 on a collection error, and 2 *would* block.
+        # This is also the compensating control for the PostToolUse matcher
+        # being Edit|Write only: nothing can know which files a Bash command
+        # wrote, so `format-check` at turn end is the net that catches them.
+        #
         # spec-0020: `make typecheck format-check` added ahead of the suite.
         # Measured at 0.3s warm, and mypy catches cross-file type breakage that
         # neither the per-file ruff hook nor pytest sees.
@@ -399,7 +417,7 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # to `make` for the same reason CI does — one definition of each check.
         "Stop",
         "*",
-        "make typecheck format-check || true ; python -m pytest -q --no-cov || true",
+        "make typecheck format-check || exit 1 ; python -m pytest -q --no-cov || exit 1",
     ),
     (
         # spec-0022 R11: the same stdin-JSON pre-tool-use mode, registered a
@@ -409,7 +427,7 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # `ask` on protected paths — never `deny`, per ADR-0021.
         "PreToolUse",
         "Bash",
-        "python scripts/lint_agent_frontmatter.py --hook pre-tool-use",
+        PRE_TOOL_USE_HOOK_COMMAND,
     ),
 )
 
@@ -450,8 +468,10 @@ EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-adr-author",
     "mango-agent-impl-dev",
     "mango-api-dev",
+    "mango-api-impl-dev",
     "mango-architect",
     "mango-backend",
+    "mango-ci-dev",
     "mango-cli-dev",
     "mango-error-taxonomy-dev",
     "mango-eval-dev",
@@ -484,6 +504,8 @@ WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adr-author",
         "mango-agent-impl-dev",
+        "mango-api-impl-dev",
+        "mango-ci-dev",
         "mango-cli-dev",
         "mango-error-taxonomy-dev",
         "mango-eval-dev",
@@ -543,11 +565,11 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
     "mango-agent-impl-dev": ("mango-agent-add",),
+    "mango-api-impl-dev": ("mango-observability", "mango-config"),
+    "mango-ci-dev": ("mango-deploy", "mango-mutation-proof"),
     "mango-error-taxonomy-dev": ("mango-error",),
     "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
-    # `mango-cli-dev` is deliberately absent: no skill documents the CLI
-    # surface, so its workflow is its own rather than a restated recipe.
     "mango-harness-dev": ("mango-harness",),
     "mango-hypothesis-fuzz": ("mango-testing",),
     "mango-integration-runner": ("mango-testing",),
@@ -567,6 +589,106 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-telemetry-exporter-dev": ("mango-observability", "mango-deploy"),
     "mango-workflow-graph-dev": ("mango-workflow", "mango-observability"),
 }
+# Agents deliberately outside `AGENT_SKILL_OWNERS`, so the mapping can be
+# checked for totality: a new agent must land in one set or the other, never
+# fall through both unnoticed. Two reasons appear here, and both are decisions
+# rather than omissions:
+#
+#   * the four routers and the two auditors have no file surface at all — they
+#     read and advise, and their numbered steps are their own operating loop,
+#     not a recipe any skill owns (which is also why
+#     `test_mapped_agent_has_no_procedure_section` is scoped to mapped agents);
+#   * `mango-cli-dev` owns a real surface that no skill documents, so its
+#     workflow is genuinely its own rather than a restated recipe.
+#
+# Adding a slug here is therefore a claim that no skill documents its
+# procedure. `test_every_agent_is_mapped_or_recorded_unmapped` enforces the
+# partition; `test_mapped_agent_references_its_skill` enforces the other half.
+# Top-level entries under `src/mangomas/` that no write-capable agent claims in
+# its `## Surface You Own` section. `registry.py` is deliberate rather than an
+# omission: it is a protected path holding a generic `Registry[T]` with no
+# project-specific logic, consumed equally by the agent, eval, workflow,
+# secrets and node registries. Handing it to any one of those owners would be
+# arbitrary, and a change to it is a cross-cutting contract change that needs a
+# `BREAKING-CHANGE` trailer and an architecture review, not a surface owner.
+#
+# Everything else must be claimed. `test_every_source_surface_has_a_write_capable_owner`
+# derives ownership from the agent bodies themselves rather than a second
+# hand-maintained table, so the corpus cannot desync from its own claims.
+UNOWNED_SOURCE_SURFACES: frozenset[str] = frozenset({"registry.py"})
+
+# ── Corpus-count claims in prose ─────────────────────────────────────────────
+#
+# Docs that describe the corpus as it is *now*. A number in one of these is a
+# claim about the live tree and must agree with it; the README said "13 skills,
+# 23 agents (4 routers + 19 specialists)" while the tree held 15 and 27.
+#
+# `NEXT_STEPS.md` is deliberately absent. It is a dated delivery log whose
+# per-milestone counts are correct *as of that milestone* and must not be
+# rewritten — its own preamble says "counts below are as-of the harness
+# branch". Rewriting them would falsify the record rather than fix drift.
+# `docs/adr/` and `docs/plans/` are excluded for the same reason.
+LIVE_CORPUS_COUNT_DOCS: tuple[str, ...] = (
+    "CLAUDE.md",
+    "README.md",
+    "docs/tooling/claude-code-ecosystem.md",
+)
+# Numbers written as words, which the corpus docs use in prose.
+#
+# "one" is deliberately absent. In English it doubles as an article — "dispatch
+# one agent", "one skill owns the procedure" — so treating it as a count claim
+# produces false positives on ordinary prose, and no doc will ever truthfully
+# claim this corpus holds a single agent. Every other word is unambiguous
+# because it forces a plural noun.
+SPELLED_NUMBERS: dict[str, int] = {
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "twenty-one": 21,
+    "twenty-two": 22,
+    "twenty-three": 23,
+    "twenty-four": 24,
+    "twenty-five": 25,
+    "twenty-six": 26,
+    "twenty-seven": 27,
+    "twenty-eight": 28,
+    "twenty-nine": 29,
+    "thirty": 30,
+}
+# A count claim whose noun is a corpus noun but whose subject is a *subset*.
+# Keyed by a distinctive phrase on the line; the value names the roster the
+# number must equal. Registered rather than exempted — a subset count is still
+# a claim, and this keeps it pinned to something real.
+SUBSET_COUNT_CLAIMS: dict[str, str] = {
+    "own a **protected path**": "PROTECTED_PATH_OWNER_SLUGS",
+}
+SKILL_UNMAPPED_AGENT_SLUGS: frozenset[str] = frozenset(
+    {
+        "mango-api-dev",
+        "mango-architect",
+        "mango-backend",
+        "mango-cli-dev",
+        "mango-layering-auditor",
+        "mango-protocol-auditor",
+        "mango-test-engineer",
+    }
+)
 # The four protected-path owners additionally reference the governance skill.
 HARNESS_SKILL_SLUG: str = "mango-harness"
 # Heading a mapped agent may not carry: its procedure belongs to its skill.
@@ -686,25 +808,45 @@ MCP_PROJECT_DIR_SCOPE: str = "${CLAUDE_PROJECT_DIR:-.}"
 # Single source for three consumers: the collection gate in tests/conftest.py
 # builds its skip marks from these, the zero-skip session guard treats exactly
 # these reasons as sanctioned, and tests/tooling/test_collection_gate.py
-# asserts the wiring in a subprocess. Restating a reason string anywhere else
-# reintroduces the desync this table exists to prevent.
+# asserts the wiring in a subprocess.
+#
+# Stored as {env_var: what-it-runs} and *formatted* into the reason, rather
+# than storing the full sentence: the reason repeats its own key, so a
+# hand-written table admits `{"RUN_RAG": "set RUN_LANGFUSE=1 to run RAG..."}`
+# — a typo the gate would emit, the guard would sanction (it is in .values()),
+# and no test would catch. Deriving it makes that desync unrepresentable.
+ENV_GATE_SUITES: dict[str, str] = {
+    "RUN_INTEGRATION": "integration tests",
+    "RUN_LMSTUDIO": "LM Studio tests",
+    "RUN_POSTGRES": "Postgres tests",
+    "RUN_VERTEX": "Vertex AI tests",
+    "RUN_GCP_SECRETS": "GCP Secret Manager tests",
+    "RUN_GCP_TRACE": "Cloud Trace exporter tests",
+    "RUN_EMBEDDINGS_LOCAL": "sentence-transformers tests",
+    "RUN_RAG": "chromadb-backed RAG tests",
+    "RUN_LANGFUSE": "Langfuse sink tests",
+    "RUN_GITLEAKS": "gitleaks config behaviour tests",
+}
+
+
+def env_gate_skip_reason(env_var: str, suite: str) -> str:
+    """Render the one sanctioned skip-reason sentence shape."""
+    return f"set {env_var}=1 to run {suite}"
+
+
 ENV_GATE_SKIP_REASONS: dict[str, str] = {
-    "RUN_INTEGRATION": "set RUN_INTEGRATION=1 to run integration tests",
-    "RUN_LMSTUDIO": "set RUN_LMSTUDIO=1 to run LM Studio tests",
-    "RUN_POSTGRES": "set RUN_POSTGRES=1 to run Postgres tests",
-    "RUN_VERTEX": "set RUN_VERTEX=1 to run Vertex AI tests",
-    "RUN_GCP_SECRETS": "set RUN_GCP_SECRETS=1 to run GCP Secret Manager tests",
-    "RUN_GCP_TRACE": "set RUN_GCP_TRACE=1 to run Cloud Trace exporter tests",
-    "RUN_EMBEDDINGS_LOCAL": "set RUN_EMBEDDINGS_LOCAL=1 to run sentence-transformers tests",
-    "RUN_RAG": "set RUN_RAG=1 to run chromadb-backed RAG tests",
-    "RUN_LANGFUSE": "set RUN_LANGFUSE=1 to run Langfuse sink tests",
+    env: env_gate_skip_reason(env, suite) for env, suite in ENV_GATE_SUITES.items()
 }
 # Runtime `pytest.skip(...)` calls inside already-enabled gated suites (the
 # vertex/gcp fixtures that additionally need a project id) phrase their reason
-# `set <VAR> ...`. Deliberately narrow — `RUN_*` gates must match the exact
-# strings above, so a novel ad-hoc `pytest.skip("set RUN_FOO=1 ...")` still
-# escalates rather than sliding through a loose prefix.
-GATED_RUNTIME_SKIP_REASON_RE: str = r"^set (VERTEX_|GCP_)"
+# `set <VAR> to run <suite>`. Applied with `fullmatch`, not `match`: a prefix
+# test would sanction `pytest.skip("set VERTEX_X ... actually just flaky")`.
+# The alternation is derived from the env-var names the suites actually use,
+# so it cannot rot away from them.
+GATED_RUNTIME_SKIP_REASON_PREFIXES: tuple[str, ...] = ("VERTEX_", "GCP_")
+GATED_RUNTIME_SKIP_REASON_RE: str = (
+    r"^set (?:" + "|".join(GATED_RUNTIME_SKIP_REASON_PREFIXES) + r")\w+ to run [\w \-]+$"
+)
 
 # ── CLI public surface (tests/test_cli_surface.py) ────────────────────────────
 # `mangomas` is a console script (`pyproject.toml` -> `mangomas.cli.main:app`),

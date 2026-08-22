@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 
 import pytest
 from typer.testing import CliRunner
@@ -71,7 +70,7 @@ def test_validate_disabled_by_default_exits_config_code(runner: CliRunner) -> No
 
 
 def test_validate_verbose_requests_debug_logging(
-    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+    runner: CliRunner, cli_logging_calls: list[dict[str, object]]
 ) -> None:
     """`workflow validate --verbose` asks for DEBUG logging.
 
@@ -83,11 +82,11 @@ def test_validate_verbose_requests_debug_logging(
     result = runner.invoke(cli_main.app, ["workflow", "validate", "-f", _AGENT_GRAPH, "--verbose"])
     assert result.exit_code == 0
     assert "name=t" in result.stdout
-    assert basic_config_calls == [{"level": logging.DEBUG}]
+    assert cli_logging_calls == [{"verbose": True}]
 
 
 def test_run_verbose_requests_debug_logging(
-    runner: CliRunner, basic_config_calls: list[dict[str, object]]
+    runner: CliRunner, cli_logging_calls: list[dict[str, object]]
 ) -> None:
     """`workflow run --verbose` — a branch nothing exercised until now.
 
@@ -102,4 +101,4 @@ def test_run_verbose_requests_debug_logging(
     )
     assert result.exit_code == 0
     assert STUB_REPLY in result.stdout
-    assert basic_config_calls == [{"level": logging.DEBUG}]
+    assert cli_logging_calls == [{"verbose": True}]

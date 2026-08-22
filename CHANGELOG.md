@@ -9,6 +9,186 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Post-review hardening (peer review of spec-0022) — Spec-0023._
+
+### Fixed
+
+- **The injection guard added by spec-0022 was bypassable by deleting one
+  space.** `test_no_run_body_interpolates_forbidden_expressions` matched the
+  literal `"${{ github.event."`; GitHub allows arbitrary whitespace inside
+  `${{ }}`, so `${{github.event.release.tag_name}}` — the exact line the test
+  exists to forbid — passed it. Now a regex over the whole
+  attacker-influenced family (`github.event`, `head_ref`, `ref_name`,
+  `inputs`, `secrets`), with `test_forbidden_expression_pattern_is_whitespace_insensitive`
+  pinning the guard's own weakness. The same file was blind to `*.yaml`
+  workflows and to job-level `uses:` (reusable-workflow calls).
+- **`mangomas <cmd> --verbose` stopped working mid-run.** Commands called
+  `logging.basicConfig(level=DEBUG)` themselves; the first `get_tracer()`
+  deep in dispatch then lazily called `configure_telemetry()` with its
+  default `log_level="INFO"` and `force=True`, replacing the root handler.
+  Every `logger.debug` after that vanished — exactly where the interesting
+  work happens. Fixed by one reusable seam,
+  `_runtime.configure_cli_logging`, pinned by `tests/test_cli_runtime.py`.
+- **No CLI run had ever honoured `MANGOMAS_LOG__FORMAT` or
+  `MANGOMAS_TELEMETRY__EXPORTER`** — and the seam above did not, by itself,
+  fix that. `mangomas.telemetry.get_tracer` self-bootstraps
+  `configure_telemetry()` with hard-coded defaults (INFO / text / console),
+  and `configure_telemetry` is idempotent, so whoever calls it first wins.
+  Four modules bound `_tracer = get_tracer(__name__)` at module scope —
+  `eval/gate.py`, `eval/baseline.py`, `eval/sinks/langfuse.py` and
+  `rag/pipeline.py` — and the CLI imports all four, so telemetry was latched
+  at defaults before `main()` ran. The codebase already stated this rule and
+  already tested it, but only against the `mangomas.api.app` import chain,
+  which imports none of the four; that is why the drift went unseen. All four
+  now use the house idiom (`opentelemetry.trace.get_tracer` inside the
+  function, which returns a provider-deferring proxy), and
+  `test_no_module_configures_telemetry_at_import` replaces the per-chain
+  check with an AST scan over every module under `src/`. The log *level* is
+  additionally re-applied after the idempotent call — the non-verbose path
+  needed that as much as `--verbose` did — so it survives a latch the scan
+  cannot prevent, such as a prior command in the same process.
+- **The RAG *query* half stayed silent after the ingest half was fixed**, which
+  left the three most-reported symptoms indistinguishable: an empty store, a
+  document dropped at ingest, and a query that genuinely matches nothing all
+  produced zero results and no explanation. `Retriever.search` now emits a
+  `rag.search` span mirroring `rag.ingest`, warns on zero matches, and a
+  `retrieve` tool call arriving with no query — a prompt or schema problem, not
+  a miss — warns rather than only telling the model. The query text is never
+  logged, only its length: it is end-user content and this layer cannot know
+  what it carries. A test asserts that absence directly, so a later "just log
+  the query, it helps debugging" edit fails rather than shipping user text into
+  the log stream.
+- **`rag/` was silent on the longest-running operation in the product.** No
+  logger anywhere in the package, including a branch that drops a document
+  from the index without a word — the "my file did not get indexed and I
+  have no idea why" case. Now an `rag.ingest` span with per-batch children,
+  and warnings on both silent-failure paths.
+- **`asyncio_default_fixture_loop_scope` was unset**, so pytest-asyncio's
+  announced default change would have landed on a minor bump rather than as a
+  reviewed edit. Pinned to the announced future value; the suite is green under
+  it.
+- **An invalid escape sequence in a test module docstring** raised a
+  `DeprecationWarning` on every run — the one warning the suite carried that
+  was actually ours.
+- **The Stop hook swallowed the zero-skip guard's signal.** `|| true` is now
+  `|| exit 1`: only exit code 2 blocks a Stop hook, so non-zero was already
+  a visible, non-blocking notice — the swallow just downgraded it to a
+  transcript line.
+- **`mango-config` would have failed CI if followed.** Its Workflow ended at
+  `.env.example` while spec-0022 R12 made the CLAUDE.md config row mandatory.
+- **`mango-ci-dev` was in neither half of the agent↔skill mapping**, so both
+  skill-duplication guards were silently off for it. It now maps to
+  `mango-deploy` + `mango-mutation-proof`, and
+  `test_every_agent_is_mapped_or_recorded_unmapped` asserts the two sets
+  partition the corpus, so the next agent cannot fall through the same way.
+- **Three documentation claims that had drifted past what they describe**:
+  `mango-ci-dev` did not list `nightly.yml` among the workflows it owns; the
+  ecosystem doc still said `claude mcp list` shows 5 servers after `github`
+  became the sixth (now pinned by
+  `test_documented_server_count_matches_the_adopted_set`, since a count
+  nothing compares is a claim rather than a check); and `NEXT_STEPS.md` listed
+  `dependabot.yml` as deferred tooling after this branch added it.
+- **`mango-pr-watcher` labelled two Claude Code platform tools as
+  `mcp__github__*`** and did not say the agent is inert without a PAT.
+- **`.PHONY` was missing `gated-suites`** — a CI-invoked target — and
+  `embeddings-local`.
+
+### Added
+
+- **`CONTRIBUTING.md`.** A repo with five protected paths, a
+  `BREAKING-CHANGE` trailer convention, spec-before-code, twenty coverage
+  floors and a 27-agent corpus had no entry point telling a new contributor any
+  of it. Written as a map that links to the file owning each rule, never a
+  second copy of the rule — a duplicated rule is one that disagrees with the
+  original within a release.
+- **Link-integrity tests for the repo's own docs.** Every relative Markdown
+  link in the current-state docs must resolve, and no bullet list may name the
+  same target twice — the signature of someone appending to a "further reading"
+  list without reading it. `docs/adr/` and `docs/plans/` are excluded: they are
+  dated records that may name since-renamed paths, and rewriting them to please
+  a linter would falsify the record. External URLs are not checked, so a third
+  party's outage cannot turn this build red.
+- **`docs/testing/regression.md`'s floor table is pinned to the gate.** The doc
+  said "if this table and that script ever disagree, the script wins and this
+  table is the bug" — honest, and an admission nothing checked it. Six enforced
+  floors (`headers`, `entry_points`, `config`, `telemetry`, `metrics`,
+  `harness`) were missing, so a reader auditing coverage policy saw fourteen
+  where twenty exist. Checked in both directions: a phantom row overstates the
+  policy exactly as a missing one understates it.
+- **Nightly scheduled workflow.** The repo had no scheduled automation at
+  all: `secret-scan` fired on push only, and seven opt-in suites ran nowhere,
+  ever. `nightly.yml` runs the Postgres suite (Docker is all it needs — and
+  ci.yml already records that a row-shape defect shipped behind a green
+  pipeline "purely because nothing set the gate") and both gitleaks passes.
+- **A guard that both secret-scan jobs check out full history.** Nothing
+  asserted it. `fetch-depth` left at its default turns the gitleaks `git` pass
+  into a one-commit scan that reports "no leaks found" and goes green —
+  indistinguishable from clean history, and vacuous exactly where the pass
+  matters, since its whole purpose is a credential committed and later removed
+  from the working tree.
+- **A failure path for the nightly run.** A scheduled workflow surfaces
+  nowhere: GitHub emails only the account that last touched the cron, and only
+  on the *first* failure of a consecutive run, so a suite that breaks and stays
+  broken goes quiet after night one — the exact shape of the long-lived defect
+  a nightly suite exists to catch. A `if: failure()` job now files one tracking
+  issue, deduped by title so a week of red is one thread rather than seven
+  issues, using the `gh` CLI and `GITHUB_TOKEN` already on the runner (no
+  action to pin, no secret to provision).
+  `test_every_scheduled_workflow_reports_its_own_failure` checks the guard
+  rather than the job name, so the reporting job can be reimplemented freely
+  and only deleting the failure path fails.
+- **Tests for the coverage gate itself.** `scripts/check_coverage.py` sat at
+  24%: a defect in `_check`/`main` would pass the whole per-package gate
+  while measuring nothing, and no coverage number could reveal it. Now 100%,
+  and `SCRIPTS_FLOOR` ratchets 84 → 92 on a measured 94%.
+- **Property tests for `sanitize_header_token`** — the shared log-injection /
+  SQL-parameter defence, previously guarded only by hand-picked examples.
+- **`mango-api-impl-dev`**, and a test deriving source ownership from the
+  agent corpus itself. The whole FastAPI assembly layer had no write-capable
+  owner: `create_app` and its load-bearing middleware install order,
+  `middleware.py`, `auth.py`, `health.py`, `tracing.py` and the system +
+  workflow routers. `mango-api-dev` is a router and cannot edit;
+  `mango-sse-streamer`, `mango-schema-evolution` and `mango-error-taxonomy-dev`
+  each own one slice and correctly decline the rest. The corpus asserted it
+  covered the codebase and nothing checked that, so
+  `test_every_source_surface_has_a_write_capable_owner` now reads each agent's
+  `## Surface You Own` — the agent bodies stay the single source of truth
+  rather than gaining a parallel table — and requires every top-level entry
+  under `src/mangomas/` to be claimed or recorded unowned with a reason.
+  `registry.py` is the one recorded exception: a generic `Registry[T]` on a
+  protected path, consumed equally by five registries, where naming any single
+  owner would be arbitrary.
+- **`mango-ci-dev`**, owning `Makefile`, `.github/workflows/`,
+  `dependabot.yml`, `deploy/` and `tests/deploy/` — five contract suites and
+  the whole gate chain belonged to no agent.
+- **Documented procedures**: the `.claude/settings.json` lockstep (including
+  that the repo denies itself `Edit` on that file) in `mango-harness`; the
+  subprocess meta-test pattern in `mango-mutation-proof`; the OpenAPI-snapshot
+  regen in `mango-release` and `mango-schema-evolution`.
+- **`tests/deploy/_workflows.py`** — one workflow-YAML reader, replacing the
+  copy that had drifted between the two suites.
+
+### Changed
+
+- **CLAUDE.md's config defaults are now actually enforced.** The
+  "No hard-coded values" row cited a test that checked *names* in both
+  directions while ~96 documented default values went uncompared. Defaults
+  are what rots; they are now checked against the live `Settings` fields.
+- **`MANGOMAS_RAG__MIN_CHUNK_WORDS` is documented as inert.** Unblinding the
+  chunker fuzz (both properties pinned `min_words=0`, making the
+  trailing-fragment drop unreachable) showed the branch is *provably* dead —
+  zero reachable states over an exhaustive search, and 12k randomised
+  comparisons where `min_words` never changed the output. Resolving it
+  (accept word loss, or retire the knob) is a retrieval-quality decision, so
+  today's behaviour is pinned and the doc row corrected.
+- **Named the last two hard-coded tunables**: `core/tools.py`'s repeated
+  truncation bound (kept local, since `core` imports nothing but `errors` and
+  `registry`, with a test pinning it to the shared default) and
+  `adapters/storage`'s triplicated `list_turns` limit.
+- **The "no magic numbers in tests" rule is scoped to domain values**, which
+  is what it always meant — `PLR2004` is deliberately off for `tests/*` and
+  65 HTTP status literals sit inline by design.
+
 _Governance-hardening adoptions (SSD-pack Tier 1 + 2) — Spec-0022._
 
 ### Fixed

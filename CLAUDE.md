@@ -132,7 +132,7 @@ The **Enforced by** column names the mechanism that catches a violation
 | Rule | Detail | Enforced by |
 |------|--------|-------------|
 | **Protocol-first** | Every adapter satisfies a `@runtime_checkable Protocol`. Never import concrete types across layers. | `mypy --strict` for signatures; layering is code review (prose-only — `mango-layering-auditor` on demand) |
-| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). | `tests/deploy/test_env_example_contract.py` (docs ⊆ Settings and Settings ⊆ docs, both directions) |
+| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). | `tests/deploy/test_env_example_contract.py` (names both directions: docs ⊆ Settings and Settings ⊆ docs; plus documented defaults compared against the live field values) |
 | **Backwards-compatible contracts** | `AgentRequest`, `AgentResponse` fields default-safe; adding fields must not break callers. | `tests/test_openapi_snapshot.py` (wire shape) + `tests/test_errors.py` status walk + the protected-path CI gate |
 | **`from __future__ import annotations`** | Required in every source file. | ruff isort `required-imports` (`make lint`) |
 | **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. | code review (prose-only — ruff's TC family is not selected) |
@@ -149,7 +149,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 |---|---|---|
 | `MANGOMAS_ENV` | `local` | Deployment environment label (`local`/`dev`/`prod`) |
 | `MANGOMAS_LOG_LEVEL` | `INFO` | Root log level |
-| `MANGOMAS_LOG__FORMAT` | `json` | Log line format (`json` \| `text`) |
+| `MANGOMAS_LOG__FORMAT` | `text` | Log line format (`json` \| `text`) — note `.claude/settings.json` exports `json` for Claude Code sessions; that is a session override, not the code default |
 | `MANGOMAS_LOG__BODY_TRUNCATE` | `512` | Max chars of request/response body in access logs |
 | `MANGOMAS_LLM__PROVIDER` | `lmstudio` | LLM registry entry; `vertex` enables Vertex AI |
 | `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
@@ -211,7 +211,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
-| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Intended to drop trailing fragments shorter than this — **currently inert**: the guard that would drop one is unreachable (it only fires when the fragment is already covered by the previous chunk, which the stepping makes impossible). Pinned by `test_fuzz_min_words_never_changes_the_output` |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
 | `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
@@ -354,7 +354,11 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
   = 100 %, `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
   `pyproject.toml` mirrors the global floor.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
-- **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
+- **Constants**: `tests/constants.py` — no magic **domain** values in tests
+  (URLs, model ids, env-var names, limits, rosters). Universal literals with
+  a standardised meaning — HTTP status codes, `0`/`1` — stay inline, which is
+  why `PLR2004` is disabled for `tests/*` in `pyproject.toml`. Config-mirroring
+  defaults must be **re-exported** (`X as X`), never restated.
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
 - **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
   and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
@@ -387,7 +391,7 @@ CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
 
 ## Claude Code Agents
 
-25 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
+27 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
 hierarchy. Claude Code resolves an agent by its `name:` field, which must equal
 the filename stem; the `mango-` prefix separates the committed corpus from
 personal agents `/agents` writes into the same directory.
@@ -403,7 +407,7 @@ or `Bash`.
 | `mango-api-dev` | Adding or changing an endpoint, evolving a request/response schema, API-layer integration |
 | `mango-test-engineer` | Adding or fixing tests, diagnosing a coverage gap, choosing a test surface |
 
-**Twenty-one specialists**, invoked *by name*, not by topic match — their
+**Twenty-three specialists**, invoked *by name*, not by topic match — their
 descriptions deliberately carry no trigger conditions, because auto-delegation
 matches the condition and never reads a modal verb like "invoke explicitly
 when". Name them directly:
@@ -426,6 +430,8 @@ when". Name them directly:
 | `mango-agent-impl-dev` | The built-in agents under `agents/` + `_prompt` / `_structured` / discovery |
 | `mango-cli-dev` | `cli/` — the `main.py` facade, `_app` assembly order, the `_runtime` seam |
 | `mango-harness-dev` | `harness/` + the four `scripts/` harness entry points |
+| `mango-ci-dev` | `Makefile`, `.github/workflows/`, `dependabot.yml`, `deploy/`, `tests/deploy/` |
+| `mango-api-impl-dev` | The FastAPI assembly layer — `create_app` + middleware order, `middleware.py`, `auth.py`, `health.py`, `tracing.py`, the system/workflow routers, `tenancy.py` |
 
 **Agents vs skills.** They are different things and the tie-break matters:
 **skills own procedure** (the recipe for doing X), **agents own a surface** —
