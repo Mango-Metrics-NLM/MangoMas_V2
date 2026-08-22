@@ -14,6 +14,13 @@ The hook emits structured logs via the shared
 :func:`mangomas.telemetry.get_tracer` namespace so operators see hook
 activity in the same trace tree as orchestrator activity.  Exit code is
 always ``0`` — the hook never fails a session.
+
+That contract has to hold on the exact machine the warnings exist for: a
+fresh web session with no venv, where neither ``httpx`` nor ``mangomas`` is
+importable.  Both imports are therefore guarded (the same degradation
+posture as ``harness_config_audit.py``) — an absent dependency downgrades
+the corresponding probe to a warning instead of dying at import time with
+``ModuleNotFoundError`` / exit 1 (spec-0022 R3).
 """
 
 from __future__ import annotations
@@ -24,10 +31,18 @@ import sys
 from pathlib import Path
 from typing import Final
 
-import httpx
+try:
+    import httpx
+except ImportError:  # bare web-session interpreter — degrade, never die
+    httpx = None  # type: ignore[assignment]
 
-from mangomas.config import get_settings
-from mangomas.telemetry import configure_telemetry
+try:
+    from mangomas.config import get_settings
+    from mangomas.telemetry import configure_telemetry
+except ImportError:  # mangomas not installed — probes degrade to warnings
+    _MANGOMAS_AVAILABLE = False
+else:
+    _MANGOMAS_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +69,12 @@ def _check_venv(root: Path) -> bool:
 async def _probe_lmstudio(base_url: str) -> bool:
     """Return ``True`` when LM Studio responds to a quick GET ``/models``."""
     url = base_url.rstrip("/") + PROBE_PATH
+    if httpx is None:
+        logger.warning(
+            "LM Studio probe unavailable — httpx not installed",
+            extra={"url": url},
+        )
+        return False
     try:
         async with httpx.AsyncClient(timeout=LMSTUDIO_PROBE_TIMEOUT_SECONDS) as client:
             response = await client.get(url)
@@ -70,6 +91,8 @@ async def _probe_lmstudio(base_url: str) -> bool:
 
 
 def _configure_logging() -> None:
+    if not _MANGOMAS_AVAILABLE:
+        raise ImportError("mangomas is not installed — telemetry unavailable")
     cfg = get_settings()
     configure_telemetry(
         service_name=cfg.harness.metrics_namespace,
@@ -92,6 +115,10 @@ def main() -> int:
 
     repo_root = Path.cwd()
     _check_venv(repo_root)
+
+    if not _MANGOMAS_AVAILABLE:
+        logger.warning("Probe skipped — mangomas not installed")
+        return EXIT_OK
 
     try:
         cfg = get_settings()
