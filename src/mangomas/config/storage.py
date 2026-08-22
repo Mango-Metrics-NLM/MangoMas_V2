@@ -23,6 +23,13 @@ DEFAULT_DB_CONNECT_TIMEOUT_SECONDS: float = 10.0
 DEFAULT_DB_STATEMENT_TIMEOUT_SECONDS: float | None = None
 
 
+# Default page size for ``TurnRepository.list_turns``. Lives here rather than
+# as a bare literal in the Protocol and each backend: the same default was
+# written three times (base/sqlite/postgres), so an implementation could
+# silently disagree with the Protocol it claims to satisfy.
+DEFAULT_STORAGE_LIST_TURNS_LIMIT: int = 50
+
+
 class DBSettings(BaseModel):
     """Persistence configuration."""
 

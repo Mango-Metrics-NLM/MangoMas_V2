@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
+from mangomas.core import tools as core_tools
 from mangomas.core.tools import (
     ToolCall,
     ToolCallParser,
@@ -236,3 +237,17 @@ def test_parse_or_recover_schema_mismatch_returns_none() -> None:
 def test_parse_or_recover_inverted_braces_returns_none() -> None:
     """``}`` appearing before ``{`` is not a valid recovery target."""
     assert parse_or_recover("} oops {", _DemoModel) is None
+
+
+def test_error_detail_truncate_matches_config() -> None:
+    """`core` names its own truncation bound; pin it to the shared default.
+
+    `core` is the innermost layer and imports nothing but `errors` and
+    `registry`, so it deliberately does *not* import the settings package for
+    a single integer. That leaves two literals for the same policy — the bound
+    on untrusted exception text reaching an error `detail` — which this test
+    keeps equal. Mutation proof: change either constant alone and this fails.
+    """
+    from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE  # noqa: PLC0415
+
+    assert core_tools._ERROR_DETAIL_TRUNCATE == DEFAULT_ERROR_DETAIL_TRUNCATE

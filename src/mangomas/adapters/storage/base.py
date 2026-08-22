@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from mangomas.config import DEFAULT_STORAGE_LIST_TURNS_LIMIT
 from mangomas.core.agent import AgentRequest, AgentResponse
 
 
@@ -25,7 +26,9 @@ class TurnRepository(Protocol):
         """Persist one turn and return its assigned row ID."""
         ...
 
-    async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
+    async def list_turns(
+        self, limit: int = DEFAULT_STORAGE_LIST_TURNS_LIMIT
+    ) -> list[dict[str, Any]]:
         """Return the most recent *limit* turns, newest first."""
         ...
 

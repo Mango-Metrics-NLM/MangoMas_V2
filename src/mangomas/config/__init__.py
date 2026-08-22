@@ -318,6 +318,9 @@ from mangomas.config.storage import (
     DEFAULT_MEMORY_PROVIDER as DEFAULT_MEMORY_PROVIDER,
 )
 from mangomas.config.storage import (
+    DEFAULT_STORAGE_LIST_TURNS_LIMIT as DEFAULT_STORAGE_LIST_TURNS_LIMIT,
+)
+from mangomas.config.storage import (
     DBSettings as DBSettings,
 )
 from mangomas.config.storage import (
@@ -411,6 +414,7 @@ __all__ = [
     "DEFAULT_RAG_MIN_CHUNK_WORDS",
     "DEFAULT_SECRETS_PROVIDER",
     "DEFAULT_SECRETS_STRICT",
+    "DEFAULT_STORAGE_LIST_TURNS_LIMIT",
     "DEFAULT_SUMMARIZE_HISTORY_LIMIT",
     "DEFAULT_TELEMETRY_EXPORTER",
     "DEFAULT_TELEMETRY_METRICS_ENABLED",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Protocol, TypeAlias, TypeVar, runtime_checkable
+from typing import Any, Final, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -91,6 +91,15 @@ _DEFAULT_STRUCTURED_PROMPT_TEMPLATE: str = (
 
 _JSON_FENCE_RE: re.Pattern[str] = re.compile(r"```(?:json)?\s*([\[{].*?)\s*```", re.DOTALL)
 
+# Maximum length of the ``detail`` field on errors raised here. Mirrors
+# ``mangomas.config.DEFAULT_ERROR_DETAIL_TRUNCATE`` by value rather than by
+# import: ``core`` is the innermost layer and deliberately depends on nothing
+# but ``errors`` and ``registry``, so importing the settings package here
+# would invert the dependency direction for a single integer. The two are
+# pinned equal by ``tests/test_tools.py::test_error_detail_truncate_matches_config``
+# so they cannot drift apart.
+_ERROR_DETAIL_TRUNCATE: Final[int] = 200
+
 
 # ── Prompt builders ───────────────────────────────────────────────────────────
 
@@ -172,25 +181,25 @@ class ToolCallParser:
         except json.JSONDecodeError as exc:
             raise LLMBadResponse(
                 "Tool call JSON is syntactically invalid.",
-                detail=raw[:200],
+                detail=raw[:_ERROR_DETAIL_TRUNCATE],
             ) from exc
 
         if not isinstance(data, dict):
             raise LLMBadResponse(
                 "Tool call JSON must be a JSON object.",
-                detail=raw[:200],
+                detail=raw[:_ERROR_DETAIL_TRUNCATE],
             )
         if "tool" not in data:
             raise LLMBadResponse(
                 "Tool call JSON is missing the required 'tool' key.",
-                detail=raw[:200],
+                detail=raw[:_ERROR_DETAIL_TRUNCATE],
             )
         try:
             return ToolCall.model_validate(data)
         except Exception as exc:
             raise LLMBadResponse(
                 "Tool call JSON does not match expected shape.",
-                detail=str(exc)[:200],
+                detail=str(exc)[:_ERROR_DETAIL_TRUNCATE],
             ) from exc
 
 
