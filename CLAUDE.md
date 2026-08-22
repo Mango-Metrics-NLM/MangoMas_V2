@@ -125,15 +125,19 @@ src/mangomas/
 
 ## Key Design Rules
 
-| Rule | Detail |
-|------|--------|
-| **Protocol-first** | Every adapter satisfies a `@runtime_checkable Protocol`. Never import concrete types across layers. |
-| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). |
-| **Backwards-compatible contracts** | `AgentRequest`, `AgentResponse` fields default-safe; adding fields must not break callers. |
-| **`from __future__ import annotations`** | Required in every source file. |
-| **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. |
-| **Async I/O** | `asyncio.to_thread` for any synchronous I/O (file, DB) inside async handlers. |
-| **Composition root** | All wiring happens in `composition.py::build_orchestrator`. No service locators elsewhere. |
+The **Enforced by** column names the mechanism that catches a violation
+(spec-0022 R15, a constraint written as a mechanism survives agent turnover);
+"code review (prose-only)" is an honest admission that nothing mechanical does.
+
+| Rule | Detail | Enforced by |
+|------|--------|-------------|
+| **Protocol-first** | Every adapter satisfies a `@runtime_checkable Protocol`. Never import concrete types across layers. | `mypy --strict` for signatures; layering is code review (prose-only — `mango-layering-auditor` on demand) |
+| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). | `tests/deploy/test_env_example_contract.py` (docs ⊆ Settings and Settings ⊆ docs, both directions) |
+| **Backwards-compatible contracts** | `AgentRequest`, `AgentResponse` fields default-safe; adding fields must not break callers. | `tests/test_openapi_snapshot.py` (wire shape) + `tests/test_errors.py` status walk + the protected-path CI gate |
+| **`from __future__ import annotations`** | Required in every source file. | ruff isort `required-imports` (`make lint`) |
+| **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. | code review (prose-only — ruff's TC family is not selected) |
+| **Async I/O** | `asyncio.to_thread` for any synchronous I/O (file, DB) inside async handlers. | ruff `ASYNC` family (partial; `ASYNC240` excluded by recorded decision) + code review |
+| **Composition root** | All wiring happens in `composition.py::build_orchestrator`. No service locators elsewhere. | `tests/test_composition.py` + code review (prose-only for "nowhere else") |
 
 ---
 

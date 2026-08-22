@@ -1,6 +1,6 @@
 # Spec-0022: Governance-hardening adoptions (SSD-pack Tier 1 + 2)
 
-- **Status:** In progress
+- **Status:** Implemented
 - **Linked ADR:** _none — no boundary change_
 - **Linked CHANGELOG entry:** `[Unreleased]` › `<Added|Changed|Fixed>`
 
