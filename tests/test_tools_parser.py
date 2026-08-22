@@ -1,15 +1,16 @@
-"""Tests for ToolCallParser error branches and prompt builders."""
+"""Tests for ToolCallParser error branches.
+
+Prompt-builder coverage lives in ``tests/test_tools.py`` — this file used to
+duplicate it, with two function names colliding across the two modules
+(pytest does not flag cross-module name collisions, so the redundancy was
+invisible). The originals there are strictly broader.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from mangomas.core.tools import (
-    ToolCallParser,
-    ToolSpec,
-    build_structured_prompt,
-    build_tool_system_prompt,
-)
+from mangomas.core.tools import ToolCallParser
 from mangomas.errors import LLMBadResponse
 
 # ── ToolCallParser — error paths ─────────────────────────────────────────────
@@ -68,36 +69,3 @@ def test_parser_bare_json_valid_returns_tool_call() -> None:
     result = parser.parse('some text {"tool": "bare_tool"} more text')
     assert result is not None
     assert result.tool == "bare_tool"
-
-
-# ── Prompt builders ───────────────────────────────────────────────────────────
-
-
-def test_build_tool_system_prompt_contains_tool_names() -> None:
-    specs = [
-        ToolSpec(name="search", description="Search the web"),
-        ToolSpec(name="calc", description="Calculate math"),
-    ]
-    prompt = build_tool_system_prompt(specs)
-    assert "search" in prompt
-    assert "calc" in prompt
-
-
-def test_build_tool_system_prompt_custom_template() -> None:
-    specs = [ToolSpec(name="t", description="d")]
-    prompt = build_tool_system_prompt(specs, template="TOOLS: {tools_list}")
-    assert prompt == "TOOLS: - t: d"
-
-
-def test_build_structured_prompt_contains_schema_keys() -> None:
-    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
-    prompt = build_structured_prompt(schema)
-    assert '"name"' in prompt
-    assert '"type"' in prompt
-
-
-def test_build_structured_prompt_custom_template() -> None:
-    schema = {"type": "object"}
-    prompt = build_structured_prompt(schema, template="SCHEMA:{schema}")
-    assert "SCHEMA:" in prompt
-    assert '"type"' in prompt

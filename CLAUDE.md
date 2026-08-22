@@ -211,7 +211,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
-| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Intended to drop trailing fragments shorter than this — **currently inert**: the guard that would drop one is unreachable (it only fires when the fragment is already covered by the previous chunk, which the stepping makes impossible). Pinned by `test_fuzz_min_words_never_changes_the_output` |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
 | `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
@@ -354,7 +354,11 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
   = 100 %, `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
   `pyproject.toml` mirrors the global floor.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
-- **Constants**: `tests/constants.py` — never use magic strings/numbers in tests
+- **Constants**: `tests/constants.py` — no magic **domain** values in tests
+  (URLs, model ids, env-var names, limits, rosters). Universal literals with
+  a standardised meaning — HTTP status codes, `0`/`1` — stay inline, which is
+  why `PLR2004` is disabled for `tests/*` in `pyproject.toml`. Config-mirroring
+  defaults must be **re-exported** (`X as X`), never restated.
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
 - **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
   and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
