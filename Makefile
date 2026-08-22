@@ -34,6 +34,9 @@ SCRIPTS_FLOOR ?= 84
 # inline; it just calls `make secret-scan` like every other job calls its own
 # target below.
 GITLEAKS_VERSION ?= 8.21.2
+# SHA256 of gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz, pinned from the
+# release's own checksums.txt. Update both together when bumping the version.
+GITLEAKS_SHA256 ?= 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba
 
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck frontmatter \
@@ -146,9 +149,10 @@ langfuse: ## Langfuse sink/source suite (needs the langfuse extra installed)
 # Not part of `gate`: every step in that chain runs fully offline today, and
 # downloading a release binary is the one thing here that doesn't.
 
-secret-scan: ## Gitleaks secret scan (downloads a pinned release binary; needs network, not part of gate)
+secret-scan: ## Gitleaks secret scan (downloads a pinned, checksum-verified release binary; needs network, not part of gate)
 	curl -fsSL -o gitleaks.tar.gz \
 	  "https://github.com/gitleaks/gitleaks/releases/download/v$(GITLEAKS_VERSION)/gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz"
+	echo "$(GITLEAKS_SHA256)  gitleaks.tar.gz" | sha256sum -c -
 	tar -xzf gitleaks.tar.gz gitleaks
 	chmod +x gitleaks
 	rm -f gitleaks.tar.gz
