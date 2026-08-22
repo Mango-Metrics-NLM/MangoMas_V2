@@ -41,6 +41,11 @@ class FakeLLM:
     # call received, index-aligned with `calls` (spec-0014 M5: proves the two
     # AgentSettings fields actually flow from agents through to the client).
     call_kwargs: list[dict[str, float | int | None]] = field(default_factory=list)
+    # Raised mid-stream after `raise_after_chunks` chunks have been yielded
+    # (spec-0022 R14: pins the truncation contract — a mid-stream failure ends
+    # the SSE response with no `done` frame and no invented error frame).
+    raise_on_stream: BaseException | None = None
+    raise_after_chunks: int = 0
 
     async def complete(
         self,
@@ -79,8 +84,12 @@ class FakeLLM:
     ) -> AsyncGenerator[str, None]:
         self.calls.append(list(messages))
         self.call_kwargs.append({"temperature": temperature, "max_tokens": max_tokens})
-        for chunk in self.chunks if self.chunks else [self.reply]:
+        for index, chunk in enumerate(self.chunks if self.chunks else [self.reply]):
+            if self.raise_on_stream is not None and index >= self.raise_after_chunks:
+                raise self.raise_on_stream
             yield chunk
+        if self.raise_on_stream is not None:
+            raise self.raise_on_stream
 
     async def aclose(self) -> None:
         self.closed = True

@@ -24,7 +24,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
-    "pytest-cov>=5.0",
+    # Exact-pinned together: coverage measurement semantics (branch arcs,
+    # exclude_lines handling) are the denominator scripts/check_coverage.py
+    # and the two isolated Makefile coverage gates measure — a floating
+    # coverage bump can shift a percentage under a green gate. Bump both
+    # in one commit.
+    "pytest-cov==7.1.0",
+    "coverage[toml]==7.15.4",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
     # Exact-pinned and kept in lockstep with the ruff-pre-commit rev in

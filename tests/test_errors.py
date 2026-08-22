@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from mangomas.adapters.embeddings.lmstudio import LMStudioEmbeddingError
 from mangomas.adapters.llm.lmstudio import LMStudioError
+from mangomas.adapters.llm.vertex import VertexError
+from mangomas.api.auth import AuthenticationError
+from mangomas.api.errors import _ERROR_STATUS
 from mangomas.errors import (
     AgentNotFound,
     ConfigError,
@@ -20,6 +24,7 @@ from mangomas.errors import (
     ToolNotFound,
     UnknownProvider,
 )
+from mangomas.eval.dataset import DatasetError
 
 # ── MangomasError ─────────────────────────────────────────────────────────────
 
@@ -181,3 +186,111 @@ def test_tool_execution_error_stores_tool_name() -> None:
     exc = ToolExecutionError("Tool exploded", tool_name="hammer")
     assert exc.tool_name == "hammer"
     assert "Tool exploded" in str(exc)
+
+
+# ── Exhaustive subclass → intended-HTTP-status walk (spec-0022 R14) ───────────
+#
+# api/errors.py's module docstring promises "every MangomasError must be
+# mapped here (directly or via a base class)", but only 8 of the concrete
+# classes were ever asserted, one subclass proved the MRO fallback, and
+# nothing noticed a NEW subclass landing without a deliberate status
+# decision — it would silently resolve to the root's 500. This walk makes
+# inheritance a decision: every concrete subclass appears in the intended
+# table below, the discovery sweep fails when one is missing, and only the
+# recorded exemption may resolve through the root entry.
+
+
+def _all_error_classes() -> set[type[MangomasError]]:
+    # Import the defining modules explicitly (see the module imports above) so
+    # the recursive __subclasses__ sweep is deterministic, not import-order-
+    # dependent. Scoped to the shipped package: a full-suite run also imports
+    # test-local throwaway subclasses (tests/adapters define two), and the
+    # status contract governs mangomas, not test scaffolding.
+    discovered: set[type[MangomasError]] = set()
+    pending = [MangomasError]
+    while pending:
+        cls = pending.pop()
+        for sub in cls.__subclasses__():
+            if sub not in discovered:
+                if sub.__module__.startswith("mangomas"):
+                    discovered.add(sub)
+                pending.append(sub)
+    return discovered
+
+
+# The review record for status decisions. Classes mapped directly in
+# _ERROR_STATUS restate their status; classes that inherit one list the
+# inherited value so the inheritance is deliberate, not accidental.
+_INTENDED_STATUS: dict[type[MangomasError], int] = {
+    UnknownProvider: 400,
+    ConfigError: 400,
+    ToolNotFound: 400,
+    AuthenticationError: 401,
+    AgentNotFound: 404,
+    LLMTimeout: 504,
+    LLMUnavailable: 503,
+    LLMBadResponse: 502,
+    LLMError: 502,
+    ToolExecutionError: 502,
+    MaxStepsExceeded: 422,
+    SecretsResolutionError: 503,
+    PersistenceError: 500,
+    # Inherited via LLMBadResponse — listed so the inheritance is a decision.
+    LMStudioError: 502,
+    VertexError: 502,
+    LMStudioEmbeddingError: 502,
+    # Root-mapped 500 is intended: DatasetError is raised by the eval CLI,
+    # which catches it (exit code 2) before any HTTP surface is involved.
+    # Adding it to _ERROR_STATUS would be an error-taxonomy change owned by
+    # mango-error-taxonomy-dev, not this contract test.
+    DatasetError: 500,
+}
+
+
+def _resolved_status(cls: type[MangomasError]) -> int:
+    return next(int(_ERROR_STATUS[base]) for base in cls.__mro__ if base in _ERROR_STATUS)
+
+
+def test_every_discovered_subclass_has_an_intended_status() -> None:
+    """A new MangomasError subclass must record its status decision here."""
+    discovered = _all_error_classes()
+    missing = sorted(cls.__name__ for cls in discovered if cls not in _INTENDED_STATUS)
+    assert missing == [], (
+        f"MangomasError subclass(es) without a recorded intended status: {missing}. "
+        "Add each to _ERROR_STATUS in api/errors.py or record its inherited/"
+        "root mapping in _INTENDED_STATUS here."
+    )
+    extinct = sorted(
+        cls.__name__
+        for cls in _INTENDED_STATUS
+        if cls is not MangomasError and cls not in discovered
+    )
+    assert extinct == [], f"intended-status rows for classes that no longer exist: {extinct}"
+
+
+_INTENDED_STATUS_CLASSES = sorted(_INTENDED_STATUS, key=lambda cls: cls.__name__)
+
+
+@pytest.mark.parametrize(
+    "cls", _INTENDED_STATUS_CLASSES, ids=[cls.__name__ for cls in _INTENDED_STATUS_CLASSES]
+)
+def test_subclass_resolves_to_its_intended_status(cls: type[MangomasError]) -> None:
+    assert _resolved_status(cls) == _INTENDED_STATUS[cls]
+
+
+def test_no_unexempted_class_resolves_through_the_root_fallback() -> None:
+    """Only the recorded exemption may map to a status via bare MangomasError.
+
+    Everything else must hit a non-root _ERROR_STATUS entry somewhere in its
+    MRO — a class that only resolves through the root is an undecided 500
+    wearing a green test.
+    """
+    root_exempt = {DatasetError}
+    for cls in _all_error_classes() - root_exempt:
+        non_root_hit = any(
+            base in _ERROR_STATUS for base in cls.__mro__ if base is not MangomasError
+        )
+        assert non_root_hit, (
+            f"{cls.__name__} resolves only via the root MangomasError→500 "
+            "fallback; decide its status in _ERROR_STATUS or exempt it here."
+        )

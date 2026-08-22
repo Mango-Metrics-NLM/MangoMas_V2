@@ -154,6 +154,21 @@ def test_secret_scan_job_delegates_to_make() -> None:
     assert commands == ["make secret-scan"]
 
 
+def test_secret_scan_runs_both_gitleaks_passes() -> None:
+    """The scan must cover the working tree AND committed history (spec-0022 R1).
+
+    The old recipe ran the deprecated ``gitleaks detect`` — an alias for the
+    history-only ``git`` scan — so an uncommitted ``.env`` holding a real
+    credential passed the gate. Since gitleaks v8.19 the supported commands
+    are ``dir`` (working tree) and ``git`` (history); neither subsumes the
+    other, so the recipe must run both and never regress to ``detect``.
+    """
+    body = _make_target_body("secret-scan")
+    assert "gitleaks dir" in body
+    assert "gitleaks git" in body
+    assert "detect" not in body
+
+
 def test_global_coverage_floor_matches_pytest_addopts() -> None:
     """The one duplication that can't be structurally eliminated (pytest's
     own --cov-fail-under vs. scripts/check_coverage.py's authoritative

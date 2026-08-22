@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from mangomas.agents import ChatAgent
 from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.secrets import secrets_registry
+from tests.constants import ENV_GATE_SKIP_REASONS, GATED_RUNTIME_SKIP_REASON_RE
 from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository, FakeTool
 
 # ── Cross-test isolation for lazy-registered cloud providers ──────────────────
@@ -37,55 +39,107 @@ def _teardown_lazy_gcp_secrets() -> Iterator[None]:
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip integration / cloud-provider tests unless explicitly enabled."""
-    run_integration = os.getenv("RUN_INTEGRATION") == "1"
-    run_lmstudio = os.getenv("RUN_LMSTUDIO") == "1"
-    run_postgres = os.getenv("RUN_POSTGRES") == "1"
-    run_vertex = os.getenv("RUN_VERTEX") == "1"
-    run_gcp_secrets = os.getenv("RUN_GCP_SECRETS") == "1"
-    run_gcp_trace = os.getenv("RUN_GCP_TRACE") == "1"
-    run_embeddings_local = os.getenv("RUN_EMBEDDINGS_LOCAL") == "1"
-    run_rag = os.getenv("RUN_RAG") == "1"
-    run_langfuse = os.getenv("RUN_LANGFUSE") == "1"
-    integration_skip = pytest.mark.skip(reason="set RUN_INTEGRATION=1 to run integration tests")
-    lmstudio_skip = pytest.mark.skip(reason="set RUN_LMSTUDIO=1 to run LM Studio tests")
-    postgres_skip = pytest.mark.skip(reason="set RUN_POSTGRES=1 to run Postgres tests")
-    vertex_skip = pytest.mark.skip(reason="set RUN_VERTEX=1 to run Vertex AI tests")
-    gcp_secrets_skip = pytest.mark.skip(
-        reason="set RUN_GCP_SECRETS=1 to run GCP Secret Manager tests"
-    )
-    gcp_trace_skip = pytest.mark.skip(
-        reason="set RUN_GCP_TRACE=1 to run Cloud Trace exporter tests"
-    )
-    embeddings_local_skip = pytest.mark.skip(
-        reason="set RUN_EMBEDDINGS_LOCAL=1 to run sentence-transformers tests"
-    )
-    rag_skip = pytest.mark.skip(reason="set RUN_RAG=1 to run chromadb-backed RAG tests")
-    langfuse_skip = pytest.mark.skip(reason="set RUN_LANGFUSE=1 to run Langfuse sink tests")
+    """Skip integration / cloud-provider tests unless explicitly enabled.
+
+    Reasons come from ``tests.constants.ENV_GATE_SKIP_REASONS`` — the same
+    table the zero-skip session guard below treats as sanctioned, so the two
+    can never desync (spec-0022 R8).
+    """
+    enabled = {env: os.getenv(env) == "1" for env in ENV_GATE_SKIP_REASONS}
+    skip = {env: pytest.mark.skip(reason=reason) for env, reason in ENV_GATE_SKIP_REASONS.items()}
 
     for item in items:
         path_parts = set(Path(str(item.fspath)).parts)
-        if "integration" in path_parts and not run_integration:
-            item.add_marker(integration_skip)
-        if "lmstudio" in item.keywords and not run_lmstudio:
-            item.add_marker(lmstudio_skip)
-        if ("postgres" in path_parts or "postgres" in item.keywords) and not run_postgres:
-            item.add_marker(postgres_skip)
-        if "vertex" in item.keywords and not run_vertex:
-            item.add_marker(vertex_skip)
-        if "gcp_secrets" in item.keywords and not run_gcp_secrets:
-            item.add_marker(gcp_secrets_skip)
-        if "gcp_trace" in item.keywords and not run_gcp_trace:
-            item.add_marker(gcp_trace_skip)
-        if "embeddings_local" in item.keywords and not run_embeddings_local:
-            item.add_marker(embeddings_local_skip)
+        if "integration" in path_parts and not enabled["RUN_INTEGRATION"]:
+            item.add_marker(skip["RUN_INTEGRATION"])
+        if "lmstudio" in item.keywords and not enabled["RUN_LMSTUDIO"]:
+            item.add_marker(skip["RUN_LMSTUDIO"])
+        if ("postgres" in path_parts or "postgres" in item.keywords) and not enabled[
+            "RUN_POSTGRES"
+        ]:
+            item.add_marker(skip["RUN_POSTGRES"])
+        if "vertex" in item.keywords and not enabled["RUN_VERTEX"]:
+            item.add_marker(skip["RUN_VERTEX"])
+        if "gcp_secrets" in item.keywords and not enabled["RUN_GCP_SECRETS"]:
+            item.add_marker(skip["RUN_GCP_SECRETS"])
+        if "gcp_trace" in item.keywords and not enabled["RUN_GCP_TRACE"]:
+            item.add_marker(skip["RUN_GCP_TRACE"])
+        if "embeddings_local" in item.keywords and not enabled["RUN_EMBEDDINGS_LOCAL"]:
+            item.add_marker(skip["RUN_EMBEDDINGS_LOCAL"])
         # Gate on the explicit ``@pytest.mark.rag`` marker only — the
         # ``tests/rag/`` directory name would otherwise leak into ``keywords``
         # and wrongly skip the pure-domain chunker/models unit tests.
-        if item.get_closest_marker("rag") is not None and not run_rag:
-            item.add_marker(rag_skip)
-        if "langfuse" in item.keywords and not run_langfuse:
-            item.add_marker(langfuse_skip)
+        if item.get_closest_marker("rag") is not None and not enabled["RUN_RAG"]:
+            item.add_marker(skip["RUN_RAG"])
+        if "langfuse" in item.keywords and not enabled["RUN_LANGFUSE"]:
+            item.add_marker(skip["RUN_LANGFUSE"])
+
+
+# ── Zero-skip session guard (spec-0022 R8) ────────────────────────────────────
+#
+# Escalate-only: an otherwise-green run fails if any test skipped for a reason
+# outside the sanctioned env-gate table, or xfailed/xpassed at all. The repo
+# has ~25 env-gated skips and zero xfails on a default run, so the ratchet
+# binds on nothing today — it exists to stop rot: an ad-hoc
+# ``pytest.skip("flaky")``, or a broken environment silently shedding the
+# Hypothesis fuzz files (module-level ``importorskip`` surfaces as a *collect*
+# report, which is why ``pytest_collectreport`` is hooked too — hypothesis and
+# asyncpg are dev-extra deps, so such a skip means a broken install, not an
+# optional feature). A red run is never masked: the guard only acts when
+# ``exitstatus == 0``. tests/tooling/test_collection_gate.py proves both
+# directions in a subprocess, including that mutating ``session.exitstatus``
+# here actually changes the process exit code.
+
+_UNSANCTIONED_OUTCOMES: list[str] = []
+_SANCTIONED_SKIP_REASONS = frozenset(ENV_GATE_SKIP_REASONS.values())
+_GATED_RUNTIME_SKIP_RE = re.compile(GATED_RUNTIME_SKIP_REASON_RE)
+
+
+def _skip_reason(report: pytest.TestReport | pytest.CollectReport) -> str:
+    # A skip's longrepr is the tuple ``(path, lineno, "Skipped: <reason>")``.
+    longrepr = report.longrepr
+    if isinstance(longrepr, tuple) and len(longrepr) == 3:
+        reason = str(longrepr[2])
+    else:
+        reason = str(longrepr)
+    return reason.removeprefix("Skipped: ")
+
+
+def _reason_is_sanctioned(reason: str) -> bool:
+    return reason in _SANCTIONED_SKIP_REASONS or bool(_GATED_RUNTIME_SKIP_RE.match(reason))
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if hasattr(report, "wasxfail"):
+        # xfail (skipped-with-wasxfail) and xpass (passed-with-wasxfail) alike:
+        # the repo has zero, and an expected failure that never runs to green
+        # is exactly the rot the guard exists to surface.
+        _UNSANCTIONED_OUTCOMES.append(f"XFAIL/XPASS {report.nodeid}")
+        return
+    if report.skipped:
+        reason = _skip_reason(report)
+        if not _reason_is_sanctioned(reason):
+            _UNSANCTIONED_OUTCOMES.append(f"SKIP {report.nodeid}: {reason}")
+
+
+def pytest_collectreport(report: pytest.CollectReport) -> None:
+    if report.skipped:
+        reason = _skip_reason(report)
+        if not _reason_is_sanctioned(reason):
+            _UNSANCTIONED_OUTCOMES.append(f"SKIP (collection) {report.nodeid}: {reason}")
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    if exitstatus != 0 or not _UNSANCTIONED_OUTCOMES:
+        return
+    lines = "\n".join(f"  {line}" for line in _UNSANCTIONED_OUTCOMES)
+    print(  # noqa: T201 -- terminal summary for a session-level guard
+        f"\nzero-skip guard: {len(_UNSANCTIONED_OUTCOMES)} unsanctioned "
+        f"outcome(s) on an otherwise-green run:\n{lines}\n"
+        "Fix the test or gate it through ENV_GATE_SKIP_REASONS in "
+        "tests/constants.py (spec-0022 R8)."
+    )
+    session.exitstatus = 1
 
 
 # ── Settings fixture ──────────────────────────────────────────────────────────

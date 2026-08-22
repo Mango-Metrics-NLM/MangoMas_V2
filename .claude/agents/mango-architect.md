@@ -60,3 +60,18 @@ Return a structured review with:
 2. **Violations** — numbered list of principle violations with file + line references
 3. **Recommendations** — concrete, actionable fixes for each violation
 4. **Suggestions** (optional) — non-blocking improvements worth considering
+
+### Adversarial review protocol
+
+- Tag every Violation with a severity — **Blocker | Major | Minor | Info** —
+  and a confidence — **Certain | Likely | Guessing**. A Guessing finding must
+  name the evidence that would settle it; verify against the tree before
+  tagging Certain.
+- Cap any review→fix loop at **2 fix cycles** per finding. On the third round
+  of the same finding, stop and escalate to the human reviewer with both
+  positions stated — a converging loop needs no cap, a circling one never
+  converges on its own.
+- **Red-stage mode** — when the diff is tests-only, the tests are the product:
+  check each new assertion can actually fail (the `mango-mutation-proof`
+  skill's discipline), that every gate is exercised in both directions, and
+  that no fixture quietly makes an assertion vacuous.

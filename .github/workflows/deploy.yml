@@ -23,18 +23,25 @@ jobs:
       REGION: us-central1
       SERVICE: mangomas
       REPOSITORY: mangomas
+      # Bound to env vars (never inlined into a run: body) to avoid ${{ }}
+      # expression injection into a credentialed shell — the same idiom as
+      # eval-gate.yml's AGENTS_REF. A release tag name is event payload.
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      IMAGE_TAG: ${{ github.event.release.tag_name || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud (Workload Identity Federation)
         id: auth
-        uses: google-github-actions/auth@v2
+        # Third-party actions are pinned to full commit SHAs (supply-chain
+        # hardening); Dependabot's github-actions ecosystem keeps them fresh.
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
@@ -42,7 +49,7 @@ jobs:
       - name: Build and push image
         run: |
           set -euo pipefail
-          IMAGE="${REGION}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPOSITORY}/${SERVICE}:${{ github.event.release.tag_name || github.sha }}"
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVICE}:${IMAGE_TAG}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"

@@ -1,0 +1,113 @@
+{
+  "components": {
+    "AgentRequest": {
+      "properties": [
+        "max_steps",
+        "messages",
+        "metadata"
+      ],
+      "required": [
+        "messages"
+      ]
+    },
+    "AgentResponse": {
+      "properties": [
+        "agent",
+        "content",
+        "metadata"
+      ],
+      "required": [
+        "agent",
+        "content"
+      ]
+    },
+    "HTTPValidationError": {
+      "properties": [
+        "detail"
+      ],
+      "required": []
+    },
+    "Message": {
+      "properties": [
+        "content",
+        "role"
+      ],
+      "required": [
+        "content",
+        "role"
+      ]
+    },
+    "ValidationError": {
+      "properties": [
+        "ctx",
+        "input",
+        "loc",
+        "msg",
+        "type"
+      ],
+      "required": [
+        "loc",
+        "msg",
+        "type"
+      ]
+    },
+    "WorkflowRunRequest": {
+      "properties": [
+        "definition",
+        "request"
+      ],
+      "required": [
+        "request"
+      ]
+    },
+    "WorkflowValidateRequest": {
+      "properties": [
+        "definition"
+      ],
+      "required": []
+    },
+    "WorkflowValidateResponse": {
+      "properties": [
+        "name",
+        "ok",
+        "root_kind"
+      ],
+      "required": [
+        "name",
+        "root_kind"
+      ]
+    }
+  },
+  "paths": {
+    "/agents": {
+      "get": "list_agents_agents_get"
+    },
+    "/agents/{name}/invoke": {
+      "post": "invoke_agents__name__invoke_post"
+    },
+    "/agents/{name}/stream": {
+      "post": "stream_agent_agents__name__stream_post"
+    },
+    "/health": {
+      "get": "healthz_health_get"
+    },
+    "/healthz": {
+      "get": "healthz_healthz_get"
+    },
+    "/history": {
+      "get": "history_history_get"
+    },
+    "/ready": {
+      "get": "readyz_ready_get"
+    },
+    "/readyz": {
+      "get": "readyz_readyz_get"
+    },
+    "/workflows/run": {
+      "post": "workflow_run_workflows_run_post"
+    },
+    "/workflows/validate": {
+      "post": "workflow_validate_workflows_validate_post"
+    }
+  }
+}

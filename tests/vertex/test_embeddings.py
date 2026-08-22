@@ -26,7 +26,9 @@ pytestmark = pytest.mark.vertex
 async def test_vertex_embed_batch_returns_finite_vectors() -> None:
     project = os.getenv(VERTEX_PROJECT_ENV)
     if not project:
-        pytest.skip(f"{VERTEX_PROJECT_ENV} not set")
+        # Phrased `set <VAR> ...` so the zero-skip guard's sanctioned-runtime
+        # prefix (GATED_RUNTIME_SKIP_REASON_RE) recognises it — spec-0022 R8.
+        pytest.skip(f"set {VERTEX_PROJECT_ENV} to run Vertex AI tests")
     location = os.getenv(VERTEX_LOCATION_ENV, DEFAULT_VERTEX_LOCATION)
     model = os.getenv(VERTEX_EMBEDDING_MODEL_ENV, DEFAULT_VERTEX_EMBEDDING_MODEL)
     client = VertexEmbeddingClient(project_id=project, location=location, model=model)

@@ -553,6 +553,65 @@ def test_pre_tool_use_payload_missing_tool_input_returns_ok() -> None:
     assert result == linter.EXIT_OK
 
 
+_BASH_PROTECTED_PAYLOAD: Final[str] = json.dumps(
+    {
+        "tool_name": "Bash",
+        "tool_input": {"command": "sed -i 's/x/y/' src/mangomas/errors.py"},
+    }
+)
+_BASH_BACKSLASH_PAYLOAD: Final[str] = json.dumps(
+    {
+        "tool_name": "Bash",
+        "tool_input": {"command": "type src\\mangomas\\core\\agent.py"},
+    }
+)
+_BASH_UNPROTECTED_PAYLOAD: Final[str] = json.dumps(
+    {"tool_name": "Bash", "tool_input": {"command": "python -m pytest -q"}}
+)
+
+
+def test_pre_tool_use_bash_protected_mention_emits_ask(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A Bash command mentioning a protected path gets the advisory `ask`.
+
+    Shell writes bypass the Edit|Write|NotebookEdit matcher entirely — the
+    gap ADR-0021 concedes. The Bash registration narrows it at mention level
+    (spec-0022 R11) without reversing ADR-0021's rejected hard block.
+    """
+    result = linter._pre_tool_use_hook(StringIO(_BASH_PROTECTED_PAYLOAD))
+    assert result == linter.EXIT_OK
+    decision = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "ask"
+    assert "src/mangomas/errors.py" in decision["permissionDecisionReason"]
+    assert linter.BREAKING_CHANGE_MARKER in decision["permissionDecisionReason"]
+
+
+def test_pre_tool_use_bash_backslash_paths_are_recognised(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Windows-style separators normalise before the protected-path scan."""
+    linter._pre_tool_use_hook(StringIO(_BASH_BACKSLASH_PAYLOAD))
+    decision = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "ask"
+    assert "src/mangomas/core/agent.py" in decision["permissionDecisionReason"]
+
+
+def test_pre_tool_use_bash_unprotected_command_emits_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = linter._pre_tool_use_hook(StringIO(_BASH_UNPROTECTED_PAYLOAD))
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
+def test_pre_tool_use_bash_never_returns_deny(capsys: pytest.CaptureFixture[str]) -> None:
+    """The Bash branch is advisory only, exactly like the file-path branch."""
+    for payload in (_BASH_PROTECTED_PAYLOAD, _BASH_UNPROTECTED_PAYLOAD):
+        assert linter._pre_tool_use_hook(StringIO(payload)) == linter.EXIT_OK
+    assert '"deny"' not in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("stdin_json", ["[1, 2, 3]", '"just a string"', "42", "null"])
 def test_read_hook_payload_rejects_non_dict_json(stdin_json: str) -> None:
     """``_read_hook_payload``'s ``isinstance(payload, dict)`` guard is
@@ -596,6 +655,15 @@ def test_subprocess_pre_tool_use_protected_path_exits_ok_with_ask_json() -> None
     assert result.returncode == linter.EXIT_OK
     decision = json.loads(result.stdout)["hookSpecificOutput"]
     assert decision["permissionDecision"] == "ask"
+
+
+def test_subprocess_pre_tool_use_bash_mention_exits_ok_with_ask_json() -> None:
+    """The Bash-matcher registration pipes through the same mode (spec-0022 R11)."""
+    result = _run_hook_subprocess(["--hook", "pre-tool-use"], _BASH_PROTECTED_PAYLOAD)
+    assert result.returncode == linter.EXIT_OK
+    decision = json.loads(result.stdout)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "ask"
+    assert "src/mangomas/errors.py" in decision["permissionDecisionReason"]
 
 
 def test_subprocess_post_tool_use_emit_path_pipes_the_path() -> None:

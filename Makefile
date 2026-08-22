@@ -32,7 +32,8 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
 SCRIPTS_FLOOR ?= 84
 # Pinned once, here — ci.yml's secret-scan job no longer repeats this literal
 # inline; it just calls `make secret-scan` like every other job calls its own
-# target below.
+# target below. The `dir`/`git` subcommands the recipe relies on exist from
+# v8.19.0, so a `?=` override below that silently breaks the recipe.
 GITLEAKS_VERSION ?= 8.21.2
 # SHA256 of gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
@@ -160,7 +161,10 @@ secret-scan: ## Gitleaks secret scan (downloads a pinned, checksum-verified rele
 	# We invoke the open-source binary directly rather than the
 	# gitleaks/gitleaks-action@v2 wrapper, which requires a paid licence for
 	# organisation accounts. The binary itself is MIT-licensed and free.
-	./gitleaks detect --no-banner --redact --exit-code 1 --source .
+	# Two passes: `dir` scans the working tree (an uncommitted .env with a
+	# real key), `git` scans committed history. Neither subsumes the other.
+	./gitleaks dir --no-banner --redact --exit-code 1 .
+	./gitleaks git --no-banner --redact --exit-code 1 .
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 

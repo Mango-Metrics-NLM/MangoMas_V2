@@ -9,6 +9,82 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Governance-hardening adoptions (SSD-pack Tier 1 + 2) — Spec-0022._
+
+### Fixed
+
+- **`make secret-scan` ran the deprecated, history-only `gitleaks detect`.**
+  An uncommitted `.env` holding a real credential passed the gate. The recipe
+  now runs both supported passes — `gitleaks dir` (working tree) and
+  `gitleaks git` (history) — locked by
+  `test_secret_scan_runs_both_gitleaks_passes`.
+- **`deploy.yml` interpolated event payload into a credentialed shell.**
+  `${{ github.event.release.tag_name || github.sha }}` (and a secret) were
+  expanded inside the `id-token: write` job's `run:` body — a release tag name
+  is attacker-influenceable text. Both are now bound through `env:` (the
+  `eval-gate.yml` idiom), and `tests/deploy/test_workflow_hardening.py`
+  forbids `${{ github.event.* }}`/`${{ github.head_ref }}`/`${{ secrets.* }}`
+  in any workflow `run:` body.
+- **`scripts/harness_session_start.py` could not honor its own exit-0
+  contract.** Module-scope `httpx`/`mangomas` imports died with
+  `ModuleNotFoundError` on the exact machine the hook's warnings exist for (a
+  fresh web session with no venv). Both imports are now guarded and the probes
+  degrade to warnings; a subprocess test proves exit 0 on a bare interpreter.
+
+### Added
+
+- **MCP write/mutation deny rules** in `.claude/settings.json` — the ten
+  `mcp__filesystem__*` write tools and `mcp__git__*` mutation tools bypassed
+  both the PreToolUse Edit-matcher and the `Edit(...)` deny rules (ADR-0021's
+  conceded MCP gap); denied now at the permission layer, the only
+  in-session-authoritative one. `test_mcp_deny_rules_name_adopted_servers`
+  guards against silently-inert typo'd rules.
+- **Advisory Bash protected-path check** — the `--hook pre-tool-use` linter
+  mode also inspects Bash `tool_input.command` and emits a mention-level
+  `permissionDecision: "ask"` for protected paths (never `deny`, never a
+  non-zero exit; ADR-0021's advisory/authoritative split unchanged),
+  registered as a second hook under the `PreToolUse`/`Bash` matcher.
+- **Zero-skip session guard** (`tests/conftest.py`) — an otherwise-green run
+  fails on any skip outside the nine sanctioned env-gate reasons (now
+  single-sourced as `ENV_GATE_SKIP_REASONS` in `tests/constants.py`) and on
+  any xfail/xpass, including collection-level `importorskip` skips. Escalate
+  only: a red run is never masked.
+- **Collection-gate meta-test** (`tests/tooling/test_collection_gate.py`) —
+  subprocess pytest over tmp mini-suites importing the real conftest hooks
+  proves the gate skips/unskips, the guard escalates, and mutating
+  `session.exitstatus` really changes the process exit code.
+- **Three contract tests for asserted-but-untested behavior** — a normalized
+  OpenAPI-projection snapshot (`tests/test_openapi_snapshot.py`, regen via
+  `python -m tests.test_openapi_snapshot`); the mid-stream SSE truncation
+  contract (token frames delivered, no `done`, no invented error frame),
+  observed at the raw ASGI boundary; and an exhaustive 17-subclass
+  `MangomasError` → intended-HTTP-status walk that fails on any new subclass
+  without a recorded decision.
+- **Reverse config-doc drift test** —
+  `test_claude_md_documents_every_settings_field` closes the direction the
+  existing contract missed; CLAUDE.md's tables gained the 29 missing rows.
+- **`docs/plans/_template.md`** — plans were the one artifact in the
+  specs/ADR/plans triad without a template; includes the
+  failing-test-first-per-milestone and honest-dependency conventions.
+- **WHEN/THEN Scenarios section** (optional) in `specs/TEMPLATE.md`, with the
+  both-directions fail-closed rule the 0020/0021 defect hunts motivated.
+- **Adversarial review protocol** in `mango-architect`'s output format —
+  severity enum, confidence tags, a 2-fix-cycle escalation cap, and a
+  red-stage mode for tests-only diffs.
+- **"Enforced by" column** in CLAUDE.md's Key Design Rules — each invariant
+  names its mechanical gate, or honestly says "code review (prose-only)".
+
+### Changed
+
+- **Third-party GitHub Actions SHA-pinned** (`codecov-action`,
+  `google-github-actions/auth`/`setup-gcloud`), with `.github/dependabot.yml`
+  (github-actions ecosystem, monthly) as the bump mechanism; first-party
+  `actions/*` stay tag-pinned by policy, asserted by
+  `test_third_party_actions_are_sha_pinned`.
+- **`pytest-cov`/`coverage` exact-pinned** in the dev extra (lockstep-comment
+  idiom) so the measured coverage denominator cannot drift between
+  environments.
+
 _CI/Makefile parity and corpus-validation completion — Spec-0021._
 
 ### Fixed

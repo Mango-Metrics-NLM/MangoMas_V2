@@ -62,6 +62,7 @@ thinking tool, not a gate.
 | [0019](0019-corpus-ownership-completion.md) | Corpus ownership completion (the deferred "B5" agents) |
 | [0020](0020-gate-integrity-and-corpus-completion.md) | Gate integrity and corpus completion |
 | [0021](0021-ci-makefile-parity-and-corpus-validation.md) | CI/Makefile parity and corpus-validation completion |
+| [0022](0022-governance-hardening-adoptions.md) | Governance-hardening adoptions (SSD-pack Tier 1 + 2) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -72,4 +73,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0022**; next free ADR: **0025**.
+than reused. Next free spec on this branch: **0023**; next free ADR: **0025**.

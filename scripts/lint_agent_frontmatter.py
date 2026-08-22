@@ -567,26 +567,33 @@ def _extract_tool_path(payload: dict[str, object]) -> str | None:
     return None
 
 
-def _pre_tool_use_hook(stream: IO[str]) -> int:
-    """Advisory protected-path check. Always returns ``EXIT_OK``.
+def _extract_bash_command(payload: dict[str, object]) -> str | None:
+    """Return ``tool_input.command`` from a ``Bash`` payload, if any."""
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    value = tool_input.get("command")
+    if isinstance(value, str) and value:
+        return value
+    return None
 
-    For an edit to a protected core contract, prints a
-    ``permissionDecision: "ask"`` JSON response (Claude Code processes hook
-    JSON only on exit 0) so the human approving the tool call sees a heads-up
-    naming the path and the trailer requirement the CI gate enforces.
+
+def _protected_paths_in_command(command: str) -> list[str]:
+    """Return the protected paths *command* mentions, backslash-normalised.
+
+    A plain substring scan, deliberately: parsing shell to decide whether a
+    mention is a write reopens the bypass family (redirects, heredocs,
+    ``sed -i``, ``python -c``, ``tee``) that made ADR-0021 declare this layer
+    advisory in the first place. The accepted false positive is a read-only
+    mention — ``grep``, ``cat``, ``git diff`` of a protected path also trips
+    the advisory, and the reason text says so.
     """
-    path = _extract_tool_path(_read_hook_payload(stream))
-    if path is None:
-        return EXIT_OK
-    normalised = _normalize_path(path)
-    if normalised not in PROTECTED_PATHS:
-        return EXIT_OK
-    reason = (
-        f"{normalised} is a protected core contract (CLAUDE.md 'File "
-        f"Ownership'). Approve only if this change will land in a commit "
-        f"whose message contains {BREAKING_CHANGE_MARKER!r} — "
-        f"scripts/check_protected_paths.py enforces this in CI."
-    )
+    normalised = command.replace("\\", "/")
+    return sorted(path for path in PROTECTED_PATHS if path in normalised)
+
+
+def _emit_ask(reason: str) -> None:
+    """Print a ``permissionDecision: "ask"`` envelope (never ``deny``)."""
     decision = {
         "hookSpecificOutput": {
             "hookEventName": _HOOK_EVENT_NAME,
@@ -595,6 +602,50 @@ def _pre_tool_use_hook(stream: IO[str]) -> int:
         }
     }
     print(json.dumps(decision))
+
+
+def _pre_tool_use_hook(stream: IO[str]) -> int:
+    """Advisory protected-path check. Always returns ``EXIT_OK``.
+
+    For an edit to a protected core contract — a ``file_path``/
+    ``notebook_path`` payload from ``Edit``/``Write``/``NotebookEdit``, or a
+    ``Bash`` payload whose ``command`` merely *mentions* a protected path —
+    prints a ``permissionDecision: "ask"`` JSON response (Claude Code
+    processes hook JSON only on exit 0) so the human approving the tool call
+    sees a heads-up naming the path and the trailer requirement the CI gate
+    enforces. The Bash branch narrows the gap ADR-0021 concedes (shell
+    writes bypass the Edit-matcher hook entirely) without reversing its
+    recorded rejection of a hard block: always ``ask``, never ``deny``,
+    never a non-zero exit.
+    """
+    payload = _read_hook_payload(stream)
+    path = _extract_tool_path(payload)
+    if path is not None:
+        normalised = _normalize_path(path)
+        if normalised not in PROTECTED_PATHS:
+            return EXIT_OK
+        _emit_ask(
+            f"{normalised} is a protected core contract (CLAUDE.md 'File "
+            f"Ownership'). Approve only if this change will land in a commit "
+            f"whose message contains {BREAKING_CHANGE_MARKER!r} — "
+            f"scripts/check_protected_paths.py enforces this in CI."
+        )
+        return EXIT_OK
+
+    command = _extract_bash_command(payload)
+    if command is None:
+        return EXIT_OK
+    mentioned = _protected_paths_in_command(command)
+    if not mentioned:
+        return EXIT_OK
+    _emit_ask(
+        f"This command mentions protected core contract(s): "
+        f"{', '.join(mentioned)} (CLAUDE.md 'File Ownership'). If it writes "
+        f"to them, the change must land in a commit whose message contains "
+        f"{BREAKING_CHANGE_MARKER!r} — scripts/check_protected_paths.py "
+        f"enforces this in CI. This is a mention-level advisory: a read-only "
+        f"command (grep, cat, git diff) trips it too."
+    )
     return EXIT_OK
 
 

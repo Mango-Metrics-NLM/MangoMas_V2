@@ -125,15 +125,19 @@ src/mangomas/
 
 ## Key Design Rules
 
-| Rule | Detail |
-|------|--------|
-| **Protocol-first** | Every adapter satisfies a `@runtime_checkable Protocol`. Never import concrete types across layers. |
-| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). |
-| **Backwards-compatible contracts** | `AgentRequest`, `AgentResponse` fields default-safe; adding fields must not break callers. |
-| **`from __future__ import annotations`** | Required in every source file. |
-| **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. |
-| **Async I/O** | `asyncio.to_thread` for any synchronous I/O (file, DB) inside async handlers. |
-| **Composition root** | All wiring happens in `composition.py::build_orchestrator`. No service locators elsewhere. |
+The **Enforced by** column names the mechanism that catches a violation
+(spec-0022 R15, a constraint written as a mechanism survives agent turnover);
+"code review (prose-only)" is an honest admission that nothing mechanical does.
+
+| Rule | Detail | Enforced by |
+|------|--------|-------------|
+| **Protocol-first** | Every adapter satisfies a `@runtime_checkable Protocol`. Never import concrete types across layers. | `mypy --strict` for signatures; layering is code review (prose-only — `mango-layering-auditor` on demand) |
+| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). | `tests/deploy/test_env_example_contract.py` (docs ⊆ Settings and Settings ⊆ docs, both directions) |
+| **Backwards-compatible contracts** | `AgentRequest`, `AgentResponse` fields default-safe; adding fields must not break callers. | `tests/test_openapi_snapshot.py` (wire shape) + `tests/test_errors.py` status walk + the protected-path CI gate |
+| **`from __future__ import annotations`** | Required in every source file. | ruff isort `required-imports` (`make lint`) |
+| **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. | code review (prose-only — ruff's TC family is not selected) |
+| **Async I/O** | `asyncio.to_thread` for any synchronous I/O (file, DB) inside async handlers. | ruff `ASYNC` family (partial; `ASYNC240` excluded by recorded decision) + code review |
+| **Composition root** | All wiring happens in `composition.py::build_orchestrator`. No service locators elsewhere. | `tests/test_composition.py` + code review (prose-only for "nowhere else") |
 
 ---
 
@@ -143,20 +147,40 @@ All settings are env-driven with prefix `MANGOMAS_`:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `MANGOMAS_ENV` | `local` | Deployment environment label (`local`/`dev`/`prod`) |
+| `MANGOMAS_LOG_LEVEL` | `INFO` | Root log level |
+| `MANGOMAS_LOG__FORMAT` | `json` | Log line format (`json` \| `text`) |
+| `MANGOMAS_LOG__BODY_TRUNCATE` | `512` | Max chars of request/response body in access logs |
 | `MANGOMAS_LLM__PROVIDER` | `lmstudio` | LLM registry entry; `vertex` enables Vertex AI |
 | `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
 | `MANGOMAS_LLM__MODEL` | `local-model` | Model id |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
+| `MANGOMAS_LLM__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
+| `MANGOMAS_LLM__TIMEOUT_SECONDS` | `60.0` | httpx timeout for LLM calls |
+| `MANGOMAS_LLM__SECRET_REF` | _(none)_ | `SecretsProvider` ref that overrides `API_KEY` when set |
 | `MANGOMAS_LLM__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=vertex`) |
 | `MANGOMAS_LLM__LOCATION` | `us-central1` | GCP region for Vertex |
+| `MANGOMAS_LLM__CREDENTIALS_PATH` | _(none)_ | Service-account JSON path for Vertex (ADC when unset) |
 | `MANGOMAS_DB__PROVIDER` | `sqlite` | Storage registry entry; `postgres` enables Cloud SQL |
 | `MANGOMAS_DB__URL` | `sqlite:///./data/mangomas.db` | Turn-storage database |
 | `MANGOMAS_DB__POOL_MIN` | `1` | asyncpg pool minimum |
 | `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
+| `MANGOMAS_DB__CONNECT_TIMEOUT_SECONDS` | `10.0` | Postgres connect timeout |
+| `MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS` | _(none)_ | Per-statement timeout (off when unset) |
 | `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
 | `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
 | `MANGOMAS_SECRETS__STRICT` | `false` | Raise `SecretsResolutionError` on cloud secret failures instead of returning `None` |
+| `MANGOMAS_SECRETS__TIMEOUT_SECONDS` | `5.0` | Cloud secret-resolution timeout |
+| `MANGOMAS_SECRETS__DEFAULT_VERSION` | `latest` | Secret version used when a ref names none |
+| `MANGOMAS_API__HOST` | `0.0.0.0` | Bind address for `uvicorn` |
+| `MANGOMAS_API__PORT` | `8000` | Bind port |
+| `MANGOMAS_API__READY_TIMEOUT_SECONDS` | `2.0` | `/readyz` LLM-ping budget |
 | `MANGOMAS_API__CORS_ALLOW_ORIGINS` | `[]` | Opt-in CORS allow-list; empty → `CORSMiddleware` not installed |
+| `MANGOMAS_API__CORS_ALLOW_METHODS` | `["*"]` | CORS methods (used only when origins non-empty) |
+| `MANGOMAS_API__CORS_ALLOW_HEADERS` | `["*"]` | CORS headers (used only when origins non-empty) |
+| `MANGOMAS_API__CORS_ALLOW_CREDENTIALS` | `false` | CORS credentials flag |
+| `MANGOMAS_API__HISTORY_DEFAULT_LIMIT` | `10` | Default page size for `GET /conversations/{id}` |
+| `MANGOMAS_API__HISTORY_MAX_LIMIT` | `1000` | Hard cap on the history `limit` query param |
 | `MANGOMAS_API__MAX_BODY_BYTES` | `0` | Max request body bytes (`0` = off; 413 when exceeded; ADR-0015) |
 | `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; ADR-0015) |
 | `MANGOMAS_AUTH__ENABLED` | `false` | Enforce bearer / API-key auth on data + execution routes (ADR-0014) |
@@ -170,6 +194,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
 | `MANGOMAS_MEMORY__PROVIDER` | `file` | Memory backend provider |
 | `MANGOMAS_MEMORY__MEMORY_DIR` | `memory` | Memory root directory |
+| `MANGOMAS_MEMORY__INDEX_FILE` | `MEMORY.md` | Memory index filename inside `MEMORY_DIR` |
 | `MANGOMAS_EMBEDDINGS__ENABLED` | `false` | Construct + attach `ctx.embeddings` |
 | `MANGOMAS_EMBEDDINGS__PROVIDER` | `lmstudio` | `lmstudio` \| `sentence_transformers` \| `vertex` |
 | `MANGOMAS_EMBEDDINGS__MODEL` | `local-model` | Embedding model id (set per provider) |
@@ -177,7 +202,8 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EMBEDDINGS__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
 | `MANGOMAS_EMBEDDINGS__BATCH_SIZE` | `32` | Pipeline embed-batch size |
 | `MANGOMAS_EMBEDDINGS__TIMEOUT_SECONDS` | `60.0` | httpx timeout (LM Studio) |
-| `MANGOMAS_EMBEDDINGS__PROJECT_ID` / `__LOCATION` | _(none)_ / `us-central1` | Vertex only (ADC auth) |
+| `MANGOMAS_EMBEDDINGS__PROJECT_ID` | _(none)_ | Vertex only (ADC auth) |
+| `MANGOMAS_EMBEDDINGS__LOCATION` | `us-central1` | Vertex only: GCP region |
 | `MANGOMAS_VECTOR__ENABLED` | `false` | Construct + attach `ctx.vector_store` |
 | `MANGOMAS_VECTOR__PROVIDER` | `chroma` | Vector backend |
 | `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent dir |
@@ -186,7 +212,10 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
 | `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Drop trailing fragments shorter than this |
+| `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
+| `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
+| `MANGOMAS_EVAL__SCORER_OPTIONS` | `{}` | Per-scorer options keyed by scorer name |
 | `MANGOMAS_EVAL__TARGET` | `agent` | Eval target (`agent`/`pipeline`/`fan_out`/`echo`) resolved via `target_registry` |
 | `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name (e.g. `{"pipeline": {"agents": [...]}}`) |
 | `MANGOMAS_EVAL__DATASET_SOURCE` | `jsonl` | Dataset source (`jsonl`/`inline`/`langfuse`) resolved via `dataset_source_registry` |
@@ -200,6 +229,10 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
+| `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Directory for `json_file`/`sqlite_results` artefacts |
+| `MANGOMAS_EVAL__PARALLELISM` | `1` | Concurrent eval rows |
+| `MANGOMAS_EVAL__FAIL_FAST` | `false` | Stop the run on the first errored row |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
@@ -565,6 +598,7 @@ responses = await orchestrator.dispatch_fan_out(["reviewer", "summarize"], reque
 
 # Iterative loop with acceptance criterion
 from mangomas.core import AcceptanceFn
+
 accept: AcceptanceFn = lambda r: "DONE" in r.content
 response = await orchestrator.dispatch("chat", request, acceptance_fn=accept, max_steps=5)
 ```
@@ -601,7 +635,8 @@ CLI: `mangomas workflow validate -f graph.json` and `mangomas workflow run "<msg
 
 ```python
 from mangomas.workflow import execute_workflow, load_workflow
-graph = load_workflow("graph.json")          # or an inline JSON string
+
+graph = load_workflow("graph.json")  # or an inline JSON string
 response = await execute_workflow(graph, request, orch=orchestrator)
 ```
 
