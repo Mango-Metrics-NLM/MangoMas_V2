@@ -167,6 +167,27 @@ def test_claude_md_names_all_resolve() -> None:
     assert _unresolved(_CLAUDE_MD) == []
 
 
+# Settings fields intentionally undocumented in CLAUDE.md's config tables.
+# `MANGOMAS_AGENTS` is the dict field behind the documented per-agent
+# `MANGOMAS_AGENTS__<NAME>__*` rows — the nested form IS its documentation.
+# Kept explicit so any further exemption is a reviewed edit, not a regex hole.
+_CLAUDE_MD_UNDOCUMENTED_OK: frozenset[str] = frozenset({f"{_PREFIX}{_AGENTS_FIELD}"})
+
+
+def test_claude_md_documents_every_settings_field() -> None:
+    """Reverse direction of the resolve test: every declared field is documented.
+
+    The forward tests catch a documented name that resolves to nothing; until
+    spec-0022 R12 nothing caught the opposite drift — a real Settings field
+    (29 of them, at the time this landed) invisible to every session that
+    auto-loads CLAUDE.md. A field CLAUDE.md omits effectively does not exist
+    for agent work.
+    """
+    documented = {_normalize(name) for name in _names_in(_CLAUDE_MD)}
+    missing = sorted(_declared_names() - documented - _CLAUDE_MD_UNDOCUMENTED_OK)
+    assert missing == [], f"Settings fields missing from CLAUDE.md's config tables: {missing}"
+
+
 @pytest.mark.parametrize(
     "group",
     sorted(
