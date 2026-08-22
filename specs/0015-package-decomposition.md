@@ -1,7 +1,9 @@
 # Spec-0015: Package decomposition (deferred spec-0014 scope)
 
-- **Status:** In progress — R1–R3 implemented (`cli/`, `config/`,
-  `telemetry/`); R4 (`core/structured.py`) deferred, see below
+- **Status:** Complete — R1–R3 implemented (`cli/`, `config/`,
+  `telemetry/`); R4 (`core/structured.py`) landed 2026-08-22 (see the dated
+  note on its acceptance box for the exact landed scope and two recorded
+  narrowings)
 - **Linked ADR:** ADR-0019 (re-export facade decomposition — Accepted, proven
   by the `api/app.py` split; this spec applies the same pattern to the
   remaining oversized modules)
@@ -171,16 +173,43 @@ The corrected bar:
 - [x] `cli/main.py`, `config.py`, `telemetry.py` decomposed with permanent
       re-export facades; `tests/test_import_compat.py` proves identity for all
       three, public and private surface alike.
-- [ ] `core/structured.py` extracted; `core/tools.py` + `errors.py` land in
-      one `BREAKING-CHANGE`-marked commit; dead code removed. **Deferred** —
+- [x] `core/structured.py` extracted; `core/tools.py` + `errors.py` land in
+      one `BREAKING-CHANGE`-marked commit; dead code removed. ~~**Deferred**~~ —
       `core/tools.py` and `errors.py` are protected paths, and the ownership
       question they raise (`harness/governance.py` defines `PROTECTED_PATHS`)
       is unsettled. It is a backwards-compatibility audit, not a mechanical
       split, and does not belong in the same PR as one.
+      **Landed 2026-08-22** (roadmap Batch A), after the deferral's two
+      prerequisites were settled: decision D3b assigns the
+      `[tool.mangomas.governance]` table to `mango-harness-dev`, and the new
+      `core/structured.py` joined `protected_paths` in the same commit that
+      created it (fallback sets in `harness/governance.py` and
+      `scripts/lint_agent_frontmatter.py` updated in lock-step; membership
+      pinned by `tests/test_import_compat.py::test_core_structured_is_a_protected_path`).
+      Landed scope: `build_structured_prompt`, a single `_extract_json_span`
+      (now also used by `ToolCallParser.parse`), the relocated
+      `parse_or_recover`, the new `parse_llm_json_object(text, *,
+      detail_truncate=200)` (core-local default), and deletion of the dead
+      `ToolResult` / `_default_parser`; `core/tools.py` re-exports every
+      moved name permanently (identity pinned in
+      `tests/test_import_compat.py`). Two recorded narrowings against the R4
+      text above: (1) `parse_tool_call` is **kept** as a live delegation —
+      the 2026-08-09 decomposition plan already corrected the "dead" claim
+      (`tests/test_tools.py` exercises it), so the "Removed" list under
+      *Protocol / contract impact* is wrong about it; (2)
+      `eval/scorers/llm_judge.py` did **not** adopt `parse_llm_json_object`,
+      because its typed errors carry scorer-specific messages the fixed
+      helper signature cannot reproduce — adopting it would be an observable
+      behaviour change inside what must review as a pure move. The
+      planner/reviewer path adopts the shared helper via
+      `agents/_structured.py` importing from the new home module.
+      `errors.py` itself needed no code change — its role in R4 was only the
+      shared `BREAKING-CHANGE` commit ceremony.
 - [x] `ruff`, `mypy --strict`, `frontmatter-lint`, `pytest` (95% gate +
       per-package floors), bridge coverage all clean — `make gate` green at
       every landing commit, not only the last.
 - [x] CHANGELOG updated. Status stays **In progress** until R4 lands.
+      (R4 landed 2026-08-22; Status header updated to **Complete**.)
 
 ### What the split measured
 

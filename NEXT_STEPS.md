@@ -435,7 +435,12 @@ defects and a further round of duplication clusters via a full-repo audit:
   protected paths, so it needs a `BREAKING-CHANGE` trailer and a real
   backwards-compatibility audit rather than a mechanical split; it is also
   entangled with who owns `harness/governance.py`, which defines
-  `PROTECTED_PATHS`.
+  `PROTECTED_PATHS`. **Done 2026-08-22** — R4 landed as roadmap Phase 1
+  Batch A: `core/structured.py` extracted behind a permanent `core/tools.py`
+  facade, added to `[tool.mangomas.governance].protected_paths` in the same
+  commit, with the ownership question settled by decision D3b
+  (`mango-harness-dev` owns the governance table). Exact landed scope and
+  two recorded narrowings are on spec-0015's R4 acceptance box.
 
 ### Follow-ups this branch deliberately did not take
 

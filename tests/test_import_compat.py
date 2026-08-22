@@ -438,6 +438,61 @@ def test_cli_base_modules_import_nothing_from_their_own_package() -> None:
     assert offenders == [], f"base modules importing from mangomas.cli: {offenders}"
 
 
+# ── core.tools facade (spec-0015 R4) ─────────────────────────────────────────
+
+# Every pre-extraction name that moved from `core/tools.py` to
+# `core/structured.py`. `core/tools.py` is a *module* facade, not a package
+# root, so the `_FACADES` machinery above (which enumerates group modules)
+# does not apply; the contract is a fixed roster instead. Private names are
+# listed deliberately: `_ERROR_DETAIL_TRUNCATE` is asserted by
+# `tests/test_tools.py::test_error_detail_truncate_matches_config` through the
+# facade, and `_extract_json_span` is the shared span heuristic `ToolCallParser`
+# itself calls — a facade that rebound either would drift silently.
+_CORE_TOOLS_FACADE_NAMES: tuple[str, ...] = (
+    "_DEFAULT_STRUCTURED_PROMPT_TEMPLATE",
+    "_ERROR_DETAIL_TRUNCATE",
+    "_extract_json_span",
+    "build_structured_prompt",
+    "parse_or_recover",
+)
+
+
+def test_core_tools_facade_roster_is_populated() -> None:
+    """An empty roster would make the parametrised test below vacuous."""
+    assert _CORE_TOOLS_FACADE_NAMES
+
+
+@pytest.mark.parametrize("name", _CORE_TOOLS_FACADE_NAMES)
+def test_core_tools_facade_reexports_are_identical_objects(name: str) -> None:
+    """`core.tools.X is core.structured.X` for every name the extraction moved.
+
+    Identity, not mere importability: `tests/agents/test_prompt.py` computes
+    its oracle via the facade path while `agents/_structured.py` imports the
+    home module — a copy that satisfied equality would still let the two
+    drift apart at runtime.
+    """
+    facade_mod = importlib.import_module("mangomas.core.tools")
+    home_mod = importlib.import_module("mangomas.core.structured")
+    assert hasattr(facade_mod, name), f"mangomas.core.tools no longer re-exports {name!r}"
+    assert getattr(facade_mod, name) is getattr(home_mod, name), (
+        f"mangomas.core.tools.{name} is not the same object as mangomas.core.structured.{name}"
+    )
+
+
+def test_core_structured_is_a_protected_path() -> None:
+    """Extracted contract code must not quietly leave governance.
+
+    spec-0015 R4's governance follow-through: `core/structured.py` joined
+    `[tool.mangomas.governance].protected_paths` in the same commit that
+    created it. Without this pin, removing the entry would fail nothing —
+    the fallback-lock-step tests in `tests/harness/test_governance.py` only
+    prove table == fallback, which both dropping it satisfies.
+    """
+    pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    protected = pyproject["tool"]["mangomas"]["governance"]["protected_paths"]
+    assert "src/mangomas/core/structured.py" in protected
+
+
 def test_console_script_entry_point_matches_the_facade() -> None:
     """`pyproject.toml` names the facade, and the facade is what tests patch.
 

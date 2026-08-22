@@ -53,7 +53,10 @@ src/mangomas/
 ├── core/           # Stable domain contracts (Agent, Orchestrator, tools, loop)
 │   ├── agent.py        Protocol: Agent, AgentContext, AgentRequest, AgentResponse
 │   ├── orchestrator.py Dispatch + iterative loop + pipeline/fan-out topologies
-│   ├── tools.py        ToolSpec, ToolCallParser, ToolRegistry, prompt builders
+│   ├── structured.py   Structured-output helpers: build_structured_prompt,
+│   │                   parse_or_recover, parse_llm_json_object (spec-0015 R4)
+│   ├── tools.py        ToolSpec, ToolCallParser, ToolRegistry, tool prompt
+│   │                   builder + permanent re-export facade over structured.py
 │   └── loop.py         AcceptanceFn type alias
 ├── agents/         # Concrete agent implementations (all satisfy Agent protocol)
 │   ├── _prompt.py      resolve_system_prompt + build_messages (shared precedence + message insertion)
@@ -482,7 +485,8 @@ and `scripts/check_protected_paths.py`), and the `ConfigChange` hook's
 decision table.
 
 Protected core paths (`src/mangomas/core/agent.py`,
-`src/mangomas/core/orchestrator.py`, `src/mangomas/core/tools.py`,
+`src/mangomas/core/orchestrator.py`, `src/mangomas/core/structured.py`,
+`src/mangomas/core/tools.py`,
 `src/mangomas/errors.py`, `src/mangomas/registry.py`) require a
 `BREAKING-CHANGE` marker (the legacy `# approved-breaking-change` form is
 still accepted) on at least one commit message when touched. The
@@ -655,7 +659,8 @@ response = await execute_workflow(graph, request, orch=orchestrator)
 |------|-----------------|
 | `src/mangomas/core/agent.py` | Stable public contract — backward-compat required (protected path) |
 | `src/mangomas/core/orchestrator.py` | Dispatch surface — backward-compat required (protected path) |
-| `src/mangomas/core/tools.py` | Tool contracts + parser — backward-compat required (protected path) |
+| `src/mangomas/core/structured.py` | Structured-output prompt + JSON-recovery helpers — backward-compat required (protected path) |
+| `src/mangomas/core/tools.py` | Tool contracts + parser; re-export facade over `structured.py` — backward-compat required (protected path) |
 | `src/mangomas/errors.py` | Typed error hierarchy + HTTP mapping (protected path) |
 | `src/mangomas/registry.py` | Generic, no project-specific logic (protected path) |
 | `src/mangomas/composition.py` | Single wiring point — all new adapters registered here |

@@ -9,6 +9,23 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`core/structured.py` extracted from `core/tools.py`** (spec-0015 R4, the
+  last open decomposition item — governed Batch A, `BREAKING-CHANGE`
+  trailer): `build_structured_prompt`, a single `_extract_json_span`, the
+  relocated `parse_or_recover`, and the new
+  `parse_llm_json_object(text, *, detail_truncate=200)` now live in a new
+  protected core module; `core/tools.py` keeps every previously importable
+  name as a permanent re-export facade (ADR-0019), identity-pinned by
+  import-compat tests, so no caller changes. Dead `ToolResult` /
+  `_default_parser` deleted per the spec. `structured.py` joins
+  `[tool.mangomas.governance].protected_paths` (with the package/script
+  fallbacks updated in lock-step and a new ∈-table guard, mutation-proven
+  both ways), and D3b is settled: `mango-harness-dev` explicitly owns the
+  governance table. **Backwards-compatibility:** every pre-extraction
+  import path and object identity is preserved; zero behavior change.
+
 ### Fixed
 
 - **`mangomas.__version__` no longer drifts from the package** (review
