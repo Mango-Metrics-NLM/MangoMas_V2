@@ -30,12 +30,20 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
 # (see spec-0017 R7 and A7) — ratchet upward as scripts/ gains direct tests,
 # most obviously check_coverage.py's own `main()`/`_check()`.
 SCRIPTS_FLOOR ?= 84
+# Pinned once, here — ci.yml's secret-scan job no longer repeats this literal
+# inline; it just calls `make secret-scan` like every other job calls its own
+# target below.
+GITLEAKS_VERSION ?= 8.21.2
+# SHA256 of gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz, pinned from the
+# release's own checksums.txt. Update both together when bumping the version.
+GITLEAKS_SHA256 ?= 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba
 
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck frontmatter \
         protected-paths test test-xml \
         coverage bridge-coverage scripts-coverage gate precommit serve clean \
-        integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse
+        integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
+        secret-scan
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -136,6 +144,24 @@ gcp-trace: ## Cloud Trace exporter suite (needs the gcp extra installed)
 langfuse: ## Langfuse sink/source suite (needs the langfuse extra installed)
 	RUN_LANGFUSE=1 $(PYTHON) -m pytest tests/eval -m langfuse --no-cov $(PYTEST_FLAGS)
 
+# ── Opt-in tooling (off by default; needs the network) ───────────────────────
+#
+# Not part of `gate`: every step in that chain runs fully offline today, and
+# downloading a release binary is the one thing here that doesn't.
+
+secret-scan: ## Gitleaks secret scan (downloads a pinned, checksum-verified release binary; needs network, not part of gate)
+	curl -fsSL -o gitleaks.tar.gz \
+	  "https://github.com/gitleaks/gitleaks/releases/download/v$(GITLEAKS_VERSION)/gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz"
+	echo "$(GITLEAKS_SHA256)  gitleaks.tar.gz" | sha256sum -c -
+	tar -xzf gitleaks.tar.gz gitleaks
+	chmod +x gitleaks
+	rm -f gitleaks.tar.gz
+	./gitleaks version
+	# We invoke the open-source binary directly rather than the
+	# gitleaks/gitleaks-action@v2 wrapper, which requires a paid licence for
+	# organisation accounts. The binary itself is MIT-licensed and free.
+	./gitleaks detect --no-banner --redact --exit-code 1 --source .
+
 # ── Misc ─────────────────────────────────────────────────────────────────────
 
 serve: ## Run the API with reload (factory pattern required)
@@ -143,5 +169,5 @@ serve: ## Run the API with reload (factory pattern required)
 
 clean: ## Remove caches and coverage artefacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis htmlcov \
-	       .coverage .coverage.* coverage.xml
+	       .coverage .coverage.* coverage.xml gitleaks gitleaks.tar.gz
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

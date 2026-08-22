@@ -143,6 +143,32 @@ def test_docs_do_not_reference_a_retired_corpus_path(relpath: str, retired: str)
 _linter = load_script_module("lint_agent_frontmatter.py")
 
 
+# ── Full schema validation (spec-0018 / ADR-0024) ────────────────────────────
+#
+# Every test in this module checks one structural property at a time (a tool
+# token, a heading, a description-length ceiling, ...). None of them run the
+# actual Pydantic schema `scripts/lint_agent_frontmatter.py` enforces —
+# `make frontmatter` does, but as a separate non-pytest step, and
+# `tests/test_lint_agent_frontmatter.py` only points the schema at synthetic
+# fixtures, never this repo's own `.claude/` tree. This module's own
+# `_frontmatter_name`-style scans also tolerate broken YAML elsewhere in the
+# same file, so a corrupted skill or agent frontmatter file could pass every
+# test above while `make frontmatter` — run nowhere under plain
+# `pytest`/`make test` — is the only thing that would have caught it.
+
+
+def test_live_corpus_passes_schema_lint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run the real schema-lint entry point against the real `.claude/` tree.
+
+    `run_schema_lint()` is exactly what `make frontmatter` calls (via
+    `main()`'s default mode); calling it here under pytest closes the gap
+    between "the linter would have caught this" and "a pytest run did".
+    """
+    monkeypatch.chdir(_REPO_ROOT)
+    result = _linter.run_schema_lint()
+    assert result.failures == (), "\n".join(result.failures)
+
+
 def _agent_paths() -> list[Path]:
     """Return the *tracked* agent files.
 
@@ -341,6 +367,21 @@ def test_mapped_agent_references_its_skill(slug: str) -> None:
     body = _agent_body(slug)
     missing = [skill for skill in AGENT_SKILL_OWNERS[slug] if skill not in body]
     assert missing == [], f"{slug} does not reference {missing}"
+
+
+def test_agent_skill_owners_resolve_to_a_real_skill() -> None:
+    """Every `AGENT_SKILL_OWNERS` value must still be a real skill.
+
+    `test_mapped_agent_references_its_skill` above only checks the skill name
+    is a substring of the agent's body prose — a renamed or retired skill
+    mentioned only in stale prose still passes that check. This checks the
+    mapping's *target* against the live roster instead, so a rename that
+    updates the constant's key but leaves a retired slug in its value fails by
+    name here, rather than silently validating a skill that no longer exists.
+    """
+    referenced = {skill for skills in AGENT_SKILL_OWNERS.values() for skill in skills}
+    unresolved = sorted(referenced - set(EXPECTED_SKILL_SLUGS))
+    assert unresolved == [], f"AGENT_SKILL_OWNERS references retired/renamed skill(s): {unresolved}"
 
 
 @pytest.mark.parametrize("slug", sorted(AGENT_SKILL_OWNERS))

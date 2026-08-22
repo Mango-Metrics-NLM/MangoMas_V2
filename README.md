@@ -364,6 +364,11 @@ make bridge-coverage # eval_harness_bridge isolated 100% floor
 make precommit       # pre-commit run --all-files
 ```
 
+`make secret-scan` (gitleaks) is CI-only and deliberately outside `make
+gate` — every other gate step runs fully offline, and downloading a pinned
+release binary is the one exception. Run it directly to reproduce that CI job
+locally (needs network access).
+
 Per-package floors (`scripts/check_coverage.py` — the authoritative gate):
 `errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy`, `_headers`
 at **100 %**; `composition`, `agents`, `api`, `cli`, `eval`, `rag`, `workflow`
@@ -423,7 +428,9 @@ src/mangomas/
   workflow/     Opt-in declarative workflow graphs — frozen node models, predicate
                 compiler, node registry + executors, loader (compiles to dispatch)
   api/          FastAPI app factory, routes, middleware, auth, health checks
-  cli/          Typer CLI (chat, history, eval, rag, workflow subcommands)
+  cli/          Typer CLI, one module per dependency layer behind a permanent
+                facade (ADR-0019 / spec-0015 R1) — chat, history, eval, rag,
+                workflow subcommands
   eval/         Offline evaluation harness — Scorer protocol, registry, runner, scorers, sinks
   secrets/      SecretsProvider seam (env-var backend; cloud backends pluggable)
   config/       Pydantic-settings, one module per domain behind a permanent

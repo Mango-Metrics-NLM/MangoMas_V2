@@ -114,11 +114,44 @@ def test_protected_paths_job_delegates_to_make() -> None:
     assert job["env"]["BASE_BRANCH"] == "feat/initial-release"
 
 
+def test_pull_request_trigger_targets_the_real_trunk() -> None:
+    """CI's PR trigger must name this repo's actual trunk.
+
+    `feat/initial-release` is trunk here — the Makefile's `BASE_REF` default
+    and the `protected-paths` job's `BASE_BRANCH` above both say so — not
+    `main` (a real but permanently-diverged branch; see NEXT_STEPS.md) and not
+    `develop` (which does not exist in this repository at all, checked against
+    both local and remote branches). A PR opened against the actual trunk got
+    no `pull_request`-triggered CI before this.
+
+    PyYAML's default (YAML 1.1) resolver reads the unquoted ``on:`` key as the
+    boolean ``True`` rather than the string ``"on"`` — the same reason
+    `_ci_jobs()` above only ever indexes `doc["jobs"]`. Looking up either key
+    keeps this guard correct even if a future PyYAML default ever stopped
+    resolving the bare word to a boolean (YAML 1.2 keeps it a string).
+    """
+    doc = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
+    triggers = doc.get("on", doc.get(True))
+    assert triggers is not None, "ci.yml has no `on:` trigger section"
+    assert triggers["pull_request"]["branches"] == ["feat/initial-release"]
+
+
 def test_scripts_coverage_job_delegates_to_make() -> None:
     """scripts/ sits outside `--cov=mangomas`'s reach (ADR-0021 / spec-0017
     A7), so it gets the same isolated-job treatment as bridge-coverage."""
     commands = _step_run_commands(_ci_jobs()["scripts-coverage"])
     assert commands == ["make scripts-coverage"]
+
+
+def test_secret_scan_job_delegates_to_make() -> None:
+    """gitleaks lives in exactly one place: the `secret-scan` Makefile target.
+
+    Before this, `secret-scan` was the one CI job with no Makefile target —
+    raw inline `curl`/`gitleaks` shell, which made README's "the Makefile
+    wraps the exact commands CI runs" claim false for exactly this job.
+    """
+    commands = _step_run_commands(_ci_jobs()["secret-scan"])
+    assert commands == ["make secret-scan"]
 
 
 def test_global_coverage_floor_matches_pytest_addopts() -> None:
