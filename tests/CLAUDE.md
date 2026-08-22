@@ -53,9 +53,7 @@ stale every release. `scripts/check_coverage.py` is the authoritative gate
 `tests/constants.py` has two halves. The rule targets **domain** values —
 URLs, model ids, env-var names, limits, rosters — not universal literals
 such as HTTP status codes, which stay inline (`PLR2004` is disabled for
-`tests/*` for exactly that reason).
-
-`tests/constants.py` has two halves:
+`tests/*` for exactly that reason). The two halves are:
 
 - **Config-mirroring defaults are re-exported** from `mangomas.config` using
   the explicit `X as X` idiom (e.g. `DEFAULT_LLM_BASE_URL`,

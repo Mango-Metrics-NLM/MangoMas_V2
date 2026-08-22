@@ -21,15 +21,20 @@ SCRIPTS_SRC  ?= scripts
 SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session_start.py \
                  tests/test_run_workflow_e2e.py tests/deploy/test_ci_make_parity.py \
                  tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
-                 tests/test_scripts_shared_helpers.py tests/harness
-# Measured baseline (2026-08-09, this branch, after A1-A5 landed): 85% total
-# (check_coverage.py itself sits at 24% — imported only for its FLOORS/
-# GLOBAL_FLOOR constants by tests/deploy/test_ci_make_parity.py; its own
-# `_check`/`main` are never exercised by a script-level test). Set to the
-# measured actual minus a small safety margin, rather than an assumed 95
-# (see spec-0017 R7 and A7) — ratchet upward as scripts/ gains direct tests,
-# most obviously check_coverage.py's own `main()`/`_check()`.
-SCRIPTS_FLOOR ?= 84
+                 tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
+                 tests/harness
+# Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
+# was the gate's own blind spot — 24%, imported only for its FLOORS/
+# GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect
+# there (an inverted returncode test, a missing sys.exit) would pass the whole
+# per-package gate while measuring nothing, and no coverage number could
+# reveal it. tests/test_check_coverage.py now drives both against a stubbed
+# subprocess and the file sits at 100%, so the floor ratchets 84 -> 92.
+# Set to the measured actual minus a small safety margin rather than an
+# assumed 95 (see spec-0017 R7 and A7); ratchet again as scripts/ gains tests
+# — the remaining gaps are harness_config_audit.py (85%) and the two
+# bare-interpreter ImportError arms in harness_session_start.py.
+SCRIPTS_FLOOR ?= 92
 # Pinned once, here — ci.yml's secret-scan job no longer repeats this literal
 # inline; it just calls `make secret-scan` like every other job calls its own
 # target below. The `dir`/`git` subcommands the recipe relies on exist from

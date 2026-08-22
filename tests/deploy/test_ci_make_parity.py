@@ -276,3 +276,17 @@ def test_mypy_does_not_narrow_the_surface_with_packages() -> None:
         "[tool.mypy] declares `packages`, which narrows a bare `mypy` back to "
         "that package regardless of `files` — the drift this test exists to stop"
     )
+
+
+def test_isolated_coverage_floors_are_pinned() -> None:
+    """`SCRIPTS_FLOOR` / `BRIDGE_FLOOR` are the only floors living in Makefile text.
+
+    Every `src/mangomas` floor is a `Floor(...)` in `scripts/check_coverage.py`
+    and is parametrised over by `tests/test_check_coverage.py`; the global one
+    is asserted equal to pytest's addopt above. These two are `?=` Makefile
+    variables that nothing checked — so a quiet edit lowering either would
+    weaken an isolated gate with no review record. Bumping a floor is fine;
+    doing it invisibly is not, and updating this line is the record.
+    """
+    assert int(_makefile_variable("SCRIPTS_FLOOR")) == 92
+    assert int(_makefile_variable("BRIDGE_FLOOR")) == 100

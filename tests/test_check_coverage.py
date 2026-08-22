@@ -1,6 +1,6 @@
 """Contract tests for the per-package coverage gate.
 
-`scripts/check_coverage.py` is the authoritative coverage gate, and its floor
+`scripts/_checker.py` is the authoritative coverage gate, and its floor
 globs have a **fail-open** failure mode: `coverage report --include=<glob>`
 that matches fewer files than intended still prints a percentage and still
 passes. Nothing reports that the glob stopped covering something.
@@ -44,7 +44,7 @@ from tests._script_loader import load_script_module
 
 
 class _FloorLike(Protocol):
-    """The shape `check_coverage.Floor` exposes.
+    """The shape `_checker.Floor` exposes.
 
     `load_script_module` returns an untyped module, so its `FLOORS` entries are
     `Any`. Naming the shape here keeps `--strict` honest without scattering
@@ -238,8 +238,87 @@ def test_every_top_level_source_path_has_a_floor(entry: str) -> None:
     roots = _floor_roots()
     expected = f"src/mangomas/{entry}"
     assert expected in roots, (
-        f"{expected!r} has no entry in scripts/check_coverage.py::FLOORS. "
+        f"{expected!r} has no entry in scripts/_checker.py::FLOORS. "
         f"Add one (choose the floor deliberately — 100% for a small pure "
         f"module, 95% to match its siblings), or add it to _FLOOR_EXEMPT with "
         f"a reason."
     )
+
+
+# ── The gate's own logic (spec-0023 R5) ──────────────────────────────────────
+#
+# `_check` and `main` were the least-covered code in `scripts/` (the module sat
+# at 24%): the coverage gate itself was the one script no test exercised. A
+# defect here — an inverted returncode test, a swallowed failure, a missing
+# `sys.exit` — makes the *entire* per-package gate pass while measuring
+# nothing, and by construction no coverage number would reveal it. These drive
+# `_check`/`main` against a stubbed subprocess so both verdicts are proven.
+
+
+class _FakeCompleted:
+    def __init__(self, returncode: int) -> None:
+        self.returncode = returncode
+        self.stdout = "TOTAL 100 0 42%\n"
+        self.stderr = ""
+
+
+def _stub_run(returncode: int, calls: list[list[str]]) -> object:
+    def _run(cmd: list[str], **_kwargs: object) -> _FakeCompleted:
+        calls.append(cmd)
+        return _FakeCompleted(returncode)
+
+    return _run
+
+
+def test_check_returns_true_when_coverage_command_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(_checker.subprocess, "run", _stub_run(0, calls))
+    assert _checker._check(_checker.GLOBAL_FLOOR) is True
+    # The floor must actually reach the coverage invocation — a gate that
+    # forgets --fail-under passes unconditionally.
+    assert f"--fail-under={_checker.GLOBAL_FLOOR.minimum}" in calls[0]
+    assert f"--include={_checker.GLOBAL_FLOOR.include}" in calls[0]
+
+
+def test_check_returns_false_when_coverage_command_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(_checker.subprocess, "run", _stub_run(2, calls))
+    assert _checker._check(_checker.GLOBAL_FLOOR) is False
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+    assert _checker.GLOBAL_FLOOR.include in out
+
+
+def test_main_exits_nonzero_when_any_floor_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The gate must fail the build, not merely print a complaint."""
+    monkeypatch.setattr(_checker, "_check", lambda _floor: False)
+    with pytest.raises(SystemExit) as excinfo:
+        _checker.main()
+    assert excinfo.value.code == 1
+
+
+def test_main_succeeds_when_every_floor_passes(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(_checker, "_check", lambda _floor: True)
+    _checker.main()
+    assert "All coverage floors met." in capsys.readouterr().out
+
+
+def test_main_checks_every_declared_floor_plus_the_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A gate that silently skips a floor is the fail-open shape this guards."""
+    seen: list[str] = []
+
+    def _record(floor: _FloorLike) -> bool:
+        seen.append(floor.label)
+        return True
+
+    monkeypatch.setattr(_checker, "_check", _record)
+    _checker.main()
+    assert seen == [floor.label for floor in _checker.FLOORS] + [_checker.GLOBAL_FLOOR.label]
