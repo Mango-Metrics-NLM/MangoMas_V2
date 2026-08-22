@@ -391,7 +391,7 @@ CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
 
 ## Claude Code Agents
 
-26 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
+27 agents live at `.claude/agents/mango-<slug>.md` — one flat directory, no
 hierarchy. Claude Code resolves an agent by its `name:` field, which must equal
 the filename stem; the `mango-` prefix separates the committed corpus from
 personal agents `/agents` writes into the same directory.
@@ -407,7 +407,7 @@ or `Bash`.
 | `mango-api-dev` | Adding or changing an endpoint, evolving a request/response schema, API-layer integration |
 | `mango-test-engineer` | Adding or fixing tests, diagnosing a coverage gap, choosing a test surface |
 
-**Twenty-two specialists**, invoked *by name*, not by topic match — their
+**Twenty-three specialists**, invoked *by name*, not by topic match — their
 descriptions deliberately carry no trigger conditions, because auto-delegation
 matches the condition and never reads a modal verb like "invoke explicitly
 when". Name them directly:
@@ -431,6 +431,7 @@ when". Name them directly:
 | `mango-cli-dev` | `cli/` — the `main.py` facade, `_app` assembly order, the `_runtime` seam |
 | `mango-harness-dev` | `harness/` + the four `scripts/` harness entry points |
 | `mango-ci-dev` | `Makefile`, `.github/workflows/`, `dependabot.yml`, `deploy/`, `tests/deploy/` |
+| `mango-api-impl-dev` | The FastAPI assembly layer — `create_app` + middleware order, `middleware.py`, `auth.py`, `health.py`, `tracing.py`, the system/workflow routers, `tenancy.py` |
 
 **Agents vs skills.** They are different things and the tie-break matters:
 **skills own procedure** (the recipe for doing X), **agents own a surface** —

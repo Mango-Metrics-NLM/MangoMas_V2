@@ -88,6 +88,21 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   and `SCRIPTS_FLOOR` ratchets 84 → 92 on a measured 94%.
 - **Property tests for `sanitize_header_token`** — the shared log-injection /
   SQL-parameter defence, previously guarded only by hand-picked examples.
+- **`mango-api-impl-dev`**, and a test deriving source ownership from the
+  agent corpus itself. The whole FastAPI assembly layer had no write-capable
+  owner: `create_app` and its load-bearing middleware install order,
+  `middleware.py`, `auth.py`, `health.py`, `tracing.py` and the system +
+  workflow routers. `mango-api-dev` is a router and cannot edit;
+  `mango-sse-streamer`, `mango-schema-evolution` and `mango-error-taxonomy-dev`
+  each own one slice and correctly decline the rest. The corpus asserted it
+  covered the codebase and nothing checked that, so
+  `test_every_source_surface_has_a_write_capable_owner` now reads each agent's
+  `## Surface You Own` — the agent bodies stay the single source of truth
+  rather than gaining a parallel table — and requires every top-level entry
+  under `src/mangomas/` to be claimed or recorded unowned with a reason.
+  `registry.py` is the one recorded exception: a generic `Registry[T]` on a
+  protected path, consumed equally by five registries, where naming any single
+  owner would be arbitrary.
 - **`mango-ci-dev`**, owning `Makefile`, `.github/workflows/`,
   `dependabot.yml`, `deploy/` and `tests/deploy/` — five contract suites and
   the whole gate chain belonged to no agent.

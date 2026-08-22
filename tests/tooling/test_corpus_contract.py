@@ -44,6 +44,7 @@ from tests.constants import (
     RETIRED_STRAY_AGENT_FILENAME,
     ROUTER_AGENT_SLUGS,
     SKILL_UNMAPPED_AGENT_SLUGS,
+    UNOWNED_SOURCE_SURFACES,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
 
@@ -368,6 +369,76 @@ def test_mapped_agent_references_its_skill(slug: str) -> None:
     body = _agent_body(slug)
     missing = [skill for skill in AGENT_SKILL_OWNERS[slug] if skill not in body]
     assert missing == [], f"{slug} does not reference {missing}"
+
+
+_SRC_ROOT = _REPO_ROOT / "src" / "mangomas"
+# An agent may name a surface as a path (`src/mangomas/api/app.py`) or as a
+# module (`mangomas.telemetry`); both spellings appear in the corpus and both
+# are legitimate, so ownership is read from either.
+_SURFACE_PATH_RE = re.compile(r"src/mangomas/([A-Za-z0-9_]+)")
+_SURFACE_MODULE_RE = re.compile(r"\bmangomas\.([A-Za-z0-9_]+)")
+_SURFACE_SECTION_RE = re.compile(r"^## Surface You Own\n(.*?)(?=\n## |\Z)", re.S | re.M)
+
+
+def _claimed_source_surfaces() -> dict[str, set[str]]:
+    """Map each top-level `src/mangomas` entry to the agents claiming it.
+
+    Derived from the agent bodies rather than a hand-written table: a second
+    table would be a second source of truth, and the failure it is meant to
+    catch — an agent's claims and the roster disagreeing — is exactly what a
+    duplicate cannot see.
+    """
+    claimed: dict[str, set[str]] = {}
+    for slug in sorted(WRITE_CAPABLE_AGENT_SLUGS):
+        section = _SURFACE_SECTION_RE.search(_agent_body(slug))
+        if section is None:
+            continue
+        text = section.group(1)
+        for name in _SURFACE_PATH_RE.findall(text) + _SURFACE_MODULE_RE.findall(text):
+            claimed.setdefault(name, set()).add(slug)
+    return claimed
+
+
+def test_every_source_surface_has_a_write_capable_owner() -> None:
+    """Every top-level `src/mangomas` entry is claimed, or recorded as unowned.
+
+    The corpus asserted that its agents cover the codebase and nothing checked
+    it. The whole FastAPI assembly layer — `create_app` and its middleware
+    install order, `middleware.py`, `auth.py`, `health.py`, `tracing.py`, and
+    the system + workflow routers — had no write-capable owner at all:
+    `mango-api-dev` is a router and cannot edit, while `mango-sse-streamer`,
+    `mango-schema-evolution` and `mango-error-taxonomy-dev` each own one slice
+    and correctly decline the rest. `mango-api-impl-dev` closes it; this test
+    is what stops the next one opening unnoticed.
+    """
+    entries = sorted(
+        path.name for path in _SRC_ROOT.iterdir() if path.name not in {"__pycache__", "__init__.py"}
+    )
+    assert len(entries) > 10, f"only {len(entries)} entries under {_SRC_ROOT} — layout moved?"
+
+    claimed = _claimed_source_surfaces()
+    assert claimed, "no agent declares a `## Surface You Own` section — parsing broke"
+
+    unowned = sorted(
+        entry
+        for entry in entries
+        if entry not in UNOWNED_SOURCE_SURFACES and claimed.get(entry.removesuffix(".py")) is None
+    )
+    assert unowned == [], (
+        f"no write-capable agent claims: {unowned}. Name the path under an "
+        "agent's `## Surface You Own`, or add it to UNOWNED_SOURCE_SURFACES "
+        "with why no single owner is right."
+    )
+
+    stale = sorted(UNOWNED_SOURCE_SURFACES - set(entries))
+    assert stale == [], f"UNOWNED_SOURCE_SURFACES names entries that no longer exist: {stale}"
+
+    claimed_entries = {e for e in entries if claimed.get(e.removesuffix(".py"))}
+    conflicting = sorted(UNOWNED_SOURCE_SURFACES & claimed_entries)
+    assert conflicting == [], (
+        f"recorded as unowned but an agent claims it: {conflicting} — drop it from "
+        "UNOWNED_SOURCE_SURFACES"
+    )
 
 
 def test_every_agent_is_mapped_or_recorded_unmapped() -> None:

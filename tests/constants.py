@@ -468,6 +468,7 @@ EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-adr-author",
     "mango-agent-impl-dev",
     "mango-api-dev",
+    "mango-api-impl-dev",
     "mango-architect",
     "mango-backend",
     "mango-ci-dev",
@@ -503,6 +504,7 @@ WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adr-author",
         "mango-agent-impl-dev",
+        "mango-api-impl-dev",
         "mango-ci-dev",
         "mango-cli-dev",
         "mango-error-taxonomy-dev",
@@ -563,6 +565,7 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
     "mango-agent-impl-dev": ("mango-agent-add",),
+    "mango-api-impl-dev": ("mango-observability", "mango-config"),
     "mango-ci-dev": ("mango-deploy", "mango-mutation-proof"),
     "mango-error-taxonomy-dev": ("mango-error",),
     "mango-eval-dev": ("mango-eval",),
@@ -601,6 +604,18 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
 # Adding a slug here is therefore a claim that no skill documents its
 # procedure. `test_every_agent_is_mapped_or_recorded_unmapped` enforces the
 # partition; `test_mapped_agent_references_its_skill` enforces the other half.
+# Top-level entries under `src/mangomas/` that no write-capable agent claims in
+# its `## Surface You Own` section. `registry.py` is deliberate rather than an
+# omission: it is a protected path holding a generic `Registry[T]` with no
+# project-specific logic, consumed equally by the agent, eval, workflow,
+# secrets and node registries. Handing it to any one of those owners would be
+# arbitrary, and a change to it is a cross-cutting contract change that needs a
+# `BREAKING-CHANGE` trailer and an architecture review, not a surface owner.
+#
+# Everything else must be claimed. `test_every_source_surface_has_a_write_capable_owner`
+# derives ownership from the agent bodies themselves rather than a second
+# hand-maintained table, so the corpus cannot desync from its own claims.
+UNOWNED_SOURCE_SURFACES: frozenset[str] = frozenset({"registry.py"})
 SKILL_UNMAPPED_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-api-dev",
