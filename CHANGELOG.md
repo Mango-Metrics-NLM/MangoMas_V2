@@ -9,6 +9,87 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Post-review hardening (peer review of spec-0022) — Spec-0023._
+
+### Fixed
+
+- **The injection guard added by spec-0022 was bypassable by deleting one
+  space.** `test_no_run_body_interpolates_forbidden_expressions` matched the
+  literal `"${{ github.event."`; GitHub allows arbitrary whitespace inside
+  `${{ }}`, so `${{github.event.release.tag_name}}` — the exact line the test
+  exists to forbid — passed it. Now a regex over the whole
+  attacker-influenced family (`github.event`, `head_ref`, `ref_name`,
+  `inputs`, `secrets`), with `test_forbidden_expression_pattern_is_whitespace_insensitive`
+  pinning the guard's own weakness. The same file was blind to `*.yaml`
+  workflows and to job-level `uses:` (reusable-workflow calls).
+- **`mangomas <cmd> --verbose` stopped working mid-run.** Commands called
+  `logging.basicConfig(level=DEBUG)` themselves; the first `get_tracer()`
+  deep in dispatch then lazily called `configure_telemetry()` with its
+  default `log_level="INFO"` and `force=True`, replacing the root handler.
+  Every `logger.debug` after that vanished — exactly where the interesting
+  work happens. `MANGOMAS_LOG__FORMAT`, `MANGOMAS_LOG_LEVEL` and
+  `MANGOMAS_TELEMETRY__EXPORTER` were ignored on every CLI path for the same
+  reason. Fixed by one reusable seam, `_runtime.configure_cli_logging`.
+- **`rag/` was silent on the longest-running operation in the product.** No
+  logger anywhere in the package, including a branch that drops a document
+  from the index without a word — the "my file did not get indexed and I
+  have no idea why" case. Now an `rag.ingest` span with per-batch children,
+  and warnings on both silent-failure paths.
+- **The Stop hook swallowed the zero-skip guard's signal.** `|| true` is now
+  `|| exit 1`: only exit code 2 blocks a Stop hook, so non-zero was already
+  a visible, non-blocking notice — the swallow just downgraded it to a
+  transcript line.
+- **`mango-config` would have failed CI if followed.** Its Workflow ended at
+  `.env.example` while spec-0022 R12 made the CLAUDE.md config row mandatory.
+- **`mango-pr-watcher` labelled two Claude Code platform tools as
+  `mcp__github__*`** and did not say the agent is inert without a PAT.
+- **`.PHONY` was missing `gated-suites`** — a CI-invoked target — and
+  `embeddings-local`.
+
+### Added
+
+- **Nightly scheduled workflow.** The repo had no scheduled automation at
+  all: `secret-scan` fired on push only, and seven opt-in suites ran nowhere,
+  ever. `nightly.yml` runs the Postgres suite (Docker is all it needs — and
+  ci.yml already records that a row-shape defect shipped behind a green
+  pipeline "purely because nothing set the gate") and both gitleaks passes.
+- **Tests for the coverage gate itself.** `scripts/check_coverage.py` sat at
+  24%: a defect in `_check`/`main` would pass the whole per-package gate
+  while measuring nothing, and no coverage number could reveal it. Now 100%,
+  and `SCRIPTS_FLOOR` ratchets 84 → 92 on a measured 94%.
+- **Property tests for `sanitize_header_token`** — the shared log-injection /
+  SQL-parameter defence, previously guarded only by hand-picked examples.
+- **`mango-ci-dev`**, owning `Makefile`, `.github/workflows/`,
+  `dependabot.yml`, `deploy/` and `tests/deploy/` — five contract suites and
+  the whole gate chain belonged to no agent.
+- **Documented procedures**: the `.claude/settings.json` lockstep (including
+  that the repo denies itself `Edit` on that file) in `mango-harness`; the
+  subprocess meta-test pattern in `mango-mutation-proof`; the OpenAPI-snapshot
+  regen in `mango-release` and `mango-schema-evolution`.
+- **`tests/deploy/_workflows.py`** — one workflow-YAML reader, replacing the
+  copy that had drifted between the two suites.
+
+### Changed
+
+- **CLAUDE.md's config defaults are now actually enforced.** The
+  "No hard-coded values" row cited a test that checked *names* in both
+  directions while ~96 documented default values went uncompared. Defaults
+  are what rots; they are now checked against the live `Settings` fields.
+- **`MANGOMAS_RAG__MIN_CHUNK_WORDS` is documented as inert.** Unblinding the
+  chunker fuzz (both properties pinned `min_words=0`, making the
+  trailing-fragment drop unreachable) showed the branch is *provably* dead —
+  zero reachable states over an exhaustive search, and 12k randomised
+  comparisons where `min_words` never changed the output. Resolving it
+  (accept word loss, or retire the knob) is a retrieval-quality decision, so
+  today's behaviour is pinned and the doc row corrected.
+- **Named the last two hard-coded tunables**: `core/tools.py`'s repeated
+  truncation bound (kept local, since `core` imports nothing but `errors` and
+  `registry`, with a test pinning it to the shared default) and
+  `adapters/storage`'s triplicated `list_turns` limit.
+- **The "no magic numbers in tests" rule is scoped to domain values**, which
+  is what it always meant — `PLR2004` is deliberately off for `tests/*` and
+  65 HTTP status literals sit inline by design.
+
 _Governance-hardening adoptions (SSD-pack Tier 1 + 2) — Spec-0022._
 
 ### Fixed
