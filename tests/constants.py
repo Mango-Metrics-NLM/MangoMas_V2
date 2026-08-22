@@ -33,6 +33,9 @@ from mangomas.config import (
     DEFAULT_LOOP_MAX_STEPS as DEFAULT_LOOP_MAX_STEPS,
 )
 from mangomas.config import (
+    DEFAULT_LOOP_STEP_TIMEOUT as DEFAULT_LOOP_STEP_TIMEOUT,
+)
+from mangomas.config import (
     DEFAULT_RAG_CHUNK_OVERLAP as DEFAULT_RAG_CHUNK_OVERLAP,
 )
 from mangomas.config import (
@@ -929,3 +932,14 @@ PLAN_EXECUTE_REVIEW_GRAPH_RELPATH = "examples/workflows/plan-execute-review.json
 PLAN_EXECUTE_REVIEW_GRAPH_NAME = "plan-execute-review"
 # Ordered roster of the pipeline's agent slugs (mirrors the example file).
 PLAN_EXECUTE_REVIEW_AGENTS: tuple[str, ...] = ("planner", "tool", "reviewer")
+
+# ── Per-step timeout test values (spec-0026) ──────────────────────────────────
+# A step budget far below the slow agent's sleep, so the timeout test fires
+# fast and deterministically; the sleep itself is cancelled by the expiring
+# `asyncio.timeout`, so its nominal length is never actually waited out.
+TINY_STEP_TIMEOUT_SECONDS: float = 0.02
+SLOW_AGENT_DELAY_SECONDS: float = 5.0
+# A short real delay used to pin the no-timeout regression: with
+# `loop_settings=None` a step slower than TINY_STEP_TIMEOUT_SECONDS must still
+# complete (there is no clock to cancel it).
+UNTIMED_AGENT_DELAY_SECONDS: float = 0.05

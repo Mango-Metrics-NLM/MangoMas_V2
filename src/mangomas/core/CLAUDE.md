@@ -48,8 +48,11 @@ skill for the dispatch surface's shape.
   escape hatch for per-request data that does not deserve a field.
 - `AcceptanceFn` is **sync**. An async one would couple the orchestrator to its
   callers' event loop.
-- `core/` imports only `mangomas.errors` and `mangomas.registry` — never
-  `adapters/`, `api/`, `agents/`, `workflow/`, `eval/` or `rag/`. The dependency
-  direction points inward, always. Cross-layer type references live under
-  `if TYPE_CHECKING:` (that is why `AgentContext` can name `LLMClient` without
-  importing the adapter package at runtime).
+- `core/` imports only `mangomas.errors`, `mangomas.registry` and — since
+  ADR-0026 — `mangomas.metrics` (a telemetry leaf over the OTel API
+  `orchestrator.py` already imports; the record helpers are no-ops until
+  metrics are enabled) — never `adapters/`, `api/`, `agents/`, `workflow/`,
+  `eval/` or `rag/`. The dependency direction points inward, always.
+  Cross-layer type references live under `if TYPE_CHECKING:` (that is why
+  `AgentContext` can name `LLMClient` without importing the adapter package
+  at runtime, and why `Orchestrator` can name `LoopSettings`).

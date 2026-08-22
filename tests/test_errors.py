@@ -20,6 +20,7 @@ from mangomas.errors import (
     MaxStepsExceeded,
     PersistenceError,
     SecretsResolutionError,
+    StepTimeout,
     ToolExecutionError,
     ToolNotFound,
     UnknownProvider,
@@ -56,6 +57,7 @@ def test_mangomas_error_default_detail_is_empty() -> None:
         AgentNotFound,
         PersistenceError,
         MaxStepsExceeded,
+        StepTimeout,
         ToolNotFound,
         ToolExecutionError,
         SecretsResolutionError,
@@ -138,6 +140,7 @@ def test_lmstudio_error_is_llm_bad_response() -> None:
         (AgentNotFound, "agent_not_found"),
         (PersistenceError, "persistence_error"),
         (MaxStepsExceeded, "max_steps_exceeded"),
+        (StepTimeout, "step_timeout"),
         (ToolNotFound, "tool_not_found"),
         (ToolExecutionError, "tool_execution_error"),
         (SecretsResolutionError, "secrets_resolution_error"),
@@ -166,6 +169,16 @@ def test_max_steps_exceeded_stores_steps() -> None:
     exc = MaxStepsExceeded(5)
     assert exc.steps == 5
     assert "5" in str(exc)
+
+
+# ── StepTimeout ───────────────────────────────────────────────────────────────
+
+
+def test_step_timeout_stores_seconds() -> None:
+    exc = StepTimeout(1.5)
+    assert exc.seconds == 1.5
+    assert "1.5" in str(exc)
+    assert "1.5" in exc.detail
 
 
 # ── ToolNotFound ───────────────────────────────────────────────────────────────
@@ -228,6 +241,9 @@ _INTENDED_STATUS: dict[type[MangomasError], int] = {
     AuthenticationError: 401,
     AgentNotFound: 404,
     LLMTimeout: 504,
+    # The server-side per-step budget elapsed while waiting on the agent's
+    # upstream work — mirrors LLMTimeout's 504 (spec-0026).
+    StepTimeout: 504,
     LLMUnavailable: 503,
     LLMBadResponse: 502,
     LLMError: 502,

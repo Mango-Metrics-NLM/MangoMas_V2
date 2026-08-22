@@ -17,6 +17,7 @@ __all__ = [
     "MaxStepsExceeded",
     "PersistenceError",
     "SecretsResolutionError",
+    "StepTimeout",
     "ToolExecutionError",
     "ToolNotFound",
     "UnknownProvider",
@@ -146,6 +147,24 @@ class MaxStepsExceeded(MangomasError):
             detail=f"max_steps={steps}",
         )
         self.steps = steps
+
+
+class StepTimeout(MangomasError):
+    """Raised when a single dispatch step exceeds the configured per-step timeout.
+
+    Only raised when the orchestrator is constructed with ``loop_settings``
+    (the composition root wires ``Settings.loop``); a bare ``Orchestrator``
+    applies no step timeout. See spec-0026 / ADR-0026.
+    """
+
+    code = "step_timeout"
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__(
+            f"Agent step exceeded the per-step timeout of {seconds} second(s).",
+            detail=f"step_timeout_seconds={seconds}",
+        )
+        self.seconds = seconds
 
 
 # ── Tool calling ──────────────────────────────────────────────────────────────

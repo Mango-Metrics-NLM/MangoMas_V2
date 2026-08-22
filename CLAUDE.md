@@ -192,8 +192,8 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_TENANCY__HEADER` | `X-Tenant-ID` | Inbound tenant header → per-request `ContextVar` |
 | `MANGOMAS_TENANCY__DEFAULT` | `default` | Implicit tenant when the header is absent/disabled |
 | `MANGOMAS_TELEMETRY__METRICS_ENABLED` | `false` | Install an OTel `MeterProvider` (agent invocation/error/duration; ADR-0013) |
-| `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap |
-| `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout |
+| `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap, honored by `dispatch` (spec-0026; precedence: `max_steps` kwarg > non-default `request.max_steps` > this) |
+| `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout enforced on each `agent.handle` step via `asyncio.timeout` (composition-wired orchestrators; `StepTimeout` → 504) |
 | `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
 | `MANGOMAS_MEMORY__PROVIDER` | `file` | Memory backend provider |
 | `MANGOMAS_MEMORY__MEMORY_DIR` | `memory` | Memory root directory |

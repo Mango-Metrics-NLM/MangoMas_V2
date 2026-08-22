@@ -32,6 +32,7 @@ from mangomas.config import (
     EmbeddingSettings,
     HarnessSettings,
     LLMSettings,
+    LoopSettings,
     MemorySettings,
     SecretsSettings,
     Settings,
@@ -284,8 +285,14 @@ class _HarnessOrchestrator(Orchestrator):
     ``stream_dispatch`` does not, so it is wrapped explicitly below.
     """
 
-    def __init__(self, ctx: AgentContext, harness_cfg: HarnessSettings) -> None:
-        super().__init__(ctx)
+    def __init__(
+        self,
+        ctx: AgentContext,
+        harness_cfg: HarnessSettings,
+        *,
+        loop_settings: LoopSettings | None = None,
+    ) -> None:
+        super().__init__(ctx, loop_settings=loop_settings)
         self._harness_tracer = build_scoped_tracer(
             harness_cfg.metrics_namespace, exporter=harness_cfg.metrics_exporter
         )
@@ -468,14 +475,16 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         vector_store=vector_store,
         tools=tools,
     )
+    # Wiring `cfg.loop` is what activates the control-loop tunables
+    # (spec-0026): the per-step timeout and the max_steps deployment default.
     if cfg.harness.enabled:
-        orch: Orchestrator = _HarnessOrchestrator(ctx, cfg.harness)
+        orch: Orchestrator = _HarnessOrchestrator(ctx, cfg.harness, loop_settings=cfg.loop)
         logger.info(
             "Harness telemetry enabled",
             extra={"metrics_namespace": cfg.harness.metrics_namespace},
         )
     else:
-        orch = Orchestrator(ctx)
+        orch = Orchestrator(ctx, loop_settings=cfg.loop)
 
     # Layer in any entry-point agent plugins (no-op unless discovery_enabled).
     # Built-ins are already registered above and form the protected set.

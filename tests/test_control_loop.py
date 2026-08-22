@@ -2,21 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from mangomas.agents import ChatAgent
+from mangomas.config import LoopSettings
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Message, Orchestrator
-from mangomas.errors import MaxStepsExceeded
-from tests.constants import STUB_REPLY
+from mangomas.errors import MaxStepsExceeded, StepTimeout
+from tests.constants import (
+    DEFAULT_LOOP_MAX_STEPS,
+    SLOW_AGENT_DELAY_SECONDS,
+    STUB_REPLY,
+    TINY_STEP_TIMEOUT_SECONDS,
+    UNTIMED_AGENT_DELAY_SECONDS,
+)
 from tests.fakes import FakeLLM, FakeRepository
 
 
 def _make_orch(
     llm: FakeLLM | None = None,
     repo: FakeRepository | None = None,
+    loop_settings: LoopSettings | None = None,
 ) -> Orchestrator:
     ctx = AgentContext(llm=llm or FakeLLM(), repo=repo)
-    orch = Orchestrator(ctx)
+    orch = Orchestrator(ctx, loop_settings=loop_settings)
     orch.register(ChatAgent())
     return orch
 
@@ -151,3 +161,117 @@ async def test_dispatch_max_steps_kwarg_overrides_request() -> None:
         await orch.dispatch("chat", req, acceptance_fn=lambda _: False, max_steps=2)
     # kwarg wins: raises after 2, not 10
     assert exc_info.value.steps == 2
+
+
+# ── LoopSettings wiring (spec-0026): per-step timeout ─────────────────────────
+
+
+class _SlowAgent:
+    """Agent whose handle() sleeps — the target of the per-step timeout."""
+
+    name = "slow"
+
+    def __init__(self, delay: float) -> None:
+        self._delay = delay
+
+    async def handle(self, _request: AgentRequest, _ctx: AgentContext) -> AgentResponse:
+        await asyncio.sleep(self._delay)
+        return AgentResponse(content=STUB_REPLY, agent=self.name)
+
+
+async def test_step_timeout_raises_step_timeout_and_persists_nothing() -> None:
+    """A step slower than the configured budget raises the typed StepTimeout.
+
+    Mutation proof (spec-0026): removing the ``asyncio.timeout`` wrap in
+    ``Orchestrator._handle_step`` makes this test fail (the slow agent
+    completes and no StepTimeout is raised).
+    """
+    repo = FakeRepository()
+    orch = _make_orch(
+        repo=repo,
+        loop_settings=LoopSettings(step_timeout_seconds=TINY_STEP_TIMEOUT_SECONDS),
+    )
+    orch.register(_SlowAgent(SLOW_AGENT_DELAY_SECONDS))
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+
+    with pytest.raises(StepTimeout) as exc_info:
+        await orch.dispatch("slow", req)
+    assert exc_info.value.seconds == TINY_STEP_TIMEOUT_SECONDS
+    # The timeout aborts the loop before the persistence step — no half turn.
+    assert repo._turns == []
+
+
+async def test_no_loop_settings_means_no_timeout_regression_pin() -> None:
+    """Without loop_settings a slow step completes exactly as before spec-0026."""
+    orch = _make_orch(loop_settings=None)
+    orch.register(_SlowAgent(UNTIMED_AGENT_DELAY_SECONDS))
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    resp = await orch.dispatch("slow", req)
+    assert resp.content == STUB_REPLY
+
+
+async def test_default_step_timeout_does_not_bite_a_fast_agent() -> None:
+    """The composition-wired default (30 s) leaves a normal step untouched."""
+    repo = FakeRepository()
+    orch = _make_orch(repo=repo, loop_settings=LoopSettings())
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    resp = await orch.dispatch("chat", req)
+    assert resp.content == STUB_REPLY
+    assert len(repo._turns) == 1
+
+
+# ── LoopSettings wiring (spec-0026): max_steps precedence ─────────────────────
+
+
+async def test_settings_max_steps_fills_caller_silence() -> None:
+    """Tier 3: no kwarg + default request.max_steps → settings cap the loop."""
+    llm = FakeLLM()
+    orch = _make_orch(llm=llm, loop_settings=LoopSettings(max_steps=3))
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    resp = await orch.dispatch("chat", req)
+    assert len(llm.calls) == 3
+    assert resp.metadata["loop"]["steps_taken"] == 3
+
+
+async def test_non_default_request_max_steps_beats_settings() -> None:
+    """Tier 2: an explicit request.max_steps is caller intent over the env cap."""
+    llm = FakeLLM()
+    orch = _make_orch(llm=llm, loop_settings=LoopSettings(max_steps=5))
+    req = AgentRequest(messages=[Message(role="user", content="x")], max_steps=2)
+    resp = await orch.dispatch("chat", req)
+    assert len(llm.calls) == 2
+    assert resp.metadata["loop"]["steps_taken"] == 2
+
+
+async def test_kwarg_beats_request_and_settings() -> None:
+    """Tier 1: the explicit kwarg wins over both lower tiers."""
+    orch = _make_orch(loop_settings=LoopSettings(max_steps=5))
+    req = AgentRequest(messages=[Message(role="user", content="x")], max_steps=4)
+    with pytest.raises(MaxStepsExceeded) as exc_info:
+        await orch.dispatch("chat", req, acceptance_fn=lambda _: False, max_steps=2)
+    assert exc_info.value.steps == 2
+
+
+async def test_field_default_closes_the_chain_without_settings() -> None:
+    """Tier 4: no kwarg, default request, no settings → single shot (as ever)."""
+    llm = FakeLLM()
+    orch = _make_orch(llm=llm, loop_settings=None)
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    resp = await orch.dispatch("chat", req)
+    assert len(llm.calls) == DEFAULT_LOOP_MAX_STEPS
+    assert resp.metadata["loop"]["steps_taken"] == DEFAULT_LOOP_MAX_STEPS
+
+
+async def test_settings_default_coincidence_pin() -> None:
+    """LoopSettings() defaults (max_steps=1) are behaviour-identical to today.
+
+    The whole backwards-compat argument of spec-0026 rests on this
+    coincidence, so it gets its own pin.
+    """
+    llm = FakeLLM()
+    orch = _make_orch(llm=llm, loop_settings=LoopSettings())
+    req = AgentRequest(messages=[Message(role="user", content="x")])
+    resp = await orch.dispatch("chat", req)
+    assert len(llm.calls) == DEFAULT_LOOP_MAX_STEPS
+    assert resp.metadata["loop"]["steps_taken"] == DEFAULT_LOOP_MAX_STEPS
+    assert resp.metadata["loop"]["accepted"] is False

@@ -9,7 +9,31 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`MANGOMAS_LOOP__*` is finally honored** (spec-0026 / ADR-0026 — governed
+  Batch B-b): `Orchestrator` gains a keyword-only optional `loop_settings`;
+  composition wires `cfg.loop`, so `STEP_TIMEOUT_SECONDS` now enforces a real
+  per-step `asyncio.timeout` around `agent.handle` (new `StepTimeout` error,
+  `code="step_timeout"`, HTTP 504, three-file lock-step) and `MAX_STEPS`
+  participates via the recorded precedence: explicit kwarg > non-default
+  `request.max_steps` > settings > field default. Defaults coincide, so
+  behavior is unchanged until an operator sets them — except that
+  composition-wired deployments now enforce the documented 30 s cap the env
+  var always claimed. Streaming is deliberately not timeout-wrapped (scoped
+  in spec-0026).
+
 ### Changed
+
+- **Agent metrics moved from the HTTP layer into the orchestrator**
+  (closing ADR-0013's recorded deferral): invocation/error/duration now
+  emit inside `dispatch` and `_stream_agent` — so CLI dispatch, workflow
+  nodes, and every pipeline/fan-out inner step are uniformly counted —
+  and the route handlers' duplicate emission is removed
+  (exactly-once-through-the-route mutation-proven). Instrument names and
+  labels unchanged; spec-0025's stream symmetry (full drain ⇔ persisted ⇔
+  counted) preserved. Visible change recorded in ADR-0026: metric counts
+  now include non-HTTP dispatch traffic.
 
 - **`core/structured.py` extracted from `core/tools.py`** (spec-0015 R4, the
   last open decomposition item — governed Batch A, `BREAKING-CHANGE`

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from opentelemetry import trace
 
@@ -18,18 +19,46 @@ from mangomas.core.agent import (
     StreamingAgent,
 )
 from mangomas.core.loop import AcceptanceFn
-from mangomas.errors import AgentNotFound, MaxStepsExceeded
+from mangomas.errors import AgentNotFound, MangomasError, MaxStepsExceeded, StepTimeout
+
+# Telemetry leaf over the OTel API this module already imports
+# (``opentelemetry.trace``) — not a domain dependency. The record helpers are
+# no-ops until metrics are enabled (ADR-0013), and the orchestrator is the
+# single truthful chokepoint for invocation counting (ADR-0026), so every
+# dispatch path — HTTP, CLI, workflow nodes, pipeline/fan-out inner steps —
+# records unconditionally here.
+from mangomas.metrics import (
+    record_agent_duration,
+    record_agent_error,
+    record_agent_invocation,
+)
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.config import LoopSettings
 
 logger = logging.getLogger(__name__)
+
+# The AgentRequest field default acts as the "caller stated nothing" sentinel
+# in the max_steps precedence chain (spec-0026 R2). Read off the model so the
+# two can never desync.
+_REQUEST_MAX_STEPS_DEFAULT: int = AgentRequest.model_fields["max_steps"].default
 
 
 class Orchestrator:
     """Registers agents by name and dispatches requests."""
 
-    def __init__(self, ctx: AgentContext) -> None:
+    def __init__(self, ctx: AgentContext, *, loop_settings: LoopSettings | None = None) -> None:
+        """*loop_settings* (keyword-only, optional) activates the control-loop
+        tunables (spec-0026): a per-step ``asyncio.timeout`` on ``dispatch``'s
+        loop and the ``max_steps`` deployment default. ``None`` — the default,
+        and what every pre-existing caller passes implicitly — preserves the
+        previous behaviour exactly (no step timeout; ``request.max_steps``
+        rules). The composition root passes ``Settings.loop``.
+        """
         self._ctx = ctx
         self._agents: dict[str, Agent] = {}
         self._closed: bool = False
+        self._loop_settings = loop_settings
 
     @property
     def context(self) -> AgentContext:
@@ -130,6 +159,12 @@ class Orchestrator:
     ) -> AgentResponse:
         """Route *request* to the named agent, iterating until accepted or exhausted.
 
+        Records the agent invocation/error/duration instruments around the
+        whole call (ADR-0026): ``ok`` + duration on success, ``error`` + the
+        error code for any :class:`~mangomas.errors.MangomasError` — so HTTP,
+        CLI, workflow-node, and pipeline/fan-out inner-step invocations are
+        all uniformly counted (each inner step is its own point).
+
         Parameters
         ----------
         agent_name:
@@ -145,10 +180,35 @@ class Orchestrator:
             (default 1) and the last response is returned without raising.
         max_steps:
             Override the per-request ``max_steps`` field.  Must be >= 1.
+            Precedence (spec-0026 R2): this kwarg > a non-default
+            ``request.max_steps`` > ``loop_settings.max_steps`` > the
+            ``AgentRequest`` field default.
         """
         if max_steps is not None and max_steps < 1:
             raise ValueError("max_steps must be >= 1")
 
+        start = time.perf_counter()
+        try:
+            response = await self._dispatch_once(
+                agent_name, request, acceptance_fn=acceptance_fn, max_steps=max_steps
+            )
+        except MangomasError as exc:
+            record_agent_invocation(agent_name, "error")
+            record_agent_error(agent_name, exc.code)
+            raise
+        record_agent_invocation(agent_name, "ok")
+        record_agent_duration(agent_name, time.perf_counter() - start)
+        return response
+
+    async def _dispatch_once(
+        self,
+        agent_name: str,
+        request: AgentRequest,
+        *,
+        acceptance_fn: AcceptanceFn | None,
+        max_steps: int | None,
+    ) -> AgentResponse:
+        """The dispatch body :meth:`dispatch` wraps with metric emission."""
         if agent_name not in self._agents:
             logger.error(
                 "Dispatch failed: agent not found",
@@ -157,12 +217,16 @@ class Orchestrator:
             raise AgentNotFound(agent_name)
 
         agent = self._agents[agent_name]
-        effective_max = max_steps if max_steps is not None else request.max_steps
+        effective_max = self._effective_max_steps(request, max_steps)
 
         with trace.get_tracer(__name__).start_as_current_span("orchestrator.dispatch") as span:
             span.set_attribute("agent.name", agent_name)
             span.set_attribute("messages.count", len(request.messages))
             span.set_attribute("loop.max_steps", effective_max)
+            if self._loop_settings is not None:
+                span.set_attribute(
+                    "loop.step_timeout_seconds", self._loop_settings.step_timeout_seconds
+                )
 
             current_messages = list(request.messages)
             response: AgentResponse | None = None
@@ -176,7 +240,7 @@ class Orchestrator:
                     metadata=request.metadata,
                     max_steps=request.max_steps,
                 )
-                response = await agent.handle(step_request, self._ctx)
+                response = await self._handle_step(agent, step_request)
 
                 if acceptance_fn is not None:
                     if acceptance_fn(response):
@@ -221,6 +285,43 @@ class Orchestrator:
             await self._ctx.repo.save_turn(agent_name, request, response)
 
         return response
+
+    def _effective_max_steps(self, request: AgentRequest, max_steps: int | None) -> int:
+        """Resolve the loop budget by the spec-0026 precedence chain.
+
+        The explicit kwarg wins; a ``request.max_steps`` that differs from the
+        field default is caller-stated intent and beats the deployment
+        default; ``loop_settings.max_steps`` (env: ``MANGOMAS_LOOP__MAX_STEPS``)
+        fills silence; the field default closes the chain. The defaults all
+        coincide at 1, so behaviour changes only when an operator raises the
+        env var.
+        """
+        if max_steps is not None:
+            return max_steps
+        if request.max_steps != _REQUEST_MAX_STEPS_DEFAULT:
+            return request.max_steps
+        if self._loop_settings is not None:
+            return self._loop_settings.max_steps
+        return request.max_steps
+
+    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:
+        """Run one ``agent.handle`` step, under the per-step timeout when wired.
+
+        With ``loop_settings`` unset (a directly constructed orchestrator) the
+        step runs unbounded, exactly as before spec-0026. When set, the step
+        runs under ``asyncio.timeout(step_timeout_seconds)`` — the stdlib
+        structured-concurrency primitive, no hand-rolled timer — and an expiry
+        raises the typed :class:`~mangomas.errors.StepTimeout` (504).
+        Streaming is deliberately not timeout-wrapped (spec-0026 out of scope).
+        """
+        if self._loop_settings is None:
+            return await agent.handle(step_request, self._ctx)
+        seconds = self._loop_settings.step_timeout_seconds
+        try:
+            async with asyncio.timeout(seconds):
+                return await agent.handle(step_request, self._ctx)
+        except TimeoutError as exc:
+            raise StepTimeout(seconds) from exc
 
     # ── Multi-agent topologies ────────────────────────────────────────────────
 
@@ -328,7 +429,12 @@ class Orchestrator:
                 "Stream dispatch failed: agent not found",
                 extra={"agent_name": agent_name, "registered": self.list_agents()},
             )
-            raise AgentNotFound(agent_name)
+            # Pre-stream failure: record the error metrics here (ADR-0026) —
+            # the generator below never starts, so its own error path cannot.
+            exc = AgentNotFound(agent_name)
+            record_agent_invocation(agent_name, "error")
+            record_agent_error(agent_name, exc.code)
+            raise exc
 
         agent = self._agents[agent_name]
         logger.debug("Stream dispatch to agent %r", agent_name)
@@ -349,7 +455,15 @@ class Orchestrator:
         ``GeneratorExit`` thrown in at the suspended ``yield``) and upstream
         exceptions both unwind past it, so a half-drained stream can never be
         saved as a turn (spec-0025's persist-only-on-full-drain rule).
+
+        Metrics follow the same symmetry (spec-0025 rule, seam moved here by
+        ADR-0026): full drain ⇔ persisted ⇔ counted. The ok invocation +
+        duration are recorded only after the drain-and-persist path completes;
+        a :class:`~mangomas.errors.MangomasError` mid-drain (or while
+        persisting) records the error metrics before re-raising; abandonment
+        (``GeneratorExit``) unwinds past both and records nothing.
         """
+        start = time.perf_counter()
         with trace.get_tracer(__name__).start_as_current_span(
             "orchestrator.stream_dispatch"
         ) as span:
@@ -359,29 +473,36 @@ class Orchestrator:
             degraded = not isinstance(agent, StreamingAgent)
             span.set_attribute("stream.degraded", degraded)
 
-            chunks: list[str] = []
-            if isinstance(agent, StreamingAgent):
-                async for chunk in await agent.stream(request, self._ctx):
-                    chunks.append(chunk)
-                    yield chunk
-            else:
-                logger.warning(
-                    "Streaming requested but agent %r does not implement "
-                    "StreamingAgent; output was buffered into a single chunk",
-                    agent_name,
-                    extra={"agent": agent_name},
-                )
-                response = await agent.handle(request, self._ctx)
-                chunks.append(response.content)
-                yield response.content
+            try:
+                chunks: list[str] = []
+                if isinstance(agent, StreamingAgent):
+                    async for chunk in await agent.stream(request, self._ctx):
+                        chunks.append(chunk)
+                        yield chunk
+                else:
+                    logger.warning(
+                        "Streaming requested but agent %r does not implement "
+                        "StreamingAgent; output was buffered into a single chunk",
+                        agent_name,
+                        extra={"agent": agent_name},
+                    )
+                    response = await agent.handle(request, self._ctx)
+                    chunks.append(response.content)
+                    yield response.content
 
-            # Full drain: only reached when the consumer exhausts the stream.
-            span.set_attribute("stream.chunks", len(chunks))
-            if self._ctx.repo is not None:
-                streamed_response = AgentResponse(
-                    content="".join(chunks),
-                    agent=agent_name,
-                    metadata={"stream": {"chunks": len(chunks), "degraded": degraded}},
-                )
-                await self._ctx.repo.save_turn(agent_name, request, streamed_response)
-                logger.debug("Persisted streamed turn for agent %r", agent_name)
+                # Full drain: only reached when the consumer exhausts the stream.
+                span.set_attribute("stream.chunks", len(chunks))
+                if self._ctx.repo is not None:
+                    streamed_response = AgentResponse(
+                        content="".join(chunks),
+                        agent=agent_name,
+                        metadata={"stream": {"chunks": len(chunks), "degraded": degraded}},
+                    )
+                    await self._ctx.repo.save_turn(agent_name, request, streamed_response)
+                    logger.debug("Persisted streamed turn for agent %r", agent_name)
+            except MangomasError as exc:
+                record_agent_invocation(agent_name, "error")
+                record_agent_error(agent_name, exc.code)
+                raise
+            record_agent_invocation(agent_name, "ok")
+            record_agent_duration(agent_name, time.perf_counter() - start)
