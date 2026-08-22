@@ -200,6 +200,38 @@ async def test_fan_out_counts_each_inner_step(metric_reader: InMemoryMetricReade
         assert inv.value == 1
 
 
+async def test_fan_out_settled_counts_each_inner_step_including_failures(
+    metric_reader: InMemoryMetricReader,
+) -> None:
+    """Settled fan-out (spec-0027) adds no instrument of its own: each inner
+    dispatch — including the failed one — records its own per-agent point."""
+    orch = _direct_orch(_NamedAgent("settled-ok-agent"))
+    outcomes = await orch.dispatch_fan_out_settled(
+        ["settled-ok-agent", "settled-ghost-agent"], _DIRECT_REQUEST
+    )
+    assert [outcome.ok for outcome in outcomes] == [True, False]
+
+    inv_ok = _point_for(
+        metric_reader, app_metrics.AGENT_INVOCATIONS, {"agent": "settled-ok-agent", "status": "ok"}
+    )
+    assert inv_ok is not None
+    assert inv_ok.value == 1
+    inv_err = _point_for(
+        metric_reader,
+        app_metrics.AGENT_INVOCATIONS,
+        {"agent": "settled-ghost-agent", "status": "error"},
+    )
+    assert inv_err is not None
+    assert inv_err.value == 1
+    err = _point_for(
+        metric_reader,
+        app_metrics.AGENT_ERRORS,
+        {"agent": "settled-ghost-agent", "code": "agent_not_found"},
+    )
+    assert err is not None
+    assert err.value == 1
+
+
 def test_route_invoke_counts_exactly_once(metric_reader: InMemoryMetricReader) -> None:
     """One HTTP invoke = exactly one invocation point (no route double-count).
 

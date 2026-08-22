@@ -11,6 +11,22 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Whole-pipeline acceptance loops** (spec-0027 / ADR-0027 — governed
+  Batch B-c): `dispatch_pipeline` gains keyword-only optional
+  `acceptance_fn` / `max_steps`. Loop mode judges the *final* response,
+  re-injects the prior final reply into the first stage, raises
+  `MaxStepsExceeded` on exhaustion, and reports the same
+  `metadata["loop"]` block `dispatch` uses; defaults-None is byte-identical
+  to today (regression-pinned). This is the orchestrator-side prerequisite
+  for Phase 3's composite workflow `loop` bodies. Fan-out acceptance is
+  recorded as not-applicable rather than invented.
+- **`dispatch_fan_out_settled` + frozen `FanOutOutcome`** — the additive
+  partial-results sibling of the (unchanged, still fail-fast)
+  `dispatch_fan_out`: roster-ordered outcomes with exactly-one-of
+  response/error guarded by construction, an `ok` convenience property, a
+  `fan_out.failed_count` span attribute, and per-agent inner metrics
+  including failures. All guards mutation-proven.
+
 - **`MANGOMAS_LOOP__*` is finally honored** (spec-0026 / ADR-0026 — governed
   Batch B-b): `Orchestrator` gains a keyword-only optional `loop_settings`;
   composition wires `cfg.loop`, so `STEP_TIMEOUT_SECONDS` now enforces a real

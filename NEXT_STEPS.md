@@ -514,7 +514,10 @@ method — the loop lives inside `Orchestrator.dispatch` via `acceptance_fn`/
 `max_steps`, and `LoopNodeExecutor` already just calls `orch.dispatch(...)`,
 so per the ADR-0018 `fan_out` precedent this needs **no protected-path edit**
 at all; the real blocker is that `WorkflowStep` excludes `SequenceNode`, so a
-composite loop body can't loop a sub-pipeline yet), and entry-point discovery
+composite loop body can't loop a sub-pipeline yet — 2026-08-22: the
+orchestrator-side prerequisite now exists, since `dispatch_pipeline` accepts
+`acceptance_fn`/`max_steps` for a whole-pipeline acceptance loop per spec-0027,
+leaving only that graph-side widening), and entry-point discovery
 of third-party node kinds (needs an additive `PluginNode` union member, since
 `WorkflowNode` is a closed `extra="forbid"` discriminated union — an unknown
 `kind` fails validation before any registry is consulted).

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from opentelemetry import trace
@@ -42,6 +43,38 @@ logger = logging.getLogger(__name__)
 # in the max_steps precedence chain (spec-0026 R2). Read off the model so the
 # two can never desync.
 _REQUEST_MAX_STEPS_DEFAULT: int = AgentRequest.model_fields["max_steps"].default
+
+
+def _outcome_error_code(error: BaseException) -> str:
+    """Loggable identifier for a settled fan-out failure — never its content.
+
+    Typed errors surface their stable ``code``; anything else falls back to the
+    class name, which is still content-free.
+    """
+    return error.code if isinstance(error, MangomasError) else type(error).__name__
+
+
+@dataclass(frozen=True)
+class FanOutOutcome:
+    """One agent's settled fan-out result: exactly one of response/error is set.
+
+    Defined here rather than in ``agent.py`` deliberately (spec-0027): this is
+    an orchestrator-topology result, not a wire DTO — the ``AgentRequest`` /
+    ``AgentResponse`` surface stays untouched.
+    """
+
+    agent: str
+    response: AgentResponse | None = None
+    error: BaseException | None = None
+
+    def __post_init__(self) -> None:
+        if (self.response is None) == (self.error is None):
+            raise ValueError("exactly one of response/error must be set")
+
+    @property
+    def ok(self) -> bool:
+        """Whether this agent's dispatch succeeded."""
+        return self.error is None
 
 
 class Orchestrator:
@@ -326,15 +359,59 @@ class Orchestrator:
     # ── Multi-agent topologies ────────────────────────────────────────────────
 
     async def dispatch_pipeline(
-        self, agent_names: list[str], request: AgentRequest
+        self,
+        agent_names: list[str],
+        request: AgentRequest,
+        *,
+        acceptance_fn: AcceptanceFn | None = None,
+        max_steps: int | None = None,
     ) -> AgentResponse:
         """Sequential pipeline: each agent's output becomes the next agent's input.
 
-        Raises ``ValueError`` when *agent_names* is empty.
+        With the default ``acceptance_fn=None, max_steps=None`` the pipeline
+        runs exactly once — byte-identical to the pre-spec-0027 behaviour.
+        Providing either keyword engages a **whole-pipeline** acceptance loop
+        (spec-0027): the entire pipeline is one loop body, the *final*
+        response is judged, and on reject the pipeline re-runs with the
+        original first-stage request plus the prior final assistant reply
+        appended to its messages (mirroring :meth:`dispatch`'s re-injection
+        idiom). This is what a composite workflow ``loop`` body needs and
+        cannot be expressed today — a final-stage-only loop is already
+        composable via :meth:`dispatch` on the last agent.
+
+        Parameters
+        ----------
+        agent_names:
+            Ordered roster of registered agents; each inner hop is a full
+            :meth:`dispatch` (its own metrics point and its own inner loop).
+        request:
+            The first stage's request. Its ``max_steps`` field governs the
+            inner dispatches as ever — it deliberately does **not** join the
+            pipeline-loop budget tier, which would double-apply it.
+        acceptance_fn:
+            Optional sync callable judging the pipeline's **final** response.
+            When provided and never satisfied within the budget,
+            :class:`~mangomas.errors.MaxStepsExceeded` is raised. When only
+            *max_steps* is provided the pipeline iterates with conversational
+            re-injection and the last response is returned without raising
+            (mirroring :meth:`dispatch`'s no-acceptance semantics).
+        max_steps:
+            Pipeline-iteration budget; must be >= 1. Precedence (spec-0027):
+            this kwarg > ``loop_settings.max_steps`` > the request field
+            default.
+
+        In loop mode the returned response's metadata carries the same
+        ``"loop"`` block shape :meth:`dispatch` uses
+        (``{"steps_taken", "accepted"}``) at the **pipeline** level; the inner
+        dispatches' own responses keep their metadata untouched.
+
+        Raises ``ValueError`` when *agent_names* is empty or *max_steps* < 1.
         Raises :class:`~mangomas.errors.AgentNotFound` if any name is unregistered.
         """
         if not agent_names:
             raise ValueError("agent_names must be non-empty")
+        if max_steps is not None and max_steps < 1:
+            raise ValueError("max_steps must be >= 1")
 
         with trace.get_tracer(__name__).start_as_current_span(
             "orchestrator.dispatch_pipeline"
@@ -342,20 +419,102 @@ class Orchestrator:
             span.set_attribute("topology", "pipeline")
             span.set_attribute("agent_count", len(agent_names))
 
-            current_request = request
-            response: AgentResponse | None = None
+            if acceptance_fn is None and max_steps is None:
+                # Single pass — the pre-spec-0027 contract, byte-identical.
+                return await self._pipeline_pass(agent_names, request)
 
-            for i, name in enumerate(agent_names):
-                logger.debug("Pipeline step %d/%d: agent %r", i + 1, len(agent_names), name)
-                response = await self.dispatch(name, current_request)
-                if i < len(agent_names) - 1:
-                    current_request = AgentRequest(
-                        messages=[Message(role="user", content=response.content)],
-                        metadata=response.metadata,
-                    )
+            effective_max = self._pipeline_effective_max_steps(max_steps)
+            span.set_attribute("loop.max_steps", effective_max)
+
+            current_messages = list(request.messages)
+            response: AgentResponse | None = None
+            accepted = False
+            steps_taken = 0
+
+            for _ in range(effective_max):
+                steps_taken += 1
+                first_stage_request = AgentRequest(
+                    messages=current_messages,
+                    metadata=request.metadata,
+                    max_steps=request.max_steps,
+                )
+                response = await self._pipeline_pass(agent_names, first_stage_request)
+
+                if acceptance_fn is not None:
+                    if acceptance_fn(response):
+                        accepted = True
+                        logger.debug(
+                            "Pipeline acceptance criteria met at iteration %d", steps_taken
+                        )
+                        break
+                    # Re-inject the prior FINAL assistant reply for the next pass.
+                    current_messages = [
+                        *current_messages,
+                        Message(role="assistant", content=response.content),
+                    ]
+                elif effective_max > 1:
+                    # Multi-step without acceptance: conversational continuity.
+                    current_messages = [
+                        *current_messages,
+                        Message(role="assistant", content=response.content),
+                    ]
+
+            if acceptance_fn is not None and not accepted:
+                raise MaxStepsExceeded(effective_max)
+
+            assert response is not None  # noqa: S101 — guaranteed: effective_max >= 1
+
+            # Pipeline-level loop telemetry; the inner dispatches keep theirs.
+            response = AgentResponse(
+                content=response.content,
+                agent=response.agent,
+                metadata={
+                    **response.metadata,
+                    "loop": {"steps_taken": steps_taken, "accepted": accepted},
+                },
+            )
+
+            span.set_attribute("loop.steps_taken", steps_taken)
+            span.set_attribute("loop.accepted", accepted)
+
+        return response
+
+    async def _pipeline_pass(self, agent_names: list[str], request: AgentRequest) -> AgentResponse:
+        """One full pipeline pass — the exact pre-spec-0027 threading.
+
+        No metrics of its own: each inner hop is a full :meth:`dispatch`, so
+        every step is already its own invocation/error/duration point
+        (ADR-0026); a separate pipeline-level instrument would only grow
+        instrument cardinality without adding information.
+        """
+        current_request = request
+        response: AgentResponse | None = None
+
+        for i, name in enumerate(agent_names):
+            logger.debug("Pipeline step %d/%d: agent %r", i + 1, len(agent_names), name)
+            response = await self.dispatch(name, current_request)
+            if i < len(agent_names) - 1:
+                current_request = AgentRequest(
+                    messages=[Message(role="user", content=response.content)],
+                    metadata=response.metadata,
+                )
 
         assert response is not None  # noqa: S101 — guaranteed: at least one step ran
         return response
+
+    def _pipeline_effective_max_steps(self, max_steps: int | None) -> int:
+        """Resolve the pipeline-loop budget (spec-0027 precedence).
+
+        The explicit kwarg wins; ``loop_settings.max_steps`` fills silence; the
+        ``AgentRequest`` field default closes the chain. ``request.max_steps``
+        is deliberately absent from this chain — it already governs each inner
+        dispatch's own budget, and reading it here too would double-apply it.
+        """
+        if max_steps is not None:
+            return max_steps
+        if self._loop_settings is not None:
+            return self._loop_settings.max_steps
+        return _REQUEST_MAX_STEPS_DEFAULT
 
     async def dispatch_fan_out(
         self, agent_names: list[str], request: AgentRequest
@@ -381,6 +540,60 @@ class Orchestrator:
 
         logger.debug("Fan-out complete: %d responses", len(results))
         return results
+
+    async def dispatch_fan_out_settled(
+        self, agent_names: list[str], request: AgentRequest
+    ) -> list[FanOutOutcome]:
+        """Fan-out that settles every branch: per-agent outcomes, in roster order.
+
+        The additive sibling of :meth:`dispatch_fan_out` (spec-0027): where the
+        fail-fast method discards successful siblings the moment one agent
+        raises — its established contract, deliberately unchanged — this one
+        gathers with ``return_exceptions=True`` and maps each result to a
+        :class:`FanOutOutcome` (exactly one of ``response``/``error`` set),
+        preserving the declaration order ``asyncio.gather`` guarantees.
+
+        Each inner hop is a full :meth:`dispatch`, so the failed agents' error
+        metrics are already recorded per-agent (ADR-0026) — no extra
+        instrument here.
+
+        Raises ``ValueError`` when *agent_names* is empty, mirroring the sibling.
+        """
+        if not agent_names:
+            raise ValueError("agent_names must be non-empty")
+
+        with trace.get_tracer(__name__).start_as_current_span(
+            "orchestrator.dispatch_fan_out_settled"
+        ) as span:
+            span.set_attribute("topology", "fan_out")
+            span.set_attribute("agent_count", len(agent_names))
+
+            settled: list[AgentResponse | BaseException] = await asyncio.gather(
+                *(self.dispatch(name, request) for name in agent_names),
+                return_exceptions=True,
+            )
+            outcomes = [
+                FanOutOutcome(agent=name, error=result)
+                if isinstance(result, BaseException)
+                else FanOutOutcome(agent=name, response=result)
+                for name, result in zip(agent_names, settled, strict=True)
+            ]
+            span.set_attribute(
+                "fan_out.failed_count", sum(1 for outcome in outcomes if not outcome.ok)
+            )
+
+        # Names + error codes only — never response content.
+        logger.debug(
+            "Settled fan-out complete: %s",
+            [
+                (
+                    outcome.agent,
+                    "ok" if outcome.error is None else _outcome_error_code(outcome.error),
+                )
+                for outcome in outcomes
+            ],
+        )
+        return outcomes
 
     # ── Streaming ─────────────────────────────────────────────────────────────
 

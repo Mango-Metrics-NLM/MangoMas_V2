@@ -11,7 +11,7 @@ from mangomas.core.agent import (
     StreamingAgent,
 )
 from mangomas.core.loop import AcceptanceFn
-from mangomas.core.orchestrator import Orchestrator
+from mangomas.core.orchestrator import FanOutOutcome, Orchestrator
 
 __all__ = [
     "AcceptanceFn",
@@ -19,6 +19,7 @@ __all__ = [
     "AgentContext",
     "AgentRequest",
     "AgentResponse",
+    "FanOutOutcome",
     "Message",
     "Orchestrator",
     "StreamingAgent",
