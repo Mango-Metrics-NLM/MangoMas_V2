@@ -45,6 +45,11 @@ CI/build, no scheduled automation at all).
 - R2: `rag/` must log its ingestion decisions — start, finish, per-batch
   progress, and the two silent-failure paths (empty path, document dropped
   for producing no chunks) — under an `rag.ingest` span.
+- R2a (added in review): the **query** half must be instrumented to match. A
+  `rag.search` span, a warning on zero matches, and a warning when a `retrieve`
+  tool call carries no query. The query text itself must never be logged —
+  end-user content whose sensitivity this layer cannot assess — so only its
+  length is recorded, and a test asserts the absence rather than the presence.
 - R3: CLAUDE.md's documented config **defaults** must be compared against the
   live `Settings` fields, so the "No hard-coded values" Enforced-by cell is
   true rather than name-only.
@@ -140,6 +145,7 @@ truncation bound and `adapters/storage`'s triplicated `list_turns` limit.
 
 - [x] `${{github.event.x}}` (no space) fails the injection guard.
 - [x] `--verbose` still emits DEBUG after a lazy `get_tracer()`.
+- [x] A zero-result retrieval warns, and never logs the query text.
 - [x] A module-level `get_tracer()` anywhere under `src/` fails the scan.
 - [x] A CLI run honours `MANGOMAS_LOG__FORMAT=json` end to end.
 - [x] A CLAUDE.md default that disagrees with `Settings` fails CI.

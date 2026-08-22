@@ -47,6 +47,17 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   additionally re-applied after the idempotent call — the non-verbose path
   needed that as much as `--verbose` did — so it survives a latch the scan
   cannot prevent, such as a prior command in the same process.
+- **The RAG *query* half stayed silent after the ingest half was fixed**, which
+  left the three most-reported symptoms indistinguishable: an empty store, a
+  document dropped at ingest, and a query that genuinely matches nothing all
+  produced zero results and no explanation. `Retriever.search` now emits a
+  `rag.search` span mirroring `rag.ingest`, warns on zero matches, and a
+  `retrieve` tool call arriving with no query — a prompt or schema problem, not
+  a miss — warns rather than only telling the model. The query text is never
+  logged, only its length: it is end-user content and this layer cannot know
+  what it carries. A test asserts that absence directly, so a later "just log
+  the query, it helps debugging" edit fails rather than shipping user text into
+  the log stream.
 - **`rag/` was silent on the longest-running operation in the product.** No
   logger anywhere in the package, including a branch that drops a document
   from the index without a word — the "my file did not get indexed and I

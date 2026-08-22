@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+
+import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from mangomas.core.tools import Tool, ToolCallParser
 from mangomas.rag.retrieval import RetrievalTool, Retriever
@@ -116,3 +123,112 @@ async def test_retrieval_tool_call_round_trips_through_parser() -> None:
     assert call.tool == tool.name
     out = await tool.execute(call.arguments)
     assert "doc two" in out
+
+
+# ── Instrumentation (spec-0023 R2, query side) ────────────────────────────────
+#
+# The query half was silent while the ingest half was not, which left the two
+# most-reported RAG symptoms indistinguishable in the logs: "the store is
+# empty", "my document was dropped at ingest", and "the query genuinely matches
+# nothing" all produced zero results and no explanation.
+#
+# Assertions read the structured ``extra=`` fields off ``caplog.records``, not
+# ``caplog.text``: the default formatter renders only the message, so a test
+# reading the text passes even if every ``extra`` field is dropped.
+
+
+def _events(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [getattr(record, "event", "") for record in caplog.records]
+
+
+async def test_search_warns_when_nothing_matches(caplog: pytest.LogCaptureFixture) -> None:
+    """A zero-result search is the case a user actually reports."""
+    retriever = Retriever(embeddings=FakeEmbeddingClient(), vector_store=FakeVectorStore(), top_k=3)
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.rag.retrieval"):
+        results = await retriever.search("anything")
+
+    assert results == []
+    assert "rag_search_empty" in _events(caplog)
+    record = next(r for r in caplog.records if getattr(r, "event", "") == "rag_search_empty")
+    assert getattr(record, "top_k", None) == 3
+
+
+async def test_search_logs_shape_but_never_the_query(caplog: pytest.LogCaptureFixture) -> None:
+    """A successful search reports its shape — and must not log the query text.
+
+    The query is end-user content and the RAG layer cannot know whether it
+    carries anything sensitive, so only its length is recorded. This asserts
+    the absence directly: a later 'just add the query, it helps debugging'
+    edit fails here rather than shipping user text into the log stream.
+    """
+    emb = FakeEmbeddingClient()
+    store = FakeVectorStore()
+    await _seed(store, emb)
+    retriever = Retriever(embeddings=emb, vector_store=store, top_k=5)
+    private_query = "my-private-search-string"
+
+    with caplog.at_level(logging.DEBUG, logger="mangomas.rag.retrieval"):
+        results = await retriever.search(private_query)
+
+    assert results
+    record = next(r for r in caplog.records if getattr(r, "event", "") == "rag_search_completed")
+    assert getattr(record, "matches", None) == len(results)
+    assert getattr(record, "sources", None) == sorted({r.chunk.source for r in results})
+    assert getattr(record, "query_chars", None) == len(private_query)
+    assert private_query not in str(record.__dict__), "the query text must never be logged"
+    assert "rag_search_empty" not in _events(caplog)
+
+
+async def test_tool_warns_when_the_model_omits_the_query(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A `retrieve` call with no query is a prompt/schema problem, not a miss.
+
+    Returning the string alone tells the model and nobody else; the operator
+    needs to see that the tool is being called wrong.
+    """
+    retriever = Retriever(embeddings=FakeEmbeddingClient(), vector_store=FakeVectorStore(), top_k=2)
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.rag.retrieval"):
+        output = await RetrievalTool(retriever).execute({"top_k": 2})
+
+    assert output == "No query provided."
+    assert "rag_tool_missing_query" in _events(caplog)
+    record = next(r for r in caplog.records if getattr(r, "event", "") == "rag_tool_missing_query")
+    assert getattr(record, "argument_keys", None) == ["top_k"]
+
+
+async def test_search_emits_a_span() -> None:
+    """`rag.search` mirrors `rag.ingest`, so a trace shows both halves.
+
+    Acquired via `trace.get_tracer(__name__)` inside the call, never bound at
+    module scope — a module-level `mangomas.telemetry.get_tracer` would
+    configure telemetry at import with hard-coded defaults (spec-0023 R1a).
+
+    Attaches an exporter to whichever provider is live rather than swapping the
+    global one. OTel promotes `ProxyTracerProvider` → `TracerProvider` exactly
+    once and refuses to go back: assigning the proxy to `trace._TRACER_PROVIDER`
+    to "restore" it makes `get_tracer` delegate to itself, and the next test in
+    the same process dies with a `RecursionError` rather than a useful failure.
+    This is the pattern `tests/test_tracing.py` already uses for that reason.
+    """
+    exporter = InMemorySpanExporter()
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    emb = FakeEmbeddingClient()
+    store = FakeVectorStore()
+    await _seed(store, emb)
+    await Retriever(embeddings=emb, vector_store=store, top_k=2).search("q")
+
+    spans = {s.name: s for s in exporter.get_finished_spans()}
+    assert "rag.search" in spans, f"expected a rag.search span, got {sorted(spans)}"
+    attributes = spans["rag.search"].attributes or {}
+    assert attributes["rag.top_k"] == 2
+    matches = attributes["rag.matches"]
+    assert isinstance(matches, int)
+    assert matches >= 1
