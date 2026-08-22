@@ -66,6 +66,8 @@ thinking tool, not a gate.
 | [0023](0023-post-review-hardening.md) | Post-review hardening (peer review of spec-0022) |
 | [0024](0024-deploy-manifest-application.md) | Deploy-manifest application + post-deploy smoke |
 | [0025](0025-streaming-turn-persistence.md) | Streaming turn persistence + metrics (governed Batch B-a) |
+| [0026](0026-orchestrator-metrics-loop-wiring.md) | Orchestrator-level metrics + LoopSettings wiring (governed Batch B-b) |
+| [0027](0027-pipeline-acceptance-and-settled-fan-out.md) | Pipeline acceptance threading + settled fan-out (governed Batch B-c) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -76,5 +78,6 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0026**; next free ADR: **0026**
-(`docs/adr/0025-streaming-turn-persistence.md` is authored, per spec-0025).
+than reused. Next free spec on this branch: **0028**; next free ADR: **0028**
+(`docs/adr/0027-pipeline-acceptance-loop-and-settled-fan-out.md` is authored,
+per spec-0027).

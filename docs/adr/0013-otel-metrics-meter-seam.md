@@ -37,7 +37,9 @@ the recording calls compile away to nothing.
 - v1 counts the **HTTP served surface only**: streaming, the workflow route,
   CLI dispatch, and adapter-level LLM latency are not yet instrumented. These are
   documented follow-ups; the api boundary is chosen because it is the
-  Cloud-Run-served surface where SLOs matter first.
+  Cloud-Run-served surface where SLOs matter first. *(Deferral closed by
+  ADR-0026: emission moved into the orchestrator; streaming was instrumented
+  by spec-0025/ADR-0025.)*
 
 ### Neutral
 
@@ -51,6 +53,7 @@ the recording calls compile away to nothing.
 - **Option A — emit inside `core/orchestrator.py::dispatch`** — rejected for v1:
   it is the single truthful chokepoint but a protected-path edit; deferred until a
   metrics need spans CLI + programmatic dispatch, at which point an ADR blesses it.
+  *(That ADR is ADR-0026, which adopts Option A and closes this deferral.)*
 - **Boundary emission scattered across api + workflow + cli** — deferred: start
   with the one served surface (`/agents/{name}/invoke`) to avoid double-counting
   and premature scatter.

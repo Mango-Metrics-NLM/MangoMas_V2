@@ -1,15 +1,17 @@
 # Core — `src/mangomas/core/`
 
-The stable domain contracts. **Three of the four modules here are protected
-paths** (`agent.py`, `orchestrator.py`, `tools.py`; `loop.py` is not, and
-`__init__.py` is a re-export facade), which is the fact worth knowing before you edit anything in this
+The stable domain contracts. **Four of the five modules here are protected
+paths** (`agent.py`, `orchestrator.py`, `structured.py`, `tools.py`;
+`loop.py` is not, and `__init__.py` is a re-export facade), which is the fact
+worth knowing before you edit anything in this
 directory and the one thing you cannot see from inside it.
 
 | File | Protected? | Holds |
 |---|---|---|
 | `agent.py` | **yes** | `Agent` / `StreamingAgent` Protocols, `AgentContext`, `AgentRequest`, `AgentResponse`, `Message` |
 | `orchestrator.py` | **yes** | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out`, `stream_dispatch` |
-| `tools.py` | **yes** | `ToolSpec`, `ToolCallParser`, `ToolRegistry`, prompt builders |
+| `structured.py` | **yes** | `build_structured_prompt`, `parse_or_recover`, `parse_llm_json_object`, `_extract_json_span` (spec-0015 R4 extraction) |
+| `tools.py` | **yes** | `ToolSpec`, `ToolCallParser`, `ToolRegistry`, tool prompt builder; permanent re-export facade for the names extracted to `structured.py` (ADR-0019) |
 | `loop.py` | no | `AcceptanceFn` type alias |
 
 Note `core/agent.md` — the file this one replaced — was **not** protected; the
@@ -18,7 +20,7 @@ ever wonder why an edit here did or did not need a trailer.
 
 ## Editing a protected path
 
-Any change to the three files above requires a `BREAKING-CHANGE` marker on at
+Any change to the four files above requires a `BREAKING-CHANGE` marker on at
 least one commit message in the PR, or the `Protected-path governance gate` CI
 job fails the build.
 
@@ -46,8 +48,11 @@ skill for the dispatch surface's shape.
   escape hatch for per-request data that does not deserve a field.
 - `AcceptanceFn` is **sync**. An async one would couple the orchestrator to its
   callers' event loop.
-- `core/` imports only `mangomas.errors` and `mangomas.registry` — never
-  `adapters/`, `api/`, `agents/`, `workflow/`, `eval/` or `rag/`. The dependency
-  direction points inward, always. Cross-layer type references live under
-  `if TYPE_CHECKING:` (that is why `AgentContext` can name `LLMClient` without
-  importing the adapter package at runtime).
+- `core/` imports only `mangomas.errors`, `mangomas.registry` and — since
+  ADR-0026 — `mangomas.metrics` (a telemetry leaf over the OTel API
+  `orchestrator.py` already imports; the record helpers are no-ops until
+  metrics are enabled) — never `adapters/`, `api/`, `agents/`, `workflow/`,
+  `eval/` or `rag/`. The dependency direction points inward, always.
+  Cross-layer type references live under `if TYPE_CHECKING:` (that is why
+  `AgentContext` can name `LLMClient` without importing the adapter package
+  at runtime, and why `Orchestrator` can name `LoopSettings`).

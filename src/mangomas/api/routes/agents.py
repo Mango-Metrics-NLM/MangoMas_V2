@@ -10,7 +10,6 @@ process-wide values instead.
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import aclosing
 from typing import TYPE_CHECKING, Any, cast
@@ -20,12 +19,6 @@ from fastapi.responses import StreamingResponse
 
 from mangomas.api.auth import require_auth
 from mangomas.core import AgentRequest, AgentResponse
-from mangomas.errors import MangomasError
-from mangomas.metrics import (
-    record_agent_duration,
-    record_agent_error,
-    record_agent_invocation,
-)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import APISettings
@@ -66,37 +59,27 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
         dependencies=[Depends(require_auth)],
     )
     async def invoke(name: str, request: AgentRequest, http_request: Request) -> AgentResponse:
+        # Metrics are emitted inside Orchestrator.dispatch (ADR-0026) — the
+        # route keeps only HTTP concerns; emitting here again would
+        # double-count. A MangomasError flows to the shared handler for its
+        # HTTP envelope.
         orch: Orchestrator = http_request.app.state.orchestrator
-        start = time.perf_counter()
-        try:
-            response = await orch.dispatch(name, request)
-        except MangomasError as exc:
-            # Metrics are no-ops unless MANGOMAS_TELEMETRY__METRICS_ENABLED=true;
-            # the error still flows to the shared handler for its HTTP envelope.
-            record_agent_invocation(name, "error")
-            record_agent_error(name, exc.code)
-            raise
-        record_agent_invocation(name, "ok")
-        record_agent_duration(name, time.perf_counter() - start)
-        return response
+        return await orch.dispatch(name, request)
 
     @router.post("/agents/{name}/stream", dependencies=[Depends(require_auth)])
     async def stream_agent(
         name: str, request: AgentRequest, http_request: Request
     ) -> StreamingResponse:
         orch: Orchestrator = http_request.app.state.orchestrator
-        start = time.perf_counter()
-        try:
-            # Computed before streaming begins: it raises AgentNotFound in the
-            # same pre-stream window as stream_dispatch's own check, so the
-            # exception handler can still return a proper 404 JSON response.
-            degraded = not orch.agent_supports_streaming(name)
-            stream_iter: AsyncIterator[str] = await orch.stream_dispatch(name, request)
-        except MangomasError as exc:
-            # Pre-stream failure: mirror invoke's metrics-then-envelope path.
-            record_agent_invocation(name, "error")
-            record_agent_error(name, exc.code)
-            raise
+        # stream_dispatch validates the agent eagerly — an AgentNotFound here
+        # is raised before any streaming begins, so the exception handler can
+        # still return a proper 404 JSON response. It runs *first* so the
+        # orchestrator's pre-stream error metrics (ADR-0026) are the ones that
+        # record it; the degraded query below then cannot raise, because the
+        # agent is known to exist. The route emits no metrics of its own —
+        # doing so again would double-count.
+        stream_iter: AsyncIterator[str] = await orch.stream_dispatch(name, request)
+        degraded = not orch.agent_supports_streaming(name)
 
         async def _events() -> AsyncGenerator[bytes, None]:
             # ``aclosing`` guarantees ``stream_iter.aclose()`` runs promptly
@@ -115,30 +98,23 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
             # implementation on this path — ``Orchestrator._stream_agent`` and
             # the harness's ``_traced_stream`` alike — is an async generator,
             # which always has one.
+            # A mid-drain MangomasError propagates untouched: the 200 +
+            # text/event-stream headers are already on the wire, so no error
+            # envelope can run — the SSE stream simply ends (no `done` frame,
+            # spec-0022 R14). The orchestrator's `_stream_agent` records the
+            # error metrics before the exception reaches this loop (ADR-0026);
+            # abandonment (GeneratorExit) records nothing — symmetry: full
+            # drain <=> persisted <=> counted.
             chunks = 0
-            try:
-                async with aclosing(cast("AsyncGenerator[str, None]", stream_iter)):
-                    async for chunk in stream_iter:
-                        chunks += 1
-                        payload = {
-                            "event": "token",
-                            "data": {"content": chunk},
-                            "content": chunk,
-                        }
-                        yield f"data: {json.dumps(payload)}\n\n".encode()
-            except MangomasError as exc:
-                # Mid-drain failure: the 200 + text/event-stream headers are
-                # already on the wire, so no error envelope can run — the SSE
-                # stream simply ends (no `done` frame, spec-0022 R14). Record
-                # the error metrics, then re-raise so the truncation contract
-                # is unchanged.
-                record_agent_invocation(name, "error")
-                record_agent_error(name, exc.code)
-                raise
-            # Full drain (client abandonment raises GeneratorExit above and
-            # records nothing — symmetry: full drain <=> persisted <=> counted).
-            record_agent_invocation(name, "ok")
-            record_agent_duration(name, time.perf_counter() - start)
+            async with aclosing(cast("AsyncGenerator[str, None]", stream_iter)):
+                async for chunk in stream_iter:
+                    chunks += 1
+                    payload = {
+                        "event": "token",
+                        "data": {"content": chunk},
+                        "content": chunk,
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n".encode()
             metadata = {
                 "event": "metadata",
                 "data": {"agent": name, "degraded": degraded, "chunks": chunks},

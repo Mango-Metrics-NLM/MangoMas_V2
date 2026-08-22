@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mangomas"
-version = "0.3.1"
+version = "0.4.0"
 description = "Mango-Mas V2 — modular, local-first agent platform (LM Studio now, GCP later)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -133,6 +133,7 @@ packages = ["src/mangomas"]
 protected_paths = [
     "src/mangomas/core/agent.py",
     "src/mangomas/core/orchestrator.py",
+    "src/mangomas/core/structured.py",
     "src/mangomas/core/tools.py",
     "src/mangomas/errors.py",
     "src/mangomas/registry.py",
@@ -237,6 +238,11 @@ exclude = ["*.md"]
 # script in [project.scripts] resolves `mangomas.cli.main:app`. Same idiom, and
 # same reason, as the `tests/constants.py` ignore above.
 "src/mangomas/cli/main.py" = ["PLC0414"]
+# PLC0414: `mangomas.core.tools` is likewise a permanent re-export facade
+# (ADR-0019 / spec-0015 R4) for the structured-output surface extracted to
+# `core/structured.py` — a module facade, not an `__init__.py`, so ruff's
+# automatic exemption does not apply.
+"src/mangomas/core/tools.py" = ["PLC0414"]
 
 [tool.mypy]
 python_version = "3.11"

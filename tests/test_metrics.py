@@ -8,6 +8,7 @@ coverage uses monkeypatched provider installation to stay independent of it.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -27,9 +28,10 @@ from mangomas import telemetry
 from mangomas.agents import ChatAgent
 from mangomas.api import app as app_module
 from mangomas.api.app import create_app
-from mangomas.config import get_settings
-from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
-from mangomas.errors import ConfigError, LLMUnavailable
+from mangomas.config import LoopSettings, get_settings
+from mangomas.core import AgentContext, AgentRequest, AgentResponse, Message, Orchestrator
+from mangomas.errors import AgentNotFound, ConfigError, LLMUnavailable, StepTimeout
+from tests.constants import SLOW_AGENT_DELAY_SECONDS, TINY_STEP_TIMEOUT_SECONDS
 from tests.fakes import FakeLLM
 
 
@@ -86,7 +88,196 @@ def test_record_helpers_emit_points(metric_reader: InMemoryMetricReader) -> None
     assert dur.count == 1
 
 
-# ── API boundary emission ─────────────────────────────────────────────────────
+# ── Orchestrator-seam emission (spec-0026 / ADR-0026) ─────────────────────────
+# Metric emission lives inside Orchestrator.dispatch/_stream_agent, so direct
+# (CLI-style) dispatch counts — no HTTP involved. Agent names are unique per
+# test because the module-scoped reader is cumulative.
+
+
+class _NamedAgent:
+    """Minimal agent with an injectable name (unique per metric test)."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    async def handle(self, request: AgentRequest, _ctx: AgentContext) -> AgentResponse:
+        return AgentResponse(content=f"n:{len(request.messages)}", agent=self.name)
+
+
+class _SlowMetricsAgent:
+    name = "slow-metrics-agent"
+
+    async def handle(self, _request: AgentRequest, _ctx: AgentContext) -> AgentResponse:
+        await asyncio.sleep(SLOW_AGENT_DELAY_SECONDS)
+        return AgentResponse(content="late", agent=self.name)
+
+
+def _direct_orch(*agents: Any, loop_settings: LoopSettings | None = None) -> Orchestrator:
+    orch = Orchestrator(AgentContext(llm=FakeLLM(), repo=None), loop_settings=loop_settings)
+    for agent in agents:
+        orch.register(agent)
+    return orch
+
+
+_DIRECT_REQUEST = AgentRequest(messages=[Message(role="user", content="hi")])
+
+
+async def test_direct_dispatch_records_ok_and_duration(
+    metric_reader: InMemoryMetricReader,
+) -> None:
+    """CLI-style dispatch (no HTTP route anywhere) emits ok + duration points."""
+    orch = _direct_orch(_NamedAgent("direct-ok-agent"))
+    await orch.dispatch("direct-ok-agent", _DIRECT_REQUEST)
+    inv = _point_for(
+        metric_reader, app_metrics.AGENT_INVOCATIONS, {"agent": "direct-ok-agent", "status": "ok"}
+    )
+    assert inv is not None
+    assert inv.value == 1
+    dur = _point_for(metric_reader, app_metrics.AGENT_DURATION, {"agent": "direct-ok-agent"})
+    assert dur is not None
+    assert dur.count == 1
+
+
+async def test_direct_dispatch_records_error_metrics(
+    metric_reader: InMemoryMetricReader,
+) -> None:
+    orch = _direct_orch()
+    with pytest.raises(AgentNotFound):
+        await orch.dispatch("direct-ghost-agent", _DIRECT_REQUEST)
+    inv = _point_for(
+        metric_reader,
+        app_metrics.AGENT_INVOCATIONS,
+        {"agent": "direct-ghost-agent", "status": "error"},
+    )
+    assert inv is not None
+    assert inv.value == 1
+    err = _point_for(
+        metric_reader,
+        app_metrics.AGENT_ERRORS,
+        {"agent": "direct-ghost-agent", "code": "agent_not_found"},
+    )
+    assert err is not None
+    assert err.value == 1
+
+
+async def test_step_timeout_records_error_metric(metric_reader: InMemoryMetricReader) -> None:
+    """A StepTimeout surfaces on the error counter with its own code."""
+    orch = _direct_orch(
+        _SlowMetricsAgent(),
+        loop_settings=LoopSettings(step_timeout_seconds=TINY_STEP_TIMEOUT_SECONDS),
+    )
+    with pytest.raises(StepTimeout):
+        await orch.dispatch("slow-metrics-agent", _DIRECT_REQUEST)
+    err = _point_for(
+        metric_reader,
+        app_metrics.AGENT_ERRORS,
+        {"agent": "slow-metrics-agent", "code": "step_timeout"},
+    )
+    assert err is not None
+    assert err.value == 1
+
+
+async def test_pipeline_counts_each_inner_step(metric_reader: InMemoryMetricReader) -> None:
+    """dispatch_pipeline delegates through dispatch: each hop is its own point."""
+    orch = _direct_orch(_NamedAgent("pipe-agent-a"), _NamedAgent("pipe-agent-b"))
+    await orch.dispatch_pipeline(["pipe-agent-a", "pipe-agent-b"], _DIRECT_REQUEST)
+    for agent in ("pipe-agent-a", "pipe-agent-b"):
+        inv = _point_for(
+            metric_reader, app_metrics.AGENT_INVOCATIONS, {"agent": agent, "status": "ok"}
+        )
+        assert inv is not None, agent
+        assert inv.value == 1
+
+
+async def test_fan_out_counts_each_inner_step(metric_reader: InMemoryMetricReader) -> None:
+    orch = _direct_orch(_NamedAgent("fan-agent-a"), _NamedAgent("fan-agent-b"))
+    await orch.dispatch_fan_out(["fan-agent-a", "fan-agent-b"], _DIRECT_REQUEST)
+    for agent in ("fan-agent-a", "fan-agent-b"):
+        inv = _point_for(
+            metric_reader, app_metrics.AGENT_INVOCATIONS, {"agent": agent, "status": "ok"}
+        )
+        assert inv is not None, agent
+        assert inv.value == 1
+
+
+async def test_fan_out_settled_counts_each_inner_step_including_failures(
+    metric_reader: InMemoryMetricReader,
+) -> None:
+    """Settled fan-out (spec-0027) adds no instrument of its own: each inner
+    dispatch — including the failed one — records its own per-agent point."""
+    orch = _direct_orch(_NamedAgent("settled-ok-agent"))
+    outcomes = await orch.dispatch_fan_out_settled(
+        ["settled-ok-agent", "settled-ghost-agent"], _DIRECT_REQUEST
+    )
+    assert [outcome.ok for outcome in outcomes] == [True, False]
+
+    inv_ok = _point_for(
+        metric_reader, app_metrics.AGENT_INVOCATIONS, {"agent": "settled-ok-agent", "status": "ok"}
+    )
+    assert inv_ok is not None
+    assert inv_ok.value == 1
+    inv_err = _point_for(
+        metric_reader,
+        app_metrics.AGENT_INVOCATIONS,
+        {"agent": "settled-ghost-agent", "status": "error"},
+    )
+    assert inv_err is not None
+    assert inv_err.value == 1
+    err = _point_for(
+        metric_reader,
+        app_metrics.AGENT_ERRORS,
+        {"agent": "settled-ghost-agent", "code": "agent_not_found"},
+    )
+    assert err is not None
+    assert err.value == 1
+
+
+def test_route_invoke_counts_exactly_once(metric_reader: InMemoryMetricReader) -> None:
+    """One HTTP invoke = exactly one invocation point (no route double-count).
+
+    Mutation proof (spec-0026): re-adding record_agent_invocation to the
+    invoke handler makes this fail with value == 2.
+    """
+    orch = _direct_orch(_NamedAgent("once-invoke-agent"))
+    app = create_app(orchestrator=orch)
+    with TestClient(app) as client:
+        r = client.post(
+            "/agents/once-invoke-agent/invoke",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert r.status_code == 200
+    inv = _point_for(
+        metric_reader,
+        app_metrics.AGENT_INVOCATIONS,
+        {"agent": "once-invoke-agent", "status": "ok"},
+    )
+    assert inv is not None
+    assert inv.value == 1
+    dur = _point_for(metric_reader, app_metrics.AGENT_DURATION, {"agent": "once-invoke-agent"})
+    assert dur is not None
+    assert dur.count == 1
+
+
+def test_route_stream_counts_exactly_once(metric_reader: InMemoryMetricReader) -> None:
+    """One fully-drained HTTP stream = exactly one ok invocation point."""
+    orch = _direct_orch(_NamedAgent("once-stream-agent"))
+    app = create_app(orchestrator=orch)
+    with TestClient(app) as client:
+        r = client.post("/agents/once-stream-agent/stream", json=_STREAM_BODY)
+        assert r.status_code == 200
+    inv = _point_for(
+        metric_reader,
+        app_metrics.AGENT_INVOCATIONS,
+        {"agent": "once-stream-agent", "status": "ok"},
+    )
+    assert inv is not None
+    assert inv.value == 1
+
+
+# ── API boundary: HTTP end-to-end (orchestrator-seam emission via a route) ────
+# These prove the orchestrator emission is reached through a real route call —
+# removing the emission from Orchestrator.dispatch fails them, since the route
+# itself no longer records anything (spec-0026 mutation proof #1).
 
 
 def test_invoke_records_ok_metrics(

@@ -435,7 +435,12 @@ defects and a further round of duplication clusters via a full-repo audit:
   protected paths, so it needs a `BREAKING-CHANGE` trailer and a real
   backwards-compatibility audit rather than a mechanical split; it is also
   entangled with who owns `harness/governance.py`, which defines
-  `PROTECTED_PATHS`.
+  `PROTECTED_PATHS`. **Done 2026-08-22** — R4 landed as roadmap Phase 1
+  Batch A: `core/structured.py` extracted behind a permanent `core/tools.py`
+  facade, added to `[tool.mangomas.governance].protected_paths` in the same
+  commit, with the ownership question settled by decision D3b
+  (`mango-harness-dev` owns the governance table). Exact landed scope and
+  two recorded narrowings are on spec-0015's R4 acceptance box.
 
 ### Follow-ups this branch deliberately did not take
 
@@ -509,7 +514,10 @@ method — the loop lives inside `Orchestrator.dispatch` via `acceptance_fn`/
 `max_steps`, and `LoopNodeExecutor` already just calls `orch.dispatch(...)`,
 so per the ADR-0018 `fan_out` precedent this needs **no protected-path edit**
 at all; the real blocker is that `WorkflowStep` excludes `SequenceNode`, so a
-composite loop body can't loop a sub-pipeline yet), and entry-point discovery
+composite loop body can't loop a sub-pipeline yet — 2026-08-22: the
+orchestrator-side prerequisite now exists, since `dispatch_pipeline` accepts
+`acceptance_fn`/`max_steps` for a whole-pipeline acceptance loop per spec-0027,
+leaving only that graph-side widening), and entry-point discovery
 of third-party node kinds (needs an additive `PluginNode` union member, since
 `WorkflowNode` is a closed `extra="forbid"` discriminated union — an unknown
 `kind` fails validation before any registry is consulted).

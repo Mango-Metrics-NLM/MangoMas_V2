@@ -14,8 +14,8 @@ argument-hint: "Name the protected file you are changing, or paste the failing g
 
 ## When to Use
 
-- Editing `core/agent.py`, `core/orchestrator.py`, `core/tools.py`, `errors.py`
-  or `registry.py` — the five protected paths
+- Editing `core/agent.py`, `core/orchestrator.py`, `core/structured.py`,
+  `core/tools.py`, `errors.py` or `registry.py` — the six protected paths
 - The `Protected-path governance gate` CI job failed and you need to know why
 - Adding or changing a hook in `.claude/settings.json`
 - Deciding whether a change is genuinely breaking, or additive and marker-free
@@ -49,6 +49,7 @@ the three cannot drift.
 |---|---|
 | `src/mangomas/core/agent.py` | `mango-schema-evolution`, fuzz-targeted by `mango-hypothesis-fuzz` |
 | `src/mangomas/core/orchestrator.py` | `mango-orchestrator-dev` |
+| `src/mangomas/core/structured.py` | — (spec-0015 R4 extraction; governed since creation) |
 | `src/mangomas/core/tools.py` | fuzz-targeted by `mango-hypothesis-fuzz` |
 | `src/mangomas/errors.py` | `mango-error-taxonomy-dev` |
 | `src/mangomas/registry.py` | — |

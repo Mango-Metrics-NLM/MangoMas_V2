@@ -9,6 +9,83 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Whole-pipeline acceptance loops** (spec-0027 / ADR-0027 — governed
+  Batch B-c): `dispatch_pipeline` gains keyword-only optional
+  `acceptance_fn` / `max_steps`. Loop mode judges the *final* response,
+  re-injects the prior final reply into the first stage, raises
+  `MaxStepsExceeded` on exhaustion, and reports the same
+  `metadata["loop"]` block `dispatch` uses; defaults-None is byte-identical
+  to today (regression-pinned). This is the orchestrator-side prerequisite
+  for Phase 3's composite workflow `loop` bodies. Fan-out acceptance is
+  recorded as not-applicable rather than invented.
+- **`dispatch_fan_out_settled` + frozen `FanOutOutcome`** — the additive
+  partial-results sibling of the (unchanged, still fail-fast)
+  `dispatch_fan_out`: roster-ordered outcomes with exactly-one-of
+  response/error guarded by construction, an `ok` convenience property, a
+  `fan_out.failed_count` span attribute, and per-agent inner metrics
+  including failures. All guards mutation-proven.
+
+- **`MANGOMAS_LOOP__*` is finally honored** (spec-0026 / ADR-0026 — governed
+  Batch B-b): `Orchestrator` gains a keyword-only optional `loop_settings`;
+  composition wires `cfg.loop`, so `STEP_TIMEOUT_SECONDS` now enforces a real
+  per-step `asyncio.timeout` around `agent.handle` (new `StepTimeout` error,
+  `code="step_timeout"`, HTTP 504, three-file lock-step) and `MAX_STEPS`
+  participates via the recorded precedence: explicit kwarg > non-default
+  `request.max_steps` > settings > field default. Defaults coincide, so
+  behavior is unchanged until an operator sets them — except that
+  composition-wired deployments now enforce the documented 30 s cap the env
+  var always claimed. Streaming is deliberately not timeout-wrapped (scoped
+  in spec-0026).
+
+### Changed
+
+- **Agent metrics moved from the HTTP layer into the orchestrator**
+  (closing ADR-0013's recorded deferral): invocation/error/duration now
+  emit inside `dispatch` and `_stream_agent` — so CLI dispatch, workflow
+  nodes, and every pipeline/fan-out inner step are uniformly counted —
+  and the route handlers' duplicate emission is removed
+  (exactly-once-through-the-route mutation-proven). Instrument names and
+  labels unchanged; spec-0025's stream symmetry (full drain ⇔ persisted ⇔
+  counted) preserved. Visible change recorded in ADR-0026: metric counts
+  now include non-HTTP dispatch traffic.
+
+- **`core/structured.py` extracted from `core/tools.py`** (spec-0015 R4, the
+  last open decomposition item — governed Batch A, `BREAKING-CHANGE`
+  trailer): `build_structured_prompt`, a single `_extract_json_span`, the
+  relocated `parse_or_recover`, and the new
+  `parse_llm_json_object(text, *, detail_truncate=200)` now live in a new
+  protected core module; `core/tools.py` keeps every previously importable
+  name as a permanent re-export facade (ADR-0019), identity-pinned by
+  import-compat tests, so no caller changes. Dead `ToolResult` /
+  `_default_parser` deleted per the spec. `structured.py` joins
+  `[tool.mangomas.governance].protected_paths` (with the package/script
+  fallbacks updated in lock-step and a new ∈-table guard, mutation-proven
+  both ways), and D3b is settled: `mango-harness-dev` explicitly owns the
+  governance table. **Backwards-compatibility:** every pre-extraction
+  import path and object identity is preserved; zero behavior change.
+
+### Fixed
+
+- **`mangomas.__version__` no longer drifts from the package** (review
+  finding on the v0.4.0 cut): it was a hardcoded copy still reading
+  `0.3.1`. Both it and the OpenAPI `info.version` now derive from one
+  package-metadata helper at the package root (`package_version()`), with
+  `api/app.py`'s previous names kept as facade aliases; guard tests pin
+  both surfaces. The `[0.4.0]` CHANGELOG link definition was also missing.
+
+---
+
+## [0.4.0] — 2026-08-22
+
+Everything below shipped through PR #45 and the branches it absorbed —
+the specs 0014–0025 deliveries, the governance-hardening and harness
+campaigns, RAG, workflow HTTP parity, and the peer-reviewed roadmap's
+Phase 0/1 P0 implementation. See
+`docs/analysis/20260822-next-steps-roadmap-analysis.md` for the program
+this release cut closes out.
+
 _Streaming turn persistence + metrics — Spec-0025 / ADR-0025 (governed
 Batch B-a, `BREAKING-CHANGE`-trailered protected-path edit)._
 
@@ -2096,6 +2173,7 @@ accepted by code or configuration.
 - `.gitignore` excludes `.venv/`, `data/`, `memory/`, `.env`, coverage artefacts, caches, and generated files.
 - Request-scoped tracing without leaking spans across async contexts.
 
+[0.4.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0

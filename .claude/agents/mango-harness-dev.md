@@ -17,6 +17,11 @@ below are what that skill does not cover: the shape of this code.
 
 - `src/mangomas/harness/governance.py` — `PROTECTED_PATHS` and the marker
   aliases, read from `pyproject.toml`'s `[tool.mangomas.governance]`
+- `pyproject.toml`'s `[tool.mangomas.governance]` table itself — the
+  protected-path *definition* (decision D3b, settling the ownership question
+  that deferred spec-0015 R4). Membership changes land with the fallback sets
+  in `governance.py` and `lint_agent_frontmatter.py` in the same commit; the
+  lock-step tests in `tests/harness/test_governance.py` are red otherwise
 - `src/mangomas/harness/config_audit.py` — the `ConfigChange` decision table
 - `scripts/check_protected_paths.py` — the authoritative CI gate
 - `scripts/lint_agent_frontmatter.py` — frontmatter lint plus both hook modes

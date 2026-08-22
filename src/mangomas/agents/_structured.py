@@ -21,7 +21,7 @@ from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_sy
 from mangomas.agents._streaming import stream_with_buffered_fallback
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_VALIDATE_OUTPUT
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
-from mangomas.core.tools import build_structured_prompt
+from mangomas.core.structured import build_structured_prompt
 from mangomas.errors import LLMBadResponse
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -38,7 +38,7 @@ class StructuredOutputAgent:
     explicit constructor ``system_prompt`` wins over
     ``settings.system_prompt``, and either is concatenated (custom-first)
     ahead of the schema instructions built via
-    :func:`~mangomas.core.tools.build_structured_prompt`. With neither
+    :func:`~mangomas.core.structured.build_structured_prompt`. With neither
     override, the schema prompt alone is used.
 
     Subclasses satisfy the :class:`~mangomas.core.agent.Agent` and

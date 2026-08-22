@@ -1,18 +1,39 @@
-"""Tool protocol, registry type alias, call parsing, and prompt construction."""
+"""Tool protocol, registry type alias, call parsing, and prompt construction.
+
+Also the **permanent re-export facade** (ADR-0019 / spec-0015 R4) for the
+structured-output surface that moved to :mod:`mangomas.core.structured`:
+``build_structured_prompt``, ``parse_or_recover``, and the private
+``_DEFAULT_STRUCTURED_PROMPT_TEMPLATE`` / ``_ERROR_DETAIL_TRUNCATE`` /
+``_extract_json_span`` names stay importable from this module forever and
+resolve to the same objects — pinned by ``tests/test_import_compat.py``.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 import re
-from typing import Any, Final, Protocol, TypeAlias, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeAlias, runtime_checkable
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
+from mangomas.core.structured import (
+    _DEFAULT_STRUCTURED_PROMPT_TEMPLATE as _DEFAULT_STRUCTURED_PROMPT_TEMPLATE,
+)
+from mangomas.core.structured import (
+    _ERROR_DETAIL_TRUNCATE as _ERROR_DETAIL_TRUNCATE,
+)
+from mangomas.core.structured import (
+    _extract_json_span as _extract_json_span,
+)
+from mangomas.core.structured import (
+    build_structured_prompt as build_structured_prompt,
+)
+from mangomas.core.structured import (
+    parse_or_recover as parse_or_recover,
+)
 from mangomas.errors import LLMBadResponse
 from mangomas.registry import Registry
-
-_StructuredModel = TypeVar("_StructuredModel", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +53,6 @@ class ToolCall(BaseModel):
 
     tool: str
     arguments: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolResult(BaseModel):
-    """Result returned from executing a tool."""
-
-    tool: str
-    output: str
-    error: str | None = None
 
 
 # ── Tool protocol ─────────────────────────────────────────────────────────────
@@ -81,24 +94,9 @@ _DEFAULT_TOOL_PROMPT_TEMPLATE: str = (
     "If you do not need a tool, respond normally."
 )
 
-_DEFAULT_STRUCTURED_PROMPT_TEMPLATE: str = (
-    "Respond ONLY with a valid JSON object matching this schema:\n\n"
-    "{schema}\n\n"
-    "Do not include markdown fences, explanations, or any text outside the JSON object."
-)
-
 # ── JSON fence pattern ────────────────────────────────────────────────────────
 
 _JSON_FENCE_RE: re.Pattern[str] = re.compile(r"```(?:json)?\s*([\[{].*?)\s*```", re.DOTALL)
-
-# Maximum length of the ``detail`` field on errors raised here. Mirrors
-# ``mangomas.config.DEFAULT_ERROR_DETAIL_TRUNCATE`` by value rather than by
-# import: ``core`` is the innermost layer and deliberately depends on nothing
-# but ``errors`` and ``registry``, so importing the settings package here
-# would invert the dependency direction for a single integer. The two are
-# pinned equal by ``tests/test_tools.py::test_error_detail_truncate_matches_config``
-# so they cannot drift apart.
-_ERROR_DETAIL_TRUNCATE: Final[int] = 200
 
 
 # ── Prompt builders ───────────────────────────────────────────────────────────
@@ -118,20 +116,6 @@ def build_tool_system_prompt(specs: list[ToolSpec], *, template: str | None = No
     tools_list = "\n".join(f"- {s.name}: {s.description}" for s in specs)
     tpl = template if template is not None else _DEFAULT_TOOL_PROMPT_TEMPLATE
     return tpl.format(tools_list=tools_list)
-
-
-def build_structured_prompt(schema: dict[str, Any], *, template: str | None = None) -> str:
-    """Build an LLM system prompt instructing structured JSON output.
-
-    Parameters
-    ----------
-    schema:
-        JSON Schema dict (e.g. from ``Model.model_json_schema()``).
-    template:
-        Optional override.  Must contain a ``{schema}`` placeholder.
-    """
-    tpl = template if template is not None else _DEFAULT_STRUCTURED_PROMPT_TEMPLATE
-    return tpl.format(schema=json.dumps(schema, indent=2))
 
 
 # ── Tool call parser ──────────────────────────────────────────────────────────
@@ -159,19 +143,16 @@ class ToolCallParser:
         # Priority 2: bare {...} object containing a "tool" key.
         # Only fenced blocks raise on malformed JSON; bare detection must be
         # tolerant so that prose containing curly braces never crashes the agent.
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and start < end:
-            raw = text[start : end + 1]
-            if '"tool"' in raw or "'tool'" in raw:
-                logger.debug("ToolCallParser: bare JSON object detected")
-                try:
-                    return self._parse_raw(raw)
-                except LLMBadResponse:
-                    logger.debug(
-                        "ToolCallParser: bare JSON object failed validation; treating as prose"
-                    )
-                    return None
+        raw_span = _extract_json_span(text)
+        if raw_span is not None and ('"tool"' in raw_span or "'tool'" in raw_span):
+            logger.debug("ToolCallParser: bare JSON object detected")
+            try:
+                return self._parse_raw(raw_span)
+            except LLMBadResponse:
+                logger.debug(
+                    "ToolCallParser: bare JSON object failed validation; treating as prose"
+                )
+                return None
 
         return None
 
@@ -203,40 +184,12 @@ class ToolCallParser:
             ) from exc
 
 
-# Keep a module-level default instance for convenience.
-_default_parser = ToolCallParser()
-
-
 def parse_tool_call(text: str) -> ToolCall | None:
-    """Module-level convenience wrapper around :class:`ToolCallParser`."""
-    return _default_parser.parse(text)
+    """Module-level convenience wrapper around :class:`ToolCallParser`.
 
-
-def parse_or_recover(
-    content: str,
-    model: type[_StructuredModel],
-) -> _StructuredModel | None:
-    """Validate *content* against *model*, recovering from wrapped JSON.
-
-    Returns the parsed model on success, ``None`` when no salvageable JSON
-    object is present. The recovery path strips everything outside the first
-    ``{`` and the last ``}`` — this covers the common case of local models
-    emitting JSON inside a markdown fence or surrounded by chatter.
-
-    Generic helper for any structured-output agent (planner, reviewer, future
-    agents). Kept in :mod:`mangomas.core.tools` alongside the existing JSON
-    fence parsing so structured-output handling lives in one place.
+    Kept as a live delegation (not deleted with the spec-0015 R4 dead code):
+    ``tests/test_tools.py`` exercises it, and the parser is stateless, so
+    constructing one per call is behaviourally identical to the removed
+    module-level ``_default_parser`` instance.
     """
-    try:
-        return model.model_validate_json(content)
-    except ValidationError:
-        pass
-
-    start = content.find("{")
-    end = content.rfind("}")
-    if start == -1 or end == -1 or start >= end:
-        return None
-    try:
-        return model.model_validate_json(content[start : end + 1])
-    except ValidationError:
-        return None
+    return ToolCallParser().parse(text)
