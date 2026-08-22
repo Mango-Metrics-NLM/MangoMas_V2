@@ -52,6 +52,13 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   from the index without a word — the "my file did not get indexed and I
   have no idea why" case. Now an `rag.ingest` span with per-batch children,
   and warnings on both silent-failure paths.
+- **`asyncio_default_fixture_loop_scope` was unset**, so pytest-asyncio's
+  announced default change would have landed on a minor bump rather than as a
+  reviewed edit. Pinned to the announced future value; the suite is green under
+  it.
+- **An invalid escape sequence in a test module docstring** raised a
+  `DeprecationWarning` on every run — the one warning the suite carried that
+  was actually ours.
 - **The Stop hook swallowed the zero-skip guard's signal.** `|| true` is now
   `|| exit 1`: only exit code 2 blocks a Stop hook, so non-zero was already
   a visible, non-blocking notice — the swallow just downgraded it to a
@@ -77,6 +84,26 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
 
 ### Added
 
+- **`CONTRIBUTING.md`.** A repo with five protected paths, a
+  `BREAKING-CHANGE` trailer convention, spec-before-code, twenty coverage
+  floors and a 27-agent corpus had no entry point telling a new contributor any
+  of it. Written as a map that links to the file owning each rule, never a
+  second copy of the rule — a duplicated rule is one that disagrees with the
+  original within a release.
+- **Link-integrity tests for the repo's own docs.** Every relative Markdown
+  link in the current-state docs must resolve, and no bullet list may name the
+  same target twice — the signature of someone appending to a "further reading"
+  list without reading it. `docs/adr/` and `docs/plans/` are excluded: they are
+  dated records that may name since-renamed paths, and rewriting them to please
+  a linter would falsify the record. External URLs are not checked, so a third
+  party's outage cannot turn this build red.
+- **`docs/testing/regression.md`'s floor table is pinned to the gate.** The doc
+  said "if this table and that script ever disagree, the script wins and this
+  table is the bug" — honest, and an admission nothing checked it. Six enforced
+  floors (`headers`, `entry_points`, `config`, `telemetry`, `metrics`,
+  `harness`) were missing, so a reader auditing coverage policy saw fourteen
+  where twenty exist. Checked in both directions: a phantom row overstates the
+  policy exactly as a missing one understates it.
 - **Nightly scheduled workflow.** The repo had no scheduled automation at
   all: `secret-scan` fired on push only, and seven opt-in suites ran nowhere,
   ever. `nightly.yml` runs the Postgres suite (Docker is all it needs — and

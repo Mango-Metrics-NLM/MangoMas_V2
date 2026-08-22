@@ -41,6 +41,73 @@ default preserves ADR-002. See ADR-0010, spec 0003.
 
 ---
 
+## Done on the governance-hardening branch (Unreleased)
+
+Specs 0022 + 0023. The theme is the same throughout: this repo had a large
+number of **claims nothing checked** — a documented default, a prose count, an
+architecture diagram, a secret scan's own effectiveness — and each one had
+quietly drifted from the thing it described. Every item below pairs the fix
+with the mechanism that keeps it fixed.
+
+### Governance and CI
+
+- Two-pass `gitleaks` (`dir` + `git`) replacing the history-only `detect`, so
+  an uncommitted `.env` can no longer pass.
+- `.gitleaks.toml` — the ruleset is declared rather than inherited, plus a rule
+  for a password inside `MANGOMAS_DB__URL`, which **no built-in rule detects**
+  (probed, not assumed). `make gitleaks-selftest` plants a secret of each
+  covered class and requires the scan to still fail; it runs nightly.
+- Deploy-job interpolation moved behind `env:`; third-party actions SHA-pinned
+  with `.github/dependabot.yml` keeping the pins fresh.
+- `nightly.yml` — the repo had no scheduled automation at all. Runs the
+  Postgres suite and both secret-scan passes, and files a deduped tracking
+  issue on failure, because a cron run otherwise reports to nobody.
+- MCP write/mutation tools denied at the permission layer; an advisory Bash
+  protected-path check (always `ask`, never `deny`).
+
+### Guards that were weaker than what they guarded
+
+- The workflow injection guard was bypassable by deleting one space.
+- `scripts/check_coverage.py` — the gate itself — sat at 24% coverage.
+- `sanitize_header_token`, the shared log-injection defence, had only
+  example-based tests; it now has properties over arbitrary text.
+- The chunker fuzz pinned `min_words=0`, hiding that
+  `MANGOMAS_RAG__MIN_CHUNK_WORDS` is provably inert (see below).
+- A zero-skip/xfail session guard, with a subprocess meta-test proving it
+  fires — including on collection-level `importorskip`.
+
+### Claims that had drifted from reality
+
+- CLAUDE.md documented config **defaults** that nothing compared against the
+  live `Settings` fields.
+- No CLI run had ever honoured `MANGOMAS_LOG__FORMAT` or
+  `MANGOMAS_TELEMETRY__EXPORTER`: four modules bound a self-bootstrapping
+  tracer at import time, latching telemetry at defaults before `main()` ran.
+- The README claimed 13 skills and 23 agents against a tree holding 15 and 27.
+- The C4 model omitted `tenancy.py`, the eval registries, the harness
+  governance package and the MeterProvider, and still called Cloud Run and
+  Cloud Trace "planned" a release after both landed.
+- `docs/testing/regression.md`'s floor table listed 14 of the 20 floors the
+  gate enforces.
+- The FastAPI assembly layer had no write-capable owning agent
+  (`mango-api-impl-dev` now owns it), and ownership is derived from the agent
+  bodies rather than a parallel table.
+
+### Still open from this branch
+
+- **`MANGOMAS_RAG__MIN_CHUNK_WORDS` is inert.** The guard that would drop a
+  short trailing fragment is unreachable: the loop only steps again when the
+  previous window was not last, so the final window always extends past it.
+  Verified exhaustively (`n < 40` × `size < 15` × every overlap: zero reachable
+  states). Dropping the fragment would lose words, so the *code* is right and
+  the documentation overclaims. Resolving it — accept the word loss, or retire
+  the knob — is a retrieval-quality decision, deliberately not taken here.
+- **`registry.py` has no owning agent.** A generic `Registry[T]` on a protected
+  path, consumed equally by five registries; naming any one owner would be
+  arbitrary. Recorded in `UNOWNED_SOURCE_SURFACES` rather than assigned.
+
+---
+
 ## Done on the harness branch (Unreleased)
 
 ### Claude Code enterprise harness
@@ -363,6 +430,8 @@ defects and a further round of duplication clusters via a full-repo audit:
 - **Deferred tooling** — ruff `ASYNC`/`DTZ`/`C4`/`RET`/`PERF`/`C90` rule
   families, a `pip-audit` job, a Python 3.13 matrix leg, a
   `verify` job gating `deploy.yml`, and a `pre-commit run --all-files` CI job.
+  (`dependabot.yml` and scheduled automation are no longer on this list — both
+  landed on the governance-hardening branch.)
 - **Protected-paths CI job is not yet a required status check.** Spec-0017 R1
   intends the `protected-paths` job to be a merge-blocking required status
   check, but GitHub branch-protection settings are a repo-admin action under

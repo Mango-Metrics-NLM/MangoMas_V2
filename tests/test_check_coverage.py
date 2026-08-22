@@ -1,4 +1,4 @@
-"""Contract tests for the per-package coverage gate.
+r"""Contract tests for the per-package coverage gate.
 
 `scripts/_checker.py` is the authoritative coverage gate, and its floor
 globs have a **fail-open** failure mode: `coverage report --include=<glob>`
@@ -322,3 +322,51 @@ def test_main_checks_every_declared_floor_plus_the_global(
     monkeypatch.setattr(_checker, "_check", _record)
     _checker.main()
     assert seen == [floor.label for floor in _checker.FLOORS] + [_checker.GLOBAL_FLOOR.label]
+
+
+# ── docs/testing/regression.md ────────────────────────────────────────────────
+
+_REGRESSION_DOC = _REPO_ROOT / "docs" / "testing" / "regression.md"
+# `| `label` | 95% |` — a floor row in the doc's per-package table.
+_DOC_FLOOR_ROW_RE = re.compile(r"^\|\s*`(?P<label>[a-z_]+)`\s*\|\s*(?P<floor>\d+)%")
+
+
+def _documented_floors() -> dict[str, int]:
+    return {
+        m.group("label"): int(m.group("floor"))
+        for line in _REGRESSION_DOC.read_text(encoding="utf-8").splitlines()
+        if (m := _DOC_FLOOR_ROW_RE.match(line))
+    }
+
+
+def test_regression_doc_floor_table_matches_the_script() -> None:
+    """`docs/testing/regression.md` must list the floors the gate enforces.
+
+    The doc already says "if this table and that script ever disagree, the
+    script wins and this table is the bug" — an honest disclaimer, and an
+    admission that nothing checked it. It had drifted: six packages the gate
+    enforces (`headers`, `entry_points`, `config`, `telemetry`, `metrics`,
+    `harness`) were absent from the table, so a reader auditing coverage policy
+    saw fourteen floors where twenty exist.
+
+    Direction matters both ways. A missing row understates the policy; a row
+    for a floor that no longer exists overstates it, and both send a reader
+    looking for a gate that is not there.
+    """
+    declared = {floor.label: floor.minimum for floor in _all_floors()}
+    documented = _documented_floors()
+
+    assert documented, f"no floor rows parsed from {_REGRESSION_DOC.name} — table reformatted?"
+
+    undocumented = sorted(set(declared) - set(documented))
+    assert undocumented == [], f"enforced but undocumented floor(s): {undocumented}"
+
+    phantom = sorted(set(documented) - set(declared))
+    assert phantom == [], f"documented but not enforced: {phantom}"
+
+    wrong = sorted(
+        f"{label}: doc says {documented[label]}%, gate enforces {declared[label]}%"
+        for label in declared
+        if documented[label] != declared[label]
+    )
+    assert wrong == [], "floor value(s) disagree:\n  " + "\n  ".join(wrong)

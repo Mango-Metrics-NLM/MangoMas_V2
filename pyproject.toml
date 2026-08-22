@@ -295,6 +295,11 @@ minversion = "8.0"
 addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=95"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Pinned to the value pytest-asyncio has announced as its future default.
+# Left unset it emits a deprecation warning and will change under us on a
+# minor bump; pinning it means the change is a reviewed edit here rather
+# than a surprise in CI. Verified: the suite is green under this scope.
+asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["src", "eval_harness_bridge/src"]
 markers = [
     "integration: tests that exercise the application through public boundaries",

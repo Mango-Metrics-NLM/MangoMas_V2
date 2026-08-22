@@ -74,15 +74,25 @@ Enforced by `scripts/check_coverage.py` in CI and locally:
 | `secrets` | 100% |
 | `correlation` | 100% |
 | `tenancy` | 100% |
+| `headers` | 100% |
+| `entry_points` | 100% |
 | `composition` | 95% |
 | `agents` | 95% |
 | `api` | 95% |
 | `cli` | 95% |
+| `config` | 95% |
+| `telemetry` | 95% |
+| `metrics` | 95% |
 | `eval` | 95% |
 | `rag` | 95% |
 | `workflow` | 95% |
+| `harness` | 95% |
 | `adapters` | 85% (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
 | **Global** | **95%** |
+
+Two floors sit outside `FLOORS` because they measure a different tree:
+`eval_harness_bridge` (100%, `make bridge-coverage`) and `scripts/` (92%,
+`make scripts-coverage`, a measured ratchet rather than a round number).
 
 `scripts/check_coverage.py` is the authority — if this table and that script
 ever disagree, the script wins and this table is the bug.
