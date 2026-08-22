@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_(nothing yet)_
+
+---
+
+## [0.4.0] — 2026-08-22
+
+Everything below shipped through PR #45 and the branches it absorbed —
+the specs 0014–0025 deliveries, the governance-hardening and harness
+campaigns, RAG, workflow HTTP parity, and the peer-reviewed roadmap's
+Phase 0/1 P0 implementation. See
+`docs/analysis/20260822-next-steps-roadmap-analysis.md` for the program
+this release cut closes out.
+
 _Streaming turn persistence + metrics — Spec-0025 / ADR-0025 (governed
 Batch B-a, `BREAKING-CHANGE`-trailered protected-path edit)._
 
