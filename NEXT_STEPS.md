@@ -8,6 +8,48 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Next: the peer-reviewed development program (2026-08-22)
+
+The forward roadmap now lives in
+[`docs/analysis/20260822-next-steps-roadmap-analysis.md`](docs/analysis/20260822-next-steps-roadmap-analysis.md)
+— a full-repo review (three parallel surveys, source-verified claims,
+adversarially peer-reviewed by `mango-architect` before presentation). Its
+thesis: verification engineering here is exceptional, delivery engineering is
+immature, and the advertised planner→tool→reviewer loop is not actually
+shipped. Program order: **stop the repo misdescribing itself → make the
+advertised product real → extend.** Tranche summary (argumentation, evidence,
+and the D1–D9 sponsor-decision register live in the analysis doc):
+
+- **Phase 0 — truth, deploy integrity, release (P0, mechanical).**
+  Make `deploy.yml` actually apply `deploy/service.yaml` + post-deploy smoke +
+  contract tie (spec [0024](specs/0024-deploy-manifest-application.md)) —
+  **before** cutting v0.4.0, because the deploy workflow triggers on
+  `release: published`; then the v0.4.0 cut with the app version derived from
+  package metadata; supply-chain baseline (lockfile, pip Dependabot,
+  `pip-audit`, pinned eval-gate ref, digest-pinned base image); docs/ledger
+  truth sweep (specs 0019–0023 acceptance boxes, `MIN_CHUNK_WORDS` README fix,
+  stale architecture docs, `.env.example`).
+- **Phase 1 — make the advertised product real (governed tranche).**
+  Batch A: spec-0015 R4 `core/structured.py` extraction (after the
+  `harness/governance.py` ownership decision; new file joins
+  `protected_paths`). Batch B, split into ≥3 governed PRs: (a) streaming turn
+  persistence + metrics + SSE metadata (P0; spec
+  [0025](specs/0025-streaming-turn-persistence.md) + ADR-0025); (b)
+  orchestrator metrics per ADR-0013 + `LoopSettings` wiring (the per-step
+  timeout); (c) acceptance/max-steps threading + fan-out partial results.
+  Plus: structured-output validation + a shipped planner→tool→reviewer flow
+  (P0, no protected paths); rate limiting (P1, posture decision D5);
+  `MODEL_OVERRIDE` wiring.
+- **Phase 2 — verification honesty + adoption surface.** Executing homes for
+  the feasibly-runnable gated suites + a parity meta-test; container
+  scan + SBOM; Ollama adapter; `mangomas serve`; RAG/workflow-stream HTTP
+  endpoints; pgvector; perf smoke.
+- **Phase 3 — backlog (sequenced).** Composite `loop` bodies → `dag` node
+  (ADR-0023 design) → tenancy Phase 2. Explicitly not now: `PluginNode`,
+  OIDC auth, GCP provisioning from this repo, distributed orchestration.
+
+---
+
 ## Near term
 
 _(All cloud adapters (Vertex AI, Postgres, GCP Secret Manager) and the

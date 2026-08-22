@@ -9,6 +9,29 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Next-steps roadmap — a peer-reviewed case for the development program._
+
+### Added
+
+- **`docs/analysis/20260822-next-steps-roadmap-analysis.md`** — full-repo
+  strategic review (three parallel surveys; load-bearing claims verified
+  against source; adversarially peer-reviewed by `mango-architect`,
+  verdict approve-with-changes, corrections folded in). Establishes the
+  Phase 0–3 program — deploy integrity before the v0.4.0 cut, the governed
+  protected-path batches, the shipped planner→tool→reviewer flow — plus the
+  D1–D9 sponsor-decision register and an execution map onto the repo's own
+  agent/skill corpus.
+- **Spec-0024** (deploy-manifest application + post-deploy smoke) and
+  **spec-0025** (streaming turn persistence + metrics, governed Batch B-a,
+  reserving ADR-0025) — the two Phase 0/1 items that change shipped
+  contracts, drafted per the spec-before-code convention; `specs/README.md`
+  index and next-free counters updated.
+- **`NEXT_STEPS.md`** gains a forward "peer-reviewed development program"
+  section linking the tranches to the analysis doc, replacing ad-hoc
+  forward ordering.
+
+---
+
 _Post-review hardening (peer review of spec-0022) — Spec-0023._
 
 ### Fixed
