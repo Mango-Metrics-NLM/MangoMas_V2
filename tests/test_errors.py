@@ -260,11 +260,10 @@ def test_every_discovered_subclass_has_an_intended_status() -> None:
         "Add each to _ERROR_STATUS in api/errors.py or record its inherited/"
         "root mapping in _INTENDED_STATUS here."
     )
-    extinct = sorted(
-        cls.__name__
-        for cls in _INTENDED_STATUS
-        if cls is not MangomasError and cls not in discovered
-    )
+    # No `cls is not MangomasError` guard: the root is deliberately absent
+    # from _INTENDED_STATUS (it is the fallback, not a decision), so such a
+    # condition would read as an exemption while never doing anything.
+    extinct = sorted(cls.__name__ for cls in _INTENDED_STATUS if cls not in discovered)
     assert extinct == [], f"intended-status rows for classes that no longer exist: {extinct}"
 
 

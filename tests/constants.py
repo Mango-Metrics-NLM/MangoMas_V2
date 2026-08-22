@@ -363,6 +363,11 @@ CORPUS_DOC_RELPATHS: tuple[str, ...] = (
 # additive, so the contract test asserts each of these survives verbatim —
 # listing them here (rather than inline) keeps the expected hook contract in
 # one place and lets the test stay data-driven.
+# One command string, two registrations: the same stdin-JSON mode is wired
+# under both the Edit-family matcher and Bash (it discriminates by payload
+# shape). Named so the two tuples below cannot drift apart.
+PRE_TOOL_USE_HOOK_COMMAND: str = "python scripts/lint_agent_frontmatter.py --hook pre-tool-use"
+
 PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
     ("SessionStart", "*", "python scripts/harness_session_start.py"),
     (
@@ -372,7 +377,7 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # mode, and widened the matcher to cover NotebookEdit.
         "PreToolUse",
         "Edit|Write|NotebookEdit",
-        "python scripts/lint_agent_frontmatter.py --hook pre-tool-use",
+        PRE_TOOL_USE_HOOK_COMMAND,
     ),
     (
         # Same stdin-JSON fix applied to the ruff-autofix hook, which had the
@@ -409,7 +414,7 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # `ask` on protected paths — never `deny`, per ADR-0021.
         "PreToolUse",
         "Bash",
-        "python scripts/lint_agent_frontmatter.py --hook pre-tool-use",
+        PRE_TOOL_USE_HOOK_COMMAND,
     ),
 )
 
@@ -686,25 +691,44 @@ MCP_PROJECT_DIR_SCOPE: str = "${CLAUDE_PROJECT_DIR:-.}"
 # Single source for three consumers: the collection gate in tests/conftest.py
 # builds its skip marks from these, the zero-skip session guard treats exactly
 # these reasons as sanctioned, and tests/tooling/test_collection_gate.py
-# asserts the wiring in a subprocess. Restating a reason string anywhere else
-# reintroduces the desync this table exists to prevent.
+# asserts the wiring in a subprocess.
+#
+# Stored as {env_var: what-it-runs} and *formatted* into the reason, rather
+# than storing the full sentence: the reason repeats its own key, so a
+# hand-written table admits `{"RUN_RAG": "set RUN_LANGFUSE=1 to run RAG..."}`
+# — a typo the gate would emit, the guard would sanction (it is in .values()),
+# and no test would catch. Deriving it makes that desync unrepresentable.
+ENV_GATE_SUITES: dict[str, str] = {
+    "RUN_INTEGRATION": "integration tests",
+    "RUN_LMSTUDIO": "LM Studio tests",
+    "RUN_POSTGRES": "Postgres tests",
+    "RUN_VERTEX": "Vertex AI tests",
+    "RUN_GCP_SECRETS": "GCP Secret Manager tests",
+    "RUN_GCP_TRACE": "Cloud Trace exporter tests",
+    "RUN_EMBEDDINGS_LOCAL": "sentence-transformers tests",
+    "RUN_RAG": "chromadb-backed RAG tests",
+    "RUN_LANGFUSE": "Langfuse sink tests",
+}
+
+
+def env_gate_skip_reason(env_var: str, suite: str) -> str:
+    """Render the one sanctioned skip-reason sentence shape."""
+    return f"set {env_var}=1 to run {suite}"
+
+
 ENV_GATE_SKIP_REASONS: dict[str, str] = {
-    "RUN_INTEGRATION": "set RUN_INTEGRATION=1 to run integration tests",
-    "RUN_LMSTUDIO": "set RUN_LMSTUDIO=1 to run LM Studio tests",
-    "RUN_POSTGRES": "set RUN_POSTGRES=1 to run Postgres tests",
-    "RUN_VERTEX": "set RUN_VERTEX=1 to run Vertex AI tests",
-    "RUN_GCP_SECRETS": "set RUN_GCP_SECRETS=1 to run GCP Secret Manager tests",
-    "RUN_GCP_TRACE": "set RUN_GCP_TRACE=1 to run Cloud Trace exporter tests",
-    "RUN_EMBEDDINGS_LOCAL": "set RUN_EMBEDDINGS_LOCAL=1 to run sentence-transformers tests",
-    "RUN_RAG": "set RUN_RAG=1 to run chromadb-backed RAG tests",
-    "RUN_LANGFUSE": "set RUN_LANGFUSE=1 to run Langfuse sink tests",
+    env: env_gate_skip_reason(env, suite) for env, suite in ENV_GATE_SUITES.items()
 }
 # Runtime `pytest.skip(...)` calls inside already-enabled gated suites (the
 # vertex/gcp fixtures that additionally need a project id) phrase their reason
-# `set <VAR> ...`. Deliberately narrow — `RUN_*` gates must match the exact
-# strings above, so a novel ad-hoc `pytest.skip("set RUN_FOO=1 ...")` still
-# escalates rather than sliding through a loose prefix.
-GATED_RUNTIME_SKIP_REASON_RE: str = r"^set (VERTEX_|GCP_)"
+# `set <VAR> to run <suite>`. Applied with `fullmatch`, not `match`: a prefix
+# test would sanction `pytest.skip("set VERTEX_X ... actually just flaky")`.
+# The alternation is derived from the env-var names the suites actually use,
+# so it cannot rot away from them.
+GATED_RUNTIME_SKIP_REASON_PREFIXES: tuple[str, ...] = ("VERTEX_", "GCP_")
+GATED_RUNTIME_SKIP_REASON_RE: str = (
+    r"^set (?:" + "|".join(GATED_RUNTIME_SKIP_REASON_PREFIXES) + r")\w+ to run [\w \-]+$"
+)
 
 # ── CLI public surface (tests/test_cli_surface.py) ────────────────────────────
 # `mangomas` is a console script (`pyproject.toml` -> `mangomas.cli.main:app`),

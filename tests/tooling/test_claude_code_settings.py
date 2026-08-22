@@ -169,19 +169,6 @@ def test_rtk_telemetry_is_disabled_by_default() -> None:
 # ── Bash protected-path advisory (spec-0022 R11) ──────────────────────────────
 
 
-def test_bash_advisory_hook_is_registered() -> None:
-    """The pre-tool-use linter mode must also run under the Bash matcher.
-
-    The Edit|Write|NotebookEdit matcher never sees a shell write (the gap
-    ADR-0021 concedes); registering the same stdin-JSON mode under Bash lets
-    it emit a mention-level `ask` for protected paths. The command string is
-    identical to the Edit-matcher one — the mode discriminates by payload
-    shape, so PREEXISTING_HOOKS pins both registrations.
-    """
-    commands = _hook_commands("PreToolUse", "Bash")
-    assert "python scripts/lint_agent_frontmatter.py --hook pre-tool-use" in commands
-
-
 def test_mcp_deny_rules_name_adopted_servers() -> None:
     """A deny rule naming a nonexistent server is silently inert (spec-0022 R4).
 

@@ -89,6 +89,12 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 # ``exitstatus == 0``. tests/tooling/test_collection_gate.py proves both
 # directions in a subprocess, including that mutating ``session.exitstatus``
 # here actually changes the process exit code.
+#
+# NOT xdist-safe: under `-n auto` these hooks run on workers, and an
+# exitstatus set in a worker's sessionfinish does not reach the controller's
+# process exit code — the guard would fail OPEN, silently. pytest-xdist is not
+# a dev dependency today; adding one means moving this accounting to a
+# controller-side hook.
 
 _UNSANCTIONED_OUTCOMES: list[str] = []
 _SANCTIONED_SKIP_REASONS = frozenset(ENV_GATE_SKIP_REASONS.values())
@@ -106,7 +112,14 @@ def _skip_reason(report: pytest.TestReport | pytest.CollectReport) -> str:
 
 
 def _reason_is_sanctioned(reason: str) -> bool:
-    return reason in _SANCTIONED_SKIP_REASONS or bool(_GATED_RUNTIME_SKIP_RE.match(reason))
+    return reason in _SANCTIONED_SKIP_REASONS or bool(_GATED_RUNTIME_SKIP_RE.fullmatch(reason))
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:  # noqa: ARG001 -- pytest hook signature
+    # Repeated in-process sessions (pytest.main() twice, pytester) would
+    # otherwise inherit the previous session's outcomes and fail for a skip
+    # that did not happen in this one.
+    _UNSANCTIONED_OUTCOMES.clear()
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:

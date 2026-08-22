@@ -15,6 +15,7 @@ that quietly does nothing, not one that explodes.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -227,3 +228,81 @@ def test_env_file_is_not_read_during_these_assertions() -> None:
     """
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert set(type(settings).model_fields) == set(Settings.model_fields)
+
+
+# ── Documented defaults must match the model (spec-0023 R3) ───────────────────
+#
+# CLAUDE.md's Key Design Rules cite this file as the mechanical enforcement for
+# "No hard-coded values". Until now both directions were **name-only**: ~96
+# rows carry a `| Default |` column that nothing compared against
+# `Settings`. Defaults are precisely what rots — a field's default changes in
+# code and the auto-loaded doc keeps asserting the old one to every session.
+
+_ROW_RE = re.compile(r"^\|\s*`(MANGOMAS_[A-Z0-9_]+)`\s*\|\s*(.+?)\s*\|", re.MULTILINE)
+# Rows whose Default cell is prose rather than a value.
+_NOT_A_VALUE = frozenset({"_(none)_", "—", "-", ""})
+
+
+def _documented_defaults() -> dict[str, str]:
+    text = _PLACEHOLDER_RE.sub(_PLACEHOLDER_SLUG, _CLAUDE_MD.read_text(encoding="utf-8"))
+    found: dict[str, str] = {}
+    for name, raw_cell in _ROW_RE.findall(text):
+        cell = raw_cell.strip()
+        if cell in _NOT_A_VALUE:
+            continue
+        # Strip markdown code fencing and any trailing prose after the value.
+        match = re.match(r"`([^`]*)`", cell)
+        if match is not None:
+            found[_normalize(name)] = match.group(1)
+    return found
+
+
+def _model_defaults() -> dict[str, str]:
+    """Flatten Settings into ``MANGOMAS_GROUP__FIELD -> repr-ish default``."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    flat: dict[str, str] = {}
+    for name, field in Settings.model_fields.items():
+        annotation = field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            group = getattr(settings, name)
+            for sub in annotation.model_fields:
+                key = f"{_PREFIX}{name.upper()}{_NESTED_DELIMITER}{sub.upper()}"
+                flat[key] = _render(getattr(group, sub))
+        else:
+            flat[f"{_PREFIX}{name.upper()}"] = _render(getattr(settings, name))
+    return flat
+
+
+def _render(value: object) -> str:
+    """Render a live default the way the docs write it."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list | dict):
+        return json.dumps(value, separators=(",", ":"))
+    return str(value)
+
+
+def _normalise_documented(value: str) -> str:
+    """Collapse doc formatting that carries no semantic difference."""
+    return value.replace('"', "").replace(" ", "").lower()
+
+
+def test_claude_md_documented_defaults_match_the_model() -> None:
+    """Every documented default must equal the field's real default.
+
+    Rows whose Default cell is `_(none)_` are skipped (an unset optional), as
+    are rows carrying a `DEFAULT_*` constant name in prose — both say "look at
+    the code", which is the honest thing for them to say.
+    """
+    model = _model_defaults()
+    documented = _documented_defaults()
+    assert documented, "parsed zero default cells from CLAUDE.md"
+
+    mismatches = [
+        (name, doc_value, model[name])
+        for name, doc_value in documented.items()
+        if name in model and _normalise_documented(doc_value) != _normalise_documented(model[name])
+    ]
+    assert mismatches == [], (
+        f"CLAUDE.md documents a default that differs from the Settings field: {mismatches}"
+    )

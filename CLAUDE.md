@@ -132,7 +132,7 @@ The **Enforced by** column names the mechanism that catches a violation
 | Rule | Detail | Enforced by |
 |------|--------|-------------|
 | **Protocol-first** | Every adapter satisfies a `@runtime_checkable Protocol`. Never import concrete types across layers. | `mypy --strict` for signatures; layering is code review (prose-only — `mango-layering-auditor` on demand) |
-| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). | `tests/deploy/test_env_example_contract.py` (docs ⊆ Settings and Settings ⊆ docs, both directions) |
+| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). | `tests/deploy/test_env_example_contract.py` (names both directions: docs ⊆ Settings and Settings ⊆ docs; plus documented defaults compared against the live field values) |
 | **Backwards-compatible contracts** | `AgentRequest`, `AgentResponse` fields default-safe; adding fields must not break callers. | `tests/test_openapi_snapshot.py` (wire shape) + `tests/test_errors.py` status walk + the protected-path CI gate |
 | **`from __future__ import annotations`** | Required in every source file. | ruff isort `required-imports` (`make lint`) |
 | **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. | code review (prose-only — ruff's TC family is not selected) |

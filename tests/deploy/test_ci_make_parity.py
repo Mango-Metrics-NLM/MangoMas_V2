@@ -23,6 +23,7 @@ import pytest
 import yaml
 
 from tests._script_loader import load_script_module
+from tests.deploy import _workflows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
@@ -45,8 +46,9 @@ _OPT_IN_TARGETS = (
 
 
 def _ci_jobs() -> dict[str, Any]:
-    doc = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
-    return dict(doc["jobs"])
+    # Parsing lives in tests/deploy/_workflows.py so this suite and
+    # test_workflow_hardening.py cannot drift in what they can see.
+    return _workflows.jobs(_CI_WORKFLOW.name)
 
 
 def _step_run_commands(job: dict[str, Any]) -> list[str]:
@@ -166,7 +168,7 @@ def test_secret_scan_runs_both_gitleaks_passes() -> None:
     body = _make_target_body("secret-scan")
     assert "gitleaks dir" in body
     assert "gitleaks git" in body
-    assert "detect" not in body
+    assert "gitleaks detect" not in body
 
 
 def test_global_coverage_floor_matches_pytest_addopts() -> None:
