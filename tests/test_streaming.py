@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from mangomas.adapters.llm.base import LLMClient
 from mangomas.agents import ChatAgent
 from mangomas.api.app import create_app
-from mangomas.core import AgentContext, Orchestrator
+from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
 from tests.constants import STUB_REPLY
 from tests.fakes import FakeLLM, NonPingableFakeLLM
 
@@ -119,6 +119,64 @@ def test_stream_single_default_reply() -> None:
     assert r.status_code == 200
     payloads = _parse_sse(r.text)
     assert _token_contents(payloads) == [STUB_REPLY]
+
+
+# ── Terminal metadata event (spec-0025 / ADR-0025) ───────────────────────────
+
+
+class _BufferedAgent:
+    """Non-streaming agent: exercises the degraded fallback at the route level."""
+
+    name = "buffered"
+
+    async def handle(self, request: AgentRequest, _ctx: AgentContext) -> AgentResponse:
+        return AgentResponse(content=f"buffered:{len(request.messages)}", agent=self.name)
+
+
+def test_stream_metadata_event_between_tokens_and_done() -> None:
+    """The metadata event arrives after every token and before the done event."""
+    llm = FakeLLM(chunks=["Hello", " world", "!"])
+    client = _make_client(llm=llm)
+    r = client.post("/agents/chat/stream", json=_INVOKE_BODY)
+    assert r.status_code == 200
+    payloads = _parse_sse(r.text)
+    events = [p.get("event") for p in payloads]
+    assert events == ["token", "token", "token", "metadata", "done"]
+    metadata = payloads[-2]
+    assert metadata["data"] == {"agent": "chat", "degraded": False, "chunks": 3}
+
+
+def test_stream_metadata_event_flags_degraded_agent() -> None:
+    """A non-StreamingAgent target is labelled degraded in the metadata event."""
+    ctx = AgentContext(llm=FakeLLM(), repo=None)
+    orch = Orchestrator(ctx)
+    orch.register(_BufferedAgent())
+    app = create_app(orchestrator=orch)
+    with TestClient(app) as client:
+        r = client.post("/agents/buffered/stream", json=_INVOKE_BODY)
+    assert r.status_code == 200
+    payloads = _parse_sse(r.text)
+    metadata = next(p for p in payloads if p.get("event") == "metadata")
+    assert metadata["data"] == {"agent": "buffered", "degraded": True, "chunks": 1}
+
+
+def test_stream_token_and_done_frames_byte_identical_snapshot() -> None:
+    """Spec-0025 back-compat: token + done SSE frames are byte-identical to the
+    pre-metadata framing; the metadata event is purely additive between them."""
+    llm = FakeLLM(chunks=["Hello"])
+    client = _make_client(llm=llm)
+    r = client.post("/agents/chat/stream", json=_INVOKE_BODY)
+    assert r.status_code == 200
+    frames = r.content.split(b"\n\n")
+    assert frames == [
+        # Pre-spec-0025 snapshot: must never change.
+        b'data: {"event": "token", "data": {"content": "Hello"}, "content": "Hello"}',
+        # Additive frame (new in spec-0025).
+        b'data: {"event": "metadata", "data": {"agent": "chat", "degraded": false, "chunks": 1}}',
+        # Pre-spec-0025 snapshot: must never change.
+        b'data: {"event": "done"}',
+        b"",
+    ]
 
 
 async def test_mid_stream_failure_truncates_without_done_or_error_frame() -> None:

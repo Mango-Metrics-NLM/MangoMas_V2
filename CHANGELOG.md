@@ -9,6 +9,38 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Streaming turn persistence + metrics — Spec-0025 / ADR-0025 (governed
+Batch B-a, `BREAKING-CHANGE`-trailered protected-path edit)._
+
+### Fixed
+
+- **Streamed conversations are no longer invisible.** `stream_dispatch`
+  persisted nothing and the stream route recorded no metrics, so every SSE
+  conversation was missing from `GET /history`, `SummarizeAgent`'s window,
+  tenancy-scoped storage, and the agent instruments. `_stream_agent` now
+  accumulates chunks and persists the turn on **full drain only**
+  (abandonment and upstream errors persist nothing — a half-drained stream
+  is not a turn; rule recorded in ADR-0025), and the stream route records
+  the same invocation/error/duration metrics as invoke (full drain ⇔
+  persisted ⇔ counted). The silent single-chunk degradation of
+  non-streaming agents now logs a warning and is labelled.
+
+### Added
+
+- **SSE `metadata` terminal event** — `{"event": "metadata", "data":
+  {"agent", "degraded", "chunks"}}` emitted after the token stream and
+  before the byte-identical `done` frame (snapshot-tested), so consumers
+  can detect degraded streams without any change to existing token events.
+- **`Orchestrator.agent_supports_streaming(name)`** — the single additive
+  public method (raises `AgentNotFound` for unknown names) letting
+  transport layers label degraded streams without widening the protected
+  `AsyncIterator[str]` contract. All dispatch signatures unchanged;
+  persistence + abandonment guards mutation-proven; `core/orchestrator.py`
+  and `api/routes/agents.py` at 100% branch coverage; harness
+  `_traced_stream` composition covered.
+
+---
+
 _Structured-output validation + the shipped planner→tool→reviewer pipeline —
 roadmap Phase 1 item 1.3._
 

@@ -8,6 +8,7 @@ coverage uses monkeypatched provider installation to stay independent of it.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -23,11 +24,13 @@ from opentelemetry.sdk.metrics.export import (
 
 from mangomas import metrics as app_metrics
 from mangomas import telemetry
+from mangomas.agents import ChatAgent
 from mangomas.api import app as app_module
 from mangomas.api.app import create_app
 from mangomas.config import get_settings
-from mangomas.core import Orchestrator
-from mangomas.errors import ConfigError
+from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
+from mangomas.errors import ConfigError, LLMUnavailable
+from tests.fakes import FakeLLM
 
 
 def _points(reader: InMemoryMetricReader, name: str) -> list[Any]:
@@ -123,6 +126,92 @@ def test_invoke_records_error_metrics(
         metric_reader,
         app_metrics.AGENT_ERRORS,
         {"agent": "ghost-agent", "code": "agent_not_found"},
+    )
+    assert err is not None
+    assert err.value >= 1
+
+
+# ── API boundary emission: /agents/{name}/stream (spec-0025 / ADR-0025) ───────
+
+
+class _StreamMetricsAgent:
+    """Non-streaming agent with a unique name so its metric points are
+    unambiguous under the module-scoped (cumulative) reader."""
+
+    name = "stream-unit-agent"
+
+    async def handle(self, request: AgentRequest, _ctx: AgentContext) -> AgentResponse:
+        return AgentResponse(content=f"s:{len(request.messages)}", agent=self.name)
+
+
+_STREAM_BODY = {"messages": [{"role": "user", "content": "hi"}]}
+
+
+def test_stream_records_ok_metrics_on_full_drain(metric_reader: InMemoryMetricReader) -> None:
+    ctx = AgentContext(llm=FakeLLM(), repo=None)
+    orch = Orchestrator(ctx)
+    orch.register(_StreamMetricsAgent())
+    app = create_app(orchestrator=orch)
+    with TestClient(app) as client:
+        r = client.post("/agents/stream-unit-agent/stream", json=_STREAM_BODY)
+        assert r.status_code == 200
+    inv = _point_for(
+        metric_reader,
+        app_metrics.AGENT_INVOCATIONS,
+        {"agent": "stream-unit-agent", "status": "ok"},
+    )
+    assert inv is not None
+    assert inv.value >= 1
+    dur = _point_for(metric_reader, app_metrics.AGENT_DURATION, {"agent": "stream-unit-agent"})
+    assert dur is not None
+    assert dur.count >= 1
+
+
+def test_stream_records_error_metrics_pre_stream(
+    metric_reader: InMemoryMetricReader, orchestrator: Orchestrator
+) -> None:
+    """AgentNotFound before streaming begins mirrors invoke's error metrics."""
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post("/agents/ghost-stream/stream", json=_STREAM_BODY)
+        assert r.status_code == 404
+    inv = _point_for(
+        metric_reader,
+        app_metrics.AGENT_INVOCATIONS,
+        {"agent": "ghost-stream", "status": "error"},
+    )
+    assert inv is not None
+    assert inv.value >= 1
+    err = _point_for(
+        metric_reader,
+        app_metrics.AGENT_ERRORS,
+        {"agent": "ghost-stream", "code": "agent_not_found"},
+    )
+    assert err is not None
+    assert err.value >= 1
+
+
+def test_stream_records_error_metrics_mid_drain(metric_reader: InMemoryMetricReader) -> None:
+    """A MangomasError raised mid-drain records error metrics before re-raising.
+
+    The 200 + text/event-stream headers are already sent, so no error envelope
+    can run — the SSE stream just ends (spec-0022 R14) and the re-raised
+    exception surfaces through TestClient instead of a response.
+    """
+    llm = FakeLLM(chunks=["a", "b"], raise_on_stream=LLMUnavailable("gone"), raise_after_chunks=1)
+    ctx = AgentContext(llm=llm, repo=None)
+    orch = Orchestrator(ctx)
+    orch.register(ChatAgent())
+    app = create_app(orchestrator=orch)
+    with TestClient(app) as client, contextlib.suppress(Exception):
+        client.post("/agents/chat/stream", json=_STREAM_BODY)
+    inv = _point_for(
+        metric_reader, app_metrics.AGENT_INVOCATIONS, {"agent": "chat", "status": "error"}
+    )
+    assert inv is not None
+    assert inv.value >= 1
+    err = _point_for(
+        metric_reader, app_metrics.AGENT_ERRORS, {"agent": "chat", "code": "llm_unavailable"}
     )
     assert err is not None
     assert err.value >= 1

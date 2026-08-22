@@ -329,6 +329,53 @@ async def test_harness_orchestrator_stream_dispatch_yields_tokens() -> None:
     assert "".join(received)  # at least one non-empty token
 
 
+async def test_harness_traced_stream_full_drain_persists_exactly_one_turn() -> None:
+    """Spec-0025 composes under the harness wrapper: a full drain through
+    ``_traced_stream`` persists the streamed turn exactly once. The wrapper's
+    ``finally``-side ``inner.aclose()`` runs on an already-exhausted inner
+    generator (persistence happened during the final ``__anext__``), so it
+    must neither double-persist nor raise."""
+    llm = FakeLLM(reply=STUB_REPLY, chunks=["hel", "lo"])
+    repo = FakeRepository()
+    ctx = AgentContext(llm=llm, repo=repo)
+
+    harness_cfg = Settings(_env_file=None).harness  # type: ignore[call-arg]
+    harness_cfg.enabled = True
+    wrapper = _HarnessOrchestrator(ctx, harness_cfg)
+    wrapper.register(agent_registry.get(DEFAULT_AGENT_NAME)(None))
+
+    request = AgentRequest(messages=[Message(role="user", content="hi")])
+    stream = await wrapper.stream_dispatch(DEFAULT_AGENT_NAME, request)
+    received = [chunk async for chunk in stream]
+
+    assert "".join(received) == "hello"
+    rows = await repo.list_turns()
+    assert len(rows) == 1
+    assert rows[0]["response"]["content"] == "hello"
+    assert rows[0]["response"]["metadata"]["stream"] == {"chunks": 2, "degraded": False}
+
+
+async def test_harness_traced_stream_abandonment_persists_nothing() -> None:
+    """Early abandonment through the wrapper (``aclose`` → ``GeneratorExit``
+    propagated into the inner generator by ``_traced_stream``'s cleanup) never
+    saves a half-drained turn — the spec-0025 rule survives the wrap."""
+    llm = FakeLLM(reply=STUB_REPLY, chunks=["hel", "lo"])
+    repo = FakeRepository()
+    ctx = AgentContext(llm=llm, repo=repo)
+
+    harness_cfg = Settings(_env_file=None).harness  # type: ignore[call-arg]
+    harness_cfg.enabled = True
+    wrapper = _HarnessOrchestrator(ctx, harness_cfg)
+    wrapper.register(agent_registry.get(DEFAULT_AGENT_NAME)(None))
+
+    request = AgentRequest(messages=[Message(role="user", content="hi")])
+    stream = await wrapper.stream_dispatch(DEFAULT_AGENT_NAME, request)
+    assert await stream.__anext__() == "hel"
+    await cast("AsyncGenerator[str, None]", stream).aclose()
+
+    assert await repo.list_turns() == []
+
+
 def _make_traced_stream_wrapper(
     monkeypatch: pytest.MonkeyPatch, exporter: InMemorySpanExporter, *, namespace: str
 ) -> tuple[_HarnessOrchestrator, AgentRequest]:

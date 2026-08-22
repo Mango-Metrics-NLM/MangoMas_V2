@@ -76,5 +76,5 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0026**; next free ADR: **0025**
-(reserved by spec-0025 for the streaming-persistence batch).
+than reused. Next free spec on this branch: **0026**; next free ADR: **0026**
+(`docs/adr/0025-streaming-turn-persistence.md` is authored, per spec-0025).

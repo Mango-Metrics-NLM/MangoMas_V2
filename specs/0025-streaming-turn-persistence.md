@@ -1,9 +1,9 @@
 # Spec-0025: Streaming turn persistence + metrics (governed Batch B-a)
 
-- **Status:** Draft
-- **Linked ADR:** ADR-0025 _(to be authored with the implementation — required:
-  this touches the `core/orchestrator.py` boundary, and ADR-0013 explicitly
-  defers orchestrator-level metric emission "until an ADR blesses it")_
+- **Status:** Implemented
+- **Linked ADR:** [ADR-0025](../docs/adr/0025-streaming-turn-persistence.md)
+  (persist-only-on-full-drain rule; additive `metadata` SSE event;
+  `agent_supports_streaming` query)
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Fixed` (when implemented)
 - **Origin:** `docs/analysis/20260822-next-steps-roadmap-analysis.md` §3
   Phase 1, item 1.2(a)
@@ -87,10 +87,10 @@ _None planned._ If the abandonment rule needs tuning, it enters as a
 
 ## Acceptance criteria
 
-- [ ] Streamed turns appear in `/history` (tenancy-scoped), proven by test.
-- [ ] Streaming metrics parity with invoke, proven by test.
-- [ ] Degraded-mode streaming is observable (metadata event + warning log).
-- [ ] Existing SSE token framing byte-identical (snapshot test).
-- [ ] `BREAKING-CHANGE` trailer present; ADR-0025 authored and Accepted.
-- [ ] `ruff`, `mypy`, `pytest` (95 % gate), `frontmatter-lint` all clean.
-- [ ] CHANGELOG updated.
+- [x] Streamed turns appear in `/history` (tenancy-scoped), proven by test.
+- [x] Streaming metrics parity with invoke, proven by test.
+- [x] Degraded-mode streaming is observable (metadata event + warning log).
+- [x] Existing SSE token framing byte-identical (snapshot test).
+- [x] `BREAKING-CHANGE` trailer present; ADR-0025 authored and Accepted.
+- [x] `ruff`, `mypy`, `pytest` (95 % gate), `frontmatter-lint` all clean.
+- [x] CHANGELOG updated.
