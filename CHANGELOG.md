@@ -9,7 +9,14 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_(nothing yet)_
+### Fixed
+
+- **`mangomas.__version__` no longer drifts from the package** (review
+  finding on the v0.4.0 cut): it was a hardcoded copy still reading
+  `0.3.1`. Both it and the OpenAPI `info.version` now derive from one
+  package-metadata helper at the package root (`package_version()`), with
+  `api/app.py`'s previous names kept as facade aliases; guard tests pin
+  both surfaces. The `[0.4.0]` CHANGELOG link definition was also missing.
 
 ---
 
@@ -2109,6 +2116,7 @@ accepted by code or configuration.
 - `.gitignore` excludes `.venv/`, `data/`, `memory/`, `.env`, coverage artefacts, caches, and generated files.
 - Request-scoped tracing without leaking spans across async contexts.
 
+[0.4.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0

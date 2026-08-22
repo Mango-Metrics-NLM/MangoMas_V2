@@ -8,6 +8,7 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
+import mangomas
 from mangomas.adapters.llm.lmstudio import LMStudioError
 from mangomas.agents import ChatAgent
 from mangomas.api import app as app_module
@@ -163,11 +164,22 @@ def test_app_version_falls_back_when_distribution_missing(
     monkeypatch: pytest.MonkeyPatch,
     orchestrator: Orchestrator,
 ) -> None:
-    """Uninstalled-distribution path: the fallback constant, not a crash."""
+    """Uninstalled-distribution path: the fallback constant, not a crash.
+
+    The helper now lives at the package root (shared with
+    ``mangomas.__version__``), so the metadata reader is patched there.
+    """
 
     def _raise(name: str) -> str:
         raise importlib.metadata.PackageNotFoundError(name)
 
-    monkeypatch.setattr(app_module, "_distribution_version", _raise)
+    monkeypatch.setattr(mangomas, "_distribution_version", _raise)
     app = create_app(orchestrator=orchestrator)
     assert app.version == app_module.DEFAULT_APP_VERSION
+
+
+def test_package_dunder_version_matches_installed_distribution() -> None:
+    """`mangomas.__version__` shares the metadata source of truth — it was a
+    hardcoded copy that sat at 0.3.1 through the 0.4.0 cut (review finding)."""
+    assert mangomas.__version__ == importlib.metadata.version("mangomas")
+    assert mangomas.__version__ != mangomas.DEFAULT_PACKAGE_VERSION
