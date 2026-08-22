@@ -49,6 +49,20 @@ def workflow_docs() -> dict[str, dict[str, Any]]:
     return {p.name: yaml.safe_load(p.read_text(encoding="utf-8")) for p in workflow_paths()}
 
 
+def triggers(name: str) -> dict[str, Any]:
+    """Return one workflow's trigger section, tolerating the YAML 1.1 quirk.
+
+    PyYAML's default resolver reads the unquoted ``on:`` key as the boolean
+    ``True`` rather than the string ``"on"``. Looking up either keeps callers
+    correct under both resolvers (YAML 1.2 keeps it a string), and doing it
+    here means no caller has to re-learn it.
+    """
+    doc: dict[Any, Any] = workflow_docs()[name]
+    section = doc.get("on", doc.get(True))
+    assert section is not None, f"{name} has no `on:` trigger section"
+    return dict(section)
+
+
 def jobs(name: str) -> dict[str, Any]:
     """Return the ``jobs`` mapping of one workflow file."""
     return dict(workflow_docs()[name]["jobs"])

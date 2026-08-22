@@ -393,6 +393,19 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         'python -m ruff format "{}" >/dev/null 2>&1\' || true',
     ),
     (
+        # spec-0023 R8: `|| exit 1` replaced `|| true`. The recorded rationale
+        # for swallowing ("so a failure never strands a session") did not hold:
+        # only exit code 2 blocks a Stop hook, so any other non-zero was
+        # already a *visible, non-blocking* notice. What `|| true` actually did
+        # was downgrade that notice to a transcript-only line — and once the
+        # zero-skip guard landed (spec-0022 R8, which turns a green run red by
+        # mutating session.exitstatus) it was swallowing precisely the signal
+        # the guard exists to raise. `exit 1` rather than bare propagation
+        # because pytest exits 2 on a collection error, and 2 *would* block.
+        # This is also the compensating control for the PostToolUse matcher
+        # being Edit|Write only: nothing can know which files a Bash command
+        # wrote, so `format-check` at turn end is the net that catches them.
+        #
         # spec-0020: `make typecheck format-check` added ahead of the suite.
         # Measured at 0.3s warm, and mypy catches cross-file type breakage that
         # neither the per-file ruff hook nor pytest sees.
@@ -404,7 +417,7 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # to `make` for the same reason CI does — one definition of each check.
         "Stop",
         "*",
-        "make typecheck format-check || true ; python -m pytest -q --no-cov || true",
+        "make typecheck format-check || exit 1 ; python -m pytest -q --no-cov || exit 1",
     ),
     (
         # spec-0022 R11: the same stdin-JSON pre-tool-use mode, registered a

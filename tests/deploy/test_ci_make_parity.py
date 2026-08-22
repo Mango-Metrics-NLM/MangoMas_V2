@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import yaml
 
 from tests._script_loader import load_script_module
 from tests.deploy import _workflows
@@ -132,9 +131,7 @@ def test_pull_request_trigger_targets_the_real_trunk() -> None:
     keeps this guard correct even if a future PyYAML default ever stopped
     resolving the bare word to a boolean (YAML 1.2 keeps it a string).
     """
-    doc = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
-    triggers = doc.get("on", doc.get(True))
-    assert triggers is not None, "ci.yml has no `on:` trigger section"
+    triggers = _workflows.triggers(_CI_WORKFLOW.name)
     assert triggers["pull_request"]["branches"] == ["feat/initial-release"]
 
 
@@ -290,3 +287,23 @@ def test_isolated_coverage_floors_are_pinned() -> None:
     """
     assert int(_makefile_variable("SCRIPTS_FLOOR")) == 92
     assert int(_makefile_variable("BRIDGE_FLOOR")) == 100
+
+
+def test_nightly_jobs_delegate_to_make() -> None:
+    """The scheduled suites obey the same one-place rule as push CI.
+
+    `nightly.yml` exists because seven opt-in suites ran nowhere and
+    `secret-scan` only ever fired on push — but a scheduled job that inlines
+    its commands would reintroduce exactly the drift `make`-delegation
+    prevents, and nobody reads a nightly log until it matters.
+    """
+    jobs = _workflows.jobs("nightly.yml")
+    assert _step_run_commands(jobs["postgres"]) == ["make postgres"]
+    assert _step_run_commands(jobs["secret-scan"]) == ["make secret-scan"]
+
+
+def test_nightly_is_scheduled_and_manually_dispatchable() -> None:
+    """A schedule nobody can trigger by hand is untestable until it fires."""
+    triggers = _workflows.triggers("nightly.yml")
+    assert triggers["schedule"], "nightly.yml must carry a cron schedule"
+    assert "workflow_dispatch" in triggers

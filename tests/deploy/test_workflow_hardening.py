@@ -35,7 +35,7 @@ import re
 
 from tests.deploy import _workflows
 
-_EXPECTED_WORKFLOW_COUNT = 3
+_EXPECTED_WORKFLOW_COUNT = 4
 # Vacuity floors: low enough that a legitimate change never trips them, high
 # enough that a glob matching nothing (or a workflow losing every step) fails
 # loudly. Deliberately not the exact counts — see the module docstring.
