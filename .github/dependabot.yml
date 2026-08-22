@@ -1,0 +1,9 @@
+# Keeps the SHA-pinned third-party actions fresh (spec-0022 R5). First-party
+# actions/* stay tag-pinned by policy — tests/deploy/test_workflow_hardening.py
+# encodes that split, so a Dependabot PR that flips it will fail CI visibly.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

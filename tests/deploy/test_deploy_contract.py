@@ -79,7 +79,9 @@ def test_deploy_workflow_is_valid_yaml() -> None:
 def test_deploy_workflow_uses_workload_identity_federation() -> None:
     """No service-account JSON keys — auth must be via WIF with id-token perms."""
     raw = _DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    assert "google-github-actions/auth@v2" in raw
+    # Version-agnostic: the action is SHA-pinned (see test_workflow_hardening),
+    # so asserting a tag literal here would rot on every Dependabot bump.
+    assert "google-github-actions/auth@" in raw
     assert "workload_identity_provider" in raw
     assert "id-token: write" in raw
     # Guard against a committed key file / inline credentials.
