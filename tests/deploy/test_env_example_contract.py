@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
+from pydantic_core import PydanticUndefined
 
 from mangomas.config import AgentSettings, Settings
 
@@ -257,19 +258,39 @@ def _documented_defaults() -> dict[str, str]:
     return found
 
 
+def _field_default(field: object) -> object:
+    """Return a field's *declared* default, resolving a default_factory."""
+    default = getattr(field, "default", PydanticUndefined)
+    if default is not PydanticUndefined:
+        return default
+    factory = getattr(field, "default_factory", None)
+    return factory() if factory is not None else PydanticUndefined
+
+
 def _model_defaults() -> dict[str, str]:
-    """Flatten Settings into ``MANGOMAS_GROUP__FIELD -> repr-ish default``."""
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    """Flatten Settings into ``MANGOMAS_GROUP__FIELD -> rendered default``.
+
+    Reads the **declared** defaults off ``model_fields``, never a constructed
+    ``Settings()``. An instance absorbs ``os.environ`` even with
+    ``_env_file=None`` — and this repo's own ``.claude/settings.json`` exports
+    ``MANGOMAS_LOG__FORMAT=json`` into every Claude Code session, so an
+    instance-based reader reported the session's value as "the default": green
+    locally, red in CI, and masking a genuinely wrong doc row. A contract test
+    whose verdict depends on the ambient environment is not a contract test.
+    """
     flat: dict[str, str] = {}
     for name, field in Settings.model_fields.items():
         annotation = field.annotation
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            group = getattr(settings, name)
-            for sub in annotation.model_fields:
-                key = f"{_PREFIX}{name.upper()}{_NESTED_DELIMITER}{sub.upper()}"
-                flat[key] = _render(getattr(group, sub))
+            for sub, sub_field in annotation.model_fields.items():
+                value = _field_default(sub_field)
+                if value is not PydanticUndefined:
+                    key = f"{_PREFIX}{name.upper()}{_NESTED_DELIMITER}{sub.upper()}"
+                    flat[key] = _render(value)
         else:
-            flat[f"{_PREFIX}{name.upper()}"] = _render(getattr(settings, name))
+            value = _field_default(field)
+            if value is not PydanticUndefined:
+                flat[f"{_PREFIX}{name.upper()}"] = _render(value)
     return flat
 
 
