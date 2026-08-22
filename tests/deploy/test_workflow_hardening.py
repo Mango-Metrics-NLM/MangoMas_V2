@@ -32,6 +32,7 @@ documents. Parsing lives in ``tests/deploy/_workflows.py`` so this suite and
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from tests.deploy import _workflows
 
@@ -170,3 +171,52 @@ def test_every_scheduled_workflow_reports_its_own_failure() -> None:
             f"{name} runs on a schedule but no job is guarded by `if: {_FAILURE_GUARD}`, "
             "so a failing nightly run notifies nobody"
         )
+
+
+# A shallow checkout is the default. The `git` gitleaks pass walks committed
+# history, so on `fetch-depth: 1` it scans a single commit, finds nothing, and
+# exits 0 — the same fail-open shape as every other defect on this branch.
+_FULL_HISTORY = 0
+_HISTORY_SCANNING_STEP = "make secret-scan"
+
+
+def _jobs_running(command: str) -> list[tuple[str, str, dict[str, Any]]]:
+    """Every (workflow, job name, job spec) whose steps run ``command``."""
+    found = []
+    for workflow, doc in _workflows.workflow_docs().items():
+        for name, spec in (doc.get("jobs") or {}).items():
+            runs = [str(step.get("run", "")) for step in (spec.get("steps") or [])]
+            if any(command in run for run in runs):
+                found.append((workflow, name, spec))
+    return found
+
+
+def test_history_scanning_jobs_check_out_full_history() -> None:
+    """`make secret-scan`'s git pass needs every commit, not just the tip.
+
+    Nothing asserted this. A `fetch-depth` left at its default turns the
+    history pass into a one-commit scan that reports "no leaks found" and goes
+    green, which is indistinguishable from a clean history — and the pass
+    exists precisely because a credential can be committed and then removed
+    from the working tree.
+    """
+    jobs = _jobs_running(_HISTORY_SCANNING_STEP)
+    assert jobs, f"no job runs {_HISTORY_SCANNING_STEP!r} — has the target been renamed?"
+
+    shallow = []
+    for workflow, name, spec in jobs:
+        checkouts = [
+            step
+            for step in (spec.get("steps") or [])
+            if str(step.get("uses", "")).startswith("actions/checkout")
+        ]
+        assert checkouts, f"{workflow}:{name} scans history without checking anything out"
+        for step in checkouts:
+            depth = (step.get("with") or {}).get("fetch-depth")
+            if depth != _FULL_HISTORY:
+                shallow.append(f"{workflow}:{name} (fetch-depth={depth!r})")
+
+    assert shallow == [], (
+        "history-scanning job(s) use a shallow checkout, so the gitleaks `git` "
+        f"pass would scan one commit and pass vacuously: {shallow}"
+    )

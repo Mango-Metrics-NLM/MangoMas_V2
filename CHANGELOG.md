@@ -120,6 +120,12 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   ever. `nightly.yml` runs the Postgres suite (Docker is all it needs — and
   ci.yml already records that a row-shape defect shipped behind a green
   pipeline "purely because nothing set the gate") and both gitleaks passes.
+- **A guard that both secret-scan jobs check out full history.** Nothing
+  asserted it. `fetch-depth` left at its default turns the gitleaks `git` pass
+  into a one-commit scan that reports "no leaks found" and goes green —
+  indistinguishable from clean history, and vacuous exactly where the pass
+  matters, since its whole purpose is a credential committed and later removed
+  from the working tree.
 - **A failure path for the nightly run.** A scheduled workflow surfaces
   nowhere: GitHub emails only the account that last touched the cron, and only
   on the *first* failure of a consecutive run, so a suite that breaks and stays
