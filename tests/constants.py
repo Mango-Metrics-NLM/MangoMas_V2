@@ -682,6 +682,30 @@ PATH_SCOPED_MCP_SERVERS: tuple[str, ...] = ("filesystem", "git")
 # through as a literal string rather than failing, which is the dangerous case.
 MCP_PROJECT_DIR_SCOPE: str = "${CLAUDE_PROJECT_DIR:-.}"
 
+# ── Env-gated suite skip reasons (spec-0022 R8) ───────────────────────────────
+# Single source for three consumers: the collection gate in tests/conftest.py
+# builds its skip marks from these, the zero-skip session guard treats exactly
+# these reasons as sanctioned, and tests/tooling/test_collection_gate.py
+# asserts the wiring in a subprocess. Restating a reason string anywhere else
+# reintroduces the desync this table exists to prevent.
+ENV_GATE_SKIP_REASONS: dict[str, str] = {
+    "RUN_INTEGRATION": "set RUN_INTEGRATION=1 to run integration tests",
+    "RUN_LMSTUDIO": "set RUN_LMSTUDIO=1 to run LM Studio tests",
+    "RUN_POSTGRES": "set RUN_POSTGRES=1 to run Postgres tests",
+    "RUN_VERTEX": "set RUN_VERTEX=1 to run Vertex AI tests",
+    "RUN_GCP_SECRETS": "set RUN_GCP_SECRETS=1 to run GCP Secret Manager tests",
+    "RUN_GCP_TRACE": "set RUN_GCP_TRACE=1 to run Cloud Trace exporter tests",
+    "RUN_EMBEDDINGS_LOCAL": "set RUN_EMBEDDINGS_LOCAL=1 to run sentence-transformers tests",
+    "RUN_RAG": "set RUN_RAG=1 to run chromadb-backed RAG tests",
+    "RUN_LANGFUSE": "set RUN_LANGFUSE=1 to run Langfuse sink tests",
+}
+# Runtime `pytest.skip(...)` calls inside already-enabled gated suites (the
+# vertex/gcp fixtures that additionally need a project id) phrase their reason
+# `set <VAR> ...`. Deliberately narrow — `RUN_*` gates must match the exact
+# strings above, so a novel ad-hoc `pytest.skip("set RUN_FOO=1 ...")` still
+# escalates rather than sliding through a loose prefix.
+GATED_RUNTIME_SKIP_REASON_RE: str = r"^set (VERTEX_|GCP_)"
+
 # ── CLI public surface (tests/test_cli_surface.py) ────────────────────────────
 # `mangomas` is a console script (`pyproject.toml` -> `mangomas.cli.main:app`),
 # so its command tree and flags are a user-facing contract. Recorded from the
