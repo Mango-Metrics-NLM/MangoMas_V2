@@ -110,13 +110,15 @@ tests, workflows, config docs, and the Claude Code corpus only).
 
 ## Acceptance criteria
 
-- [ ] Working-tree secret is caught: `make secret-scan` runs `gitleaks dir`
+- [x] Working-tree secret is caught: `make secret-scan` runs `gitleaks dir`
       and `gitleaks git`; parity test proves `detect` is gone.
-- [ ] No workflow `run:` body interpolates event payload or secrets
+- [x] No workflow `run:` body interpolates event payload or secrets
       (test proves it, and fails if reintroduced).
-- [ ] `harness_session_start.py` exits 0 with `httpx`/`mangomas` absent
+- [x] `harness_session_start.py` exits 0 with `httpx`/`mangomas` absent
       (subprocess test proves it).
-- [ ] Default `pytest -q` run is green with all nine gated suites sanctioned;
+- [x] Default `pytest -q` run is green with all nine gated suites sanctioned;
       an ad-hoc skip/xfail turns it red (meta-test proves both directions).
-- [ ] `ruff`, `mypy`, `pytest` (95% gate), `frontmatter-lint` all clean.
-- [ ] CHANGELOG updated; no ADR needed (no boundary changed).
+- [x] `ruff`, `mypy`, `pytest` (95% gate), `frontmatter-lint` all clean.
+- [x] CHANGELOG updated; no ADR needed (no boundary changed).
+
+> Acceptance adjudicated 2026-08-22 against the shipped tree (roadmap Phase 0.4); unchecked boxes remain genuinely open.

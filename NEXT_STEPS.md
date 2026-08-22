@@ -439,11 +439,11 @@ defects and a further round of duplication clusters via a full-repo audit:
 
 ### Follow-ups this branch deliberately did not take
 
-- **`.env.example` still documents `MANGOMAS_LLM__PROJECT` and
-  `MANGOMAS_LLM__MAX_OUTPUT_TOKENS`** in a duplicated Vertex block (roughly
-  lines 25–33), and its eval-var block names settings that do not exist. The
-  file is read-protected in the authoring environment, so it needs a manual
-  edit — this is the last live instance of that drift.
+- ✅ **`.env.example` drift — resolved** (verified 2026-08-22, roadmap Phase
+  0.4): the file no longer documents `MANGOMAS_LLM__PROJECT` or
+  `MANGOMAS_LLM__MAX_OUTPUT_TOKENS`, carries no duplicated Vertex block, and
+  `tests/deploy/test_env_example_contract.py` passes unchanged. The earlier
+  "read-protected, needs a manual edit" record was stale.
 - **`main` / `feat/initial-release` reconciliation — partially done.** The two
   branches genuinely diverged: `main` carried a harness-hardening layer
   (`src/mangomas/harness/`, `scripts/harness_stop_gate.py`,

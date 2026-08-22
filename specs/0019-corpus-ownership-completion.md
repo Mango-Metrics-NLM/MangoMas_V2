@@ -8,7 +8,7 @@
 
 ## Problem
 
-`docs/plans/20260809T133844Z-harness-corpus-decomposition-plan.md` defines a
+`docs/plans/20260809T143356Z-harness-corpus-decomposition-plan.md` defines a
 deferred item **B5**: *"Owner agents for the unowned surfaces: `eval/`, `rag/`
 + `adapters/embeddings/` + `adapters/vector/`, `config.py`,
 `src/mangomas/agents/`, `secrets/`, `cli/`, `harness/`. Four mature skills
@@ -108,16 +108,18 @@ none owns a protected path.
 
 ## Acceptance criteria
 
-- [ ] Four agent files exist, each naming its mapped skill and carrying no
+- [x] Four agent files exist, each naming its mapped skill and carrying no
       `## Workflow` section.
-- [ ] `tests/constants.py` updated in the same commit as each agent file — the
+- [x] `tests/constants.py` updated in the same commit as each agent file — the
       roster count guard fails immediately otherwise.
 - [ ] No file is claimed by two write-capable agents (R4).
 - [ ] Every invariant in every new body resolves against current source (R5).
-- [ ] `mango-storage-adapter-dev`, `mango-api-dev` and `mango-backend` updated
+- [x] `mango-storage-adapter-dev`, `mango-api-dev` and `mango-backend` updated
       for tenancy and routing (R6).
-- [ ] `make gate` green: `ruff`, `mypy --strict`, `frontmatter`, `pytest`
+- [x] `make gate` green: `ruff`, `mypy --strict`, `frontmatter`, `pytest`
       (95% gate + per-package floors).
-- [ ] `CLAUDE.md` agent counts and specialist table updated; the
+- [x] `CLAUDE.md` agent counts and specialist table updated; the
       "covers 12 of 19" docstring in `test_corpus_contract.py` updated.
-- [ ] CHANGELOG updated under `[Unreleased]` › `Added`.
+- [x] CHANGELOG updated under `[Unreleased]` › `Added`.
+
+> Acceptance adjudicated 2026-08-22 against the shipped tree (roadmap Phase 0.4); unchecked boxes remain genuinely open.

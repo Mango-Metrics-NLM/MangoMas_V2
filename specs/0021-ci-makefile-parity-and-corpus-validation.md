@@ -1,6 +1,6 @@
 # Spec-0021: CI/Makefile parity and corpus-validation completion
 
-- **Status:** In progress
+- **Status:** Implemented (acceptance adjudicated 2026-08-22 — all boxes verified against the shipped tree)
 - **Linked ADR:** _none — no boundary change._ Same footing as spec-0020: this
   touches CI configuration, a Makefile target, docs and pytest coverage of an
   existing script's entry point — no protocol, error contract, or layering
@@ -88,19 +88,21 @@ so it does not belong in `Settings`.
 
 ## Acceptance criteria
 
-- [ ] R1: `ci.yml`'s `pull_request` trigger targets `["feat/initial-release"]`
+- [x] R1: `ci.yml`'s `pull_request` trigger targets `["feat/initial-release"]`
       only; a revert to `["main", "develop"]` fails the new test.
-- [ ] R2: `secret-scan` delegates to `make secret-scan`; `GITLEAKS_VERSION`
+- [x] R2: `secret-scan` delegates to `make secret-scan`; `GITLEAKS_VERSION`
       appears in exactly one place.
-- [ ] R3: every `AGENT_SKILL_OWNERS` value resolves to a real skill slug.
-- [ ] R4: `run_schema_lint()` runs against the live `.claude/` tree under
+- [x] R3: every `AGENT_SKILL_OWNERS` value resolves to a real skill slug.
+- [x] R4: `run_schema_lint()` runs against the live `.claude/` tree under
       pytest and reports zero failures.
-- [ ] R5: `c2-container.md` and `README.md` both name the `cli/` facade pattern.
-- [ ] `ruff`, `mypy`, `pytest` (95% gate + per-package floors),
+- [x] R5: `c2-container.md` and `README.md` both name the `cli/` facade pattern.
+- [x] `ruff`, `mypy`, `pytest` (95% gate + per-package floors),
       `frontmatter-lint`, `protected-paths` all clean — `make gate` green at
       every commit.
-- [ ] No protected path touched; no `BREAKING-CHANGE` trailer required.
-- [ ] CHANGELOG updated. No ADR required (no boundary changed).
+- [x] No protected path touched; no `BREAKING-CHANGE` trailer required.
+- [x] CHANGELOG updated. No ADR required (no boundary changed).
+
+> Acceptance adjudicated 2026-08-22 against the shipped tree (roadmap Phase 0.4); unchecked boxes remain genuinely open.
 
 ## Deliberate non-goals
 

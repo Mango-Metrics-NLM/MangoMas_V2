@@ -106,10 +106,15 @@ To disable the inbound-header pathway entirely (e.g. to force regeneration
 for security reasons), strip the header at the edge — there is no
 runtime flag for this today.
 
-## What ships in v0.2.0 vs Phase 3
+## What ships when
 
 - **v0.2.0:** ContextVar, filter, middleware integration, OTel baggage push,
   W3C trace propagation via `TraceContextTextMapPropagator`.
-- **Phase 3 (deferred):** Cloud Trace OTLP exporter swap (replacing
-  `ConsoleSpanExporter`), Cloud Logging structured-log sink, per-tenant
-  correlation id partitioning.
+- **Shipped (Milestone C):** the Cloud Trace exporter swap — setting
+  `MANGOMAS_TELEMETRY__EXPORTER=gcp` replaces `ConsoleSpanExporter` with a
+  lazily imported `CloudTraceSpanExporter`
+  (`telemetry/exporters.py::_lazy_cloud_trace_exporter`, `gcp` extra
+  required). Structured logs reach Cloud Logging via the JSON log format
+  (`MANGOMAS_LOG__FORMAT=json`): Cloud Run ingests JSON stdout lines
+  natively, so no dedicated log-sink adapter is needed.
+- **Still open:** per-tenant correlation id partitioning.

@@ -179,7 +179,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_API__CORS_ALLOW_METHODS` | `["*"]` | CORS methods (used only when origins non-empty) |
 | `MANGOMAS_API__CORS_ALLOW_HEADERS` | `["*"]` | CORS headers (used only when origins non-empty) |
 | `MANGOMAS_API__CORS_ALLOW_CREDENTIALS` | `false` | CORS credentials flag |
-| `MANGOMAS_API__HISTORY_DEFAULT_LIMIT` | `10` | Default page size for `GET /conversations/{id}` |
+| `MANGOMAS_API__HISTORY_DEFAULT_LIMIT` | `10` | Default page size for `GET /history` |
 | `MANGOMAS_API__HISTORY_MAX_LIMIT` | `1000` | Hard cap on the history `limit` query param |
 | `MANGOMAS_API__MAX_BODY_BYTES` | `0` | Max request body bytes (`0` = off; 413 when exceeded; ADR-0015) |
 | `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; ADR-0015) |
