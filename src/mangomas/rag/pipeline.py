@@ -128,15 +128,17 @@ class IngestionPipeline:
                 min_words=self._settings.min_chunk_words,
             )
             if not texts:
-                # Every chunk fell under ``min_chunk_words``: the document is
-                # silently dropped from the index. This is the "my file did
-                # not get indexed and I have no idea why" case, so it warns.
+                # ``chunk_text`` returns [] only for a document with no words
+                # (empty or whitespace-only content) — ``min_chunk_words`` is
+                # provably inert and never drops a chunk (pinned by
+                # ``test_fuzz_min_words_never_changes_the_output``). This is
+                # the "my file did not get indexed and I have no idea why"
+                # case, so it warns.
                 logger.warning(
-                    "Document produced no chunks; skipped",
+                    "Document yielded no chunks (empty or whitespace-only content); skipped",
                     extra={
                         "event": "rag_document_skipped",
                         "source": doc.source,
-                        "min_chunk_words": self._settings.min_chunk_words,
                     },
                 )
                 continue

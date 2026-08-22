@@ -143,6 +143,11 @@ async def test_document_producing_no_chunks_warns(
     This is the "my file did not get indexed and I have no idea why" case: the
     pipeline skips the document, the report still counts it under
     ``documents``, and before this there was no output at any level.
+
+    The message must name the real cause — the document yielded no chunks
+    because it had no words (empty or whitespace-only content). It used to
+    misattribute the skip to ``min_chunk_words``, which is provably inert
+    (pinned by ``test_fuzz_min_words_never_changes_the_output``).
     """
     f = tmp_path / "empty.txt"
     f.write_text("   \n  ", encoding="utf-8")
@@ -157,7 +162,10 @@ async def test_document_producing_no_chunks_warns(
     skipped = next(r for r in caplog.records if getattr(r, "event", "") == "rag_document_skipped")
     # getattr: LogRecord has no static schema for `extra=` fields.
     assert getattr(skipped, "source", None) == str(f)
-    assert getattr(skipped, "min_chunk_words", None) == _SETTINGS.min_chunk_words
+    # The message names the real cause, not the inert min_chunk_words knob.
+    assert "empty or whitespace-only" in skipped.getMessage()
+    assert "min_chunk_words" not in skipped.getMessage()
+    assert not hasattr(skipped, "min_chunk_words")
 
 
 async def test_empty_path_warns_rather_than_reporting_zero_silently(
