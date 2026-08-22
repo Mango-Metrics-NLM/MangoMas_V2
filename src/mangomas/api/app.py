@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _distribution_version
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -64,6 +66,28 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+# The installed distribution whose version stamps the OpenAPI ``info.version``.
+# Named once here — never restate the string at a call site.
+_DIST_NAME = "mangomas"
+
+# Fallback ``info.version`` when the distribution is not installed (e.g. a raw
+# source checkout without ``pip install -e``). PEP 440 local-version syntax
+# makes the "unknown" provenance explicit rather than masquerading as a release.
+DEFAULT_APP_VERSION = "0.0.0+unknown"
+
+
+def _package_version() -> str:
+    """Resolve the app version from installed package metadata.
+
+    ``pyproject.toml`` is the single source of truth for the project version;
+    deriving it here keeps the OpenAPI document from drifting behind releases
+    (it sat at a hardcoded ``0.1.0`` for two minor versions).
+    """
+    try:
+        return _distribution_version(_DIST_NAME)
+    except PackageNotFoundError:
+        return DEFAULT_APP_VERSION
 
 
 def _install_backpressure(app: FastAPI, api_cfg: APISettings) -> None:
@@ -128,7 +152,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     """Application factory. Pass *orchestrator* to inject a stub for tests."""
     app = FastAPI(
         title="Mango-Mas V2",
-        version="0.1.0",
+        version=_package_version(),
         lifespan=None if orchestrator is not None else _lifespan,
     )
 
