@@ -42,7 +42,7 @@ dev = [
     # Exact-pinned and kept in lockstep with the ruff-pre-commit rev in
     # .pre-commit-config.yaml so the hook, local pip, and CI cannot drift
     # (rule availability and formatter style both change between releases).
-    "ruff==0.16.0",
+    "ruff==0.16.3",
     # Exact-pinned in lockstep with the mirrors-mypy rev in
     # .pre-commit-config.yaml, for the same reason as the ruff pin above.
     "mypy==2.3.0",
