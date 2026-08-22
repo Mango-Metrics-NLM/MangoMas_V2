@@ -9,6 +9,56 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Deploy integrity + supply-chain baseline — Spec-0024 / roadmap Phase 0._
+
+### Fixed
+
+- **`deploy.yml` now applies `deploy/service.yaml`.** The deploy job
+  previously ran an image-only `gcloud run deploy`, so none of the manifest's
+  env vars, secret refs, probes, limits, or autoscaling bounds ever reached
+  the service — a real deploy would have run with library defaults (auth off,
+  SQLite, console exporter). The job now renders the manifest (image
+  substitution proven in-job) and applies it with `gcloud run services
+  replace`, gated by a new `verify` job (`make test` + `make coverage`,
+  absorbing the deferred NEXT_STEPS item) and followed by an
+  identity-token-authenticated smoke probe of `/healthz` + `/readyz`.
+  Four new contract tests in `tests/deploy/test_deploy_contract.py` tie the
+  workflow to the manifest in both directions — all mutation-proven.
+  `deploy/README.md`'s local snippet taught the old image-only defect and is
+  corrected. (Spec-0024.)
+- **`eval-gate.yml` no longer defaults its external `ianshank/Agents` install
+  to the moving `main` ref** — the job now fails closed with a clear error
+  when `AGENTS_HARNESS_REF` is unset; pinned by
+  `test_eval_gate_external_install_has_no_floating_default_ref`.
+- **The FastAPI app version no longer drifts from the package** —
+  `create_app` derives it from `importlib.metadata` (was hardcoded `0.1.0`
+  against a `0.3.1` package), with a fallback constant for uninstalled
+  checkouts and guard tests for both branches.
+- **`rag/pipeline.py`'s "no chunks" warning no longer misattributes the skip
+  to `min_chunk_words`** (the knob is provably inert); the message names the
+  real cause (empty/whitespace-only document) and the pinning test was
+  mutation-proven. README's `MIN_CHUNK_WORDS` row now mirrors CLAUDE.md's
+  honest "currently inert" wording.
+
+### Added
+
+- **Supply-chain baseline** (roadmap 0.3): `requirements.lock` — the full
+  pinned transitive runtime closure compiled by pip-compile under the image's
+  Python 3.11, consumed as a pip constraints file by the Docker runtime
+  stage; both Dockerfile `FROM` lines digest-pinned to the registry-verified
+  `python:3.11-slim` index digest; a `pip` Dependabot ecosystem; a pinned
+  `make pip-audit` target in the network group with a dedicated CI job —
+  placement (out of `gate`, delegated to make) two-sidedly tested.
+- **Docs/ledger truth sweep** (roadmap 0.4): specs 0019–0023 acceptance
+  boxes adjudicated against the shipped tree with dated notes (spec-0021 →
+  Implemented); stale Cloud-Trace "deferred" passages in
+  `docs/architecture/observability.md` / `cloud-providers.md` rewritten;
+  CLAUDE.md history rows now name the shipped `GET /history` route;
+  spec-0019's plan-file reference fixed; the stale `.env.example`-drift
+  record in NEXT_STEPS.md corrected (the drift was already fixed).
+
+---
+
 _Next-steps roadmap — a peer-reviewed case for the development program._
 
 ### Added

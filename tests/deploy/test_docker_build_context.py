@@ -107,6 +107,40 @@ def test_readme_is_in_build_context() -> None:
     assert _exclusion_rule("README.md", _ignore_rules()) is None
 
 
+# ── lockfile wiring (supply-chain baseline, roadmap item 0.3) ─────────────────
+
+_LOCKFILE = _REPO_ROOT / "requirements.lock"
+# Vacuity floor with headroom (deliberately below the current pin count): a
+# lockfile emptied to a header would satisfy an existence check alone.
+_MIN_LOCKED_PINS = 10
+
+
+def test_runtime_wheel_install_is_constrained_by_the_lockfile() -> None:
+    """The runtime `pip install` must pass requirements.lock as constraints.
+
+    Without ``-c``, the wheel install resolves pyproject's ``>=`` ranges at
+    build time — the build still *succeeds*, so nothing but this test notices
+    that image contents stopped being reproducible.
+    """
+    dockerfile = _DOCKERFILE.read_text(encoding="utf-8")
+    assert "-c /tmp/requirements.lock" in dockerfile, (
+        "runtime wheel install no longer passes requirements.lock as a constraints file"
+    )
+
+
+def test_lockfile_exists_and_actually_pins() -> None:
+    """Every non-comment lockfile line is an exact ``==`` pin, and enough exist.
+
+    A constraints file with ranges (or an emptied one) silently degrades the
+    Dockerfile's ``-c`` back to floating resolution.
+    """
+    lines = [line.strip() for line in _LOCKFILE.read_text(encoding="utf-8").splitlines()]
+    pins = [line for line in lines if line and not line.startswith("#")]
+    assert len(pins) >= _MIN_LOCKED_PINS, f"only {len(pins)} pins — lockfile emptied?"
+    unpinned = [pin for pin in pins if "==" not in pin]
+    assert unpinned == []
+
+
 # ── matcher semantics ─────────────────────────────────────────────────────────
 # The guard above is only as trustworthy as its matcher, so pin the three
 # Dockerfile behaviours an exact/prefix-only implementation silently gets wrong.

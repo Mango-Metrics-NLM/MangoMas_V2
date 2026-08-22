@@ -1,6 +1,6 @@
 # Spec-0024: Deploy-manifest application + post-deploy smoke
 
-- **Status:** Draft
+- **Status:** Implemented (2026-08-22; live cloud validation stays out of scope per ADR-0001 / decision D2)
 - **Linked ADR:** _none — no boundary change_ (amends the spec-0004 delivery; ADR-0001's "no GCP resources provisioned here" posture is unchanged)
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Fixed` (when implemented)
 - **Origin:** `docs/analysis/20260822-next-steps-roadmap-analysis.md` §3 Phase 0, item 0.1
@@ -77,8 +77,12 @@ _None._ All production configuration continues to live in
 
 ## Acceptance criteria
 
-- [ ] `deploy.yml` applies `deploy/service.yaml`; image-only deploy is gone.
-- [ ] Post-deploy smoke step probes `/healthz` + `/readyz`.
-- [ ] Contract test ties workflow to manifest, proven in both directions.
-- [ ] `ruff`, `mypy`, `pytest` (95 % gate), `frontmatter-lint` all clean.
-- [ ] CHANGELOG updated.
+- [x] `deploy.yml` applies `deploy/service.yaml`; image-only deploy is gone
+      (render + `gcloud run services replace`; a re-added image-only deploy is
+      banned by its own test).
+- [x] Post-deploy smoke step probes `/healthz` + `/readyz` (identity-token
+      authenticated — `services replace` keeps the service private).
+- [x] Contract test ties workflow to manifest, proven in both directions
+      (mutation-proofed: renamed ref fails, renamed file on disk fails).
+- [x] `ruff`, `mypy`, `pytest` (95 % gate), `frontmatter-lint` all clean.
+- [x] CHANGELOG updated.

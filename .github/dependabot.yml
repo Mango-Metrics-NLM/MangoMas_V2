@@ -7,3 +7,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # Python dependencies (supply-chain baseline, roadmap item 0.3): covers
+  # pyproject.toml's version ranges and the requirements.lock pins the
+  # Dockerfile consumes as a constraints file.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
