@@ -126,10 +126,14 @@ def test_pull_request_trigger_targets_the_real_trunk() -> None:
 
     PyYAML's default (YAML 1.1) resolver reads the unquoted ``on:`` key as the
     boolean ``True`` rather than the string ``"on"`` — the same reason
-    `_ci_jobs()` above only ever indexes `doc["jobs"]`.
+    `_ci_jobs()` above only ever indexes `doc["jobs"]`. Looking up either key
+    keeps this guard correct even if a future PyYAML default ever stopped
+    resolving the bare word to a boolean (YAML 1.2 keeps it a string).
     """
     doc = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
-    assert doc[True]["pull_request"]["branches"] == ["feat/initial-release"]
+    triggers = doc.get("on", doc.get(True))
+    assert triggers is not None, "ci.yml has no `on:` trigger section"
+    assert triggers["pull_request"]["branches"] == ["feat/initial-release"]
 
 
 def test_scripts_coverage_job_delegates_to_make() -> None:
