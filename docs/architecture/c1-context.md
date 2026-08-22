@@ -19,11 +19,11 @@ C4Context
 
   System_Ext(postgres, "PostgreSQL (GCP Cloud SQL)", "Cloud SQL relational database. Activated by MANGOMAS_DB__PROVIDER=postgres; uses asyncpg connection pool. Requires the `mangomas[postgres]` optional extra.")
 
-  System_Ext(secret_mgr, "GCP Secret Manager", "Resolves API keys and service-account JSON at orchestrator-build time. Activated by MANGOMAS_SECRETS__PROVIDER=gcp. Collapses all failure modes into None per ADR-002.")
+  System_Ext(secret_mgr, "GCP Secret Manager", "Resolves API keys and service-account JSON at orchestrator-build time. Activated by MANGOMAS_SECRETS__PROVIDER=gcp. Fails soft to None by default (ADR-0002); MANGOMAS_SECRETS__STRICT=true raises SecretsResolutionError (503) instead, so a misconfigured deployment is loud rather than silently unauthenticated (spec-0003).")
 
-  System_Ext(otel, "OpenTelemetry Collector / stdout", "Receives traces and structured log output from the application.")
+  System_Ext(otel, "OpenTelemetry Collector / stdout", "Receives traces, metrics and structured log output. Span exporter selected by MANGOMAS_TELEMETRY__EXPORTER (console | gcp Cloud Trace, ADR-0009); an opt-in MeterProvider emits agent invocation/error/duration metrics when MANGOMAS_TELEMETRY__METRICS_ENABLED=true (ADR-0013).")
 
-  System_Ext(gcp_future, "Google Cloud Platform (remaining future targets)", "Planned swap-in targets still pending: Cloud Run (compute), Cloud Logging + Trace (observability). See ADR-001.")
+  System_Ext(cloud_run, "Cloud Run", "Container compute target. deploy/service.yaml + .github/workflows/deploy.yml build and deploy the image; the runtime is the same FastAPI app with MANGOMAS_ENV=prod and JSON logs (spec-0004).")
 
   Rel(developer, mangomas, "Invokes agents / queries health / runs eval", "HTTP REST or CLI")
   Rel(mangomas, lmstudio, "Sends chat completion requests", "HTTP (OpenAI-compat /v1/chat/completions)")
@@ -31,8 +31,8 @@ C4Context
   Rel(mangomas, sqlite, "Reads and writes conversation turns (default)", "SQLite driver")
   Rel(mangomas, postgres, "Reads and writes conversation turns (when provider=postgres)", "asyncpg / TLS")
   Rel(mangomas, secret_mgr, "Resolves secret references (when provider=gcp)", "Secret Manager API / IAM")
-  Rel(mangomas, otel, "Emits traces and structured logs", "OTLP / stdout")
-  Rel_Back(gcp_future, mangomas, "Future: swap in remaining GCP boundaries via existing registry seams", "TLS / IAM")
+  Rel(mangomas, otel, "Emits traces, metrics and structured logs", "OTLP / stdout")
+  Rel(mangomas, cloud_run, "Deployed as a container image (make deploy / deploy.yml)", "Cloud Run / HTTPS")
 ```
 
 ## Notes
@@ -42,10 +42,17 @@ C4Context
   provider is selected.
 - All external service coordinates are env-driven (`MANGOMAS_*` prefix); no
   endpoint, project id, or model id is hardcoded in source.
-- The Vertex AI swap-in (ADR-001) shipped in v0.3.0. PostgreSQL (asyncpg
-  adapter) and GCP Secret Manager shipped in v0.3.1 and are E2E verified.
-  Remaining GCP targets (Cloud Run, Cloud Logging/Trace) are still tracked
-  in [NEXT_STEPS.md](../../NEXT_STEPS.md).
+- Every GCP boundary this diagram once listed as "future" has landed, each
+  through an existing registry seam rather than a rewrite: Vertex AI (ADR-001,
+  v0.3.0), PostgreSQL via asyncpg and GCP Secret Manager (v0.3.1, both E2E
+  verified), the Cloud Trace span exporter (ADR-0009 / spec-0001) and Cloud Run
+  (spec-0004). What remains open is tracked in
+  [NEXT_STEPS.md](../../NEXT_STEPS.md) — no external system on this diagram is
+  aspirational.
+- Multi-tenancy (ADR-0017) adds no external system. `TenancyMiddleware` reads
+  an inbound header into a `ContextVar` that the storage adapters filter rows
+  on, so the tenant boundary is enforced inside the existing SQLite/Postgres
+  systems rather than by a new one. Default-OFF.
 - Vertex AI adapter code is functional but project-level model access is
   currently blocked on the GCP side; LM Studio + GCP Secret Manager
   integration is E2E verified.

@@ -306,6 +306,7 @@ markers = [
     "embeddings_local: tests that require the sentence-transformers extra installed",
     "rag: tests that require the chromadb extra installed",
     "langfuse: tests that require the langfuse extra installed (RUN_LANGFUSE=1)",
+    "gitleaks: tests that shell out to the real gitleaks binary (RUN_GITLEAKS=1)",
 ]
 
 [tool.coverage.run]

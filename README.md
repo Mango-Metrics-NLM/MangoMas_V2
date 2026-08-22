@@ -307,14 +307,17 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 13 skills — live in Claude Code and VS Code Copilot |
-| Agents | `.claude/agents/mango-<slug>.md` | 23, flat: 4 routers + 19 specialists |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 15 skills — live in Claude Code and VS Code Copilot |
+| Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
 | Project settings | `.claude/settings.json` | Allow/Deny + SessionStart/PreToolUse/PostToolUse/Stop hooks |
 | MCP servers | `.mcp.json` | 6 servers: filesystem/git/fetch/sequential-thinking/repomix + optional github |
 | Cross-session memory (per-contributor, user-scoped) | external `~/.claude-mem/` | claude-mem — no shared config |
-| PR template + secret-scan job | `.github/PULL_REQUEST_TEMPLATE.md` + `ci.yml` | Mandatory PR checklist |
+| Secret scan | `.gitleaks.toml` + `make secret-scan` | Declared ruleset; working tree + history; proved non-vacuous nightly |
+| Scheduled automation | `.github/workflows/nightly.yml` | Postgres suite + secret scan; files a tracking issue on failure |
+| Dependency updates | `.github/dependabot.yml` | Monthly `github-actions` bumps, keeping the SHA pins fresh |
+| PR template | `.github/PULL_REQUEST_TEMPLATE.md` | Mandatory PR checklist |
 
 See `CLAUDE.md` for the full skill/agent map and protected-path
 table; `docs/tooling/claude-code-ecosystem.md` for the full external

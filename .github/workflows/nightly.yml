@@ -56,6 +56,23 @@ jobs:
       - name: Secret scan
         run: make secret-scan
 
+      # `make secret-scan` exiting 0 proves nothing on its own — a scanner
+      # configured down to zero rules is indistinguishable from a clean tree.
+      # This runs the same pinned binary, downloaded by the step above, against
+      # planted secrets and requires it to still fail. It lives here rather
+      # than in the unit suite because that suite is fully offline.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Prove the secret scan can still fail
+        run: make gitleaks-selftest
+
   # A scheduled run nobody watches is a gate that reports to no one. GitHub
   # emails only the account that last touched the cron, and only for the
   # *first* failure in a run of consecutive ones, so a suite that breaks and

@@ -1,0 +1,76 @@
+# Gitleaks configuration for Mango-Mas V2 — `make secret-scan` (both passes).
+#
+# Declared rather than implied. Without this file gitleaks runs its built-in
+# ruleset, which is a moving target across releases: an upstream change to what
+# is or is not detected would land silently on the next `GITLEAKS_VERSION` bump.
+# `useDefault = true` keeps every built-in rule and makes that inheritance an
+# explicit, reviewable statement.
+#
+# `tests/deploy/test_gitleaks_config.py` proves this file is non-vacuous — that
+# a planted secret of each covered class is still caught with the config in
+# force — because a misconfigured scanner reports "no leaks found" exactly like
+# a clean tree.
+
+title = "Mango-Mas V2 secret scan"
+
+[extend]
+useDefault = true
+
+# ── Repo-specific rule ────────────────────────────────────────────────────────
+#
+# Evidence for this rule, not a guess: with the default ruleset alone,
+# `MANGOMAS_DB__URL=postgresql://mangomas:S3cr3tP4ssw0rdHere@10.0.0.5:5432/db` # gitleaks:allow
+# scans clean. The built-ins key off recognisable vendor token formats
+# (`ghp_…`, `AKIA…`, high-entropy assignments), and a password embedded in a
+# connection string looks like none of them. `MANGOMAS_DB__URL` is a documented
+# setting whose Postgres form carries exactly that credential, and
+# `deploy/service.yaml` plus every Cloud SQL deployment sets it — so this is
+# the single most likely credential to be pasted into this repo, and the one
+# the default rules do not see.
+[[rules]]
+id = "mangomas-connection-string-password"
+description = "Password embedded in a database or broker connection string"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql)(?:\+[a-z0-9]+)?://[^\s:@/]+:([^\s:@/]{2,})@'''
+secretGroup = 1
+tags = ["database", "connection-string", "mangomas"]
+
+  # Reserved names cannot address real infrastructure (RFC 2606 / RFC 6761), so
+  # a credential pointed at one is a fixture by construction rather than by
+  # promise. This is deliberately narrower than exempting `tests/`: a real
+  # connection string committed into a test file is still a leak, and still
+  # fails.
+  [rules.allowlist]
+  description = "Fixtures: RFC-reserved hosts, loopback, env interpolation, placeholder passwords"
+  regexTarget = "line"
+  regexes = [
+    '''://[^\s@]+@(?:localhost|127\.0\.0\.1|\[::1\])(?:[:/]|$)''',
+    '''://[^\s@]+@[^\s:@/]*\.(?:invalid|test|example|localhost)(?:[:/]|$)''',
+    '''://[^\s@]+@(?:example\.(?:com|org|net))(?:[:/]|$)''',
+    # `${VAR}` / `$VAR` / `%VAR%` — an indirection, not a value.
+    '''://[^\s:@/]+:[$%][{(]?[A-Za-z_]''',
+    # Placeholder passwords, matched **whole** rather than as substrings.
+    #
+    # Gitleaks `stopwords` are substring matches, which makes the conventional
+    # list actively dangerous here: a `password` stopword exempts
+    # `SuperPassword2024Xy`, a real credential. Verified rather than assumed —
+    # `test_placeholder_allowlist_does_not_exempt_a_real_password` plants that
+    # exact string and requires it to be caught. Anchoring the alternation
+    # between `:` and `@` keeps `pass` exempt and everything merely containing
+    # it in scope.
+    '''://[^\s:@/]+:(?:p|pw|pass|password|passwd|secret|secret-value|changeme|placeholder|redacted|example|test)@''',
+  ]
+# ── Global allowlist ──────────────────────────────────────────────────────────
+[allowlist]
+description = "Paths that cannot hold a real credential"
+paths = [
+  # Hypothesis's example database — machine-generated binary blobs whose random
+  # bytes trip entropy rules. Gitignored, so this only matters for `dir` scans
+  # on a developer machine that has run the fuzz suite.
+  '''^\.hypothesis/''',
+  # The downloaded scanner binary itself (gitignored, `dir`-scan only).
+  '''^gitleaks$''',
+  # Compiled bytecode: gitignored build artefacts that mirror whatever the
+  # source held, so a finding here is always a duplicate of a source finding.
+  # `dir` walks the filesystem, gitignore and all.
+  '''(^|/)__pycache__/''',
+]

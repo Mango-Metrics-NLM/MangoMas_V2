@@ -73,6 +73,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(skip["RUN_RAG"])
         if "langfuse" in item.keywords and not enabled["RUN_LANGFUSE"]:
             item.add_marker(skip["RUN_LANGFUSE"])
+        if "gitleaks" in item.keywords and not enabled["RUN_GITLEAKS"]:
+            item.add_marker(skip["RUN_GITLEAKS"])
 
 
 # ── Zero-skip session guard (spec-0022 R8) ────────────────────────────────────

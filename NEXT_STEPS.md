@@ -51,9 +51,9 @@ see the skill and agent tables in `CLAUDE.md` for the current set.
 
 - **8 skills** under `.claude/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
-  observability, config, release, and topology. _(Since grown to 12, and
+  observability, config, release, and topology. _(Since grown, and
   relocated to `.claude/` by spec-0018 — see the skill table in
-  `CLAUDE.md` for the current set.)_
+  `CLAUDE.md`, which is the pinned source of truth for the current set.)_
 - **19 agents** under `.claude/agents/mango-<slug>.md` (4 routers + 15 specialists)
   grouped under the 4 parent agents (including `pr-watcher` under
   `architect`). _(Since superseded: the parent/child hierarchy and its

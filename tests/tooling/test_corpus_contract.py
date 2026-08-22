@@ -33,6 +33,7 @@ from tests.constants import (
     EXPECTED_AGENT_SLUGS,
     EXPECTED_SKILL_SLUGS,
     HARNESS_SKILL_SLUG,
+    LIVE_CORPUS_COUNT_DOCS,
     MAX_ROUTER_DESCRIPTION_JACCARD,
     MIN_CORPUS_TRACEABILITY_REFS,
     PROCEDURE_SECTION_HEADING,
@@ -44,6 +45,8 @@ from tests.constants import (
     RETIRED_STRAY_AGENT_FILENAME,
     ROUTER_AGENT_SLUGS,
     SKILL_UNMAPPED_AGENT_SLUGS,
+    SPELLED_NUMBERS,
+    SUBSET_COUNT_CLAIMS,
     UNOWNED_SOURCE_SURFACES,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
@@ -439,6 +442,77 @@ def test_every_source_surface_has_a_write_capable_owner() -> None:
         f"recorded as unowned but an agent claims it: {conflicting} — drop it from "
         "UNOWNED_SOURCE_SURFACES"
     )
+
+
+# `**23**` / `23` / `twenty-three`, followed by a corpus noun. Bold markers are
+# stripped because the docs use them inside tables and bullets.
+_COUNT_CLAIM_RE = re.compile(
+    r"\*{0,2}(?P<count>\d+|" + "|".join(sorted(SPELLED_NUMBERS, key=len, reverse=True)) + r")"
+    r"\*{0,2}\s+(?P<noun>agents?|skills?|routers?|specialists?)\b",
+    re.IGNORECASE,
+)
+
+
+def _corpus_rosters() -> dict[str, int]:
+    """The live counts a prose claim must agree with."""
+    agents = len(_agent_paths())
+    routers = len(ROUTER_AGENT_SLUGS)
+    return {
+        "agent": agents,
+        "skill": len(_skill_dirs()),
+        "router": routers,
+        "specialist": agents - routers,
+    }
+
+
+def _subset_roster_size(name: str) -> int:
+    sizes = {"PROTECTED_PATH_OWNER_SLUGS": len(PROTECTED_PATH_OWNER_SLUGS)}
+    assert name in sizes, f"SUBSET_COUNT_CLAIMS names an unknown roster: {name}"
+    return sizes[name]
+
+
+def test_prose_corpus_counts_match_the_live_corpus() -> None:
+    """A number in a current-state doc must agree with the tree it describes.
+
+    Prose counts rot silently and nothing here compared them: the README's
+    "What ships in the harness" table claimed 13 skills and 23 agents
+    (4 routers + 19 specialists) against a tree holding 15 and 27. A reader
+    checking whether the corpus is what the docs say gets a wrong answer, and
+    the corpus is the whole routing surface.
+
+    Scoped to `LIVE_CORPUS_COUNT_DOCS`. `NEXT_STEPS.md`, `docs/adr/` and
+    `docs/plans/` are dated records whose counts are correct as of their
+    milestone; rewriting those would falsify history rather than fix drift.
+
+    A subset count (four agents own a protected path) is not exempted — it is
+    registered in `SUBSET_COUNT_CLAIMS` and checked against the real subset.
+    """
+    rosters = _corpus_rosters()
+    checked = 0
+    wrong: list[str] = []
+
+    for relpath in LIVE_CORPUS_COUNT_DOCS:
+        path = _REPO_ROOT / relpath
+        assert path.exists(), f"{relpath} is listed as a live corpus doc but does not exist"
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            subset = next((v for k, v in SUBSET_COUNT_CLAIMS.items() if k in line), None)
+            for match in _COUNT_CLAIM_RE.finditer(line):
+                raw = match.group("count").lower()
+                claimed = int(raw) if raw.isdigit() else SPELLED_NUMBERS[raw]
+                noun = match.group("noun").lower().rstrip("s")
+                expected = _subset_roster_size(subset) if subset else rosters[noun]
+                checked += 1
+                if claimed != expected:
+                    wrong.append(
+                        f"{relpath}:{lineno} claims {claimed} {noun}(s), tree has {expected}"
+                        f"  |  {line.strip()[:90]}"
+                    )
+
+    assert checked >= len(LIVE_CORPUS_COUNT_DOCS), (
+        f"only {checked} count claim(s) found across {list(LIVE_CORPUS_COUNT_DOCS)} — "
+        "the wording changed and this guard is measuring almost nothing"
+    )
+    assert wrong == [], "corpus counts disagree with the tree:\n  " + "\n  ".join(wrong)
 
 
 def test_every_agent_is_mapped_or_recorded_unmapped() -> None:

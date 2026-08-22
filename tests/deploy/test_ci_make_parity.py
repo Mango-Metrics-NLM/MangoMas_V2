@@ -299,7 +299,13 @@ def test_nightly_jobs_delegate_to_make() -> None:
     """
     jobs = _workflows.jobs("nightly.yml")
     assert _step_run_commands(jobs["postgres"]) == ["make postgres"]
-    assert _step_run_commands(jobs["secret-scan"]) == ["make secret-scan"]
+    assert _step_run_commands(jobs["secret-scan"]) == [
+        "make secret-scan",
+        # Non-vacuity proof for the step above, using the binary it just
+        # downloaded: a scan configured down to nothing exits 0 exactly like a
+        # clean tree, so the green above is only meaningful alongside this.
+        "make gitleaks-selftest",
+    ]
 
 
 def test_nightly_is_scheduled_and_manually_dispatchable() -> None:

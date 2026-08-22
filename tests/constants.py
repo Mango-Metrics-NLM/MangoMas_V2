@@ -616,6 +616,68 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
 # derives ownership from the agent bodies themselves rather than a second
 # hand-maintained table, so the corpus cannot desync from its own claims.
 UNOWNED_SOURCE_SURFACES: frozenset[str] = frozenset({"registry.py"})
+
+# ── Corpus-count claims in prose ─────────────────────────────────────────────
+#
+# Docs that describe the corpus as it is *now*. A number in one of these is a
+# claim about the live tree and must agree with it; the README said "13 skills,
+# 23 agents (4 routers + 19 specialists)" while the tree held 15 and 27.
+#
+# `NEXT_STEPS.md` is deliberately absent. It is a dated delivery log whose
+# per-milestone counts are correct *as of that milestone* and must not be
+# rewritten — its own preamble says "counts below are as-of the harness
+# branch". Rewriting them would falsify the record rather than fix drift.
+# `docs/adr/` and `docs/plans/` are excluded for the same reason.
+LIVE_CORPUS_COUNT_DOCS: tuple[str, ...] = (
+    "CLAUDE.md",
+    "README.md",
+    "docs/tooling/claude-code-ecosystem.md",
+)
+# Numbers written as words, which the corpus docs use in prose.
+#
+# "one" is deliberately absent. In English it doubles as an article — "dispatch
+# one agent", "one skill owns the procedure" — so treating it as a count claim
+# produces false positives on ordinary prose, and no doc will ever truthfully
+# claim this corpus holds a single agent. Every other word is unambiguous
+# because it forces a plural noun.
+SPELLED_NUMBERS: dict[str, int] = {
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "twenty-one": 21,
+    "twenty-two": 22,
+    "twenty-three": 23,
+    "twenty-four": 24,
+    "twenty-five": 25,
+    "twenty-six": 26,
+    "twenty-seven": 27,
+    "twenty-eight": 28,
+    "twenty-nine": 29,
+    "thirty": 30,
+}
+# A count claim whose noun is a corpus noun but whose subject is a *subset*.
+# Keyed by a distinctive phrase on the line; the value names the roster the
+# number must equal. Registered rather than exempted — a subset count is still
+# a claim, and this keeps it pinned to something real.
+SUBSET_COUNT_CLAIMS: dict[str, str] = {
+    "own a **protected path**": "PROTECTED_PATH_OWNER_SLUGS",
+}
 SKILL_UNMAPPED_AGENT_SLUGS: frozenset[str] = frozenset(
     {
         "mango-api-dev",
@@ -763,6 +825,7 @@ ENV_GATE_SUITES: dict[str, str] = {
     "RUN_EMBEDDINGS_LOCAL": "sentence-transformers tests",
     "RUN_RAG": "chromadb-backed RAG tests",
     "RUN_LANGFUSE": "Langfuse sink tests",
+    "RUN_GITLEAKS": "gitleaks config behaviour tests",
 }
 
 

@@ -43,11 +43,15 @@ GITLEAKS_VERSION ?= 8.21.2
 # SHA256 of gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
 GITLEAKS_SHA256 ?= 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba
+# Explicit ruleset. Both passes must pass `-c`: gitleaks does NOT auto-discover
+# a config at the repo root when a scan path is given, so omitting the flag
+# silently reverts to the built-in rules and drops the connection-string rule.
+GITLEAKS_CONFIG ?= .gitleaks.toml
 
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck frontmatter \
         protected-paths test test-xml \
-        coverage bridge-coverage scripts-coverage gate precommit serve clean \
+        coverage bridge-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local secret-scan
 
@@ -150,6 +154,9 @@ gcp-trace: ## Cloud Trace exporter suite (needs the gcp extra installed)
 langfuse: ## Langfuse sink/source suite (needs the langfuse extra installed)
 	RUN_LANGFUSE=1 $(PYTHON) -m pytest tests/eval -m langfuse --no-cov $(PYTEST_FLAGS)
 
+gitleaks-selftest: ## Prove `secret-scan` can still fail (needs the binary `secret-scan` downloads)
+	RUN_GITLEAKS=1 $(PYTHON) -m pytest tests/deploy/test_gitleaks_config.py --no-cov $(PYTEST_FLAGS)
+
 # ── Opt-in tooling (off by default; needs the network) ───────────────────────
 #
 # Not part of `gate`: every step in that chain runs fully offline today, and
@@ -168,8 +175,11 @@ secret-scan: ## Gitleaks secret scan (downloads a pinned, checksum-verified rele
 	# organisation accounts. The binary itself is MIT-licensed and free.
 	# Two passes: `dir` scans the working tree (an uncommitted .env with a
 	# real key), `git` scans committed history. Neither subsumes the other.
-	./gitleaks dir --no-banner --redact --exit-code 1 .
-	./gitleaks git --no-banner --redact --exit-code 1 .
+	# `-c .gitleaks.toml` is not optional: without it gitleaks silently falls
+	# back to its built-in ruleset, dropping the connection-string rule that
+	# catches a password in MANGOMAS_DB__URL (which no built-in rule sees).
+	./gitleaks dir --no-banner --redact --exit-code 1 -c $(GITLEAKS_CONFIG) .
+	./gitleaks git --no-banner --redact --exit-code 1 -c $(GITLEAKS_CONFIG) .
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 
