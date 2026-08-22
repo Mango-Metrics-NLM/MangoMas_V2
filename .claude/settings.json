@@ -22,7 +22,17 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Edit(/.claude/settings.json)",
-      "Edit(/.claude/settings.local.json)"
+      "Edit(/.claude/settings.local.json)",
+      "mcp__filesystem__write_file",
+      "mcp__filesystem__edit_file",
+      "mcp__filesystem__move_file",
+      "mcp__filesystem__create_directory",
+      "mcp__git__git_commit",
+      "mcp__git__git_add",
+      "mcp__git__git_reset",
+      "mcp__git__git_checkout",
+      "mcp__git__git_create_branch",
+      "mcp__git__git_init"
     ]
   },
   "env": {
@@ -59,6 +69,10 @@
           {
             "type": "command",
             "command": "if [ \"$MANGOMAS_DISABLE_RTK_HOOK\" != \"1\" ] && command -v rtk >/dev/null 2>&1; then rtk hook claude; fi"
+          },
+          {
+            "type": "command",
+            "command": "python scripts/lint_agent_frontmatter.py --hook pre-tool-use"
           }
         ]
       }

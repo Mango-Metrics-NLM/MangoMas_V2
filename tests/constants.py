@@ -401,6 +401,16 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         "*",
         "make typecheck format-check || true ; python -m pytest -q --no-cov || true",
     ),
+    (
+        # spec-0022 R11: the same stdin-JSON pre-tool-use mode, registered a
+        # second time under the Bash matcher. The mode discriminates by
+        # payload shape (`tool_input.command` vs `file_path`), so one command
+        # serves both matchers; for Bash it emits a mention-level advisory
+        # `ask` on protected paths — never `deny`, per ADR-0021.
+        "PreToolUse",
+        "Bash",
+        "python scripts/lint_agent_frontmatter.py --hook pre-tool-use",
+    ),
 )
 
 # rtk (rtk-ai/rtk): Bash-output compaction, wired as a PreToolUse hook.
@@ -606,8 +616,28 @@ EXPECTED_DENY_RULES: frozenset[str] = frozenset(
         # Gitignored, still loaded, and able to add `permissions.allow` entries
         # — so it is the more useful of the two to deny.
         "Edit(/.claude/settings.local.json)",
+        # spec-0022 R4: MCP filesystem-write and git-mutation tools bypass both
+        # the `Edit|Write|NotebookEdit` PreToolUse matcher and the `Edit(...)`
+        # deny rules — the MCP half of the gap ADR-0021 explicitly concedes.
+        # The permission layer is the only in-session-authoritative one, so the
+        # deny lands here. File edits and git mutations keep their first-class,
+        # harness-audited channels (native Edit/Write and Bash git).
+        "mcp__filesystem__write_file",
+        "mcp__filesystem__edit_file",
+        "mcp__filesystem__move_file",
+        "mcp__filesystem__create_directory",
+        "mcp__git__git_commit",
+        "mcp__git__git_add",
+        "mcp__git__git_reset",
+        "mcp__git__git_checkout",
+        "mcp__git__git_create_branch",
+        "mcp__git__git_init",
     }
 )
+# Every MCP-tool deny rule is `mcp__<server>__<tool>`; the server segment must
+# name an adopted server or the rule is silently inert (a dead control that
+# reads like a live one — the same defect class as the interior-`*` Bash rule).
+MCP_DENY_RULE_PREFIX: str = "mcp__"
 # Deny rules Claude Code consults for a *file write*. `Edit(...)` covers Edit,
 # Write and NotebookEdit; nothing here stops a `Bash` heredoc or `>` redirect,
 # so these rules are cheap and partial rather than airtight.

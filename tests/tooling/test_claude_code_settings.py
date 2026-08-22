@@ -32,6 +32,7 @@ from tests.constants import (
     HARNESS_CONFIG_AUDIT_MODE_ENV,
     INERT_FILE_RULE_PREFIXES,
     MCP_CONFIG_RELPATH,
+    MCP_DENY_RULE_PREFIX,
     MCP_PROJECT_DIR_SCOPE,
     PATH_SCOPED_DENY_RULE_PREFIX,
     PATH_SCOPED_MCP_SERVERS,
@@ -125,7 +126,14 @@ def test_no_hook_command_references_the_dead_tool_input_env_var() -> None:
 
 
 def _rtk_hook_command() -> str:
-    commands = _hook_commands(RTK_HOOK_EVENT, RTK_HOOK_MATCHER)
+    # The PreToolUse/Bash matcher now also carries the protected-path
+    # advisory (spec-0022 R11), so filter to the rtk command rather than
+    # asserting the pair holds exactly one hook.
+    commands = [
+        command
+        for command in _hook_commands(RTK_HOOK_EVENT, RTK_HOOK_MATCHER)
+        if RTK_HOOK_COMMAND_FRAGMENT in command
+    ]
     assert len(commands) == 1
     return commands[0]
 
@@ -156,6 +164,40 @@ def test_rtk_env_flag_is_declared_in_shared_settings(env_var: str) -> None:
 
 def test_rtk_telemetry_is_disabled_by_default() -> None:
     assert _settings()["env"][RTK_TELEMETRY_DISABLED_ENV] == ENV_FLAG_ON
+
+
+# ── Bash protected-path advisory (spec-0022 R11) ──────────────────────────────
+
+
+def test_bash_advisory_hook_is_registered() -> None:
+    """The pre-tool-use linter mode must also run under the Bash matcher.
+
+    The Edit|Write|NotebookEdit matcher never sees a shell write (the gap
+    ADR-0021 concedes); registering the same stdin-JSON mode under Bash lets
+    it emit a mention-level `ask` for protected paths. The command string is
+    identical to the Edit-matcher one — the mode discriminates by payload
+    shape, so PREEXISTING_HOOKS pins both registrations.
+    """
+    commands = _hook_commands("PreToolUse", "Bash")
+    assert "python scripts/lint_agent_frontmatter.py --hook pre-tool-use" in commands
+
+
+def test_mcp_deny_rules_name_adopted_servers() -> None:
+    """A deny rule naming a nonexistent server is silently inert (spec-0022 R4).
+
+    Claude Code matches MCP rules by exact tool-name string; a typo'd server
+    segment produces a dead control that reads like a live one — the same
+    defect class as the interior-`*` Bash rule documented in constants. The
+    tool names themselves are only as real as the (unpinned) npx server
+    version, so at minimum the server segment must resolve.
+    """
+    mcp_rules = [
+        rule for rule in _settings()["permissions"]["deny"] if rule.startswith(MCP_DENY_RULE_PREFIX)
+    ]
+    assert mcp_rules, "expected MCP deny rules in permissions.deny"
+    for rule in mcp_rules:
+        server = rule.split("__")[1]
+        assert server in ADOPTED_MCP_SERVERS, rule
 
 
 # ── .claude/settings.local.json.example (ADR-0021 / spec-0017) ────────────────
