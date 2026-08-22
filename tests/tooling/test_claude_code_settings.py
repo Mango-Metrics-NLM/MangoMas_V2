@@ -13,6 +13,7 @@ See docs/adr/0020-claude-code-ecosystem-tooling.md.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -258,6 +259,29 @@ def test_mcp_servers_match_the_adopted_set() -> None:
     """Exactly the servers ADR-0020 adopted — no upstream extras, and nothing
     left over from local experimentation."""
     assert set(_mcp_servers()) == set(ADOPTED_MCP_SERVERS)
+
+
+# Any "all N servers" claim in the ecosystem doc. Written as a pattern rather
+# than a single known line so a second claim added later is also pinned.
+_SERVER_COUNT_CLAIM_RE = re.compile(r"all (\d+) servers\b")
+_ECOSYSTEM_DOC = "docs/tooling/claude-code-ecosystem.md"
+
+
+def test_documented_server_count_matches_the_adopted_set() -> None:
+    """A prose server count must agree with `.mcp.json`.
+
+    This drifted: the doc's verification block said "all 5 servers" after
+    `github` was adopted as the sixth, so the one command a human is told to
+    run to check the MCP wiring would have looked correct while listing an
+    unexpected server. A count nothing compares is a claim, not a check.
+    """
+    text = (_REPO_ROOT / _ECOSYSTEM_DOC).read_text(encoding="utf-8")
+    claims = [int(match) for match in _SERVER_COUNT_CLAIM_RE.findall(text)]
+    assert claims, f"no server-count claim found in {_ECOSYSTEM_DOC} — has the wording changed?"
+    assert all(count == len(ADOPTED_MCP_SERVERS) for count in claims), (
+        f"{_ECOSYSTEM_DOC} claims {claims} server(s); .mcp.json adopts "
+        f"{len(ADOPTED_MCP_SERVERS)}: {sorted(ADOPTED_MCP_SERVERS)}"
+    )
 
 
 @pytest.mark.parametrize("server", PATH_SCOPED_MCP_SERVERS)

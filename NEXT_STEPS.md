@@ -361,7 +361,7 @@ defects and a further round of duplication clusters via a full-repo audit:
   the design — compile to a `Sequence`/`FanOut` tree at load time, absorbing
   only `main`'s `execution_levels()` algorithm — but does not implement it).
 - **Deferred tooling** — ruff `ASYNC`/`DTZ`/`C4`/`RET`/`PERF`/`C90` rule
-  families, a `dependabot.yml`, a `pip-audit` job, a Python 3.13 matrix leg, a
+  families, a `pip-audit` job, a Python 3.13 matrix leg, a
   `verify` job gating `deploy.yml`, and a `pre-commit run --all-files` CI job.
 - **Protected-paths CI job is not yet a required status check.** Spec-0017 R1
   intends the `protected-paths` job to be a merge-blocking required status

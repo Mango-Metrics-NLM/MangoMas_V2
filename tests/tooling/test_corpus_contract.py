@@ -43,6 +43,7 @@ from tests.constants import (
     RETIRED_SKILLS_DIR_RELPATH,
     RETIRED_STRAY_AGENT_FILENAME,
     ROUTER_AGENT_SLUGS,
+    SKILL_UNMAPPED_AGENT_SLUGS,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
 
@@ -367,6 +368,37 @@ def test_mapped_agent_references_its_skill(slug: str) -> None:
     body = _agent_body(slug)
     missing = [skill for skill in AGENT_SKILL_OWNERS[slug] if skill not in body]
     assert missing == [], f"{slug} does not reference {missing}"
+
+
+def test_every_agent_is_mapped_or_recorded_unmapped() -> None:
+    """`AGENT_SKILL_OWNERS` + `SKILL_UNMAPPED_AGENT_SLUGS` must partition the corpus.
+
+    Without this, "does a skill document this agent's surface?" is answered
+    only for agents someone remembered to answer it for. A new agent simply
+    fell out of both halves: `mango-ci-dev` shipped citing `mango-deploy` and
+    `mango-mutation-proof` in its body, but was in neither set, so neither
+    `test_mapped_agent_references_its_skill` nor
+    `test_mapped_agent_has_no_procedure_section` applied to it — the corpus's
+    two skill-duplication guards were simply off for that agent, silently.
+
+    Disjointness matters as much as coverage: a slug in both sets would claim
+    both that a skill owns its procedure and that none does.
+    """
+    mapped = set(AGENT_SKILL_OWNERS)
+    unmapped = set(SKILL_UNMAPPED_AGENT_SLUGS)
+
+    overlap = sorted(mapped & unmapped)
+    assert overlap == [], f"agent(s) both mapped and recorded unmapped: {overlap}"
+
+    unclassified = sorted(set(EXPECTED_AGENT_SLUGS) - mapped - unmapped)
+    assert unclassified == [], (
+        f"agent(s) in neither set: {unclassified}. Add each to AGENT_SKILL_OWNERS "
+        "with the skill(s) documenting its procedure, or to "
+        "SKILL_UNMAPPED_AGENT_SLUGS with why none does."
+    )
+
+    stale = sorted((mapped | unmapped) - set(EXPECTED_AGENT_SLUGS))
+    assert stale == [], f"set(s) name retired/renamed agent(s): {stale}"
 
 
 def test_agent_skill_owners_resolve_to_a_real_skill() -> None:

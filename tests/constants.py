@@ -563,11 +563,10 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
     "mango-agent-impl-dev": ("mango-agent-add",),
+    "mango-ci-dev": ("mango-deploy", "mango-mutation-proof"),
     "mango-error-taxonomy-dev": ("mango-error",),
     "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
-    # `mango-cli-dev` is deliberately absent: no skill documents the CLI
-    # surface, so its workflow is its own rather than a restated recipe.
     "mango-harness-dev": ("mango-harness",),
     "mango-hypothesis-fuzz": ("mango-testing",),
     "mango-integration-runner": ("mango-testing",),
@@ -587,6 +586,32 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-telemetry-exporter-dev": ("mango-observability", "mango-deploy"),
     "mango-workflow-graph-dev": ("mango-workflow", "mango-observability"),
 }
+# Agents deliberately outside `AGENT_SKILL_OWNERS`, so the mapping can be
+# checked for totality: a new agent must land in one set or the other, never
+# fall through both unnoticed. Two reasons appear here, and both are decisions
+# rather than omissions:
+#
+#   * the four routers and the two auditors have no file surface at all — they
+#     read and advise, and their numbered steps are their own operating loop,
+#     not a recipe any skill owns (which is also why
+#     `test_mapped_agent_has_no_procedure_section` is scoped to mapped agents);
+#   * `mango-cli-dev` owns a real surface that no skill documents, so its
+#     workflow is genuinely its own rather than a restated recipe.
+#
+# Adding a slug here is therefore a claim that no skill documents its
+# procedure. `test_every_agent_is_mapped_or_recorded_unmapped` enforces the
+# partition; `test_mapped_agent_references_its_skill` enforces the other half.
+SKILL_UNMAPPED_AGENT_SLUGS: frozenset[str] = frozenset(
+    {
+        "mango-api-dev",
+        "mango-architect",
+        "mango-backend",
+        "mango-cli-dev",
+        "mango-layering-auditor",
+        "mango-protocol-auditor",
+        "mango-test-engineer",
+    }
+)
 # The four protected-path owners additionally reference the governance skill.
 HARNESS_SKILL_SLUG: str = "mango-harness"
 # Heading a mapped agent may not carry: its procedure belongs to its skill.

@@ -17,7 +17,7 @@ restate either here.
 
 - `Makefile` — every target, the gate chain, and the `?=` variables
   (`SCRIPTS_FLOOR`, `BRIDGE_FLOOR`, `GITLEAKS_VERSION`/`_SHA256`, `BASE_REF`)
-- `.github/workflows/` — `ci.yml`, `deploy.yml`, `eval-gate.yml`
+- `.github/workflows/` — `ci.yml`, `deploy.yml`, `eval-gate.yml`, `nightly.yml`
 - `.github/dependabot.yml`
 - `deploy/` — the Cloud Run service definition and env contract
 - `tests/deploy/` — `_workflows.py` (the shared YAML reader),

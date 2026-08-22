@@ -58,6 +58,18 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   transcript line.
 - **`mango-config` would have failed CI if followed.** Its Workflow ended at
   `.env.example` while spec-0022 R12 made the CLAUDE.md config row mandatory.
+- **`mango-ci-dev` was in neither half of the agent↔skill mapping**, so both
+  skill-duplication guards were silently off for it. It now maps to
+  `mango-deploy` + `mango-mutation-proof`, and
+  `test_every_agent_is_mapped_or_recorded_unmapped` asserts the two sets
+  partition the corpus, so the next agent cannot fall through the same way.
+- **Three documentation claims that had drifted past what they describe**:
+  `mango-ci-dev` did not list `nightly.yml` among the workflows it owns; the
+  ecosystem doc still said `claude mcp list` shows 5 servers after `github`
+  became the sixth (now pinned by
+  `test_documented_server_count_matches_the_adopted_set`, since a count
+  nothing compares is a claim rather than a check); and `NEXT_STEPS.md` listed
+  `dependabot.yml` as deferred tooling after this branch added it.
 - **`mango-pr-watcher` labelled two Claude Code platform tools as
   `mcp__github__*`** and did not say the agent is inert without a PAT.
 - **`.PHONY` was missing `gated-suites`** — a CI-invoked target — and
