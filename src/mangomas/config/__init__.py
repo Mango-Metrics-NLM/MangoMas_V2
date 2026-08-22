@@ -45,6 +45,9 @@ from mangomas.config.agents import (
     DEFAULT_TOOL_MAX_STEPS as DEFAULT_TOOL_MAX_STEPS,
 )
 from mangomas.config.agents import (
+    DEFAULT_VALIDATE_OUTPUT as DEFAULT_VALIDATE_OUTPUT,
+)
+from mangomas.config.agents import (
     AgentSettings as AgentSettings,
 )
 from mangomas.config.agents import (
@@ -421,6 +424,7 @@ __all__ = [
     "DEFAULT_TENANCY_ENABLED",
     "DEFAULT_TENANCY_HEADER",
     "DEFAULT_TOOL_MAX_STEPS",
+    "DEFAULT_VALIDATE_OUTPUT",
     "DEFAULT_VECTOR_COLLECTION",
     "DEFAULT_VECTOR_ENABLED",
     "DEFAULT_VECTOR_PERSIST_DIR",

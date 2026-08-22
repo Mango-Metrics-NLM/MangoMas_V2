@@ -9,6 +9,31 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Structured-output validation + the shipped planner→tool→reviewer pipeline —
+roadmap Phase 1 item 1.3._
+
+### Added
+
+- **`StructuredOutputAgent.parse()`** — the caller the planner/reviewer
+  docstrings always promised: validates the agent's JSON reply against its
+  own Pydantic schema and raises the existing `LLMBadResponse` (no new error
+  type, no protected-path edit) with a truncated, content-free detail; the
+  error log carries length + bounded head only, never user content.
+- **`MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT`** (default `false`,
+  `DEFAULT_VALIDATE_OUTPUT`) — opt-in per-agent validation: `handle()`
+  validates after the LLM call and returns the raw JSON unchanged when
+  valid, so the response contract is byte-identical for valid output and
+  fully backwards-compatible when off. Streaming is deliberately untouched.
+- **`examples/workflows/plan-execute-review.json`** — the canonical
+  planner → tool → reviewer `WorkflowGraph`, loader-validated and executed
+  end-to-end in tests (with validation on, including the failure path);
+  documented in `docs/workflow/graphs.md`. The advertised multi-agent loop
+  now ships instead of living only in documentation. Hypothesis fuzz proves
+  `parse()` total over arbitrary text (nothing but `LLMBadResponse` or a
+  model instance). Key guards mutation-proven.
+
+---
+
 _Deploy integrity + supply-chain baseline — Spec-0024 / roadmap Phase 0._
 
 ### Fixed

@@ -921,3 +921,11 @@ EXPECTED_CLI_HELP_ORDER: dict[str, tuple[str, ...]] = {
     "rag": ("ingest", "query"),
     "workflow": ("validate", "run"),
 }
+
+# ── Shipped canonical workflow example (roadmap item 1.3) ─────────────────────
+# Repo-root-relative path of the shipped planner → tool → reviewer graph; tests
+# resolve it against their own location so the suite stays cwd-independent.
+PLAN_EXECUTE_REVIEW_GRAPH_RELPATH = "examples/workflows/plan-execute-review.json"
+PLAN_EXECUTE_REVIEW_GRAPH_NAME = "plan-execute-review"
+# Ordered roster of the pipeline's agent slugs (mirrors the example file).
+PLAN_EXECUTE_REVIEW_AGENTS: tuple[str, ...] = ("planner", "tool", "reviewer")

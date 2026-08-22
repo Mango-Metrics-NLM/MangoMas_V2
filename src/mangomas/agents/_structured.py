@@ -15,12 +15,14 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_system_prompt
 from mangomas.agents._streaming import stream_with_buffered_fallback
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_VALIDATE_OUTPUT
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import build_structured_prompt
+from mangomas.errors import LLMBadResponse
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import AgentSettings
@@ -57,6 +59,14 @@ class StructuredOutputAgent:
         settings: AgentSettings | None = None,
     ) -> None:
         self.name = agent_name
+        self._schema = schema
+        # Opt-in post-completion schema validation (spec-0014 shape: the
+        # resolved AgentSettings flow in from composition.py unchanged).
+        # ``None`` settings → DEFAULT_VALIDATE_OUTPUT (off), preserving the
+        # raw pass-through contract.
+        self._validate_output: bool = (
+            settings.validate_output if settings is not None else DEFAULT_VALIDATE_OUTPUT
+        )
         schema_prompt = build_structured_prompt(schema.model_json_schema())
         # ``schema_prompt`` is always a non-empty string, so this call can
         # never actually return ``None`` — the ``or`` fallback exists purely
@@ -77,8 +87,42 @@ class StructuredOutputAgent:
         """Prepend the schema-aware system prompt when absent from the request."""
         return build_messages(request, self._system_prompt)
 
+    def parse(self, content: str) -> BaseModel:
+        """Validate *content* against the agent's schema and return the model.
+
+        Raises :class:`~mangomas.errors.LLMBadResponse` when *content* is not
+        valid JSON or does not conform to the schema. The error (and the log
+        record emitted before it) carries the agent name, the schema class
+        name, and a detail truncated to
+        :data:`~mangomas.config.DEFAULT_ERROR_DETAIL_TRUNCATE` — never the
+        full LLM content.
+        """
+        try:
+            return self._schema.model_validate_json(content)
+        except ValidationError as exc:
+            schema_name = self._schema.__name__
+            logger.error(
+                "%s: LLM output failed %s validation (content length %d, head %r)",
+                self.name,
+                schema_name,
+                len(content),
+                content[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+            )
+            raise LLMBadResponse(
+                f"Agent {self.name!r}: LLM output does not conform to the {schema_name} schema.",
+                detail=str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+            ) from exc
+
     async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
-        """Return the LLM's raw structured-JSON content for the given request."""
+        """Return the LLM's raw structured-JSON content for the given request.
+
+        When ``settings.validate_output`` is True the content is first checked
+        via :meth:`parse` (raising
+        :class:`~mangomas.errors.LLMBadResponse` on mismatch); the parsed
+        object is discarded, so a valid response is byte-for-byte identical to
+        the unvalidated pass-through. The streaming path is untouched —
+        validating a token stream is out of scope for this flag.
+        """
         messages = self._build_messages(request)
         logger.debug("%s: calling LLM for structured output", self.name)
         content = await ctx.llm.complete(
@@ -86,6 +130,8 @@ class StructuredOutputAgent:
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
+        if self._validate_output:
+            self.parse(content)
         return AgentResponse(content=content, agent=self.name)
 
     async def stream(
