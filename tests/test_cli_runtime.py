@@ -125,3 +125,46 @@ def test_configure_cli_logging_is_idempotent() -> None:
     first = list(logging.getLogger().handlers)
     _runtime.configure_cli_logging(verbose=False)
     assert logging.getLogger().handlers == first
+
+
+def test_telemetry_failure_degrades_instead_of_killing_the_command(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A broken exporter must not be the reason a CLI invocation dies.
+
+    Previously this branch carried `# pragma: no cover`. It is a real
+    behavioural fallback, not a race arm or an optional-extra import, so the
+    repo's own coverage-audit guidance says test it rather than exclude it.
+    """
+    import logging  # noqa: PLC0415
+
+    def _boom(**_kwargs: object) -> None:
+        raise RuntimeError("exporter unreachable")
+
+    _reset_telemetry_state()
+    monkeypatch.setattr(_runtime, "configure_telemetry", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.cli._runtime"):
+        _runtime.configure_cli_logging(verbose=True)
+
+    assert "falling back to basicConfig" in caplog.text
+
+
+def test_config_error_is_not_swallowed_as_a_logging_problem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid config must fail the command, not be masked by the guard.
+
+    `get_settings()` is deliberately outside the try: a config error is a real
+    error with its own exit code, and reporting it as "telemetry not
+    configured" would send the operator hunting in the wrong place.
+    """
+
+    def _bad_settings() -> object:
+        raise ValueError("invalid MANGOMAS_ setting")
+
+    _reset_telemetry_state()
+    monkeypatch.setattr(_runtime, "get_settings", _bad_settings)
+
+    with pytest.raises(ValueError, match="invalid MANGOMAS_ setting"):
+        _runtime.configure_cli_logging(verbose=False)

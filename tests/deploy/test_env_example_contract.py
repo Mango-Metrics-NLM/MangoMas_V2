@@ -242,6 +242,18 @@ def test_env_file_is_not_read_during_these_assertions() -> None:
 _ROW_RE = re.compile(r"^\|\s*`(MANGOMAS_[A-Z0-9_]+)`\s*\|\s*(.+?)\s*\|", re.MULTILINE)
 # Rows whose Default cell is prose rather than a value.
 _NOT_A_VALUE = frozenset({"_(none)_", "—", "-", ""})
+# Per-agent rows document the *effective* default an agent falls back to when
+# the field is unset (`AgentSettings.max_tool_steps` is None; `ToolAgent`
+# supplies DEFAULT_TOOL_MAX_STEPS). Comparing those to the field default would
+# compare two different things. Listed explicitly because they were previously
+# skipped by accident — `Settings.agents` is a `dict`, not a nested model, so
+# the walk below never emitted them and nothing recorded why.
+_EFFECTIVE_NOT_FIELD_DEFAULT: frozenset[str] = frozenset(
+    {
+        f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}MAX_TOOL_STEPS",
+        f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}HISTORY_LIMIT",
+    }
+)
 
 
 def _documented_defaults() -> dict[str, str]:
@@ -318,6 +330,16 @@ def test_claude_md_documented_defaults_match_the_model() -> None:
     model = _model_defaults()
     documented = _documented_defaults()
     assert documented, "parsed zero default cells from CLAUDE.md"
+
+    unexplained = sorted(
+        name
+        for name in documented
+        if name not in model and name not in _EFFECTIVE_NOT_FIELD_DEFAULT
+    )
+    assert unexplained == [], (
+        "documented default for a name the model walk does not emit — either a "
+        f"typo or an unrecorded exemption: {unexplained}"
+    )
 
     mismatches = [
         (name, doc_value, model[name])

@@ -74,8 +74,11 @@ def configure_cli_logging(*, verbose: bool = False) -> None:
     the ``TraceContextFilter``/``CorrelationFilter`` that carry ``trace_id``
     and ``correlation_id`` onto every record.
 
-    Failures here never abort a command: observability setup must not be the
-    reason a CLI invocation dies.
+    A telemetry-setup failure degrades to ``basicConfig`` rather than killing
+    the command — observability must not be the reason a CLI invocation dies.
+    A *configuration* error is deliberately NOT swallowed: ``get_settings()``
+    is called outside the guard, so invalid config still fails the command
+    (``EXIT_CONFIG_ERROR``) instead of being masked as a logging problem.
     """
     cfg = get_settings()
     try:
@@ -84,7 +87,7 @@ def configure_cli_logging(*, verbose: bool = False) -> None:
             log_format=cfg.log.format,
             exporter=cfg.telemetry.exporter,
         )
-    except Exception:  # pragma: no cover -- never fail a command over logging setup
+    except Exception:
         logging.basicConfig(level=VERBOSE_LOG_LEVEL if verbose else cfg.log_level)
         logging.getLogger(__name__).warning(
             "Telemetry not configured; falling back to basicConfig",
