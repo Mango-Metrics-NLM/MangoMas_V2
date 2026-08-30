@@ -11,6 +11,23 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`src/mangomas/composition/` package decomposition** (spec-0015 R1 — god
+  file refactoring for maintainability): the 499-line monolithic
+  `composition.py` is now a focused 12-module package with separated concerns
+  — `_registries.py` (singletons), `secrets.py` (LLM secret resolution & GCP
+  bootstrap), `llm.py` (LLM factories), `storage.py` (DB factories),
+  `memory.py`, `embeddings.py` (3 backends), `vector.py`, `rag.py`,
+  `agents.py` (import-time agent registration), `harness.py`
+  (_HarnessOrchestrator wrapper), and `builder.py` (main `build_orchestrator`
+  orchestration). Lazy imports for optional SDKs (Vertex, PostgreSQL, GCP,
+  Chroma) preserved — zero behavior change. **Backwards-compatibility:**
+  every name importable from `mangomas.composition` today remains importable
+  via `__init__.py` re-export facade (ADR-0019); tests and external code see
+  zero changes. Registry identities and factory signatures preserved for
+  monkeypatching.
+
+### Added
+
 - **Whole-pipeline acceptance loops** (spec-0027 / ADR-0027 — governed
   Batch B-c): `dispatch_pipeline` gains keyword-only optional
   `acceptance_fn` / `max_steps`. Loop mode judges the *final* response,
