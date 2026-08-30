@@ -108,6 +108,7 @@ from mangomas.composition.storage import (
 from mangomas.composition.vector import (
     _chroma_vector_factory as _chroma_vector_factory,
 )
+from mangomas.secrets import secrets_registry as secrets_registry
 
 __all__ = [
     "AgentFactory",
@@ -134,4 +135,5 @@ __all__ = [
     "ensure_agent_plugins",
     "ensure_secrets_provider",
     "llm_registry",
+    "secrets_registry",
 ]

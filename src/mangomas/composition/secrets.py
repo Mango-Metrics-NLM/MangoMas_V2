@@ -13,7 +13,6 @@ from typing import Any
 
 from mangomas.config import LLMSettings, SecretsSettings
 from mangomas.errors import ConfigError
-from mangomas.secrets import secrets_registry
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,9 @@ def _resolve_llm_secrets(llm_cfg: LLMSettings, secrets_provider_name: str) -> LL
     """
     if not llm_cfg.secret_ref:
         return llm_cfg
-    provider = secrets_registry.get(secrets_provider_name)
+    import mangomas.composition as composition_module  # noqa: PLC0415
+
+    provider = composition_module.secrets_registry.get(secrets_provider_name)
     resolved = provider.get(llm_cfg.secret_ref)
     if resolved is None:
         logger.debug(
@@ -72,9 +73,13 @@ def ensure_secrets_provider(cfg: SecretsSettings) -> None:
     :mod:`mangomas.secrets.registry`. Keeps the registry's "stored as instance,
     not factory" contract.
     """
-    if cfg.provider == "gcp" and "gcp" not in secrets_registry.available():
+    import mangomas.composition as composition_module  # noqa: PLC0415
+
+    if cfg.provider == "gcp" and "gcp" not in composition_module.secrets_registry.available():
         logger.info("Registering GCP secrets provider", extra={"project_id": cfg.project_id})
-        secrets_registry.register("gcp", _build_gcp_secrets_provider(cfg))
+        composition_module.secrets_registry.register(
+            "gcp", composition_module._build_gcp_secrets_provider(cfg)
+        )
 
 
 __all__ = [
