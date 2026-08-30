@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -20,6 +21,7 @@ from mangomas.composition import (
     _file_memory_factory,
     _HarnessOrchestrator,
     _lmstudio_embedding_factory,
+    _registries,
     _resolve_llm_secrets,
     _storage_registry,
     _vector_registry,
@@ -38,6 +40,7 @@ from mangomas.config import (
     MemorySettings,
     SecretsSettings,
     Settings,
+    VectorSettings,
 )
 from mangomas.core import Orchestrator
 from mangomas.core.agent import AgentContext, AgentRequest, Message
@@ -113,6 +116,29 @@ def test_default_agents_are_registered_in_agent_registry() -> None:
     assert "tool" in agent_registry.available()
     assert "planner" in agent_registry.available()
     assert "reviewer" in agent_registry.available()
+
+
+def test_registry_singletons_are_the_same_object_builder_reads() -> None:
+    """Pin the invariant `Registry.scoped()` monkeypatching depends on.
+
+    The facade re-exports registries from ``_registries.py``; ``builder.py``
+    imports the very same names. If a future refactor ever gave ``builder.py``
+    its own ``Registry("vector")`` instead of importing the shared singleton,
+    every ``*_registry.scoped(...)`` test would still run — and would fail
+    with a confusing "used the real SDK" or "fake not found" error instead of
+    a clear identity mismatch. This test makes the failure legible instead.
+    """
+    # `builder.py` deliberately does not re-export these (it is not a facade),
+    # so mypy's `--no-implicit-reexport` refuses static attribute access;
+    # `importlib` + `getattr` reach the same real module attribute at runtime
+    # without mypy statically checking it against builder's typed exports —
+    # the same idiom `tests/test_import_compat.py` uses throughout.
+    builder_mod = importlib.import_module("mangomas.composition.builder")
+    assert llm_registry is _registries.llm_registry is builder_mod.llm_registry
+    assert embedding_registry is _registries.embedding_registry is builder_mod.embedding_registry
+    assert agent_registry is _registries.agent_registry is builder_mod.agent_registry
+    assert _storage_registry is _registries._storage_registry
+    assert _vector_registry is _registries._vector_registry
 
 
 def test_build_orchestrator_disabled_harness_returns_plain_orchestrator() -> None:
@@ -710,11 +736,88 @@ def test_lmstudio_embedding_factory_forwards_settings() -> None:
     assert client._base_url == "http://lm/v1"
 
 
+def test_sentence_transformers_embedding_factory_forwards_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SDK-backed factories are lazy-imported inside the function body, so
+    only registry membership was previously exercised — kwarg-forwarding
+    regressions in these bodies were invisible to the suite. Monkeypatching
+    the class at its lazy-import source (rather than through the composition
+    facade) mirrors ``test_vertex_factory_forwards_settings_to_client`` above,
+    adapted for a factory that imports directly instead of via a facade name.
+    """
+    captured: dict[str, Any] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "mangomas.adapters.embeddings.sentence_transformers.SentenceTransformersEmbeddingClient",
+        _Recorder,
+    )
+    cfg = EmbeddingSettings(enabled=True, provider="sentence_transformers", model="all-MiniLM-L6")
+    from mangomas.composition.embeddings import (  # noqa: PLC0415
+        _sentence_transformers_embedding_factory,
+    )
+
+    _sentence_transformers_embedding_factory(cfg)
+    assert captured == {"model": "all-MiniLM-L6"}
+
+
+def test_vertex_embedding_factory_forwards_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "mangomas.adapters.embeddings.vertex.VertexEmbeddingClient",
+        _Recorder,
+    )
+    cfg = EmbeddingSettings(
+        enabled=True,
+        provider="vertex",
+        model="text-embedding-004",
+        project_id="proj-x",
+        location="europe-west4",
+    )
+    from mangomas.composition.embeddings import _vertex_embedding_factory  # noqa: PLC0415
+
+    _vertex_embedding_factory(cfg)
+    assert captured == {
+        "project_id": "proj-x",
+        "location": "europe-west4",
+        "model": "text-embedding-004",
+    }
+
+
 # ── Vector store wiring ───────────────────────────────────────────────────────
 
 
 def test_vector_factory_registered() -> None:
     assert "chroma" in _vector_registry.available()
+
+
+def test_chroma_vector_factory_forwards_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """See ``test_sentence_transformers_embedding_factory_forwards_settings`` —
+    same lazy-import blind spot, same fix."""
+    captured: dict[str, Any] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "mangomas.adapters.vector.chroma.ChromaVectorStore",
+        _Recorder,
+    )
+    from mangomas.composition.vector import _chroma_vector_factory  # noqa: PLC0415
+
+    cfg = VectorSettings(enabled=True, provider="chroma", persist_dir="./data/x", collection="c1")
+    _chroma_vector_factory(cfg)
+    assert captured == {"persist_dir": "./data/x", "collection_name": "c1"}
 
 
 def test_build_orchestrator_vector_disabled_by_default() -> None:
@@ -817,9 +920,11 @@ def test_gcp_secrets_lazy_registers_on_build_when_provider_selected() -> None:
         db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
         secrets=SecretsSettings(provider="gcp", project_id="test-proj"),
     )
-    # Drop any prior gcp binding so we can observe the lazy registration.
-    if "gcp" in secrets_registry.available():
-        secrets_registry._store.pop("gcp", None)
+    # Drop any prior gcp binding so we can observe the lazy registration,
+    # restoring it in `finally` — build_orchestrator registers a *real*
+    # GCPSecretManagerProvider into this process-wide singleton, and leaving
+    # it there would leak into every test that runs after this one.
+    prior = secrets_registry._store.pop("gcp", None)
 
     captured: dict[str, Any] = {}
 
@@ -831,12 +936,18 @@ def test_gcp_secrets_lazy_registers_on_build_when_provider_selected() -> None:
 
         return _Stub()
 
-    with llm_registry.scoped("lmstudio", _capturing_llm_factory):
-        orch = build_orchestrator(settings)
-        try:
-            assert "gcp" in secrets_registry.available()
-        finally:
-            _close_repo(orch)
+    try:
+        with llm_registry.scoped("lmstudio", _capturing_llm_factory):
+            orch = build_orchestrator(settings)
+            try:
+                assert "gcp" in secrets_registry.available()
+            finally:
+                _close_repo(orch)
+    finally:
+        if prior is None:
+            secrets_registry._store.pop("gcp", None)
+        else:
+            secrets_registry._store["gcp"] = prior
 
 
 def test_gcp_secrets_lazy_register_raises_when_project_id_missing() -> None:
@@ -846,10 +957,15 @@ def test_gcp_secrets_lazy_register_raises_when_project_id_missing() -> None:
         db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
         secrets=SecretsSettings(provider="gcp", project_id=None),
     )
-    if "gcp" in secrets_registry.available():
-        secrets_registry._store.pop("gcp", None)
-    with pytest.raises(ConfigError, match="MANGOMAS_SECRETS__PROJECT_ID"):
-        build_orchestrator(settings)
+    prior = secrets_registry._store.pop("gcp", None)
+    try:
+        with pytest.raises(ConfigError, match="MANGOMAS_SECRETS__PROJECT_ID"):
+            build_orchestrator(settings)
+    finally:
+        if prior is None:
+            secrets_registry._store.pop("gcp", None)
+        else:
+            secrets_registry._store["gcp"] = prior
 
 
 def test_build_gcp_secrets_provider_returns_provider_when_valid() -> None:
@@ -892,18 +1008,27 @@ def test_resolve_llm_secrets_updates_when_provider_resolves() -> None:
         def get(self, ref: str) -> str | None:
             return "resolved-key" if ref == "my-secret" else None
 
-    with (
-        embedding_registry.scoped("lmstudio", lambda _: None),
-        llm_registry.scoped("vertex", lambda _: None),
-        agent_registry.scoped("dummy", lambda _: None),
-    ):
-        try:
-            from mangomas.composition import secrets_registry  # noqa: PLC0415
+    with secrets_registry.scoped("fake", _FakeProvider()):
+        result = _resolve_llm_secrets(cfg, "fake")
+    assert result.api_key == "resolved-key"
+    assert result.secret_ref == "my-secret"  # unchanged  # noqa: S105
 
-            secrets_registry.register("fake", _FakeProvider())
-            result = _resolve_llm_secrets(cfg, "fake")
-            assert result.api_key == "resolved-key"
-            assert result.secret_ref == "my-secret"  # unchanged  # noqa: S105
-        finally:
-            if "fake" in secrets_registry.available():
-                secrets_registry._store.pop("fake", None)
+
+def test_resolve_llm_secrets_keeps_inline_key_when_provider_returns_none() -> None:
+    """When the provider has no value for ``secret_ref``, the inline ``api_key``
+    survives unchanged — local development with no vault entry configured
+    must keep working rather than resolving to ``None``."""
+    cfg = LLMSettings(
+        provider="lmstudio",
+        api_key="inline-fallback",
+        secret_ref="unconfigured-ref",  # noqa: S106
+    )
+
+    class _EmptyProvider:
+        def get(self, _ref: str) -> str | None:
+            return None
+
+    with secrets_registry.scoped("empty", _EmptyProvider()):
+        result = _resolve_llm_secrets(cfg, "empty")
+    assert result.api_key == "inline-fallback"
+    assert result is cfg  # unresolved falls back to the original object, no copy

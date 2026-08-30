@@ -192,7 +192,7 @@ def test_create_app_resolves_the_token_for_a_cloud_secrets_provider(
             return AUTH_TOKEN if ref == AUTH_SECRET_REF_ENV else None
 
     monkeypatch.setattr(
-        "mangomas.composition._build_gcp_secrets_provider",
+        "mangomas.composition.secrets._build_gcp_secrets_provider",
         lambda _cfg: _StubCloudProvider(),
     )
 

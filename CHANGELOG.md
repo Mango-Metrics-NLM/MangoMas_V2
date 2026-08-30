@@ -11,20 +11,25 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **`src/mangomas/composition/` package decomposition** (spec-0015 R1 — god
-  file refactoring for maintainability): the 499-line monolithic
-  `composition.py` is now a focused 12-module package with separated concerns
-  — `_registries.py` (singletons), `secrets.py` (LLM secret resolution & GCP
-  bootstrap), `llm.py` (LLM factories), `storage.py` (DB factories),
-  `memory.py`, `embeddings.py` (3 backends), `vector.py`, `rag.py`,
-  `agents.py` (import-time agent registration), `harness.py`
+- **`src/mangomas/composition/` package decomposition** (ADR-0019's re-export
+  facade pattern, applied to a fourth module beyond spec-0015's own cli/
+  config/telemetry trio — god file refactoring for maintainability): the
+  499-line monolithic `composition.py` is now a focused 12-module package
+  with separated concerns — `_registries.py` (singletons), `secrets.py` (LLM
+  secret resolution & GCP bootstrap), `llm.py` (LLM factories), `storage.py`
+  (DB factories), `memory.py`, `embeddings.py` (3 backends), `vector.py`,
+  `rag.py`, `agents.py` (import-time agent registration), `harness.py`
   (_HarnessOrchestrator wrapper), and `builder.py` (main `build_orchestrator`
   orchestration). Lazy imports for optional SDKs (Vertex, PostgreSQL, GCP,
   Chroma) preserved — zero behavior change. **Backwards-compatibility:**
   every name importable from `mangomas.composition` today remains importable
   via `__init__.py` re-export facade (ADR-0019); tests and external code see
   zero changes. Registry identities and factory signatures preserved for
-  monkeypatching.
+  monkeypatching. `tests/test_import_compat.py`'s facade-identity contract
+  (previously scoped to `cli`/`telemetry`/`config`) now also covers
+  `composition`, closing the gap that let an `__all__` typo
+  (`_vector_embedding_factory` instead of `_vertex_embedding_factory`) ship
+  in the first commit undetected by anything but manual review.
 
 ### Added
 

@@ -29,6 +29,7 @@ from types import ModuleType
 
 import pytest
 
+import mangomas.composition as composition_facade
 import mangomas.config as facade
 
 # Resolved from `__file__`, not the CWD. `pytest` can be invoked from anywhere,
@@ -38,7 +39,9 @@ import mangomas.config as facade
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Decomposed packages and the group modules their facade re-exports from.
-# spec-0015 is complete at three: config/, telemetry/ and cli/.
+# spec-0015 is complete at three: config/, telemetry/ and cli/. `composition/`
+# is a fourth, later decomposition of the same ADR-0019 shape (not part of
+# spec-0015's own requirement list — see the composition-facade section below).
 _FACADES: dict[str, tuple[str, ...]] = {
     "mangomas.cli": (
         "_app",
@@ -71,6 +74,19 @@ _FACADES: dict[str, tuple[str, ...]] = {
         "secrets",
         "storage",
         "workflow",
+    ),
+    "mangomas.composition": (
+        "_registries",
+        "agents",
+        "builder",
+        "embeddings",
+        "harness",
+        "llm",
+        "memory",
+        "rag",
+        "secrets",
+        "storage",
+        "vector",
     ),
 }
 
@@ -161,6 +177,35 @@ _PRIVATE_FACADE_CONTRACT: dict[str, dict[str, str]] = {
         "_build_metric_reader": "exporters",
         "_lazy_cloud_trace_exporter": "exporters",
         "_lazy_cloud_monitoring_exporter": "exporters",
+    },
+    # Composition's factory functions are underscore-prefixed by convention
+    # (they are wiring internals, not an API meant for casual use) yet are
+    # still part of the documented facade contract: `tests/test_composition.py`
+    # imports every one of them directly from `mangomas.composition`, and
+    # `mango-*-dev` agents monkeypatch several through this exact path. The
+    # `_owned_names()` helper filters underscore-prefixed names as "not
+    # public", so without an explicit entry here almost this entire facade
+    # would be invisible to the identity/completeness tests below — which is
+    # exactly how a stray `__all__` typo (`_vector_embedding_factory` instead
+    # of `_vertex_embedding_factory`, caught in review, not by any test)
+    # shipped once already.
+    "mangomas.composition": {
+        "_HarnessOrchestrator": "harness",
+        "_build_gcp_secrets_provider": "secrets",
+        "_build_rag_tools": "rag",
+        "_chroma_vector_factory": "vector",
+        "_file_memory_factory": "memory",
+        "_lmstudio_embedding_factory": "embeddings",
+        "_lmstudio_factory": "llm",
+        "_memory_registry": "_registries",
+        "_postgres_factory": "storage",
+        "_resolve_llm_secrets": "secrets",
+        "_sentence_transformers_embedding_factory": "embeddings",
+        "_sqlite_factory": "storage",
+        "_storage_registry": "_registries",
+        "_vector_registry": "_registries",
+        "_vertex_embedding_factory": "embeddings",
+        "_vertex_factory": "llm",
     },
 }
 
@@ -436,6 +481,70 @@ def test_cli_base_modules_import_nothing_from_their_own_package() -> None:
             if imported.startswith("mangomas.cli"):
                 offenders.append(f"{submodule} -> {imported}")
     assert offenders == [], f"base modules importing from mangomas.cli: {offenders}"
+
+
+# ── Composition facade (ADR-0019, outside spec-0015's own requirement list) ──
+
+
+def test_composition_facade_exports_are_non_empty() -> None:
+    assert _public_names(composition_facade)
+
+
+@pytest.mark.parametrize("name", _public_names(composition_facade))
+def test_composition_facade_name_is_importable(name: str) -> None:
+    """Every name in `__all__` must actually resolve.
+
+    This is exactly the check a stray `__all__` typo breaks: a name *listed*
+    but never bound under that spelling. No import statement anywhere
+    references the wrong name, so every existing `from mangomas.composition
+    import X` keeps working — only `__all__`'s own advertised surface lies.
+    That is precisely how `_vector_embedding_factory` (should have been
+    `_vertex_embedding_factory`) shipped in this package's first commit and
+    needed a manual review pass to catch, rather than failing here.
+    """
+    assert hasattr(composition_facade, name), (
+        f"mangomas.composition.__all__ advertises {name!r} but does not define it"
+    )
+
+
+@pytest.mark.parametrize("submodule", _FACADES["mangomas.composition"])
+def test_composition_facade_reexports_are_identical_objects(submodule: str) -> None:
+    """`facade.X is home_module.X` for every *public* (non-underscore) name a
+    submodule owns — `build_orchestrator`, `agent_registry`, `AgentFactory`,
+    etc. Composition's factory functions are underscore-prefixed even though
+    `__all__` exports them; those go through
+    `test_composition_private_contract_names_are_identical` below instead,
+    mirroring the cli/telemetry private-contract pattern.
+    """
+    home = importlib.import_module(f"mangomas.composition.{submodule}")
+    for name in _owned_names("mangomas.composition", submodule):
+        if not hasattr(composition_facade, name):
+            continue
+        assert getattr(composition_facade, name) is getattr(home, name), (
+            f"mangomas.composition.{name} is not the same object as "
+            f"mangomas.composition.{submodule}.{name}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "home"), sorted(_PRIVATE_FACADE_CONTRACT["mangomas.composition"].items())
+)
+def test_composition_private_contract_names_are_identical(name: str, home: str) -> None:
+    home_mod = importlib.import_module(f"mangomas.composition.{home}")
+    assert hasattr(composition_facade, name), f"mangomas.composition no longer re-exports {name!r}"
+    assert getattr(composition_facade, name) is getattr(home_mod, name)
+
+
+def test_every_owned_public_name_reaches_the_composition_facade() -> None:
+    """No public name may be stranded in a composition submodule."""
+    stranded: list[str] = []
+    for submodule in _FACADES["mangomas.composition"]:
+        for name in _owned_names("mangomas.composition", submodule):
+            if not hasattr(composition_facade, name):
+                stranded.append(f"{submodule}.{name}")
+    assert stranded == [], (
+        f"public names not re-exported by mangomas.composition: {sorted(stranded)}"
+    )
 
 
 # ── core.tools facade (spec-0015 R4) ─────────────────────────────────────────
