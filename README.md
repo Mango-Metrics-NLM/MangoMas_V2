@@ -307,7 +307,7 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 15 skills — live in Claude Code and VS Code Copilot |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 16 skills — live in Claude Code and VS Code Copilot |
 | Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |

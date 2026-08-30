@@ -44,7 +44,7 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/errors.py", 100, "errors"),
     Floor("src/mangomas/registry.py", 100, "registry"),
     Floor("src/mangomas/core/**/*.py", 100, "core"),
-    Floor("src/mangomas/composition.py", 95, "composition"),
+    Floor("src/mangomas/composition/**/*.py", 95, "composition"),
     Floor("src/mangomas/agents/**/*.py", 95, "agents"),
     Floor("src/mangomas/api/**/*.py", 95, "api"),
     Floor("src/mangomas/cli/**/*.py", 95, "cli"),
