@@ -557,6 +557,7 @@ tree serves both.
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
 | `mango-mutation-proof` | Proving a guard fails when the thing it guards breaks |
 | `mango-coverage-audit` | Checking a coverage number is measured over the right denominator |
+| `mango-decompose` | Splitting a god file into a package: extract, facade, wire into `test_import_compat.py`, verify per-submodule coverage |
 
 ---
 

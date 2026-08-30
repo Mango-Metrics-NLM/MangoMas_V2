@@ -329,6 +329,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-agent-add",
         "mango-config",
         "mango-coverage-audit",
+        "mango-decompose",
         "mango-deploy",
         "mango-error",
         "mango-eval",
