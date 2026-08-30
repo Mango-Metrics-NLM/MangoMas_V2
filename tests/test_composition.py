@@ -882,23 +882,28 @@ def test_resolve_llm_secrets_returns_unchanged_when_no_ref() -> None:
 
 def test_resolve_llm_secrets_updates_when_provider_resolves() -> None:
     """_resolve_llm_secrets updates api_key when provider.get succeeds."""
-    cfg = LLMSettings(provider="lmstudio", api_key="inline", secret_ref="my-secret")
+    cfg = LLMSettings(
+        provider="lmstudio",
+        api_key="inline",
+        secret_ref="my-secret",  # noqa: S106
+    )
 
     class _FakeProvider:
         def get(self, ref: str) -> str | None:
             return "resolved-key" if ref == "my-secret" else None
 
-    with embedding_registry.scoped("lmstudio", lambda _: None):  # benign dummy registry entry
-        with llm_registry.scoped("vertex", lambda _: None):  # benign dummy
-            with agent_registry.scoped("dummy", lambda _: None):  # benign dummy
-                try:
-                    # Register fake provider; use a context to isolate
-                    from mangomas.composition import secrets_registry
+    with (
+        embedding_registry.scoped("lmstudio", lambda _: None),
+        llm_registry.scoped("vertex", lambda _: None),
+        agent_registry.scoped("dummy", lambda _: None),
+    ):
+        try:
+            from mangomas.composition import secrets_registry  # noqa: PLC0415
 
-                    secrets_registry.register("fake", _FakeProvider())
-                    result = _resolve_llm_secrets(cfg, "fake")
-                    assert result.api_key == "resolved-key"
-                    assert result.secret_ref == "my-secret"  # unchanged
-                finally:
-                    if "fake" in secrets_registry.available():
-                        secrets_registry._store.pop("fake", None)
+            secrets_registry.register("fake", _FakeProvider())
+            result = _resolve_llm_secrets(cfg, "fake")
+            assert result.api_key == "resolved-key"
+            assert result.secret_ref == "my-secret"  # unchanged  # noqa: S105
+        finally:
+            if "fake" in secrets_registry.available():
+                secrets_registry._store.pop("fake", None)

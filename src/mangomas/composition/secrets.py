@@ -78,7 +78,8 @@ def ensure_secrets_provider(cfg: SecretsSettings) -> None:
     if cfg.provider == "gcp" and "gcp" not in composition_module.secrets_registry.available():
         logger.info("Registering GCP secrets provider", extra={"project_id": cfg.project_id})
         composition_module.secrets_registry.register(
-            "gcp", composition_module._build_gcp_secrets_provider(cfg)
+            "gcp",
+            composition_module._build_gcp_secrets_provider(cfg),  # noqa: SLF001
         )
 
 
