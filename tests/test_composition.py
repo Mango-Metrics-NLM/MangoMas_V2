@@ -20,6 +20,7 @@ from mangomas.composition import (
     _file_memory_factory,
     _HarnessOrchestrator,
     _lmstudio_embedding_factory,
+    _resolve_llm_secrets,
     _storage_registry,
     _vector_registry,
     _vertex_factory,
@@ -862,3 +863,42 @@ def test_build_gcp_secrets_provider_returns_provider_when_valid() -> None:
     provider = _build_gcp_secrets_provider(cfg)
     assert provider is not None
     assert provider._project_id == "my-proj"
+
+
+def test_build_gcp_secrets_provider_raises_without_project_id() -> None:
+    """_build_gcp_secrets_provider must raise ConfigError when project_id is None."""
+    cfg = SecretsSettings(provider="gcp", project_id=None)
+    with pytest.raises(ConfigError, match="MANGOMAS_SECRETS__PROJECT_ID"):
+        _build_gcp_secrets_provider(cfg)
+
+
+def test_resolve_llm_secrets_returns_unchanged_when_no_ref() -> None:
+    """_resolve_llm_secrets returns input unchanged when secret_ref is unset."""
+    cfg = LLMSettings(provider="lmstudio", api_key="inline-key")
+    result = _resolve_llm_secrets(cfg, "env")
+    assert result is cfg  # same object, unmodified
+    assert result.api_key == "inline-key"
+
+
+def test_resolve_llm_secrets_updates_when_provider_resolves() -> None:
+    """_resolve_llm_secrets updates api_key when provider.get succeeds."""
+    cfg = LLMSettings(provider="lmstudio", api_key="inline", secret_ref="my-secret")
+
+    class _FakeProvider:
+        def get(self, ref: str) -> str | None:
+            return "resolved-key" if ref == "my-secret" else None
+
+    with embedding_registry.scoped("lmstudio", lambda _: None):  # benign dummy registry entry
+        with llm_registry.scoped("vertex", lambda _: None):  # benign dummy
+            with agent_registry.scoped("dummy", lambda _: None):  # benign dummy
+                try:
+                    # Register fake provider; use a context to isolate
+                    from mangomas.composition import secrets_registry
+
+                    secrets_registry.register("fake", _FakeProvider())
+                    result = _resolve_llm_secrets(cfg, "fake")
+                    assert result.api_key == "resolved-key"
+                    assert result.secret_ref == "my-secret"  # unchanged
+                finally:
+                    if "fake" in secrets_registry.available():
+                        secrets_registry._store.pop("fake", None)
