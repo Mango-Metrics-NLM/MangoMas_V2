@@ -30,16 +30,20 @@ and the D1–D9 sponsor-decision register live in the analysis doc):
   truth sweep (specs 0019–0023 acceptance boxes, `MIN_CHUNK_WORDS` README fix,
   stale architecture docs, `.env.example`).
 - **Phase 1 — make the advertised product real (governed tranche).**
-  Batch A: spec-0015 R4 `core/structured.py` extraction (after the
-  `harness/governance.py` ownership decision; new file joins
-  `protected_paths`). Batch B, split into ≥3 governed PRs: (a) streaming turn
-  persistence + metrics + SSE metadata (P0; spec
+  ✅ Batch A (spec-0015 R4 `core/structured.py` extraction) landed
+  2026-08-22 — see "Spec-0014 follow-on" below. ✅ Batch B landed in full:
+  (a) streaming turn persistence + metrics + SSE metadata (spec
   [0025](specs/0025-streaming-turn-persistence.md) + ADR-0025); (b)
-  orchestrator metrics per ADR-0013 + `LoopSettings` wiring (the per-step
-  timeout); (c) acceptance/max-steps threading + fan-out partial results.
-  Plus: structured-output validation + a shipped planner→tool→reviewer flow
-  (P0, no protected paths); rate limiting (P1, posture decision D5);
-  `MODEL_OVERRIDE` wiring.
+  orchestrator metrics per ADR-0013 + `LoopSettings` wiring (spec
+  [0026](specs/0026-orchestrator-metrics-loop-wiring.md) + ADR-0026); (c)
+  acceptance/max-steps threading + fan-out partial results (spec
+  [0027](specs/0027-pipeline-acceptance-and-settled-fan-out.md) + ADR-0027).
+  Also landed, outside the original tranche: the `composition.py` →
+  `composition/` package decomposition (2026-08-30) — see "Done on the
+  composition-decomposition branch" below. Still open: structured-output
+  validation + a shipped planner→tool→reviewer flow (P0, no protected paths;
+  status not re-verified since the analysis doc was written); rate limiting
+  (P1, posture decision D5); `MODEL_OVERRIDE` wiring.
 - **Phase 2 — verification honesty + adoption surface.** Executing homes for
   the feasibly-runnable gated suites + a parity meta-test; container
   scan + SBOM; Ollama adapter; `mangomas serve`; RAG/workflow-stream HTTP
@@ -82,6 +86,18 @@ no GCP resources are provisioned here. See ADR-0001, spec 0004.
 default preserves ADR-002. See ADR-0010, spec 0003.
 
 ---
+
+## Done on the composition-decomposition branch (Unreleased)
+
+`src/mangomas/composition.py` (499 lines) decomposed into a 12-module
+`composition/` package (`_registries.py`, `secrets.py`, `llm.py`,
+`storage.py`, `memory.py`, `embeddings.py`, `vector.py`, `rag.py`,
+`agents.py`, `harness.py`, `builder.py`) behind a permanent re-export facade
+(ADR-0019, applied a fourth time beyond spec-0015's cli/config/telemetry
+trio). `_HarnessOrchestrator` now lives in `composition/harness.py`. Zero
+behavior change; `tests/test_import_compat.py`'s facade-identity contract
+extended to cover it, closing the gap that let an `__all__` typo ship
+undetected in the first commit. See `CHANGELOG.md`'s `[Unreleased]` section.
 
 ## Done on the governance-hardening branch (Unreleased)
 

@@ -3,7 +3,7 @@
 - **Branch:** `claude/agents-mcps-implementation-plan-9bdtnt`
 - **Date:** 2026-08-09
 - **Target release:** `[Unreleased]` → next minor
-- **Status:** In progress — PR A done; PR B complete (B1/B2a/B2b/B3+B4/B5 merged); PR C landed for R1–R3 (`config/`, `telemetry/`, `cli/`), R4 still deferred
+- **Status:** Delivered — PR A done; PR B complete (B1/B2a/B2b/B3+B4/B5 merged); PR C landed in full (R1–R4); R4 (`core/structured.py`) landed 2026-08-22 (see `specs/0015-package-decomposition.md` and `CHANGELOG.md`)
 - **Specs:** `specs/0017-protected-path-governance.md`,
   `specs/0018-live-claude-code-corpus.md`,
   `specs/0015-package-decomposition.md` (existing, amended)
@@ -120,7 +120,7 @@ two load-bearing premises:
 
 ## PR C — Package decomposition (spec-0015, amended / ADR-0019, amended)
 
-R1–R3 landed; R4 still deferred. Amended spec-0015's acceptance bar (a facade preserves
+R1–R4 all landed (R4 on 2026-08-22). Amended spec-0015's acceptance bar (a facade preserves
 object identity, not module-global name bindings — `cli/main.py`'s `_build` and
 `telemetry.py`'s lazy exporters need object-attribute seams, not bare functions, before
 the split). Sequenced `config/` first (safest, zero monkeypatch risk) rather than last.
@@ -139,10 +139,14 @@ orchestrators and passing anyway. That is the finding worth carrying forward: on
 of anything that is not a clean partition, a green suite is not evidence the facade
 worked.
 
-R4 (`core/structured.py`, plus the protected `core/tools.py` / `errors.py` batch) stays
-deferred — it is a backwards-compatibility audit rather than a mechanical split, and it
-is entangled with the unsettled question of who owns `harness/governance.py`, which
-defines `PROTECTED_PATHS`.
+R4 (`core/structured.py`, plus the protected `core/tools.py` / `errors.py` batch) landed
+2026-08-22: `build_structured_prompt`, a single `_extract_json_span`, the relocated
+`parse_or_recover`, and a new `parse_llm_json_object` now live in the new protected
+`core/structured.py`, with `core/tools.py` keeping every previously importable name as a
+permanent re-export facade. The question of who owns `harness/governance.py` (which
+defines `PROTECTED_PATHS`) was resolved as decision D3b: `mango-harness-dev` owns the
+governance table. See `specs/0015-package-decomposition.md`'s R4 acceptance box and
+`NEXT_STEPS.md`'s code-hygiene-branch section for the full record.
 
 ## Verification
 

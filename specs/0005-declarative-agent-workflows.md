@@ -1,6 +1,10 @@
 # Spec-0005: Declarative multi-agent workflow graph
 
-- **Status:** In progress
+- **Status:** Implemented — all acceptance criteria met; the "Open questions"
+  below were resolved as deliberate deferrals (conditional edges, composite
+  `loop`/`fan_out` bodies, third-party node-kind discovery), tracked as Phase
+  3 backlog in `docs/analysis/20260822-next-steps-roadmap-analysis.md` and
+  `NEXT_STEPS.md`.
 - **Linked ADR:** ADR-0011
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added`
 

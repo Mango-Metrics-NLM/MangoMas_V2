@@ -3,7 +3,16 @@
 - **Branch:** `claude/code-hygiene-modularity-3r4umt`
 - **Date:** 2026-07-30
 - **Target release:** `[Unreleased]` → next minor
-- **Status:** In progress
+- **Status:** Delivered — PR #24 merged (`specs/0014-code-hygiene-modularity.md`,
+  `CHANGELOG.md`). M0–M9, M11, M13–M15 landed as planned. M10 (`cli/` split)
+  and M12(b)/(c) (`telemetry/`, `config/` packages) were descoped
+  mid-execution to spec-0015 and landed there 2026-08-22 — see
+  `docs/plans/20260809T143356Z-harness-corpus-decomposition-plan.md` and
+  `specs/0015-package-decomposition.md` for that record. M12(a)
+  (`_HarnessOrchestrator` → a standalone `mangomas/harness.py`) did not land
+  as described: `_HarnessOrchestrator` instead moved into the `composition/`
+  package's own `harness.py` submodule via a later, unrelated decomposition
+  (2026-08-30, tracked only in `CHANGELOG.md`'s `[Unreleased]` section).
 - **Spec:** `specs/0014-code-hygiene-modularity.md` · **ADR:** ADR-0019
 
 ## Executive Summary
