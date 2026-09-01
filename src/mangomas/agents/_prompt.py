@@ -22,7 +22,27 @@ from typing import TYPE_CHECKING
 from mangomas.core.agent import AgentRequest, Message
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.adapters.llm.base import LLMClient
     from mangomas.config import AgentSettings
+    from mangomas.core.agent import AgentContext
+
+
+def resolve_llm(ctx: AgentContext, agent_name: str) -> LLMClient:
+    """Return the agent-scoped LLM override client, or ``ctx.llm`` when none is set.
+
+    Per ADR-0028, per-agent model overrides are carried in
+    ``ctx.extras["agent_llm_overrides"]: dict[str, LLMClient]`` — a seam built
+    by the composition layer (``composition/builder.py``), not this package.
+    This resolver has no opinion on how (or whether) that dict is populated;
+    it degrades gracefully to ``ctx.llm`` when ``extras`` lacks the key
+    entirely, or lacks *this* agent's name within it — the identical
+    "explicit-arg -> per-agent override -> shared default" shape
+    :func:`resolve_sampling` uses, just resolved at call time (``handle``/
+    ``stream``) rather than construction time, since agents only receive
+    ``ctx`` once a request arrives.
+    """
+    overrides: dict[str, LLMClient] = ctx.extras.get("agent_llm_overrides", {})
+    return overrides.get(agent_name, ctx.llm)
 
 
 def resolve_system_prompt(

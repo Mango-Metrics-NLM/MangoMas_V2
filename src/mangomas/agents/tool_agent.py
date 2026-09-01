@@ -6,7 +6,12 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_system_prompt
+from mangomas.agents._prompt import (
+    build_messages,
+    resolve_llm,
+    resolve_sampling,
+    resolve_system_prompt,
+)
 from mangomas.config import DEFAULT_TOOL_MAX_STEPS
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolCallParser, build_tool_system_prompt
@@ -75,12 +80,17 @@ class ToolAgent:
         effective_prompt = resolve_system_prompt(self._system_prompt, None, suffix=tool_prompt)
         messages = build_messages(request, effective_prompt)
 
+        # Resolved once per request: the agent-scoped override (if configured)
+        # or ctx.llm — every LLM call in the inner loop below uses the same
+        # client (ADR-0028).
+        llm = resolve_llm(ctx, self.name)
+
         content = ""
         steps = 0
         while steps < self._max_tool_steps:
             steps += 1
             logger.debug("ToolAgent step %d/%d", steps, self._max_tool_steps)
-            content = await ctx.llm.complete(
+            content = await llm.complete(
                 messages,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,

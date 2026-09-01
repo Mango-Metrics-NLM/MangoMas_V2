@@ -11,6 +11,24 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Per-agent `MODEL_OVERRIDE` wiring** (spec-0028 / ADR-0028 — closes the
+  Phase-1 roadmap item): `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE`, reserved
+  since spec-0014, is now read. `composition/llm.py::build_agent_llm_overrides`
+  builds one same-provider `LLMClient` per agent whose override differs from
+  the shared default (reusing the existing `llm_registry` factories
+  verbatim), keyed by agent name at `ctx.extras["agent_llm_overrides"]` —
+  `extras`'s first real consumer. Agents resolve their client at call time
+  via the new `agents/_prompt.py::resolve_llm`, falling back to `ctx.llm`
+  when unset. **Backwards-compatibility:** no agent sets `model_override`
+  today, so the extras dict is always `{}` and every agent resolves to
+  `ctx.llm` — byte-identical to pre-change behavior (regression-pinned).
+  Resource cleanup for the extra clients is wired via a new
+  `_AgentLLMOverrideCloseMixin` extending `Orchestrator._close_hooks()` from
+  the composition layer — the same subclass-to-extend pattern
+  `_HarnessOrchestrator` already uses — so `Orchestrator.aclose()` picks it
+  up with **zero edits to the protected `core/orchestrator.py` or
+  `core/agent.py`**.
+
 - **`src/mangomas/composition/` package decomposition** (ADR-0019's re-export
   facade pattern, applied to a fourth module beyond spec-0015's own cli/
   config/telemetry trio — god file refactoring for maintainability): the

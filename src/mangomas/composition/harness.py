@@ -14,6 +14,7 @@ from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
+from mangomas.composition.llm import _AgentLLMOverrideCloseMixin
 from mangomas.config import HarnessSettings, LoopSettings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import AgentRequest, AgentResponse
@@ -28,7 +29,7 @@ _HARNESS_TOPOLOGY_DISPATCH = "dispatch"
 _HARNESS_TOPOLOGY_STREAM = "stream"
 
 
-class _HarnessOrchestrator(Orchestrator):
+class _HarnessOrchestrator(_AgentLLMOverrideCloseMixin, Orchestrator):
     """Orchestrator subclass that wraps dispatch paths in a harness-level span.
 
     Engaged only when ``Settings.harness.enabled`` is ``True``. The parent
@@ -38,6 +39,10 @@ class _HarnessOrchestrator(Orchestrator):
     ``dispatch_pipeline`` and ``dispatch_fan_out`` delegate through
     ``dispatch``, those topologies inherit the wrap automatically;
     ``stream_dispatch`` does not, so it is wrapped explicitly below.
+
+    Also picks up :class:`~mangomas.composition.llm._AgentLLMOverrideCloseMixin`
+    so per-agent ``MODEL_OVERRIDE`` clients (spec-0028 / ADR-0028) are closed
+    on :meth:`aclose` the same as the harness-disabled orchestrator.
     """
 
     def __init__(

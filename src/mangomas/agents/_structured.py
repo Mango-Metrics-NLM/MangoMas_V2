@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
-from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_system_prompt
+from mangomas.agents._prompt import (
+    build_messages,
+    resolve_llm,
+    resolve_sampling,
+    resolve_system_prompt,
+)
 from mangomas.agents._streaming import stream_with_buffered_fallback
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_VALIDATE_OUTPUT
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
@@ -125,7 +130,8 @@ class StructuredOutputAgent:
         """
         messages = self._build_messages(request)
         logger.debug("%s: calling LLM for structured output", self.name)
-        content = await ctx.llm.complete(
+        llm = resolve_llm(ctx, self.name)
+        content = await llm.complete(
             messages,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
@@ -149,10 +155,11 @@ class StructuredOutputAgent:
     ) -> AsyncGenerator[str, None]:
         messages = self._build_messages(request)
         logger.debug("%s streaming %d messages", self.name, len(messages))
+        llm = resolve_llm(ctx, self.name)
         async for chunk in stream_with_buffered_fallback(
             self.name,
             messages,
-            ctx,
+            llm,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         ):

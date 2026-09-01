@@ -43,7 +43,8 @@ and the D1–D9 sponsor-decision register live in the analysis doc):
   composition-decomposition branch" below. Still open: structured-output
   validation + a shipped planner→tool→reviewer flow (P0, no protected paths;
   status not re-verified since the analysis doc was written); rate limiting
-  (P1, posture decision D5); `MODEL_OVERRIDE` wiring.
+  (P1, posture decision D5). ✅ `MODEL_OVERRIDE` wiring landed (spec-0028 /
+  ADR-0028) — see "Done on the model-override branch" below.
 - **Phase 2 — verification honesty + adoption surface.** Executing homes for
   the feasibly-runnable gated suites + a parity meta-test; container
   scan + SBOM; Ollama adapter; `mangomas serve`; RAG/workflow-stream HTTP
@@ -98,6 +99,24 @@ trio). `_HarnessOrchestrator` now lives in `composition/harness.py`. Zero
 behavior change; `tests/test_import_compat.py`'s facade-identity contract
 extended to cover it, closing the gap that let an `__all__` typo ship
 undetected in the first commit. See `CHANGELOG.md`'s `[Unreleased]` section.
+
+## Done on the model-override branch (Unreleased)
+
+`MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` (reserved since spec-0014) is now
+read: `composition/llm.py::build_agent_llm_overrides` builds one same-
+provider `LLMClient` per agent whose override differs from the shared
+default, keyed by agent name at `ctx.extras["agent_llm_overrides"]` —
+`extras`'s first real consumer. Agents resolve their client at call time via
+`agents/_prompt.py::resolve_llm(ctx, agent_name)`, falling back to `ctx.llm`
+when unset (default-off, byte-identical when no agent opts in). Cleanup for
+the extra clients is wired without touching either protected `core/agent.py`
+or `core/orchestrator.py`: a new `_AgentLLMOverrideCloseMixin` extends
+`Orchestrator._close_hooks()` from the composition layer — the same
+subclass-to-extend pattern `composition/harness.py::_HarnessOrchestrator`
+already used — so `Orchestrator.aclose()` picks it up via ordinary method
+dispatch with zero protected-path edits. See spec-0028 / ADR-0028 for the
+full design and the alternative (editing `_close_hooks()` directly) it
+rejected.
 
 ## Done on the governance-hardening branch (Unreleased)
 
