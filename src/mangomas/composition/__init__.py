@@ -69,10 +69,16 @@ from mangomas.composition.harness import (
 
 # LLM factories (used by tests for direct testing)
 from mangomas.composition.llm import (
+    _AgentLLMOverrideCloseMixin as _AgentLLMOverrideCloseMixin,
+)
+from mangomas.composition.llm import (
     _lmstudio_factory as _lmstudio_factory,
 )
 from mangomas.composition.llm import (
     _vertex_factory as _vertex_factory,
+)
+from mangomas.composition.llm import (
+    build_agent_llm_overrides as build_agent_llm_overrides,
 )
 
 # Memory factory (used by tests for direct testing)
@@ -113,6 +119,7 @@ from mangomas.secrets import secrets_registry as secrets_registry
 __all__ = [
     "AgentFactory",
     "VertexClient",
+    "_AgentLLMOverrideCloseMixin",
     "_HarnessOrchestrator",
     "_build_gcp_secrets_provider",
     "_build_rag_tools",
@@ -130,6 +137,7 @@ __all__ = [
     "_vertex_embedding_factory",
     "_vertex_factory",
     "agent_registry",
+    "build_agent_llm_overrides",
     "build_orchestrator",
     "embedding_registry",
     "ensure_agent_plugins",

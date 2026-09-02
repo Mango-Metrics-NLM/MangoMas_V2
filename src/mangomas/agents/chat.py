@@ -6,7 +6,12 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING
 
-from mangomas.agents._prompt import build_messages, resolve_sampling, resolve_system_prompt
+from mangomas.agents._prompt import (
+    build_messages,
+    resolve_llm,
+    resolve_sampling,
+    resolve_system_prompt,
+)
 from mangomas.agents._streaming import stream_with_buffered_fallback
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse
 
@@ -35,7 +40,8 @@ class ChatAgent:
         """Send the messages to the LLM and wrap the reply."""
         messages = build_messages(request, self._system_prompt)
         logger.debug("ChatAgent dispatching %d messages", len(messages))
-        content = await ctx.llm.complete(
+        llm = resolve_llm(ctx, self.name)
+        content = await llm.complete(
             messages,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
@@ -57,10 +63,11 @@ class ChatAgent:
     ) -> AsyncGenerator[str, None]:
         messages = build_messages(request, self._system_prompt)
         logger.debug("ChatAgent streaming %d messages", len(messages))
+        llm = resolve_llm(ctx, self.name)
         async for chunk in stream_with_buffered_fallback(
             self.name,
             messages,
-            ctx,
+            llm,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         ):

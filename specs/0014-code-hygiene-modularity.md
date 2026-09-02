@@ -1,10 +1,12 @@
 # Spec-0014: Code hygiene & modularity overhaul
 
-- **Status:** In progress — defect + deduplication tiers complete and merging
-  via this PR; the remaining oversized-module decompositions (`cli/main.py`,
-  `config.py`, `telemetry.py`) and the protected-path `core/tools.py` /
-  `errors.py` batch are descoped to **spec-0015** (see "Scope revision" below)
-  rather than bundled into this PR.
+- **Status:** Complete — defect + deduplication tiers and this PR's own scope
+  (R1, R2 minus `core/structured.py`, R3's `api/app.py` split, R4) all landed
+  via PR #24. The oversized-module decompositions explicitly descoped to
+  spec-0015 (`cli/main.py`, `config.py`, `telemetry.py`, and the
+  protected-path `core/tools.py` / `errors.py` batch — see "Scope revision"
+  below) landed separately; `specs/0015-package-decomposition.md` is itself
+  now Complete (R4 landed 2026-08-22).
 - **Linked ADR:** ADR-0019 (re-export facade decomposition) — Accepted, proven
   by the `api/app.py` split; the remainder of its scope carries over to
   spec-0015.

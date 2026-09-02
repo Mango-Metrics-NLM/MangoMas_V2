@@ -33,7 +33,7 @@ from mangomas.agents import (
     SummarizeAgent,
     ToolAgent,
 )
-from mangomas.agents._prompt import build_messages, resolve_system_prompt
+from mangomas.agents._prompt import build_messages, resolve_llm, resolve_system_prompt
 from mangomas.config import AgentSettings
 from mangomas.core.agent import AgentContext, AgentRequest, Message
 from mangomas.core.tools import build_structured_prompt
@@ -412,3 +412,186 @@ def test_fake_llm_still_satisfies_streaming_llm_client_protocol() -> None:
 
 def test_fake_llm_still_satisfies_pingable_llm_client_protocol() -> None:
     assert isinstance(FakeLLM(), PingableLLMClient)
+
+
+# ── resolve_llm: per-agent override resolution (ADR-0028) ─────────────────────
+
+
+def test_resolve_llm_no_extras_returns_ctx_llm() -> None:
+    default_llm = FakeLLM()
+    ctx = AgentContext(llm=default_llm, repo=None)
+    assert resolve_llm(ctx, "chat") is default_llm
+
+
+def test_resolve_llm_override_present_for_agent_returns_override() -> None:
+    default_llm = FakeLLM()
+    override_llm = FakeLLM()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {"chat": override_llm}},
+    )
+    result = resolve_llm(ctx, "chat")
+    assert result is override_llm
+    assert result is not default_llm
+
+
+def test_resolve_llm_override_present_for_other_agent_returns_ctx_llm() -> None:
+    """Proves per-agent keying, not a global switch: an override configured for
+    a *different* agent name must not leak into this agent's resolution."""
+    default_llm = FakeLLM()
+    override_llm = FakeLLM()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {"tool": override_llm}},
+    )
+    assert resolve_llm(ctx, "chat") is default_llm
+
+
+# ── Per-agent LLM override: end-to-end identity (ADR-0028) ────────────────────
+# Two distinct FakeLLM instances prove the *override* client (not the shared
+# default) actually receives the request when configured for this agent's
+# name, and that the shared default receives it (unchanged) when no override
+# is configured — the backward-compatibility regression guard.
+
+
+async def test_chat_agent_handle_uses_override_llm_when_configured() -> None:
+    default_llm = FakeLLM()
+    override_llm = FakeLLM()
+    agent = ChatAgent()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {agent.name: override_llm}},
+    )
+    req = AgentRequest(messages=[Message(role="user", content="hi")])
+    await agent.handle(req, ctx)
+    assert override_llm.calls, "override client should have received the request"
+    assert not default_llm.calls, "shared default client must not be called"
+
+
+async def test_chat_agent_handle_uses_default_llm_when_no_override() -> None:
+    default_llm = FakeLLM()
+    agent = ChatAgent()
+    ctx = AgentContext(llm=default_llm, repo=None)
+    req = AgentRequest(messages=[Message(role="user", content="hi")])
+    await agent.handle(req, ctx)
+    assert default_llm.calls, "default client should receive the request when unconfigured"
+
+
+async def test_chat_agent_stream_uses_override_llm_when_configured() -> None:
+    default_llm = FakeLLM(chunks=["default"])
+    override_llm = FakeLLM(chunks=["a", "b"])
+    agent = ChatAgent()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {agent.name: override_llm}},
+    )
+    req = AgentRequest(messages=[Message(role="user", content="hi")])
+    chunks = [c async for c in await agent.stream(req, ctx)]
+    assert chunks == ["a", "b"]
+    assert override_llm.calls
+    assert not default_llm.calls
+
+
+async def test_chat_agent_stream_uses_default_llm_when_no_override() -> None:
+    default_llm = FakeLLM(chunks=["a", "b"])
+    agent = ChatAgent()
+    ctx = AgentContext(llm=default_llm, repo=None)
+    req = AgentRequest(messages=[Message(role="user", content="hi")])
+    chunks = [c async for c in await agent.stream(req, ctx)]
+    assert chunks == ["a", "b"]
+    assert default_llm.calls
+
+
+async def test_tool_agent_handle_uses_override_llm_when_configured() -> None:
+    default_llm = FakeLLM(reply="Plain response.")
+    override_llm = FakeLLM(reply="Plain response.")
+    agent = ToolAgent()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {agent.name: override_llm}},
+    )
+    req = AgentRequest(messages=[Message(role="user", content="go")])
+    await agent.handle(req, ctx)
+    assert override_llm.calls
+    assert not default_llm.calls
+
+
+async def test_tool_agent_handle_uses_default_llm_when_no_override() -> None:
+    default_llm = FakeLLM(reply="Plain response.")
+    agent = ToolAgent()
+    ctx = AgentContext(llm=default_llm, repo=None)
+    req = AgentRequest(messages=[Message(role="user", content="go")])
+    await agent.handle(req, ctx)
+    assert default_llm.calls
+
+
+async def test_summarize_agent_handle_uses_override_llm_when_configured() -> None:
+    default_llm = FakeLLM(reply="summary")
+    override_llm = FakeLLM(reply="summary")
+    agent = SummarizeAgent()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {agent.name: override_llm}},
+    )
+    req = AgentRequest(messages=[Message(role="user", content="summarize")])
+    await agent.handle(req, ctx)
+    assert override_llm.calls
+    assert not default_llm.calls
+
+
+async def test_summarize_agent_handle_uses_default_llm_when_no_override() -> None:
+    default_llm = FakeLLM(reply="summary")
+    agent = SummarizeAgent()
+    ctx = AgentContext(llm=default_llm, repo=None)
+    req = AgentRequest(messages=[Message(role="user", content="summarize")])
+    await agent.handle(req, ctx)
+    assert default_llm.calls
+
+
+async def test_planner_agent_handle_uses_override_llm_when_configured() -> None:
+    reply = '{"goal":"g","steps":[{"step":1,"description":"d"}]}'
+    default_llm = FakeLLM(reply=reply)
+    override_llm = FakeLLM(reply=reply)
+    agent = PlannerAgent()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {agent.name: override_llm}},
+    )
+    req = AgentRequest(messages=[Message(role="user", content="plan")])
+    await agent.handle(req, ctx)
+    assert override_llm.calls
+    assert not default_llm.calls
+
+
+async def test_planner_agent_stream_uses_override_llm_when_configured() -> None:
+    default_llm = FakeLLM(chunks=["default"])
+    override_llm = FakeLLM(chunks=["a", "b"])
+    agent = PlannerAgent()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={"agent_llm_overrides": {agent.name: override_llm}},
+    )
+    req = AgentRequest(messages=[Message(role="user", content="plan")])
+    chunks = [c async for c in await agent.stream(req, ctx)]
+    assert chunks == ["a", "b"]
+    assert override_llm.calls
+    assert not default_llm.calls
+
+
+async def test_reviewer_agent_handle_uses_default_llm_when_no_override() -> None:
+    """Inverse/back-compat case, exercised on the sibling structured agent so
+    both PlannerAgent and ReviewerAgent get at least one direct assertion."""
+    default_llm = FakeLLM(reply='{"passed":true,"score":1.0,"feedback":"ok"}')
+    agent = ReviewerAgent()
+    ctx = AgentContext(llm=default_llm, repo=None)
+    req = AgentRequest(messages=[Message(role="user", content="review")])
+    await agent.handle(req, ctx)
+    assert default_llm.calls

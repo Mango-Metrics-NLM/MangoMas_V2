@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from mangomas.agents._prompt import resolve_sampling, resolve_system_prompt
+from mangomas.agents._prompt import resolve_llm, resolve_sampling, resolve_system_prompt
 from mangomas.config import DEFAULT_SUMMARIZE_HISTORY_LIMIT
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 
@@ -110,7 +110,8 @@ class SummarizeAgent:
             Message(role="user", content=user_content),
         ]
 
-        content = await ctx.llm.complete(
+        llm = resolve_llm(ctx, self.name)
+        content = await llm.complete(
             messages,
             temperature=self._temperature,
             max_tokens=self._max_tokens,

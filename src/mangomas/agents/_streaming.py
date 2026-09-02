@@ -15,15 +15,24 @@ branch is shared.
 
 Adding a fourth streaming agent only requires implementing ``_build_messages``
 and calling :func:`stream_with_buffered_fallback` from ``_do_stream``.
+
+Takes an already-resolved ``LLMClient`` rather than an ``AgentContext`` (ADR-0028):
+the caller resolves ``ctx.llm`` vs. a per-agent override via
+``mangomas.agents._prompt.resolve_llm`` before calling in, so this helper has
+no need for — and no import of — ``AgentContext``.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 from mangomas.adapters.llm.base import StreamingLLMClient
-from mangomas.core.agent import AgentContext, Message
+from mangomas.core.agent import Message
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.adapters.llm.base import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +44,7 @@ _FALLBACK_WARNING_MESSAGE: str = (
 async def stream_with_buffered_fallback(
     agent_name: str,
     messages: list[Message],
-    ctx: AgentContext,
+    llm: LLMClient,
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
@@ -51,27 +60,28 @@ async def stream_with_buffered_fallback(
     messages:
         Already-prepared message list (the caller is responsible for
         prepending its system prompt — this helper does not modify it).
-    ctx:
-        The agent context whose ``llm`` will be inspected for streaming
-        capability.
+    llm:
+        The already-resolved LLM client to use — either ``ctx.llm`` or a
+        per-agent override (see ``mangomas.agents._prompt.resolve_llm``) —
+        inspected for streaming capability.
     temperature:
-        Forwarded verbatim to ``ctx.llm.stream``/``ctx.llm.complete`` (the
-        caller resolves this from ``AgentSettings``; ``None`` lets the LLM
-        adapter apply its own default).
+        Forwarded verbatim to ``llm.stream``/``llm.complete`` (the caller
+        resolves this from ``AgentSettings``; ``None`` lets the LLM adapter
+        apply its own default).
     max_tokens:
-        Forwarded verbatim to ``ctx.llm.stream``/``ctx.llm.complete``, same
+        Forwarded verbatim to ``llm.stream``/``llm.complete``, same
         resolution contract as *temperature*.
 
     Behaviour
     ---------
-    * If ``ctx.llm`` implements :class:`StreamingLLMClient` the helper
-      simply forwards its token stream.
-    * Otherwise it logs ``WARNING`` once, calls ``ctx.llm.complete(messages)``,
+    * If *llm* implements :class:`StreamingLLMClient` the helper simply
+      forwards its token stream.
+    * Otherwise it logs ``WARNING`` once, calls ``llm.complete(messages)``,
       and yields the full response as a single chunk so callers see a
       uniform "stream" of one element.
     """
-    if isinstance(ctx.llm, StreamingLLMClient):
-        async for chunk in await ctx.llm.stream(
+    if isinstance(llm, StreamingLLMClient):
+        async for chunk in await llm.stream(
             messages, temperature=temperature, max_tokens=max_tokens
         ):
             yield chunk
@@ -81,5 +91,5 @@ async def stream_with_buffered_fallback(
         _FALLBACK_WARNING_MESSAGE,
         extra={"agent": agent_name},
     )
-    content = await ctx.llm.complete(messages, temperature=temperature, max_tokens=max_tokens)
+    content = await llm.complete(messages, temperature=temperature, max_tokens=max_tokens)
     yield content

@@ -23,7 +23,12 @@ from mangomas.composition.embeddings import (
     _vertex_embedding_factory,
 )
 from mangomas.composition.harness import _HarnessOrchestrator
-from mangomas.composition.llm import _lmstudio_factory, _vertex_factory
+from mangomas.composition.llm import (
+    _AgentLLMOverrideCloseMixin,
+    _lmstudio_factory,
+    _vertex_factory,
+    build_agent_llm_overrides,
+)
 from mangomas.composition.memory import _file_memory_factory
 from mangomas.composition.rag import _build_rag_tools
 from mangomas.composition.secrets import _resolve_llm_secrets, ensure_secrets_provider
@@ -33,6 +38,16 @@ from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
 
 logger = logging.getLogger(__name__)
+
+
+class _Orchestrator(_AgentLLMOverrideCloseMixin, Orchestrator):
+    """``Orchestrator`` extended to also close per-agent LLM override clients.
+
+    Used for the harness-disabled branch of :func:`build_orchestrator`; the
+    harness-enabled branch gets the same mixin via ``_HarnessOrchestrator``.
+    See :class:`mangomas.composition.llm._AgentLLMOverrideCloseMixin`
+    (spec-0028 / ADR-0028).
+    """
 
 
 def _seed_registries() -> None:
@@ -106,6 +121,16 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
     llm = llm_registry.get(llm_cfg.provider)(llm_cfg)
     logger.debug("LLM client built", extra={"provider": llm_cfg.provider})
 
+    # Per-agent MODEL_OVERRIDE clients (spec-0028 / ADR-0028). Empty when no
+    # agent opts in — same-provider-only, resolved at call time via
+    # agents/_prompt.py::resolve_llm against ctx.extras below.
+    agent_llm_overrides = build_agent_llm_overrides(cfg.agents, llm_cfg)
+    if agent_llm_overrides:
+        logger.info(
+            "Agent-scoped LLM model overrides built",
+            extra={"agents": sorted(agent_llm_overrides)},
+        )
+
     # Build storage repository
     repo = _storage_registry.get(cfg.db.provider)(cfg.db)
     logger.debug("Storage repository built", extra={"provider": cfg.db.provider})
@@ -140,6 +165,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         embeddings=embeddings,
         vector_store=vector_store,
         tools=tools,
+        extras={"agent_llm_overrides": agent_llm_overrides},
     )
     logger.debug("AgentContext created with all components")
 
@@ -153,7 +179,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
             extra={"metrics_namespace": cfg.harness.metrics_namespace},
         )
     else:
-        orch = Orchestrator(ctx, loop_settings=cfg.loop)
+        orch = _Orchestrator(ctx, loop_settings=cfg.loop)
         logger.debug("Orchestrator created without harness wrapper")
 
     # Layer in any entry-point agent plugins (no-op unless discovery_enabled).
