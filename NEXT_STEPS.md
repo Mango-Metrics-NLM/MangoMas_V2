@@ -46,7 +46,13 @@ and the D1–D9 sponsor-decision register live in the analysis doc):
   (P1, posture decision D5). ✅ `MODEL_OVERRIDE` wiring landed (spec-0028 /
   ADR-0028) — see "Done on the model-override branch" below.
 - **Phase 2 — verification honesty + adoption surface.** Executing homes for
-  the feasibly-runnable gated suites + a parity meta-test; container
+  the feasibly-runnable gated suites + a parity meta-test — **planned** as
+  spec [0029](specs/0029-hardware-agnostic-e2e-suites.md) +
+  [`docs/plans/20260904T030302Z-hardware-agnostic-e2e-plan.md`](docs/plans/20260904T030302Z-hardware-agnostic-e2e-plan.md),
+  which also gives every Phase-1 delivery (specs 0025–0028, validation + the
+  shipped graph) an end-to-end scenario per executing tier and puts the live
+  LM Studio and local sentence-transformers tiers under one linted GPU/CPU
+  contract (plan only; no test code landed yet); container
   scan + SBOM; Ollama adapter; `mangomas serve`; RAG/workflow-stream HTTP
   endpoints; pgvector; perf smoke.
 - **Phase 3 — backlog (sequenced).** Composite `loop` bodies → `dag` node
