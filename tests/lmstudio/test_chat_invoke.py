@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 
 from mangomas.core import Orchestrator
-from tests.constants import ASGI_TEST_BASE_URL, HTTPX_REQUEST_TIMEOUT_SECONDS
+from tests.constants import ASGI_TEST_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 async def test_chat_invoke_against_live_lmstudio(
     lmstudio_app: FastAPI,
     lmstudio_orchestrator: Orchestrator,
+    lmstudio_client_timeout: float,
 ) -> None:
     """End-to-end: a real LM Studio completion flows through invoke and persists."""
     transport = httpx.ASGITransport(app=lmstudio_app)
@@ -30,7 +31,7 @@ async def test_chat_invoke_against_live_lmstudio(
         response = await client.post(
             "/agents/chat/invoke",
             json={"messages": [{"role": "user", "content": "Say 'pong' and nothing else."}]},
-            timeout=HTTPX_REQUEST_TIMEOUT_SECONDS,
+            timeout=lmstudio_client_timeout,
         )
 
     assert response.status_code == 200, response.text

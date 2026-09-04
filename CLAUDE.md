@@ -205,6 +205,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EMBEDDINGS__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
 | `MANGOMAS_EMBEDDINGS__BATCH_SIZE` | `32` | Pipeline embed-batch size |
 | `MANGOMAS_EMBEDDINGS__TIMEOUT_SECONDS` | `60.0` | httpx timeout (LM Studio) |
+| `MANGOMAS_EMBEDDINGS__DEVICE` | _(none)_ | Torch device for `sentence_transformers` (`SentenceTransformer(device=...)`); unset = library auto-detect (CUDA → MPS → CPU) |
 | `MANGOMAS_EMBEDDINGS__PROJECT_ID` | _(none)_ | Vertex only (ADC auth) |
 | `MANGOMAS_EMBEDDINGS__LOCATION` | `us-central1` | Vertex only: GCP region |
 | `MANGOMAS_VECTOR__ENABLED` | `false` | Construct + attach `ctx.vector_store` |

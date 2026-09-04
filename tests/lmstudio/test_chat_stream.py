@@ -13,14 +13,17 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from tests.constants import ASGI_TEST_BASE_URL, HTTPX_REQUEST_TIMEOUT_SECONDS
+from tests.constants import ASGI_TEST_BASE_URL
 from tests.lmstudio.conftest import parse_sse_data
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.mark.lmstudio
-async def test_chat_stream_emits_token_and_done_frames(lmstudio_app: FastAPI) -> None:
+async def test_chat_stream_emits_token_and_done_frames(
+    lmstudio_app: FastAPI,
+    lmstudio_client_timeout: float,
+) -> None:
     transport = httpx.ASGITransport(app=lmstudio_app)
     token_frames: list[dict[str, Any]] = []
     done_seen = False
@@ -31,7 +34,7 @@ async def test_chat_stream_emits_token_and_done_frames(lmstudio_app: FastAPI) ->
             "POST",
             "/agents/chat/stream",
             json={"messages": [{"role": "user", "content": "Stream a short reply."}]},
-            timeout=HTTPX_REQUEST_TIMEOUT_SECONDS,
+            timeout=lmstudio_client_timeout,
         ) as response,
     ):
         assert response.status_code == 200, response.reason_phrase

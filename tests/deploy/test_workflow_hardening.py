@@ -221,6 +221,33 @@ def test_every_scheduled_workflow_reports_its_own_failure() -> None:
         )
 
 
+def test_the_failure_reporter_waits_on_every_scheduled_job() -> None:
+    """A reporting job must `needs:` every job it is meant to report on.
+
+    The guard above proves a reporter *exists*; it cannot see that the reporter
+    is watching the right things. `needs:` is what makes `if: failure()` fire —
+    a job absent from that list can fail every night and the reporter, having
+    never depended on it, still succeeds and files nothing.
+
+    That is the fail-open shape, and it costs one line to introduce: adding a
+    nightly job and forgetting the `needs:` entry. Adding `embeddings-local`
+    (spec-0029 R6) is exactly when it would have happened.
+    """
+    for name in _scheduled_workflows():
+        jobs = _workflows.jobs(name)
+        reporters = {job for job, spec in jobs.items() if _FAILURE_GUARD in str(spec.get("if", ""))}
+        watched: set[str] = set()
+        for reporter in reporters:
+            needs = jobs[reporter].get("needs") or []
+            watched.update([needs] if isinstance(needs, str) else needs)
+
+        unwatched = sorted(set(jobs) - reporters - watched)
+        assert unwatched == [], (
+            f"{name}: job(s) {unwatched} are not in any failure reporter's `needs:`, "
+            "so their failures notify nobody"
+        )
+
+
 # A shallow checkout is the default. The `git` gitleaks pass walks committed
 # history, so on `fetch-depth: 1` it scans a single commit, finds nothing, and
 # exits 0 — the same fail-open shape as every other defect on this branch.

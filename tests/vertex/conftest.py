@@ -43,17 +43,18 @@ from mangomas.config import (
 from mangomas.core import Orchestrator
 from tests.constants import (
     DEFAULT_VERTEX_TEST_MODEL,
+    IN_MEMORY_SQLITE_URL,
     VERTEX_CREDENTIALS_PATH_ENV,
+    VERTEX_E2E_TIMEOUT_ENV,
     VERTEX_LOCATION_ENV,
     VERTEX_MODEL_ENV,
     VERTEX_PROJECT_ENV,
+    client_timeout_for,
+    resolve_live_timeout,
 )
 from tests.lmstudio.conftest import orchestrator_cleanup
 
-# Vertex calls round-trip via the public Google API; CPU-bound test boxes can
-# still see >60s for the first cold completion. Match the LM Studio E2E budget.
-VERTEX_E2E_TIMEOUT_SECONDS: float = 240.0
-_E2E_DB_URL: str = "sqlite:///:memory:"
+_E2E_DB_URL: str = IN_MEMORY_SQLITE_URL
 
 
 def make_vertex_settings(
@@ -62,9 +63,18 @@ def make_vertex_settings(
     model: str,
     *,
     credentials_path: str | None = None,
-    timeout_seconds: float = VERTEX_E2E_TIMEOUT_SECONDS,
+    timeout_seconds: float | None = None,
 ) -> Settings:
-    """Construct fresh :class:`Settings` pointed at Vertex + in-memory SQLite."""
+    """Construct fresh :class:`Settings` pointed at Vertex + in-memory SQLite.
+
+    *timeout_seconds* defaults to the env-resolved adapter budget
+    (``VERTEX_E2E_TIMEOUT_SECONDS``), the same seam the LM Studio suite uses —
+    Vertex round-trips the public Google API, so a cold first completion is
+    just as hardware- and network-sensitive as a local model.
+    """
+    resolved = (
+        resolve_live_timeout(VERTEX_E2E_TIMEOUT_ENV) if timeout_seconds is None else timeout_seconds
+    )
     return Settings(
         llm=LLMSettings(
             provider="vertex",
@@ -72,10 +82,26 @@ def make_vertex_settings(
             project_id=project_id,
             location=location,
             credentials_path=credentials_path,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=resolved,
         ),
         db=DBSettings(provider="sqlite", url=_E2E_DB_URL),
     )
+
+
+@pytest.fixture
+def vertex_timeout() -> float:
+    """Adapter-side budget for a live Vertex call, from the env or the default."""
+    return resolve_live_timeout(VERTEX_E2E_TIMEOUT_ENV)
+
+
+@pytest.fixture
+def vertex_client_timeout(vertex_timeout: float) -> float:
+    """httpx client budget, derived from the adapter budget (never below it).
+
+    Mirrors ``lmstudio_client_timeout``; this suite carried the identical
+    60 s-client-around-a-240 s-adapter inversion (spec-0029 R2.1).
+    """
+    return client_timeout_for(vertex_timeout)
 
 
 @pytest.fixture

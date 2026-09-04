@@ -33,6 +33,17 @@ DEFAULT_EMBEDDINGS_BATCH_SIZE: int = 32
 DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS: float = 60.0
 
 
+# Torch device for the in-process ``sentence_transformers`` backend. ``None``
+# (the default) passes no ``device`` argument at all, leaving the library's own
+# auto-detect (CUDA → MPS → CPU) exactly as it was before this setting existed.
+#
+# Set it when auto-detect picks the wrong thing: a box whose GPU is already
+# serving an LLM wants ``cpu`` for embeddings, and a CI runner wants to prove a
+# forced-CPU run matches an auto-detected one. Ignored by the ``lmstudio`` and
+# ``vertex`` backends, which run the model out of process.
+DEFAULT_EMBEDDINGS_DEVICE: str | None = None
+
+
 class EmbeddingSettings(BaseModel):
     """Embedding-provider configuration.
 
@@ -51,6 +62,9 @@ class EmbeddingSettings(BaseModel):
     api_key: str = DEFAULT_EMBEDDINGS_API_KEY
     batch_size: int = DEFAULT_EMBEDDINGS_BATCH_SIZE
     timeout_seconds: float = DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS
+    # sentence_transformers-specific: the torch device. Unset ⇒ the library's
+    # own auto-detect, so existing deployments are unaffected (spec-0029 R5).
+    device: str | None = DEFAULT_EMBEDDINGS_DEVICE
     # Vertex-specific (required only when provider="vertex"; ADC auth).
     project_id: str | None = None
     location: str = DEFAULT_VERTEX_LOCATION

@@ -12,14 +12,17 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from tests.constants import ASGI_TEST_BASE_URL, HTTPX_REQUEST_TIMEOUT_SECONDS
+from tests.constants import ASGI_TEST_BASE_URL
 from tests.lmstudio.conftest import parse_sse_data
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.mark.vertex
-async def test_chat_stream_against_live_vertex(vertex_app: FastAPI) -> None:
+async def test_chat_stream_against_live_vertex(
+    vertex_app: FastAPI,
+    vertex_client_timeout: float,
+) -> None:
     """SSE stream emits at least one ``token`` frame and a final ``done`` frame."""
     transport = httpx.ASGITransport(app=vertex_app)
     async with (
@@ -28,7 +31,7 @@ async def test_chat_stream_against_live_vertex(vertex_app: FastAPI) -> None:
             "POST",
             "/agents/chat/stream",
             json={"messages": [{"role": "user", "content": "Reply with the single word 'pong'."}]},
-            timeout=HTTPX_REQUEST_TIMEOUT_SECONDS,
+            timeout=vertex_client_timeout,
         ) as response,
     ):
         assert response.status_code == 200, await response.aread()
