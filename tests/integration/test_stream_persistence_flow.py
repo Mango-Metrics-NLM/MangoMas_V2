@@ -85,9 +85,29 @@ async def test_mid_stream_failure_persists_nothing(compose_app: ComposeFn) -> No
     The failure cannot become an error envelope: the 200 and the
     ``text/event-stream`` headers are already on the wire when the LLM raises.
     Over in-process ASGI transport Starlette then re-raises it as a generic
-    ``RuntimeError("... response already started")``, so the *exception type*
-    is a transport artefact and asserting on it would test Starlette. The
-    contract is what survives in storage, and that is what this asserts.
+    ``RuntimeError`` about the response already having started — so **both the
+    exception type and its message are Starlette-version artefacts**, and
+    asserting on either would test Starlette rather than this contract. This
+    asserts only that the drain did not complete normally, and then asserts
+    the thing that actually matters: nothing reached storage.
+
+    **Why no assertion on the exception.** The type *and* the message are both
+    Starlette-version artefacts: the 200 and the ``text/event-stream`` headers
+    are already on the wire when the LLM raises, so Starlette re-raises it as a
+    generic "response already started" ``RuntimeError``. Matching either would
+    test Starlette. Only that the drain did not complete normally is asserted.
+
+    **Non-vacuity, and its limit.** ``llm.calls`` proves the request reached
+    the LLM, ruling out the empty-history-because-nothing-happened reading (a
+    404, a misrouted request). It does *not* detect a deliberately sabotaged
+    precondition inside ``_drain`` — two better-looking guards were tried and
+    both failed against that: filtering ``AssertionError`` does not work
+    because the transport replaces the exception during teardown, and
+    asserting on frames received before the failure does not work because
+    ``httpx.ASGITransport`` delivers none of them (the same non-incremental
+    behaviour that keeps stream *abandonment* out of this tier entirely). The
+    mutation that matters — the stream no longer failing — is caught by
+    ``drain_failed``.
 
     Truncation itself is already pinned at unit level by
     ``tests/test_streaming.py::test_mid_stream_failure_truncates_without_done_or_error_frame``;
@@ -101,9 +121,16 @@ async def test_mid_stream_failure_persists_nothing(compose_app: ComposeFn) -> No
         )
     )
 
-    with pytest.raises(Exception, match="response already started"):
+    drain_failed = False
+    try:
         await _drain(composed)
+    except Exception:
+        drain_failed = True
 
+    assert drain_failed, "a mid-stream LLM failure must break the drain, not complete it"
+    assert composed.llm.calls, (
+        "the request never reached the LLM, so an empty history proves nothing"
+    )
     assert await read_history(composed) == [], (
         "a stream that failed mid-drain must persist no turn (ADR-0025)"
     )

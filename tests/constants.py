@@ -1076,6 +1076,10 @@ HOSTED_RUNNER_INFEASIBLE: dict[str, str] = {
 # Env-var names the composed-app flows set. Named here (not inline) for the
 # same reason every other env-var name is: one typo in a literal silently makes
 # a test assert the default instead of the override, and still passes.
+# Every settings env var shares this prefix, so it is also what a hermetic
+# fixture scrubs: a flow that declares its own MANGOMAS_* world must not
+# inherit the rest of the developer's shell.
+SETTINGS_ENV_PREFIX: str = "MANGOMAS_"
 LOOP_STEP_TIMEOUT_ENV: str = "MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS"
 LOOP_MAX_STEPS_ENV: str = "MANGOMAS_LOOP__MAX_STEPS"
 CHAT_MODEL_OVERRIDE_ENV: str = "MANGOMAS_AGENTS__CHAT__MODEL_OVERRIDE"

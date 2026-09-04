@@ -64,7 +64,16 @@ def _enable_local_rag(
     # Never touch a developer's real database from a suite that builds a real
     # orchestrator.
     monkeypatch.setenv(DB_URL_ENV, IN_MEMORY_SQLITE_URL)
-    if device is not None:
+    if device is None:
+        # Deleting, not merely "not setting". The auto-detect case must mean
+        # *no* device configured — if a developer has
+        # MANGOMAS_EMBEDDINGS__DEVICE exported, leaving it in place turns the
+        # parity check into forced-vs-forced and quietly proves nothing. That
+        # is the same ambient-environment trap `tests/deploy/
+        # test_env_example_contract.py` records: an env-reading test whose
+        # verdict depends on the shell it runs in is not a contract test.
+        monkeypatch.delenv(EMBEDDINGS_DEVICE_ENV, raising=False)
+    else:
         monkeypatch.setenv(EMBEDDINGS_DEVICE_ENV, device)
     get_settings.cache_clear()
 

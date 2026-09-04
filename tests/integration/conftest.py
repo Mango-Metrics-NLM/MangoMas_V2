@@ -31,6 +31,7 @@ optional — they are the tier that must stay fast, hermetic, and green.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -44,7 +45,12 @@ from mangomas.api.app import create_app
 from mangomas.composition import build_orchestrator, llm_registry
 from mangomas.config import LLMSettings, Settings, get_settings
 from mangomas.core import Orchestrator
-from tests.constants import ASGI_TEST_BASE_URL, DB_URL_ENV, IN_MEMORY_SQLITE_URL
+from tests.constants import (
+    ASGI_TEST_BASE_URL,
+    DB_URL_ENV,
+    IN_MEMORY_SQLITE_URL,
+    SETTINGS_ENV_PREFIX,
+)
 from tests.fakes import FakeLLM
 
 logger = logging.getLogger(__name__)
@@ -159,6 +165,16 @@ def compose_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[ComposeFn]:
 
     Storage is forced to in-memory SQLite unless a flow overrides it, so a
     developer's real database is never touched by a CI-resident suite.
+
+    The environment is **scrubbed** before each build: every ambient
+    ``MANGOMAS_*`` variable the flow did not itself set is removed. Without
+    that, a flow's verdict depends on the shell it runs in — a developer with
+    ``MANGOMAS_LOOP__MAX_STEPS`` exported would fail
+    ``test_no_env_budget_runs_a_single_step`` for a reason that has nothing to
+    do with the code. This is not hypothetical here: this repo's own
+    ``.claude/settings.json`` exports ``MANGOMAS_LOG__FORMAT=json`` into every
+    Claude Code session, and ``tests/deploy/test_env_example_contract.py``
+    records being bitten by exactly that ("green locally, red in CI").
     """
     orchestrators: list[Orchestrator] = []
 
@@ -168,8 +184,14 @@ def compose_app(monkeypatch: pytest.MonkeyPatch) -> Iterator[ComposeFn]:
         llm: FakeLLM | None = None,
         per_model: dict[str, FakeLLM] | None = None,
     ) -> ComposedApp:
-        monkeypatch.setenv(DB_URL_ENV, IN_MEMORY_SQLITE_URL)
-        for key, value in (env or {}).items():
+        requested = dict(env or {})
+        requested.setdefault(DB_URL_ENV, IN_MEMORY_SQLITE_URL)
+        # Scrub first, then set: a flow declares its entire MANGOMAS_* world,
+        # and anything it did not name is absent rather than inherited.
+        for key in [k for k in os.environ if k.startswith(SETTINGS_ENV_PREFIX)]:
+            if key not in requested:
+                monkeypatch.delenv(key, raising=False)
+        for key, value in requested.items():
             monkeypatch.setenv(key, value)
         # Settings are cached process-wide; the autouse fixture in
         # tests/conftest.py clears the cache around every test, but the build
