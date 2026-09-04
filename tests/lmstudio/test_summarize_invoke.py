@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 
 from mangomas.core import Orchestrator
-from tests.constants import ASGI_TEST_BASE_URL, HTTPX_REQUEST_TIMEOUT_SECONDS
+from tests.constants import ASGI_TEST_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 async def test_summarize_invoke_persists_with_summarize_agent(
     lmstudio_app: FastAPI,
     lmstudio_orchestrator: Orchestrator,
+    lmstudio_client_timeout: float,
 ) -> None:
     thread = [
         {"role": "user", "content": "We need to decide on a database."},
@@ -35,7 +36,7 @@ async def test_summarize_invoke_persists_with_summarize_agent(
         response = await client.post(
             "/agents/summarize/invoke",
             json={"messages": thread},
-            timeout=HTTPX_REQUEST_TIMEOUT_SECONDS,
+            timeout=lmstudio_client_timeout,
         )
 
     assert response.status_code == 200, response.text

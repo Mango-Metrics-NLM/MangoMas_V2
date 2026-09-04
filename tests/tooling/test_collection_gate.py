@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests.constants import ENV_GATE_SKIP_REASONS
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -132,17 +134,57 @@ def test_xfail_fails_the_session(tmp_path: Path) -> None:
     assert "XFAIL/XPASS" in result.stdout
 
 
-def test_gated_runtime_skip_prefix_is_tolerated(tmp_path: Path) -> None:
-    """`set VERTEX_*/GCP_*` runtime skips inside enabled suites stay sanctioned."""
+@pytest.mark.parametrize(
+    "reason",
+    [
+        pytest.param("set VERTEX_PROJECT_ID to run Vertex AI tests", id="prefix-vertex"),
+        pytest.param("set GCP_SECRETS_PROJECT to run GCP secrets tests", id="prefix-gcp"),
+        # spec-0029 R9: the live MODEL_OVERRIDE scenario needs a *second*
+        # loaded model, which the suite's own RUN_LMSTUDIO gate cannot express
+        # — so it skips at runtime inside an already-enabled suite, exactly
+        # like the vertex/gcp fixtures above.
+        pytest.param(
+            "set LMSTUDIO_OVERRIDE_MODEL to run LM Studio override tests",
+            id="prefix-lmstudio",
+        ),
+    ],
+    # Ids are deliberately prefixed: conftest's collection gate matches
+    # substrings against `item.keywords`, which include the parametrize id, so
+    # a bare "vertex"/"lmstudio" id makes these cases skip as though they were
+    # the real gated live-service tests — silently, on a green run. The same
+    # scar `tests/deploy/test_ci_make_parity.py` records with `ids=[f"make-{t}"]`.
+    #
+    # This file is where that hazard bites hardest: it is the proof that the
+    # gate works, so a case the gate silently swallows proves nothing.
+)
+def test_gated_runtime_skip_prefix_is_tolerated(tmp_path: Path, reason: str) -> None:
+    """`set VERTEX_*/GCP_*/LMSTUDIO_*` runtime skips stay sanctioned."""
     _write(
         tmp_path,
         "test_runtime_gate.py",
-        "import pytest\n\ndef test_needs_project() -> None:\n"
-        '    pytest.skip("set VERTEX_PROJECT_ID to run Vertex AI tests")\n',
+        f"import pytest\n\ndef test_needs_config() -> None:\n    pytest.skip({reason!r})\n",
     )
     result = _run_pytest(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "1 skipped" in result.stdout
+
+
+def test_an_unprefixed_runtime_skip_is_still_rejected(tmp_path: Path) -> None:
+    """The other direction: widening the prefix list must not sanction everything.
+
+    Adding ``LMSTUDIO_`` to the allowlist is only safe if the allowlist is
+    still an allowlist. A reason naming an env var outside the sanctioned
+    prefixes must keep failing the session.
+    """
+    _write(
+        tmp_path,
+        "test_runtime_gate.py",
+        "import pytest\n\ndef test_needs_config() -> None:\n"
+        '    pytest.skip("set SOME_OTHER_VAR to run something")\n',
+    )
+    result = _run_pytest(tmp_path)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "zero-skip guard" in result.stdout
 
 
 def test_collection_level_importorskip_fails_the_session(tmp_path: Path) -> None:

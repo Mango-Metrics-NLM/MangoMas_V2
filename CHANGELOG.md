@@ -11,6 +11,66 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Hardware-agnostic end-to-end suites** (spec-0029, no ADR — no boundary
+  change). Every Phase-1 delivery now has an end-to-end scenario in the tier
+  where it can execute, and the two hardware-sensitive tiers follow one
+  written, linted GPU/CPU contract.
+  - **Tier 1 — `tests/integration/`, 1 test → 21**, all through the **real
+    composition root** (`build_orchestrator` → `create_app`), so an
+    `MANGOMAS_*` env var is proven to reach a running request for the first
+    time. Flows: streamed turn → `GET /history` (spec-0025);
+    `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` → 504 `step_timeout` envelope and
+    the `max_steps` precedence chain (spec-0026); the shipped
+    `plan-execute-review` graph over `POST /workflows/run` with
+    `VALIDATE_OUTPUT` on, plus its back-compat off direction; `branch` and
+    composite `fan_out` graphs (specs 0012/0013); `MODEL_OVERRIDE` proving
+    which client answered and that both are closed (spec-0028); tenant-scoped
+    **streamed** turns (specs 0007+0025). Runs in CI on every push via
+    `make gated-suites`.
+  - **Tier 2 — LM Studio scenarios 7–12** (`docs/testing/lmstudio-e2e.md`):
+    stream persistence, a live per-step timeout budgeted below one network
+    round trip, pipeline acceptance loops, the validated shipped graph,
+    per-agent `MODEL_OVERRIDE`, and a composite `branch`+`fan_out` graph.
+  - **Tier 3 — the device contract** in `tests/rag/`: embedding finiteness,
+    dimension agreement, batch-order preservation, and **ranking parity
+    between forced-CPU and auto-detect**, plus a real-retrieval `ToolAgent`
+    test and a `mangomas rag ingest|query` CLI round trip.
+  - **`MANGOMAS_EMBEDDINGS__DEVICE`** (default unset = the library's
+    auto-detect): forwarded to `SentenceTransformer(device=...)`. Additive and
+    default-off — with the variable unset the loader is called exactly as
+    before, regression-pinned.
+  - **Two meta-tests**, each mutation-proven in both directions:
+    `tests/tooling/test_e2e_hardware_contract.py` lints tiers 2/3 for
+    elapsed-time assertions, numeric timeouts, device literals and embedding
+    equality; `tests/deploy/test_gated_suite_homes.py` asserts every `RUN_*`
+    suite has an executing home **or** a recorded infeasibility reason, and
+    never both (closing roadmap item 2.1).
+  - **A nightly `embeddings-local` CPU job** gives the one feasibly-runnable
+    homeless suite an executing home, installing CPU-only torch wheels first.
+  - `FakeLLM.delay_seconds` (additive, default `0.0`, no `sleep` at all when
+    zero) so a per-step timeout can be driven through the HTTP boundary.
+
+### Fixed
+
+- **The live E2E suites were green on a GPU box and could fail on a CPU one**,
+  for a reason unrelated to the code under test: `tests/lmstudio/` and
+  `tests/vertex/` each gave the LLM adapter a 240 s budget while six scenarios
+  wrapped the same call in a 60 s httpx client timeout. On fast hardware the
+  completion landed inside 60 s and the inversion was invisible; on slow
+  hardware the client aborted a request the adapter was still legitimately
+  waiting on. Both budgets are now env-overridable
+  (`LMSTUDIO_E2E_TIMEOUT_SECONDS` / `VERTEX_E2E_TIMEOUT_SECONDS` — the thing
+  both fixture docstrings always claimed and neither delivered), and the client
+  budget is *derived* from the adapter budget, which makes the inversion
+  unrepresentable rather than merely fixed once. The hardware-contract lint
+  rejects a numeric `timeout=` so it cannot return.
+- **A new nightly job could fail silently forever.** The scheduled-workflow
+  guard checked that *some* job carried `if: failure()`, not that the reporter
+  `needs:` every job — so a job omitted from that list could fail every night
+  while the reporter succeeded and filed nothing.
+
+### Added
+
 - **Per-agent `MODEL_OVERRIDE` wiring** (spec-0028 / ADR-0028 — closes the
   Phase-1 roadmap item): `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE`, reserved
   since spec-0014, is now read. `composition/llm.py::build_agent_llm_overrides`

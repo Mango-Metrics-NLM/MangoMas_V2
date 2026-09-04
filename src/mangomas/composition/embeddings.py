@@ -43,13 +43,17 @@ def _sentence_transformers_embedding_factory(cfg: EmbeddingSettings) -> Any:
     """
     logger.debug(
         "Building SentenceTransformersEmbeddingClient",
-        extra={"model": cfg.model},
+        # `device` is logged because it is the setting most likely to explain
+        # a surprise: a machine that silently fell back to CPU, or one whose
+        # GPU is being contended by an LLM, looks like "embeddings got slow"
+        # with nothing in the logs to say why.
+        extra={"model": cfg.model, "device": cfg.device},
     )
     from mangomas.adapters.embeddings.sentence_transformers import (  # noqa: PLC0415
         SentenceTransformersEmbeddingClient,
     )
 
-    return SentenceTransformersEmbeddingClient(model=cfg.model)
+    return SentenceTransformersEmbeddingClient(model=cfg.model, device=cfg.device)
 
 
 def _vertex_embedding_factory(cfg: EmbeddingSettings) -> Any:

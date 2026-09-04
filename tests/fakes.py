@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -46,6 +47,19 @@ class FakeLLM:
     # the SSE response with no `done` frame and no invented error frame).
     raise_on_stream: BaseException | None = None
     raise_after_chunks: int = 0
+    # Seconds to await before answering (spec-0029 R8). The default 0.0 skips
+    # the sleep *entirely* rather than awaiting a zero delay, so every existing
+    # fake-backed test keeps its exact prior call sequence. Exists so an
+    # end-to-end test can drive the orchestrator's per-step timeout through the
+    # HTTP boundary: the unit suite's `_SlowAgent` bypasses the agent layer,
+    # and a real LLM's latency is exactly what a hardware-agnostic test may not
+    # depend on.
+    delay_seconds: float = 0.0
+
+    async def _maybe_delay(self) -> None:
+        """Await the configured delay, or nothing at all when it is zero."""
+        if self.delay_seconds > 0:
+            await asyncio.sleep(self.delay_seconds)
 
     async def complete(
         self,
@@ -56,6 +70,7 @@ class FakeLLM:
     ) -> str:
         self.calls.append(list(messages))
         self.call_kwargs.append({"temperature": temperature, "max_tokens": max_tokens})
+        await self._maybe_delay()
         idx = len(self.calls) - 1
         if self.replies and idx < len(self.replies):
             return self.replies[idx]
@@ -84,6 +99,9 @@ class FakeLLM:
     ) -> AsyncGenerator[str, None]:
         self.calls.append(list(messages))
         self.call_kwargs.append({"temperature": temperature, "max_tokens": max_tokens})
+        # Before the first chunk, so a delayed stream is slow to *start* — the
+        # shape a per-step budget or an impatient client actually sees.
+        await self._maybe_delay()
         for index, chunk in enumerate(self.chunks if self.chunks else [self.reply]):
             if self.raise_on_stream is not None and index >= self.raise_after_chunks:
                 raise self.raise_on_stream

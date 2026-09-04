@@ -11,9 +11,17 @@ name: Nightly
 #    "excluded from CI purely because nothing set the gate, which is how a
 #    Postgres row-shape defect shipped behind a green pipeline."
 #
-# The remaining gated suites (lmstudio, vertex, gcp-*, langfuse,
-# embeddings-local) need a service, cloud credentials or an extra that vanilla
-# runners do not have, so they stay manual.
+# `embeddings-local` joined them (spec-0029 R6): it needs no service and no
+# credentials, only CPU torch wheels and a small model download, both of which
+# a vanilla runner can do. It is also the only suite that runs real numerical
+# compute, so it is the only place the device contract can be exercised.
+#
+# The remaining gated suites (lmstudio, vertex, gcp-*, langfuse) need a local
+# process, cloud credentials or an extra that vanilla runners do not have, so
+# they stay manual — each with its reason recorded in
+# `tests/constants.py::HOSTED_RUNNER_INFEASIBLE` and enforced by
+# `tests/deploy/test_gated_suite_homes.py`, so "it cannot run in CI" is a
+# claim something checks rather than a thing people remember.
 
 on:
   schedule:
@@ -43,6 +51,44 @@ jobs:
 
       - name: Postgres suite
         run: make postgres
+
+  embeddings-local:
+    name: Local embeddings + RAG suite (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # The default Linux torch wheel bundles CUDA runtime libraries and is
+      # several GB. This runner has no GPU, so that download is pure cost —
+      # installing the CPU build FIRST means the extras below resolve against
+      # an already-satisfied torch instead of pulling the CUDA one.
+      - name: Install CPU-only torch
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,embeddings-local,rag]"
+
+      # Keyed on the model id so a model change invalidates the cache rather
+      # than silently testing against the previous one.
+      - name: Cache the sentence-transformers model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+
+      # MANGOMAS_EMBEDDINGS__DEVICE is deliberately NOT set: this runner has no
+      # GPU, so the library's auto-detect resolves to CPU on its own. Forcing
+      # the device would mask a broken auto-detect — the suite's device-parity
+      # test compares forced-CPU against auto, and pinning both halves to the
+      # same value would make it vacuous.
+      - name: Local embeddings + RAG suite
+        run: make embeddings-local
 
   secret-scan:
     name: Secret scan (working tree + history)
@@ -86,7 +132,7 @@ jobs:
   notify:
     name: File a tracking issue on failure
     runs-on: ubuntu-latest
-    needs: [postgres, secret-scan]
+    needs: [postgres, embeddings-local, secret-scan]
     if: failure()
     permissions:
       issues: write

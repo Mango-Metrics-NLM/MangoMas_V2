@@ -23,7 +23,7 @@ from mangomas.api.app import create_app
 from mangomas.composition import build_orchestrator, llm_registry
 from mangomas.config import LLMSettings
 from mangomas.core.agent import Message
-from tests.constants import ASGI_TEST_BASE_URL, HTTPX_REQUEST_TIMEOUT_SECONDS
+from tests.constants import ASGI_TEST_BASE_URL
 from tests.lmstudio.conftest import (
     make_lmstudio_settings,
     orchestrator_cleanup,
@@ -77,6 +77,7 @@ def _non_streaming_factory(cfg: LLMSettings) -> NonStreamingLMStudioClient:
 async def test_stream_fallback_warns_and_delivers_buffered_content(
     lmstudio_base_url: str,
     lmstudio_model: str,
+    lmstudio_client_timeout: float,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     settings = make_lmstudio_settings(lmstudio_base_url, lmstudio_model)
@@ -99,7 +100,7 @@ async def test_stream_fallback_warns_and_delivers_buffered_content(
                                 {"role": "user", "content": "Reply with a single short sentence."}
                             ]
                         },
-                        timeout=HTTPX_REQUEST_TIMEOUT_SECONDS,
+                        timeout=lmstudio_client_timeout,
                     ) as response,
                 ):
                     assert response.status_code == 200, response.reason_phrase

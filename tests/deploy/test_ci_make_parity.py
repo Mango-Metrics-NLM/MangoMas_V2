@@ -324,6 +324,12 @@ def test_nightly_jobs_delegate_to_make() -> None:
     """
     jobs = _workflows.jobs("nightly.yml")
     assert _step_run_commands(jobs["postgres"]) == ["make postgres"]
+    # The suite command itself delegates, like every other job. The job's other
+    # `run:` step is a CPU-only torch install, which `_step_run_commands`
+    # filters as setup — and rightly: it is an environment prerequisite (the
+    # default wheel bundles several GB of CUDA a GPU-less runner cannot use),
+    # not a project command, so it has no business being a `make` target.
+    assert _step_run_commands(jobs["embeddings-local"]) == ["make embeddings-local"]
     assert _step_run_commands(jobs["secret-scan"]) == [
         "make secret-scan",
         # Non-vacuity proof for the step above, using the binary it just

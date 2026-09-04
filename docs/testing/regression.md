@@ -53,7 +53,10 @@ the per-suite sections below, or use the matching `make` target
 | Shared error helpers | `tests/adapters/test_shared_errors.py` | `_http_errors` / `_vertex_errors` translation + detail truncation |
 | Shared HTTP client base | `tests/adapters/test_openai_client.py` | `OpenAICompatHTTPClient` lifecycle: client ownership, `ClassVar` enforcement, MRO tail, public constructor stability |
 | Vector adapter | `tests/adapters/vector/` | `ChromaVectorStore` via injected fake collection; cosine scoring |
-| RAG domain | `tests/rag/` | chunker (+ Hypothesis fuzz), models, loader, pipeline, retrieval, ToolAgent-invokes-RetrievalTool, gated end-to-end |
+| RAG domain | `tests/rag/` | chunker (+ Hypothesis fuzz), models, loader, pipeline, retrieval, ToolAgent-invokes-RetrievalTool; **tier-3 gated device contract** (embedding finiteness/ordering, CPU-vs-auto ranking parity, real-retrieval ToolAgent, CLI round trip) |
+| **Tier-1 E2E** | `tests/integration/` | Seven flows through the **real composition root** (`build_orchestrator` → `create_app`): stream persistence → `/history`, `LoopSettings` → 504 + budget precedence, the shipped `plan-execute-review` graph with validation, `branch`/composite `fan_out` over HTTP, `MODEL_OVERRIDE`, tenant-scoped streamed turns. Runs in CI on every push |
+| Gated-suite parity | `tests/deploy/test_gated_suite_homes.py` | Every `RUN_*` suite has an executing home or a recorded infeasibility reason — and never both |
+| Hardware contract | `tests/tooling/test_e2e_hardware_contract.py` | Lints tiers 2/3 for elapsed-time assertions, numeric timeouts, device literals, embedding equality |
 | Eval serializer | `tests/eval/test_serialize.py` | `report_payload` shape + round trip through `load_baseline` |
 | Workflow graph | `tests/test_workflow_*.py` | graph model, predicates, loader, registry (per-kind factory guards), executors, HTTP endpoints, CLI |
 | Deploy contract | `tests/deploy/` | `service.yaml` / `deploy.yml` shape; Dockerfile ↔ `.dockerignore` build-context consistency |
@@ -180,18 +183,37 @@ python -m pytest tests/postgres --no-cov -q
 
 ---
 
-## RAG local end-to-end (opt-in)
+## RAG local end-to-end (opt-in) — the tier-3 device contract
 
 Gated on `RUN_EMBEDDINGS_LOCAL=1` (and `RUN_RAG=1` for the Chroma path).
 Exercises ingest → query through real sentence-transformers + an ephemeral
 Chroma store; no server required.
 
+**This is the only suite that runs real numerical compute**, so it is the only
+one where the torch device matters. It runs nightly on a CPU runner
+(`nightly.yml`'s `embeddings-local` job, CPU torch wheels). Its oracles are
+rankings and tolerances, never raw scores — two devices reduce float32 sums in
+a different order, so identical inputs give scores that differ in the last few
+decimals while the ordering does not (spec-0029 R2.2).
+
 ```powershell
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU-only build
 pip install -e ".[dev,embeddings-local,rag]"
 $env:RUN_EMBEDDINGS_LOCAL = '1'
 $env:RUN_RAG = '1'
 python -m pytest tests/rag -q
+
+# On a GPU box, reproduce what the nightly CPU runner sees:
+$env:MANGOMAS_EMBEDDINGS__DEVICE = 'cpu'
+python -m pytest tests/rag -q
 ```
+
+`MANGOMAS_EMBEDDINGS__DEVICE` (default unset = the library's auto-detect,
+CUDA → MPS → CPU) is both the operator knob — force `cpu` on a box whose GPU is
+already serving an LLM — and the way one machine can compare a forced device
+against auto-detect. The nightly job deliberately leaves it unset: the runner
+has no GPU, so auto-detect resolves to CPU by itself, and pinning it would make
+the parity assertion vacuous.
 
 ---
 
