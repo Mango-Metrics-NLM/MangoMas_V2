@@ -938,8 +938,8 @@ def test_sentence_transformers_embedding_factory_forwards_settings(
     # R5). The default stays byte-identical one hop further in: the client
     # omits the argument entirely when it is ``None``, so
     # ``SentenceTransformer`` is constructed exactly as before this setting
-    # existed — pinned by
-    # ``tests/adapters/embeddings/test_sentence_transformers.py::test_no_device_is_passed_when_unset``.
+    # existed — pinned by ``test_no_device_is_passed_when_unset`` in
+    # ``tests/adapters/embeddings/test_sentence_transformers.py``.
     assert captured == {"model": "all-MiniLM-L6", "device": None}
 
 
