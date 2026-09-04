@@ -7,6 +7,7 @@ config change can never silently desync the tests.
 
 from __future__ import annotations
 
+import math
 import os
 
 # The CLI's three exit codes are re-exported the same way. `cli.exit_codes` is a
@@ -118,26 +119,53 @@ HTTPX_ERROR_PATH_TIMEOUT_SECONDS: float = 30.0
 LIVE_STEP_TIMEOUT_SECONDS: float = 0.001
 
 
+def _validated_budget(value: float, source: str) -> float:
+    """Return *value* if it is a usable timeout budget, else raise saying why.
+
+    A budget must be finite and positive. ``NaN`` and ``inf`` are rejected
+    explicitly rather than left to propagate: they defeat the very comparison
+    the derivation below promises, because ``nan + 30 > nan`` and
+    ``inf + 30 > inf`` are both ``False``. A silently non-finite budget would
+    make "the client budget is never below the adapter budget" a claim that
+    reads true and is not.
+    """
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{source} must be a finite positive number of seconds, got {value!r}")
+    return value
+
+
 def resolve_live_timeout(env_var: str) -> float:
     """Read a live-suite adapter budget from the environment.
 
     Shared by both live conftests so neither hand-rolls the env read (and so
     a malformed value fails loudly here rather than silently reverting to the
     default in one suite only).
+
+    A malformed value names *the env var* in the error. A bare
+    ``float("abc")`` raises "could not convert string to float: 'abc'", which
+    tells whoever set it nothing about which variable to fix — and this is a
+    knob operators reach for precisely when a suite is already misbehaving on
+    their hardware.
     """
     raw = os.environ.get(env_var)
     if raw is None or not raw.strip():
         return DEFAULT_LIVE_E2E_TIMEOUT_SECONDS
-    return float(raw)
+    try:
+        parsed = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{env_var} must be a number of seconds, got {raw!r}") from exc
+    return _validated_budget(parsed, env_var)
 
 
 def client_timeout_for(adapter_timeout_seconds: float) -> float:
     """Derive the httpx client budget from the adapter budget.
 
     Always strictly greater, so the client can never abort a request the
-    adapter is still legitimately waiting on (spec-0029 R2.1).
+    adapter is still legitimately waiting on (spec-0029 R2.1) — which is only
+    true for a finite positive input, so that is enforced rather than assumed.
     """
-    return adapter_timeout_seconds + LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS
+    validated = _validated_budget(adapter_timeout_seconds, "adapter timeout")
+    return validated + LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS
 
 
 # ── ASGI test transport base URL ──────────────────────────────────────────────

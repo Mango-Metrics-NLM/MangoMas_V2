@@ -61,10 +61,21 @@ _ELAPSED_ASSERT_RE = re.compile(
     re.MULTILINE,
 )
 
-# `timeout=` given a bare number. The budget must come from a name so it can be
-# raised by env for slow hardware and can never invert against the adapter's
-# own budget. Allows `timeout=None` (an explicit "no budget") and any name.
-_NUMERIC_TIMEOUT_RE = re.compile(r"\btimeout\s*=\s*\d")
+# `timeout=` carrying a numeric literal *anywhere* in its argument expression.
+# The budget must come from a name so it can be raised by env for slow hardware
+# and can never invert against the adapter's own budget.
+#
+# The lazy middle and the lookbehind are both load-bearing. A narrower
+# `timeout\s*=\s*\d` — which is what this rule was first written as — catches
+# `timeout=60.0` but sails straight past `timeout=httpx.Timeout(60.0)`, i.e.
+# the identical hardcoded budget wearing a constructor. That is a fail-open in
+# the one guard whose entire job is stopping that shape, so the rule now looks
+# for a numeral anywhere in the argument.
+#
+# The lookbehind excludes digits that are part of an identifier, so
+# `timeout=budget_2` and `timeout=v1_budget` stay legal while
+# `timeout=Timeout(60)` does not. `timeout=None` and any bare name pass.
+_NUMERIC_TIMEOUT_RE = re.compile(r"\btimeout\s*=\s*[^,\n]*?(?<![A-Za-z0-9_.])\d")
 
 # Two embedding calls compared for equality. Real backends are float32 and
 # reorder reductions across devices, so this is green only on the machine it
@@ -153,6 +164,16 @@ def test_hardware_contract_holds_across_the_scoped_tree() -> None:
             id="numeric-timeout",
         ),
         pytest.param(
+            "resp = await client.post('/x', timeout=httpx.Timeout(60.0))\n",
+            "numeric timeout",
+            id="numeric-timeout-in-constructor",
+        ),
+        pytest.param(
+            "resp = await client.post('/x', timeout=Timeout(60))\n",
+            "numeric timeout",
+            id="numeric-timeout-bare-constructor",
+        ),
+        pytest.param(
             "assert await client.embed('a') == await client.embed('a')\n",
             "compares embeddings",
             id="embed-equality",
@@ -180,6 +201,9 @@ def test_a_clean_snippet_is_not_flagged() -> None:
         "from tests.constants import DEVICE_CPU, EMBEDDING_COSINE_ATOL\n"
         "async def test_ok(client_timeout: float) -> None:\n"
         "    resp = await client.post('/x', timeout=client_timeout)\n"
+        "    other = await client.post('/y', timeout=httpx.Timeout(client_timeout))\n"
+        "    third = await client.post('/z', timeout=budget_2)\n"
+        "    fourth = await client.post('/w', timeout=None)\n"
         "    vectors = await client.embed_batch(['a'])\n"
         "    expected = pytest.approx(1.0, abs=EMBEDDING_COSINE_ATOL)\n"
         "    assert cosine(vectors[0], vectors[0]) == expected\n"
