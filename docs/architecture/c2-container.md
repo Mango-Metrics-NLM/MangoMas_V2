@@ -17,6 +17,7 @@ C4Container
     Container(workflow, "Workflow Graph Layer (opt-in)", "Python package (src/mangomas/workflow/)", "Declarative multi-agent topologies: a frozen WorkflowGraph (agent / sequence / fan_out / loop / branch) compiled to the Orchestrator's public dispatch primitives — every leaf is one dispatch call, so an all-agent sequence equals dispatch_pipeline. Surfaced via POST /workflows/run|validate and `mangomas workflow validate|run`. Dormant unless MANGOMAS_WORKFLOW__ENABLED or an explicit --definition.")
     Container(composition, "Composition Root", "Python module", "composition.py — wires LLM, storage, secrets, embeddings, vector, agent, and harness registries at startup. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
     Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .claude/agents and .claude/skills), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
+    Container(integration_contracts, "Integration contracts", "Python package (mango-integration-contracts 1.1.0)", "Strict CognitiveSignal / ProposedAction envelope (extra=forbid, frozen). Shared schema only: src/mangomas does not import it at runtime in this change. INV-16: never an authorization input.")
   }
 
   System_Ext(lmstudio, "LM Studio", ":1234 — OpenAI-compatible LLM server (default)")
@@ -29,6 +30,7 @@ C4Container
   System_Ext(embed_backend, "Embedding backend (opt-in)", "LM Studio /v1/embeddings (default), in-process sentence-transformers, or Vertex text-embedding-004. Selected by MANGOMAS_EMBEDDINGS__PROVIDER.")
   System_Ext(chroma_store, "Chroma vector store (opt-in)", "data/chroma — persistent ChromaDB collection (hnsw:space=cosine). Activated by MANGOMAS_VECTOR__ENABLED.")
   System_Ext(otel_out, "OTel / stdout", "Traces and structured logs")
+  System_Ext(code_agent_harness, "Mango Code Agent Harness", "Sibling execution/authority plane (classify, authorize, broker). Distinct from the in-repo Claude Code harness container. Companion 1.1.0 bump required before ingest.")
 
   Rel(developer, api, "POST /agents/{name}/invoke, stream; GET /healthz, /readyz, /agents", "HTTP")
   Rel(developer, cli, "mangomas chat / history / eval", "shell")
@@ -54,6 +56,7 @@ C4Container
   Rel(api, otel_out, "TraceMiddleware emits spans; structured logs via logging", "OTLP / stdout")
   Rel(composition, harness, "Engages _HarnessOrchestrator wrapper + emits harness.agent_invoke spans (when harness.enabled=true)")
   Rel(harness, otel_out, "harness.agent_invoke parent spans + JSON structured logs", "OTLP / stdout")
+  Rel(integration_contracts, code_agent_harness, "CognitiveSignal 1.1.0 JSON (advisory; never grants capability)", "schema")
 ```
 
 ## Notes
@@ -98,6 +101,13 @@ C4Container
   effectively absent. Skills, agents, and the frontmatter linter
   remain installed but inert at runtime — they're consumed by the
   Claude Code IDE/web client and CI, not the FastAPI process.
+- `integration_contracts` is a standalone package in this repo
+  (`mango-integration-contracts/`, ADR-0029 / spec-0030). It is the
+  only intended coupling to the sibling Mango Code Agent Harness.
+  A `CognitiveSignal` can cause review, archival, prompt-context
+  compilation, or a separate `ProposedAction` record — never a
+  command, write, capability grant, completion, or release. Runtime
+  emission from planner/reviewer is a later, default-OFF change.
 - `memory/`, `eval-output/`, and harness scratch state
   (`.claude/cache/`, `.claude/state/`, `.claude/logs/`,
   `.claude/settings.local.json`) are excluded from git and Docker
