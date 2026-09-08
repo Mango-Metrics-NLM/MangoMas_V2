@@ -23,6 +23,7 @@ gates below, all of which are executable:
 | Unit suite + global floor | `make test` | `pyproject.toml` addopts mirror the global floor |
 | Per-package floors | `make coverage` | **`scripts/check_coverage.py` — the authoritative gate** |
 | Bridge floor (100%) | `make bridge-coverage` | `eval_harness_bridge` is gated separately |
+| Contracts floor (100%) | `make contracts-coverage` | `mango-integration-contracts` is gated separately |
 | Mypy (strict) | `make typecheck` | 0 errors required |
 | Ruff lint + format | `make lint` / `make format-check` | Clean required |
 | Frontmatter lint | `make frontmatter` | `scripts/lint_agent_frontmatter.py` |
@@ -93,9 +94,11 @@ Enforced by `scripts/check_coverage.py` in CI and locally:
 | `adapters` | 85% (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
 | **Global** | **95%** |
 
-Two floors sit outside `FLOORS` because they measure a different tree:
-`eval_harness_bridge` (100%, `make bridge-coverage`) and `scripts/` (92%,
-`make scripts-coverage`, a measured ratchet rather than a round number).
+Three floors sit outside `FLOORS` because they measure a different tree:
+`eval_harness_bridge` (100%, `make bridge-coverage`),
+`mango-integration-contracts` (100%, `make contracts-coverage`), and
+`scripts/` (92%, `make scripts-coverage`, a measured ratchet rather than a
+round number).
 
 `scripts/check_coverage.py` is the authority — if this table and that script
 ever disagree, the script wins and this table is the bug.
@@ -225,18 +228,22 @@ make gate
 
 `make gate` is the whole of `.github/workflows/ci.yml`, in CI's order. The
 underlying commands, if you prefer to run them individually — note the lint
-surface includes `eval_harness_bridge/src`, and the bridge carries its own
+surface includes `eval_harness_bridge/src` and
+`mango-integration-contracts/src`, and each isolated package carries its own
 100% floor as a separate CI job:
 
 ```powershell
-python -m ruff check src tests scripts eval_harness_bridge/src
-python -m ruff format --check src tests scripts eval_harness_bridge/src
-python -m mypy --strict src tests scripts eval_harness_bridge/src
+python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
+python -m ruff format --check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
+python -m mypy --strict src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 python scripts/lint_agent_frontmatter.py
 python -m pytest -q
 python scripts/check_coverage.py
 python -m coverage run --source=eval_harness_bridge/src -m pytest `
     tests/eval_harness_bridge -o addopts="" -q
+python -m coverage report --show-missing --fail-under=100
+python -m coverage run --source=mango-integration-contracts/src -m pytest `
+    tests/mango_contracts -o addopts="" -q
 python -m coverage report --show-missing --fail-under=100
 ```
 

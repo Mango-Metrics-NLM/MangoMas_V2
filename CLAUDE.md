@@ -38,10 +38,11 @@ pre-commit run --all-files
 
 Every CI command is also wrapped as a `Makefile` target — `make gate` runs the
 whole pipeline (validate-config, lint, format-check, typecheck, frontmatter,
-protected-paths, test, per-package coverage, bridge coverage, scripts coverage)
+protected-paths, test, per-package coverage, bridge coverage, contracts
+coverage, scripts coverage)
 in CI's order — note `protected-paths` runs locally too, not only in CI; `make help` lists the rest. Prefer it
 over retyping paths: CI's lint surface is
-`src tests scripts eval_harness_bridge/src`, which is wider than the
+`src tests scripts eval_harness_bridge/src mango-integration-contracts/src`, which is wider than the
 `src tests` shown above.
 
 ---

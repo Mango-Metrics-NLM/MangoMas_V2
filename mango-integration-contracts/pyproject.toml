@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mango-integration-contracts"
+version = "1.1.0"
+description = "Versioned CognitiveSignal / ProposedAction envelope shared by Mango-Mas V2 and Mango Code Agent Harness."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "pydantic>=2.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_contracts"]

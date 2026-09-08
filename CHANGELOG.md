@@ -11,6 +11,24 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
+  package `mango-integration-contracts` (`mango_contracts`) shared with the
+  sibling [Mango Code Agent Harness](https://github.com/ianshank/Mango_Code_Agent-Harness).
+  `CognitiveSignal` is identity + schema + policy binding + content +
+  evidence; `extra="forbid"`; nested payload/metadata cannot smuggle
+  `allowed_tools` / `gate_passed` / secrets. INV-16: `confidence`,
+  `severity`, `recommendation`, and `payload` never enter
+  `policy_input_from_signal`. Unknown review roles and unknown producer
+  names raise — they never default to `implementer`. Isolated coverage
+  gate `make contracts-coverage` (100%). `src/mangomas/` does not import
+  the package yet (runtime emission is a later, default-OFF change).
+  Wire-incompatible with the harness dataclass envelope 1.0.0; companion
+  bump required before ingest. Command/patch execution remains blocked
+  until the harness isolation backend exists. Peer review of the
+  2026-09-08 governed-coding-platform architecture set is recorded in
+  `docs/analysis/20260908-governed-coding-platform-architecture-review.md`
+  (keep INV-16 / envelope / sandbox gate; reject HF-MoE identity,
+  `developer→implementer` ROLE_MAP, and pack ADR numbers).
 - **Hardware-agnostic end-to-end suites** (spec-0029, no ADR — no boundary
   change). Every Phase-1 delivery now has an end-to-end scenario in the tier
   where it can execute, and the two hardware-sensitive tiers follow one

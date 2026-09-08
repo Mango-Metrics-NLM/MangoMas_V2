@@ -36,6 +36,7 @@ tests/
 ├── harness/               # Harness governance + config-audit units
 ├── tooling/               # Corpus + Claude Code config contract tests
 ├── eval_harness_bridge/   # Bridge black-box tests (own 100% floor, own constants.py)
+├── mango_contracts/       # CognitiveSignal 1.1.0 envelope (own 100% floor, own constants.py)
 ├── integration/           # Requires RUN_INTEGRATION=1; ASGI transport
 ├── lmstudio/              # Requires RUN_LMSTUDIO=1; real LM Studio
 ├── vertex/                # Requires RUN_VERTEX=1; real Vertex project
@@ -64,6 +65,8 @@ such as HTTP status codes, which stay inline (`PLR2004` is disabled for
 
 `tests/eval_harness_bridge/constants.py` is deliberately separate: the bridge
 is tested as a decoupled black-box client and must not import `mangomas`.
+`tests/mango_contracts/constants.py` is the same idea for the shared
+cognitive envelope — it must not import `mangomas` either.
 
 ## Configuration
 

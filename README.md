@@ -349,21 +349,23 @@ CI runs, so one target reproduces the whole pipeline locally:
 
 ```powershell
 make gate     # validate-config + lint + format-check + typecheck + frontmatter
-              # + protected-paths + test + coverage + bridge-coverage + scripts-coverage
+              # + protected-paths + test + coverage + bridge-coverage
+              # + contracts-coverage + scripts-coverage
 make help     # list every target
 ```
 
-Individually — note the lint surface includes `eval_harness_bridge/src`,
-matching `.github/workflows/ci.yml`:
+Individually — note the lint surface includes `eval_harness_bridge/src` and
+`mango-integration-contracts/src`, matching `.github/workflows/ci.yml`:
 
 ```powershell
-make lint            # python -m ruff check src tests scripts eval_harness_bridge/src
+make lint            # python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 make format-check    # python -m ruff format --check ...
 make typecheck       # python -m mypy --strict ...
 make frontmatter     # python scripts/lint_agent_frontmatter.py
 make test            # python -m pytest -q  (addopts supply --cov + the global floor)
 make coverage        # python scripts/check_coverage.py  — per-package floors
 make bridge-coverage # eval_harness_bridge isolated 100% floor
+make contracts-coverage # mango-integration-contracts isolated 100% floor
 make precommit       # pre-commit run --all-files
 ```
 
@@ -462,6 +464,7 @@ tests/
   tooling/       Corpus contracts (agents/skills/settings/.mcp.json),
                  the C4 architecture contract, and the collection-gate meta-test
   eval_harness_bridge/  Black-box bridge tests; own 100% floor, own constants.py
+  mango_contracts/      CognitiveSignal 1.1.0 envelope tests; own 100% floor, own constants.py
   integration/   ASGITransport-based; set RUN_INTEGRATION=1
   lmstudio/      Real-server tests; set RUN_LMSTUDIO=1
   vertex/        Real Vertex project tests; set RUN_VERTEX=1
