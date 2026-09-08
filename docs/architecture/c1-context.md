@@ -37,8 +37,8 @@ C4Context
   Rel(mangomas, secret_mgr, "Resolves secret references (when provider=gcp)", "Secret Manager API / IAM")
   Rel(mangomas, otel, "Emits traces, metrics and structured logs", "OTLP / stdout")
   Rel(mangomas, cloud_run, "Deployed as a container image (make deploy / deploy.yml)", "Cloud Run / HTTPS")
-  Rel(mangomas, code_agent_harness, "Emits CognitiveSignal 1.1.0 (advisory; never grants capability)", "JSONL / HTTP")
-  Rel(mangomas, cognitive_signals, "Appends planner/reviewer envelopes (when signal.enabled)", "filesystem")
+  Rel(mangomas, code_agent_harness, "Optional HTTP ingest of CognitiveSignal 1.1.0 (advisory; never grants capability)", "HTTP")
+  Rel(mangomas, cognitive_signals, "Appends planner/reviewer JSONL envelopes (when signal.enabled)", "filesystem")
 ```
 
 ## Notes

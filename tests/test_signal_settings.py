@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from mangomas.config import Settings, SignalSettings, get_settings
+from mangomas.config import Settings, SignalSettings, get_settings, policy_snapshot_hash_for
 from tests.constants import (
     DEFAULT_SIGNAL_DIR,
     DEFAULT_SIGNAL_ENABLED,
@@ -16,8 +16,10 @@ from tests.constants import (
     DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
     DEFAULT_SIGNAL_POLICY_VERSION,
     DEFAULT_SIGNAL_SCHEMA_VERSION,
+    SIGNAL_CUSTOM_POLICY_ID,
     SIGNAL_DIR_ENV,
     SIGNAL_ENABLED_ENV,
+    SIGNAL_POLICY_ID_ENV,
 )
 
 
@@ -83,5 +85,32 @@ def test_signal_does_not_overload_harness_prefix(monkeypatch: pytest.MonkeyPatch
         s = get_settings()
         assert s.harness.enabled is True
         assert s.signal.enabled is False
+    finally:
+        get_settings.cache_clear()
+
+
+def test_policy_id_change_rebinds_default_hash() -> None:
+    settings = SignalSettings(policy_id=SIGNAL_CUSTOM_POLICY_ID)
+    assert settings.policy_snapshot_hash == policy_snapshot_hash_for(
+        SIGNAL_CUSTOM_POLICY_ID, DEFAULT_SIGNAL_POLICY_VERSION
+    )
+    assert settings.policy_snapshot_hash != DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH
+
+
+def test_explicit_policy_hash_is_kept_when_policy_id_changes() -> None:
+    custom = policy_snapshot_hash_for("other.policy", "9")
+    settings = SignalSettings(policy_id=SIGNAL_CUSTOM_POLICY_ID, policy_snapshot_hash=custom)
+    assert settings.policy_snapshot_hash == custom
+
+
+def test_signal_env_policy_id_rebinds_hash(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(SIGNAL_POLICY_ID_ENV, SIGNAL_CUSTOM_POLICY_ID)
+    get_settings.cache_clear()
+    try:
+        signal = get_settings().signal
+        assert signal.policy_id == SIGNAL_CUSTOM_POLICY_ID
+        assert signal.policy_snapshot_hash == policy_snapshot_hash_for(
+            SIGNAL_CUSTOM_POLICY_ID, DEFAULT_SIGNAL_POLICY_VERSION
+        )
     finally:
         get_settings.cache_clear()

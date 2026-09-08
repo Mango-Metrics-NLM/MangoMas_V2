@@ -28,7 +28,8 @@ from mango_contracts import (
     validate_signal_payload,
 )
 from mango_contracts.cognitive_signal import CognitiveSignal
-from mango_contracts.payloads import ReviewFindingPayload
+from mango_contracts.payloads import FORBIDDEN_RECOMMENDED_ROLES, ReviewFindingPayload
+from mango_contracts.proposed_action import SHELL_INTENT_MARKERS
 from mango_contracts.roles import HARNESS_REVIEW_ROLES
 
 
@@ -162,7 +163,8 @@ def test_proposed_action_idempotency_is_stable() -> None:
     assert action.kind is kind
 
 
-def test_proposed_action_rejects_shell_intent() -> None:
+@pytest.mark.parametrize("marker", SHELL_INTENT_MARKERS)
+def test_proposed_action_rejects_shell_intent(marker: str) -> None:
     key = compute_idempotency_key(
         uuid4(),
         uuid4(),
@@ -176,7 +178,7 @@ def test_proposed_action_rejects_shell_intent() -> None:
             proposal_id="proposal_shell_001",
             kind=ProposedActionKind.RUN_COMMAND,
             summary="Run tests",
-            intent="pytest -q; rm -rf /",
+            intent=f"pytest -q{marker} extra",
             artifact_refs=[],
             idempotency_key=key,
         )
@@ -234,13 +236,14 @@ def test_map_requested_review_roles_empty() -> None:
     assert map_requested_review_roles([]) == []
 
 
-def test_routing_payload_rejects_implementer_role() -> None:
+@pytest.mark.parametrize("role", sorted(FORBIDDEN_RECOMMENDED_ROLES))
+def test_routing_payload_rejects_execution_roles(role: str) -> None:
     raw = envelope_base(
         signal_type="routing.recommendation",
         signal_kind="routing.recommendation",
         memory_class="prompt_injectable",
         payload={
-            "recommended_cognitive_role": "implementer",
+            "recommended_cognitive_role": role,
             "rationale": "Would grant write capability if mapped.",
             "alternatives_considered": [],
         },

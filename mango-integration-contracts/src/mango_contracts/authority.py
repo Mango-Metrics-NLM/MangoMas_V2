@@ -7,6 +7,7 @@ closes that hole.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -49,11 +50,23 @@ FORBIDDEN_SECRET_KEYS: frozenset[str] = frozenset(
 )
 
 _NORMALISE = str.maketrans({"-": "_", " ": "_"})
+_CAMEL_LOWER_TO_UPPER = re.compile(r"([a-z0-9])([A-Z])")
+_CAMEL_ACRONYM = re.compile(r"([A-Z]+)([A-Z][a-z])")
 
 
 def normalise_key(key: str) -> str:
-    """Lowercase and unify separators so ``Allowed-Tools`` still matches."""
-    return key.strip().lower().translate(_NORMALISE)
+    """Unify separators and camelCase so ``allowedTools`` still matches.
+
+    Lowercasing first would erase the camelCase boundary. Split on
+    lower→upper and acronym→word, then lowercase, then ``-``/space → ``_``.
+    """
+    stripped = key.strip()
+    split = _CAMEL_LOWER_TO_UPPER.sub(r"\1_\2", stripped)
+    split = _CAMEL_ACRONYM.sub(r"\1_\2", split)
+    normalised = split.lower().translate(_NORMALISE)
+    while "__" in normalised:
+        normalised = normalised.replace("__", "_")
+    return normalised.strip("_")
 
 
 def reject_authority_shaped_keys(value: Any, *, location: str) -> None:

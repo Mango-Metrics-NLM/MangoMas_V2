@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 DEFAULT_SIGNAL_ENABLED: bool = False
 
@@ -37,8 +37,13 @@ def _prefixed_sha256(payload: str) -> str:
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH: str = _prefixed_sha256(
-    f"{DEFAULT_SIGNAL_POLICY_ID}:{DEFAULT_SIGNAL_POLICY_VERSION}"
+def policy_snapshot_hash_for(policy_id: str, policy_version: str) -> str:
+    """Digest ``id:version`` with the ``sha256:`` prefix the envelope requires."""
+    return _prefixed_sha256(f"{policy_id}:{policy_version}")
+
+
+DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH: str = policy_snapshot_hash_for(
+    DEFAULT_SIGNAL_POLICY_ID, DEFAULT_SIGNAL_POLICY_VERSION
 )
 
 
@@ -71,3 +76,20 @@ class SignalSettings(BaseModel):
         default=DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS,
         gt=0.0,
     )
+
+    @model_validator(mode="after")
+    def _rebind_default_policy_hash(self) -> SignalSettings:
+        """Keep the default hash bound to the stated policy id/version.
+
+        An operator who sets only ``MANGOMAS_SIGNAL__POLICY_ID`` must not keep
+        the snapshot hash of ``mangomas.cognitive.default:1``. An explicit
+        ``policy_snapshot_hash`` is left alone (it may name a prior snapshot).
+        """
+        if self.policy_snapshot_hash != DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH:
+            return self
+        rebound = policy_snapshot_hash_for(self.policy_id, self.policy_version)
+        if rebound != self.policy_snapshot_hash:
+            # Mutate in place: returning model_copy from a top-level
+            # ``mode="after"`` validator is ignored on ``__init__``.
+            self.policy_snapshot_hash = rebound
+        return self

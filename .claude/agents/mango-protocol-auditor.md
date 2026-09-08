@@ -1,6 +1,6 @@
 ---
 name: mango-protocol-auditor
-description: "Audits @runtime_checkable Protocol surfaces for backward-compatibility, signature drift and missing isinstance verification, across core/agent.py and adapters/*/base.py. Read-only: reports findings, never edits. Invoked by name, not by topic match."
+description: "Audits @runtime_checkable Protocol surfaces for backward-compatibility, signature drift and missing isinstance verification, across core/agent.py, adapters/*/base.py, secrets/provider.py, and cognitive/sink.py. Read-only: reports findings, never edits. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill
 model: inherit
 ---
@@ -20,6 +20,7 @@ report the Architect rolls up.
 | `src/mangomas/adapters/embeddings/base.py` | `EmbeddingClient` |
 | `src/mangomas/adapters/vector/base.py` | `VectorStoreRepository` |
 | `src/mangomas/secrets/provider.py` | `SecretsProvider` |
+| `src/mangomas/cognitive/sink.py` | `CognitiveSignalSink` |
 
 `core/agent.py` and `core/tools.py` are protected paths — a change to either
 needs a `BREAKING-CHANGE` commit trailer (see the `mango-harness` skill).

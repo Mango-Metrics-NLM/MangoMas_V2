@@ -16,8 +16,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from opentelemetry import trace
-from opentelemetry.trace import Span
 from pydantic import BaseModel
 
 from mango_contracts import CognitiveSignal, SignalKind, producer_id_for_agent
@@ -33,6 +31,8 @@ from mangomas.cognitive.constants import (
     GENAI_INVOKE_AGENT_SPAN,
     METADATA_RUN_ID,
     METADATA_TASK_ID,
+    UNPARSED_GOAL,
+    UNPARSED_PLANNER_STEP,
 )
 from mangomas.cognitive.roles import harness_role_for_agent
 from mangomas.correlation import get_correlation_id
@@ -62,6 +62,7 @@ _SUMMARY_MAX = _field_max_length(CognitiveSignal, "summary")
 _IMPACT_MAX = _field_max_length(ReviewFindingPayload, "impact_statement")
 _GOAL_MAX = _field_max_length(PlanningProposalPayload, "goal")
 _REMEDIATION_MAX = _field_max_length(ReviewFindingPayload, "suggested_remediation")
+_STEPS_MAX = _field_max_length(PlanningProposalPayload, "steps")
 
 
 def _sha256_hex(text: str) -> str:
@@ -89,6 +90,8 @@ def _uuid_from_metadata(metadata: dict[str, Any], key: str) -> UUID:
 
 def current_trace_id() -> str | None:
     """W3C trace id of the current span, or ``None`` outside a valid span."""
+    from opentelemetry import trace  # noqa: PLC0415
+
     span = trace.get_current_span()
     ctx = span.get_span_context()
     if not ctx.is_valid:
@@ -118,9 +121,9 @@ def _as_dict(content: str) -> dict[str, Any] | None:
 def _planning_payload(content: str) -> dict[str, Any]:
     data = _as_dict(content)
     if data is None:
-        goal = (content[:_GOAL_MAX] or "unparsed planner output").strip() or "unparsed"
-        return {"goal": goal, "steps": ["unparsed planner output"]}
-    goal = str(data.get("goal") or "unparsed")[:_GOAL_MAX].strip() or "unparsed"
+        goal = (content[:_GOAL_MAX] or UNPARSED_PLANNER_STEP).strip() or UNPARSED_GOAL
+        return {"goal": goal, "steps": [UNPARSED_PLANNER_STEP]}
+    goal = str(data.get("goal") or UNPARSED_GOAL)[:_GOAL_MAX].strip() or UNPARSED_GOAL
     steps: list[str] = []
     raw_steps = data.get("steps")
     if isinstance(raw_steps, list):
@@ -130,7 +133,17 @@ def _planning_payload(content: str) -> dict[str, Any]:
             elif isinstance(item, str) and item.strip():
                 steps.append(item)
     if not steps:
-        steps = ["unparsed planner output"]
+        steps = [UNPARSED_PLANNER_STEP]
+    elif len(steps) > _STEPS_MAX:
+        logger.debug(
+            "planner steps truncated to envelope max",
+            extra={
+                "event": "cognitive_steps_truncated",
+                "kept": _STEPS_MAX,
+                "dropped": len(steps) - _STEPS_MAX,
+            },
+        )
+        steps = steps[:_STEPS_MAX]
     return {"goal": goal, "steps": steps}
 
 
@@ -232,9 +245,11 @@ def build_signal(
     return signal
 
 
-def _genai_span(settings: SignalSettings) -> AbstractContextManager[Span | None]:
+def _genai_span(settings: SignalSettings) -> AbstractContextManager[Any]:
     if not settings.genai_spans:
         return nullcontext()
+    from opentelemetry import trace  # noqa: PLC0415
+
     tracer = trace.get_tracer(__name__)
     return tracer.start_as_current_span(GENAI_INVOKE_AGENT_SPAN)
 
@@ -252,6 +267,13 @@ async def emit_agent_signal(
     if sink is None or settings is None:
         return
     if agent_name not in _EMITTERS:
+        return
+    emit = getattr(sink, "emit", None)
+    if not callable(emit):
+        logger.error(
+            "cognitive_sink extra is not a sink; skipping emit",
+            extra={"event": "cognitive_sink_invalid", "agent": agent_name},
+        )
         return
     with _genai_span(settings) as span:
         if span is not None:

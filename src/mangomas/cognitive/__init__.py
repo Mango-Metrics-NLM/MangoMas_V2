@@ -32,6 +32,12 @@ from mangomas.cognitive.constants import (
 from mangomas.cognitive.constants import (
     METADATA_TASK_ID as METADATA_TASK_ID,
 )
+from mangomas.cognitive.constants import (
+    UNPARSED_GOAL as UNPARSED_GOAL,
+)
+from mangomas.cognitive.constants import (
+    UNPARSED_PLANNER_STEP as UNPARSED_PLANNER_STEP,
+)
 from mangomas.cognitive.roles import (
     FORBIDDEN_HARNESS_ROLES as FORBIDDEN_HARNESS_ROLES,
 )
@@ -62,6 +68,8 @@ __all__ = [
     "METADATA_RUN_ID",
     "METADATA_TASK_ID",
     "UNMAPPED_OBSERVATION_AGENTS",
+    "UNPARSED_GOAL",
+    "UNPARSED_PLANNER_STEP",
     "UnknownAgentRoleError",
     "UnmappedToolAgentError",
     "harness_role_for_agent",

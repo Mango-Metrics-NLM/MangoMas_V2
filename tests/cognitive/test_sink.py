@@ -14,6 +14,7 @@ from tests.fakes import FakeCognitiveSink
 from tests.mango_contracts.constants import envelope_base
 
 from mango_contracts import CognitiveSignal
+from mango_contracts.roles import AGENT_PRODUCER_IDS
 from mangomas.cognitive.constants import JSONL_FILENAME
 from mangomas.cognitive.sink import (
     CognitiveSignalSink,
@@ -32,13 +33,13 @@ def _signal() -> CognitiveSignal:
 
 
 async def test_jsonl_sink_appends_one_line(tmp_path: Path) -> None:
-    path = tmp_path / "signals.jsonl"
+    path = tmp_path / JSONL_FILENAME
     sink = JsonlCognitiveSink(path)
     await sink.emit(_signal())
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     restored = CognitiveSignal.model_validate_json(lines[0])
-    assert restored.producer_id == "mangomas.reviewer.v2"
+    assert restored.producer_id == AGENT_PRODUCER_IDS["reviewer"]
 
 
 @respx.mock
@@ -62,7 +63,7 @@ async def test_http_sink_raises_on_non_2xx() -> None:
 @respx.mock
 async def test_composite_writes_jsonl_even_when_http_fails(tmp_path: Path) -> None:
     respx.post(_URL).mock(return_value=httpx.Response(500))
-    path = tmp_path / "signals.jsonl"
+    path = tmp_path / JSONL_FILENAME
     sink = CompositeCognitiveSink(
         (JsonlCognitiveSink(path), HttpCognitiveSink(_URL, timeout_seconds=1.0))
     )

@@ -323,6 +323,9 @@ from mangomas.config.signal import (
 from mangomas.config.signal import (
     SignalSettings as SignalSettings,
 )
+from mangomas.config.signal import (
+    policy_snapshot_hash_for as policy_snapshot_hash_for,
+)
 from mangomas.config.storage import (
     DEFAULT_DB_CONNECT_TIMEOUT_SECONDS as DEFAULT_DB_CONNECT_TIMEOUT_SECONDS,
 )
@@ -498,4 +501,5 @@ __all__ = [
     "VectorSettings",
     "WorkflowSettings",
     "get_settings",
+    "policy_snapshot_hash_for",
 ]

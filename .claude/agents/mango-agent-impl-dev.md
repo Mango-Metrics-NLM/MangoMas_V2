@@ -24,12 +24,15 @@ for `MANGOMAS_SIGNAL__*` emission, extras-only sink wiring, and INV-16.
   ADR-0029). Default-OFF via `MANGOMAS_SIGNAL__*`. Must not import
   `mangomas.harness` or a harness ExecutionBroker. Emit hooks live in
   `_structured.py`; do not intercept `Tool.execute`.
+- `mango-integration-contracts/` — shared `mango_contracts` envelope (schema
+  1.1.0). Isolated `make contracts-coverage`. Same INV-16 rules; do not coerce
+  1.0.0.
 - `src/mangomas/agents/discovery.py` — `discover_agents`, `ensure_agent_plugins`
 - `src/mangomas/agents/__init__.py` re-exports and the `agent_registry` lines
   in `composition.py`
 - `AgentSettings` in `mangomas.config`
 - Tests: `tests/test_agent.py`, `test_summarize.py`, `test_tool_agent.py`,
-  `tests/agents/`, `tests/cognitive/`
+  `tests/agents/`, `tests/cognitive/`, `tests/mango_contracts/`
 
 Three neighbours, deliberately excluded: `_streaming.py` belongs to
 `mango-sse-streamer`; `ExecutionPlan` and `ReviewResult` belong to

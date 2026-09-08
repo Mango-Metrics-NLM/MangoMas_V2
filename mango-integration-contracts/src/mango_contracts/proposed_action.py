@@ -15,6 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mango_contracts.enums import ProposedActionKind
 
+# Natural-language intent must not be a shell program. Shared with tests so
+# a new marker cannot land in the validator without a matching reject case.
+SHELL_INTENT_MARKERS: tuple[str, ...] = (";", "|", "`", "$(", "${")
+
 
 class ProposedAction(BaseModel):
     """Non-authoritative intent record referenced by a CognitiveSignal."""
@@ -47,7 +51,7 @@ class ProposedAction(BaseModel):
     @field_validator("intent")
     @classmethod
     def reject_shell_metacharacters(cls, value: str) -> str:
-        if any(marker in value for marker in (";", "|", "`", "$(", "${")):
+        if any(marker in value for marker in SHELL_INTENT_MARKERS):
             raise ValueError("intent must not contain shell metacharacters")
         return value
 

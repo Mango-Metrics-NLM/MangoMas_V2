@@ -10,8 +10,13 @@ import pytest
 from pydantic import ValidationError
 from tests.mango_contracts.constants import BLOB_CONTENT_HASH, envelope_base
 
-from mango_contracts import CognitiveSignal, EvidenceBundle
-from mango_contracts.authority import reject_authority_shaped_keys
+from mango_contracts import CognitiveSignal, EvidenceBundle, SignalKind
+from mango_contracts.authority import (
+    FORBIDDEN_AUTHORITY_KEYS,
+    FORBIDDEN_SECRET_KEYS,
+    normalise_key,
+    reject_authority_shaped_keys,
+)
 from mango_contracts.cognitive_signal import CognitiveRecommendation, SignalLineage
 from mango_contracts.evidence import EvidenceReference
 from mango_contracts.payloads import (
@@ -198,6 +203,72 @@ def test_scalar_list_payload_is_allowed() -> None:
 def test_tuple_of_authority_dicts_is_rejected() -> None:
     with pytest.raises(ValueError, match="forbidden authority key"):
         reject_authority_shaped_keys(({"retry_limit": 1},), location="payload")
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("allowedTools", "allowed_tools"),
+        ("AllowedTools", "allowed_tools"),
+        ("apiKey", "api_key"),
+        ("APIKey", "api_key"),
+        ("policyOverride", "policy_override"),
+        ("Allowed-Tools", "allowed_tools"),
+        ("Allowed--Tools", "allowed_tools"),
+        ("_allowedTools_", "allowed_tools"),
+        ("allowed_tools", "allowed_tools"),
+        ("bearerToken", "bearer_token"),
+    ],
+)
+def test_normalise_key_unifies_camel_and_snake(raw: str, expected: str) -> None:
+    assert normalise_key(raw) == expected
+
+
+def _to_camel(snake: str) -> str:
+    parts = snake.split("_")
+    return parts[0] + "".join(part.title() for part in parts[1:])
+
+
+@pytest.mark.parametrize("key", sorted(FORBIDDEN_AUTHORITY_KEYS | FORBIDDEN_SECRET_KEYS))
+def test_nested_payload_forbidden_key_is_rejected(key: str) -> None:
+    raw = envelope_base()
+    raw["payload"][key] = True
+    with pytest.raises(ValidationError):
+        CognitiveSignal.model_validate(raw)
+
+
+@pytest.mark.parametrize(
+    "key",
+    sorted(k for k in (FORBIDDEN_AUTHORITY_KEYS | FORBIDDEN_SECRET_KEYS) if "_" in k),
+)
+def test_camelcase_nested_forbidden_key_is_rejected(key: str) -> None:
+    raw = envelope_base()
+    raw["payload"][_to_camel(key)] = True
+    with pytest.raises(ValidationError):
+        CognitiveSignal.model_validate(raw)
+
+
+def test_unknown_payload_schema_camelcase_authority_key_is_rejected() -> None:
+    raw = envelope_base(
+        signal_type=SignalKind.RESEARCH_FINDING.value,
+        signal_kind=SignalKind.RESEARCH_FINDING.value,
+        payload={"allowedTools": ["shell"]},
+    )
+    with pytest.raises(ValidationError):
+        CognitiveSignal.model_validate(raw)
+
+
+def test_evidence_metadata_camelcase_secret_key_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        EvidenceReference(
+            evidence_id="ev_camel_001",
+            source_type="workspace_blob",
+            source_uri="workspace://root/x",
+            content_hash=BLOB_CONTENT_HASH,
+            retrieved_at=datetime(2026, 9, 8, tzinfo=UTC),
+            trust_tier="trusted_local",
+            metadata={"apiKey": "sk-test"},
+        )
 
 
 def test_evidence_classifiers_are_normalised() -> None:

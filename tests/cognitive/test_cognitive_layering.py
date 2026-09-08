@@ -34,6 +34,29 @@ _BANNED_PREFIXES = (
 )
 
 
+def _is_type_checking(node: ast.If) -> bool:
+    test = node.test
+    return isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
+
+
+def _runtime_imports(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    guarded: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and _is_type_checking(node):
+            for child in ast.walk(node):
+                guarded.add(id(child))
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if id(node) in guarded:
+            continue
+        if isinstance(node, ast.Import):
+            found.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            found.append(node.module)
+    return found
+
+
 def _imports(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     found: list[str] = []
@@ -77,16 +100,6 @@ def test_cognitive_mangomas_imports_are_allow_listed() -> None:
     assert offenders == []
 
 
-def test_cognitive_does_not_import_agents() -> None:
-    """Producer parses planner/reviewer JSON as dicts; it must not import agents."""
-    offenders: list[str] = []
-    for path in _COGNITIVE.rglob("*.py"):
-        for name in _imports(path):
-            if name == "mangomas.agents" or name.startswith("mangomas.agents."):
-                offenders.append(f"{path.name}: {name}")
-    assert offenders == []
-
-
 def test_producer_imports_correlation_explicitly() -> None:
     """Non-vacuity: the allow-list would pass if nobody imported correlation."""
     producer = (_COGNITIVE / "producer.py").read_text(encoding="utf-8")
@@ -105,9 +118,15 @@ def test_only_cognitive_imports_mango_contracts_at_runtime() -> None:
     assert offenders == []
 
 
-def test_producer_and_sink_do_import_contracts() -> None:
+def test_producer_runtime_imports_contracts() -> None:
     """Non-vacuity: the confine test would pass if nobody imported contracts."""
-    producer = (_COGNITIVE / "producer.py").read_text(encoding="utf-8")
-    sink = (_COGNITIVE / "sink.py").read_text(encoding="utf-8")
-    assert "mango_contracts" in producer
-    assert "mango_contracts" in sink
+    names = _runtime_imports(_COGNITIVE / "producer.py")
+    assert any(name == "mango_contracts" or name.startswith("mango_contracts.") for name in names)
+
+
+def test_sink_does_not_runtime_import_contracts() -> None:
+    """Sink type-hints CognitiveSignal under TYPE_CHECKING only."""
+    names = _runtime_imports(_COGNITIVE / "sink.py")
+    assert not any(
+        name == "mango_contracts" or name.startswith("mango_contracts.") for name in names
+    )

@@ -255,7 +255,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_SIGNAL__GENAI_SPANS` | `false` | Additive OTel `gen_ai.invoke_agent` alias (Development semconv; default-off) |
 | `MANGOMAS_SIGNAL__POLICY_ID` | `mangomas.cognitive.default` | Identity/policy binding copied onto each envelope (not a grant) |
 | `MANGOMAS_SIGNAL__POLICY_VERSION` | `1` | Policy version string copied onto each envelope |
-| `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | `sha256:` digest of `policy_id:policy_version` defaults; operator-overridable |
+| `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | Default `sha256:` digest of `policy_id:policy_version`; rebinds when only id/version change |
 | `MANGOMAS_SIGNAL__HTTP_URL` | _(none)_ | Optional harness ingest URL; JSONL is always written when enabled |
 | `MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS` | `5.0` | Timeout for the optional HTTP sink |
 | `MANGOMAS_AGENTS__<NAME>__SYSTEM_PROMPT` | _(none)_ | Per-agent system-prompt override (`AgentSettings.system_prompt`) |

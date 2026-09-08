@@ -80,9 +80,18 @@ Versioning: [Semantic Versioning](https://semver.org/).
   install `mango-integration-contracts` as a second wheel/editable so
   flag-on emission can `import mango_contracts` outside pytest's
   `pythonpath`. C1 names the sibling Code Agent Harness. Corpus adds the
-  `mango-cognitive` skill (16 → 17 skills).
+  `mango-cognitive` skill (16 → 17 skills). C2 draws optional HTTP ingest
+  separately from local JSONL; C3 names chat/summarize as unmapped
+  observation.
 
 ### Fixed
+
+- **Planner plans longer than 64 steps no longer vanish.** The producer
+  truncates `PlanningProposalPayload.steps` to the envelope cap so
+  `validate_signal_payload` cannot swallow the emit. CamelCase nested
+  keys (`allowedTools`, `apiKey`) now match the authority/secret walker.
+  Changing only `MANGOMAS_SIGNAL__POLICY_ID` rebinds the default snapshot
+  hash to the stated id/version.
 
 - **The live E2E suites were green on a GPU box and could fail on a CPU one**,
   for a reason unrelated to the code under test: `tests/lmstudio/` and

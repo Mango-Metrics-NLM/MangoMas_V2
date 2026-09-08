@@ -11,19 +11,14 @@ from mango_contracts import CognitiveSignal
 from mango_contracts.validation import POLICY_INPUT_KEYS, policy_input_from_signal
 
 
-def _disposition(policy_input: dict[str, str]) -> str:
-    """Stand-in PDP: identity/policy binding only, no cognitive fields."""
-    assert set(policy_input) == set(POLICY_INPUT_KEYS)
-    return "requires_independent_gate_evidence"
-
-
 @pytest.mark.parametrize("low,high", [(0.0, 1.0), (0.01, 0.99), (0.40, 0.41)])
 def test_confidence_cannot_change_harness_disposition(low: float, high: float) -> None:
     low_signal = CognitiveSignal.model_validate(envelope_base(confidence=low))
     high_signal = CognitiveSignal.model_validate(envelope_base(confidence=high))
-    assert _disposition(policy_input_from_signal(low_signal)) == _disposition(
-        policy_input_from_signal(high_signal)
-    )
+    left = policy_input_from_signal(low_signal)
+    right = policy_input_from_signal(high_signal)
+    assert left == right
+    assert set(left) == set(POLICY_INPUT_KEYS)
 
 
 @pytest.mark.parametrize(
@@ -53,12 +48,11 @@ def test_cognitive_field_cannot_change_policy_input_shape(field: str, value: obj
     variant = CognitiveSignal.model_validate(variant_raw)
     left = policy_input_from_signal(baseline)
     right = policy_input_from_signal(variant)
+    assert left == right
     assert set(left) == set(POLICY_INPUT_KEYS)
-    assert set(right) == set(POLICY_INPUT_KEYS)
     for key in ("confidence", "severity", "summary", "payload", "recommendation"):
         assert key not in left
         assert key not in right
-    assert _disposition(left) == _disposition(right)
 
 
 def test_recommendation_cannot_enter_policy_input() -> None:
@@ -74,7 +68,7 @@ def test_recommendation_cannot_enter_policy_input() -> None:
     policy_input = policy_input_from_signal(signal)
     dumped = deepcopy(policy_input)
     assert "recommend_stop" not in dumped.values()
-    assert _disposition(policy_input) == "requires_independent_gate_evidence"
+    assert policy_input == policy_input_from_signal(CognitiveSignal.model_validate(envelope_base()))
 
 
 def test_policy_input_is_stable_across_identical_identity_fields() -> None:
@@ -102,4 +96,3 @@ def test_signal_type_cannot_change_policy_input() -> None:
     left = policy_input_from_signal(review)
     right = policy_input_from_signal(routing)
     assert left == right
-    assert _disposition(left) == _disposition(right)

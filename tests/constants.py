@@ -7,6 +7,7 @@ config change can never silently desync the tests.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 
@@ -18,6 +19,10 @@ from mangomas.cli.exit_codes import EVAL_GATE_EXIT_CODE as EVAL_GATE_EXIT_CODE
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR as EXIT_CONFIG_ERROR
 from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR as EXIT_RUNTIME_ERROR
 from mangomas.cognitive.constants import JSONL_FILENAME as JSONL_FILENAME
+from mangomas.cognitive.constants import UNPARSED_GOAL as UNPARSED_GOAL
+from mangomas.cognitive.constants import (
+    UNPARSED_PLANNER_STEP as UNPARSED_PLANNER_STEP,
+)
 
 # Defaults that mirror ``mangomas.config`` are re-exported (``X as X``) rather
 # than restated, so the config remains the single source of truth.
@@ -431,13 +436,29 @@ SIGNAL_DIR_ENV: str = "MANGOMAS_SIGNAL__DIR"
 SIGNAL_GENAI_SPANS_ENV: str = "MANGOMAS_SIGNAL__GENAI_SPANS"
 SIGNAL_HTTP_URL_ENV: str = "MANGOMAS_SIGNAL__HTTP_URL"
 SIGNAL_HTTP_TIMEOUT_ENV: str = "MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS"
+SIGNAL_POLICY_ID_ENV: str = "MANGOMAS_SIGNAL__POLICY_ID"
+SIGNAL_POLICY_VERSION_ENV: str = "MANGOMAS_SIGNAL__POLICY_VERSION"
 SIGNAL_POLICY_SNAPSHOT_HASH_ENV: str = "MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH"
+SIGNAL_SCHEMA_VERSION_ENV: str = "MANGOMAS_SIGNAL__SCHEMA_VERSION"
 SIGNAL_MOCK_INGEST_URL: str = "https://harness.example.test/ingest/cognitive"
-PLANNER_SIGNAL_REPLY: str = (
-    '{"goal": "ship it", "steps": [{"step": 1, "description": "Build", "agent": null}]}'
+SIGNAL_CUSTOM_POLICY_ID: str = "team.policy"
+PLANNER_SIGNAL_GOAL: str = "ship it"
+PLANNER_SIGNAL_STEPS: tuple[str, ...] = ("Build",)
+PLANNER_SIGNAL_REPLY: str = json.dumps(
+    {
+        "goal": PLANNER_SIGNAL_GOAL,
+        "steps": [{"step": 1, "description": PLANNER_SIGNAL_STEPS[0], "agent": None}],
+    }
 )
-REVIEWER_SIGNAL_REPLY: str = (
-    '{"passed": true, "score": 0.8, "feedback": "Good job.", "suggestions": ["nits"]}'
+REVIEWER_SIGNAL_FEEDBACK: str = "Good job."
+REVIEWER_SIGNAL_REMEDIATION: str = "nits"
+REVIEWER_SIGNAL_REPLY: str = json.dumps(
+    {
+        "passed": True,
+        "score": 0.8,
+        "feedback": REVIEWER_SIGNAL_FEEDBACK,
+        "suggestions": [REVIEWER_SIGNAL_REMEDIATION],
+    }
 )
 
 # ── Live Claude Code corpus (spec-0018 / ADR-0024) ───────────────────────────

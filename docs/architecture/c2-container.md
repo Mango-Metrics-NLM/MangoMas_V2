@@ -16,7 +16,7 @@ C4Container
     Container(rag, "RAG Layer (opt-in)", "Python package (src/mangomas/rag/)", "Pure-domain retrieval-augmented generation: chunker, loader, IngestionPipeline, Retriever, RetrievalTool. Imports only the EmbeddingClient / VectorStoreRepository protocols. Surfaced via `mangomas rag ingest|query` and wired into ToolAgent via ctx.tools. Dormant unless MANGOMAS_EMBEDDINGS__ENABLED + MANGOMAS_VECTOR__ENABLED.")
     Container(workflow, "Workflow Graph Layer (opt-in)", "Python package (src/mangomas/workflow/)", "Declarative multi-agent topologies: a frozen WorkflowGraph (agent / sequence / fan_out / loop / branch) compiled to the Orchestrator's public dispatch primitives — every leaf is one dispatch call, so an all-agent sequence equals dispatch_pipeline. Surfaced via POST /workflows/run|validate and `mangomas workflow validate|run`. Dormant unless MANGOMAS_WORKFLOW__ENABLED or an explicit --definition.")
     Container(cognitive, "Cognitive producer (opt-in)", "Python package (src/mangomas/cognitive/)", "Emits CognitiveSignal 1.1.0 JSONL (planner planning.proposal, reviewer review.finding) when MANGOMAS_SIGNAL__ENABLED=true. Attaches CognitiveSignalSink on ctx.extras. Failures are contained. Never grants tools or talks to ExecutionBroker.")
-    Container(composition, "Composition Root", "Python module", "composition.py — wires LLM, storage, secrets, embeddings, vector, agent, harness, and signal registries at startup. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
+    Container(composition, "Composition Root", "Python module", "composition.py — wires LLM, storage, secrets, embeddings, vector, agent, and harness registries at startup, and attaches extras['cognitive_sink'] when signal.enabled. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
     Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .claude/agents and .claude/skills), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
     Container(integration_contracts, "Integration contracts", "Python package (mango-integration-contracts 1.1.0)", "Strict CognitiveSignal / ProposedAction envelope (extra=forbid, frozen). Imported at runtime only by mangomas.cognitive when MANGOMAS_SIGNAL__ENABLED. INV-16: never an authorization input.")
   }
@@ -59,8 +59,8 @@ C4Container
   Rel(composition, harness, "Engages _HarnessOrchestrator wrapper + emits harness.agent_invoke spans (when harness.enabled=true)")
   Rel(composition, cognitive, "Attaches extras['cognitive_sink'] when signal.enabled=true")
   Rel(cognitive, integration_contracts, "builds CognitiveSignal 1.1.0 (observation only)", "in-process")
-  Rel(cognitive, code_agent_harness, "JSONL today; optional HTTP ingest when that route exists", "JSONL / HTTP")
-  Rel(cognitive, cognitive_signals, "appends one envelope per planner/reviewer handle", "filesystem")
+  Rel(cognitive, code_agent_harness, "optional HTTP ingest when MANGOMAS_SIGNAL__HTTP_URL is set (advisory; never a grant)", "HTTP")
+  Rel(cognitive, cognitive_signals, "appends one JSONL envelope per planner/reviewer handle", "filesystem")
   Rel(harness, otel_out, "harness.agent_invoke parent spans + JSON structured logs", "OTLP / stdout")
   Rel(code_agent_harness, integration_contracts, "validates CognitiveSignal 1.1.0 against the shared schema (advisory; never grants capability)", "schema")
 ```

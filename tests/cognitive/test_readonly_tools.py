@@ -52,5 +52,5 @@ def test_no_write_or_command_tool_names_in_cognitive_plane() -> None:
 
 
 def test_scan_roots_are_populated() -> None:
-    files = [path for root in _SCAN_ROOTS for path in root.rglob("*.py")]
-    assert len(files) >= 8
+    empty = [str(root) for root in _SCAN_ROOTS if not any(root.rglob("*.py"))]
+    assert empty == []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from uuid import UUID
 
 import pytest
@@ -10,10 +11,17 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from tests.constants import PLANNER_SIGNAL_REPLY
+from pydantic import BaseModel
+from tests.constants import (
+    PLANNER_SIGNAL_GOAL,
+    PLANNER_SIGNAL_REPLY,
+    UNPARSED_GOAL,
+    UNPARSED_PLANNER_STEP,
+)
 from tests.fakes import FakeCognitiveSink, FakeLLM
 from tests.mango_contracts.constants import RUN_ID, TASK_ID
 
+from mango_contracts.payloads import PlanningProposalPayload
 from mangomas.agents.planner import PlannerAgent
 from mangomas.agents.reviewer import ReviewerAgent
 from mangomas.cognitive import producer as producer_mod
@@ -30,6 +38,7 @@ from mangomas.core.agent import AgentContext, AgentRequest, Message
 from mangomas.correlation import set_correlation_id
 
 _PLAN = PLANNER_SIGNAL_REPLY
+_EMIT_FAILED = "cognitive signal emit failed"
 _EXPORTER: InMemorySpanExporter = InMemorySpanExporter()
 
 
@@ -93,45 +102,87 @@ async def test_unparsed_review_still_emits() -> None:
     assert sink.emitted[0].payload["impact_statement"].startswith("unparsed:")
 
 
-async def test_emit_noops_without_settings() -> None:
+async def test_emit_noops_without_settings(caplog: pytest.LogCaptureFixture) -> None:
     sink = FakeCognitiveSink()
     ctx = AgentContext(
         llm=FakeLLM(reply=_PLAN),
         repo=None,
         extras={COGNITIVE_SINK_EXTRAS_KEY: sink},
     )
-    await emit_agent_signal(
-        agent_name="planner",
-        content=_PLAN,
-        request=_request(),
-        ctx=ctx,
-    )
+    with caplog.at_level(logging.ERROR):
+        await emit_agent_signal(
+            agent_name="planner",
+            content=_PLAN,
+            request=_request(),
+            ctx=ctx,
+        )
     assert sink.emitted == []
+    assert _EMIT_FAILED not in caplog.text
 
 
-async def test_emit_noops_without_sink() -> None:
+async def test_emit_noops_without_sink(caplog: pytest.LogCaptureFixture) -> None:
     ctx = AgentContext(
         llm=FakeLLM(reply=_PLAN),
         repo=None,
         extras={COGNITIVE_SETTINGS_EXTRAS_KEY: SignalSettings(enabled=True, dir=".")},
     )
-    await emit_agent_signal(
-        agent_name="planner",
-        content=_PLAN,
-        request=_request(),
-        ctx=ctx,
-    )
+    with caplog.at_level(logging.ERROR):
+        await emit_agent_signal(
+            agent_name="planner",
+            content=_PLAN,
+            request=_request(),
+            ctx=ctx,
+        )
+    assert _EMIT_FAILED not in caplog.text
 
 
-async def test_emit_noops_for_chat_name() -> None:
+async def test_emit_noops_for_chat_name(caplog: pytest.LogCaptureFixture) -> None:
     sink = FakeCognitiveSink()
-    await emit_agent_signal(
-        agent_name="chat",
-        content="hi",
-        request=_request(),
-        ctx=_wired("hi", sink),
-    )
+    with caplog.at_level(logging.ERROR):
+        await emit_agent_signal(
+            agent_name="chat",
+            content="hi",
+            request=_request(),
+            ctx=_wired("hi", sink),
+        )
     assert sink.emitted == []
+    assert _EMIT_FAILED not in caplog.text
+
+
+async def test_emit_noops_for_non_callable_sink(caplog: pytest.LogCaptureFixture) -> None:
+    ctx = AgentContext(
+        llm=FakeLLM(reply=_PLAN),
+        repo=None,
+        extras={
+            COGNITIVE_SINK_EXTRAS_KEY: object(),
+            COGNITIVE_SETTINGS_EXTRAS_KEY: SignalSettings(enabled=True, dir="."),
+        },
+    )
+    with caplog.at_level(logging.ERROR):
+        await emit_agent_signal(
+            agent_name="planner",
+            content=_PLAN,
+            request=_request(),
+            ctx=ctx,
+        )
+    assert "cognitive_sink extra is not a sink" in caplog.text
+    assert _EMIT_FAILED not in caplog.text
+
+
+async def test_emit_noops_for_tool_without_swallowing_role_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`tool` is not an emitter; adding it to `_EMITTERS` would raise and log."""
+    sink = FakeCognitiveSink()
+    with caplog.at_level(logging.ERROR):
+        await emit_agent_signal(
+            agent_name="tool",
+            content="retrieve",
+            request=_request(),
+            ctx=_wired("retrieve", sink),
+        )
+    assert sink.emitted == []
+    assert _EMIT_FAILED not in caplog.text
 
 
 def test_current_trace_id_outside_span_is_none() -> None:
@@ -160,46 +211,46 @@ async def test_schema_mismatch_is_contained(monkeypatch: pytest.MonkeyPatch) -> 
 
 async def test_planner_steps_as_strings() -> None:
     sink = FakeCognitiveSink()
-    plan = json.dumps({"goal": "ship", "steps": ["Build", "Test"]})
+    plan = json.dumps({"goal": PLANNER_SIGNAL_GOAL, "steps": ["Build", "Test"]})
     await PlannerAgent().handle(_request(), _wired(plan, sink))
     assert sink.emitted[0].payload["steps"] == ["Build", "Test"]
 
 
 async def test_empty_steps_become_unparsed() -> None:
     sink = FakeCognitiveSink()
-    plan = json.dumps({"goal": "ship", "steps": []})
+    plan = json.dumps({"goal": PLANNER_SIGNAL_GOAL, "steps": []})
     await PlannerAgent().handle(_request(), _wired(plan, sink))
-    assert sink.emitted[0].payload["steps"] == ["unparsed planner output"]
+    assert sink.emitted[0].payload["steps"] == [UNPARSED_PLANNER_STEP]
 
 
 async def test_json_array_is_unparsed() -> None:
     sink = FakeCognitiveSink()
     await PlannerAgent().handle(_request(), _wired("[1, 2, 3]", sink))
-    assert sink.emitted[0].payload["steps"] == ["unparsed planner output"]
+    assert sink.emitted[0].payload["steps"] == [UNPARSED_PLANNER_STEP]
 
 
 async def test_empty_content_still_emits_valid_payload() -> None:
     sink = FakeCognitiveSink()
     await PlannerAgent().handle(_request(), _wired("", sink))
-    assert sink.emitted[0].payload["steps"] == ["unparsed planner output"]
+    assert sink.emitted[0].payload["steps"] == [UNPARSED_PLANNER_STEP]
 
 
 async def test_whitespace_content_still_emits() -> None:
     sink = FakeCognitiveSink()
     await PlannerAgent().handle(_request(), _wired("   \n", sink))
-    assert sink.emitted[0].payload["goal"]
+    assert sink.emitted[0].payload["goal"] == UNPARSED_GOAL
 
 
 async def test_steps_not_a_list_become_unparsed() -> None:
     sink = FakeCognitiveSink()
-    plan = json.dumps({"goal": "ship", "steps": "nope"})
+    plan = json.dumps({"goal": PLANNER_SIGNAL_GOAL, "steps": "nope"})
     await PlannerAgent().handle(_request(), _wired(plan, sink))
-    assert sink.emitted[0].payload["steps"] == ["unparsed planner output"]
+    assert sink.emitted[0].payload["steps"] == [UNPARSED_PLANNER_STEP]
 
 
 async def test_junk_step_items_are_skipped() -> None:
     sink = FakeCognitiveSink()
-    plan = json.dumps({"goal": "ship", "steps": [1, None, {"nope": 1}, "ok"]})
+    plan = json.dumps({"goal": PLANNER_SIGNAL_GOAL, "steps": [1, None, {"nope": 1}, "ok"]})
     await PlannerAgent().handle(_request(), _wired(plan, sink))
     assert sink.emitted[0].payload["steps"] == ["ok"]
 
@@ -225,3 +276,23 @@ def test_current_trace_id_inside_span() -> None:
         value = current_trace_id()
     assert value is not None
     assert len(value) == 32
+
+
+def _list_max_length(model: type[BaseModel], name: str) -> int:
+    for meta in model.model_fields[name].metadata:
+        max_length = getattr(meta, "max_length", None)
+        if isinstance(max_length, int):
+            return max_length
+    raise AssertionError(f"{model.__name__}.{name} is missing max_length")
+
+
+async def test_planner_steps_are_capped_to_envelope_max() -> None:
+    """Plans longer than the payload cap must still emit (truncated), not vanish."""
+    cap = _list_max_length(PlanningProposalPayload, "steps")
+    steps = [f"step-{index}" for index in range(cap + 1)]
+    sink = FakeCognitiveSink()
+    plan = json.dumps({"goal": PLANNER_SIGNAL_GOAL, "steps": steps})
+    resp = await PlannerAgent().handle(_request(), _wired(plan, sink))
+    assert resp.content == plan
+    assert len(sink.emitted) == 1
+    assert sink.emitted[0].payload["steps"] == steps[:cap]

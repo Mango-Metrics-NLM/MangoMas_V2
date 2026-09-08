@@ -10,7 +10,7 @@ from tests.constants import (
     DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
     DEFAULT_SIGNAL_POLICY_VERSION,
 )
-from tests.mango_contracts.constants import envelope_base
+from tests.mango_contracts.constants import RUN_ID, TASK_ID, envelope_base
 
 from mango_contracts import CognitiveSignal
 from mango_contracts.validation import POLICY_INPUT_KEYS
@@ -22,8 +22,8 @@ from mangomas.cognitive.pdp import (
 )
 
 _IDENTITY = {
-    "run_id": "8e4ea278-3988-48a4-883a-38b978faadf1",
-    "task_id": "bb4214e9-2138-47bc-95e4-4ad34ee98d72",
+    "run_id": str(RUN_ID),
+    "task_id": str(TASK_ID),
     "policy_id": DEFAULT_SIGNAL_POLICY_ID,
     "policy_version": DEFAULT_SIGNAL_POLICY_VERSION,
     "policy_snapshot_hash": DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,

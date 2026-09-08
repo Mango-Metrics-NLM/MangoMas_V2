@@ -11,11 +11,19 @@ from uuid import UUID
 
 from hypothesis import given
 from hypothesis import strategies as st
-from tests.constants import PLANNER_SIGNAL_REPLY, REVIEWER_SIGNAL_REPLY
+from tests.constants import (
+    PLANNER_SIGNAL_GOAL,
+    PLANNER_SIGNAL_REPLY,
+    PLANNER_SIGNAL_STEPS,
+    REVIEWER_SIGNAL_REMEDIATION,
+    REVIEWER_SIGNAL_REPLY,
+    UNPARSED_PLANNER_STEP,
+)
 from tests.fakes import FakeCognitiveSink, FakeLLM
 from tests.mango_contracts.constants import RUN_ID, TASK_ID
 
 from mango_contracts import CognitiveSignal, SignalKind
+from mango_contracts.roles import AGENT_PRODUCER_IDS
 from mango_contracts.validation import POLICY_INPUT_KEYS, validate_signal_payload
 from mangomas import __version__ as _PACKAGE_VERSION
 from mangomas.agents.chat import ChatAgent
@@ -76,6 +84,7 @@ async def test_flag_off_reviewer_response_identical() -> None:
     resp = await ReviewerAgent().handle(_request(), ctx)
     assert resp.content == _REVIEW
     assert resp.agent == "reviewer"
+    assert resp.metadata == {}
 
 
 async def test_flag_on_planner_emits_one_planning_proposal() -> None:
@@ -83,13 +92,15 @@ async def test_flag_on_planner_emits_one_planning_proposal() -> None:
     ctx = _wired_ctx(_PLAN, sink)
     resp = await PlannerAgent().handle(_request(), ctx)
     assert resp.content == _PLAN
+    assert resp.agent == "planner"
+    assert resp.metadata == {}
     assert len(sink.emitted) == 1
     signal = sink.emitted[0]
     assert isinstance(signal, CognitiveSignal)
     assert signal.signal_kind is SignalKind.PLANNING_PROPOSAL
-    assert signal.producer_id == "mangomas.planner.v2"
-    assert signal.payload["goal"] == "ship it"
-    assert signal.payload["steps"] == ["Build"]
+    assert signal.producer_id == AGENT_PRODUCER_IDS["planner"]
+    assert signal.payload["goal"] == PLANNER_SIGNAL_GOAL
+    assert signal.payload["steps"] == list(PLANNER_SIGNAL_STEPS)
     assert set(pdp_input_from_signal(signal)) == set(POLICY_INPUT_KEYS)
 
 
@@ -131,7 +142,7 @@ async def test_unparsed_planner_output_still_emits() -> None:
     sink = FakeCognitiveSink()
     ctx = _wired_ctx("not-json", sink)
     await PlannerAgent().handle(_request(), ctx)
-    assert sink.emitted[0].payload["steps"] == ["unparsed planner output"]
+    assert sink.emitted[0].payload["steps"] == [UNPARSED_PLANNER_STEP]
 
 
 async def test_invalid_metadata_uuid_mints_new_ids() -> None:
@@ -232,7 +243,7 @@ async def test_reviewer_suggestions_are_joined() -> None:
     sink = FakeCognitiveSink()
     ctx = _wired_ctx(_REVIEW, sink)
     await ReviewerAgent().handle(_request(), ctx)
-    assert sink.emitted[0].payload["suggested_remediation"] == "nits"
+    assert sink.emitted[0].payload["suggested_remediation"] == REVIEWER_SIGNAL_REMEDIATION
 
 
 @given(
@@ -249,4 +260,4 @@ def test_any_planner_or_reviewer_content_validates(agent_name: str, content: str
         producer_version=_PACKAGE_VERSION,
     )
     validate_signal_payload(signal)
-    assert agent_name in signal.producer_id
+    assert signal.producer_id == AGENT_PRODUCER_IDS[agent_name]

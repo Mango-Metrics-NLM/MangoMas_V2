@@ -83,7 +83,7 @@ C4Component
   }
 
   Container_Boundary(cognitive_boundary, "Cognitive producer (src/mangomas/cognitive/) — opt-in") {
-    Component(cognitive, "CognitiveSignalSink + producer", "Protocol + emit helper", "JSONL (default) or optional HTTP POST of CognitiveSignal 1.1.0. Wired on ctx.extras['cognitive_sink'] when MANGOMAS_SIGNAL__ENABLED=true. planner emits planning.proposal; reviewer emits review.finding. Failures log+swallow. tool agent is unmapped (raises); retrieve stays local.")
+    Component(cognitive, "CognitiveSignalSink + producer", "Protocol + emit helper", "JSONL (default) or optional HTTP POST of CognitiveSignal 1.1.0. Wired on ctx.extras['cognitive_sink'] when MANGOMAS_SIGNAL__ENABLED=true. planner emits planning.proposal; reviewer emits review.finding. Failures log+swallow. tool has no harness role (map raises; emit skips); chat/summarize are unmapped observation and do not emit; retrieve stays local RAG.")
   }
 
   Rel(app_factory, access_log, "adds middleware")
@@ -120,7 +120,7 @@ C4Component
   Rel(orchestrator, postgres_repo, "persists turn via TurnRepository (when provider=postgres)")
   Rel(registry, chat_agent, "resolves 'chat'")
   Rel(registry, summarize_agent, "resolves 'summarize'")
-  Rel(registry, tool_agent, "resolves 'tool_agent'")
+  Rel(registry, tool_agent, "resolves 'tool'")
   Rel(registry, planner_agent, "resolves 'planner'")
   Rel(registry, reviewer_agent, "resolves 'reviewer'")
   Rel(chat_agent, llm_client, "complete() / stream()")

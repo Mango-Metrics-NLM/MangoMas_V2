@@ -34,3 +34,11 @@ GENAI_SEMCONV_STATUS: str = "development-2026-09"
 # Default JSONL basename under ``SignalSettings.dir``. Not a Settings field:
 # renaming the file is a producer-side choice, not an operator tunable.
 JSONL_FILENAME: str = "signals.jsonl"
+
+
+# Fallback payload text when planner JSON is missing or empty. Shared with
+# tests so a wording change cannot silently desync assertions.
+UNPARSED_PLANNER_STEP: str = "unparsed planner output"
+
+
+UNPARSED_GOAL: str = "unparsed"

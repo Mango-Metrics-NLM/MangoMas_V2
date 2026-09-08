@@ -61,10 +61,21 @@ adapters, agents, or a harness `ExecutionBroker` / `command_actions`.
 | Contained I/O | Sink failures log + swallow. `AgentResponse` is unchanged. No new `MangomasError` for disk/HTTP. |
 | Refuse, don't strip | `refuse_cognitive_pdp_fields` **raises** on `confidence` / authority-shaped keys. Never drop them and forward. |
 | Join keys in lineage | `trace_id` / correlation id go in `lineage.source_event_ids` (`otel-trace:`, `mangomas.correlation_id:`). Payload models are `extra="forbid"`. |
-| `tool` raises | `retrieve` stays local RAG. No `run_command` / `write_file` / `apply_patch`. Unknown names never default to `implementer`. |
+| Chat / summarize | `harness_role_for_agent` returns `None`; `_EMITTERS` does not include them. Unmapped observation — they must not emit. |
+| `tool` raises | Map raises (`UnmappedToolAgentError`). Emit path skips (not swallowed). `retrieve` stays local RAG. No `run_command` / `write_file` / `apply_patch`. Unknown names never default to `implementer`. |
 | Envelope 1.1.0 | `Literal["1.1.0"]` rejects `1.0.0` at Settings parse. Do not silently coerce. |
 | GenAI aliases | `gen_ai.invoke_agent` is additive and **default-off** (`MANGOMAS_SIGNAL__GENAI_SPANS`). Live spans stay `orchestrator.*` / `harness.agent_invoke`. |
 | Dual install | `mango_contracts` is a sibling package, not a root `dependencies` pin. `make install`, CI, and the Docker dual-wheel build install it. Pytest `pythonpath` is not a runtime install. |
+
+---
+
+## Not a Claude Code hook
+
+SIGNAL is env-driven (`MANGOMAS_SIGNAL__*`), not a `.claude/settings.json`
+edit. Do **not** add PreToolUse / ConfigChange / SessionStart hooks for it.
+The emit site is `_structured.handle` after `AgentResponse` — that is the
+loop hook. Orchestrator acceptance loops and workflow `loop` nodes stay
+unchanged.
 
 ---
 

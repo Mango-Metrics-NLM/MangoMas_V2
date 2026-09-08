@@ -106,8 +106,10 @@ Runtime producer `src/mangomas/cognitive/` is default-OFF
 handle does not import the contracts package. `make install` / CI / Docker
 dual-wheel so `import mango_contracts` is a real install. C1 now shows the
 sibling harness. Skill `mango-cognitive`; tests under `tests/cognitive/`
-plus tier-1 `tests/integration/test_signal_flow.py`. See CHANGELOG
-`[Unreleased]`.
+plus tier-1 `tests/integration/test_signal_flow.py` (planner + reviewer
+invoke, planner stream must not write JSONL). Peer-review follow-up:
+planner step cap, camelCase authority-key walker, policy-hash rebind,
+INV-16 byte-identical PDP projections. See CHANGELOG `[Unreleased]`.
 
 ## Done on the composition-decomposition branch (Unreleased)
 
