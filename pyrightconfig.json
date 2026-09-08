@@ -1,6 +1,6 @@
 {
-  "include": ["src", "tests", "scripts"],
-  "extraPaths": ["src"],
+  "include": ["src", "tests", "scripts", "eval_harness_bridge/src", "mango-integration-contracts/src"],
+  "extraPaths": ["src", "eval_harness_bridge/src", "mango-integration-contracts/src"],
   "stubPath": "typings",
   "venvPath": ".",
   "venv": ".venv"

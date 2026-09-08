@@ -142,6 +142,27 @@ jobs:
       - name: Bridge coverage (isolated, floor 100%)
         run: make bridge-coverage
 
+  contracts-coverage:
+    name: Contracts coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # mango_contracts lives outside the mangomas package, so the
+      # --cov=mangomas gate never measures it. Same isolation idiom as
+      # bridge-coverage: its own COVERAGE_FILE + -o addopts="". Floor 100%.
+      - name: Contracts coverage (isolated, floor 100%)
+        run: make contracts-coverage
+
   scripts-coverage:
     name: Scripts coverage gate
     runs-on: ubuntu-latest

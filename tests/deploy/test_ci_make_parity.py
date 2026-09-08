@@ -99,6 +99,12 @@ def test_bridge_coverage_job_delegates_to_make() -> None:
     assert commands == ["make bridge-coverage"]
 
 
+def test_contracts_coverage_job_delegates_to_make() -> None:
+    """mango_contracts sits outside `--cov=mangomas`, like the eval bridge."""
+    commands = _step_run_commands(_ci_jobs()["contracts-coverage"])
+    assert commands == ["make contracts-coverage"]
+
+
 def test_protected_paths_job_delegates_to_make() -> None:
     """The protected-path gate (ADR-0021) has its own job, like bridge-coverage,
     so a failure is attributable and the job needs no `pip install` step (the
@@ -249,6 +255,14 @@ def test_scripts_coverage_uses_an_isolated_coverage_file_and_addopts() -> None:
     assert '-o addopts=""' in body
 
 
+def test_contracts_coverage_uses_an_isolated_coverage_file_and_addopts() -> None:
+    """Same isolation idiom as bridge-coverage: own COVERAGE_FILE + shed addopts."""
+    body = _make_target_body("contracts-coverage")
+    assert "COVERAGE_FILE=.coverage.contracts" in body
+    assert '-o addopts=""' in body
+    assert "--source=$(CONTRACTS_SRC)" in body or "--source=mango-integration-contracts/src" in body
+
+
 def _makefile_variable(name: str) -> str:
     """Return a `NAME ?= value` (or `NAME = value`) assignment from the Makefile.
 
@@ -301,17 +315,23 @@ def test_mypy_does_not_narrow_the_surface_with_packages() -> None:
 
 
 def test_isolated_coverage_floors_are_pinned() -> None:
-    """`SCRIPTS_FLOOR` / `BRIDGE_FLOOR` are the only floors living in Makefile text.
+    """`SCRIPTS_FLOOR` / `BRIDGE_FLOOR` / `CONTRACTS_FLOOR` live in Makefile text.
 
     Every `src/mangomas` floor is a `Floor(...)` in `scripts/check_coverage.py`
     and is parametrised over by `tests/test_check_coverage.py`; the global one
-    is asserted equal to pytest's addopt above. These two are `?=` Makefile
-    variables that nothing checked — so a quiet edit lowering either would
+    is asserted equal to pytest's addopt above. These three are `?=` Makefile
+    variables that nothing else checked — so a quiet edit lowering any would
     weaken an isolated gate with no review record. Bumping a floor is fine;
     doing it invisibly is not, and updating this line is the record.
     """
     assert int(_makefile_variable("SCRIPTS_FLOOR")) == 92
     assert int(_makefile_variable("BRIDGE_FLOOR")) == 100
+    assert int(_makefile_variable("CONTRACTS_FLOOR")) == 100
+
+
+def test_gate_includes_contracts_coverage() -> None:
+    """The isolated contracts floor must stay in `make gate`, not CI-only."""
+    assert "contracts-coverage" in _make_target_body("gate")
 
 
 def test_nightly_jobs_delegate_to_make() -> None:
