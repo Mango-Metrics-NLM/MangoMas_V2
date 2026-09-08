@@ -13,14 +13,16 @@ permissible.
 **Schema version:** `1.1.0` (breaking vs the harness's in-tree dataclass
 `1.0.0` — companion bump required there).
 
-## Install
+## Install (from the Mango-Mas V2 repo root)
 
 ```bash
-pip install -e ./mango-integration-contracts
+make install   # mangomas[dev] + ./mango-integration-contracts
 ```
 
-In this repository the package is also on pytest's `pythonpath`, matching
-`eval_harness_bridge`. Isolated coverage: `make contracts-coverage` (100%).
+Pytest's `pythonpath` also lists this package so unit tests import it without
+an editable install. That is **not** a runtime install: flag-on emission in a
+plain interpreter or the Docker image needs the wheel/`make install` path.
+Isolated coverage: `make contracts-coverage` (100%).
 
 ## Invariant
 

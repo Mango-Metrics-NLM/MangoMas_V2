@@ -17,6 +17,7 @@ core agent contracts.
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+pip install -e ./mango-integration-contracts
 
 # 2. Start LM Studio, load a model, and enable the local server on :1234
 
@@ -37,6 +38,7 @@ mangomas chat "hello"
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+pip install -e ./mango-integration-contracts
 cp .env.example .env
 uvicorn mangomas.api.app:create_app --factory --reload
 ```
@@ -284,6 +286,41 @@ an unknown agent is `AgentNotFound` (404), and loop exhaustion is
 
 ---
 
+## Cognitive signals (opt-in)
+
+Mango-Mas can emit `CognitiveSignal` **1.1.0** envelopes (planner
+`planning.proposal`, reviewer `review.finding`) for the sibling
+[Mango Code Agent Harness](https://github.com/ianshank/Mango_Code_Agent-Harness).
+Default-OFF so existing deployments are byte-identical. This is **not** the
+Claude Code harness (`MANGOMAS_HARNESS__*`): cognition proposes; the sibling
+harness disposes (INV-16). The sink hangs on `AgentContext.extras["cognitive_sink"]`
+— no new `AgentContext` field.
+
+```env
+MANGOMAS_SIGNAL__ENABLED=true
+MANGOMAS_SIGNAL__DIR=./data/cognitive-signals
+MANGOMAS_SIGNAL__GENAI_SPANS=false
+# optional HTTP ingest when the harness route exists:
+# MANGOMAS_SIGNAL__HTTP_URL=https://harness.example.test/ingest/cognitive
+```
+
+`make install` also editable-installs `./mango-integration-contracts` so
+flag-on emission can `import mango_contracts` outside pytest's `pythonpath`.
+The production image builds both wheels.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `MANGOMAS_SIGNAL__ENABLED` | `false` | Attach the JSONL sink and emit after planner/reviewer `handle` |
+| `MANGOMAS_SIGNAL__DIR` | `./data/cognitive-signals` | JSONL directory (`signals.jsonl`) |
+| `MANGOMAS_SIGNAL__SCHEMA_VERSION` | `1.1.0` | Rejects `1.0.0` at Settings parse (no silent coerce) |
+| `MANGOMAS_SIGNAL__GENAI_SPANS` | `false` | Additive `gen_ai.invoke_agent` span alias |
+| `MANGOMAS_SIGNAL__HTTP_URL` | _(none)_ | Optional POST of the envelope JSON |
+
+Sink failures are logged and swallowed. Streaming does not emit. `tool` has
+no harness role (`retrieve` stays local RAG).
+
+---
+
 ## Claude Code harness (opt-in)
 
 The repository ships an enterprise Claude Code harness configured under
@@ -307,7 +344,7 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 16 skills — live in Claude Code and VS Code Copilot |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 17 skills — live in Claude Code and VS Code Copilot |
 | Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
@@ -316,7 +353,7 @@ What ships in the harness:
 | Cross-session memory (per-contributor, user-scoped) | external `~/.claude-mem/` | claude-mem — no shared config |
 | Secret scan | `.gitleaks.toml` + `make secret-scan` | Declared ruleset; working tree + history; proved non-vacuous nightly |
 | Scheduled automation | `.github/workflows/nightly.yml` | Postgres suite + secret scan; files a tracking issue on failure |
-| Dependency updates | `.github/dependabot.yml` | Monthly `github-actions` bumps, keeping the SHA pins fresh |
+| Dependency updates | `.github/dependabot.yml` | Monthly `github-actions` + root `pip` + `/mango-integration-contracts` pip |
 | PR template | `.github/PULL_REQUEST_TEMPLATE.md` | Mandatory PR checklist |
 
 See `CLAUDE.md` for the full skill/agent map and protected-path

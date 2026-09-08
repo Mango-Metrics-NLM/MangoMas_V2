@@ -15,7 +15,7 @@ argument-hint: "Describe the new setting (e.g. 'add a retry-count to LLMSettings
 ## When to Use
 
 - Add a new tunable to `LLMSettings`, `DBSettings`, `MemorySettings`, `LogSettings`, or `LoopSettings`
-- Introduce a brand new settings group (e.g. `HarnessSettings`)
+- Introduce a brand new settings group (e.g. `HarnessSettings`, `SignalSettings`)
 - Add a new `SecretsProvider` implementation (env, GCP, Vault)
 - Diagnose why `MANGOMAS_FOO__BAR=baz` isn't taking effect
 - Update `.env.example` to document a new variable
@@ -48,7 +48,7 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 | Rule | Detail |
 |------|--------|
 | Env prefix | All env vars use `MANGOMAS_` prefix. |
-| Nested delimiter | Use `__` between group and field: `MANGOMAS_LLM__BASE_URL`, `MANGOMAS_HARNESS__ENABLED`. |
+| Nested delimiter | Use `__` between group and field: `MANGOMAS_LLM__BASE_URL`, `MANGOMAS_HARNESS__ENABLED`, `MANGOMAS_SIGNAL__ENABLED`. |
 | `DEFAULT_*` module constants | Every default value is a module-level `DEFAULT_*` constant in the group module that owns it (`config/llm.py`, `config/rag.py`, ...) — the single source of truth. |
 | Constants re-export, not restate | `tests/constants.py` re-exports config-mirroring defaults from `mangomas.config` (`from mangomas.config import DEFAULT_X as DEFAULT_X`), so a config change can never silently desync the tests. Genuinely test-scoped values (mock URLs, env-var names, fixtures) stay as literals there. |
 | BaseModel sub-groups | Each settings group is a `BaseModel` (not `BaseSettings`) attached to root `Settings` via `Field(default_factory=...)`. |

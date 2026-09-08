@@ -9,11 +9,15 @@ import sys
 from pathlib import Path
 from uuid import UUID
 
+from hypothesis import given
+from hypothesis import strategies as st
+from tests.constants import PLANNER_SIGNAL_REPLY, REVIEWER_SIGNAL_REPLY
 from tests.fakes import FakeCognitiveSink, FakeLLM
 from tests.mango_contracts.constants import RUN_ID, TASK_ID
 
 from mango_contracts import CognitiveSignal, SignalKind
-from mango_contracts.validation import POLICY_INPUT_KEYS
+from mango_contracts.validation import POLICY_INPUT_KEYS, validate_signal_payload
+from mangomas import __version__ as _PACKAGE_VERSION
 from mangomas.agents.chat import ChatAgent
 from mangomas.agents.planner import PlannerAgent
 from mangomas.agents.reviewer import ReviewerAgent
@@ -25,16 +29,13 @@ from mangomas.cognitive.constants import (
     METADATA_TASK_ID,
 )
 from mangomas.cognitive.pdp import pdp_input_from_signal
+from mangomas.cognitive.producer import build_signal
 from mangomas.cognitive.sink import CognitiveSignalSink
 from mangomas.config import SignalSettings
 from mangomas.core.agent import AgentContext, AgentRequest, Message
 
-_PLAN = json.dumps(
-    {"goal": "ship it", "steps": [{"step": 1, "description": "Build", "agent": None}]}
-)
-_REVIEW = json.dumps(
-    {"passed": True, "score": 0.8, "feedback": "Good job.", "suggestions": ["nits"]}
-)
+_PLAN = PLANNER_SIGNAL_REPLY
+_REVIEW = REVIEWER_SIGNAL_REPLY
 
 
 def _request() -> AgentRequest:
@@ -215,3 +216,37 @@ def test_flag_off_handle_does_not_import_mango_contracts() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr + result.stdout
+
+
+async def test_planner_stream_does_not_emit() -> None:
+    sink = FakeCognitiveSink()
+    ctx = _wired_ctx(_PLAN, sink)
+    chunks: list[str] = []
+    async for chunk in await PlannerAgent().stream(_request(), ctx):
+        chunks.append(chunk)
+    assert "".join(chunks)
+    assert sink.emitted == []
+
+
+async def test_reviewer_suggestions_are_joined() -> None:
+    sink = FakeCognitiveSink()
+    ctx = _wired_ctx(_REVIEW, sink)
+    await ReviewerAgent().handle(_request(), ctx)
+    assert sink.emitted[0].payload["suggested_remediation"] == "nits"
+
+
+@given(
+    st.sampled_from(("planner", "reviewer")),
+    st.text(alphabet=st.characters(codec="utf-8"), max_size=5_000),
+)
+def test_any_planner_or_reviewer_content_validates(agent_name: str, content: str) -> None:
+    settings = SignalSettings(enabled=True, dir=".")
+    signal = build_signal(
+        agent_name=agent_name,
+        content=content,
+        request=_request(),
+        settings=settings,
+        producer_version=_PACKAGE_VERSION,
+    )
+    validate_signal_payload(signal)
+    assert agent_name in signal.producer_id

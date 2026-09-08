@@ -10,7 +10,8 @@ coverage floors that must pass before any merge.
 The existing test suite (`tests/`) constitutes the regression baseline.
 It covers unit, API, and integration boundaries with all external services
 replaced by deterministic test doubles (`FakeLLM`, `FakeRepository`,
-`FakeMemoryRepository`, `FakeTool`, `FakeEmbeddingClient`, `FakeVectorStore`).
+`FakeMemoryRepository`, `FakeTool`, `FakeEmbeddingClient`, `FakeVectorStore`,
+`FakeCognitiveSink`).
 
 ### Current baseline
 
@@ -55,7 +56,8 @@ the per-suite sections below, or use the matching `make` target
 | Shared HTTP client base | `tests/adapters/test_openai_client.py` | `OpenAICompatHTTPClient` lifecycle: client ownership, `ClassVar` enforcement, MRO tail, public constructor stability |
 | Vector adapter | `tests/adapters/vector/` | `ChromaVectorStore` via injected fake collection; cosine scoring |
 | RAG domain | `tests/rag/` | chunker (+ Hypothesis fuzz), models, loader, pipeline, retrieval, ToolAgent-invokes-RetrievalTool; **tier-3 gated device contract** (embedding finiteness/ordering, CPU-vs-auto ranking parity, real-retrieval ToolAgent, CLI round trip) |
-| **Tier-1 E2E** | `tests/integration/` | Seven flows through the **real composition root** (`build_orchestrator` → `create_app`): stream persistence → `/history`, `LoopSettings` → 504 + budget precedence, the shipped `plan-execute-review` graph with validation, `branch`/composite `fan_out` over HTTP, `MODEL_OVERRIDE`, tenant-scoped streamed turns. Runs in CI on every push |
+| **Tier-1 E2E** | `tests/integration/` | Flows through the **real composition root** (`build_orchestrator` → `create_app`): stream persistence → `/history`, `LoopSettings` → 504 + budget precedence, the shipped `plan-execute-review` graph with validation, `branch`/composite `fan_out` over HTTP, `MODEL_OVERRIDE`, tenant-scoped streamed turns, **CognitiveSignal flag-off/flag-on** (`tests/integration/test_signal_flow.py`). Runs in CI on every push |
+| Cognitive producer | `tests/cognitive/` | Flag-off identity, JSONL/HTTP/composite sinks, INV-16 PDP refuse-don't-strip, role map, retrieve-only, GenAI span exporter |
 | Gated-suite parity | `tests/deploy/test_gated_suite_homes.py` | Every `RUN_*` suite has an executing home or a recorded infeasibility reason — and never both |
 | Hardware contract | `tests/tooling/test_e2e_hardware_contract.py` | Lints tiers 2/3 for elapsed-time assertions, numeric timeouts, device literals, embedding equality |
 | Eval serializer | `tests/eval/test_serialize.py` | `report_payload` shape + round trip through `load_baseline` |

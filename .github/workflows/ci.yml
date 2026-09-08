@@ -25,7 +25,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       - name: Validate Claude Code config JSON
         run: make validate-config
@@ -60,7 +60,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       - name: Run pytest with coverage
         # pyproject addopts supplies --cov=mangomas, term-missing, and the
@@ -131,7 +131,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       # The bridge lives outside the mangomas package, so the --cov=mangomas
       # gate never measures it. `make bridge-coverage` enforces its own 100%
@@ -155,7 +155,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       # mango_contracts lives outside the mangomas package, so the
       # --cov=mangomas gate never measures it. Same isolation idiom as
@@ -176,7 +176,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       # scripts/ lives outside the mangomas package, so the --cov=mangomas
       # gate never measures it (ADR-0021 / spec-0017 A7). Same isolation
@@ -199,7 +199,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       # The pinned-tool install and the audit invocation live in exactly one
       # place: `make pip-audit` (supply-chain baseline, roadmap item 0.3).

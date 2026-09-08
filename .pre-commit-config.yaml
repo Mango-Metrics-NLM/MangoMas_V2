@@ -15,7 +15,9 @@ repos:
   # (tests, scripts, eval_harness_bridge/src, mango-integration-contracts/src)
   # pulls in far more — pytest, respx, hypothesis, asyncpg — and is type-checked
   # authoritatively by CI's full `mypy --strict` over CODE_PATHS, so the hook
-  # trades breadth for fast, dependency-accurate local feedback.
+  # trades breadth for fast, dependency-accurate local feedback. Contracts stay
+  # on `mypy_path` so `src/mangomas/cognitive/` typechecks against the envelope
+  # without widening this hook's `files:` glob.
   # Keep the rev in lockstep with the `mypy==` pin in pyproject's dev extra.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.0

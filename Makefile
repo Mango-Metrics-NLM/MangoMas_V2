@@ -64,10 +64,11 @@ PIP_AUDIT_VERSION ?= 2.10.1
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install the package with dev extras
+install: ## Install mangomas[dev] and sibling mango-integration-contracts
 	$(PYTHON) -m pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ./mango-integration-contracts
 
 # ── Quality gate (mirrors .github/workflows/ci.yml) ──────────────────────────
 

@@ -110,7 +110,7 @@ python scripts/check_coverage.py
 ## Fake Adapters Quick Reference
 
 ```python
-from tests.fakes import FakeLLM, FakeRepository, FakeTool, FakeMemoryRepository
+from tests.fakes import FakeLLM, FakeRepository, FakeTool, FakeMemoryRepository, FakeCognitiveSink
 
 # FakeLLM
 llm = FakeLLM(reply="default")               # same reply every call
@@ -124,4 +124,8 @@ tool = FakeTool(name="echo", result="echo-result")
 
 # FakeMemoryRepository — satisfies MemoryRepository
 mem = FakeMemoryRepository()
+
+# FakeCognitiveSink — satisfies CognitiveSignalSink
+sink = FakeCognitiveSink()            # sink.emitted: list
+sink = FakeCognitiveSink(raise_on_emit=RuntimeError("disk"))
 ```

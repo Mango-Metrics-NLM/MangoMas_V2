@@ -12,6 +12,7 @@ rewriting core agent contracts.
 # Install (Windows)
 python -m venv .venv ; .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+pip install -e ./mango-integration-contracts
 
 # Run API (factory pattern required)
 uvicorn mangomas.api.app:create_app --factory --reload
@@ -569,6 +570,7 @@ tree serves both.
 | `mango-workflow` | Declarative workflow graphs: schema, nodes, predicates, `workflow` CLI |
 | `mango-rag` | Embeddings/vector/RAG: ingestion, retrieval, RetrievalTool wiring |
 | `mango-eval` | Evaluation harness: scorers, sinks, targets, sources, gate/baseline |
+| `mango-cognitive` | CognitiveSignal 1.1.0 producer: `MANGOMAS_SIGNAL__*`, extras sink, INV-16 |
 | `mango-harness` | Protected-path governance, the `BREAKING-CHANGE` trailer, hooks |
 | `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |

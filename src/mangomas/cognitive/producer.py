@@ -18,11 +18,13 @@ from uuid import UUID, uuid4
 
 from opentelemetry import trace
 from opentelemetry.trace import Span
+from pydantic import BaseModel
 
 from mango_contracts import CognitiveSignal, SignalKind, producer_id_for_agent
 from mango_contracts.cognitive_signal import SCHEMA_VERSION, SignalLineage
 from mango_contracts.enums import EvidenceStatus
 from mango_contracts.evidence import EvidenceBundle, EvidenceReference
+from mango_contracts.payloads import PlanningProposalPayload, ReviewFindingPayload
 from mango_contracts.validation import validate_signal_payload
 from mangomas import __version__ as _PACKAGE_VERSION
 from mangomas.cognitive.constants import (
@@ -46,14 +48,24 @@ _EMITTERS: dict[str, SignalKind] = {
     "reviewer": SignalKind.REVIEW_FINDING,
 }
 
-_SUMMARY_MAX = 2_000
-_IMPACT_MAX = 4_000
-_GOAL_MAX = 4_000
-_REMEDIATION_MAX = 8_000
+
+def _field_max_length(model: type[BaseModel], name: str) -> int:
+    """Read a Pydantic ``max_length`` so producer truncation matches the envelope."""
+    for meta in model.model_fields[name].metadata:
+        max_length = getattr(meta, "max_length", None)
+        if isinstance(max_length, int):
+            return max_length
+    raise RuntimeError(f"{model.__name__}.{name} is missing max_length metadata")
+
+
+_SUMMARY_MAX = _field_max_length(CognitiveSignal, "summary")
+_IMPACT_MAX = _field_max_length(ReviewFindingPayload, "impact_statement")
+_GOAL_MAX = _field_max_length(PlanningProposalPayload, "goal")
+_REMEDIATION_MAX = _field_max_length(ReviewFindingPayload, "suggested_remediation")
 
 
 def _sha256_hex(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 
 def _prefixed_sha256(text: str) -> str:

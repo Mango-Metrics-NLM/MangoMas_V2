@@ -192,5 +192,10 @@ C4Component
   only from the CLI (`mangomas rag ingest`) and is not part of the request
   path. `Orchestrator.aclose()` closes `ctx.embeddings` and
   `ctx.vector_store` (fault-tolerant, idempotent) so neither leaks per run.
+- The **cognitive producer** (`src/mangomas/cognitive/`) is opt-in via
+  `MANGOMAS_SIGNAL__ENABLED`. It imports `mango_contracts` in-process and
+  writes JSONL (optional HTTP). The sibling Code Agent Harness is the C1
+  consumer of that schema; this container does not broker execution.
+  Streaming does not emit. Failures log+swallow.
 - All components that accept external input are configurable via
   `mangomas.config.Settings`; no hardcoded endpoints or model ids.

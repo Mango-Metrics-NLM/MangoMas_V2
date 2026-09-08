@@ -1,6 +1,6 @@
 # Spec-0030: Cognitive/execution boundary plugin
 
-- **Status:** In progress
+- **Status:** Implemented
 - **Linked ADR:** ADR-0029
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added`
 

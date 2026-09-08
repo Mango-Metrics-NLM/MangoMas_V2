@@ -26,6 +26,9 @@ docs/
 specs/
 tests/
 eval_harness_bridge/
+# mango-integration-contracts/ is deliberately NOT ignored — the image
+# builds that wheel so flag-on CognitiveSignal emission can import
+# mango_contracts (spec-0030 / ADR-0029).
 CHANGELOG.md
 NEXT_STEPS.md
 typings/

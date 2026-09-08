@@ -70,6 +70,7 @@ jobs:
             exit 1
           fi
           pip install -e ".[dev]"
+          pip install -e ./mango-integration-contracts
           pip install "git+https://github.com/ianshank/Agents@${AGENTS_REF}"
 
       - name: Convert sample dataset to Agents shape

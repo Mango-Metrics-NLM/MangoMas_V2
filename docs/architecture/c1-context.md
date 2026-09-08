@@ -25,6 +25,10 @@ C4Context
 
   System_Ext(cloud_run, "Cloud Run", "Container compute target. deploy/service.yaml + .github/workflows/deploy.yml build and deploy the image; the runtime is the same FastAPI app with MANGOMAS_ENV=prod and JSON logs (spec-0004).")
 
+  System_Ext(code_agent_harness, "Mango Code Agent Harness", "Sibling execution/authority plane (classify, authorize, broker). Distinct from the in-repo Claude Code harness. Consumes CognitiveSignal 1.1.0 when MANGOMAS_SIGNAL__ENABLED=true. Companion 1.1.0 bump required before ingest.")
+
+  System_Ext(cognitive_signals, "Cognitive signal log (opt-in)", "./data/cognitive-signals — JSONL envelopes written when MANGOMAS_SIGNAL__ENABLED=true. Covered by the data/ gitignore entry.")
+
   Rel(developer, mangomas, "Invokes agents / queries health / runs eval", "HTTP REST or CLI")
   Rel(mangomas, lmstudio, "Sends chat completion requests", "HTTP (OpenAI-compat /v1/chat/completions)")
   Rel(mangomas, vertex, "Sends generate_content requests (when provider=vertex)", "Vertex SDK / HTTPS")
@@ -33,6 +37,8 @@ C4Context
   Rel(mangomas, secret_mgr, "Resolves secret references (when provider=gcp)", "Secret Manager API / IAM")
   Rel(mangomas, otel, "Emits traces, metrics and structured logs", "OTLP / stdout")
   Rel(mangomas, cloud_run, "Deployed as a container image (make deploy / deploy.yml)", "Cloud Run / HTTPS")
+  Rel(mangomas, code_agent_harness, "Emits CognitiveSignal 1.1.0 (advisory; never grants capability)", "JSONL / HTTP")
+  Rel(mangomas, cognitive_signals, "Appends planner/reviewer envelopes (when signal.enabled)", "filesystem")
 ```
 
 ## Notes
@@ -60,3 +66,7 @@ C4Context
   `Orchestrator` / `LLMClient` stack as `/agents/{name}/invoke`. It does
   not introduce a new external dependency. See
   [docs/eval/harness.md](../eval/harness.md).
+- The **Mango Code Agent Harness** is a sibling execution/authority plane,
+  not this repo's Claude Code harness (`MANGOMAS_HARNESS__*`). Emission is
+  opt-in via `MANGOMAS_SIGNAL__*` (default-OFF). A `CognitiveSignal` is
+  advisory JSON; it never grants tools, models, or timeouts.

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from mango_contracts.roles import AGENT_PRODUCER_IDS
 from mangomas.cognitive import roles as roles_mod
 from mangomas.cognitive.roles import (
     FORBIDDEN_HARNESS_ROLES,
+    HARNESS_OBSERVATION_ROLES,
+    UNMAPPED_OBSERVATION_AGENTS,
     UnknownAgentRoleError,
     UnmappedToolAgentError,
     harness_role_for_agent,
@@ -42,6 +45,16 @@ def test_mapped_roles_are_not_execution_roles() -> None:
         assert role is not None
         assert role not in FORBIDDEN_HARNESS_ROLES
         assert role != "implementer"
+
+
+def test_contracts_producer_ids_lock_to_observation_roles() -> None:
+    """Contracts and the producer must agree which agents exist."""
+    assert set(HARNESS_OBSERVATION_ROLES) <= set(AGENT_PRODUCER_IDS)
+    assert set(AGENT_PRODUCER_IDS) >= UNMAPPED_OBSERVATION_AGENTS
+    assert "tool" in AGENT_PRODUCER_IDS
+    assert AGENT_PRODUCER_IDS["planner"] == "mangomas.planner.v2"
+    assert AGENT_PRODUCER_IDS["reviewer"] == "mangomas.reviewer.v2"
+    assert AGENT_PRODUCER_IDS["tool"] == "mangomas.tool.v2"
 
 
 def test_execution_role_in_the_map_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

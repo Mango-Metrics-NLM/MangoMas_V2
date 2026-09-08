@@ -28,6 +28,7 @@ C4Container
   System_Ext(secret_mgr, "GCP Secret Manager", "Resolves API keys / SA JSON at build time. Activated by MANGOMAS_SECRETS__PROVIDER=gcp.")
   System_Ext(mem_file, "File memory", "memory/ — agent memory index")
   System_Ext(eval_output, "Eval output", "eval-output/ — optional JSON reports from `mangomas eval --output-json`")
+  System_Ext(cognitive_signals, "Cognitive signal log (opt-in)", "data/cognitive-signals — JSONL envelopes when MANGOMAS_SIGNAL__ENABLED=true")
   System_Ext(embed_backend, "Embedding backend (opt-in)", "LM Studio /v1/embeddings (default), in-process sentence-transformers, or Vertex text-embedding-004. Selected by MANGOMAS_EMBEDDINGS__PROVIDER.")
   System_Ext(chroma_store, "Chroma vector store (opt-in)", "data/chroma — persistent ChromaDB collection (hnsw:space=cosine). Activated by MANGOMAS_VECTOR__ENABLED.")
   System_Ext(otel_out, "OTel / stdout", "Traces and structured logs")
@@ -59,8 +60,9 @@ C4Container
   Rel(composition, cognitive, "Attaches extras['cognitive_sink'] when signal.enabled=true")
   Rel(cognitive, integration_contracts, "builds CognitiveSignal 1.1.0 (observation only)", "in-process")
   Rel(cognitive, code_agent_harness, "JSONL today; optional HTTP ingest when that route exists", "JSONL / HTTP")
+  Rel(cognitive, cognitive_signals, "appends one envelope per planner/reviewer handle", "filesystem")
   Rel(harness, otel_out, "harness.agent_invoke parent spans + JSON structured logs", "OTLP / stdout")
-  Rel(integration_contracts, code_agent_harness, "CognitiveSignal 1.1.0 JSON (advisory; never grants capability)", "schema")
+  Rel(code_agent_harness, integration_contracts, "validates CognitiveSignal 1.1.0 against the shared schema (advisory; never grants capability)", "schema")
 ```
 
 ## Notes

@@ -163,9 +163,11 @@ def test_deploy_job_is_gated_by_the_verify_job() -> None:
     verify_commands = [
         step["run"]
         for step in jobs["verify"]["steps"]
-        if "run" in step and not str(step["run"]).startswith("pip install")
+        if "run" in step
+        and str(step["run"]).strip() not in {'pip install -e ".[dev]"', "make install"}
+        and not str(step["run"]).startswith("pip install")
     ]
-    assert verify_commands == ["make test", "make coverage"]
+    assert verify_commands == ["make test", "make coverage", "make contracts-coverage"]
 
 
 def test_deploy_workflow_uses_workload_identity_federation() -> None:

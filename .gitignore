@@ -32,7 +32,8 @@ gitleaks.tar.gz
 .env.*
 !.env.example
 
-# Data
+# Data (covers default SQLite, Chroma persist dir, and the CognitiveSignal
+# JSONL dir ./data/cognitive-signals — MANGOMAS_SIGNAL__DIR)
 data/
 *.db
 *.sqlite

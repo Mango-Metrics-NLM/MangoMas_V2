@@ -24,6 +24,9 @@ from mangomas.cognitive.constants import (
     GENAI_SEMCONV_STATUS as GENAI_SEMCONV_STATUS,
 )
 from mangomas.cognitive.constants import (
+    JSONL_FILENAME as JSONL_FILENAME,
+)
+from mangomas.cognitive.constants import (
     METADATA_RUN_ID as METADATA_RUN_ID,
 )
 from mangomas.cognitive.constants import (
@@ -55,6 +58,7 @@ __all__ = [
     "GENAI_INVOKE_AGENT_SPAN",
     "GENAI_SEMCONV_STATUS",
     "HARNESS_OBSERVATION_ROLES",
+    "JSONL_FILENAME",
     "METADATA_RUN_ID",
     "METADATA_TASK_ID",
     "UNMAPPED_OBSERVATION_AGENTS",

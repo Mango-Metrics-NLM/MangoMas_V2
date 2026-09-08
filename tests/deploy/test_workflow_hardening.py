@@ -185,6 +185,16 @@ def test_dependabot_covers_actions_and_python_ecosystems() -> None:
     assert ecosystems >= _EXPECTED_DEPENDABOT_ECOSYSTEMS, ecosystems
 
 
+def test_dependabot_watches_integration_contracts() -> None:
+    """A contracts-only pydantic bump must be its own Dependabot PR."""
+    doc = yaml.safe_load(_DEPENDABOT.read_text(encoding="utf-8"))
+    pip_dirs = {
+        entry["directory"] for entry in doc["updates"] if entry["package-ecosystem"] == "pip"
+    }
+    assert "/" in pip_dirs
+    assert "/mango-integration-contracts" in pip_dirs
+
+
 # A job that reports a scheduled run's failure somewhere a human will see.
 # Recognised by its `if:` guard rather than its name, so renaming the job is
 # fine and deleting the guard is not.

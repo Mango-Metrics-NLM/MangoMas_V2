@@ -13,8 +13,13 @@ RUN pip install --no-cache-dir "build==1.2.*"
 
 COPY pyproject.toml README.md ./
 COPY src/ src/
+# Sibling envelope (spec-0030). Built as a second wheel so flag-on emission
+# can ``import mango_contracts`` without pytest's pythonpath. Kept out of
+# pyproject.dependencies so requirements.lock stays an ==-pin of PyPI names.
+COPY mango-integration-contracts/ mango-integration-contracts/
 
 RUN python -m build --wheel --outdir /dist
+RUN python -m build --wheel --outdir /dist mango-integration-contracts
 
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────

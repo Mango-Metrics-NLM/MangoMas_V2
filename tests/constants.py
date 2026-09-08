@@ -17,6 +17,7 @@ import os
 from mangomas.cli.exit_codes import EVAL_GATE_EXIT_CODE as EVAL_GATE_EXIT_CODE
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR as EXIT_CONFIG_ERROR
 from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR as EXIT_RUNTIME_ERROR
+from mangomas.cognitive.constants import JSONL_FILENAME as JSONL_FILENAME
 
 # Defaults that mirror ``mangomas.config`` are re-exported (``X as X``) rather
 # than restated, so the config remains the single source of truth.
@@ -52,6 +53,33 @@ from mangomas.config import (
 )
 from mangomas.config import (
     DEFAULT_RAG_MIN_CHUNK_WORDS as DEFAULT_RAG_MIN_CHUNK_WORDS,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_DIR as DEFAULT_SIGNAL_DIR,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_ENABLED as DEFAULT_SIGNAL_ENABLED,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_GENAI_SPANS as DEFAULT_SIGNAL_GENAI_SPANS,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS as DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_HTTP_URL as DEFAULT_SIGNAL_HTTP_URL,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_POLICY_ID as DEFAULT_SIGNAL_POLICY_ID,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH as DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_POLICY_VERSION as DEFAULT_SIGNAL_POLICY_VERSION,
+)
+from mangomas.config import (
+    DEFAULT_SIGNAL_SCHEMA_VERSION as DEFAULT_SIGNAL_SCHEMA_VERSION,
 )
 from mangomas.config import (
     DEFAULT_SUMMARIZE_HISTORY_LIMIT as DEFAULT_SUMMARIZE_HISTORY_LIMIT,
@@ -397,6 +425,21 @@ MCP_CONFIG_RELPATH: str = ".mcp.json"
 # documentation-pointer assertion.
 HARNESS_CONFIG_AUDIT_MODE_ENV: str = "MANGOMAS_HARNESS__CONFIG_AUDIT_MODE"
 
+# CognitiveSignal emission (spec-0030 / ADR-0029). Distinct from HARNESS__*.
+SIGNAL_ENABLED_ENV: str = "MANGOMAS_SIGNAL__ENABLED"
+SIGNAL_DIR_ENV: str = "MANGOMAS_SIGNAL__DIR"
+SIGNAL_GENAI_SPANS_ENV: str = "MANGOMAS_SIGNAL__GENAI_SPANS"
+SIGNAL_HTTP_URL_ENV: str = "MANGOMAS_SIGNAL__HTTP_URL"
+SIGNAL_HTTP_TIMEOUT_ENV: str = "MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS"
+SIGNAL_POLICY_SNAPSHOT_HASH_ENV: str = "MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH"
+SIGNAL_MOCK_INGEST_URL: str = "https://harness.example.test/ingest/cognitive"
+PLANNER_SIGNAL_REPLY: str = (
+    '{"goal": "ship it", "steps": [{"step": 1, "description": "Build", "agent": null}]}'
+)
+REVIEWER_SIGNAL_REPLY: str = (
+    '{"passed": true, "score": 0.8, "feedback": "Good job.", "suggestions": ["nits"]}'
+)
+
 # ── Live Claude Code corpus (spec-0018 / ADR-0024) ───────────────────────────
 # Claude Code reads nothing from `.github/`; VS Code Copilot reads both roots,
 # so `.claude/` is the single home that serves each tool.
@@ -410,6 +453,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adapter",
         "mango-agent-add",
+        "mango-cognitive",
         "mango-config",
         "mango-coverage-audit",
         "mango-decompose",
@@ -651,7 +695,7 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 # steps are their own operating loop, not a recipe a skill owns.
 AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
-    "mango-agent-impl-dev": ("mango-agent-add",),
+    "mango-agent-impl-dev": ("mango-agent-add", "mango-cognitive"),
     "mango-api-impl-dev": ("mango-observability", "mango-config"),
     "mango-ci-dev": ("mango-deploy", "mango-mutation-proof"),
     "mango-error-taxonomy-dev": ("mango-error",),

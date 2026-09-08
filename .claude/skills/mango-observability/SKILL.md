@@ -20,6 +20,8 @@ argument-hint: "Describe the code path to instrument or paste a log line that ne
 - Switch log output between `text` and `json` formats
 - Diagnose a missing or duplicate span in the OTel console exporter
 - Wire a new harness-level tracer (e.g. `mangomas.harness`)
+- Keep `gen_ai.invoke_agent` aliases **default-off** (`MANGOMAS_SIGNAL__GENAI_SPANS`);
+  do not replace live `orchestrator.*` / `harness.agent_invoke` spans
 
 ---
 

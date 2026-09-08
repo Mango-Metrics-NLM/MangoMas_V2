@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import httpx
 
+from mangomas.cognitive.constants import JSONL_FILENAME
+
 if TYPE_CHECKING:
     from mango_contracts import CognitiveSignal
     from mangomas.config.signal import SignalSettings
@@ -36,10 +38,17 @@ class JsonlCognitiveSink:
 
     def __init__(self, path: Path) -> None:
         self._path = path
+        self._lock = asyncio.Lock()
 
     async def emit(self, signal: CognitiveSignal) -> None:
-        line = json.dumps(signal.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
-        await asyncio.to_thread(self._append, line)
+        # One write() of ``line + newline`` so POSIX O_APPEND stays atomic
+        # under concurrent ``asyncio.to_thread`` workers.
+        line = (
+            json.dumps(signal.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
+            + "\n"
+        )
+        async with self._lock:
+            await asyncio.to_thread(self._append, line)
         logger.debug(
             "cognitive signal written",
             extra={"event": "cognitive_sink_jsonl", "path": str(self._path)},
@@ -49,7 +58,6 @@ class JsonlCognitiveSink:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8") as handle:
             handle.write(line)
-            handle.write("\n")
 
 
 class HttpCognitiveSink:
@@ -94,7 +102,7 @@ class CompositeCognitiveSink:
 
 def build_sink(settings: SignalSettings) -> CognitiveSignalSink:
     """JSONL always; HTTP is composed on top when ``http_url`` is set."""
-    jsonl = JsonlCognitiveSink(Path(settings.dir) / "signals.jsonl")
+    jsonl = JsonlCognitiveSink(Path(settings.dir) / JSONL_FILENAME)
     url = (settings.http_url or "").strip()
     if not url:
         return jsonl

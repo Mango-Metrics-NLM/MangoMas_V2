@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from mangomas.config import (
+from mangomas.config import Settings, SignalSettings, get_settings
+from tests.constants import (
     DEFAULT_SIGNAL_DIR,
     DEFAULT_SIGNAL_ENABLED,
     DEFAULT_SIGNAL_GENAI_SPANS,
@@ -15,9 +16,8 @@ from mangomas.config import (
     DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
     DEFAULT_SIGNAL_POLICY_VERSION,
     DEFAULT_SIGNAL_SCHEMA_VERSION,
-    Settings,
-    SignalSettings,
-    get_settings,
+    SIGNAL_DIR_ENV,
+    SIGNAL_ENABLED_ENV,
 )
 
 
@@ -42,7 +42,7 @@ def test_settings_includes_signal_disabled_by_default() -> None:
 
 
 def test_signal_env_override_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MANGOMAS_SIGNAL__ENABLED", "true")
+    monkeypatch.setenv(SIGNAL_ENABLED_ENV, "true")
     get_settings.cache_clear()
     try:
         s = get_settings()
@@ -53,7 +53,7 @@ def test_signal_env_override_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_signal_env_override_dir(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MANGOMAS_SIGNAL__DIR", "custom-signals")
+    monkeypatch.setenv(SIGNAL_DIR_ENV, "custom-signals")
     get_settings.cache_clear()
     try:
         assert get_settings().signal.dir == "custom-signals"

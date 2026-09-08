@@ -1,4 +1,4 @@
-"""Cognitive package layering: contracts in, harness/adapters out."""
+"""Cognitive package layering: contracts in, harness/adapters/agents out."""
 
 from __future__ import annotations
 
@@ -8,6 +8,30 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COGNITIVE = _REPO_ROOT / "src" / "mangomas" / "cognitive"
 _MANGOMAS = _REPO_ROOT / "src" / "mangomas"
+
+# Kernel + this package. ``mangomas.correlation`` is the same ContextVar
+# ``eval/runner`` reads; it is not the Claude Code harness.
+_ALLOWED_MANGOMAS_PREFIXES = (
+    "mangomas.cognitive",
+    "mangomas.core",
+    "mangomas.config",
+    "mangomas.errors",
+    "mangomas.correlation",
+)
+
+_BANNED_PREFIXES = (
+    "mangomas.harness",
+    "mangomas.adapters",
+    "mangomas.agents",
+    "mangomas.api",
+    "mangomas.cli",
+    "mangomas.eval",
+    "mangomas.workflow",
+    "mangomas.telemetry",
+    "mangomas.composition",
+    "harness.shared",
+    "harness.execution",
+)
 
 
 def _imports(path: Path) -> list[str]:
@@ -21,19 +45,34 @@ def _imports(path: Path) -> list[str]:
     return found
 
 
-def test_cognitive_does_not_import_harness_or_adapters() -> None:
-    banned_prefixes = (
-        "mangomas.harness",
-        "mangomas.adapters",
-        "harness.shared",
-        "harness.execution",
+def _is_allowed_mangomas(name: str) -> bool:
+    if name == "mangomas":
+        # ``from mangomas import __version__`` — package root, not a layer.
+        return True
+    return any(
+        name == prefix or name.startswith(prefix + ".") for prefix in _ALLOWED_MANGOMAS_PREFIXES
     )
+
+
+def test_cognitive_does_not_import_harness_or_adapters() -> None:
     offenders: list[str] = []
     for path in _COGNITIVE.rglob("*.py"):
         for name in _imports(path):
-            if any(name == prefix or name.startswith(prefix + ".") for prefix in banned_prefixes):
+            if any(name == prefix or name.startswith(prefix + ".") for prefix in _BANNED_PREFIXES):
                 offenders.append(f"{path.name}: {name}")
             if "ExecutionBroker" in name or name.endswith("command_actions"):
+                offenders.append(f"{path.name}: {name}")
+    assert offenders == []
+
+
+def test_cognitive_mangomas_imports_are_allow_listed() -> None:
+    """Any new ``mangomas.*`` import must be an explicit kernel/sibling allow."""
+    offenders: list[str] = []
+    for path in _COGNITIVE.rglob("*.py"):
+        for name in _imports(path):
+            if (name == "mangomas" or name.startswith("mangomas.")) and not _is_allowed_mangomas(
+                name
+            ):
                 offenders.append(f"{path.name}: {name}")
     assert offenders == []
 
@@ -46,6 +85,12 @@ def test_cognitive_does_not_import_agents() -> None:
             if name == "mangomas.agents" or name.startswith("mangomas.agents."):
                 offenders.append(f"{path.name}: {name}")
     assert offenders == []
+
+
+def test_producer_imports_correlation_explicitly() -> None:
+    """Non-vacuity: the allow-list would pass if nobody imported correlation."""
+    producer = (_COGNITIVE / "producer.py").read_text(encoding="utf-8")
+    assert "mangomas.correlation" in producer
 
 
 def test_only_cognitive_imports_mango_contracts_at_runtime() -> None:

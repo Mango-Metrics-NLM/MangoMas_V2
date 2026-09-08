@@ -73,6 +73,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
   - `FakeLLM.delay_seconds` (additive, default `0.0`, no `sleep` at all when
     zero) so a per-step timeout can be driven through the HTTP boundary.
 
+### Changed
+
+- **Cognitive packaging is a real runtime install** (follow-up to spec-0030).
+  `make install`, every CI `mangomas[dev]` job, and the Docker image now
+  install `mango-integration-contracts` as a second wheel/editable so
+  flag-on emission can `import mango_contracts` outside pytest's
+  `pythonpath`. C1 names the sibling Code Agent Harness. Corpus adds the
+  `mango-cognitive` skill (16 → 17 skills).
+
 ### Fixed
 
 - **The live E2E suites were green on a GPU box and could fail on a CPU one**,

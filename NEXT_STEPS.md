@@ -94,6 +94,21 @@ default preserves ADR-002. See ADR-0010, spec 0003.
 
 ---
 
+## Done on the cognitive-contracts branch (Unreleased)
+
+Governed CognitiveSignal **1.1.0** plugin (spec-0030 / ADR-0029). Sibling
+package `mango-integration-contracts` (`mango_contracts`) is the shared
+envelope with the [Mango Code Agent Harness](https://github.com/ianshank/Mango_Code_Agent-Harness).
+Runtime producer `src/mangomas/cognitive/` is default-OFF
+(`MANGOMAS_SIGNAL__*`, never `MANGOMAS_HARNESS__*`). Planner emits
+`planning.proposal`, reviewer emits `review.finding`; sink hangs on
+`ctx.extras["cognitive_sink"]` (no new `AgentContext` field). Flag-off
+handle does not import the contracts package. `make install` / CI / Docker
+dual-wheel so `import mango_contracts` is a real install. C1 now shows the
+sibling harness. Skill `mango-cognitive`; tests under `tests/cognitive/`
+plus tier-1 `tests/integration/test_signal_flow.py`. See CHANGELOG
+`[Unreleased]`.
+
 ## Done on the composition-decomposition branch (Unreleased)
 
 `src/mangomas/composition.py` (499 lines) decomposed into a 12-module

@@ -11,6 +11,7 @@ disagree with the first one within a release.
 ```bash
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+pip install -e ./mango-integration-contracts
 pre-commit install
 ```
 

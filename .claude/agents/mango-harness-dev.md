@@ -1,6 +1,6 @@
 ---
 name: mango-harness-dev
-description: "Owns src/mangomas/harness/ and the four scripts/ harness entry points — the protected-path set read from pyproject.toml, the ConfigChange decision table, and the PreToolUse/PostToolUse/SessionStart hook modes. Invoked by name, not by topic match."
+description: "Owns src/mangomas/harness/ and the four scripts/ harness entry points — the protected-path set read from pyproject.toml, the ConfigChange decision table, and the PreToolUse/PostToolUse/SessionStart hook modes. Does not own MANGOMAS_SIGNAL__*. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -37,6 +37,12 @@ below are what that skill does not cover: the shape of this code.
 
 `_HarnessOrchestrator` and the `harness.agent_invoke` span live in
 `composition.py` and belong to `mango-telemetry-exporter-dev`.
+
+This agent does **not** own CognitiveSignal emission. `MANGOMAS_SIGNAL__*`
+and `src/mangomas/cognitive/` belong to `mango-agent-impl-dev` /
+`mango-cognitive`. Do not add Claude Code hooks for SIGNAL (it is env-driven,
+not a `.claude/settings.json` edit) and do not wrap `Orchestrator.dispatch`
+to emit envelopes.
 
 ## Invariants
 

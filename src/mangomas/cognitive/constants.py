@@ -29,3 +29,8 @@ GENAI_INVOKE_AGENT_SPAN: str = "gen_ai.invoke_agent"
 # Pinned in spec-0030: conventions were still Development when this landed.
 # Do not treat this as a frozen semconv version — aliases are additive.
 GENAI_SEMCONV_STATUS: str = "development-2026-09"
+
+
+# Default JSONL basename under ``SignalSettings.dir``. Not a Settings field:
+# renaming the file is a producer-side choice, not an operator tunable.
+JSONL_FILENAME: str = "signals.jsonl"

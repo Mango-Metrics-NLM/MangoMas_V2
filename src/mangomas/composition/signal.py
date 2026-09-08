@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from mangomas.config.signal import SignalSettings
+
+logger = logging.getLogger(__name__)
 
 
 def _attach_cognitive_extras(extras: dict[str, Any], settings: SignalSettings) -> None:
@@ -19,3 +22,12 @@ def _attach_cognitive_extras(extras: dict[str, Any], settings: SignalSettings) -
 
     extras[COGNITIVE_SINK_EXTRAS_KEY] = build_sink(settings)
     extras[COGNITIVE_SETTINGS_EXTRAS_KEY] = settings
+    logger.info(
+        "cognitive sink attached",
+        extra={
+            "event": "cognitive_sink_attached",
+            "dir": settings.dir,
+            "http": bool((settings.http_url or "").strip()),
+            "genai_spans": settings.genai_spans,
+        },
+    )

@@ -5,6 +5,11 @@ from __future__ import annotations
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from tests.constants import (
+    DEFAULT_SIGNAL_POLICY_ID,
+    DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
+    DEFAULT_SIGNAL_POLICY_VERSION,
+)
 from tests.mango_contracts.constants import envelope_base
 
 from mango_contracts import CognitiveSignal
@@ -19,11 +24,9 @@ from mangomas.cognitive.pdp import (
 _IDENTITY = {
     "run_id": "8e4ea278-3988-48a4-883a-38b978faadf1",
     "task_id": "bb4214e9-2138-47bc-95e4-4ad34ee98d72",
-    "policy_id": "mangomas.cognitive.default",
-    "policy_version": "1",
-    "policy_snapshot_hash": (
-        "sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349"
-    ),
+    "policy_id": DEFAULT_SIGNAL_POLICY_ID,
+    "policy_version": DEFAULT_SIGNAL_POLICY_VERSION,
+    "policy_snapshot_hash": DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
 }
 
 

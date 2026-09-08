@@ -50,15 +50,25 @@ def _ci_jobs() -> dict[str, Any]:
     return _workflows.jobs(_CI_WORKFLOW.name)
 
 
+def _is_setup_install(run: str) -> bool:
+    """Shared setup steps every job that needs the package runs first.
+
+    ``make install`` is the one-place recipe (mangomas[dev] + sibling
+    contracts). Legacy ``pip install -e ".[dev]"`` is still recognised so a
+    missed conversion fails the dedicated contracts-install test, not this
+    filter.
+    """
+    stripped = run.strip()
+    return stripped.startswith("pip install") or stripped == "make install"
+
+
 def _step_run_commands(job: dict[str, Any]) -> list[str]:
     """Return every step's ``run:`` body, excluding the shared setup steps
-    (checkout / Python setup / ``pip install -e ".[dev]"``) common to every
+    (checkout / Python setup / ``make install``) common to every
     job — the assertions below care only about the gate commands themselves.
     """
     return [
-        step["run"]
-        for step in job["steps"]
-        if "run" in step and not step["run"].startswith("pip install")
+        step["run"] for step in job["steps"] if "run" in step and not _is_setup_install(step["run"])
     ]
 
 
@@ -332,6 +342,54 @@ def test_isolated_coverage_floors_are_pinned() -> None:
 def test_gate_includes_contracts_coverage() -> None:
     """The isolated contracts floor must stay in `make gate`, not CI-only."""
     assert "contracts-coverage" in _make_target_body("gate")
+
+
+def test_makefile_install_installs_integration_contracts() -> None:
+    """Flag-on emission imports mango_contracts; pytest pythonpath is not enough."""
+    body = _make_target_body("install")
+    assert 'pip install -e ".[dev]"' in body
+    assert "pip install -e ./mango-integration-contracts" in body
+
+
+def test_makefile_help_column_fits_contracts_coverage() -> None:
+    """`%-16s` truncated the `contracts-coverage` target name in `make help`."""
+    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    assert "%-22s" in makefile
+    assert "contracts-coverage" in makefile
+
+
+def test_ci_jobs_that_need_the_package_call_make_install() -> None:
+    """Install lives in the Makefile; CI jobs that need the tree call it."""
+    needing = (
+        "lint",
+        "test",
+        "bridge-coverage",
+        "contracts-coverage",
+        "scripts-coverage",
+        "pip-audit",
+    )
+    for name in needing:
+        runs = [step["run"] for step in _ci_jobs()[name]["steps"] if "run" in step]
+        assert "make install" in runs, f"{name} does not call make install"
+        assert not any(run.strip().startswith("pip install") for run in runs), (
+            f"{name} still inlines pip install"
+        )
+
+
+def test_workflow_dev_pip_installs_also_install_contracts() -> None:
+    """Jobs that cannot call `make install` (extras / compound scripts) still
+    install the sibling envelope so ``import mango_contracts`` works.
+    """
+    for workflow_name in _workflows.workflow_docs():
+        jobs = _workflows.jobs(workflow_name)
+        for job_name, job in jobs.items():
+            for step in job.get("steps", []):
+                run = str(step.get("run", ""))
+                if "pip install -e" in run and "[dev" in run:
+                    assert "mango-integration-contracts" in run, (
+                        f"{workflow_name} / {job_name} / {step.get('name')!r} "
+                        "installs mangomas[dev] without the contracts package"
+                    )
 
 
 def test_nightly_jobs_delegate_to_make() -> None:
