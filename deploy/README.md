@@ -52,6 +52,7 @@ configuration table; this is the deploy-time contract by settings group.
 | `MANGOMAS_LOOP__` | Orchestrator loop caps |
 | `MANGOMAS_MEMORY__` | File-memory backend |
 | `MANGOMAS_HARNESS__` | Claude Code harness spans + metrics exporter |
+| `MANGOMAS_SIGNAL__` | CognitiveSignal JSONL/HTTP producer (opt-in; not a capability grant) |
 | `MANGOMAS_EVAL__` | Evaluation harness config |
 | `MANGOMAS_SECRETS__` | Secrets provider (`gcp`) + `STRICT` fail-loud mode |
 | `MANGOMAS_EMBEDDINGS__` | Embedding provider (RAG, opt-in) |
