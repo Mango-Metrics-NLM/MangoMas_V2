@@ -376,8 +376,8 @@ locally (needs network access).
 
 Per-package floors (`scripts/check_coverage.py` — the authoritative gate):
 `errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy`, `_headers`
-at **100 %**; `composition`, `agents`, `api`, `cli`, `eval`, `rag`, `workflow`
-at **95 %**; `adapters` at **85 %**; global at **95 %**. The
+at **100 %**; `composition`, `agents`, `api`, `cli`, `eval`, `rag`, `workflow`,
+`cognitive` at **95 %**; `adapters` at **85 %**; global at **95 %**. The
 `--cov-fail-under` in `pyproject.toml` mirrors the global floor for local
 runs.
 
@@ -461,6 +461,7 @@ tests/
   eval/          Evaluation-harness tests (in-process)
   harness/       Protected-path governance + ConfigChange decision table
   rag/           RAG domain tests
+  cognitive/     CognitiveSignal producer (roles, PDP, sinks, emit)
   tooling/       Corpus contracts (agents/skills/settings/.mcp.json),
                  the C4 architecture contract, and the collection-gate meta-test
   eval_harness_bridge/  Black-box bridge tests; own 100% floor, own constants.py

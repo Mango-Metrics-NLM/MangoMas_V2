@@ -39,19 +39,20 @@ backend exists.
   under `agents/` or `core/`.
 - **Depends on:** A0.
 
-## PR B — Opt-in producer (later)
+## PR B — Opt-in producer
 
-### Milestone B0 — `MANGOMAS_SIGNAL__*` default off
+### Milestone B0 — `MANGOMAS_SIGNAL__*` default off ✅
 
 - **Failing test first:** flag off → identical `AgentResponse` and no sink
   writes; flag on → one JSONL line, dispatch unchanged (contained failures).
 - **Depends on:** PR A. Planner/reviewer emit `planning.proposal` /
   `review.finding` only. Do not map `tool` → `implementer`.
 
-## PR C — Read-only observations (later)
+## PR C — Read-only observations ✅
 
 Keep `retrieve` local. No `run_command` / `write_file` / `apply_patch` from
-this repo. HTTP ingest to the harness when that route exists.
+this repo. JSONL is the sink; HTTP ingest is optional (`MANGOMAS_SIGNAL__HTTP_URL`)
+and unused until the harness route exists.
 
 ## Deferred / out of scope
 

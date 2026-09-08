@@ -91,6 +91,12 @@ src/mangomas/
 │   ├── executor.py     NodeExecutor protocol + execute_workflow driver
 │   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
 │   └── nodes/          Self-registering agent/sequence/fan_out/loop/branch executors
+├── cognitive/      CognitiveSignal producer (opt-in; spec-0030 / ADR-0029)
+│   ├── constants.py    extras keys; no mango_contracts import (flag-off safe)
+│   ├── roles.py        Fail-closed observation-role map (tool raises)
+│   ├── pdp.py          INV-16 adapter: refuse cognitive fields in PDP input
+│   ├── sink.py         JSONL + optional HTTP; attached on extras["cognitive_sink"]
+│   └── producer.py     planner/reviewer emit (contained failures)
 ├── api/
 │   ├── app.py          FastAPI app factory (lifespan, middleware installation)
 │   ├── errors.py       Error-status mapping, error-envelope builder
@@ -242,6 +248,15 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
 | `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
+| `MANGOMAS_SIGNAL__ENABLED` | `false` | Emit CognitiveSignal 1.1.0 envelopes (planner/reviewer); default-off, byte-identical dispatch |
+| `MANGOMAS_SIGNAL__DIR` | `./data/cognitive-signals` | JSONL directory for `signals.jsonl` when enabled |
+| `MANGOMAS_SIGNAL__SCHEMA_VERSION` | `1.1.0` | Envelope version; a 1.0.0 override is rejected at Settings parse |
+| `MANGOMAS_SIGNAL__GENAI_SPANS` | `false` | Additive OTel `gen_ai.invoke_agent` alias (Development semconv; default-off) |
+| `MANGOMAS_SIGNAL__POLICY_ID` | `mangomas.cognitive.default` | Identity/policy binding copied onto each envelope (not a grant) |
+| `MANGOMAS_SIGNAL__POLICY_VERSION` | `1` | Policy version string copied onto each envelope |
+| `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | `sha256:` digest of `policy_id:policy_version` defaults; operator-overridable |
+| `MANGOMAS_SIGNAL__HTTP_URL` | _(none)_ | Optional harness ingest URL; JSONL is always written when enabled |
+| `MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS` | `5.0` | Timeout for the optional HTTP sink |
 | `MANGOMAS_AGENTS__<NAME>__SYSTEM_PROMPT` | _(none)_ | Per-agent system-prompt override (`AgentSettings.system_prompt`) |
 | `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |
@@ -357,9 +372,9 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 - **Coverage gate**: `scripts/check_coverage.py` is the single source of truth —
   95 % global minimum plus per-package floors
   (`errors`/`registry`/`core`/`secrets`/`correlation`/`tenancy`/`_headers`
-  = 100 %, `adapters` = 85 %, rest = 95 %). The pytest `--cov-fail-under=95` addopt in
+  = 100 %, `adapters` = 85 %, `cognitive`/`eval`/`rag`/`workflow` and the rest = 95 %). The pytest `--cov-fail-under=95` addopt in
   `pyproject.toml` mirrors the global floor.
-- **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`
+- **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink`
 - **Constants**: `tests/constants.py` — no magic **domain** values in tests
   (URLs, model ids, env-var names, limits, rosters). Universal literals with
   a standardised meaning — HTTP status codes, `0`/`1` — stay inline, which is
@@ -433,7 +448,7 @@ when". Name them directly:
 | `mango-rag-dev` | `rag/` + the `adapters/embeddings/` and `adapters/vector/` seams |
 | `mango-eval-dev` | The `eval/` spine — runner, gates, registries, payload, discovery |
 | `mango-secrets-dev` | `secrets/` — protocol, env/GCP backends, strict-mode semantics |
-| `mango-agent-impl-dev` | The built-in agents under `agents/` + `_prompt` / `_structured` / discovery |
+| `mango-agent-impl-dev` | The built-in agents under `agents/` + `_prompt` / `_structured` / discovery + `src/mangomas/cognitive/` producer |
 | `mango-cli-dev` | `cli/` — the `main.py` facade, `_app` assembly order, the `_runtime` seam |
 | `mango-harness-dev` | `harness/` + the four `scripts/` harness entry points |
 | `mango-ci-dev` | `Makefile`, `.github/workflows/`, `dependabot.yml`, `deploy/`, `tests/deploy/` |
@@ -667,6 +682,7 @@ response = await execute_workflow(graph, request, orch=orchestrator)
 | `src/mangomas/errors.py` | Typed error hierarchy + HTTP mapping (protected path) |
 | `src/mangomas/registry.py` | Generic, no project-specific logic (protected path) |
 | `src/mangomas/composition.py` | Single wiring point — all new adapters registered here |
+| `src/mangomas/cognitive/` | CognitiveSignal producer — default-OFF; must not import harness broker internals |
 | `tests/fakes.py` | Shared test doubles — keep minimal and protocol-accurate |
 
 Paths marked _(protected path)_ are gated by the `lint_agent_frontmatter.py`

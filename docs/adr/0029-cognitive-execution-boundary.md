@@ -42,7 +42,10 @@ and do not overload `MANGOMAS_HARNESS__*`.
 
 ### Neutral
 
-- Runtime emission from planner/reviewer is a later, default-OFF PR.
+- Runtime emission from planner/reviewer is default-OFF
+  (`MANGOMAS_SIGNAL__ENABLED=false`) via `mangomas.cognitive`. Contracts live
+  in `mango-integration-contracts`; the producer must not import harness
+  `ExecutionBroker` / `command_actions`.
 - Hugging Face MoE / MemoryCell are not this tree; `routing.recommendation`
   is an optional payload for a future producer, not a capability selector.
 

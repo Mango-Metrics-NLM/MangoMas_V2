@@ -82,6 +82,10 @@ C4Component
     Component(ingestion, "IngestionPipeline", "Domain service", "ingest(path): load → delete_by_source (idempotent re-ingest) → chunk_text → embed_batch in batch_size slices → upsert with stable {source}#{index} ids. CLI-only (mangomas rag ingest).")
   }
 
+  Container_Boundary(cognitive_boundary, "Cognitive producer (src/mangomas/cognitive/) — opt-in") {
+    Component(cognitive, "CognitiveSignalSink + producer", "Protocol + emit helper", "JSONL (default) or optional HTTP POST of CognitiveSignal 1.1.0. Wired on ctx.extras['cognitive_sink'] when MANGOMAS_SIGNAL__ENABLED=true. planner emits planning.proposal; reviewer emits review.finding. Failures log+swallow. tool agent is unmapped (raises); retrieve stays local.")
+  }
+
   Rel(app_factory, access_log, "adds middleware")
   Rel(access_log, correlation, "set_correlation_id() / OTel baggage")
   Rel(app_factory, trace_mw, "adds middleware")
@@ -131,6 +135,8 @@ C4Component
   Rel(retrieval_tool, retriever, "search(query)")
   Rel(retriever, embedding_client, "embed(query)")
   Rel(retriever, vector_store, "query(embedding, top_k)")
+  Rel(planner_agent, cognitive, "planning.proposal after handle (contained)")
+  Rel(reviewer_agent, cognitive, "review.finding after handle (contained)")
   Rel(ingestion, embedding_client, "embed_batch(chunks)")
   Rel(ingestion, vector_store, "delete_by_source() then upsert()")
 ```

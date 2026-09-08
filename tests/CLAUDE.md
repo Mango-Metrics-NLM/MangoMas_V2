@@ -14,7 +14,7 @@ the shape, not an exhaustive inventory, is below.
 
 ```
 tests/
-├── fakes.py               # Shared fake adapters (FakeLLM, FakeRepository, FakeTool, ...)
+├── fakes.py               # Shared fake adapters (FakeLLM, FakeRepository, FakeTool, FakeCognitiveSink, ...)
 ├── constants.py           # Shared constants — see "Constants contract" below
 ├── conftest.py            # pytest fixtures (fake_llm, fake_repo, fake_memory, fake_tool)
 ├── _script_loader.py      # Shared helper for importing scripts/*.py in tests
@@ -32,6 +32,7 @@ tests/
 ├── agents/                # Agent units
 ├── eval/                  # Evaluation harness (incl. test_serialize.py)
 ├── rag/                   # RAG domain (chunker + Hypothesis fuzz, pipeline, retrieval)
+├── cognitive/             # CognitiveSignal producer (roles, PDP adapter, sinks, emit)
 ├── deploy/                # Deploy-manifest + Docker build-context contracts
 ├── harness/               # Harness governance + config-audit units
 ├── tooling/               # Corpus + Claude Code config contract tests

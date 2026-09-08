@@ -35,9 +35,10 @@ neither repo imports the other's internals.
   default to `implementer`.
 - Payload registry validates known `signal_type`s; unknown payload schemas
   are archived, never executed.
-- Must remain **additive & default-OFF** in `mangomas` runtime: this change
-  must not import `mango_contracts` from `src/mangomas/` yet (emission is a
-  later PR). Byte-identical orchestrator behaviour.
+- Must remain **additive & default-OFF** in `mangomas` runtime
+  (`MANGOMAS_SIGNAL__ENABLED=false`). Flag-off dispatch is byte-identical:
+  no sink on extras, no JSONL, no contracts import on the handle path.
+  When enabled, only `mangomas.cognitive` imports `mango_contracts`.
 
 ## Rejected readings (architecture set 2026-09-08)
 
@@ -76,20 +77,26 @@ review: `docs/analysis/20260908-governed-coding-platform-architecture-review.md`
 
 ## Config / env additions
 
-None in this change. Emission settings (`MANGOMAS_SIGNAL__*`) land with the
-producer PR so `.env.example` / CLAUDE.md stay aligned with live Settings.
+`MANGOMAS_SIGNAL__*` (never `MANGOMAS_HARNESS__*`): `ENABLED=false`,
+`DIR=./data/cognitive-signals`, `SCHEMA_VERSION=1.1.0`, `GENAI_SPANS=false`,
+`POLICY_ID` / `POLICY_VERSION` / `POLICY_SNAPSHOT_HASH`, optional `HTTP_URL`.
+
+OpenTelemetry GenAI semantic conventions were still **Development** (2026-09)
+when this landed. Additive `gen_ai.invoke_agent` aliases are default-off;
+the live spans remain `orchestrator.*` / `harness.agent_invoke`.
 
 ## Protocol / contract impact
 
-- New/changed protocols: none in `src/mangomas/`
-- New error types: none in `mangomas.errors` (contracts use `ValueError`
-  subclasses so the package stays mangomas-free)
-- Registry additions: payload registry inside `mango_contracts` only
+- New protocol: `CognitiveSignalSink` on `AgentContext.extras["cognitive_sink"]`
+  (no new `AgentContext` field — `core/agent.py` stays protected).
+- New error types: none in `mangomas.errors` (contain sink I/O; role-map
+  uses `ValueError` subclasses).
+- Registry additions: payload registry inside `mango_contracts` only.
 
 ## Backwards-compatibility
 
-- `src/mangomas/` is untouched at runtime; flag-off behaviour is the current
-  tree (this PR adds no flag).
+- Flag-off (`MANGOMAS_SIGNAL__ENABLED=false`, the default): extras keys,
+  `AgentResponse`, and handle imports match today.
 - Wire break vs harness `CognitiveSignal` 1.0.0 (string ids, optional
   `producer_version`, no TTL/evidence bundle). Companion harness bump to
   1.1.0 is required before cross-repo ingest. Do not silently coerce 1.0.0.
@@ -97,16 +104,23 @@ producer PR so `.env.example` / CLAUDE.md stay aligned with live Settings.
 ## Test plan
 
 - Unit: `tests/mango_contracts/` (own constants; no `mangomas` import)
-- Isolated coverage: `make contracts-coverage` floor 100%
-- Bypass inventory: `tests/test_execution_bypass_inventory.py`
+- Producer: `tests/cognitive/` (flag-off identity, JSONL, INV-16 PDP fuzz,
+  role map, retrieve-only)
+- Isolated coverage: `make contracts-coverage` floor 100%; `cognitive` 95%
+- Bypass inventory: `tests/test_execution_bypass_inventory.py` (spawn + writes)
 - Gates: both directions on extra=forbid, sufficient-evidence, role map
-- Coverage: mangomas 95% unchanged; contracts 100% isolated
+- Coverage: mangomas 95%; contracts 100% isolated
 
 ## Acceptance criteria
 
-- [x] Feature off by default → no `mangomas` import of contracts (test proves it).
+- [x] Feature off by default → no sink writes; contracts import confined to
+  `mangomas.cognitive` (test proves it).
+- [x] Flag on → one JSONL line from planner/reviewer; `AgentResponse` unchanged;
+  sink failures contained.
 - [x] `extra="forbid"` rejects authority-shaped extras (test proves it).
-- [x] INV-16 noninterference test (test proves it).
+- [x] INV-16 noninterference + producer PDP refuse-don't-strip (test proves it).
+- [x] `tool` raises; unknown agents raise; never `implementer`.
+- [x] `retrieve` stays the only ToolAgent tool; no write/command tools.
 - [x] `ruff`, `mypy`, `pytest` (95% gate), `frontmatter-lint`,
   `make contracts-coverage` all clean.
 - [x] CHANGELOG updated; ADR-0029 added.

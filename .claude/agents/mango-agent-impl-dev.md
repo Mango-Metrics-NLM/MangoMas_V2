@@ -19,6 +19,10 @@ registration pattern and the reference table.
   `resolve_sampling`
 - `src/mangomas/agents/_structured.py` — `StructuredOutputAgent`, the shared
   body of `PlannerAgent` and `ReviewerAgent`
+- `src/mangomas/cognitive/` — CognitiveSignal 1.1.0 producer (spec-0030 /
+  ADR-0029). Default-OFF via `MANGOMAS_SIGNAL__*`. Must not import
+  `mangomas.harness` or a harness ExecutionBroker. Emit hooks live in
+  `_structured.py`; do not intercept `Tool.execute`.
 - `src/mangomas/agents/discovery.py` — `discover_agents`, `ensure_agent_plugins`
 - `src/mangomas/agents/__init__.py` re-exports and the `agent_registry` lines
   in `composition.py`

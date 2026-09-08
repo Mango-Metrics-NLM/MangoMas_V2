@@ -293,6 +293,36 @@ from mangomas.config.secrets import (
 from mangomas.config.secrets import (
     SecretsSettings as SecretsSettings,
 )
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_DIR as DEFAULT_SIGNAL_DIR,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_ENABLED as DEFAULT_SIGNAL_ENABLED,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_GENAI_SPANS as DEFAULT_SIGNAL_GENAI_SPANS,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS as DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_HTTP_URL as DEFAULT_SIGNAL_HTTP_URL,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_POLICY_ID as DEFAULT_SIGNAL_POLICY_ID,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH as DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_POLICY_VERSION as DEFAULT_SIGNAL_POLICY_VERSION,
+)
+from mangomas.config.signal import (
+    DEFAULT_SIGNAL_SCHEMA_VERSION as DEFAULT_SIGNAL_SCHEMA_VERSION,
+)
+from mangomas.config.signal import (
+    SignalSettings as SignalSettings,
+)
 from mangomas.config.storage import (
     DEFAULT_DB_CONNECT_TIMEOUT_SECONDS as DEFAULT_DB_CONNECT_TIMEOUT_SECONDS,
 )
@@ -421,6 +451,15 @@ __all__ = [
     "DEFAULT_RAG_MIN_CHUNK_WORDS",
     "DEFAULT_SECRETS_PROVIDER",
     "DEFAULT_SECRETS_STRICT",
+    "DEFAULT_SIGNAL_DIR",
+    "DEFAULT_SIGNAL_ENABLED",
+    "DEFAULT_SIGNAL_GENAI_SPANS",
+    "DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS",
+    "DEFAULT_SIGNAL_HTTP_URL",
+    "DEFAULT_SIGNAL_POLICY_ID",
+    "DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH",
+    "DEFAULT_SIGNAL_POLICY_VERSION",
+    "DEFAULT_SIGNAL_SCHEMA_VERSION",
     "DEFAULT_STORAGE_LIST_TURNS_LIMIT",
     "DEFAULT_SUMMARIZE_HISTORY_LIMIT",
     "DEFAULT_TELEMETRY_EXPORTER",
@@ -453,6 +492,7 @@ __all__ = [
     "RagSettings",
     "SecretsSettings",
     "Settings",
+    "SignalSettings",
     "TelemetrySettings",
     "TenancySettings",
     "VectorSettings",

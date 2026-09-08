@@ -59,9 +59,13 @@ def test_contract_tests_do_not_import_mangomas() -> None:
     assert offenders == []
 
 
-def test_mangomas_does_not_import_contracts_yet() -> None:
-    """Runtime emission is a later PR; this change must stay byte-identical."""
+def test_mangomas_does_not_import_contracts_outside_cognitive() -> None:
+    """Only ``mangomas.cognitive`` may import the envelope at runtime."""
     offenders: list[str] = []
     for path in _MANGOMAS_SRC.rglob("*.py"):
-        offenders.extend(_contracts_imports(path))
+        rel = path.relative_to(_MANGOMAS_SRC).as_posix()
+        if rel.startswith("cognitive/"):
+            continue
+        for hit in _contracts_imports(path):
+            offenders.append(f"{rel}: {hit}")
     assert offenders == []

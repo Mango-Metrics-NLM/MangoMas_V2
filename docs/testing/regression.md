@@ -90,6 +90,7 @@ Enforced by `scripts/check_coverage.py` in CI and locally:
 | `eval` | 95% |
 | `rag` | 95% |
 | `workflow` | 95% |
+| `cognitive` | 95% |
 | `harness` | 95% |
 | `adapters` | 85% (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
 | **Global** | **95%** |

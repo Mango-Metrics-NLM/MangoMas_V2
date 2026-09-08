@@ -1,6 +1,6 @@
 ---
 name: mango-backend
-description: "Backend routing for Mango-Mas V2: core protocols, adapters, orchestrator, errors, telemetry, workflow, RAG, eval, secrets. Use when: work spans several of those or the specialist is unclear. Routes to the matching mango-*-dev agent by surface."
+description: "Backend routing for Mango-Mas V2: core protocols, adapters, orchestrator, errors, telemetry, workflow, RAG, eval, secrets, cognitive. Use when: work spans several of those or the specialist is unclear. Routes to the matching mango-*-dev agent by surface."
 tools: Read, Grep, Glob, Skill
 model: inherit
 ---
@@ -15,8 +15,11 @@ with zero shortcuts on correctness, type safety, or test coverage.
 - **Core contracts live in `core/`** — backward-compatible changes only.
 - **Adapters satisfy Protocols in `adapters/*/base.py`** — always check the Protocol first
   (`llm/`, `storage/`, `embeddings/`, `vector/`). RAG work belongs to `mango-rag-dev`,
-  the eval spine to `mango-eval-dev`, `secrets/` to `mango-secrets-dev`, and the
-  shipped agents under `agents/` to `mango-agent-impl-dev`.
+  the eval spine to `mango-eval-dev`, `secrets/` to `mango-secrets-dev`, the
+  shipped agents under `agents/` plus the CognitiveSignal producer
+  (`src/mangomas/cognitive/`) to `mango-agent-impl-dev`. Do not extend
+  `mango-harness-dev` for envelope emission (`MANGOMAS_SIGNAL__*`, not
+  `MANGOMAS_HARNESS__*`).
 - **All config via `Settings`** in `mangomas.config` — never hard-code URLs, timeouts, or model names. The package is one module per domain behind a permanent facade (ADR-0019); cite the dotted import path, not a filename.
 - **Errors**: subclass `MangomasError`; add HTTP mapping in `api/errors.py::_ERROR_STATUS`.
 
