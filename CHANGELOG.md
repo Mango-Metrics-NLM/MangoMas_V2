@@ -91,7 +91,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `validate_signal_payload` cannot swallow the emit. CamelCase nested
   keys (`allowedTools`, `apiKey`) now match the authority/secret walker.
   Changing only `MANGOMAS_SIGNAL__POLICY_ID` rebinds the default snapshot
-  hash to the stated id/version.
+  hash to the stated id/version; an explicit hash equal to the current
+  default is left alone (`model_fields_set`).
 
 - **The live E2E suites were green on a GPU box and could fail on a CPU one**,
   for a reason unrelated to the code under test: `tests/lmstudio/` and

@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationInfo, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 DEFAULT_SIGNAL_ENABLED: bool = False
 
@@ -78,18 +78,19 @@ class SignalSettings(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _rebind_default_policy_hash(self, info: ValidationInfo) -> SignalSettings:
+    def _rebind_default_policy_hash(self) -> SignalSettings:
         """Keep the default hash bound to the stated policy id/version.
 
         An operator who sets only ``MANGOMAS_SIGNAL__POLICY_ID`` must not keep
         the snapshot hash of ``mangomas.cognitive.default:1``. An explicit
-        ``policy_snapshot_hash`` is left alone (it may name a prior snapshot).
+        ``policy_snapshot_hash`` is left alone — including when it equals the
+        current default — because it may pin a prior snapshot.
         """
-        del info
         if "policy_snapshot_hash" in self.model_fields_set:
             return self
         rebound = policy_snapshot_hash_for(self.policy_id, self.policy_version)
-        # Mutate in place: returning model_copy from a top-level
-        # ``mode="after"`` validator is ignored on ``__init__``.
-        self.policy_snapshot_hash = rebound
+        if rebound != self.policy_snapshot_hash:
+            # Mutate in place: returning model_copy from a top-level
+            # ``mode="after"`` validator is ignored on ``__init__``.
+            self.policy_snapshot_hash = rebound
         return self

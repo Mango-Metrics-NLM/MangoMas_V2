@@ -37,10 +37,9 @@ def test_no_write_or_command_tool_names_in_cognitive_plane() -> None:
             rel = path.relative_to(_REPO_ROOT).as_posix()
             for node in ast.walk(tree):
                 if isinstance(node, ast.Constant) and node.value in _FORBIDDEN_TOOL_NAMES:
-                    # Docstrings / comments about the *ban* are allowed when they
-                    # sit next to the forbid-set itself; skip this test file's
-                    # imported constant by requiring assignment to `.name` or
-                    # a ToolSpec keyword.
+                    # Exact string literals whose value is a forbidden name.
+                    # Ban-list constants in cognitive/roles.py and
+                    # cognitive/pdp.py are filtered after the walk.
                     found.append(f"{rel}:{getattr(node, 'lineno', 0)}:{node.value}")
     # The forbid-set definition in this test is not under src/. Roles.py names
     # FORBIDDEN_HARNESS_ROLES including write_file/shell — those are the ban,
