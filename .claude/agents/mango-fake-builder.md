@@ -23,6 +23,7 @@ Use the `mango-testing` skill for the recipe, including the `tests/constants.py`
 | `FakeEmbeddingClient` | `EmbeddingClient` |
 | `FakeVectorStore` | `VectorStoreRepository` |
 | `FakeSink` | `Sink` (eval) |
+| `FakeCognitiveSink` | `CognitiveSignalSink` (cognitive producer) |
 | `FakeOrchestrator` | the `Orchestrator` surface an eval target calls |
 | `FakeVertexGenerativeModel` | the injected Vertex SDK seam — an *instance* double, not a factory, so it cannot observe a per-call model change |
 

@@ -7,10 +7,13 @@
 
 PYTHON      ?= python
 # Lint/type-check surface — matches ci.yml's `lint` job exactly.
-CODE_PATHS  ?= src tests scripts eval_harness_bridge/src
+CODE_PATHS  ?= src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 BRIDGE_SRC  ?= eval_harness_bridge/src
 BRIDGE_TESTS ?= tests/eval_harness_bridge
 BRIDGE_FLOOR ?= 100
+CONTRACTS_SRC ?= mango-integration-contracts/src
+CONTRACTS_TESTS ?= tests/mango_contracts
+CONTRACTS_FLOOR ?= 100
 PYTEST_FLAGS ?= -q
 # Base ref for the protected-path governance gate (ADR-0021). This repo's
 # working trunk is `feat/initial-release`, not `main` — see CLAUDE.md.
@@ -55,16 +58,17 @@ PIP_AUDIT_VERSION ?= 2.10.1
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck frontmatter \
         protected-paths test test-xml \
-        coverage bridge-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
+        coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local secret-scan pip-audit
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install the package with dev extras
+install: ## Install mangomas[dev] and sibling mango-integration-contracts
 	$(PYTHON) -m pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ./mango-integration-contracts
 
 # ── Quality gate (mirrors .github/workflows/ci.yml) ──────────────────────────
 
@@ -110,6 +114,14 @@ bridge-coverage: ## eval_harness_bridge isolated coverage gate
 	  $(BRIDGE_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.bridge $(PYTHON) -m coverage report --show-missing --fail-under=$(BRIDGE_FLOOR)
 
+contracts-coverage: ## mango-integration-contracts isolated coverage gate
+	# Same isolation idiom as bridge-coverage: its own COVERAGE_FILE so it never
+	# clobbers the main suite's `.coverage`, and -o addopts="" sheds the
+	# inherited --cov=mangomas so this run measures only mango_contracts.
+	COVERAGE_FILE=.coverage.contracts $(PYTHON) -m coverage run --source=$(CONTRACTS_SRC) -m pytest \
+	  $(CONTRACTS_TESTS) -o addopts="" $(PYTEST_FLAGS)
+	COVERAGE_FILE=.coverage.contracts $(PYTHON) -m coverage report --show-missing --fail-under=$(CONTRACTS_FLOOR)
+
 scripts-coverage: ## scripts/ isolated coverage gate (measured floor — see SCRIPTS_FLOOR above)
 	# Same isolation idiom as bridge-coverage: its own COVERAGE_FILE so it never
 	# clobbers the main suite's `.coverage`, and -o addopts="" sheds the
@@ -118,7 +130,7 @@ scripts-coverage: ## scripts/ isolated coverage gate (measured floor — see SCR
 	  $(SCRIPTS_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.scripts $(PYTHON) -m coverage report --show-missing --fail-under=$(SCRIPTS_FLOOR)
 
-gate: validate-config lint format-check typecheck frontmatter protected-paths test coverage bridge-coverage scripts-coverage ## Run the full pre-PR gate
+gate: validate-config lint format-check typecheck frontmatter protected-paths test coverage bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
 
 precommit: ## Run every pre-commit hook over the whole tree
 	pre-commit run --all-files

@@ -43,10 +43,24 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
   authoritative source is `scripts/check_coverage.py`, which pytest's
   `--cov-fail-under` mirrors
 - Every new module gets a `tests/test_<module>.py`
-- Use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository` from `tests/fakes.py`
+- Use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink` from `tests/fakes.py`
 - Constants from `tests/constants.py`; update file when adding new domain constants
 - Property-based / fuzz tests use `hypothesis`
 - Integration tests in `tests/integration/` gated by `RUN_INTEGRATION=1`
+
+---
+
+## Cognitive plugin (opt-in)
+
+- Envelope is `mango-integration-contracts` 1.1.0 (`mango_contracts`). Do not
+  coerce 1.0.0. `make install` editable-installs the sibling package.
+- Settings prefix is `MANGOMAS_SIGNAL__*`, never `MANGOMAS_HARNESS__*`.
+- Sink on `AgentContext.extras["cognitive_sink"]` — no new `AgentContext` field.
+- Planner → `planning.proposal`; reviewer → `review.finding`; `tool` raises.
+- Flag-off: no JSONL, no contracts import on the handle path.
+- Sink failures: log + swallow. Streaming does not emit.
+- INV-16: cognition proposes; the sibling Code Agent Harness disposes.
+  Join keys live in `lineage.source_event_ids`, not the payload.
 
 ---
 
@@ -66,7 +80,7 @@ src/mangomas/agents/     # Agent implementations
 src/mangomas/adapters/   # Infrastructure adapters (LLM, storage)
 src/mangomas/api/        # HTTP surface
 src/mangomas/cli/        # CLI surface
-src/mangomas/composition.py  # Single wiring point
+src/mangomas/cognitive/  # Opt-in CognitiveSignal producer (MANGOMAS_SIGNAL__*)
 tests/                   # Mirrors src/ structure; fakes.py + constants.py are shared
 ```
 
@@ -74,15 +88,14 @@ tests/                   # Mirrors src/ structure; fakes.py + constants.py are s
 
 ## Claude Code Agents & Skills
 
-- Agents live at `.claude/agents/mango-<slug>.md` — 19 files in one flat
+- Agents live at `.claude/agents/mango-<slug>.md` — 27 files in one flat
   directory, no parent/child hierarchy. Four are routers (`mango-architect`,
   `mango-backend`, `mango-api-dev`, `mango-test-engineer`) and carry `Use when:`
-  trigger conditions; the other 15 are named directly.
-- Skills live at `.claude/skills/<name>/SKILL.md` — VS Code Copilot reads that
-  directory as well as the legacy `.github/` one, so a single tree serves
-  Copilot and Claude Code (spec-0018). See `mango-testing` for the
-  canonical layout; others cover adapter / agent-add / error / observability /
-  config / topology / release workflows.
+  trigger conditions; the other 23 specialists are named directly.
+- Skills live at `.claude/skills/<name>/SKILL.md` (17 skills) — VS Code Copilot
+  reads that directory as well as the legacy `.github/` one, so a single tree
+  serves Copilot and Claude Code (spec-0018). See `mango-testing` for the
+  canonical layout; `mango-cognitive` covers `MANGOMAS_SIGNAL__*` emission.
 - Name the specific agent when working in its domain; use a router for
   cross-cutting work or when the right specialist is unclear.
 

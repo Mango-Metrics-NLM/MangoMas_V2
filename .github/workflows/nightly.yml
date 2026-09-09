@@ -47,7 +47,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       - name: Postgres suite
         run: make postgres
@@ -72,7 +72,9 @@ jobs:
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
-        run: pip install -e ".[dev,embeddings-local,rag]"
+        run: |
+          pip install -e ".[dev,embeddings-local,rag]"
+          pip install -e ./mango-integration-contracts
 
       # Keyed on the model id so a model change invalidates the cache rather
       # than silently testing against the previous one.
@@ -114,7 +116,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       - name: Prove the secret scan can still fail
         run: make gitleaks-selftest

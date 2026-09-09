@@ -14,7 +14,7 @@ the shape, not an exhaustive inventory, is below.
 
 ```
 tests/
-├── fakes.py               # Shared fake adapters (FakeLLM, FakeRepository, FakeTool, ...)
+├── fakes.py               # Shared fake adapters (FakeLLM, FakeRepository, FakeTool, FakeCognitiveSink, ...)
 ├── constants.py           # Shared constants — see "Constants contract" below
 ├── conftest.py            # pytest fixtures (fake_llm, fake_repo, fake_memory, fake_tool)
 ├── _script_loader.py      # Shared helper for importing scripts/*.py in tests
@@ -32,10 +32,12 @@ tests/
 ├── agents/                # Agent units
 ├── eval/                  # Evaluation harness (incl. test_serialize.py)
 ├── rag/                   # RAG domain (chunker + Hypothesis fuzz, pipeline, retrieval)
+├── cognitive/             # CognitiveSignal producer (roles, PDP adapter, sinks, emit)
 ├── deploy/                # Deploy-manifest + Docker build-context contracts
 ├── harness/               # Harness governance + config-audit units
 ├── tooling/               # Corpus + Claude Code config contract tests
 ├── eval_harness_bridge/   # Bridge black-box tests (own 100% floor, own constants.py)
+├── mango_contracts/       # CognitiveSignal 1.1.0 envelope (own 100% floor, own constants.py)
 ├── integration/           # Requires RUN_INTEGRATION=1; ASGI transport
 ├── lmstudio/              # Requires RUN_LMSTUDIO=1; real LM Studio
 ├── vertex/                # Requires RUN_VERTEX=1; real Vertex project
@@ -64,6 +66,8 @@ such as HTTP status codes, which stay inline (`PLR2004` is disabled for
 
 `tests/eval_harness_bridge/constants.py` is deliberately separate: the bridge
 is tested as a decoupled black-box client and must not import `mangomas`.
+`tests/mango_contracts/constants.py` is the same idea for the shared
+cognitive envelope — it must not import `mangomas` either.
 
 ## Configuration
 
@@ -106,7 +110,7 @@ python scripts/check_coverage.py
 ## Fake Adapters Quick Reference
 
 ```python
-from tests.fakes import FakeLLM, FakeRepository, FakeTool, FakeMemoryRepository
+from tests.fakes import FakeLLM, FakeRepository, FakeTool, FakeMemoryRepository, FakeCognitiveSink
 
 # FakeLLM
 llm = FakeLLM(reply="default")               # same reply every call
@@ -120,4 +124,8 @@ tool = FakeTool(name="echo", result="echo-result")
 
 # FakeMemoryRepository — satisfies MemoryRepository
 mem = FakeMemoryRepository()
+
+# FakeCognitiveSink — satisfies CognitiveSignalSink
+sink = FakeCognitiveSink()            # sink.emitted: list
+sink = FakeCognitiveSink(raise_on_emit=RuntimeError("disk"))
 ```

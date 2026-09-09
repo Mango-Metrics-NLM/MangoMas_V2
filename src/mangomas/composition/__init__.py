@@ -101,6 +101,9 @@ from mangomas.composition.secrets import (
 from mangomas.composition.secrets import (
     ensure_secrets_provider as ensure_secrets_provider,
 )
+from mangomas.composition.signal import (
+    _attach_cognitive_extras as _attach_cognitive_extras,
+)
 
 # Storage factories (used by tests for direct testing)
 from mangomas.composition.storage import (
@@ -121,6 +124,7 @@ __all__ = [
     "VertexClient",
     "_AgentLLMOverrideCloseMixin",
     "_HarnessOrchestrator",
+    "_attach_cognitive_extras",
     "_build_gcp_secrets_provider",
     "_build_rag_tools",
     "_chroma_vector_factory",

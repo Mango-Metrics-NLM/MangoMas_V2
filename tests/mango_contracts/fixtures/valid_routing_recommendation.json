@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.1.0",
+  "signal_id": "2e917ec2-a88d-4bd1-b8ff-85f1eb8b1d40",
+  "run_id": "8e4ea278-3988-48a4-883a-38b978faadf1",
+  "task_id": "bb4214e9-2138-47bc-95e4-4ad34ee98d72",
+  "producer_id": "mangomas.planner.v2",
+  "producer_version": "git:4fd7e8f",
+  "signal_type": "routing.recommendation",
+  "signal_kind": "routing.recommendation",
+  "created_at": "2026-09-08T21:00:00+00:00",
+  "expires_at": "2026-09-08T21:30:00+00:00",
+  "ttl_seconds": 1800,
+  "policy_id": "mango-code-harness-default",
+  "policy_version": "2026.09.08+git.4fd7e8f",
+  "policy_snapshot_hash": "sha256:a28f0df8e424f3495f4e9f0204c39cbcb5556047cbebf15d7b53b08c4ae68204",
+  "severity": "info",
+  "memory_class": "prompt_injectable",
+  "summary": "The task resembles a regression diagnosis workflow.",
+  "payload": {
+    "recommended_cognitive_role": "defect_analysis",
+    "rationale": "The task references a reproducible exception and a localised regression.",
+    "alternatives_considered": ["architecture_review", "documentation_analysis"]
+  },
+  "recommendation": {
+    "disposition": "request_review",
+    "summary": "Consider a diagnostic pass before implementation planning.",
+    "rationale": "A diagnostic pass can identify the minimal fault surface.",
+    "proposed_action_refs": [],
+    "requested_review_roles": ["spec-analyst"]
+  },
+  "evidence": {
+    "status": "partial",
+    "refs": [],
+    "missing_evidence": ["No failing-test trace has yet been supplied."],
+    "limitations": []
+  },
+  "confidence": 0.83,
+  "tags": ["routing", "diagnosis"]
+}

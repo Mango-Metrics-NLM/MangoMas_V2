@@ -117,4 +117,10 @@ runtime flag for this today.
   required). Structured logs reach Cloud Logging via the JSON log format
   (`MANGOMAS_LOG__FORMAT=json`): Cloud Run ingests JSON stdout lines
   natively, so no dedicated log-sink adapter is needed.
+- **Additive GenAI aliases (default-off):** `MANGOMAS_SIGNAL__GENAI_SPANS=true`
+  wraps planner/reviewer emission in a `gen_ai.invoke_agent` span (OpenTelemetry
+  GenAI conventions were still Development when spec-0030 landed). Live
+  request spans remain `orchestrator.*` / `harness.agent_invoke`. Join keys
+  (`otel-trace:…`, `mangomas.correlation_id:…`) land in
+  `CognitiveSignal.lineage.source_event_ids`, not the payload.
 - **Still open:** per-tenant correlation id partitioning.

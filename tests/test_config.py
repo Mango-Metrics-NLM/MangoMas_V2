@@ -29,6 +29,7 @@ _CONFIG_SUBMODULES: tuple[str, ...] = (
     "evaluation",
     "harness",
     "workflow",
+    "signal",
     "_root",
 )
 

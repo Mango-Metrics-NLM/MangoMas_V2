@@ -11,6 +11,29 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
+  package `mango-integration-contracts` (`mango_contracts`) shared with the
+  sibling [Mango Code Agent Harness](https://github.com/ianshank/Mango_Code_Agent-Harness).
+  `CognitiveSignal` is identity + schema + policy binding + content +
+  evidence; `extra="forbid"`; nested payload/metadata cannot smuggle
+  `allowed_tools` / `gate_passed` / secrets. INV-16: `confidence`,
+  `severity`, `recommendation`, and `payload` never enter
+  `policy_input_from_signal`. Unknown review roles and unknown producer
+  names raise — they never default to `implementer`. Isolated coverage
+  gate `make contracts-coverage` (100%). Opt-in producer
+  (`MANGOMAS_SIGNAL__ENABLED=false`): `mangomas.cognitive` attaches a JSONL
+  sink on `ctx.extras["cognitive_sink"]`; planner emits `planning.proposal`,
+  reviewer emits `review.finding`; sink failures are contained so dispatch
+  is unchanged. `tool` has no harness role (retrieve stays local). Optional
+  HTTP POST when `MANGOMAS_SIGNAL__HTTP_URL` is set. Additive
+  `gen_ai.invoke_agent` span aliases stay default-off. Wire-incompatible
+  with the harness dataclass envelope 1.0.0; companion bump required before
+  ingest. Command/patch execution remains blocked until the harness
+  isolation backend exists. Peer review of the 2026-09-08
+  governed-coding-platform architecture set is recorded in
+  `docs/analysis/20260908-governed-coding-platform-architecture-review.md`
+  (keep INV-16 / envelope / sandbox gate; reject HF-MoE identity,
+  `developer→implementer` ROLE_MAP, and pack ADR numbers).
 - **Hardware-agnostic end-to-end suites** (spec-0029, no ADR — no boundary
   change). Every Phase-1 delivery now has an end-to-end scenario in the tier
   where it can execute, and the two hardware-sensitive tiers follow one
@@ -50,7 +73,26 @@ Versioning: [Semantic Versioning](https://semver.org/).
   - `FakeLLM.delay_seconds` (additive, default `0.0`, no `sleep` at all when
     zero) so a per-step timeout can be driven through the HTTP boundary.
 
+### Changed
+
+- **Cognitive packaging is a real runtime install** (follow-up to spec-0030).
+  `make install`, every CI `mangomas[dev]` job, and the Docker image now
+  install `mango-integration-contracts` as a second wheel/editable so
+  flag-on emission can `import mango_contracts` outside pytest's
+  `pythonpath`. C1 names the sibling Code Agent Harness. Corpus adds the
+  `mango-cognitive` skill (16 → 17 skills). C2 draws optional HTTP ingest
+  separately from local JSONL; C3 names chat/summarize as unmapped
+  observation.
+
 ### Fixed
+
+- **Planner plans longer than 64 steps no longer vanish.** The producer
+  truncates `PlanningProposalPayload.steps` to the envelope cap so
+  `validate_signal_payload` cannot swallow the emit. CamelCase nested
+  keys (`allowedTools`, `apiKey`) now match the authority/secret walker.
+  Changing only `MANGOMAS_SIGNAL__POLICY_ID` rebinds the default snapshot
+  hash to the stated id/version; an explicit hash equal to the current
+  default is left alone (`model_fields_set`).
 
 - **The live E2E suites were green on a GPU box and could fail on a CPU one**,
   for a reason unrelated to the code under test: `tests/lmstudio/` and

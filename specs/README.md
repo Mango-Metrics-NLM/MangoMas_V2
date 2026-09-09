@@ -70,6 +70,7 @@ thinking tool, not a gate.
 | [0027](0027-pipeline-acceptance-and-settled-fan-out.md) | Pipeline acceptance threading + settled fan-out (governed Batch B-c) |
 | [0028](0028-per-agent-model-override.md) | Per-agent LLM model override (`MODEL_OVERRIDE` wiring) |
 | [0029](0029-hardware-agnostic-e2e-suites.md) | Hardware-agnostic end-to-end suites for the Phase-1 deliveries |
+| [0030](0030-cognitive-authority-plugin.md) | Cognitive/execution boundary plugin (`mango-integration-contracts` 1.1.0) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -80,5 +81,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0030**; next free ADR: **0029**
-(`docs/adr/0028-per-agent-model-override.md` is authored, per spec-0028).
+than reused. Next free spec on this branch: **0031**; next free ADR: **0030**.

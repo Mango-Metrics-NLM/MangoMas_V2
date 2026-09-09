@@ -12,10 +12,12 @@ repos:
   # ── mypy: static type checking ─────────────────────────────────────────────
   # Scoped to src/ only: additional_dependencies below covers exactly the
   # runtime deps, which is all src/ needs. Everything else in CI's surface
-  # (tests, scripts, eval_harness_bridge/src) pulls in far more — pytest,
-  # respx, hypothesis, asyncpg — and is type-checked authoritatively by CI's
-  # full `mypy --strict src tests scripts eval_harness_bridge/src` run, so the
-  # hook trades breadth for fast, dependency-accurate local feedback.
+  # (tests, scripts, eval_harness_bridge/src, mango-integration-contracts/src)
+  # pulls in far more — pytest, respx, hypothesis, asyncpg — and is type-checked
+  # authoritatively by CI's full `mypy --strict` over CODE_PATHS, so the hook
+  # trades breadth for fast, dependency-accurate local feedback. Contracts stay
+  # on `mypy_path` so `src/mangomas/cognitive/` typechecks against the envelope
+  # without widening this hook's `files:` glob.
   # Keep the rev in lockstep with the `mypy==` pin in pyproject's dev extra.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.0

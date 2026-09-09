@@ -19,6 +19,7 @@ from mangomas.config.llm import LLMSettings
 from mangomas.config.observability import LogSettings, TelemetrySettings
 from mangomas.config.rag import EmbeddingSettings, RagSettings, VectorSettings
 from mangomas.config.secrets import SecretsSettings
+from mangomas.config.signal import SignalSettings
 from mangomas.config.storage import DBSettings, MemorySettings
 from mangomas.config.workflow import WorkflowSettings
 
@@ -57,6 +58,7 @@ class Settings(BaseSettings):
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
     workflow: WorkflowSettings = Field(default_factory=WorkflowSettings)
+    signal: SignalSettings = Field(default_factory=SignalSettings)
 
     # Set to True (MANGOMAS_DISCOVERY_ENABLED=true) to enable entry-point-based
     # plugin discovery for eval components (mangomas.eval.*) and agents

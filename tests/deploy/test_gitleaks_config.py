@@ -34,6 +34,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.constants import DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH, SIGNAL_POLICY_SNAPSHOT_HASH_ENV
+
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -83,6 +85,11 @@ _MUST_IGNORE: tuple[tuple[str, str, str], ...] = (
     ("env-interpolation", "ok4.yaml", "  value: postgresql://svc:${DB_PASSWORD}@10.0.0.5/db"),
     ("placeholder-password", "ok5.md", "    postgresql://user:pass@host:5432/mangomas"),
     ("sqlite-has-no-credential", "ok6.env", "MANGOMAS_DB__URL=sqlite:///./data/mangomas.db"),
+    (
+        "signal-policy-hash",
+        "ok7.env",
+        f"{SIGNAL_POLICY_SNAPSHOT_HASH_ENV}={DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH}",
+    ),
 )
 
 

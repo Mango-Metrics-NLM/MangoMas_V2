@@ -14,3 +14,9 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # Sibling envelope package (pydantic>=2.7 today). Separate from the root
+  # pip ecosystem so a contracts-only bump is its own PR.
+  - package-ecosystem: pip
+    directory: /mango-integration-contracts
+    schedule:
+      interval: monthly

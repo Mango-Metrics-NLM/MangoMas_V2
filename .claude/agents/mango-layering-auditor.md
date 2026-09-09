@@ -17,15 +17,17 @@ api  ←  composition
 cli  ←  composition
 adapters ←  composition  (the ONLY place adapters are imported as concrete types)
 
-core, errors, registry, config  ←  workflow, eval, rag, secrets
+core, errors, registry, config  ←  workflow, eval, rag, secrets, cognitive
 adapters/*/base.py (Protocols only)  ←  eval, rag
 ```
 
-`workflow/`, `eval/`, `rag/`, and `secrets/` are **pure siblings**: each may
-import `core`, `errors`, `registry`, `config` (and, for `eval` / `rag`, the
-adapter *Protocol* modules `adapters/*/base.py`), but never each other. In
-particular `workflow` must not import `mangomas.eval`, and `rag` must not be
-imported from `adapters/vector/` or `adapters/embeddings/` (that would cycle).
+`workflow/`, `eval/`, `rag/`, `secrets/`, and `cognitive/` are **pure siblings**:
+each may import `core`, `errors`, `registry`, `config` (and, for `eval` / `rag`,
+the adapter *Protocol* modules `adapters/*/base.py`), but never each other.
+`cognitive/` may import `mango_contracts` and must not import `mangomas.harness`,
+`mangomas.adapters`, or `mangomas.agents`. In particular `workflow` must not
+import `mangomas.eval`, and `rag` must not be imported from `adapters/vector/`
+or `adapters/embeddings/` (that would cycle).
 
 ## Constraints
 - `from mangomas.adapters.llm.lmstudio import` outside `src/mangomas/composition.py`
@@ -55,6 +57,7 @@ imported from `adapters/vector/` or `adapters/embeddings/` (that would cycle).
 3. `grep -rn 'from mangomas.api' src/mangomas/{agents,core,adapters}/ --include='*.py'` — should return zero hits.
 4. `grep -rn 'from mangomas.eval' src/mangomas/workflow/ --include='*.py'` (and the
    reverse) — should return zero hits; the siblings share nothing by import.
+   Also `grep -rn 'from mangomas.harness\\|from mangomas.agents\\|from mangomas.adapters' src/mangomas/cognitive/ --include='*.py'` — zero hits.
 5. `grep -rn 'from mangomas.adapters._' src/mangomas/ --include='*.py' | grep -v '/adapters/'`
    — should return zero hits; the private adapter helpers stay inside `adapters/`.
 6. Inspect every new `TYPE_CHECKING:` block; ensure the imported names are only used as type annotations.

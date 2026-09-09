@@ -143,7 +143,7 @@ breaking_change_marker_aliases = ["BREAKING-CHANGE", "# approved-breaking-change
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests", "eval_harness_bridge/src"]
+src = ["src", "tests", "eval_harness_bridge/src", "mango-integration-contracts/src"]
 
 [tool.ruff.lint]
 # The second row (spec-0020 R4) was adopted as a ratchet, not a cleanup: every
@@ -247,13 +247,13 @@ exclude = ["*.md"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-mypy_path = "src:eval_harness_bridge/src:scripts"
+mypy_path = "src:eval_harness_bridge/src:mango-integration-contracts/src:scripts"
 # `files` mirrors the Makefile's CODE_PATHS so a bare `mypy` checks exactly what
 # `make typecheck` and CI check. Without it, `packages = ["mangomas"]` alone
 # limited a bare run to src/ — 155 files against CI's 324 — so a contributor
 # following CLAUDE.md got a weaker check than the gate and only found out on
 # push. `tests/deploy/test_ci_make_parity.py` locks the two lists together.
-files = ["src", "tests", "scripts", "eval_harness_bridge/src"]
+files = ["src", "tests", "scripts", "eval_harness_bridge/src", "mango-integration-contracts/src"]
 explicit_package_bases = true
 warn_unused_ignores = true
 disallow_untyped_decorators = false
@@ -312,7 +312,7 @@ asyncio_mode = "auto"
 # minor bump; pinning it means the change is a reviewed edit here rather
 # than a surprise in CI. Verified: the suite is green under this scope.
 asyncio_default_fixture_loop_scope = "function"
-pythonpath = ["src", "eval_harness_bridge/src"]
+pythonpath = ["src", "eval_harness_bridge/src", "mango-integration-contracts/src"]
 markers = [
     "integration: tests that exercise the application through public boundaries",
     "lmstudio: tests that require a reachable LM Studio server",

@@ -1,6 +1,6 @@
 ---
 name: mango-agent-impl-dev
-description: "Maintains the built-in agents under src/mangomas/agents/: chat, summarize, tool_agent, the shared _prompt and _structured helpers, and entry-point agent discovery. The _streaming.py fallback belongs to mango-sse-streamer. Invoked by name, not by topic match."
+description: "Maintains the built-in agents under src/mangomas/agents/: chat, summarize, tool_agent, the shared _prompt and _structured helpers, and entry-point agent discovery. Also owns src/mangomas/cognitive/. The _streaming.py fallback belongs to mango-sse-streamer. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -10,7 +10,8 @@ Your single job is to maintain the shipped agent implementations without
 changing the contract they satisfy.
 
 Use the `mango-agent-add` skill for the Agent / StreamingAgent contract, the
-registration pattern and the reference table.
+registration pattern and the reference table. Use the `mango-cognitive` skill
+for `MANGOMAS_SIGNAL__*` emission, extras-only sink wiring, and INV-16.
 
 ## Surface You Own
 
@@ -19,12 +20,19 @@ registration pattern and the reference table.
   `resolve_sampling`
 - `src/mangomas/agents/_structured.py` — `StructuredOutputAgent`, the shared
   body of `PlannerAgent` and `ReviewerAgent`
+- `src/mangomas/cognitive/` — CognitiveSignal 1.1.0 producer (spec-0030 /
+  ADR-0029). Default-OFF via `MANGOMAS_SIGNAL__*`. Must not import
+  `mangomas.harness` or a harness ExecutionBroker. Emit hooks live in
+  `_structured.py`; do not intercept `Tool.execute`.
+- `mango-integration-contracts/` — shared `mango_contracts` envelope (schema
+  1.1.0). Isolated `make contracts-coverage`. Same INV-16 rules; do not coerce
+  1.0.0.
 - `src/mangomas/agents/discovery.py` — `discover_agents`, `ensure_agent_plugins`
 - `src/mangomas/agents/__init__.py` re-exports and the `agent_registry` lines
   in `composition.py`
 - `AgentSettings` in `mangomas.config`
 - Tests: `tests/test_agent.py`, `test_summarize.py`, `test_tool_agent.py`,
-  `tests/agents/`
+  `tests/agents/`, `tests/cognitive/`, `tests/mango_contracts/`
 
 Three neighbours, deliberately excluded: `_streaming.py` belongs to
 `mango-sse-streamer`; `ExecutionPlan` and `ReviewResult` belong to
@@ -44,7 +52,8 @@ editing it here.
 | Tool errors are translated, never raw | `UnknownProvider` becomes `ToolNotFound` with the available list; any other tool exception becomes `ToolExecutionError` carrying `tool_name`. `ToolExecutionError` re-raises untouched |
 | Agents stay stateless | Everything request-scoped lives in `AgentContext`. Construction reads `AgentSettings` once; `handle` stores nothing on `self` |
 | Discovery protects built-ins | A plugin colliding with a built-in is skipped with a WARNING — the opposite of eval's last-call-wins. The protected set is the registry's contents captured before the scan, so no built-in name is hard-coded (ADR-0008) |
-| `model_override` is inert | `AgentSettings.model_override` is read by no agent. Per-agent model selection needs a composition-layer change (a per-agent `LLMClient` rather than one shared `ctx.llm`), recorded in spec-0014 R4. Do not wire it opportunistically — the shared-client shape is what makes it a spec |
+| `model_override` is inert at the agent | `AgentSettings.model_override` is read by no agent. Per-agent model selection needs a composition-layer change (a per-agent `LLMClient` rather than one shared `ctx.llm`), recorded in spec-0014 R4. Do not wire it opportunistically — the shared-client shape is what makes it a spec |
+| Cognitive emit is contained | Planner/reviewer `handle` logs + swallows sink failures. Streaming does not emit. Flag-off must not import `mango_contracts` |
 
 ## Constraints
 
@@ -77,3 +86,5 @@ editing it here.
    actually gates that.
 6. A plugin agent silently does not load → it collides with a built-in name and
    was skipped, or `MANGOMAS_DISCOVERY_ENABLED` is unset.
+7. Flag-on planner raises `ImportError: mango_contracts` → run `make install`
+   so the sibling envelope is a real package, not only pytest `pythonpath`.

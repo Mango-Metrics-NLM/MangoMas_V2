@@ -25,7 +25,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       - name: Validate Claude Code config JSON
         run: make validate-config
@@ -60,7 +60,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       - name: Run pytest with coverage
         # pyproject addopts supplies --cov=mangomas, term-missing, and the
@@ -131,7 +131,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       # The bridge lives outside the mangomas package, so the --cov=mangomas
       # gate never measures it. `make bridge-coverage` enforces its own 100%
@@ -141,6 +141,27 @@ jobs:
       # independent and each failure is attributable.
       - name: Bridge coverage (isolated, floor 100%)
         run: make bridge-coverage
+
+  contracts-coverage:
+    name: Contracts coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: make install
+
+      # mango_contracts lives outside the mangomas package, so the
+      # --cov=mangomas gate never measures it. Same isolation idiom as
+      # bridge-coverage: its own COVERAGE_FILE + -o addopts="". Floor 100%.
+      - name: Contracts coverage (isolated, floor 100%)
+        run: make contracts-coverage
 
   scripts-coverage:
     name: Scripts coverage gate
@@ -155,7 +176,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       # scripts/ lives outside the mangomas package, so the --cov=mangomas
       # gate never measures it (ADR-0021 / spec-0017 A7). Same isolation
@@ -178,7 +199,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       # The pinned-tool install and the audit invocation live in exactly one
       # place: `make pip-audit` (supply-chain baseline, roadmap item 0.3).

@@ -35,13 +35,16 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make install
 
       - name: Run pytest with coverage
         run: make test
 
       - name: Per-package coverage floors
         run: make coverage
+
+      - name: Contracts coverage floor
+        run: make contracts-coverage
 
   deploy:
     name: Build, push & deploy

@@ -32,6 +32,7 @@ from mangomas.composition.llm import (
 from mangomas.composition.memory import _file_memory_factory
 from mangomas.composition.rag import _build_rag_tools
 from mangomas.composition.secrets import _resolve_llm_secrets, ensure_secrets_provider
+from mangomas.composition.signal import _attach_cognitive_extras
 from mangomas.composition.storage import _postgres_factory, _sqlite_factory
 from mangomas.composition.vector import _chroma_vector_factory
 from mangomas.config import Settings, get_settings
@@ -167,6 +168,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         tools=tools,
         extras={"agent_llm_overrides": agent_llm_overrides},
     )
+    _attach_cognitive_extras(ctx.extras, cfg.signal)
     logger.debug("AgentContext created with all components")
 
     # Create orchestrator (harness-wrapped if enabled)

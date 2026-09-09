@@ -20,6 +20,9 @@ argument-hint: "Name the protected file you are changing, or paste the failing g
 - Adding or changing a hook in `.claude/settings.json`
 - Deciding whether a change is genuinely breaking, or additive and marker-free
 
+SIGNAL emission (`MANGOMAS_SIGNAL__*`, `src/mangomas/cognitive/`) is **not**
+this skill — use `mango-cognitive`. Do not add a Claude Code hook for it.
+
 ---
 
 ## Quick Commands

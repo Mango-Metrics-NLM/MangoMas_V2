@@ -59,6 +59,7 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/eval/**/*.py", 95, "eval"),
     Floor("src/mangomas/rag/**/*.py", 95, "rag"),
     Floor("src/mangomas/workflow/**/*.py", 95, "workflow"),
+    Floor("src/mangomas/cognitive/**/*.py", 95, "cognitive"),
     # ADR-0021 / spec-0017: PROTECTED_PATHS/marker-alias governance +
     # ConfigChange decision logic. New package; 95% matches its siblings.
     Floor("src/mangomas/harness/**/*.py", 95, "harness"),

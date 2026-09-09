@@ -10,7 +10,8 @@ coverage floors that must pass before any merge.
 The existing test suite (`tests/`) constitutes the regression baseline.
 It covers unit, API, and integration boundaries with all external services
 replaced by deterministic test doubles (`FakeLLM`, `FakeRepository`,
-`FakeMemoryRepository`, `FakeTool`, `FakeEmbeddingClient`, `FakeVectorStore`).
+`FakeMemoryRepository`, `FakeTool`, `FakeEmbeddingClient`, `FakeVectorStore`,
+`FakeCognitiveSink`).
 
 ### Current baseline
 
@@ -23,6 +24,7 @@ gates below, all of which are executable:
 | Unit suite + global floor | `make test` | `pyproject.toml` addopts mirror the global floor |
 | Per-package floors | `make coverage` | **`scripts/check_coverage.py` — the authoritative gate** |
 | Bridge floor (100%) | `make bridge-coverage` | `eval_harness_bridge` is gated separately |
+| Contracts floor (100%) | `make contracts-coverage` | `mango-integration-contracts` is gated separately |
 | Mypy (strict) | `make typecheck` | 0 errors required |
 | Ruff lint + format | `make lint` / `make format-check` | Clean required |
 | Frontmatter lint | `make frontmatter` | `scripts/lint_agent_frontmatter.py` |
@@ -54,7 +56,8 @@ the per-suite sections below, or use the matching `make` target
 | Shared HTTP client base | `tests/adapters/test_openai_client.py` | `OpenAICompatHTTPClient` lifecycle: client ownership, `ClassVar` enforcement, MRO tail, public constructor stability |
 | Vector adapter | `tests/adapters/vector/` | `ChromaVectorStore` via injected fake collection; cosine scoring |
 | RAG domain | `tests/rag/` | chunker (+ Hypothesis fuzz), models, loader, pipeline, retrieval, ToolAgent-invokes-RetrievalTool; **tier-3 gated device contract** (embedding finiteness/ordering, CPU-vs-auto ranking parity, real-retrieval ToolAgent, CLI round trip) |
-| **Tier-1 E2E** | `tests/integration/` | Seven flows through the **real composition root** (`build_orchestrator` → `create_app`): stream persistence → `/history`, `LoopSettings` → 504 + budget precedence, the shipped `plan-execute-review` graph with validation, `branch`/composite `fan_out` over HTTP, `MODEL_OVERRIDE`, tenant-scoped streamed turns. Runs in CI on every push |
+| **Tier-1 E2E** | `tests/integration/` | Flows through the **real composition root** (`build_orchestrator` → `create_app`): stream persistence → `/history`, `LoopSettings` → 504 + budget precedence, the shipped `plan-execute-review` graph with validation, `branch`/composite `fan_out` over HTTP, `MODEL_OVERRIDE`, tenant-scoped streamed turns, **CognitiveSignal flag-off/flag-on** (`tests/integration/test_signal_flow.py`). Runs in CI on every push |
+| Cognitive producer | `tests/cognitive/` | Flag-off identity, JSONL/HTTP/composite sinks, INV-16 PDP refuse-don't-strip (byte-identical projections), role map, retrieve-only, GenAI span exporter, planner step cap, camelCase authority keys |
 | Gated-suite parity | `tests/deploy/test_gated_suite_homes.py` | Every `RUN_*` suite has an executing home or a recorded infeasibility reason — and never both |
 | Hardware contract | `tests/tooling/test_e2e_hardware_contract.py` | Lints tiers 2/3 for elapsed-time assertions, numeric timeouts, device literals, embedding equality |
 | Eval serializer | `tests/eval/test_serialize.py` | `report_payload` shape + round trip through `load_baseline` |
@@ -89,13 +92,16 @@ Enforced by `scripts/check_coverage.py` in CI and locally:
 | `eval` | 95% |
 | `rag` | 95% |
 | `workflow` | 95% |
+| `cognitive` | 95% |
 | `harness` | 95% |
 | `adapters` | 85% (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
 | **Global** | **95%** |
 
-Two floors sit outside `FLOORS` because they measure a different tree:
-`eval_harness_bridge` (100%, `make bridge-coverage`) and `scripts/` (92%,
-`make scripts-coverage`, a measured ratchet rather than a round number).
+Three floors sit outside `FLOORS` because they measure a different tree:
+`eval_harness_bridge` (100%, `make bridge-coverage`),
+`mango-integration-contracts` (100%, `make contracts-coverage`), and
+`scripts/` (92%, `make scripts-coverage`, a measured ratchet rather than a
+round number).
 
 `scripts/check_coverage.py` is the authority — if this table and that script
 ever disagree, the script wins and this table is the bug.
@@ -225,18 +231,22 @@ make gate
 
 `make gate` is the whole of `.github/workflows/ci.yml`, in CI's order. The
 underlying commands, if you prefer to run them individually — note the lint
-surface includes `eval_harness_bridge/src`, and the bridge carries its own
+surface includes `eval_harness_bridge/src` and
+`mango-integration-contracts/src`, and each isolated package carries its own
 100% floor as a separate CI job:
 
 ```powershell
-python -m ruff check src tests scripts eval_harness_bridge/src
-python -m ruff format --check src tests scripts eval_harness_bridge/src
-python -m mypy --strict src tests scripts eval_harness_bridge/src
+python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
+python -m ruff format --check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
+python -m mypy --strict src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 python scripts/lint_agent_frontmatter.py
 python -m pytest -q
 python scripts/check_coverage.py
 python -m coverage run --source=eval_harness_bridge/src -m pytest `
     tests/eval_harness_bridge -o addopts="" -q
+python -m coverage report --show-missing --fail-under=100
+python -m coverage run --source=mango-integration-contracts/src -m pytest `
+    tests/mango_contracts -o addopts="" -q
 python -m coverage report --show-missing --fail-under=100
 ```
 

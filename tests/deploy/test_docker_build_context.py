@@ -107,6 +107,14 @@ def test_readme_is_in_build_context() -> None:
     assert _exclusion_rule("README.md", _ignore_rules()) is None
 
 
+def test_contracts_package_is_in_build_context() -> None:
+    """The runtime image builds the sibling envelope wheel (spec-0030)."""
+    assert _exclusion_rule("mango-integration-contracts/pyproject.toml", _ignore_rules()) is None
+    dockerfile = _DOCKERFILE.read_text(encoding="utf-8")
+    assert "COPY mango-integration-contracts/" in dockerfile
+    assert dockerfile.count("python -m build") >= 2
+
+
 # ── lockfile wiring (supply-chain baseline, roadmap item 0.3) ─────────────────
 
 _LOCKFILE = _REPO_ROOT / "requirements.lock"

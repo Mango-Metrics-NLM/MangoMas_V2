@@ -16,7 +16,7 @@ restate either here.
 ## Surface You Own
 
 - `Makefile` — every target, the gate chain, and the `?=` variables
-  (`SCRIPTS_FLOOR`, `BRIDGE_FLOOR`, `GITLEAKS_VERSION`/`_SHA256`, `BASE_REF`)
+  (`SCRIPTS_FLOOR`, `BRIDGE_FLOOR`, `CONTRACTS_FLOOR`, `GITLEAKS_VERSION`/`_SHA256`, `BASE_REF`)
 - `.github/workflows/` — `ci.yml`, `deploy.yml`, `eval-gate.yml`, `nightly.yml`
 - `.github/dependabot.yml`
 - `deploy/` — the Cloud Run service definition and env contract
@@ -47,8 +47,8 @@ floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
   through `tests/deploy/_workflows.py` so every rule sees every file, and so
   job-level `uses:` (reusable workflows) is not missed.
 - **A floor lives in one place.** The global floor is asserted equal to
-  pytest's `--cov-fail-under`; `SCRIPTS_FLOOR`/`BRIDGE_FLOOR` are pinned by
-  value because they exist only as Makefile text.
+  pytest's `--cov-fail-under`; `SCRIPTS_FLOOR`/`BRIDGE_FLOOR`/`CONTRACTS_FLOOR`
+  are pinned by value because they exist only as Makefile text.
 - **`gate` stays offline.** Every target in the chain runs with no network —
   that is why `secret-scan` (which downloads a pinned binary) is excluded.
 - **New target ⇒ `.PHONY`.** `gated-suites` was CI-invoked while missing from

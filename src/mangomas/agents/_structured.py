@@ -24,6 +24,7 @@ from mangomas.agents._prompt import (
     resolve_system_prompt,
 )
 from mangomas.agents._streaming import stream_with_buffered_fallback
+from mangomas.cognitive.constants import COGNITIVE_SINK_EXTRAS_KEY
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_VALIDATE_OUTPUT
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.structured import build_structured_prompt
@@ -138,7 +139,31 @@ class StructuredOutputAgent:
         )
         if self._validate_output:
             self.parse(content)
-        return AgentResponse(content=content, agent=self.name)
+        response = AgentResponse(content=content, agent=self.name)
+        await self._maybe_emit_cognitive_signal(request, ctx, content)
+        return response
+
+    async def _maybe_emit_cognitive_signal(
+        self,
+        request: AgentRequest,
+        ctx: AgentContext,
+        content: str,
+    ) -> None:
+        """Emit a CognitiveSignal when a sink is wired; no-op otherwise.
+
+        The contracts package is imported only inside the producer, and only
+        when extras actually carries a sink — flag-off handle stays identical.
+        """
+        if ctx.extras.get(COGNITIVE_SINK_EXTRAS_KEY) is None:
+            return
+        from mangomas.cognitive.producer import emit_agent_signal  # noqa: PLC0415
+
+        await emit_agent_signal(
+            agent_name=self.name,
+            content=content,
+            request=request,
+            ctx=ctx,
+        )
 
     async def stream(
         self,

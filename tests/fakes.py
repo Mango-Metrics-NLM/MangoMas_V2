@@ -448,3 +448,20 @@ class FakeOrchestrator:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+@dataclass
+class FakeCognitiveSink:
+    """In-memory stub satisfying :class:`mangomas.cognitive.sink.CognitiveSignalSink`.
+
+    Records every envelope. Set ``raise_on_emit`` to prove planner/reviewer
+    ``handle`` contains sink failures (log + swallow).
+    """
+
+    emitted: list[Any] = field(default_factory=list)
+    raise_on_emit: BaseException | None = None
+
+    async def emit(self, signal: Any) -> None:
+        if self.raise_on_emit is not None:
+            raise self.raise_on_emit
+        self.emitted.append(signal)
