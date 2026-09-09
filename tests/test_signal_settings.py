@@ -103,6 +103,14 @@ def test_explicit_policy_hash_is_kept_when_policy_id_changes() -> None:
     assert settings.policy_snapshot_hash == custom
 
 
+def test_explicit_default_policy_hash_is_kept_when_policy_id_changes() -> None:
+    settings = SignalSettings(
+        policy_id=SIGNAL_CUSTOM_POLICY_ID,
+        policy_snapshot_hash=DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
+    )
+    assert settings.policy_snapshot_hash == DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH
+
+
 def test_signal_env_policy_id_rebinds_hash(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(SIGNAL_POLICY_ID_ENV, SIGNAL_CUSTOM_POLICY_ID)
     get_settings.cache_clear()
