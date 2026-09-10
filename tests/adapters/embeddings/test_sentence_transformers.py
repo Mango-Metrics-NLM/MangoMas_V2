@@ -28,9 +28,7 @@ class _FakeModel:
 
     calls: list[list[str]] = field(default_factory=list)
 
-    def encode(
-        self, texts: list[str], *, show_progress_bar: bool = False
-    ) -> list[list[float]]:
+    def encode(self, texts: list[str], *, show_progress_bar: bool = False) -> list[list[float]]:
         assert show_progress_bar is False
         self.calls.append(list(texts))
         # Deterministic: each row is the char ordinals of its text.

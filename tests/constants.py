@@ -1142,6 +1142,7 @@ HARDWARE_CONTRACT_SCOPE: tuple[str, ...] = (
     "tests/lmstudio/*.py",
     "tests/vertex/*.py",
     "tests/rag/test_end_to_end*.py",
+    "tests/rag/test_cli_local_round_trip.py",
 )
 # Minimum number of files the scope must match. A glob that matches nothing
 # would make the lint vacuously green — the same fail-open shape

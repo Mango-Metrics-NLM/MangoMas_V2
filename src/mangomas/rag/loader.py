@@ -23,6 +23,8 @@ __all__ = ["RawDoc", "load_documents"]
 
 # Extensions treated as ingestable plain text when scanning a directory.
 _TEXT_SUFFIXES: frozenset[str] = frozenset({".txt", ".md"})
+
+
 @dataclass(frozen=True)
 class RawDoc:
     """An unchunked source document: its stable ``source`` id and raw ``text``."""

@@ -6,8 +6,8 @@
 
 ## Problem
 
-The repo documents that five core contracts (`core/agent.py`, `core/orchestrator.py`,
-`core/tools.py`, `errors.py`, `registry.py`) are protected: an edit must carry a
+The repo documents that six core contracts (`core/agent.py`, `core/orchestrator.py`,
+`core/structured.py`, `core/tools.py`, `errors.py`, `registry.py`) are protected: an edit must carry a
 `BREAKING-CHANGE` marker. In practice this has never been enforced.
 
 `.claude/settings.json`'s `PreToolUse` hook invokes

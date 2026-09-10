@@ -116,8 +116,18 @@ def test_ingest_then_query_round_trip_through_the_cli(
     assert query.exit_code == 0, query.output
     logger.info("CLI RAG round trip complete", extra={"device": device})
 
-    # The first ranked line names the source that should have won.
-    first_result = query.output.strip().splitlines()[0]
+    # Typer's CliRunner always mixes stderr into ``Result.output`` (StreamMixer;
+    # there is no mix_stderr=False). ``build_orchestrator`` logs INFO to stderr,
+    # so output[0] is a log line, not the ranking. User results are stdout.
+    first_result = _first_ranked_source_line(query.stdout)
     assert RAG_DEVICE_EXPECTED_TOP_SOURCE in first_result, (
-        f"expected {RAG_DEVICE_EXPECTED_TOP_SOURCE} ranked first, got: {query.output!r}"
+        f"expected {RAG_DEVICE_EXPECTED_TOP_SOURCE} ranked first, got: {query.stdout!r}"
     )
+
+
+def _first_ranked_source_line(stdout: str) -> str:
+    """Return the first CLI ranking line (``[1] score=... source=...``)."""
+    for line in stdout.splitlines():
+        if "source=" in line:
+            return line
+    raise AssertionError(f"no source= ranking line in stdout: {stdout!r}")

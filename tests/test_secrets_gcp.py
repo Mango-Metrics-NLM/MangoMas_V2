@@ -24,7 +24,7 @@ from mangomas.composition import _resolve_llm_secrets
 from mangomas.config import LLMSettings
 from mangomas.errors import SecretsResolutionError
 from mangomas.secrets import GCPSecretManagerProvider, SecretsProvider, secrets_registry
-from mangomas.secrets.gcp import _build_resource_path, _short_name
+from mangomas.secrets.gcp import _build_resource_path, _load_google_exceptions, _short_name
 
 # ── Synthetic Google exception modules ────────────────────────────────────────
 
@@ -138,6 +138,29 @@ FULL_PATH: str = f"projects/proj/secrets/{SHORT_NAME}/versions/latest"
 
 
 # ── path/short helpers ────────────────────────────────────────────────────────
+
+
+def test_load_google_exceptions_imports_when_absent_from_sys_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production arm: exception modules are imported, not pre-injected.
+
+    The autouse fixture (and every other test here) parks stand-ins in
+    ``sys.modules``, which left ``import_module`` (gcp.py:86) unmeasured and
+    dropped the secrets 100% floor. Stub the importer — do not pull the real
+    Google SDK into the default suite.
+    """
+    imported: list[str] = []
+    sentinel = types.ModuleType("google.api_core.exceptions")
+
+    def _import(name: str) -> types.ModuleType:
+        imported.append(name)
+        return sentinel
+
+    monkeypatch.delitem(sys.modules, "google.api_core.exceptions", raising=False)
+    monkeypatch.setattr("mangomas.secrets.gcp.import_module", _import)
+    assert _load_google_exceptions("google.api_core.exceptions") is sentinel
+    assert imported == ["google.api_core.exceptions"]
 
 
 def test_build_resource_path_for_short_id() -> None:

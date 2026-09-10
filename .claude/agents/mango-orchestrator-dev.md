@@ -23,6 +23,7 @@ for the trailer contract and for why a quiet `PreToolUse` hook proves nothing.
   - `dispatch` — single-agent, with optional acceptance loop
   - `dispatch_pipeline`
   - `dispatch_fan_out`
+  - `dispatch_fan_out_settled`
   - `stream_dispatch`
 - `src/mangomas/core/loop.py`: `AcceptanceFn` type alias
 
@@ -36,7 +37,7 @@ The declarative graph layer (`src/mangomas/workflow/`, owned by
 | `dispatch(name, request)` works with no other args | Default `acceptance_fn=None`, `max_steps=1` |
 | Existing OTel spans (`orchestrator.dispatch`, etc.) keep their names | Don't rename; add child spans if needed |
 | `AcceptanceFn` is sync | Async fn would couple orchestrator to its callers' event loop |
-| Step timeout uses `asyncio.wait_for` | Don't roll your own timer |
+| Step timeout uses `asyncio.timeout` | Don't roll your own timer |
 | Loop budget surfaces as `MaxStepsExceeded` (422) | Don't swallow; let the error envelope carry it |
 
 ## Constraints

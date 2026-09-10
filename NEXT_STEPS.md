@@ -40,9 +40,11 @@ and the D1–D9 sponsor-decision register live in the analysis doc):
   [0027](specs/0027-pipeline-acceptance-and-settled-fan-out.md) + ADR-0027).
   Also landed, outside the original tranche: the `composition.py` →
   `composition/` package decomposition (2026-08-30) — see "Done on the
-  composition-decomposition branch" below. Still open: structured-output
-  validation + a shipped planner→tool→reviewer flow (P0, no protected paths;
-  status not re-verified since the analysis doc was written); rate limiting
+  composition-decomposition branch" below. ✅ Structured-output validation
+  (`AgentSettings.validate_output`) and the shipped planner→tool→reviewer
+  graph (`examples/workflows/plan-execute-review.json`) landed — see
+  `tests/agents/test_structured_validation.py`, `tests/test_plan_execute_review.py`,
+  and the spec-0029 integration/LM Studio scenarios. Still open: rate limiting
   (P1, posture decision D5). ✅ `MODEL_OVERRIDE` wiring landed (spec-0028 /
   ADR-0028) — see "Done on the model-override branch" below.
 - **Phase 2 — verification honesty + adoption surface.** Executing homes for
@@ -105,7 +107,9 @@ Enterprise gap analysis, defect triage, and Level 4 C4 code architecture:
    and mock test stand-ins.
 3. **Dynamic contracts envelope timestamps**: Replaced static timestamp fixtures with
    dynamic UTC ISO timestamps in `tests/mango_contracts/constants.py`.
-4. **Cross-platform RAG document path equality**: Authored `PathString` in `src/mangomas/rag/loader.py`
+4. **Cross-platform RAG document path equality**: Canonical POSIX
+   `RawDoc.source` via `Path.as_posix()` / `Path.relative_to(...).as_posix()`
+   in `src/mangomas/rag/loader.py`.
    to ensure path equivalence across Windows (`\`) and POSIX (`/`) separators.
 5. **Sentence-transformers progress bar suppression**: Muted stdout progress bars (`show_progress_bar=False`)
    with backward-compatible mock fallback in `src/mangomas/adapters/embeddings/sentence_transformers.py`.
@@ -554,11 +558,10 @@ defects and a further round of duplication clusters via a full-repo audit:
   truth. **Still outstanding**: the `dag` node kind itself (ADR-0023 records
   the design — compile to a `Sequence`/`FanOut` tree at load time, absorbing
   only `main`'s `execution_levels()` algorithm — but does not implement it).
-- **Deferred tooling** — ruff `ASYNC`/`DTZ`/`C4`/`RET`/`PERF`/`C90` rule
-  families, a `pip-audit` job, a Python 3.13 matrix leg, a
-  `verify` job gating `deploy.yml`, and a `pre-commit run --all-files` CI job.
-  (`dependabot.yml` and scheduled automation are no longer on this list — both
-  landed on the governance-hardening branch.)
+- **Deferred tooling** — ruff `RET`/`PERF`/`C90` rule families, a
+  Python 3.13 matrix leg, and a `pre-commit run --all-files` CI job.
+  (`ASYNC`/`DTZ`/`C4`, `pip-audit`, `dependabot.yml`, scheduled automation,
+  and the `verify` job gating `deploy.yml` have landed.)
 - **Protected-paths CI job is not yet a required status check.** Spec-0017 R1
   intends the `protected-paths` job to be a merge-blocking required status
   check, but GitHub branch-protection settings are a repo-admin action under
