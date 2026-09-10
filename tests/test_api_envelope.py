@@ -128,7 +128,9 @@ def test_bodies_are_built_by_the_shared_function_at_runtime(
         return {**error_envelope(code, message, detail), ENVELOPE_MARKER_KEY: ENVELOPE_MARKER_VALUE}
 
     monkeypatch.setattr(api_errors, "error_envelope", marked_envelope)
-    monkeypatch.setattr(api_middleware, "error_envelope", marked_envelope)
+    # Seam proof (ADR-0019 amendment): the 413 body is built through the
+    # ``api_errors`` module object, so this one patch reaches middleware
+    # rejections without also rebinding ``api_middleware.error_envelope``.
 
     with TestClient(_backpressure_app()) as client:
         too_large = client.post(_ECHO_ROUTE, content=b"x" * (BACKPRESSURE_MAX_BODY_BYTES + 1))

@@ -40,7 +40,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.types import ASGIApp
 
-from mangomas.api.errors import error_envelope
+from mangomas.api import errors as api_errors
 from mangomas.correlation import (
     correlation_id as _correlation_var,
 )
@@ -54,6 +54,9 @@ from mangomas.tenancy import tenant_id as _tenant_var
 # ``error_envelope`` is deliberately part of this module's surface: the
 # middleware rejections and the app-level exception handler must build the
 # identical client-visible body (asserted by tests/test_api_envelope.py).
+# Call through the ``api_errors`` module object so a
+# ``monkeypatch.setattr(api_errors, "error_envelope", ...)`` reaches 413/503
+# after this file is split (ADR-0019 amendment).
 __all__ = [
     "AccessLogMiddleware",
     "ConcurrencyLimitMiddleware",
@@ -62,7 +65,9 @@ __all__ = [
     "error_envelope",
 ]
 
-logger = logging.getLogger(__name__)
+error_envelope = api_errors.error_envelope
+
+logger = logging.getLogger("mangomas.api.middleware")
 
 _REQUEST_ID_HEADER = "X-Request-ID"
 _BAGGAGE_KEY = "mangomas.correlation_id"
@@ -84,7 +89,7 @@ def _json_error(status_code: int, error: str, message: str) -> JSONResponse:
     Delegates the body shape to the shared :func:`error_envelope` so the
     middleware rejections and the exception handler can never drift apart.
     """
-    return JSONResponse(status_code=status_code, content=error_envelope(error, message))
+    return JSONResponse(status_code=status_code, content=api_errors.error_envelope(error, message))
 
 
 class MaxBodySizeMiddleware(BaseHTTPMiddleware):
