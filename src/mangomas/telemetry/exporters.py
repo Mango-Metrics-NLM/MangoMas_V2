@@ -58,7 +58,9 @@ def _lazy_cloud_trace_exporter() -> Any:  # pragma: no cover - requires gcp extr
         from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(_GCP_TRACE_INSTALL_HINT) from exc
-    return CloudTraceSpanExporter()  # type: ignore[no-untyped-call]
+    # The optional exporter package may not ship precise constructor metadata in
+    # every release, so this call site stays intentionally isolated in one seam.
+    return CloudTraceSpanExporter()
 
 
 _VALID_APP_EXPORTERS: frozenset[str] = frozenset({EXPORTER_CONSOLE, EXPORTER_GCP})

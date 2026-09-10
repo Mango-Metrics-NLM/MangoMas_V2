@@ -1,16 +1,9 @@
-"""AQA Regression Suite: Origin Defect Resolution Verification.
-
-Guards against regressions for defects triaged during the origin/feat/initial-release audit:
-1. RAG Loader PathString cross-platform path equality (Windows backslash vs POSIX forward slash).
-2. GCP Secret Manager dynamic exception binding in the presence of installed Google SDKs.
-3. Contracts envelope timestamp dynamicity (eliminating hardcoded expirations).
-4. Sentence-Transformers progress bar stdout suppression.
-5. Pytest ambient randomly plugin neutralization.
-"""
+"""AQA regression suite for the origin-defect fixes."""
 
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import types
 from datetime import UTC, datetime
@@ -18,54 +11,26 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-import sitecustomize  # noqa: F401
 from tests.mango_contracts.constants import TTL_ONE_DAY, envelope_base
 
 from mangomas.adapters.embeddings.sentence_transformers import (
     SentenceTransformersEmbeddingClient,
 )
 from mangomas.errors import SecretsResolutionError
-from mangomas.rag.loader import PathString, RawDoc
+from mangomas.rag.loader import RawDoc, load_documents
 from mangomas.secrets.gcp import GCPSecretManagerProvider
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
-@pytest.mark.parametrize(
-    ("posix_path", "windows_path"),
-    [
-        ("C:/Users/test/folder/file.txt", "C:\\Users\\test\\folder\\file.txt"),
-        ("relative/path/to/doc.md", "relative\\path\\to\\doc.md"),
-        ("//server/share/folder/file.txt", "\\\\server\\share\\folder\\file.txt"),
-        ("deep/nested/a/b/c/d/e.py", "deep\\nested\\a\\b\\c\\d\\e.py"),
-        ("", ""),
-    ],
-)
-def test_path_string_cross_platform_equality(posix_path: str, windows_path: str) -> None:
-    """PathString compares equal regardless of forward or backward slashes across path varieties."""
-    ps = PathString(posix_path)
+async def test_rag_loader_emits_canonical_posix_sources(tmp_path: Path) -> None:
+    """Document sources stay canonical via ``Path.as_posix()``."""
+    nested = tmp_path / "nested" / "doc.md"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("sample", encoding="utf-8")
 
-    # Identical string comparison
-    assert ps == posix_path
-    # Cross-platform equivalent path comparison
-    assert ps == windows_path
-    assert windows_path == ps
-    assert ps == Path(windows_path)
-    assert Path(posix_path) == ps
+    docs = await load_documents(str(tmp_path))
 
-    # Hash consistency matches wrapped str
-    assert hash(ps) == hash(posix_path)
-
-    # RawDoc integration
-    doc = RawDoc(source=ps, text="sample")
-    assert doc.source == windows_path
-    assert doc.source == posix_path
-
-
-def test_path_string_inequality_on_different_paths() -> None:
-    """PathString does not match genuinely different paths."""
-    ps = PathString("path/to/file_a.txt")
-    assert ps != "path/to/file_b.txt"
-    assert ps != Path("path/to/file_b.txt")
-    assert ps != 42  # type: ignore[comparison-overlap]
+    assert docs == [RawDoc(source="nested/doc.md", text="sample")]
 
 
 @pytest.mark.parametrize(
@@ -105,13 +70,19 @@ def test_gcp_secrets_dynamic_exception_resolution(
     class _CustomGoogleAPIError(Exception):
         pass
 
+    class _CustomDefaultCredentialsError(Exception):
+        pass
+
     mock_gax = types.ModuleType("google.api_core.exceptions")
     mock_gax.NotFound = _CustomNotFound  # type: ignore[attr-defined]
     mock_gax.PermissionDenied = _CustomPermissionDenied  # type: ignore[attr-defined]
     mock_gax.Unauthenticated = _CustomUnauthenticated  # type: ignore[attr-defined]
     mock_gax.DeadlineExceeded = _CustomDeadlineExceeded  # type: ignore[attr-defined]
     mock_gax.GoogleAPIError = _CustomGoogleAPIError  # type: ignore[attr-defined]
+    mock_gauth_exc = types.ModuleType("google.auth.exceptions")
+    mock_gauth_exc.DefaultCredentialsError = _CustomDefaultCredentialsError  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "google.api_core.exceptions", mock_gax)
+    monkeypatch.setitem(sys.modules, "google.auth.exceptions", mock_gauth_exc)
 
     exc_class = getattr(mock_gax, exc_name)
     mock_client = MagicMock()
@@ -161,7 +132,6 @@ def test_contracts_envelope_timestamps_are_dynamically_valid() -> None:
     assert abs(diff - TTL_ONE_DAY) < 5
 
 
-@pytest.mark.asyncio
 async def test_sentence_transformer_encodes_without_progress_bar() -> None:
     """SentenceTransformersEmbeddingClient disables show_progress_bar for clean stdout."""
     mock_model = MagicMock()
@@ -174,25 +144,34 @@ async def test_sentence_transformer_encodes_without_progress_bar() -> None:
     mock_model.encode.assert_called_once_with(["test text"], show_progress_bar=False)
 
 
-@pytest.mark.asyncio
-async def test_sentence_transformer_fallback_when_mock_lacks_kwarg() -> None:
-    """SentenceTransformersEmbeddingClient falls back if model lacks show_progress_bar."""
-    mock_model = MagicMock()
+async def test_sentence_transformer_injected_fake_accepts_progress_bar_kwarg() -> None:
+    """Injected fakes can match the supported encode API."""
 
-    def _encode_mock(_texts: list[str], **kwargs: object) -> list[list[float]]:
-        if "show_progress_bar" in kwargs:
-            raise TypeError("unexpected keyword argument 'show_progress_bar'")
-        return [[0.4, 0.5, 0.6]]
+    class _FakeModel:
+        def encode(
+            self, texts: list[str], *, show_progress_bar: bool = False
+        ) -> list[list[float]]:
+            assert show_progress_bar is False
+            return [[float(len(texts[0])), 0.5, 0.6]]
 
-    mock_model.encode.side_effect = _encode_mock
-
-    client = SentenceTransformersEmbeddingClient(model="dummy-model", client=mock_model)
+    client = SentenceTransformersEmbeddingClient(model="dummy-model", client=_FakeModel())
     vectors = await client.embed_batch(["fallback text"])
 
-    assert vectors == [[0.4, 0.5, 0.6]]
+    assert vectors == [[13.0, 0.5, 0.6]]
 
 
 def test_sitecustomize_protects_pytest_environment() -> None:
-    """sitecustomize.py configures PYTEST_ADDOPTS to neutralize pytest-randomly."""
-    pytest_addopts = os.environ.get("PYTEST_ADDOPTS", "")
-    assert "-p no:randomly" in pytest_addopts
+    """A clean child process auto-loads ``sitecustomize.py`` from the repo root."""
+    env = os.environ.copy()
+    env.pop("PYTEST_ADDOPTS", None)
+    env["PYTHONPATH"] = str(_REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    result = subprocess.run(
+        [sys.executable, "-c", "import os; print(os.environ.get('PYTEST_ADDOPTS', ''))"],
+        cwd=_REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "-p no:randomly" in result.stdout.strip()

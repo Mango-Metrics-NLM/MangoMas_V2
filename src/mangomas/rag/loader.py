@@ -5,9 +5,10 @@ and ``*.md`` file beneath it (recursively, sorted for deterministic ordering).
 All filesystem access runs inside :func:`asyncio.to_thread` so the async
 ingestion path never blocks the event loop (CLAUDE.md async-I/O rule).
 
-The ``source`` of each :class:`RawDoc` is the path as given for a single file,
-or the path relative to the loaded directory — a stable identifier the pipeline
-writes into chunk metadata so re-ingestion can target it for deletion.
+The ``source`` of each :class:`RawDoc` is stored as a canonical POSIX string:
+``Path.as_posix()`` for a single file, or the POSIX relative path beneath the
+loaded directory. That stable identifier is written into chunk metadata so
+re-ingestion can target it for deletion.
 """
 
 from __future__ import annotations
@@ -18,30 +19,10 @@ from pathlib import Path
 
 from mangomas.errors import ConfigError
 
-__all__ = ["PathString", "RawDoc", "load_documents"]
+__all__ = ["RawDoc", "load_documents"]
 
 # Extensions treated as ingestable plain text when scanning a directory.
 _TEXT_SUFFIXES: frozenset[str] = frozenset({".txt", ".md"})
-
-
-class PathString(str):
-    """A string subclass that compares equal to both POSIX and OS-native paths."""
-
-    def __eq__(self, other: object) -> bool:
-        res = super().__eq__(other)
-        if res is True:
-            return True
-        if isinstance(other, (str, Path)):
-            try:
-                return Path(self) == Path(other)
-            except Exception:
-                return False
-        return False
-
-    def __hash__(self) -> int:
-        return super().__hash__()
-
-
 @dataclass(frozen=True)
 class RawDoc:
     """An unchunked source document: its stable ``source`` id and raw ``text``."""
@@ -73,9 +54,9 @@ def _load_documents_sync(path: str) -> list[RawDoc]:
         files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in _TEXT_SUFFIXES)
         return [
             RawDoc(
-                source=PathString(p.relative_to(root).as_posix()),
+                source=p.relative_to(root).as_posix(),
                 text=p.read_text(encoding="utf-8"),
             )
             for p in files
         ]
-    return [RawDoc(source=PathString(root.as_posix()), text=root.read_text(encoding="utf-8"))]
+    return [RawDoc(source=root.as_posix(), text=root.read_text(encoding="utf-8"))]

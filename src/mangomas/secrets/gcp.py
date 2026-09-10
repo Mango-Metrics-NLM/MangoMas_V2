@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
 from mangomas.errors import SecretsResolutionError
@@ -75,6 +76,14 @@ def _short_name(name: str) -> str:
         return parts[idx + 1]
     except (ValueError, IndexError):  # pragma: no cover  -- malformed
         return name
+
+
+def _load_google_exceptions(module_name: str) -> Any:
+    """Return the active Google exceptions module, honoring injected test doubles."""
+    module = sys.modules.get(module_name)
+    if module is not None:
+        return module
+    return import_module(module_name)
 
 
 class GCPSecretManagerProvider:
@@ -171,14 +180,8 @@ class GCPSecretManagerProvider:
         See module docstring + ADR-002 for the rationale behind collapsing
         all failure modes into ``None``.
         """
-        if "google.api_core.exceptions" in sys.modules:
-            gax = sys.modules["google.api_core.exceptions"]
-        else:  # pragma: no cover
-            from google.api_core import exceptions as gax  # noqa: PLC0415
-        if "google.auth.exceptions" in sys.modules:
-            gauth_exc = sys.modules["google.auth.exceptions"]
-        else:  # pragma: no cover
-            from google.auth import exceptions as gauth_exc  # noqa: PLC0415
+        gax = _load_google_exceptions("google.api_core.exceptions")
+        gauth_exc = _load_google_exceptions("google.auth.exceptions")
 
         resource_path = _build_resource_path(
             name,

@@ -24,11 +24,14 @@ from tests.constants import (
 
 @dataclass
 class _FakeModel:
-    """Mimics ``SentenceTransformer``: ``encode(texts)`` returns one row per text."""
+    """Mimics ``SentenceTransformer.encode`` with the progress-bar kwarg."""
 
     calls: list[list[str]] = field(default_factory=list)
 
-    def encode(self, texts: list[str]) -> list[list[float]]:
+    def encode(
+        self, texts: list[str], *, show_progress_bar: bool = False
+    ) -> list[list[float]]:
+        assert show_progress_bar is False
         self.calls.append(list(texts))
         # Deterministic: each row is the char ordinals of its text.
         return [[float(ord(c)) for c in t] or [0.0] for t in texts]
