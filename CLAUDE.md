@@ -102,7 +102,8 @@ src/mangomas/
 │   ├── app.py          FastAPI app factory (lifespan, middleware installation)
 │   ├── errors.py       Error-status mapping, error-envelope builder
 │   ├── models.py       DTO models (WorkflowRunRequest, WorkflowValidateRequest/Response)
-│   ├── middleware.py   MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
+│   ├── middleware/     MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
+│   │                   (ADR-0019 facade; install order unchanged)
 │   └── routes/         Endpoint routers by resource
 │       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
 │       ├── system.py   /healthz + /health, /readyz + /ready, GET /agents
@@ -452,7 +453,7 @@ when". Name them directly:
 | `mango-cli-dev` | `cli/` — the `main.py` facade, `_app` assembly order, the `_runtime` seam |
 | `mango-harness-dev` | `harness/` + the four `scripts/` harness entry points |
 | `mango-ci-dev` | `Makefile`, `.github/workflows/`, `dependabot.yml`, `deploy/`, `tests/deploy/` |
-| `mango-api-impl-dev` | The FastAPI assembly layer — `create_app` + middleware order, `middleware.py`, `auth.py`, `health.py`, `tracing.py`, the system/workflow routers, `tenancy.py` |
+| `mango-api-impl-dev` | The FastAPI assembly layer — `create_app` + middleware order, `api/middleware/`, `auth.py`, `health.py`, `tracing.py`, the system/workflow routers, `tenancy.py` |
 
 **Agents vs skills.** They are different things and the tie-break matters:
 **skills own procedure** (the recipe for doing X), **agents own a surface** —

@@ -90,6 +90,11 @@ _FACADES: dict[str, tuple[str, ...]] = {
         "storage",
         "vector",
     ),
+    "mangomas.api.middleware": (
+        "access_log",
+        "backpressure",
+        "tenancy",
+    ),
 }
 
 
@@ -209,6 +214,9 @@ _PRIVATE_FACADE_CONTRACT: dict[str, dict[str, str]] = {
         "_vector_registry": "_registries",
         "_vertex_embedding_factory": "embeddings",
         "_vertex_factory": "llm",
+    },
+    "mangomas.api.middleware": {
+        "_BAGGAGE_KEY": "access_log",
     },
 }
 
@@ -548,6 +556,44 @@ def test_every_owned_public_name_reaches_the_composition_facade() -> None:
     assert stranded == [], (
         f"public names not re-exported by mangomas.composition: {sorted(stranded)}"
     )
+
+
+# ── API middleware facade (ADR-0019, applied again) ───────────────────────────
+
+
+@pytest.mark.parametrize("submodule", _FACADES["mangomas.api.middleware"])
+def test_middleware_facade_reexports_are_identical_objects(submodule: str) -> None:
+    facade_mod = importlib.import_module("mangomas.api.middleware")
+    home = importlib.import_module(f"mangomas.api.middleware.{submodule}")
+    for name in _owned_names("mangomas.api.middleware", submodule):
+        if not hasattr(facade_mod, name):
+            continue
+        assert getattr(facade_mod, name) is getattr(home, name), (
+            f"mangomas.api.middleware.{name} is not the same object as "
+            f"mangomas.api.middleware.{submodule}.{name}"
+        )
+
+
+def test_every_owned_middleware_name_reaches_the_facade() -> None:
+    stranded: list[str] = []
+    facade_mod = importlib.import_module("mangomas.api.middleware")
+    for submodule in _FACADES["mangomas.api.middleware"]:
+        for name in _owned_names("mangomas.api.middleware", submodule):
+            if not hasattr(facade_mod, name):
+                stranded.append(f"{submodule}.{name}")
+    assert stranded == [], (
+        f"public names not re-exported by mangomas.api.middleware: {sorted(stranded)}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "home"), sorted(_PRIVATE_FACADE_CONTRACT["mangomas.api.middleware"].items())
+)
+def test_middleware_private_contract_names_are_identical(name: str, home: str) -> None:
+    facade_mod = importlib.import_module("mangomas.api.middleware")
+    home_mod = importlib.import_module(f"mangomas.api.middleware.{home}")
+    assert hasattr(facade_mod, name), f"mangomas.api.middleware no longer re-exports {name!r}"
+    assert getattr(facade_mod, name) is getattr(home_mod, name)
 
 
 # ── core.tools facade (spec-0015 R4) ─────────────────────────────────────────

@@ -62,7 +62,7 @@ client ──► X-Request-ID: abc12345 ──► │ AccessLogMiddleware       
 
 - **`src/mangomas/correlation.py`** — `ContextVar`, `CorrelationFilter`,
   `set_correlation_id()`, `get_correlation_id()`, `generate_correlation_id()`.
-- **`src/mangomas/api/middleware.py`** — `AccessLogMiddleware` reads/echoes
+- **`src/mangomas/api/middleware/`** — `AccessLogMiddleware` reads/echoes
   `X-Request-ID`, sets the ContextVar, attaches OTel baggage, and detaches
   cleanly in the `finally` block so the ContextVar does not leak across
   requests.

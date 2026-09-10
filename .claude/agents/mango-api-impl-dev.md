@@ -1,6 +1,6 @@
 ---
 name: mango-api-impl-dev
-description: "Owns the FastAPI assembly layer: the create_app factory and its middleware install order, api/middleware.py, auth.py, health.py, tracing.py, and the system/workflows routers. SSE framing, DTO shape and the status table belong to their own agents. Invoked by name, not by topic match."
+description: "Owns the FastAPI assembly layer: the create_app factory and its middleware install order, api/middleware/, auth.py, health.py, tracing.py, and the system/workflows routers. SSE framing, DTO shape and the status table belong to their own agents. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -17,8 +17,9 @@ adding a tunable — do not restate either here.
 ## Surface You Own
 - `src/mangomas/api/app.py` — `create_app`, `_lifespan`, `_install_backpressure`,
   `_install_tenancy`, and the middleware install order
-- `src/mangomas/api/middleware.py` — `MaxBodySizeMiddleware`,
+- `src/mangomas/api/middleware/` — `MaxBodySizeMiddleware`,
   `ConcurrencyLimitMiddleware`, `TenancyMiddleware`, `AccessLogMiddleware`
+  behind an ADR-0019 facade; `create_app` install order is unchanged
 - `src/mangomas/api/tracing.py` — `TraceMiddleware` and W3C context extraction
 - `src/mangomas/api/auth.py` — `resolve_auth_state` / `require_auth` (ADR-0014)
 - `src/mangomas/api/health.py` — `ReadinessReport` and `check_ready`

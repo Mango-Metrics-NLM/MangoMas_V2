@@ -56,6 +56,11 @@ Versioning: [Semantic Versioning](https://semver.org/).
   removed from `chunk_text`; Settings field, env-example row, and CLAUDE.md /
   README rows gone (`tests/rag/test_chunker.py`,
   `tests/deploy/test_env_example_contract.py`). Leftover env vars stay ignored.
+- **API middleware package**: `api/middleware.py` is an ADR-0019 facade over
+  `backpressure`, `tenancy`, and `access_log`. OpenAPI snapshot unchanged.
+  Logger name stays `mangomas.api.middleware`. Locked by
+  `test_bodies_are_built_by_the_shared_function_at_runtime` and
+  `tests/test_middleware.py`.
 
 - **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
   package `mango-integration-contracts` (`mango_contracts`) shared with the

@@ -88,7 +88,7 @@ Spans are always on; **metrics are opt-in** (`MANGOMAS_TELEMETRY__METRICS_ENABLE
 | `src/mangomas/metrics.py` | Opt-in metric record helpers (`record_agent_invocation` / `_error` / `_duration`) |
 | `src/mangomas/correlation.py` | Correlation `ContextVar` + `CorrelationFilter` (picked up by both formatters) |
 | `src/mangomas/core/orchestrator.py` | Reference span usage in `dispatch`, `dispatch_pipeline`, `dispatch_fan_out`, `stream_dispatch` |
-| `src/mangomas/api/middleware.py` | `AccessLogMiddleware` — HTTP-layer instrumentation example |
+| `src/mangomas/api/middleware/` | `AccessLogMiddleware` — HTTP-layer instrumentation example |
 | `src/mangomas/api/tracing.py` | HTTP request span emitter |
 | `docs/architecture/observability.md` | Architectural overview |
 | `tests/test_telemetry.py` | Coverage of the bootstrap + JSON output |
