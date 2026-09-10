@@ -163,7 +163,7 @@ flowchart LR
 
 ## 5. Declarative Workflow Graph (`src/mangomas/workflow/`)
 
-The workflow engine executes a bounded acyclic workflow tree defined as inline JSON or a JSON file:
+The workflow engine executes a bounded workflow tree defined as inline JSON or a JSON file. The graph shape stays tree-structured, while `LoopNode` adds bounded re-dispatch at runtime rather than a structural cycle in the JSON:
 
 - **`WorkflowGraph`**: Frozen Pydantic model with a single `root` node.
 - **`WorkflowNode` Hierarchy**:
