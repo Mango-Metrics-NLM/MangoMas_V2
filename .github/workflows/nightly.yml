@@ -38,10 +38,10 @@ jobs:
     name: Postgres suite (testcontainers)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -56,10 +56,10 @@ jobs:
     name: Local embeddings + RAG suite (CPU)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -96,7 +96,7 @@ jobs:
     name: Secret scan (working tree + history)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The `git` pass scans committed history, so it needs all of it.
           fetch-depth: 0
@@ -110,7 +110,7 @@ jobs:
       # planted secrets and requires it to still fail. It lives here rather
       # than in the unit suite because that suite is fully offline.
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -120,6 +120,19 @@ jobs:
 
       - name: Prove the secret scan can still fail
         run: make gitleaks-selftest
+
+  sbom-scan:
+    name: SBOM / Trivy (baseline, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      # First scan is a baseline: the Make target uses `--exit-code 0` so
+      # findings do not fail the job. Not a PR CI gate. continue-on-error
+      # covers download flakes on this first landing.
+      - name: CycloneDX SBOM and Trivy filesystem scan
+        run: make sbom-scan
 
   # A scheduled run nobody watches is a gate that reports to no one. GitHub
   # emails only the account that last touched the cron, and only for the
@@ -134,7 +147,7 @@ jobs:
   notify:
     name: File a tracking issue on failure
     runs-on: ubuntu-latest
-    needs: [postgres, embeddings-local, secret-scan]
+    needs: [postgres, embeddings-local, secret-scan, sbom-scan]
     if: failure()
     permissions:
       issues: write

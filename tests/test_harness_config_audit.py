@@ -145,6 +145,46 @@ def test_main_block_mode_never_blocks_policy_settings(monkeypatch: pytest.Monkey
     assert hook.main() == hook.EXIT_OK
 
 
+def test_main_audit_mode_audits_a_governed_source(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """In-process cover for the ``action == "audit"`` arm (scripts floor)."""
+    monkeypatch.setenv("MANGOMAS_HARNESS__CONFIG_AUDIT_MODE", "audit")
+    config_module.get_settings.cache_clear()
+    monkeypatch.setattr(sys, "stdin", StringIO(json.dumps({"source": "project_settings"})))
+    caplog.set_level(logging.WARNING, logger=hook.__name__)
+    assert hook.main() == hook.EXIT_OK
+    assert any("Config change audited" in rec.message for rec in caplog.records)
+
+
+def test_configure_logging_falls_back_when_telemetry_raises(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """In-process cover for ``_configure_logging``'s except (scripts floor)."""
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("telemetry boom")
+
+    monkeypatch.setattr("mangomas.telemetry.configure_telemetry", _boom)
+    caplog.set_level(logging.WARNING, logger=hook.__name__)
+    hook._configure_logging()
+    assert any("falling back to basicConfig" in rec.message for rec in caplog.records)
+
+
+def test_resolve_mode_falls_back_when_settings_raise(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """In-process cover for ``_resolve_mode``'s except (scripts floor)."""
+
+    def _boom() -> object:
+        raise RuntimeError("settings boom")
+
+    monkeypatch.setattr("mangomas.config.get_settings", _boom)
+    caplog.set_level(logging.WARNING, logger=hook.__name__)
+    assert hook._resolve_mode() == hook._FALLBACK_CONFIG_AUDIT_MODE
+    assert any("Harness settings unavailable" in rec.message for rec in caplog.records)
+
+
 # ── Subprocess-level: real invocation shape, real degrade-gracefully proof ──
 
 

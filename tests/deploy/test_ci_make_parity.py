@@ -335,7 +335,7 @@ def test_isolated_coverage_floors_are_pinned() -> None:
     weaken an isolated gate with no review record. Bumping a floor is fine;
     doing it invisibly is not, and updating this line is the record.
     """
-    assert int(_makefile_variable("SCRIPTS_FLOOR")) == 92
+    assert int(_makefile_variable("SCRIPTS_FLOOR")) == 94
     assert int(_makefile_variable("BRIDGE_FLOOR")) == 100
     assert int(_makefile_variable("CONTRACTS_FLOOR")) == 100
 
@@ -422,6 +422,12 @@ def test_nightly_jobs_delegate_to_make() -> None:
         # clean tree, so the green above is only meaningful alongside this.
         "make gitleaks-selftest",
     ]
+    assert _step_run_commands(jobs["sbom-scan"]) == ["make sbom-scan"]
+
+
+def test_gate_does_not_include_sbom_scan() -> None:
+    """The first Trivy/SBOM scan must not block PR CI or `make gate`."""
+    assert "sbom-scan" not in _make_target_body("gate")
 
 
 def test_nightly_is_scheduled_and_manually_dispatchable() -> None:

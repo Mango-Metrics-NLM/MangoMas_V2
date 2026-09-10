@@ -33,11 +33,10 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
 # per-package gate while measuring nothing, and no coverage number could
 # reveal it. tests/test_check_coverage.py now drives both against a stubbed
 # subprocess and the file sits at 100%, so the floor ratchets 84 -> 92.
-# Set to the measured actual minus a small safety margin rather than an
-# assumed 95 (see spec-0017 R7 and A7); ratchet again as scripts/ gains tests
-# — the remaining gaps are harness_config_audit.py (85%) and the two
-# bare-interpreter ImportError arms in harness_session_start.py.
-SCRIPTS_FLOOR ?= 92
+# 2026-09-10: harness_config_audit.py is 100% in-process and the remaining
+# session-start gap is the two module-level ImportError arms (subprocess-
+# only). Measured 96%; floor 94 (same two-point margin as 94 vs 92).
+SCRIPTS_FLOOR ?= 94
 # Pinned once, here — ci.yml's secret-scan job no longer repeats this literal
 # inline; it just calls `make secret-scan` like every other job calls its own
 # target below. The `dir`/`git` subcommands the recipe relies on exist from
@@ -54,13 +53,17 @@ GITLEAKS_CONFIG ?= .gitleaks.toml
 # gitleaks pattern above — its version is pinned here rather than in
 # pyproject. Update deliberately; the pin is the review record.
 PIP_AUDIT_VERSION ?= 2.10.1
+# SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
+# release's own checksums.txt. Update both together when bumping the version.
+TRIVY_VERSION ?= 0.74.0
+TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
 
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck lint-imports frontmatter \
         protected-paths test test-xml \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        gated-suites embeddings-local secret-scan pip-audit
+        gated-suites embeddings-local secret-scan pip-audit sbom-scan
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -212,6 +215,20 @@ pip-audit: ## Audit installed dependencies for known CVEs (downloads the advisor
 	# which is not on PyPI and would otherwise fail resolution.
 	$(PYTHON) -m pip_audit --skip-editable
 
+sbom-scan: ## CycloneDX SBOM + Trivy fs scan (downloads a pinned binary; needs network, not part of gate)
+	# Same download-and-verify pattern as secret-scan. Baseline scan: findings
+	# do not fail (`--exit-code 0`); ratchet to 1 once the report has an owner.
+	# Not in `make gate` or PR CI — first scan is nightly-only.
+	curl -fsSL -o trivy.tar.gz \
+	  "https://github.com/aquasecurity/trivy/releases/download/v$(TRIVY_VERSION)/trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz"
+	echo "$(TRIVY_SHA256)  trivy.tar.gz" | sha256sum -c -
+	tar -xzf trivy.tar.gz trivy
+	chmod +x trivy
+	rm -f trivy.tar.gz
+	./trivy --version
+	./trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format table .
+	./trivy fs --format cyclonedx --output sbom.cdx.json .
+
 # ── Misc ─────────────────────────────────────────────────────────────────────
 
 serve: ## Run the API with reload (factory pattern required)
@@ -219,5 +236,6 @@ serve: ## Run the API with reload (factory pattern required)
 
 clean: ## Remove caches and coverage artefacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .import_linter_cache .hypothesis htmlcov \
-	       .coverage .coverage.* coverage.xml gitleaks gitleaks.tar.gz
+	       .coverage .coverage.* coverage.xml gitleaks gitleaks.tar.gz \
+	       trivy trivy.tar.gz sbom.cdx.json
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

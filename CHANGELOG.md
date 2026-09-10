@@ -72,6 +72,14 @@ Versioning: [Semantic Versioning](https://semver.org/).
   importing `adapters` / `api` / `agents` / `workflow` (TYPE_CHECKING
   imports excluded). Required GitHub checks documented in CONTRIBUTING.
   Locked by `tests/deploy/test_ci_make_parity.py`.
+- **Scripts coverage ratchet**: remaining `harness_config_audit.py` arms
+  and `harness_session_start.py`'s probe-except are covered in-process;
+  `SCRIPTS_FLOOR` 92 → 94. Adapters stay 85%. `coverage[toml]==7.16.0`
+  evaluated with `pytest-cov==7.1.0`. First-party Actions
+  `checkout`/`setup-python` tags move to v7. Optional nightly
+  `make sbom-scan` (Trivy baseline, `--exit-code 0`, not a PR gate).
+  Locked by `tests/deploy/test_ci_make_parity.py`,
+  `tests/test_harness_config_audit.py::test_main_audit_mode_audits_a_governed_source`.
 
 - **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
   package `mango-integration-contracts` (`mango_contracts`) shared with the

@@ -101,6 +101,16 @@ def test_main_returns_exit_ok_when_mangomas_missing(
     assert hook.main() == hook.EXIT_OK
 
 
+def test_main_probe_skipped_when_settings_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In-process cover for ``main``'s get_settings/_probe except (scripts floor)."""
+
+    def _boom() -> object:
+        raise RuntimeError("settings boom")
+
+    monkeypatch.setattr(hook, "get_settings", _boom)
+    assert hook.main() == hook.EXIT_OK
+
+
 def test_bare_interpreter_exits_ok(tmp_path: Path) -> None:
     """The script must exit 0 with httpx AND mangomas unimportable.
 

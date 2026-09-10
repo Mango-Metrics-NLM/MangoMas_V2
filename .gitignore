@@ -27,6 +27,9 @@ coverage.xml
 # leaves both sitting in the repo root.
 gitleaks
 gitleaks.tar.gz
+trivy
+trivy.tar.gz
+sbom.cdx.json
 
 # Env / secrets
 .env
