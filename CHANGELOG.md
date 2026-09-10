@@ -68,6 +68,10 @@ Versioning: [Semantic Versioning](https://semver.org/).
   and `tests/tooling/test_corpus_contract.py`.
 - **Composition tests split by subdomain** under `tests/composition/`.
   Locked by `tests/test_import_compat.py` facade identity tests.
+- **Import-linter layering**: `make lint-imports` forbids `core` from
+  importing `adapters` / `api` / `agents` / `workflow` (TYPE_CHECKING
+  imports excluded). Required GitHub checks documented in CONTRIBUTING.
+  Locked by `tests/deploy/test_ci_make_parity.py`.
 
 - **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
   package `mango-integration-contracts` (`mango_contracts`) shared with the

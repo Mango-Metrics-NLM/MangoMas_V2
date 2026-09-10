@@ -93,6 +93,7 @@ def test_lint_job_delegates_every_step_to_make() -> None:
         "make format-check",
         "make frontmatter",
         "make typecheck",
+        "make lint-imports",
     ]
 
 
@@ -342,6 +343,12 @@ def test_isolated_coverage_floors_are_pinned() -> None:
 def test_gate_includes_contracts_coverage() -> None:
     """The isolated contracts floor must stay in `make gate`, not CI-only."""
     assert "contracts-coverage" in _make_target_body("gate")
+
+
+def test_gate_includes_lint_imports() -> None:
+    """Import-linter is a Make target pinned by CI↔Make parity, not CI-only."""
+    assert "lint-imports" in _make_target_body("gate")
+    assert "importlinter" in _make_target_body("lint-imports")
 
 
 def test_makefile_install_installs_integration_contracts() -> None:

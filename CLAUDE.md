@@ -38,7 +38,8 @@ pre-commit run --all-files
 ```
 
 Every CI command is also wrapped as a `Makefile` target — `make gate` runs the
-whole pipeline (validate-config, lint, format-check, typecheck, frontmatter,
+whole pipeline (validate-config, lint, format-check, typecheck, lint-imports,
+frontmatter,
 protected-paths, test, per-package coverage, bridge coverage, contracts
 coverage, scripts coverage)
 in CI's order — note `protected-paths` runs locally too, not only in CI; `make help` lists the rest. Prefer it

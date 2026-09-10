@@ -56,7 +56,7 @@ GITLEAKS_CONFIG ?= .gitleaks.toml
 PIP_AUDIT_VERSION ?= 2.10.1
 
 .DEFAULT_GOAL := help
-.PHONY: help install validate-config lint format format-check typecheck frontmatter \
+.PHONY: help install validate-config lint format format-check typecheck lint-imports frontmatter \
         protected-paths test test-xml \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
@@ -88,6 +88,11 @@ format-check: ## ruff format --check
 
 typecheck: ## mypy --strict
 	$(PYTHON) -m mypy --strict $(CODE_PATHS)
+
+lint-imports: ## import-linter contracts (core ↛ adapters/api/agents/workflow)
+	# Invoked through $(PYTHON) so `make PYTHON=python3 lint-imports` cannot
+	# pick a different interpreter's copy of the exact-pinned extra.
+	$(PYTHON) -c "from importlinter.cli import lint_imports; raise SystemExit(lint_imports(no_logo=True))"
 
 frontmatter: ## Validate .claude/agents + .claude/skills frontmatter
 	$(PYTHON) scripts/lint_agent_frontmatter.py
@@ -130,7 +135,7 @@ scripts-coverage: ## scripts/ isolated coverage gate (measured floor — see SCR
 	  $(SCRIPTS_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.scripts $(PYTHON) -m coverage report --show-missing --fail-under=$(SCRIPTS_FLOOR)
 
-gate: validate-config lint format-check typecheck frontmatter protected-paths test coverage bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
+gate: validate-config lint format-check typecheck lint-imports frontmatter protected-paths test coverage bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
 
 precommit: ## Run every pre-commit hook over the whole tree
 	pre-commit run --all-files
@@ -213,6 +218,6 @@ serve: ## Run the API with reload (factory pattern required)
 	$(PYTHON) -m uvicorn mangomas.api.app:create_app --factory --reload
 
 clean: ## Remove caches and coverage artefacts
-	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis htmlcov \
+	rm -rf .pytest_cache .mypy_cache .ruff_cache .import_linter_cache .hypothesis htmlcov \
 	       .coverage .coverage.* coverage.xml gitleaks gitleaks.tar.gz
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

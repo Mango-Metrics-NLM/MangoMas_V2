@@ -46,6 +46,30 @@ table, and read from there by both `src/mangomas/harness/governance.py` and
 
 ---
 
+## Required GitHub checks (admin)
+
+These jobs must be required status checks on `feat/initial-release`. That is
+what would have blocked #58 (format + secrets floor) from merging red. This
+file cannot flip the GitHub setting — a repo admin has to mark them required:
+
+| Job name in `ci.yml` | Make target |
+|---|---|
+| Lint & type-check | `validate-config`, `lint`, `format-check`, `frontmatter`, `typecheck`, `lint-imports` |
+| Test (Python 3.11) | `test-xml`, `coverage`, `gated-suites` |
+| Test (Python 3.12) | same |
+| Protected-path governance gate | `protected-paths` |
+| Scripts coverage gate | `scripts-coverage` |
+| Bridge coverage gate | `bridge-coverage` |
+| Contracts coverage gate | `contracts-coverage` |
+| Dependency vulnerability audit | `pip-audit` |
+| Secret scan | `secret-scan` |
+
+Do not generate `CODEOWNERS` from the Claude Code skill roster
+(`AGENT_SKILL_OWNERS`). Ownership for source surfaces is the corpus contract,
+not GitHub code owners.
+
+---
+
 ## Workflow
 
 1. **Spec first** for anything non-trivial. Copy `specs/TEMPLATE.md` to

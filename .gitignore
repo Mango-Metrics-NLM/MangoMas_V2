@@ -20,6 +20,7 @@ coverage.xml
 # Type checkers / linters
 .mypy_cache/
 .ruff_cache/
+.import_linter_cache/
 
 # Secret scanning — downloaded release binary + archive (make secret-scan).
 # CI downloads fresh into an ephemeral runner and discards it; a local run

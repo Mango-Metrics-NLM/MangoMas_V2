@@ -46,6 +46,9 @@ dev = [
     # Exact-pinned in lockstep with the mirrors-mypy rev in
     # .pre-commit-config.yaml, for the same reason as the ruff pin above.
     "mypy==2.3.0",
+    # Exact-pinned: contract semantics and the TYPE_CHECKING exclusion flag
+    # change between releases. `make lint-imports` is the one invocation.
+    "import-linter==2.15",
     "httpx>=0.27",
     "hypothesis>=6.100",
     # Used by scripts/lint_agent_frontmatter.py (the Claude Code harness linter).
@@ -351,4 +354,22 @@ exclude_lines = [
     "raise NotImplementedError",
     "^\\s*\\.\\.\\.$",
     ": \\.\\.\\.$",
+]
+
+# Mechanical layering (ADR-0026): core must not import adapters/api/agents/
+# workflow at runtime. TYPE_CHECKING imports in core/agent.py are excluded so
+# the graph matches the runtime invariant. orchestrator → metrics is allowed.
+[tool.importlinter]
+root_package = "mangomas"
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "core does not import outer layers"
+type = "forbidden"
+source_modules = ["mangomas.core"]
+forbidden_modules = [
+    "mangomas.adapters",
+    "mangomas.api",
+    "mangomas.agents",
+    "mangomas.workflow",
 ]
