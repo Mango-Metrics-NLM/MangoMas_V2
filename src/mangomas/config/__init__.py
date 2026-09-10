@@ -252,9 +252,6 @@ from mangomas.config.rag import (
     DEFAULT_RAG_CHUNK_WORDS as DEFAULT_RAG_CHUNK_WORDS,
 )
 from mangomas.config.rag import (
-    DEFAULT_RAG_MIN_CHUNK_WORDS as DEFAULT_RAG_MIN_CHUNK_WORDS,
-)
-from mangomas.config.rag import (
     DEFAULT_VECTOR_COLLECTION as DEFAULT_VECTOR_COLLECTION,
 )
 from mangomas.config.rag import (
@@ -451,7 +448,6 @@ __all__ = [
     "DEFAULT_MEMORY_PROVIDER",
     "DEFAULT_RAG_CHUNK_OVERLAP",
     "DEFAULT_RAG_CHUNK_WORDS",
-    "DEFAULT_RAG_MIN_CHUNK_WORDS",
     "DEFAULT_SECRETS_PROVIDER",
     "DEFAULT_SECRETS_STRICT",
     "DEFAULT_SIGNAL_DIR",

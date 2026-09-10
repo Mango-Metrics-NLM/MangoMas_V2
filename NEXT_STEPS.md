@@ -27,7 +27,9 @@ and the D1–D9 sponsor-decision register live in the analysis doc):
   `release: published`; then the v0.4.0 cut with the app version derived from
   package metadata; supply-chain baseline (lockfile, pip Dependabot,
   `pip-audit`, pinned eval-gate ref, digest-pinned base image); docs/ledger
-  truth sweep (specs 0019–0023 acceptance boxes, `MIN_CHUNK_WORDS` README fix,
+  truth sweep (specs 0019–0023 acceptance boxes — leftover ownership boxes
+  re-adjudicated 2026-09-10; `MIN_CHUNK_WORDS` retired rather than documented
+  as inert),
   stale architecture docs, `.env.example`).
 - **Phase 1 — make the advertised product real (governed tranche).**
   ✅ Batch A (spec-0015 R4 `core/structured.py` extraction) landed
@@ -221,16 +223,16 @@ with the mechanism that keeps it fixed.
 
 ### Still open from this branch
 
-- **`MANGOMAS_RAG__MIN_CHUNK_WORDS` is inert.** The guard that would drop a
-  short trailing fragment is unreachable: the loop only steps again when the
-  previous window was not last, so the final window always extends past it.
-  Verified exhaustively (`n < 40` × `size < 15` × every overlap: zero reachable
-  states). Dropping the fragment would lose words, so the *code* is right and
-  the documentation overclaims. Resolving it — accept the word loss, or retire
-  the knob — is a retrieval-quality decision, deliberately not taken here.
+- **`MANGOMAS_RAG__MIN_CHUNK_WORDS` retired.** The drop arm was unreachable
+  (the final window always extends past the previous chunk's overlap), and
+  implementing it would have lost words. The knob, `RagSettings.min_chunk_words`,
+  and `chunk_text(..., min_words=)` are gone. A leftover env var is ignored
+  (`Settings` extra="ignore"). Locked by `tests/rag/test_chunker.py`.
 - **`registry.py` has no owning agent.** A generic `Registry[T]` on a protected
   path, consumed equally by five registries; naming any one owner would be
   arbitrary. Recorded in `UNOWNED_SOURCE_SURFACES` rather than assigned.
+  Spec-0019 R4/R5 and spec-0020 R5 acceptance boxes were re-adjudicated
+  2026-09-10 against this exception and the corpus contract.
 
 ---
 

@@ -125,15 +125,11 @@ class IngestionPipeline:
                 doc.text,
                 size=self._settings.chunk_words,
                 overlap=self._settings.chunk_overlap,
-                min_words=self._settings.min_chunk_words,
             )
             if not texts:
                 # ``chunk_text`` returns [] only for a document with no words
-                # (empty or whitespace-only content) — ``min_chunk_words`` is
-                # provably inert and never drops a chunk (pinned by
-                # ``test_fuzz_min_words_never_changes_the_output``). This is
-                # the "my file did not get indexed and I have no idea why"
-                # case, so it warns.
+                # (empty or whitespace-only content). This is the "my file did
+                # not get indexed and I have no idea why" case, so it warns.
                 logger.warning(
                     "Document yielded no chunks (empty or whitespace-only content); skipped",
                     extra={

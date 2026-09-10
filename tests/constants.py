@@ -57,9 +57,6 @@ from mangomas.config import (
     DEFAULT_RAG_CHUNK_WORDS as DEFAULT_RAG_CHUNK_WORDS,
 )
 from mangomas.config import (
-    DEFAULT_RAG_MIN_CHUNK_WORDS as DEFAULT_RAG_MIN_CHUNK_WORDS,
-)
-from mangomas.config import (
     DEFAULT_SIGNAL_DIR as DEFAULT_SIGNAL_DIR,
 )
 from mangomas.config import (

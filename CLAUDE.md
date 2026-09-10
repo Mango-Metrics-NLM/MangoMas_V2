@@ -223,7 +223,6 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
-| `MANGOMAS_RAG__MIN_CHUNK_WORDS` | `50` | Intended to drop trailing fragments shorter than this — **currently inert**: the guard that would drop one is unreachable (it only fires when the fragment is already covered by the previous chunk, which the stepping makes impossible). Pinned by `test_fuzz_min_words_never_changes_the_output` |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
 | `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |

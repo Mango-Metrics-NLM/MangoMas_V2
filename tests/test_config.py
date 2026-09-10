@@ -181,44 +181,36 @@ def test_rag_settings_defaults() -> None:
     s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
     assert s.rag.chunk_words == config_module.DEFAULT_RAG_CHUNK_WORDS
     assert s.rag.chunk_overlap == config_module.DEFAULT_RAG_CHUNK_OVERLAP
-    assert s.rag.min_chunk_words == config_module.DEFAULT_RAG_MIN_CHUNK_WORDS
 
 
 def test_rag_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MANGOMAS_RAG__CHUNK_WORDS", "400")
     monkeypatch.setenv("MANGOMAS_RAG__CHUNK_OVERLAP", "60")
-    monkeypatch.setenv("MANGOMAS_RAG__MIN_CHUNK_WORDS", "25")
     s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
     assert s.rag.chunk_words == 400
     assert s.rag.chunk_overlap == 60
-    assert s.rag.min_chunk_words == 25
 
 
 @pytest.mark.parametrize(
-    ("chunk_words", "chunk_overlap", "min_chunk_words"),
+    ("chunk_words", "chunk_overlap"),
     [
-        (0, 0, 1),  # chunk_words below floor
-        (10, 10, 1),  # overlap == window
-        (10, 12, 1),  # overlap above window
-        (10, -1, 1),  # negative overlap
-        (10, 2, -1),  # negative min_chunk_words
+        (0, 0),  # chunk_words below floor
+        (10, 10),  # overlap == window
+        (10, 12),  # overlap above window
+        (10, -1),  # negative overlap
     ],
 )
-def test_rag_settings_rejects_invalid_window(
-    chunk_words: int, chunk_overlap: int, min_chunk_words: int
-) -> None:
+def test_rag_settings_rejects_invalid_window(chunk_words: int, chunk_overlap: int) -> None:
     with pytest.raises(ValueError):
         config_module.RagSettings(
             chunk_words=chunk_words,
             chunk_overlap=chunk_overlap,
-            min_chunk_words=min_chunk_words,
         )
 
 
-def test_rag_settings_accepts_zero_overlap_and_min() -> None:
-    s = config_module.RagSettings(chunk_words=5, chunk_overlap=0, min_chunk_words=0)
+def test_rag_settings_accepts_zero_overlap() -> None:
+    s = config_module.RagSettings(chunk_words=5, chunk_overlap=0)
     assert s.chunk_overlap == 0
-    assert s.min_chunk_words == 0
 
 
 def test_rag_settings_invalid_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -11,8 +11,8 @@ from mangomas.config import RagSettings
 from mangomas.rag.pipeline import IngestionPipeline, IngestReport
 from tests.fakes import FakeEmbeddingClient, FakeVectorStore
 
-# size=3, overlap=0, min_words=1 → one chunk per 3 words, no fragment dropping.
-_SETTINGS = RagSettings(chunk_words=3, chunk_overlap=0, min_chunk_words=1)
+# size=3, overlap=0 → one chunk per 3 words.
+_SETTINGS = RagSettings(chunk_words=3, chunk_overlap=0)
 
 
 def _pipeline(
@@ -145,9 +145,7 @@ async def test_document_producing_no_chunks_warns(
     ``documents``, and before this there was no output at any level.
 
     The message must name the real cause — the document yielded no chunks
-    because it had no words (empty or whitespace-only content). It used to
-    misattribute the skip to ``min_chunk_words``, which is provably inert
-    (pinned by ``test_fuzz_min_words_never_changes_the_output``).
+    because it had no words (empty or whitespace-only content).
     """
     f = tmp_path / "empty.txt"
     f.write_text("   \n  ", encoding="utf-8")
@@ -162,7 +160,7 @@ async def test_document_producing_no_chunks_warns(
     skipped = next(r for r in caplog.records if getattr(r, "event", "") == "rag_document_skipped")
     # getattr: LogRecord has no static schema for `extra=` fields.
     assert getattr(skipped, "source", None) == str(f)
-    # The message names the real cause, not the inert min_chunk_words knob.
+    # The message names the real cause, not a retired drop-threshold knob.
     assert "empty or whitespace-only" in skipped.getMessage()
     assert "min_chunk_words" not in skipped.getMessage()
     assert not hasattr(skipped, "min_chunk_words")

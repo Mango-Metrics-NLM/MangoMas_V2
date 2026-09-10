@@ -109,9 +109,6 @@ DEFAULT_RAG_CHUNK_WORDS: int = 800
 DEFAULT_RAG_CHUNK_OVERLAP: int = 120
 
 
-DEFAULT_RAG_MIN_CHUNK_WORDS: int = 50
-
-
 class RagSettings(BaseModel):
     """RAG ingestion + chunking parameters (word-window chunker).
 
@@ -122,14 +119,11 @@ class RagSettings(BaseModel):
 
     chunk_words: int = DEFAULT_RAG_CHUNK_WORDS
     chunk_overlap: int = DEFAULT_RAG_CHUNK_OVERLAP
-    min_chunk_words: int = DEFAULT_RAG_MIN_CHUNK_WORDS
 
     @model_validator(mode="after")
     def _check_window(self) -> RagSettings:
         if self.chunk_words < 1:
             raise ValueError(f"chunk_words must be >= 1 (got {self.chunk_words})")
-        if self.min_chunk_words < 0:
-            raise ValueError(f"min_chunk_words must be >= 0 (got {self.min_chunk_words})")
         if self.chunk_overlap < 0:
             raise ValueError(f"chunk_overlap must be >= 0 (got {self.chunk_overlap})")
         if self.chunk_overlap >= self.chunk_words:

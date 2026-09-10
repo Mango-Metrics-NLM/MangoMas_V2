@@ -79,7 +79,7 @@ async def test_tool_agent_grounds_its_answer_in_real_retrieval(tmp_path: Path) -
         pipeline = IngestionPipeline(
             embeddings=embeddings,
             vector_store=store,
-            settings=RagSettings(chunk_words=50, chunk_overlap=10, min_chunk_words=1),
+            settings=RagSettings(chunk_words=50, chunk_overlap=10),
             batch_size=8,
         )
         report = await pipeline.ingest(str(corpus))

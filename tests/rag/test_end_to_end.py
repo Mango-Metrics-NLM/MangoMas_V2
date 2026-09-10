@@ -50,7 +50,6 @@ pytestmark = [pytest.mark.embeddings_local, pytest.mark.rag]
 # document ranked first" and the oracle is legible.
 _CHUNK_WORDS = 50
 _CHUNK_OVERLAP = 10
-_MIN_CHUNK_WORDS = 1
 _BATCH_SIZE = 8
 
 
@@ -97,7 +96,6 @@ async def _ingest(corpus: Path, embeddings: Any, store: Any) -> Any:
         settings=RagSettings(
             chunk_words=_CHUNK_WORDS,
             chunk_overlap=_CHUNK_OVERLAP,
-            min_chunk_words=_MIN_CHUNK_WORDS,
         ),
         batch_size=_BATCH_SIZE,
     )

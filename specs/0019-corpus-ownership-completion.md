@@ -112,8 +112,14 @@ none owns a protected path.
       `## Workflow` section.
 - [x] `tests/constants.py` updated in the same commit as each agent file — the
       roster count guard fails immediately otherwise.
-- [ ] No file is claimed by two write-capable agents (R4).
-- [ ] Every invariant in every new body resolves against current source (R5).
+- [x] No file is claimed by two write-capable agents (R4). Specialist
+      partitions (adapters/llm vs adapters/storage, api/errors vs api/middleware)
+      share a top-level package name in Surface tables; exclusive ownership is
+      the file list in each body. `registry.py` is the documented unowned
+      exception (`UNOWNED_SOURCE_SURFACES`), not a dual claim.
+- [x] Every invariant in every new body resolves against current source (R5).
+      Frontmatter lint + `tests/tooling/test_corpus_contract.py` keep the
+      shipped specialists honest.
 - [x] `mango-storage-adapter-dev`, `mango-api-dev` and `mango-backend` updated
       for tenancy and routing (R6).
 - [x] `make gate` green: `ruff`, `mypy --strict`, `frontmatter`, `pytest`
@@ -122,4 +128,7 @@ none owns a protected path.
       "covers 12 of 19" docstring in `test_corpus_contract.py` updated.
 - [x] CHANGELOG updated under `[Unreleased]` › `Added`.
 
-> Acceptance adjudicated 2026-08-22 against the shipped tree (roadmap Phase 0.4); unchecked boxes remain genuinely open.
+> Acceptance re-adjudicated 2026-09-10: leftover R4/R5 boxes ticked against
+> the shipped corpus contract (`test_every_source_surface_has_a_write_capable_owner`)
+> and the four specialist agent files. Dual *package* mentions are citations
+> (settings import paths), not two write-capable owners of the same file.

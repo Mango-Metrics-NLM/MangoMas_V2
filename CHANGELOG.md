@@ -52,6 +52,10 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `asyncio.timeout` and `dispatch_fan_out_settled`; NEXT_STEPS no longer
   claims structured-output / plan-execute-review as open or `pip-audit` as
   deferred.
+- **Inert `MANGOMAS_RAG__MIN_CHUNK_WORDS` retired**: unreachable drop arm
+  removed from `chunk_text`; Settings field, env-example row, and CLAUDE.md /
+  README rows gone (`tests/rag/test_chunker.py`,
+  `tests/deploy/test_env_example_contract.py`). Leftover env vars stay ignored.
 
 - **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
   package `mango-integration-contracts` (`mango_contracts`) shared with the

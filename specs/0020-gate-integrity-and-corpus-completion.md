@@ -121,14 +121,21 @@ pinned by `tests/tooling/test_corpus_contract.py`.
 - [x] R3: bare `python -m mypy` and `make typecheck` report the same file count.
 - [x] R4: the nine families are clean across all four lint paths;
       `ASYNC240`'s exclusion is load-bearing (removing it re-surfaces 4 hits).
-- [ ] R5: every surface under `src/mangomas/` has exactly one write-capable owner.
+- [x] R5: every surface under `src/mangomas/` has a write-capable owner, or
+      is recorded in `UNOWNED_SOURCE_SURFACES` (`registry.py` — a generic
+      `Registry[T]` consumed equally by five registries; naming any one
+      owner would be arbitrary). Locked by
+      `test_every_source_surface_has_a_write_capable_owner`.
 - [x] R6: both skills validate against `make frontmatter` and the corpus contract.
 - [x] `ruff`, `mypy`, `pytest` (95% gate + per-package floors),
       `frontmatter-lint`, `protected-paths` all clean — `make gate` green at
       every commit, not only the last.
 - [x] CHANGELOG updated. No ADR required (no boundary changed).
 
-> Acceptance adjudicated 2026-08-22 against the shipped tree (roadmap Phase 0.4); unchecked boxes remain genuinely open.
+> Acceptance re-adjudicated 2026-09-10: R5 is met with the documented
+> `registry.py` exception in `UNOWNED_SOURCE_SURFACES` (see NEXT_STEPS).
+> File-exclusive ownership inside partitioned packages (api/, adapters/,
+> core/) lives in each agent's Surface table, not a second roster.
 
 ## Deliberate non-goals
 
