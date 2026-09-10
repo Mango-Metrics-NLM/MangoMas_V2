@@ -103,7 +103,7 @@ classDiagram
 
 ### 2.2 Orchestration & Topologies
 
-- **`Orchestrator`**: Concrete dispatcher that manages registered agents against a thread-safe `dict[str, Agent]`.
+- **`Orchestrator`**: Concrete dispatcher that stores registered agents internally and is typically wired by `Registry[T]`-backed composition code before requests are dispatched.
 - **Iterative Control Loop**: Supports `AcceptanceFn` predicates to drive multi-turn refinement loops with bounded step limits (`max_steps`).
 - **Pipeline & Fan-Out Topologies**:
   - `dispatch_pipeline(agent_names, request)`: Sequences execution across agent stages $A \to B \to C$, piping prior stage output to the next request.

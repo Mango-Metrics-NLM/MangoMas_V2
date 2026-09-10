@@ -21,7 +21,8 @@ silently in the one place that does not assert loudly.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter
@@ -59,8 +60,9 @@ def _lazy_cloud_trace_exporter() -> Any:  # pragma: no cover - requires gcp extr
     except ImportError as exc:
         raise ImportError(_GCP_TRACE_INSTALL_HINT) from exc
     # The optional exporter package may not ship precise constructor metadata in
-    # every release, so this call site stays intentionally isolated in one seam.
-    return CloudTraceSpanExporter()
+    # every release, so the untyped constructor is isolated and cast at this seam.
+    exporter_factory = cast(Callable[[], Any], CloudTraceSpanExporter)
+    return exporter_factory()
 
 
 _VALID_APP_EXPORTERS: frozenset[str] = frozenset({EXPORTER_CONSOLE, EXPORTER_GCP})
