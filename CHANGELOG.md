@@ -11,6 +11,35 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Level 4 C4 Code Architecture Specification** (`docs/architecture/c4-code.md`).
+  Formalizes concrete runtime protocols (`Agent`, `StreamingAgent`, `LLMClient`,
+  `EmbeddingClient`, `TurnRepository`, `VectorStoreRepository`), adapter boundaries,
+  pure-domain RAG subsystem (`PathString`, `RawDoc`, `IngestionPipeline`, `Retriever`),
+  declarative workflow graph execution hierarchy, and error taxonomy with
+  HTTP status mapping and correlation propagation.
+- **Enterprise AQA Regression Test Suite** (`tests/regression/test_origin_defects.py`).
+  Guards against regressions across origin defect resolutions:
+  - `PathString` cross-platform path equivalence (Windows `\` vs POSIX `/`)
+    across drive letters, relative subdirectories, UNC network paths, and empty strings.
+  - `GCPSecretManagerProvider` dynamic `sys.modules` exception resolution across
+    `NotFound`, `PermissionDenied`, `Unauthenticated`, `DeadlineExceeded`, and `GoogleAPIError`.
+  - Dynamic `envelope_base` UTC ISO timestamps preventing stale fixture expiration.
+  - `SentenceTransformersEmbeddingClient` progress bar stdout suppression and mock compatibility.
+  - Ambient `pytest-randomly` / NumPy 2.x overflow neutralization.
+
+### Fixed
+
+- **Pytest ambient environment hardening**: Neutralized `pytest-randomly` NumPy 2.x
+  integer overflow collision via `sitecustomize.py` and `tests/conftest.py` registration filter.
+- **GCP Secret Manager SDK exception binding**: Enabled dynamic `sys.modules` resolution in
+  `src/mangomas/secrets/gcp.py` to prevent import mismatches between real SDK and mock test stand-ins.
+- **Contracts envelope timestamp dynamicity**: Converted static timestamps to dynamic UTC ISO-8601
+  timestamps in `tests/mango_contracts/constants.py`.
+- **RAG document path cross-platform equality**: Implemented `PathString` in `src/mangomas/rag/loader.py`
+  ensuring stable cross-platform document IDs on Windows and POSIX systems.
+- **Sentence-transformers stdout pollution**: Passed `show_progress_bar=False` with defensive
+  backward-compatible mock fallback in `src/mangomas/adapters/embeddings/sentence_transformers.py`.
+
 - **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
   package `mango-integration-contracts` (`mango_contracts`) shared with the
   sibling [Mango Code Agent Harness](https://github.com/ianshank/Mango_Code_Agent-Harness).

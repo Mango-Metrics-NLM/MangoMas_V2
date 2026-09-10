@@ -36,7 +36,11 @@ def test_no_write_or_command_tool_names_in_cognitive_plane() -> None:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             rel = path.relative_to(_REPO_ROOT).as_posix()
             for node in ast.walk(tree):
-                if isinstance(node, ast.Constant) and node.value in _FORBIDDEN_TOOL_NAMES:
+                if (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and node.value in _FORBIDDEN_TOOL_NAMES
+                ):
                     # Exact string literals whose value is a forbidden name.
                     # Ban-list constants in cognitive/roles.py and
                     # cognitive/pdp.py are filtered after the walk.

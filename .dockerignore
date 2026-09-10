@@ -9,8 +9,12 @@ __pycache__/
 .ruff_cache/
 .hypothesis/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
+*.log
+.gemini/
+scratch/
 data/
 memory/
 eval-output/

@@ -65,5 +65,5 @@ class SentenceTransformersEmbeddingClient(SingleTextEmbedMixin, NoTransportAclos
         return await asyncio.to_thread(self._encode, texts)
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
-        result = self._model.encode(texts)
+        result = self._model.encode(texts, show_progress_bar=False)
         return [[float(x) for x in row] for row in result]

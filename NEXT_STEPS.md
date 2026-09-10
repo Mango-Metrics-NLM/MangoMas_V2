@@ -92,6 +92,28 @@ no GCP resources are provisioned here. See ADR-0001, spec 0004.
 (HTTP 503) instead of returning `None` on auth/permission/timeout failures;
 default preserves ADR-002. See ADR-0010, spec 0003.
 
+## Done on the defect-resolution and AQA branch (Unreleased)
+
+Enterprise gap analysis, defect triage, and Level 4 C4 code architecture:
+
+1. **Pytest ambient randomly neutralization**: Fixed NumPy 2.x integer overflow collision
+   when ambient `pytest-randomly` is present in developer environments by unregistering the
+   plugin and enforcing `-p no:randomly` via `pyproject.toml`, `sitecustomize.py`, and `tests/conftest.py`.
+2. **GCP Secret Manager SDK exception binding**: In `src/mangomas/secrets/gcp.py`, bound
+   exception handling dynamically to `sys.modules["google.api_core.exceptions"]` and
+   `sys.modules["google.auth.exceptions"]`, preventing import mismatches between real SDK
+   and mock test stand-ins.
+3. **Dynamic contracts envelope timestamps**: Replaced static timestamp fixtures with
+   dynamic UTC ISO timestamps in `tests/mango_contracts/constants.py`.
+4. **Cross-platform RAG document path equality**: Authored `PathString` in `src/mangomas/rag/loader.py`
+   to ensure path equivalence across Windows (`\`) and POSIX (`/`) separators.
+5. **Sentence-transformers progress bar suppression**: Muted stdout progress bars (`show_progress_bar=False`)
+   with backward-compatible mock fallback in `src/mangomas/adapters/embeddings/sentence_transformers.py`.
+6. **Level 4 C4 Code Architecture**: Authored `docs/architecture/c4-code.md` formalizing runtime
+   protocols, adapter boundaries, declarative workflows, RAG pipeline, error taxonomy, and ADR-0021 governance.
+7. **Enterprise AQA Regression Suite**: Added `tests/regression/test_origin_defects.py` with 15
+   parameterized tests guarding against defect regressions.
+
 ---
 
 ## Done on the cognitive-contracts branch (Unreleased)

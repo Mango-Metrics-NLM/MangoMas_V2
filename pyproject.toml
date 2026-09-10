@@ -304,7 +304,7 @@ disallow_incomplete_defs = false
 minversion = "8.0"
 # --cov-fail-under mirrors GLOBAL_FLOOR in scripts/check_coverage.py — the
 # authoritative gate (per-package floors live there); keep the two in sync.
-addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=95"
+addopts = "-ra --strict-markers --cov=mangomas --cov-report=term-missing --cov-fail-under=95 -p no:randomly"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 # Pinned to the value pytest-asyncio has announced as its future default.
