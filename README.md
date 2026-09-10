@@ -491,6 +491,7 @@ src/mangomas/
 
 tests/
   (root)         Unit tests, named after the module under test
+  regression/    AQA regression suite; guards triaged origin defect fixes
   adapters/      Adapter unit tests incl. the shared error/client helpers
   agents/        Agent unit tests
   deploy/        CI/Makefile parity, workflow hardening, deploy manifests,
@@ -514,7 +515,7 @@ docs/
   adr/           Architecture Decision Records
   adapters/      Per-adapter usage docs (vertex.md)
   analysis/      One-off assessments (dated; historical records, not live docs)
-  architecture/  C4 diagrams (Mermaid) + observability + cloud providers
+  architecture/  C4 diagrams (Mermaid Context, Container, Component, Code) + observability + cloud providers
   eval/          Evaluation harness usage (harness.md)
   workflow/      Declarative workflow-graph usage (graphs.md)
   plans/         Multi-milestone delivery sequencing
@@ -532,7 +533,8 @@ scripts/         Coverage gate, frontmatter lint, and the harness hook entry poi
 ## Further reading
 
 - [ADR-001: Cloud Target Swap Matrix](docs/adr/0001-cloud-targets.md)
-- [C4 Architecture Diagrams](docs/architecture/)
+- [C4 Architecture: System Context](docs/architecture/c1-context.md)
+- [C4 Architecture: Code Domain Model](docs/architecture/c4-code.md)
 - [Vertex AI Adapter](docs/adapters/vertex.md)
 - [Evaluation Harness](docs/eval/harness.md)
 - [Observability](docs/architecture/observability.md)

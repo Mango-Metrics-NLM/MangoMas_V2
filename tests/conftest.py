@@ -35,6 +35,17 @@ def _teardown_lazy_gcp_secrets() -> Iterator[None]:
     secrets_registry._store.pop("gcp", None)
 
 
+# ── Ambient Plugin Neutralization ─────────────────────────────────────────────
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Block pytest-randomly if present to prevent NumPy 2.x 32-bit int seed overflow."""
+    config.pluginmanager.set_blocked("randomly")
+    plugin = config.pluginmanager.get_plugin("randomly")
+    if plugin is not None:
+        config.pluginmanager.unregister(plugin)
+
+
 # ── Collection gates ────────────────────────────────────────────────────────
 
 

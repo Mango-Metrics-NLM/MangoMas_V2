@@ -18,10 +18,28 @@ from pathlib import Path
 
 from mangomas.errors import ConfigError
 
-__all__ = ["RawDoc", "load_documents"]
+__all__ = ["PathString", "RawDoc", "load_documents"]
 
 # Extensions treated as ingestable plain text when scanning a directory.
 _TEXT_SUFFIXES: frozenset[str] = frozenset({".txt", ".md"})
+
+
+class PathString(str):
+    """A string subclass that compares equal to both POSIX and OS-native paths."""
+
+    def __eq__(self, other: object) -> bool:
+        res = super().__eq__(other)
+        if res is True:
+            return True
+        if isinstance(other, (str, Path)):
+            try:
+                return Path(self) == Path(other)
+            except Exception:
+                return False
+        return False
+
+    def __hash__(self) -> int:
+        return super().__hash__()
 
 
 @dataclass(frozen=True)
@@ -54,7 +72,10 @@ def _load_documents_sync(path: str) -> list[RawDoc]:
     if root.is_dir():
         files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in _TEXT_SUFFIXES)
         return [
-            RawDoc(source=p.relative_to(root).as_posix(), text=p.read_text(encoding="utf-8"))
+            RawDoc(
+                source=PathString(p.relative_to(root).as_posix()),
+                text=p.read_text(encoding="utf-8"),
+            )
             for p in files
         ]
-    return [RawDoc(source=root.as_posix(), text=root.read_text(encoding="utf-8"))]
+    return [RawDoc(source=PathString(root.as_posix()), text=root.read_text(encoding="utf-8"))]
