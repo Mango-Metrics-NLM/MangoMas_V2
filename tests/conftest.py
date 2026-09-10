@@ -163,7 +163,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         f"\nzero-skip guard: {len(_UNSANCTIONED_OUTCOMES)} unsanctioned "
         f"outcome(s) on an otherwise-green run:\n{lines}\n"
         "Fix the test or gate it through ENV_GATE_SKIP_REASONS in "
-        "tests/constants.py (spec-0022 R8)."
+        "tests.constants (spec-0022 R8)."
     )
     session.exitstatus = 1
 

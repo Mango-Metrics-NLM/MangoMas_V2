@@ -12,7 +12,7 @@ spec-0029 R2 hardware contract, and the two rules that bind hardest are:
   different orders, so identical inputs give similarity scores that differ in
   the last few decimal places. Which chunk wins does not change; *by how much*
   does. Every oracle here is an ordering or a tolerance, never an equality.
-* **No device literals** (R2.4). Devices come from ``tests/constants.py``, and
+* **No device literals** (R2.4). Devices come from ``tests.constants``, and
   forcing CPU is a *comparison*, never a precondition — a test that only ran
   on CPU would prove nothing about the GPU path.
 

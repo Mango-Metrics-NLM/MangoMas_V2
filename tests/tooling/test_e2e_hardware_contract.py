@@ -22,7 +22,7 @@ Rule  Refuses
 ===== ============================================================
 R2.1  an ``assert`` mentioning elapsed time, and a numeric ``timeout=``
 R2.2  ``==`` between two ``embed``/``embed_batch`` calls
-R2.4  a ``cuda``/``mps``/``cpu`` literal outside ``tests/constants.py``
+R2.4  a ``cuda``/``mps``/``cpu`` literal outside ``tests.constants``
 R2.5  (covered by R2.1: the budget must come from a name)
 ===== ============================================================
 
@@ -82,7 +82,7 @@ _NUMERIC_TIMEOUT_RE = re.compile(r"\btimeout\s*=\s*[^,\n]*?(?<![A-Za-z0-9_.])\d"
 # was written on.
 _EMBED_EQUALITY_RE = re.compile(r"await\s+\w+\.embed(?:_batch)?\([^)]*\)\s*==")
 
-# A device spelled inline rather than taken from tests/constants.py. Matched as
+# A device spelled inline rather than taken from tests.constants. Matched as
 # a quoted whole word so `# the cpu path` in a comment and `device_cpu` in an
 # identifier are both left alone.
 _DEVICE_LITERAL_RE = re.compile(
@@ -93,7 +93,7 @@ _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (_ELAPSED_ASSERT_RE, "asserts on elapsed time (spec-0029 R2.1)"),
     (_NUMERIC_TIMEOUT_RE, "passes a numeric timeout= instead of a named budget (R2.1)"),
     (_EMBED_EQUALITY_RE, "compares embeddings with == instead of cosine tolerance (R2.2)"),
-    (_DEVICE_LITERAL_RE, "spells a torch device inline instead of via tests/constants.py (R2.4)"),
+    (_DEVICE_LITERAL_RE, "spells a torch device inline instead of via tests.constants (R2.4)"),
 )
 
 

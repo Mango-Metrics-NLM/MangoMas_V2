@@ -187,7 +187,7 @@ _PRIVATE_FACADE_CONTRACT: dict[str, dict[str, str]] = {
     },
     # Composition's factory functions are underscore-prefixed by convention
     # (they are wiring internals, not an API meant for casual use) yet are
-    # still part of the documented facade contract: `tests/test_composition.py`
+    # still part of the documented facade contract: `tests/composition/`
     # imports every one of them directly from `mangomas.composition`, and
     # `mango-*-dev` agents monkeypatch several through this exact path. The
     # `_owned_names()` helper filters underscore-prefixed names as "not

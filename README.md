@@ -507,7 +507,7 @@ tests/
   lmstudio/      Real-server tests; set RUN_LMSTUDIO=1
   vertex/        Real Vertex project tests; set RUN_VERTEX=1
   postgres/      Testcontainers-backed; set RUN_POSTGRES=1
-  constants.py   Shared constants — re-exports config defaults from mangomas.config
+  constants/     Shared constants package — re-exports config defaults from mangomas.config
   fakes.py       Protocol-accurate test doubles
 
 docs/

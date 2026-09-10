@@ -1,0 +1,528 @@
+"""Shared test constants.
+
+Import these instead of repeating magic literals in tests.
+Defaults that mirror ``mangomas.config`` are re-exported from
+``tests.constants.config`` so a config change cannot silently desync
+the tests. This package is a domain split of the former module; the
+import path ``tests.constants`` is unchanged.
+"""
+
+from __future__ import annotations
+
+from tests.constants.cli import EVAL_GATE_EXIT_CODE as EVAL_GATE_EXIT_CODE
+from tests.constants.cli import EXIT_CONFIG_ERROR as EXIT_CONFIG_ERROR
+from tests.constants.cli import EXIT_RUNTIME_ERROR as EXIT_RUNTIME_ERROR
+from tests.constants.cli import EXPECTED_CLI_COMMANDS as EXPECTED_CLI_COMMANDS
+from tests.constants.cli import EXPECTED_CLI_HELP_ORDER as EXPECTED_CLI_HELP_ORDER
+from tests.constants.cli import EXPECTED_CLI_PARAMS as EXPECTED_CLI_PARAMS
+from tests.constants.cli import EXPECTED_CLI_ROOT_COMMANDS as EXPECTED_CLI_ROOT_COMMANDS
+from tests.constants.config import DEFAULT_EMBEDDINGS_BATCH_SIZE as DEFAULT_EMBEDDINGS_BATCH_SIZE
+from tests.constants.config import DEFAULT_EMBEDDINGS_DEVICE as DEFAULT_EMBEDDINGS_DEVICE
+from tests.constants.config import DEFAULT_EMBEDDINGS_MODEL as DEFAULT_EMBEDDINGS_MODEL
+from tests.constants.config import DEFAULT_EMBEDDINGS_PROVIDER as DEFAULT_EMBEDDINGS_PROVIDER
+from tests.constants.config import DEFAULT_LLM_BASE_URL as DEFAULT_LLM_BASE_URL
+from tests.constants.config import DEFAULT_LLM_MODEL as DEFAULT_LLM_MODEL
+from tests.constants.config import DEFAULT_LOOP_MAX_STEPS as DEFAULT_LOOP_MAX_STEPS
+from tests.constants.config import DEFAULT_LOOP_STEP_TIMEOUT as DEFAULT_LOOP_STEP_TIMEOUT
+from tests.constants.config import DEFAULT_RAG_CHUNK_OVERLAP as DEFAULT_RAG_CHUNK_OVERLAP
+from tests.constants.config import DEFAULT_RAG_CHUNK_WORDS as DEFAULT_RAG_CHUNK_WORDS
+from tests.constants.config import DEFAULT_SIGNAL_DIR as DEFAULT_SIGNAL_DIR
+from tests.constants.config import DEFAULT_SIGNAL_ENABLED as DEFAULT_SIGNAL_ENABLED
+from tests.constants.config import DEFAULT_SIGNAL_GENAI_SPANS as DEFAULT_SIGNAL_GENAI_SPANS
+from tests.constants.config import (
+    DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS as DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS,
+)
+from tests.constants.config import DEFAULT_SIGNAL_HTTP_URL as DEFAULT_SIGNAL_HTTP_URL
+from tests.constants.config import DEFAULT_SIGNAL_POLICY_ID as DEFAULT_SIGNAL_POLICY_ID
+from tests.constants.config import (
+    DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH as DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH,
+)
+from tests.constants.config import DEFAULT_SIGNAL_POLICY_VERSION as DEFAULT_SIGNAL_POLICY_VERSION
+from tests.constants.config import DEFAULT_SIGNAL_SCHEMA_VERSION as DEFAULT_SIGNAL_SCHEMA_VERSION
+from tests.constants.config import (
+    DEFAULT_SUMMARIZE_HISTORY_LIMIT as DEFAULT_SUMMARIZE_HISTORY_LIMIT,
+)
+from tests.constants.config import DEFAULT_VECTOR_COLLECTION as DEFAULT_VECTOR_COLLECTION
+from tests.constants.config import DEFAULT_VECTOR_PERSIST_DIR as DEFAULT_VECTOR_PERSIST_DIR
+from tests.constants.config import DEFAULT_VECTOR_PROVIDER as DEFAULT_VECTOR_PROVIDER
+from tests.constants.config import DEFAULT_VECTOR_TOP_K as DEFAULT_VECTOR_TOP_K
+from tests.constants.corpus import ADOPTED_MCP_SERVERS as ADOPTED_MCP_SERVERS
+from tests.constants.corpus import AGENT_DESCRIPTION_MAX_CHARS as AGENT_DESCRIPTION_MAX_CHARS
+from tests.constants.corpus import AGENT_SECTION_HEADINGS as AGENT_SECTION_HEADINGS
+from tests.constants.corpus import AGENT_SKILL_OWNERS as AGENT_SKILL_OWNERS
+from tests.constants.corpus import AGENT_SLUG_PREFIX as AGENT_SLUG_PREFIX
+from tests.constants.corpus import AGENT_TRIGGER_PHRASE_PATTERN as AGENT_TRIGGER_PHRASE_PATTERN
+from tests.constants.corpus import ANCHORED_RULE_PATH_PREFIX as ANCHORED_RULE_PATH_PREFIX
+from tests.constants.corpus import BASH_RULE_PREFIX as BASH_RULE_PREFIX
+from tests.constants.corpus import BASH_RULE_WILDCARD_SUFFIX as BASH_RULE_WILDCARD_SUFFIX
+from tests.constants.corpus import CLAUDE_AGENTS_DIR_RELPATH as CLAUDE_AGENTS_DIR_RELPATH
+from tests.constants.corpus import (
+    CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH as CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH,
+)
+from tests.constants.corpus import CLAUDE_SETTINGS_RELPATH as CLAUDE_SETTINGS_RELPATH
+from tests.constants.corpus import CLAUDE_SKILLS_DIR_RELPATH as CLAUDE_SKILLS_DIR_RELPATH
+from tests.constants.corpus import CORPUS_DOC_RELPATHS as CORPUS_DOC_RELPATHS
+from tests.constants.corpus import CREDENTIALED_MCP_SERVERS as CREDENTIALED_MCP_SERVERS
+from tests.constants.corpus import ENV_FLAG_OFF as ENV_FLAG_OFF
+from tests.constants.corpus import ENV_FLAG_ON as ENV_FLAG_ON
+from tests.constants.corpus import ENV_INTERPOLATION_PREFIX as ENV_INTERPOLATION_PREFIX
+from tests.constants.corpus import EXPECTED_AGENT_SLUGS as EXPECTED_AGENT_SLUGS
+from tests.constants.corpus import EXPECTED_DENY_RULES as EXPECTED_DENY_RULES
+from tests.constants.corpus import EXPECTED_SKILL_SLUGS as EXPECTED_SKILL_SLUGS
+from tests.constants.corpus import HARNESS_CONFIG_AUDIT_MODE_ENV as HARNESS_CONFIG_AUDIT_MODE_ENV
+from tests.constants.corpus import HARNESS_SKILL_SLUG as HARNESS_SKILL_SLUG
+from tests.constants.corpus import INERT_FILE_RULE_PREFIXES as INERT_FILE_RULE_PREFIXES
+from tests.constants.corpus import INVALID_AGENT_MODEL_VALUES as INVALID_AGENT_MODEL_VALUES
+from tests.constants.corpus import INVALID_AGENT_TOOL_TOKENS as INVALID_AGENT_TOOL_TOKENS
+from tests.constants.corpus import LEGACY_AGENT_FIELDS as LEGACY_AGENT_FIELDS
+from tests.constants.corpus import LIVE_CORPUS_COUNT_DOCS as LIVE_CORPUS_COUNT_DOCS
+from tests.constants.corpus import (
+    MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS as MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS,
+)
+from tests.constants.corpus import (
+    MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION as MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION,
+)
+from tests.constants.corpus import MAX_ROUTER_DESCRIPTION_JACCARD as MAX_ROUTER_DESCRIPTION_JACCARD
+from tests.constants.corpus import MCP_CONFIG_RELPATH as MCP_CONFIG_RELPATH
+from tests.constants.corpus import MCP_DENY_RULE_PREFIX as MCP_DENY_RULE_PREFIX
+from tests.constants.corpus import MCP_PROJECT_DIR_SCOPE as MCP_PROJECT_DIR_SCOPE
+from tests.constants.corpus import MIN_CORPUS_TRACEABILITY_REFS as MIN_CORPUS_TRACEABILITY_REFS
+from tests.constants.corpus import MISSING_TOOLS_AGENT_SLUG as MISSING_TOOLS_AGENT_SLUG
+from tests.constants.corpus import PATH_SCOPED_DENY_RULE_PREFIX as PATH_SCOPED_DENY_RULE_PREFIX
+from tests.constants.corpus import PATH_SCOPED_MCP_SERVERS as PATH_SCOPED_MCP_SERVERS
+from tests.constants.corpus import PLANNER_SIGNAL_GOAL as PLANNER_SIGNAL_GOAL
+from tests.constants.corpus import PLANNER_SIGNAL_REPLY as PLANNER_SIGNAL_REPLY
+from tests.constants.corpus import PLANNER_SIGNAL_STEPS as PLANNER_SIGNAL_STEPS
+from tests.constants.corpus import POLICY_REJECTED_AGENT_FIELDS as POLICY_REJECTED_AGENT_FIELDS
+from tests.constants.corpus import PRE_TOOL_USE_HOOK_COMMAND as PRE_TOOL_USE_HOOK_COMMAND
+from tests.constants.corpus import PREEXISTING_HOOKS as PREEXISTING_HOOKS
+from tests.constants.corpus import PROCEDURE_SECTION_HEADING as PROCEDURE_SECTION_HEADING
+from tests.constants.corpus import PROTECTED_PATH_OWNER_SLUGS as PROTECTED_PATH_OWNER_SLUGS
+from tests.constants.corpus import RETIRED_AGENT_PREFIX as RETIRED_AGENT_PREFIX
+from tests.constants.corpus import RETIRED_AGENTS_DIR_RELPATH as RETIRED_AGENTS_DIR_RELPATH
+from tests.constants.corpus import RETIRED_CHANGELOG_HEADING as RETIRED_CHANGELOG_HEADING
+from tests.constants.corpus import RETIRED_SKILLS_DIR_RELPATH as RETIRED_SKILLS_DIR_RELPATH
+from tests.constants.corpus import RETIRED_STRAY_AGENT_FILENAME as RETIRED_STRAY_AGENT_FILENAME
+from tests.constants.corpus import REVIEWER_SIGNAL_FEEDBACK as REVIEWER_SIGNAL_FEEDBACK
+from tests.constants.corpus import REVIEWER_SIGNAL_REMEDIATION as REVIEWER_SIGNAL_REMEDIATION
+from tests.constants.corpus import REVIEWER_SIGNAL_REPLY as REVIEWER_SIGNAL_REPLY
+from tests.constants.corpus import ROUTER_AGENT_SLUGS as ROUTER_AGENT_SLUGS
+from tests.constants.corpus import RTK_BINARY_GUARD_FRAGMENT as RTK_BINARY_GUARD_FRAGMENT
+from tests.constants.corpus import RTK_DISABLE_ENV as RTK_DISABLE_ENV
+from tests.constants.corpus import RTK_HOOK_COMMAND_FRAGMENT as RTK_HOOK_COMMAND_FRAGMENT
+from tests.constants.corpus import RTK_HOOK_EVENT as RTK_HOOK_EVENT
+from tests.constants.corpus import RTK_HOOK_MATCHER as RTK_HOOK_MATCHER
+from tests.constants.corpus import RTK_TELEMETRY_DISABLED_ENV as RTK_TELEMETRY_DISABLED_ENV
+from tests.constants.corpus import SCOPED_DELEGATION_TOOL_SPEC as SCOPED_DELEGATION_TOOL_SPEC
+from tests.constants.corpus import SIGNAL_CUSTOM_POLICY_ID as SIGNAL_CUSTOM_POLICY_ID
+from tests.constants.corpus import SIGNAL_DIR_ENV as SIGNAL_DIR_ENV
+from tests.constants.corpus import SIGNAL_ENABLED_ENV as SIGNAL_ENABLED_ENV
+from tests.constants.corpus import SIGNAL_GENAI_SPANS_ENV as SIGNAL_GENAI_SPANS_ENV
+from tests.constants.corpus import SIGNAL_HTTP_TIMEOUT_ENV as SIGNAL_HTTP_TIMEOUT_ENV
+from tests.constants.corpus import SIGNAL_HTTP_URL_ENV as SIGNAL_HTTP_URL_ENV
+from tests.constants.corpus import SIGNAL_MOCK_INGEST_URL as SIGNAL_MOCK_INGEST_URL
+from tests.constants.corpus import SIGNAL_POLICY_ID_ENV as SIGNAL_POLICY_ID_ENV
+from tests.constants.corpus import (
+    SIGNAL_POLICY_SNAPSHOT_HASH_ENV as SIGNAL_POLICY_SNAPSHOT_HASH_ENV,
+)
+from tests.constants.corpus import SIGNAL_POLICY_VERSION_ENV as SIGNAL_POLICY_VERSION_ENV
+from tests.constants.corpus import SIGNAL_SCHEMA_VERSION_ENV as SIGNAL_SCHEMA_VERSION_ENV
+from tests.constants.corpus import SKILL_UNMAPPED_AGENT_SLUGS as SKILL_UNMAPPED_AGENT_SLUGS
+from tests.constants.corpus import SPELLED_NUMBERS as SPELLED_NUMBERS
+from tests.constants.corpus import SUBSET_COUNT_CLAIMS as SUBSET_COUNT_CLAIMS
+from tests.constants.corpus import UNOWNED_SOURCE_SURFACES as UNOWNED_SOURCE_SURFACES
+from tests.constants.corpus import VALID_AGENT_FRONTMATTER as VALID_AGENT_FRONTMATTER
+from tests.constants.corpus import VALID_AGENT_TOOL_TOKENS as VALID_AGENT_TOOL_TOKENS
+from tests.constants.corpus import VALID_CLAUDE_AGENT_FRONTMATTER as VALID_CLAUDE_AGENT_FRONTMATTER
+from tests.constants.corpus import VALID_CLAUDE_AGENT_SLUG as VALID_CLAUDE_AGENT_SLUG
+from tests.constants.corpus import VALID_MCP_TOOL_NAME as VALID_MCP_TOOL_NAME
+from tests.constants.corpus import VALID_SKILL_FRONTMATTER as VALID_SKILL_FRONTMATTER
+from tests.constants.corpus import WRITE_CAPABLE_AGENT_SLUGS as WRITE_CAPABLE_AGENT_SLUGS
+from tests.constants.fixtures import ASGI_TEST_BASE_URL as ASGI_TEST_BASE_URL
+from tests.constants.fixtures import AUTH_SECRET_REF_ENV as AUTH_SECRET_REF_ENV
+from tests.constants.fixtures import AUTH_TOKEN as AUTH_TOKEN
+from tests.constants.fixtures import BACKPRESSURE_MAX_BODY_BYTES as BACKPRESSURE_MAX_BODY_BYTES
+from tests.constants.fixtures import BACKPRESSURE_MAX_CONCURRENT as BACKPRESSURE_MAX_CONCURRENT
+from tests.constants.fixtures import DEFAULT_AGENT_NAME as DEFAULT_AGENT_NAME
+from tests.constants.fixtures import DEFAULT_TOOL_NAME as DEFAULT_TOOL_NAME
+from tests.constants.fixtures import DEFAULT_TOOL_RESULT as DEFAULT_TOOL_RESULT
+from tests.constants.fixtures import (
+    DEFAULT_VERTEX_EMBEDDING_MODEL as DEFAULT_VERTEX_EMBEDDING_MODEL,
+)
+from tests.constants.fixtures import EVAL_BAD_REGEX_FLAG as EVAL_BAD_REGEX_FLAG
+from tests.constants.fixtures import EVAL_BAD_REQUIRED_KEYS_OPTION as EVAL_BAD_REQUIRED_KEYS_OPTION
+from tests.constants.fixtures import EVAL_SCHEMA_VERSION_CURRENT as EVAL_SCHEMA_VERSION_CURRENT
+from tests.constants.fixtures import EVAL_SINK_CONSOLE as EVAL_SINK_CONSOLE
+from tests.constants.fixtures import EVAL_SINK_JSON_FILE as EVAL_SINK_JSON_FILE
+from tests.constants.fixtures import EVAL_SQLITE_URL_PREFIX as EVAL_SQLITE_URL_PREFIX
+from tests.constants.fixtures import EVAL_THRESHOLD_LENIENT as EVAL_THRESHOLD_LENIENT
+from tests.constants.fixtures import EVAL_THRESHOLD_STRICT as EVAL_THRESHOLD_STRICT
+from tests.constants.fixtures import FAKE_PLUGIN_AGENT_NAME as FAKE_PLUGIN_AGENT_NAME
+from tests.constants.fixtures import FAKE_PLUGIN_SCORER_NAME as FAKE_PLUGIN_SCORER_NAME
+from tests.constants.fixtures import FAKE_PLUGIN_SINK_NAME as FAKE_PLUGIN_SINK_NAME
+from tests.constants.fixtures import FAKE_SINK_NAME as FAKE_SINK_NAME
+from tests.constants.fixtures import GCP_SECRETS_PROJECT_ENV as GCP_SECRETS_PROJECT_ENV
+from tests.constants.fixtures import GCP_SECRETS_SECRET_NAME_ENV as GCP_SECRETS_SECRET_NAME_ENV
+from tests.constants.fixtures import JSONL_FILENAME as JSONL_FILENAME
+from tests.constants.fixtures import LARGE_UPSTREAM_BODY_CHARS as LARGE_UPSTREAM_BODY_CHARS
+from tests.constants.fixtures import LMSTUDIO_EMBEDDING_MODEL_ENV as LMSTUDIO_EMBEDDING_MODEL_ENV
+from tests.constants.fixtures import PLAN_EXECUTE_REVIEW_AGENTS as PLAN_EXECUTE_REVIEW_AGENTS
+from tests.constants.fixtures import (
+    PLAN_EXECUTE_REVIEW_GRAPH_NAME as PLAN_EXECUTE_REVIEW_GRAPH_NAME,
+)
+from tests.constants.fixtures import (
+    PLAN_EXECUTE_REVIEW_GRAPH_RELPATH as PLAN_EXECUTE_REVIEW_GRAPH_RELPATH,
+)
+from tests.constants.fixtures import POSTGRES_TEST_DB as POSTGRES_TEST_DB
+from tests.constants.fixtures import POSTGRES_TEST_IMAGE as POSTGRES_TEST_IMAGE
+from tests.constants.fixtures import POSTGRES_TEST_PASSWORD as POSTGRES_TEST_PASSWORD
+from tests.constants.fixtures import POSTGRES_TEST_USER as POSTGRES_TEST_USER
+from tests.constants.fixtures import SLOW_AGENT_DELAY_SECONDS as SLOW_AGENT_DELAY_SECONDS
+from tests.constants.fixtures import STUB_REPLY as STUB_REPLY
+from tests.constants.fixtures import SUMMARIZE_HISTORY_LIMIT_ENV as SUMMARIZE_HISTORY_LIMIT_ENV
+from tests.constants.fixtures import TENANT_A as TENANT_A
+from tests.constants.fixtures import TENANT_B as TENANT_B
+from tests.constants.fixtures import TENANT_HEADER as TENANT_HEADER
+from tests.constants.fixtures import TEST_EMBEDDINGS_MOCK_MODEL as TEST_EMBEDDINGS_MOCK_MODEL
+from tests.constants.fixtures import TEST_HISTORY_LIMIT as TEST_HISTORY_LIMIT
+from tests.constants.fixtures import TEST_HISTORY_LIMIT_OVERRIDE as TEST_HISTORY_LIMIT_OVERRIDE
+from tests.constants.fixtures import TEST_HISTORY_SEEDED_TURNS as TEST_HISTORY_SEEDED_TURNS
+from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_BASE_URL as TEST_LMSTUDIO_MOCK_BASE_URL
+from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_MODEL as TEST_LMSTUDIO_MOCK_MODEL
+from tests.constants.fixtures import TEST_MAX_TOKENS_OVERRIDE as TEST_MAX_TOKENS_OVERRIDE
+from tests.constants.fixtures import TEST_PROMPT_EXPLICIT as TEST_PROMPT_EXPLICIT
+from tests.constants.fixtures import TEST_PROMPT_SETTINGS as TEST_PROMPT_SETTINGS
+from tests.constants.fixtures import TEST_PROMPT_SUFFIX as TEST_PROMPT_SUFFIX
+from tests.constants.fixtures import TEST_TEMPERATURE_OVERRIDE as TEST_TEMPERATURE_OVERRIDE
+from tests.constants.fixtures import TEST_TOOL_MAX_STEPS as TEST_TOOL_MAX_STEPS
+from tests.constants.fixtures import TEST_TOOL_MAX_STEPS_OVERRIDE as TEST_TOOL_MAX_STEPS_OVERRIDE
+from tests.constants.fixtures import TEST_TOOL_SYSTEM_PROMPT as TEST_TOOL_SYSTEM_PROMPT
+from tests.constants.fixtures import TEST_VECTOR_COLLECTION as TEST_VECTOR_COLLECTION
+from tests.constants.fixtures import TEST_VECTOR_PERSIST_DIR as TEST_VECTOR_PERSIST_DIR
+from tests.constants.fixtures import TEST_VERTEX_PROJECT as TEST_VERTEX_PROJECT
+from tests.constants.fixtures import TINY_STEP_TIMEOUT_SECONDS as TINY_STEP_TIMEOUT_SECONDS
+from tests.constants.fixtures import TOOL_MAX_STEPS_ENV as TOOL_MAX_STEPS_ENV
+from tests.constants.fixtures import UNPARSED_GOAL as UNPARSED_GOAL
+from tests.constants.fixtures import UNPARSED_PLANNER_STEP as UNPARSED_PLANNER_STEP
+from tests.constants.fixtures import UNTIMED_AGENT_DELAY_SECONDS as UNTIMED_AGENT_DELAY_SECONDS
+from tests.constants.fixtures import VERTEX_EMBEDDING_MODEL_ENV as VERTEX_EMBEDDING_MODEL_ENV
+from tests.constants.fixtures import WORKFLOW_CONFIG_EXIT_CODE as WORKFLOW_CONFIG_EXIT_CODE
+from tests.constants.fixtures import WORKFLOW_E2E_ELAPSED_MARKER as WORKFLOW_E2E_ELAPSED_MARKER
+from tests.constants.fixtures import WORKFLOW_E2E_EXIT_OK as WORKFLOW_E2E_EXIT_OK
+from tests.constants.fixtures import WORKFLOW_E2E_FAILURE_MESSAGE as WORKFLOW_E2E_FAILURE_MESSAGE
+from tests.constants.fixtures import WORKFLOW_E2E_SCRIPT as WORKFLOW_E2E_SCRIPT
+from tests.constants.fixtures import WORKFLOW_LOOP_SENTINEL as WORKFLOW_LOOP_SENTINEL
+from tests.constants.fixtures import WORKFLOW_NODE_KINDS as WORKFLOW_NODE_KINDS
+from tests.constants.fixtures import WORKFLOW_RUN_ROUTE as WORKFLOW_RUN_ROUTE
+from tests.constants.fixtures import WORKFLOW_RUNTIME_EXIT_CODE as WORKFLOW_RUNTIME_EXIT_CODE
+from tests.constants.fixtures import (
+    WORKFLOW_SCHEMA_VERSION_CURRENT as WORKFLOW_SCHEMA_VERSION_CURRENT,
+)
+from tests.constants.fixtures import WORKFLOW_VALIDATE_ROUTE as WORKFLOW_VALIDATE_ROUTE
+from tests.constants.live import CHAT_MODEL_OVERRIDE_ENV as CHAT_MODEL_OVERRIDE_ENV
+from tests.constants.live import DB_URL_ENV as DB_URL_ENV
+from tests.constants.live import (
+    DEFAULT_LIVE_E2E_TIMEOUT_SECONDS as DEFAULT_LIVE_E2E_TIMEOUT_SECONDS,
+)
+from tests.constants.live import DEFAULT_LOCAL_EMBEDDING_MODEL as DEFAULT_LOCAL_EMBEDDING_MODEL
+from tests.constants.live import DEFAULT_VERTEX_TEST_MODEL as DEFAULT_VERTEX_TEST_MODEL
+from tests.constants.live import DEVICE_CPU as DEVICE_CPU
+from tests.constants.live import DEVICE_CUDA as DEVICE_CUDA
+from tests.constants.live import DEVICE_MPS as DEVICE_MPS
+from tests.constants.live import EMBEDDING_COSINE_ATOL as EMBEDDING_COSINE_ATOL
+from tests.constants.live import EMBEDDING_SELF_COSINE as EMBEDDING_SELF_COSINE
+from tests.constants.live import EMBEDDINGS_DEVICE_ENV as EMBEDDINGS_DEVICE_ENV
+from tests.constants.live import EMBEDDINGS_ENABLED_ENV as EMBEDDINGS_ENABLED_ENV
+from tests.constants.live import EMBEDDINGS_MODEL_ENV as EMBEDDINGS_MODEL_ENV
+from tests.constants.live import EMBEDDINGS_PROVIDER_ENV as EMBEDDINGS_PROVIDER_ENV
+from tests.constants.live import ENV_GATE_SKIP_REASONS as ENV_GATE_SKIP_REASONS
+from tests.constants.live import ENV_GATE_SUITES as ENV_GATE_SUITES
+from tests.constants.live import FLOW_LOOP_MAX_STEPS as FLOW_LOOP_MAX_STEPS
+from tests.constants.live import FLOW_REQUEST_MAX_STEPS as FLOW_REQUEST_MAX_STEPS
+from tests.constants.live import (
+    GATED_RUNTIME_SKIP_REASON_PREFIXES as GATED_RUNTIME_SKIP_REASON_PREFIXES,
+)
+from tests.constants.live import GATED_RUNTIME_SKIP_REASON_RE as GATED_RUNTIME_SKIP_REASON_RE
+from tests.constants.live import HARDWARE_CONTRACT_SCOPE as HARDWARE_CONTRACT_SCOPE
+from tests.constants.live import HOSTED_RUNNER_INFEASIBLE as HOSTED_RUNNER_INFEASIBLE
+from tests.constants.live import (
+    HTTPX_ERROR_PATH_TIMEOUT_SECONDS as HTTPX_ERROR_PATH_TIMEOUT_SECONDS,
+)
+from tests.constants.live import IN_MEMORY_SQLITE_URL as IN_MEMORY_SQLITE_URL
+from tests.constants.live import (
+    LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS as LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS,
+)
+from tests.constants.live import LIVE_STEP_TIMEOUT_SECONDS as LIVE_STEP_TIMEOUT_SECONDS
+from tests.constants.live import LMSTUDIO_BASE_URL_ENV as LMSTUDIO_BASE_URL_ENV
+from tests.constants.live import LMSTUDIO_E2E_TIMEOUT_ENV as LMSTUDIO_E2E_TIMEOUT_ENV
+from tests.constants.live import LMSTUDIO_MODEL_ENV as LMSTUDIO_MODEL_ENV
+from tests.constants.live import LMSTUDIO_OVERRIDE_MODEL_ENV as LMSTUDIO_OVERRIDE_MODEL_ENV
+from tests.constants.live import LOCAL_EMBEDDING_MODEL_ENV as LOCAL_EMBEDDING_MODEL_ENV
+from tests.constants.live import LOOP_MAX_STEPS_ENV as LOOP_MAX_STEPS_ENV
+from tests.constants.live import LOOP_STEP_TIMEOUT_ENV as LOOP_STEP_TIMEOUT_ENV
+from tests.constants.live import MIN_HARDWARE_CONTRACT_FILES as MIN_HARDWARE_CONTRACT_FILES
+from tests.constants.live import OVERRIDE_MODEL_ID as OVERRIDE_MODEL_ID
+from tests.constants.live import PLANNER_VALIDATE_OUTPUT_ENV as PLANNER_VALIDATE_OUTPUT_ENV
+from tests.constants.live import RAG_DEVICE_CORPUS as RAG_DEVICE_CORPUS
+from tests.constants.live import RAG_DEVICE_EXPECTED_TOP_SOURCE as RAG_DEVICE_EXPECTED_TOP_SOURCE
+from tests.constants.live import RAG_DEVICE_QUERY as RAG_DEVICE_QUERY
+from tests.constants.live import REVIEWER_VALIDATE_OUTPUT_ENV as REVIEWER_VALIDATE_OUTPUT_ENV
+from tests.constants.live import SETTINGS_ENV_PREFIX as SETTINGS_ENV_PREFIX
+from tests.constants.live import STUB_VERTEX_REPLY as STUB_VERTEX_REPLY
+from tests.constants.live import TENANCY_ENABLED_ENV as TENANCY_ENABLED_ENV
+from tests.constants.live import TORCH_DEVICE_NAMES as TORCH_DEVICE_NAMES
+from tests.constants.live import VECTOR_ENABLED_ENV as VECTOR_ENABLED_ENV
+from tests.constants.live import VECTOR_PERSIST_DIR_ENV as VECTOR_PERSIST_DIR_ENV
+from tests.constants.live import VERTEX_CREDENTIALS_PATH_ENV as VERTEX_CREDENTIALS_PATH_ENV
+from tests.constants.live import VERTEX_E2E_TIMEOUT_ENV as VERTEX_E2E_TIMEOUT_ENV
+from tests.constants.live import VERTEX_LOCATION_ENV as VERTEX_LOCATION_ENV
+from tests.constants.live import VERTEX_MODEL_ENV as VERTEX_MODEL_ENV
+from tests.constants.live import VERTEX_PROJECT_ENV as VERTEX_PROJECT_ENV
+from tests.constants.live import client_timeout_for as client_timeout_for
+from tests.constants.live import env_gate_skip_reason as env_gate_skip_reason
+from tests.constants.live import resolve_live_timeout as resolve_live_timeout
+
+__all__ = [
+    "ADOPTED_MCP_SERVERS",
+    "AGENT_DESCRIPTION_MAX_CHARS",
+    "AGENT_SECTION_HEADINGS",
+    "AGENT_SKILL_OWNERS",
+    "AGENT_SLUG_PREFIX",
+    "AGENT_TRIGGER_PHRASE_PATTERN",
+    "ANCHORED_RULE_PATH_PREFIX",
+    "ASGI_TEST_BASE_URL",
+    "AUTH_SECRET_REF_ENV",
+    "AUTH_TOKEN",
+    "BACKPRESSURE_MAX_BODY_BYTES",
+    "BACKPRESSURE_MAX_CONCURRENT",
+    "BASH_RULE_PREFIX",
+    "BASH_RULE_WILDCARD_SUFFIX",
+    "CHAT_MODEL_OVERRIDE_ENV",
+    "CLAUDE_AGENTS_DIR_RELPATH",
+    "CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH",
+    "CLAUDE_SETTINGS_RELPATH",
+    "CLAUDE_SKILLS_DIR_RELPATH",
+    "CORPUS_DOC_RELPATHS",
+    "CREDENTIALED_MCP_SERVERS",
+    "DB_URL_ENV",
+    "DEFAULT_AGENT_NAME",
+    "DEFAULT_EMBEDDINGS_BATCH_SIZE",
+    "DEFAULT_EMBEDDINGS_DEVICE",
+    "DEFAULT_EMBEDDINGS_MODEL",
+    "DEFAULT_EMBEDDINGS_PROVIDER",
+    "DEFAULT_LIVE_E2E_TIMEOUT_SECONDS",
+    "DEFAULT_LLM_BASE_URL",
+    "DEFAULT_LLM_MODEL",
+    "DEFAULT_LOCAL_EMBEDDING_MODEL",
+    "DEFAULT_LOOP_MAX_STEPS",
+    "DEFAULT_LOOP_STEP_TIMEOUT",
+    "DEFAULT_RAG_CHUNK_OVERLAP",
+    "DEFAULT_RAG_CHUNK_WORDS",
+    "DEFAULT_SIGNAL_DIR",
+    "DEFAULT_SIGNAL_ENABLED",
+    "DEFAULT_SIGNAL_GENAI_SPANS",
+    "DEFAULT_SIGNAL_HTTP_TIMEOUT_SECONDS",
+    "DEFAULT_SIGNAL_HTTP_URL",
+    "DEFAULT_SIGNAL_POLICY_ID",
+    "DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH",
+    "DEFAULT_SIGNAL_POLICY_VERSION",
+    "DEFAULT_SIGNAL_SCHEMA_VERSION",
+    "DEFAULT_SUMMARIZE_HISTORY_LIMIT",
+    "DEFAULT_TOOL_NAME",
+    "DEFAULT_TOOL_RESULT",
+    "DEFAULT_VECTOR_COLLECTION",
+    "DEFAULT_VECTOR_PERSIST_DIR",
+    "DEFAULT_VECTOR_PROVIDER",
+    "DEFAULT_VECTOR_TOP_K",
+    "DEFAULT_VERTEX_EMBEDDING_MODEL",
+    "DEFAULT_VERTEX_TEST_MODEL",
+    "DEVICE_CPU",
+    "DEVICE_CUDA",
+    "DEVICE_MPS",
+    "EMBEDDINGS_DEVICE_ENV",
+    "EMBEDDINGS_ENABLED_ENV",
+    "EMBEDDINGS_MODEL_ENV",
+    "EMBEDDINGS_PROVIDER_ENV",
+    "EMBEDDING_COSINE_ATOL",
+    "EMBEDDING_SELF_COSINE",
+    "ENV_FLAG_OFF",
+    "ENV_FLAG_ON",
+    "ENV_GATE_SKIP_REASONS",
+    "ENV_GATE_SUITES",
+    "ENV_INTERPOLATION_PREFIX",
+    "EVAL_BAD_REGEX_FLAG",
+    "EVAL_BAD_REQUIRED_KEYS_OPTION",
+    "EVAL_GATE_EXIT_CODE",
+    "EVAL_SCHEMA_VERSION_CURRENT",
+    "EVAL_SINK_CONSOLE",
+    "EVAL_SINK_JSON_FILE",
+    "EVAL_SQLITE_URL_PREFIX",
+    "EVAL_THRESHOLD_LENIENT",
+    "EVAL_THRESHOLD_STRICT",
+    "EXIT_CONFIG_ERROR",
+    "EXIT_RUNTIME_ERROR",
+    "EXPECTED_AGENT_SLUGS",
+    "EXPECTED_CLI_COMMANDS",
+    "EXPECTED_CLI_HELP_ORDER",
+    "EXPECTED_CLI_PARAMS",
+    "EXPECTED_CLI_ROOT_COMMANDS",
+    "EXPECTED_DENY_RULES",
+    "EXPECTED_SKILL_SLUGS",
+    "FAKE_PLUGIN_AGENT_NAME",
+    "FAKE_PLUGIN_SCORER_NAME",
+    "FAKE_PLUGIN_SINK_NAME",
+    "FAKE_SINK_NAME",
+    "FLOW_LOOP_MAX_STEPS",
+    "FLOW_REQUEST_MAX_STEPS",
+    "GATED_RUNTIME_SKIP_REASON_PREFIXES",
+    "GATED_RUNTIME_SKIP_REASON_RE",
+    "GCP_SECRETS_PROJECT_ENV",
+    "GCP_SECRETS_SECRET_NAME_ENV",
+    "HARDWARE_CONTRACT_SCOPE",
+    "HARNESS_CONFIG_AUDIT_MODE_ENV",
+    "HARNESS_SKILL_SLUG",
+    "HOSTED_RUNNER_INFEASIBLE",
+    "HTTPX_ERROR_PATH_TIMEOUT_SECONDS",
+    "INERT_FILE_RULE_PREFIXES",
+    "INVALID_AGENT_MODEL_VALUES",
+    "INVALID_AGENT_TOOL_TOKENS",
+    "IN_MEMORY_SQLITE_URL",
+    "JSONL_FILENAME",
+    "LARGE_UPSTREAM_BODY_CHARS",
+    "LEGACY_AGENT_FIELDS",
+    "LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS",
+    "LIVE_CORPUS_COUNT_DOCS",
+    "LIVE_STEP_TIMEOUT_SECONDS",
+    "LMSTUDIO_BASE_URL_ENV",
+    "LMSTUDIO_E2E_TIMEOUT_ENV",
+    "LMSTUDIO_EMBEDDING_MODEL_ENV",
+    "LMSTUDIO_MODEL_ENV",
+    "LMSTUDIO_OVERRIDE_MODEL_ENV",
+    "LOCAL_EMBEDDING_MODEL_ENV",
+    "LOOP_MAX_STEPS_ENV",
+    "LOOP_STEP_TIMEOUT_ENV",
+    "MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS",
+    "MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION",
+    "MAX_ROUTER_DESCRIPTION_JACCARD",
+    "MCP_CONFIG_RELPATH",
+    "MCP_DENY_RULE_PREFIX",
+    "MCP_PROJECT_DIR_SCOPE",
+    "MIN_CORPUS_TRACEABILITY_REFS",
+    "MIN_HARDWARE_CONTRACT_FILES",
+    "MISSING_TOOLS_AGENT_SLUG",
+    "OVERRIDE_MODEL_ID",
+    "PATH_SCOPED_DENY_RULE_PREFIX",
+    "PATH_SCOPED_MCP_SERVERS",
+    "PLANNER_SIGNAL_GOAL",
+    "PLANNER_SIGNAL_REPLY",
+    "PLANNER_SIGNAL_STEPS",
+    "PLANNER_VALIDATE_OUTPUT_ENV",
+    "PLAN_EXECUTE_REVIEW_AGENTS",
+    "PLAN_EXECUTE_REVIEW_GRAPH_NAME",
+    "PLAN_EXECUTE_REVIEW_GRAPH_RELPATH",
+    "POLICY_REJECTED_AGENT_FIELDS",
+    "POSTGRES_TEST_DB",
+    "POSTGRES_TEST_IMAGE",
+    "POSTGRES_TEST_PASSWORD",
+    "POSTGRES_TEST_USER",
+    "PREEXISTING_HOOKS",
+    "PRE_TOOL_USE_HOOK_COMMAND",
+    "PROCEDURE_SECTION_HEADING",
+    "PROTECTED_PATH_OWNER_SLUGS",
+    "RAG_DEVICE_CORPUS",
+    "RAG_DEVICE_EXPECTED_TOP_SOURCE",
+    "RAG_DEVICE_QUERY",
+    "RETIRED_AGENTS_DIR_RELPATH",
+    "RETIRED_AGENT_PREFIX",
+    "RETIRED_CHANGELOG_HEADING",
+    "RETIRED_SKILLS_DIR_RELPATH",
+    "RETIRED_STRAY_AGENT_FILENAME",
+    "REVIEWER_SIGNAL_FEEDBACK",
+    "REVIEWER_SIGNAL_REMEDIATION",
+    "REVIEWER_SIGNAL_REPLY",
+    "REVIEWER_VALIDATE_OUTPUT_ENV",
+    "ROUTER_AGENT_SLUGS",
+    "RTK_BINARY_GUARD_FRAGMENT",
+    "RTK_DISABLE_ENV",
+    "RTK_HOOK_COMMAND_FRAGMENT",
+    "RTK_HOOK_EVENT",
+    "RTK_HOOK_MATCHER",
+    "RTK_TELEMETRY_DISABLED_ENV",
+    "SCOPED_DELEGATION_TOOL_SPEC",
+    "SETTINGS_ENV_PREFIX",
+    "SIGNAL_CUSTOM_POLICY_ID",
+    "SIGNAL_DIR_ENV",
+    "SIGNAL_ENABLED_ENV",
+    "SIGNAL_GENAI_SPANS_ENV",
+    "SIGNAL_HTTP_TIMEOUT_ENV",
+    "SIGNAL_HTTP_URL_ENV",
+    "SIGNAL_MOCK_INGEST_URL",
+    "SIGNAL_POLICY_ID_ENV",
+    "SIGNAL_POLICY_SNAPSHOT_HASH_ENV",
+    "SIGNAL_POLICY_VERSION_ENV",
+    "SIGNAL_SCHEMA_VERSION_ENV",
+    "SKILL_UNMAPPED_AGENT_SLUGS",
+    "SLOW_AGENT_DELAY_SECONDS",
+    "SPELLED_NUMBERS",
+    "STUB_REPLY",
+    "STUB_VERTEX_REPLY",
+    "SUBSET_COUNT_CLAIMS",
+    "SUMMARIZE_HISTORY_LIMIT_ENV",
+    "TENANCY_ENABLED_ENV",
+    "TENANT_A",
+    "TENANT_B",
+    "TENANT_HEADER",
+    "TEST_EMBEDDINGS_MOCK_MODEL",
+    "TEST_HISTORY_LIMIT",
+    "TEST_HISTORY_LIMIT_OVERRIDE",
+    "TEST_HISTORY_SEEDED_TURNS",
+    "TEST_LMSTUDIO_MOCK_BASE_URL",
+    "TEST_LMSTUDIO_MOCK_MODEL",
+    "TEST_MAX_TOKENS_OVERRIDE",
+    "TEST_PROMPT_EXPLICIT",
+    "TEST_PROMPT_SETTINGS",
+    "TEST_PROMPT_SUFFIX",
+    "TEST_TEMPERATURE_OVERRIDE",
+    "TEST_TOOL_MAX_STEPS",
+    "TEST_TOOL_MAX_STEPS_OVERRIDE",
+    "TEST_TOOL_SYSTEM_PROMPT",
+    "TEST_VECTOR_COLLECTION",
+    "TEST_VECTOR_PERSIST_DIR",
+    "TEST_VERTEX_PROJECT",
+    "TINY_STEP_TIMEOUT_SECONDS",
+    "TOOL_MAX_STEPS_ENV",
+    "TORCH_DEVICE_NAMES",
+    "UNOWNED_SOURCE_SURFACES",
+    "UNPARSED_GOAL",
+    "UNPARSED_PLANNER_STEP",
+    "UNTIMED_AGENT_DELAY_SECONDS",
+    "VALID_AGENT_FRONTMATTER",
+    "VALID_AGENT_TOOL_TOKENS",
+    "VALID_CLAUDE_AGENT_FRONTMATTER",
+    "VALID_CLAUDE_AGENT_SLUG",
+    "VALID_MCP_TOOL_NAME",
+    "VALID_SKILL_FRONTMATTER",
+    "VECTOR_ENABLED_ENV",
+    "VECTOR_PERSIST_DIR_ENV",
+    "VERTEX_CREDENTIALS_PATH_ENV",
+    "VERTEX_E2E_TIMEOUT_ENV",
+    "VERTEX_EMBEDDING_MODEL_ENV",
+    "VERTEX_LOCATION_ENV",
+    "VERTEX_MODEL_ENV",
+    "VERTEX_PROJECT_ENV",
+    "WORKFLOW_CONFIG_EXIT_CODE",
+    "WORKFLOW_E2E_ELAPSED_MARKER",
+    "WORKFLOW_E2E_EXIT_OK",
+    "WORKFLOW_E2E_FAILURE_MESSAGE",
+    "WORKFLOW_E2E_SCRIPT",
+    "WORKFLOW_LOOP_SENTINEL",
+    "WORKFLOW_NODE_KINDS",
+    "WORKFLOW_RUNTIME_EXIT_CODE",
+    "WORKFLOW_RUN_ROUTE",
+    "WORKFLOW_SCHEMA_VERSION_CURRENT",
+    "WORKFLOW_VALIDATE_ROUTE",
+    "WRITE_CAPABLE_AGENT_SLUGS",
+    "client_timeout_for",
+    "env_gate_skip_reason",
+    "resolve_live_timeout",
+]

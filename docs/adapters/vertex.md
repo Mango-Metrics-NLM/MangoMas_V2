@@ -95,7 +95,7 @@ skipped so callers see only non-empty content tokens.
 
 - **Unit**: `tests/test_vertex_unit.py` drives the adapter with
   `FakeVertexGenerativeModel` from `tests/fakes.py`. No SDK install required.
-- **Composition**: `tests/test_composition.py` verifies the `vertex` key is
+- **Composition**: `tests/composition/test_vertex.py` verifies the `vertex` key is
   registered and that `_vertex_factory` produces a `VertexClient`.
 - **E2E**: `tests/vertex/` runs against a real Vertex project. Gated by
   `RUN_VERTEX=1`; project / location / model are supplied via env vars

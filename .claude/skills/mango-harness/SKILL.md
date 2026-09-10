@@ -154,8 +154,8 @@ Then update, in the same commit — the tree is red otherwise:
 
 | You changed | Also update | Enforced by |
 |---|---|---|
-| a hook | `tests/constants.py::PREEXISTING_HOOKS` (append; the tuple is additive-only) | `test_preexisting_hook_survives_verbatim` |
-| a `permissions.deny` rule | `tests/constants.py::EXPECTED_DENY_RULES` | `test_deny_rules_match_the_expected_set` (set equality) |
+| a hook | `tests.constants.PREEXISTING_HOOKS` (append; the tuple is additive-only) | `test_preexisting_hook_survives_verbatim` |
+| a `permissions.deny` rule | `tests.constants.EXPECTED_DENY_RULES` | `test_deny_rules_match_the_expected_set` (set equality) |
 | an MCP deny rule | the same set; the `mcp__<server>__<tool>` server segment must name an adopted server | `test_mcp_deny_rules_name_adopted_servers` |
 | an MCP server | `ADOPTED_MCP_SERVERS` (+ `CREDENTIALED_MCP_SERVERS` if it takes a secret) | `test_mcp_servers_match_the_adopted_set` |
 

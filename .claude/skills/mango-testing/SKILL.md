@@ -3,9 +3,9 @@ name: mango-testing
 description: >
   Testing workflow for Mango-Mas V2. Use when: running the test suite,
   diagnosing failing tests, writing new tests for a module, extending fake
-  adapters in fakes.py, updating constants.py, checking coverage, or adding
+  adapters in fakes.py, updating tests.constants, checking coverage, or adding
   integration tests. Covers the pytest-asyncio auto mode, Fake* patterns,
-  Hypothesis fuzz testing, the constants.py config re-export contract, and the
+  Hypothesis fuzz testing, the tests.constants config re-export contract, and the
   coverage gate.
 argument-hint: "Describe the module to test, paste a failing test, or say 'run all tests'"
 ---
@@ -18,8 +18,8 @@ argument-hint: "Describe the module to test, paste a failing test, or say 'run a
 - Diagnose a test failure or import error
 - Write a `tests/test_<module>.py` for a new or modified module
 - Extend `tests/fakes.py` with a new fake adapter
-- Add domain constants to `tests/constants.py` (re-export config defaults; define
-  test-scoped values locally)
+- Add domain constants to `tests.constants` (re-export config defaults on the
+  package facade; define test-scoped values in the domain modules)
 - Verify the coverage gate
 - Add or run integration tests gated by `RUN_INTEGRATION=1`
 
@@ -56,8 +56,8 @@ mypy
 |------|--------|
 | `asyncio_mode = "auto"` | All async tests are `async def`. Never add `@pytest.mark.asyncio`. |
 | No `mock.patch` on protocols | Use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink` from `fakes.py`. |
-| No magic values | Strings/numbers in tests come from `tests/constants.py`. |
-| Constants re-export config | A default that mirrors `mangomas.config` is **re-exported**, not restated: `from mangomas.config import DEFAULT_X as DEFAULT_X` (the explicit `X as X` idiom, allowed by the `PLC0414` per-file ignore in `pyproject.toml`). Only test-scoped values — mock URLs, env-var names, fixture payloads, `TEST_VERTEX_PROJECT` — are literals in `constants.py`. |
+| No magic values | Strings/numbers in tests come from `tests.constants`. |
+| Constants re-export config | A default that mirrors `mangomas.config` is **re-exported**, not restated: `from mangomas.config import DEFAULT_X` in the domain module, then `from tests.constants.config import DEFAULT_X as DEFAULT_X` on the package facade (ruff auto-exempts `__init__.py` from PLC0414). Only test-scoped values — mock URLs, env-var names, fixture payloads, `TEST_VERTEX_PROJECT` — are literals in the domain modules. |
 | Coverage gate | `python scripts/check_coverage.py` is the authoritative per-package gate; the pytest `--cov-fail-under` addopt is a coarse pre-filter. |
 | One file per module | `tests/test_<module>.py` mirrors `src/mangomas/<module>.py`. |
 | Integration gating | `tests/integration/` tests skip unless `RUN_INTEGRATION=1`. |

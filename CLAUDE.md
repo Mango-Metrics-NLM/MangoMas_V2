@@ -149,7 +149,7 @@ The **Enforced by** column names the mechanism that catches a violation
 | **`from __future__ import annotations`** | Required in every source file. | ruff isort `required-imports` (`make lint`) |
 | **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. | code review (prose-only — ruff's TC family is not selected) |
 | **Async I/O** | `asyncio.to_thread` for any synchronous I/O (file, DB) inside async handlers. | ruff `ASYNC` family (partial; `ASYNC240` excluded by recorded decision) + code review |
-| **Composition root** | All wiring happens in `composition.py::build_orchestrator`. No service locators elsewhere. | `tests/test_composition.py` + code review (prose-only for "nowhere else") |
+| **Composition root** | All wiring happens in `composition.py::build_orchestrator`. No service locators elsewhere. | `tests/composition/` + code review (prose-only for "nowhere else") |
 
 ---
 
@@ -376,7 +376,7 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
   = 100 %, `adapters` = 85 %, `cognitive`/`eval`/`rag`/`workflow` and the rest = 95 %). The pytest `--cov-fail-under=95` addopt in
   `pyproject.toml` mirrors the global floor.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink`
-- **Constants**: `tests/constants.py` — no magic **domain** values in tests
+- **Constants**: `tests.constants` — no magic **domain** values in tests
   (URLs, model ids, env-var names, limits, rosters). Universal literals with
   a standardised meaning — HTTP status codes, `0`/`1` — stay inline, which is
   why `PLR2004` is disabled for `tests/*` in `pyproject.toml`. Config-mirroring

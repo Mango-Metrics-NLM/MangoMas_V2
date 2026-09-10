@@ -4,7 +4,7 @@
 configuration — every contributor's hooks and MCP servers come from these two
 files, and in cloud/Agent-SDK sessions the MCP servers load with no approval
 prompt at all. Both files are parsed at runtime rather than duplicated here,
-and the expected contract lives in ``tests/constants.py``, so a future edit
+and the expected contract lives in ``tests.constants``, so a future edit
 that silently drops, reorders, or unscopes an entry fails loudly.
 
 See docs/adr/0020-claude-code-ecosystem-tooling.md.

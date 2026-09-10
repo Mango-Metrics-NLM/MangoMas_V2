@@ -28,7 +28,7 @@ identify structural risks, and produce concise, actionable recommendations.
 
 ### Config & Hardcoding
 - [ ] All tunables go through `Settings` fields
-- [ ] No magic strings or numbers outside `tests/constants.py`
+- [ ] No magic strings or numbers outside `tests.constants`
 
 ### Error Handling
 - [ ] Errors subclass `MangomasError`, not bare `Exception`

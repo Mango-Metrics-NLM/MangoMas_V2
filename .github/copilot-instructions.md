@@ -32,7 +32,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 - Import concrete adapter implementations outside `composition.py`
 - Add `@pytest.mark.asyncio` to async test functions
 - Use `unittest.mock.patch` on internal protocols — use `Fake*` classes from `tests/fakes.py`
-- Hard-code magic numbers or strings in tests — use `tests/constants.py`
+- Hard-code magic numbers or strings in tests — use `tests.constants`
 - Use `.dict()`, `.parse_obj()`, or other Pydantic v1 APIs
 
 ---
@@ -44,7 +44,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
   `--cov-fail-under` mirrors
 - Every new module gets a `tests/test_<module>.py`
 - Use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink` from `tests/fakes.py`
-- Constants from `tests/constants.py`; update file when adding new domain constants
+- Constants from `tests.constants`; update the package when adding new domain constants
 - Property-based / fuzz tests use `hypothesis`
 - Integration tests in `tests/integration/` gated by `RUN_INTEGRATION=1`
 
@@ -81,7 +81,7 @@ src/mangomas/adapters/   # Infrastructure adapters (LLM, storage)
 src/mangomas/api/        # HTTP surface
 src/mangomas/cli/        # CLI surface
 src/mangomas/cognitive/  # Opt-in CognitiveSignal producer (MANGOMAS_SIGNAL__*)
-tests/                   # Mirrors src/ structure; fakes.py + constants.py are shared
+tests/                   # Mirrors src/ structure; fakes.py + tests.constants are shared
 ```
 
 ---

@@ -15,13 +15,14 @@ the shape, not an exhaustive inventory, is below.
 ```
 tests/
 ├── fakes.py               # Shared fake adapters (FakeLLM, FakeRepository, FakeTool, FakeCognitiveSink, ...)
-├── constants.py           # Shared constants — see "Constants contract" below
+├── constants/             # Shared constants package — see "Constants contract" below
 ├── conftest.py            # pytest fixtures (fake_llm, fake_repo, fake_memory, fake_tool)
 ├── _script_loader.py      # Shared helper for importing scripts/*.py in tests
-├── test_<module>.py       # One per src module: agent, api, cli, composition, config,
+├── test_<module>.py       # One per src module: agent, api, cli, config,
 │                          #   control_loop, correlation, errors, lmstudio, memory,
 │                          #   orchestrator, planner, postgres, registry, reviewer,
 │                          #   secrets, sqlite, telemetry, tools, topologies, ...
+├── composition/           # Composition-root wiring, split by subdomain
 ├── test_workflow_*.py     # Workflow graph: model, predicate, loader, registry,
 │                          #   executor, branch, composite fan_out, API, CLI, settings
 ├── adapters/              # Adapter units + shared helpers
@@ -52,15 +53,15 @@ stale every release. `scripts/check_coverage.py` is the authoritative gate
 
 ## Constants contract
 
-`tests/constants.py` has two halves. The rule targets **domain** values —
+`tests.constants` has two halves. The rule targets **domain** values —
 URLs, model ids, env-var names, limits, rosters — not universal literals
 such as HTTP status codes, which stay inline (`PLR2004` is disabled for
 `tests/*` for exactly that reason). The two halves are:
 
 - **Config-mirroring defaults are re-exported** from `mangomas.config` using
-  the explicit `X as X` idiom (e.g. `DEFAULT_LLM_BASE_URL`,
+  the explicit `X as X` idiom on the package facade (e.g. `DEFAULT_LLM_BASE_URL`,
   `DEFAULT_VECTOR_TOP_K`). Never restate a config default as a literal — a
-  re-export cannot desync.
+  re-export cannot desync. Domain modules live under `tests/constants/`.
 - **Test-scoped values are defined locally** (mock URLs, env-var names,
   stubs, fixtures, `TEST_VERTEX_PROJECT`). These have no config counterpart.
 

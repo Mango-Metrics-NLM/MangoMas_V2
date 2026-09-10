@@ -61,6 +61,13 @@ Versioning: [Semantic Versioning](https://semver.org/).
   Logger name stays `mangomas.api.middleware`. Locked by
   `test_bodies_are_built_by_the_shared_function_at_runtime` and
   `tests/test_middleware.py`.
+- **Test constants package**: `tests/constants.py` is now domain modules
+  under `tests.constants` (`config`, `cli`, `live`, `corpus`, `fixtures`)
+  behind an `X as X` facade. PLC0414 per-file ignore dropped (`__init__.py`
+  is auto-exempt). Locked by `tests/tooling/test_e2e_hardware_contract.py`
+  and `tests/tooling/test_corpus_contract.py`.
+- **Composition tests split by subdomain** under `tests/composition/`.
+  Locked by `tests/test_import_compat.py` facade identity tests.
 
 - **Cognitive/execution envelope 1.1.0** (spec-0030, ADR-0029). Standalone
   package `mango-integration-contracts` (`mango_contracts`) shared with the

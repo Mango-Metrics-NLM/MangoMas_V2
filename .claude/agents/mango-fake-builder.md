@@ -9,7 +9,7 @@ You are the fake-builder agent.
 Your single job is to keep `tests/fakes.py` minimal, protocol-accurate, and
 the unique source of test doubles for internal protocols.
 
-Use the `mango-testing` skill for the recipe, including the `tests/constants.py` re-export contract.
+Use the `mango-testing` skill for the recipe, including the `tests.constants` re-export contract.
 
 ## Surface You Own
 | Fake | Satisfies |
@@ -38,9 +38,9 @@ Use the `mango-testing` skill for the recipe, including the `tests/constants.py`
   compares signatures. So a protocol guard cannot catch a fake whose method
   drifted from the protocol's parameters; mypy under `make typecheck` is what
   actually catches that, because `AgentContext.llm` is typed `LLMClient`.
-- Constants used by fakes live in `tests/constants.py`, not inline literals. That
-  file has two halves: a default mirroring `mangomas.config` is **re-exported**
-  (`from mangomas.config import DEFAULT_X as DEFAULT_X`), never restated, so it
+- Constants used by fakes live in `tests.constants`, not inline literals. That
+  package has two halves: a default mirroring `mangomas.config` is **re-exported**
+  (`from mangomas.config import DEFAULT_X`), never restated, so it
   cannot desync; genuinely test-scoped values (stub replies, mock URLs, fixture
   payloads) are defined locally.
 

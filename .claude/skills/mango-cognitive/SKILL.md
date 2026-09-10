@@ -82,7 +82,7 @@ unchanged.
 ## Add a sink or field (worked example)
 
 1. New tunables are `DEFAULT_SIGNAL_*` in `config/signal.py`, re-exported
-   from `mangomas.config` and `tests/constants.py` as `X as X`.
+   from `mangomas.config` and `tests.constants` as `X as X`.
 2. Sinks satisfy `CognitiveSignalSink` (`@runtime_checkable`). Register
    behaviour in `build_sink`; JSONL is always on, HTTP composes when
    `http_url` is set. Inner HTTP failures must not prevent the JSONL write

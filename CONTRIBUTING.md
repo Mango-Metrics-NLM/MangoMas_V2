@@ -74,7 +74,7 @@ so the failure message makes sense when it arrives.
 | Every adapter satisfies a `@runtime_checkable` Protocol | `mypy --strict` for signatures; layering is code review |
 | Backwards-compatible wire contracts | `tests/test_openapi_snapshot.py` + the error-status walk |
 | No `unittest.mock` for internal protocols — use `tests/fakes.py` | Code review |
-| No domain literals in tests — use `tests/constants.py` | Code review; config defaults are **re-exported**, never restated |
+| No domain literals in tests — use `tests.constants` | Code review; config defaults are **re-exported**, never restated |
 | No module-level `mangomas.telemetry.get_tracer` | `tests/test_telemetry.py` AST scan over `src/` |
 | Every source package has a write-capable owning agent | `tests/tooling/test_corpus_contract.py` |
 | Docs' corpus counts, C4 model and coverage-floor table match reality | `tests/tooling/`, `tests/test_check_coverage.py` |
@@ -101,7 +101,7 @@ Three habits this repo cares about more than coverage percentage:
   guards breaks. Revert the fix, watch it go red, restore it. The
   `mango-mutation-proof` skill writes this up.
 - **Never skip to get green.** Skips are sanctioned only through the env-gate
-  table in `tests/constants.py`; an ad-hoc `pytest.skip` fails the session
+  table in `tests.constants`; an ad-hoc `pytest.skip` fails the session
   guard, and so does any `xfail`.
 - **Watch the denominator.** A coverage number over the wrong file set passes
   while measuring nothing — the failure mode is fail-open. See the
@@ -134,6 +134,6 @@ surface** (its boundary and invariants). An agent reaches for a skill for the
 how; a skill never delegates to an agent.
 
 Adding an agent means: a `mango-`prefixed file whose `name:` equals its stem,
-an entry in `tests/constants.py`'s roster, and either a skill mapping or a
+an entry in `tests.constants`'s roster, and either a skill mapping or a
 recorded reason no skill documents it. `make frontmatter` and
 `tests/tooling/test_corpus_contract.py` will tell you what is missing.

@@ -204,9 +204,6 @@ exclude = ["*.md"]
 [tool.ruff.lint.per-file-ignores]
 # SLF001: tests routinely assert on adapter internals (e.g. lazy-pool state).
 "tests/*" = ["PLR2004", "S101", "SLF001"]
-# PLC0414: the constants hub re-exports config defaults via the explicit
-# ``X as X`` idiom so they read as re-exports, not unused imports.
-"tests/constants.py" = ["PLC0414"]
 # T201/PTH: `scripts/` are operator-facing CLI entry points and Claude Code
 # hooks whose entire contract is what they print on stdout, and several must
 # run on a bare interpreter with no `mangomas` installed — `os.path` keeps them
@@ -235,8 +232,8 @@ exclude = ["*.md"]
 # spec-0015), and `X as X` is the explicit re-export idiom mypy's
 # --no-implicit-reexport requires. Ruff exempts `__init__.py` from this rule
 # automatically; `main.py` is a facade that is not one, because the console
-# script in [project.scripts] resolves `mangomas.cli.main:app`. Same idiom, and
-# same reason, as the `tests/constants.py` ignore above.
+# script in [project.scripts] resolves `mangomas.cli.main:app`. Same idiom as
+# package-level re-export facades (ruff auto-exempts ``__init__.py``).
 "src/mangomas/cli/main.py" = ["PLC0414"]
 # PLC0414: `mangomas.core.tools` is likewise a permanent re-export facade
 # (ADR-0019 / spec-0015 R4) for the structured-output surface extracted to

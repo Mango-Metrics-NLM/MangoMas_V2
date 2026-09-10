@@ -40,7 +40,7 @@ commands, not what they do.
 | `main.py` re-exports, it does not define | Anything new in a command module must also reach the facade. `tests/test_import_compat.py` asserts identity for the public surface and for the three private names outside code reaches: `_build`, `_close_orchestrator`, `_emit_sinks` |
 | No command module imports `_app` or `main` | `cli/__init__.py` does `from mangomas.cli.main import app`, so the package already carries a live cycle. A command module reached mid-initialisation would find `app` missing, and which module the process imports first decides whether it happens |
 | The logger name is pinned, not derived | `commands/eval.py` uses `getLogger("mangomas.cli.main")`, not `__name__`. Operators filter on it; a refactor promising no behaviour change must not rename a log field |
-| Exit codes are 0/1/2/3 and mean one thing each | 1 runtime, 2 config, 3 eval-gate. `tests/constants.py` re-exports them from `cli.exit_codes` rather than restating the literals |
+| Exit codes are 0/1/2/3 and mean one thing each | 1 runtime, 2 config, 3 eval-gate. `tests.constants` re-exports them from `cli.exit_codes` rather than restating the literals |
 | 100 % floor, over the right denominator | The package measures 100 % statements and branches. That number was once 100 % over 272 statements instead of 337, because an over-matching `exclude_lines` pattern dropped whole command bodies — see the `mango-coverage-audit` skill |
 
 ## Constraints
@@ -54,7 +54,7 @@ commands, not what they do.
   `main.py`.
 - DO NOT change `[project.scripts]` away from `mangomas.cli.main:app`.
 - DO NOT replace the pinned `getLogger("mangomas.cli.main")` with `__name__`.
-- DO NOT add a fourth exit code without a `tests/constants.py` re-export and a
+- DO NOT add a fourth exit code without a `tests.constants` re-export and a
   CHANGELOG note; scripts branch on these.
 
 ## Diagnosing Failures

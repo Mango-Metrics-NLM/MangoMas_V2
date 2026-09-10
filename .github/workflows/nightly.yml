@@ -19,7 +19,7 @@ name: Nightly
 # The remaining gated suites (lmstudio, vertex, gcp-*, langfuse) need a local
 # process, cloud credentials or an extra that vanilla runners do not have, so
 # they stay manual — each with its reason recorded in
-# `tests/constants.py::HOSTED_RUNNER_INFEASIBLE` and enforced by
+# `tests.constants.HOSTED_RUNNER_INFEASIBLE` and enforced by
 # `tests/deploy/test_gated_suite_homes.py`, so "it cannot run in CI" is a
 # claim something checks rather than a thing people remember.
 

@@ -129,7 +129,7 @@ agent_registry.register("<name>", lambda settings: <Name>Agent(settings=settings
 1. Create `src/mangomas/agents/<name>.py` satisfying the `Agent` Protocol.
 2. Re-export in `src/mangomas/agents/__init__.py`.
 3. Register the factory in `composition.py::agent_registry`.
-4. Write `tests/test_<name>.py` using `FakeLLM` / `FakeRepository` / `FakeTool` from `tests/fakes.py` and constants from `tests/constants.py`.
+4. Write `tests/test_<name>.py` using `FakeLLM` / `FakeRepository` / `FakeTool` from `tests/fakes.py` and constants from `tests.constants`.
 
 After: `ruff check --fix`, `mypy --strict`, `pytest --tb=short -q`, then update CHANGELOG.
 

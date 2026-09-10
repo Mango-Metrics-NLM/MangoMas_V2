@@ -50,7 +50,7 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 | Env prefix | All env vars use `MANGOMAS_` prefix. |
 | Nested delimiter | Use `__` between group and field: `MANGOMAS_LLM__BASE_URL`, `MANGOMAS_HARNESS__ENABLED`, `MANGOMAS_SIGNAL__ENABLED`. |
 | `DEFAULT_*` module constants | Every default value is a module-level `DEFAULT_*` constant in the group module that owns it (`config/llm.py`, `config/rag.py`, ...) — the single source of truth. |
-| Constants re-export, not restate | `tests/constants.py` re-exports config-mirroring defaults from `mangomas.config` (`from mangomas.config import DEFAULT_X as DEFAULT_X`), so a config change can never silently desync the tests. Genuinely test-scoped values (mock URLs, env-var names, fixtures) stay as literals there. |
+| Constants re-export, not restate | `tests.constants` re-exports config-mirroring defaults from `mangomas.config` (`from mangomas.config import DEFAULT_X as DEFAULT_X`), so a config change can never silently desync the tests. Genuinely test-scoped values (mock URLs, env-var names, fixtures) stay as literals in the domain modules. |
 | BaseModel sub-groups | Each settings group is a `BaseModel` (not `BaseSettings`) attached to root `Settings` via `Field(default_factory=...)`. |
 | Backwards-compatible | New fields must have defaults. Renames go through deprecation alias. |
 | Secrets seam | Secret values resolve through `_resolve_llm_secrets()` in `composition.py`, never read directly from env in adapters. |
@@ -71,7 +71,7 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 | `src/mangomas/secrets/registry.py` | `secrets_registry` registration point |
 | `src/mangomas/composition.py` | `_resolve_llm_secrets()` — the only place secret refs are resolved |
 | `tests/test_config.py` | Reference test for defaults + env overrides + nested groups |
-| `tests/constants.py` | Re-exports config-mirroring `DEFAULT_*` from `mangomas.config` via the explicit `X as X` idiom (per-file `PLC0414` ignore in `pyproject.toml`); only test-scoped values (mock URLs, env-var names, fixtures) are literals there |
+| `tests/constants/` | Re-exports config-mirroring `DEFAULT_*` from `mangomas.config` via `X as X` on the package facade (`tests.constants`); only test-scoped values (mock URLs, env-var names, fixtures) are literals in the domain modules |
 
 ---
 
@@ -140,7 +140,7 @@ referenced from outside the `config/` package. Before deleting:
 1. Search every consumer, not just `src/`:
    `grep -rn 'DEFAULT_<NAME>' src tests scripts docs .env.example` — a live hit
    in `.env.example` or `docs/` means the tunable is still documented as public.
-2. If it was re-exported in `tests/constants.py`, drop the `X as X` line there in
+2. If it was re-exported in `tests.constants`, drop the `X as X` line there in
    the same commit — a re-export of a deleted name is an `ImportError` at
    collection time, which fails the whole suite rather than one test.
 3. Remove the field, the constant, and the `.env.example` line together, then run
@@ -160,7 +160,7 @@ referenced from outside the `config/` package. Before deleting:
    name that resolves to nothing fails, and so does a declared field that
    CLAUDE.md omits. Skipping this step turns the suite red.
 6. Add two tests: default value + env override.
-7. If new group: add a single integration test in `tests/test_composition.py` confirming wiring doesn't break.
+7. If new group: add a single integration test in `tests/composition/` confirming wiring doesn't break.
 8. Run `ruff check --fix`, `mypy --strict`, `pytest`.
 
 ---

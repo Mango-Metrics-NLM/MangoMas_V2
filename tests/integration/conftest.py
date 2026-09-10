@@ -13,7 +13,7 @@ model would make it neither fast nor deterministic. The fake is injected
 through `llm_registry.scoped` rather than by constructing an `Orchestrator`
 directly, so the provider-selection path (`cfg.llm.provider` → registry →
 factory → client) is exercised rather than bypassed. That is the same seam
-`tests/lmstudio/test_stream_fallback.py` and `tests/test_composition.py`
+`tests/lmstudio/test_stream_fallback.py` and `tests/composition/`
 already use.
 
 **Why the lifespan is skipped.** `create_app(orchestrator=...)` bypasses

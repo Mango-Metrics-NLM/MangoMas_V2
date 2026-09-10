@@ -67,7 +67,7 @@ to emit envelopes.
 - DO NOT read tool input from an environment variable.
 - DO NOT let a corpus glob that matches nothing return `EXIT_OK`.
 - DO NOT edit `.claude/settings.json` without updating
-  `tests/constants.py::PREEXISTING_HOOKS` — that contract exists to make hook
+  `tests.constants.PREEXISTING_HOOKS` — that contract exists to make hook
   changes deliberate.
 - DO NOT lower the `scripts/` coverage floor to land a change.
 
