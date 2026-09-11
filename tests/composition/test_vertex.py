@@ -23,7 +23,7 @@ def test_vertex_factory_forwards_settings_to_client(
 ) -> None:
     """``_vertex_factory`` must forward LLMSettings fields to ``VertexClient``.
 
-    We monkeypatch the ``VertexClient`` symbol imported by ``composition.py``
+    We monkeypatch the ``VertexClient`` symbol imported by ``mangomas.composition``
     with a recorder so the test doesn't need the real Vertex SDK.
     """
     captured: dict[str, Any] = {}

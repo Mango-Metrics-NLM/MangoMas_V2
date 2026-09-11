@@ -51,6 +51,14 @@ floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
   are pinned by value because they exist only as Makefile text.
 - **`gate` stays offline.** Every target in the chain runs with no network —
   that is why `secret-scan` (which downloads a pinned binary) is excluded.
+  The chain is `validate-config lint format-check typecheck lint-imports
+  frontmatter protected-paths test coverage bridge-coverage
+  contracts-coverage scripts-coverage`. `make lint-imports` is in the
+  Lint job; `make scripts-coverage` is its own job. Pre-commit is a
+  **subset** (ruff/mypy(`src/`)/frontmatter plus `validate-config` and
+  `lint-imports`); it is not `make gate`. The Stop hook is
+  `typecheck + format-check + pytest --no-cov` and must not become the
+  gate.
 - **New target ⇒ `.PHONY`.** `gated-suites` was CI-invoked while missing from
   `.PHONY`, so a stray file of that name would have broken the build.
 

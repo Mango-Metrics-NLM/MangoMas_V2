@@ -23,14 +23,14 @@ Use the `mango-adapter` skill for the recipe, the `OpenAICompatHTTPClient` templ
 - Error translation: `_http_errors.translate_httpx_error(exc, *, base_url, label, bad_response)`
   for HTTP backends, `_vertex_errors.translate_vertex_error(exc, *, project, bad_request_error)`
   for Vertex — these are the mapping, do not restate it in the adapter
-- Registry: `llm_registry` in `src/mangomas/composition.py`
+- Registry: `llm_registry` in `src/mangomas/composition/`
 - Settings: `LLMSettings` in `mangomas.config` (defined in `config/llm.py`, with its `DEFAULT_*` constants)
 - Secrets: `_resolve_llm_secrets()` — never read `os.environ` directly
 - Fake: `FakeLLM` in `tests/fakes.py` — extend, never `mock.patch`
 
 ## Constraints
 
-- DO NOT import the new adapter outside `composition.py`.
+- DO NOT import the new adapter outside the `composition/` package.
 - DO NOT call `os.environ` — use the SecretsProvider seam.
 - DO NOT hard-code base URLs or model names — they belong in `LLMSettings`.
 - DO NOT raise bare `Exception` — wrap upstream errors in `LLMError` subclasses.
@@ -42,7 +42,7 @@ Use the `mango-adapter` skill for the recipe, the `OpenAICompatHTTPClient` templ
 
 ## Diagnosing Failures
 
-1. `UnknownProvider("vertex")` at startup → factory not registered in `composition.py`.
+1. `UnknownProvider("vertex")` at startup → factory not registered in the `composition/` package.
 2. `isinstance(client, StreamingLLMClient)` is `False` → `.stream()` signature drift; cross-check base.py.
 3. Coverage gate fails at 85 % adapters floor → add error-path tests.
 4. mypy strict error about `Awaitable[str]` → an `async def` is missing `await`.

@@ -27,8 +27,9 @@ argument-hint: "Name the module to decompose (e.g. 'src/mangomas/foo.py') or pas
 
 Backward-compatible package decomposition (ADR-0019) has landed **four**
 times in this repo — `cli/main.py` → `cli/`, `config.py` → `config/`,
-`telemetry.py` → `telemetry/` (all spec-0015), and `composition.py` →
-`composition/` (a later, unnumbered instance of the same pattern). Every
+`telemetry.py` → `telemetry/` (all spec-0015), and the former
+`composition.py` module → `composition/` (a later, unnumbered instance of
+the same pattern). Every
 one of them needs the identical four steps. The fourth time skipped step 3
 — wiring the new facade into `tests/test_import_compat.py` — and a typo'd
 `__all__` entry (`_vector_embedding_factory` instead of
@@ -177,7 +178,7 @@ def test_<provider>_factory_forwards_settings(monkeypatch: pytest.MonkeyPatch) -
 
 - **Hand-transcribing `__all__` from memory or from the old file's
   implicit export surface.** The old single-file module had no `__all__`
-  at all in at least one precedent (`composition.py`) — every module-level
+  at all in at least one precedent (the former `composition.py` module) — every module-level
   name was importable regardless of underscore prefix. Generate the new
   `__all__` programmatically (see Step 2) rather than trying to remember
   every name.

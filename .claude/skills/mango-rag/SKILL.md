@@ -8,7 +8,7 @@ description: >
   via RetrievalTool, or debugging cosine-similarity scoring. Covers the
   EmbeddingClient / VectorStoreRepository protocol seams, the opt-in
   enabled-gating, lazy SDK imports for the embeddings-local / rag extras,
-  and the composition.py wiring that attaches ctx.embeddings / ctx.vector_store.
+  and the composition/ wiring that attaches ctx.embeddings / ctx.vector_store.
 argument-hint: "Describe the RAG change (e.g. 'add Cohere embedding provider', 'tune chunk size') or paste a failing retrieval test"
 ---
 
@@ -20,7 +20,7 @@ argument-hint: "Describe the RAG change (e.g. 'add Cohere embedding provider', '
 - Add a new `VectorStoreRepository` under `src/mangomas/adapters/vector/`
 - Change chunking (`rag/chunker.py`), ingestion (`rag/pipeline.py`), or
   retrieval (`rag/retrieval.py`)
-- Wire a new provider into `composition.py` (`embedding_registry`,
+- Wire a new provider into `composition/` (`embedding_registry`,
   `_vector_registry`)
 - Debug cosine scores, stale-chunk re-ingest, or the `EmbeddingScorer`
 
@@ -90,7 +90,7 @@ at construction.
    (set `_LABEL` / `_BAD_RESPONSE`) and calls the inherited `self._translate_error(exc)`
    — see `adapters/embeddings/lmstudio.py`.
 3. Export it from `adapters/embeddings/__init__.py`.
-4. Register a factory in `composition.py` and seed `embedding_registry`.
+4. Register a factory in `composition/` and seed `embedding_registry`.
 5. Add `FakeEmbeddingClient`-style tests under `tests/adapters/embeddings/`.
    Do NOT add `embed()` to `FakeLLM` (breaks the scorer-fallback test).
 

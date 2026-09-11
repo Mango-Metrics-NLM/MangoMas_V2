@@ -407,7 +407,7 @@ def test_every_source_surface_has_a_write_capable_owner() -> None:
 
     The corpus asserted that its agents cover the codebase and nothing checked
     it. The whole FastAPI assembly layer — `create_app` and its middleware
-    install order, `middleware.py`, `auth.py`, `health.py`, `tracing.py`, and
+    install order, `middleware/`, `auth.py`, `health.py`, `tracing.py`, and
     the system + workflow routers — had no write-capable owner at all:
     `mango-api-dev` is a router and cannot edit, while `mango-sse-streamer`,
     `mango-schema-evolution` and `mango-error-taxonomy-dev` each own one slice

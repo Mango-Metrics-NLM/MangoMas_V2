@@ -5,7 +5,7 @@ ADR-001 swap matrix. All three follow the same pattern:
 
 1. **Lazy SDK import** — every `google.*`, `vertexai.*`, and `asyncpg`
    import lives inside function bodies (factory bodies in
-   `composition.py`, method bodies in the adapter modules). The
+   `composition/`, method bodies in the adapter modules). The
    adapter modules are importable even when the optional extra is not
    installed; the SDK is only resolved when the corresponding provider
    is actually selected via `Settings`.
@@ -42,7 +42,7 @@ The meta-extra `pip install -e ".[cloud]"` installs all three.
 
 ### Registration
 
-`composition.py::_vertex_factory` is registered unconditionally into
+`composition.llm._vertex_factory` is registered unconditionally into
 `llm_registry` as `"vertex"`. The Vertex SDK import only fires when the
 factory is invoked (`llm_registry.get(cfg.llm.provider)(cfg.llm)`).
 
@@ -86,7 +86,7 @@ factory is invoked (`llm_registry.get(cfg.llm.provider)(cfg.llm)`).
 
 ### Registration
 
-`composition.py::_postgres_factory` is registered unconditionally into
+`composition.storage._postgres_factory` is registered unconditionally into
 `_storage_registry` as `"postgres"`. The asyncpg import only fires when
 the pool is created (`_ensure_pool`).
 
@@ -94,7 +94,7 @@ the pool is created (`_ensure_pool`).
 
 - `__init__` is sync and does **no I/O** — preserves the
   `_sqlite_factory(cfg: DBSettings) -> SQLiteRepository` factory shape
-  used everywhere in `composition.py`.
+  used everywhere in `composition/`.
 - `_ensure_pool` is an async lazy initialiser guarded by an
   `asyncio.Lock` (init only — per-query access is pool-managed,
   lock-free).
@@ -138,7 +138,7 @@ idempotent — repeated `build_orchestrator` calls are safe.
 All failure modes — `NotFound`, `DefaultCredentialsError`,
 `PermissionDenied`, `Unauthenticated`, `DeadlineExceeded`, any other
 `GoogleAPIError` — collapse to `None`. The composition layer
-(`composition.py::_resolve_llm_secrets`) falls back to the inline
+(`composition.secrets._resolve_llm_secrets`) falls back to the inline
 `api_key` setting. Auth failures emit ERROR-level structured logs
 with `extra={"error": ..., "project_id": ..., "secret_name": ...}`;
 `NotFound` emits a DEBUG log only.
@@ -193,7 +193,7 @@ To add a new provider today:
 1. Implement the adapter module under `src/mangomas/adapters/<layer>/`
    or `src/mangomas/secrets/`. SDK imports must live inside function
    bodies.
-2. Add a factory in `composition.py` and register it under its
+2. Add a factory in `composition/` and register it under its
    provider name.
 3. Add a paired unit-test file under `tests/` that uses the
    constructor-injection seam to avoid the SDK at test time.

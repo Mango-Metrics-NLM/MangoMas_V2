@@ -36,7 +36,7 @@ below are what that skill does not cover: the shape of this code.
   this agent's surface)
 
 `_HarnessOrchestrator` and the `harness.agent_invoke` span live in
-`composition.py` and belong to `mango-telemetry-exporter-dev`.
+`src/mangomas/composition/harness.py` and belong to `mango-telemetry-exporter-dev`.
 
 This agent does **not** own CognitiveSignal emission. `MANGOMAS_SIGNAL__*`
 and `src/mangomas/cognitive/` belong to `mango-agent-impl-dev` /

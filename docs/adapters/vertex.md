@@ -6,7 +6,7 @@ models. It satisfies the same `LLMClient`, `PingableLLMClient`, and
 the codebase works against Vertex without code changes.
 
 The provider is selected at runtime via `MANGOMAS_LLM__PROVIDER=vertex` and
-constructed by `_vertex_factory` in `src/mangomas/composition.py`.
+constructed by `_vertex_factory` in `src/mangomas/composition/llm.py`.
 
 ## Install
 

@@ -16,7 +16,7 @@ Use the `mango-adapter` skill for the recipe and the reference table.
   (`TurnRepository`, `MemoryRepository`)
 - Reference: `src/mangomas/adapters/storage/sqlite.py`,
   `src/mangomas/adapters/storage/memory.py`
-- Registry: `_storage_registry`, `_memory_registry` in `composition.py`
+- Registry: `_storage_registry`, `_memory_registry` in `composition/`
 - Settings: `DBSettings`, `MemorySettings`, `TenancySettings` in `mangomas.config`
 - Tenancy: the `tenant` column and its `WHERE tenant = ?` row filter in both
   `sqlite.py` and `postgres.py` (ADR-0017 / spec 0007)

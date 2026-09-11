@@ -152,7 +152,10 @@ C4Component
   `mangomas[vertex]` optional extra). Vertex's SDK is lazy-imported inside
   `VertexClient.__init__`, so simply importing `mangomas.adapters.llm.vertex`
   never triggers a hard dependency.
-- `TraceMiddleware` and `AccessLogMiddleware` are the two middleware components.
+- HTTP middleware is the set installed by `create_app`: `TraceMiddleware`
+  (`api/tracing.py`) plus the `api/middleware/` package
+  (`AccessLogMiddleware`, opt-in `MaxBodySizeMiddleware` /
+  `ConcurrencyLimitMiddleware`, opt-in `TenancyMiddleware`).
   `AccessLogMiddleware` owns the **correlation id** lifecycle: it reads/echoes
   `X-Request-ID`, sets the `correlation_id` ContextVar, and pushes the value into
   OTel baggage as `mangomas.correlation_id`. See
@@ -184,7 +187,7 @@ C4Component
   `src/mangomas/adapters/vector/`, `src/mangomas/rag/`) follows the same
   protocol-first discipline as the LLM/storage seams. `EmbeddingClient` and
   `VectorStoreRepository` are `@runtime_checkable` Protocols resolved by
-  `embedding_registry` / `vector_registry` in `composition.py`. The `rag/`
+  `embedding_registry` / `vector_registry` in `composition/`. The `rag/`
   package imports only those protocol surfaces (plus its own `models` and
   `core`), so the vector layer never imports `rag/` — no cycle. The
   `RetrievalTool` is attached to `ctx.tools` only when both seams are

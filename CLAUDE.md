@@ -119,7 +119,7 @@ src/mangomas/
 ├── harness/        Claude Code harness/hook governance (opt-in; ADR-0021)
 │   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
 │   └── config_audit.py ConfigChange hook decision table
-├── composition.py  Composition root — wires settings → adapters → orchestrator
+├── composition/    Composition root — wires settings → adapters → orchestrator
 ├── config/         Pydantic-settings, one module per domain behind a
 │                   permanent re-export facade (ADR-0019 / spec-0015):
 │                   llm, storage, api, rag, observability, agents, secrets,
@@ -150,7 +150,7 @@ The **Enforced by** column names the mechanism that catches a violation
 | **`from __future__ import annotations`** | Required in every source file. | ruff isort `required-imports` (`make lint`) |
 | **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. | code review (prose-only — ruff's TC family is not selected) |
 | **Async I/O** | `asyncio.to_thread` for any synchronous I/O (file, DB) inside async handlers. | ruff `ASYNC` family (partial; `ASYNC240` excluded by recorded decision) + code review |
-| **Composition root** | All wiring happens in `composition.py::build_orchestrator`. No service locators elsewhere. | `tests/composition/` + code review (prose-only for "nowhere else") |
+| **Composition root** | All wiring happens in `composition.build_orchestrator`. No service locators elsewhere. | `tests/composition/` + code review (prose-only for "nowhere else") |
 
 ---
 
@@ -395,7 +395,7 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 To add a new agent:
 1. Create `src/mangomas/agents/<name>.py` satisfying the `Agent` protocol
 2. Register in `src/mangomas/agents/__init__.py`
-3. Register factory in `composition.py` via `agent_registry.register("<name>", ...)`
+3. Register factory in `composition/` via `agent_registry.register("<name>", ...)`
 4. Write `tests/test_<name>.py`
 
 ---
@@ -484,7 +484,7 @@ The enterprise harness layer is configured by `HarnessSettings` (env prefix
 | `MANGOMAS_HARNESS__CONFIG_AUDIT_MODE` | `off` | `ConfigChange` hook mode (`off`/`audit`/`block`) for `.claude/settings.json` / `settings.local.json` edits |
 | `MANGOMAS_TELEMETRY__EXPORTER` | `console` | Application span exporter (`console`/`gcp` Cloud Trace) |
 
-When enabled, `composition.py::build_orchestrator` returns
+When enabled, `composition.build_orchestrator` returns
 `_HarnessOrchestrator` instead of the bare `Orchestrator`. The subclass
 overrides both `dispatch` and `stream_dispatch` to add a
 `harness.agent_invoke` parent span with attributes `agent.name`,
@@ -684,7 +684,7 @@ response = await execute_workflow(graph, request, orch=orchestrator)
 | `src/mangomas/core/tools.py` | Tool contracts + parser; re-export facade over `structured.py` — backward-compat required (protected path) |
 | `src/mangomas/errors.py` | Typed error hierarchy + HTTP mapping (protected path) |
 | `src/mangomas/registry.py` | Generic, no project-specific logic (protected path) |
-| `src/mangomas/composition.py` | Single wiring point — all new adapters registered here |
+| `src/mangomas/composition/` | Single wiring point — all new adapters registered here |
 | `src/mangomas/cognitive/` | CognitiveSignal producer — default-OFF; must not import harness broker internals |
 | `tests/fakes.py` | Shared test doubles — keep minimal and protocol-accurate |
 

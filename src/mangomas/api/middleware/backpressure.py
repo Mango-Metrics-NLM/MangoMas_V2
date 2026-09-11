@@ -9,6 +9,7 @@ and carries ``X-Request-ID`` (ADR-0015). Bodies are built through the
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 
@@ -18,6 +19,8 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 import mangomas.api.errors as api_errors
+
+logger = logging.getLogger("mangomas.api.middleware")
 
 _REQUEST_TOO_LARGE_STATUS: int = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 _REQUEST_TOO_LARGE_CODE = "request_too_large"
@@ -58,6 +61,15 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
             and content_length.isdigit()
             and int(content_length) > self._max_bytes
         ):
+            logger.warning(
+                "request body exceeds limit",
+                extra={
+                    "error": _REQUEST_TOO_LARGE_CODE,
+                    "max_bytes": self._max_bytes,
+                    "path": request.url.path,
+                    "status_code": _REQUEST_TOO_LARGE_STATUS,
+                },
+            )
             return _json_error(
                 _REQUEST_TOO_LARGE_STATUS,
                 _REQUEST_TOO_LARGE_CODE,
@@ -86,6 +98,15 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         if self._in_flight >= self._max:
+            logger.warning(
+                "server at capacity",
+                extra={
+                    "error": _AT_CAPACITY_CODE,
+                    "max_concurrent": self._max,
+                    "path": request.url.path,
+                    "status_code": _AT_CAPACITY_STATUS,
+                },
+            )
             return _json_error(
                 _AT_CAPACITY_STATUS,
                 _AT_CAPACITY_CODE,

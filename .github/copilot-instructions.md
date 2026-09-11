@@ -23,13 +23,13 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 - `from __future__ import annotations` at the top of every file
 - Cross-layer imports go inside `if TYPE_CHECKING:` blocks
 - New adapters must satisfy the relevant `Protocol` in `adapters/*/base.py`
-- New agents must satisfy `Agent` in `core/agent.py` and be registered in `composition.py`
+- New agents must satisfy `Agent` in `core/agent.py` and be registered in `composition/`
 - All tunables in `Settings` (`config.py`) — no hard-coded URLs, model names, or limits
 - `asyncio.to_thread` for any synchronous I/O inside async functions
 - OpenTelemetry spans via `get_tracer(__name__).start_as_current_span("...")`
 
 ### Never
-- Import concrete adapter implementations outside `composition.py`
+- Import concrete adapter implementations outside `composition/`
 - Add `@pytest.mark.asyncio` to async test functions
 - Use `unittest.mock.patch` on internal protocols — use `Fake*` classes from `tests/fakes.py`
 - Hard-code magic numbers or strings in tests — use `tests.constants`

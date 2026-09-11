@@ -98,6 +98,21 @@ def test_preexisting_hook_survives_verbatim(event: str, matcher: str, command: s
     assert command in _hook_commands(event, matcher)
 
 
+def test_stop_hook_is_the_singleton_preexisting_command() -> None:
+    """Membership alone would let a second Stop hook land unnoticed.
+
+    Stop stays ``make typecheck format-check`` plus ``pytest --no-cov``; it
+    must not silently grow into ``make gate``.
+    """
+    expected = [
+        command
+        for event, matcher, command in PREEXISTING_HOOKS
+        if event == "Stop" and matcher == "*"
+    ]
+    assert expected, "PREEXISTING_HOOKS lost the Stop command"
+    assert _hook_commands("Stop", "*") == expected
+
+
 def test_config_change_hook_is_scoped_to_governed_sources() -> None:
     """ADR-0021 / spec-0017: the ConfigChange hook's matcher must scope it to
     only the two sources this repo governs — Claude Code cannot block

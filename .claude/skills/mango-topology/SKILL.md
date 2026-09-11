@@ -123,7 +123,7 @@ async for token in orchestrator.stream_dispatch("chat", request):
 ## Workflow
 
 1. Decide which topology fits: single-shot (`dispatch`), pipeline, fan-out, or loop.
-2. Confirm all participating agents are registered in `composition.py::agent_registry`.
+2. Confirm all participating agents are registered in `composition.agent_registry`.
 3. If using an acceptance loop: define a pure `AcceptanceFn` (no I/O) and cap `max_steps`.
 4. If streaming: confirm the underlying `LLMClient` is also a `StreamingLLMClient`; otherwise expect a single buffered chunk + warning.
 5. Add a test in `tests/test_topologies.py` (or `test_streaming.py`) using `FakeLLM(replies=[...])` to simulate multi-step behaviour.

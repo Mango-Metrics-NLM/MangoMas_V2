@@ -1,6 +1,6 @@
 ---
 name: mango-telemetry-exporter-dev
-description: "Owns the OpenTelemetry exporter seam in mangomas.telemetry, the TelemetrySettings group and harness span routing in composition.py. Default behaviour must not change when the env vars are absent. Invoked by name, not by topic match."
+description: "Owns the OpenTelemetry exporter seam in mangomas.telemetry, the TelemetrySettings group and harness span routing in composition/harness.py. Default behaviour must not change when the env vars are absent. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -29,7 +29,7 @@ Use the `mango-observability` skill for span/metric placement and `mango-deploy`
   Carries a 100% coverage floor.
 - `TelemetrySettings` (`MANGOMAS_TELEMETRY__*`, incl. `METRICS_ENABLED`) in `mangomas.config` (defined in `config/observability.py`).
 - Harness span routing: `MANGOMAS_HARNESS__METRICS_EXPORTER` wired into
-  `_HarnessOrchestrator` via `composition.py`.
+  `_HarnessOrchestrator` via `composition/harness.py`.
 
 ## Invariants
 - **Default-OFF**: absent `MANGOMAS_TELEMETRY__EXPORTER` → the exporter used

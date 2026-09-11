@@ -68,3 +68,22 @@ repos:
         language: system
         pass_filenames: false
         files: ^\.claude/(skills/.*/SKILL\.md|agents/mango-.*\.md)$
+      # Cheap Makefile mirrors. Pre-commit is a subset of `make gate` (no
+      # coverage floors, no protected-paths). Stop stays typecheck+format-check
+      # + pytest --no-cov and must not become the gate.
+      - id: validate-config
+        name: Validate Claude/MCP JSON config
+        language: system
+        pass_filenames: false
+        entry: >-
+          python -c "import json; from pathlib import Path;
+          [json.loads(Path(p).read_text(encoding='utf-8'))
+          for p in ('.mcp.json', '.claude/settings.json',
+          '.claude/settings.local.json.example')]"
+      - id: lint-imports
+        name: Import-linter layering contracts
+        language: system
+        pass_filenames: false
+        entry: >-
+          python -c "from importlinter.cli import lint_imports;
+          raise SystemExit(lint_imports(no_logo=True))"

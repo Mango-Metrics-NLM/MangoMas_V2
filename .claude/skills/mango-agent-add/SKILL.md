@@ -3,7 +3,7 @@ name: mango-agent-add
 description: >
   Adding a new agent to Mango-Mas V2. Use when: implementing a new
   Agent satisfying the core Agent Protocol, registering it in the agent
-  registry, wiring it via composition.py, and producing the matching test
+  registry, wiring it via the composition/ package, and producing the matching test
   file. Covers the Agent / StreamingAgent contract, AgentContext
   injection, and the 4-step extension pattern documented in CLAUDE.md.
 argument-hint: "Describe the agent (e.g. 'critic agent that scores responses') or paste a draft implementation"
@@ -15,7 +15,7 @@ argument-hint: "Describe the agent (e.g. 'critic agent that scores responses') o
 
 - Implement a new domain agent (planner, critic, summariser variant, etc.)
 - Add a streaming-capable agent satisfying `StreamingAgent`
-- Wire a new agent into `composition.py::agent_registry`
+- Wire a new agent into `composition.agent_registry`
 - Diagnose `AgentNotFound` errors at dispatch time
 - Convert an existing single-shot agent to support iterative loops via `AcceptanceFn`
 
@@ -47,7 +47,7 @@ python -m pytest --tb=short -q
 |------|--------|
 | Protocol-first | Satisfy `Agent` in `src/mangomas/core/agent.py`. Streaming agents additionally satisfy `StreamingAgent`. |
 | Stateless | All state lives in `AgentContext` (LLM, repo, memory, tools). Never store request-scoped data on the agent instance. |
-| Single registration point | Register via `agent_registry.register("<name>", factory)` in `composition.py` only. |
+| Single registration point | Register via `agent_registry.register("<name>", factory)` in the `composition/` package only. |
 | Config-driven settings | Per-agent settings (system prompt, temperature override) live in `AgentSettings` (`mangomas.config`, defined in `config/agents.py`), read at construction time. |
 | Structured output | Use Pydantic v2 models for any structured output (see `PlannerAgent.ExecutionPlan`, `ReviewerAgent.ReviewResult`). |
 | Telemetry | Open a span via `get_tracer(__name__).start_as_current_span("agent.<name>.execute")`. |
@@ -66,8 +66,8 @@ python -m pytest --tb=short -q
 | `src/mangomas/agents/reviewer.py` | `ReviewerAgent` — structured output + acceptance loop usage |
 | `src/mangomas/agents/tool_agent.py` | `ToolAgent` — inner tool-execution loop |
 | `src/mangomas/agents/_streaming.py` | Shared streaming fallback for non-`StreamingLLMClient` backends |
-| `src/mangomas/agents/__init__.py` | Re-export new agents so `composition.py` can import them |
-| `src/mangomas/composition.py` (`agent_registry.register` calls) | Where the 5 built-in agents are registered — pattern to follow |
+| `src/mangomas/agents/__init__.py` | Re-export new agents so `composition/` can import them |
+| `src/mangomas/composition/agents.py` (`agent_registry.register` calls) | Where the 5 built-in agents are registered — pattern to follow |
 | `tests/test_agent.py` | Reference test layout for new agents |
 
 ---
@@ -116,7 +116,7 @@ Re-export from `src/mangomas/agents/__init__.py`:
 from mangomas.agents.<name> import <Name>Agent  # noqa: F401
 ```
 
-Register in `src/mangomas/composition.py`:
+Register in `src/mangomas/composition/agents.py`:
 
 ```python
 agent_registry.register("<name>", lambda settings: <Name>Agent(settings=settings))
@@ -128,7 +128,7 @@ agent_registry.register("<name>", lambda settings: <Name>Agent(settings=settings
 
 1. Create `src/mangomas/agents/<name>.py` satisfying the `Agent` Protocol.
 2. Re-export in `src/mangomas/agents/__init__.py`.
-3. Register the factory in `composition.py::agent_registry`.
+3. Register the factory in `composition.agent_registry`.
 4. Write `tests/test_<name>.py` using `FakeLLM` / `FakeRepository` / `FakeTool` from `tests/fakes.py` and constants from `tests.constants`.
 
 After: `ruff check --fix`, `mypy --strict`, `pytest --tb=short -q`, then update CHANGELOG.
@@ -141,7 +141,7 @@ After: `ruff check --fix`, `mypy --strict`, `pytest --tb=short -q`, then update 
 - DO NOT subscribe to `AgentContext` types from outside `TYPE_CHECKING:` — break import cycles.
 - DO NOT raise bare `Exception` — use `MangomasError` subclasses.
 - DO NOT hardcode system prompts or temperatures — read them from `AgentSettings`.
-- DO NOT register the agent in any file other than `composition.py`.
+- DO NOT register the agent in any file other than the `composition/` package.
 
 ---
 

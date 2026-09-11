@@ -43,6 +43,7 @@ _LINKED_DOCS: tuple[str, ...] = (
     "docs/architecture/c1-context.md",
     "docs/architecture/c2-container.md",
     "docs/architecture/c3-component.md",
+    "docs/architecture/c4-code.md",
 )
 
 # `[text](target)` — capturing the target only.

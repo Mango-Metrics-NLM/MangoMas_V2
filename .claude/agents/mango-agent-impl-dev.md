@@ -29,7 +29,7 @@ for `MANGOMAS_SIGNAL__*` emission, extras-only sink wiring, and INV-16.
   1.0.0.
 - `src/mangomas/agents/discovery.py` — `discover_agents`, `ensure_agent_plugins`
 - `src/mangomas/agents/__init__.py` re-exports and the `agent_registry` lines
-  in `composition.py`
+  in `composition/`
 - `AgentSettings` in `mangomas.config`
 - Tests: `tests/test_agent.py`, `test_summarize.py`, `test_tool_agent.py`,
   `tests/agents/`, `tests/cognitive/`, `tests/mango_contracts/`
@@ -48,7 +48,7 @@ editing it here.
 | No truthiness collapsing in the resolver | An explicit empty string stays an empty string. `ToolAgent` normalises blank-to-`None` in its own `__init__` precisely because it concatenates a tool-format suffix; that belongs there, not in the shared helper |
 | `build_messages` copies and defers | It returns a new list, never mutates `request.messages`, and does nothing at all when the request already carries a `system` message |
 | `max_tool_steps` counts LLM calls | It bounds total completions per request, not tool executions, and `metadata["tool_steps"]` reports the exact count. On the final step the loop returns the last response *without* executing the tool it just parsed — a budget-exhausted agent must not fire a side effect it cannot report on |
-| Per-agent tunables follow one shape | `max_tool_steps` and `history_limit` both resolve explicit-arg → `settings.<field>` → `DEFAULT_*` from `mangomas.config`. A new per-agent tunable adopts the same three tiers; `composition.py` needs no change, because it already passes the resolved `AgentSettings` to every factory |
+| Per-agent tunables follow one shape | `max_tool_steps` and `history_limit` both resolve explicit-arg → `settings.<field>` → `DEFAULT_*` from `mangomas.config`. A new per-agent tunable adopts the same three tiers; the `composition/` package needs no change, because it already passes the resolved `AgentSettings` to every factory |
 | Tool errors are translated, never raw | `UnknownProvider` becomes `ToolNotFound` with the available list; any other tool exception becomes `ToolExecutionError` carrying `tool_name`. `ToolExecutionError` re-raises untouched |
 | Agents stay stateless | Everything request-scoped lives in `AgentContext`. Construction reads `AgentSettings` once; `handle` stores nothing on `self` |
 | Discovery protects built-ins | A plugin colliding with a built-in is skipped with a WARNING — the opposite of eval's last-call-wins. The protected set is the registry's contents captured before the scan, so no built-in name is hard-coded (ADR-0008) |
@@ -60,7 +60,7 @@ editing it here.
 - DO NOT let `src/mangomas/agents/*.py` fall below its 95 % floor.
 - DO NOT edit `core/agent.py`, `ExecutionPlan`, `ReviewResult` or
   `_streaming.py` — each has a named owner.
-- DO NOT register an agent anywhere but `composition.py::agent_registry`.
+- DO NOT register an agent anywhere but `composition.agent_registry`.
 - DO NOT hard-code a system prompt, temperature, token cap or history window —
   they come from `AgentSettings` with a `DEFAULT_*` fallback.
 - DO NOT import `AgentContext` outside a `TYPE_CHECKING` block.

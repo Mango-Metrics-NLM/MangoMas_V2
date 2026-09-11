@@ -53,7 +53,7 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 | Constants re-export, not restate | `tests.constants` re-exports config-mirroring defaults from `mangomas.config` (`from mangomas.config import DEFAULT_X as DEFAULT_X`), so a config change can never silently desync the tests. Genuinely test-scoped values (mock URLs, env-var names, fixtures) stay as literals in the domain modules. |
 | BaseModel sub-groups | Each settings group is a `BaseModel` (not `BaseSettings`) attached to root `Settings` via `Field(default_factory=...)`. |
 | Backwards-compatible | New fields must have defaults. Renames go through deprecation alias. |
-| Secrets seam | Secret values resolve through `_resolve_llm_secrets()` in `composition.py`, never read directly from env in adapters. |
+| Secrets seam | Secret values resolve through `_resolve_llm_secrets()` in `composition/secrets.py`, never read directly from env in adapters. |
 | `get_settings()` is cached | Memoised via `lru_cache`; tests use `monkeypatch.setenv` then `get_settings.cache_clear()`. |
 
 ---
@@ -69,7 +69,7 @@ MANGOMAS_LLM__BASE_URL=http://localhost:1235/v1 python -m mangomas.cli.main chat
 | `src/mangomas/secrets/provider.py` | `SecretsProvider` Protocol |
 | `src/mangomas/secrets/env.py` | `EnvSecretsProvider` (default) |
 | `src/mangomas/secrets/registry.py` | `secrets_registry` registration point |
-| `src/mangomas/composition.py` | `_resolve_llm_secrets()` — the only place secret refs are resolved |
+| `src/mangomas/composition/secrets.py` | `_resolve_llm_secrets()` — the only place secret refs are resolved |
 | `tests/test_config.py` | Reference test for defaults + env overrides + nested groups |
 | `tests/constants/` | Re-exports config-mirroring `DEFAULT_*` from `mangomas.config` via `X as X` on the package facade (`tests.constants`); only test-scoped values (mock URLs, env-var names, fixtures) are literals in the domain modules |
 

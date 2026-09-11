@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import httpx
@@ -40,6 +41,29 @@ def test_max_body_size_rejects_oversized() -> None:
         assert small.status_code == 200
 
 
+def test_max_body_size_logs_warning_on_reject(caplog: pytest.LogCaptureFixture) -> None:
+    app = FastAPI()
+    app.add_middleware(MaxBodySizeMiddleware, max_bytes=BACKPRESSURE_MAX_BODY_BYTES)
+
+    @app.post("/echo")
+    async def echo() -> dict[str, bool]:
+        return {"ok": True}
+
+    with (
+        caplog.at_level(logging.WARNING, logger="mangomas.api.middleware"),
+        TestClient(app) as client,
+    ):
+        client.post("/echo", content=b"x" * 100)
+    records = [r for r in caplog.records if r.name == "mangomas.api.middleware"]
+    assert records
+    rec = records[0]
+    assert rec.levelno == logging.WARNING
+    assert getattr(rec, "error", None) == "request_too_large"
+    assert getattr(rec, "max_bytes", None) == BACKPRESSURE_MAX_BODY_BYTES
+    assert getattr(rec, "path", None) == "/echo"
+    assert getattr(rec, "status_code", None) == 413
+
+
 async def test_max_body_size_ignores_non_numeric_content_length() -> None:
     # A malformed Content-Length passes through (no 500) rather than crashing.
     middleware = MaxBodySizeMiddleware(FastAPI(), max_bytes=BACKPRESSURE_MAX_BODY_BYTES)
@@ -63,7 +87,9 @@ async def test_max_body_size_ignores_non_numeric_content_length() -> None:
 # ── ConcurrencyLimitMiddleware (isolation) ────────────────────────────────────
 
 
-async def test_concurrency_limit_rejects_when_saturated() -> None:
+async def test_concurrency_limit_rejects_when_saturated(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     started = asyncio.Event()
     release = asyncio.Event()
     app = FastAPI()
@@ -76,15 +102,24 @@ async def test_concurrency_limit_rejects_when_saturated() -> None:
         return {"ok": True}
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        first = asyncio.create_task(client.get("/slow"))
-        await started.wait()  # first request is now in-flight (holds the only slot)
-        second = await client.get("/slow")
-        assert second.status_code == 503
-        assert second.json()["error"] == "server_at_capacity"
-        release.set()
-        first_result = await first
-        assert first_result.status_code == 200
+    with caplog.at_level(logging.WARNING, logger="mangomas.api.middleware"):
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            first = asyncio.create_task(client.get("/slow"))
+            await started.wait()  # first request is now in-flight (holds the only slot)
+            second = await client.get("/slow")
+            assert second.status_code == 503
+            assert second.json()["error"] == "server_at_capacity"
+            release.set()
+            first_result = await first
+            assert first_result.status_code == 200
+    records = [r for r in caplog.records if r.name == "mangomas.api.middleware"]
+    assert records
+    rec = records[0]
+    assert rec.levelno == logging.WARNING
+    assert getattr(rec, "error", None) == "server_at_capacity"
+    assert getattr(rec, "max_concurrent", None) == 1
+    assert getattr(rec, "path", None) == "/slow"
+    assert getattr(rec, "status_code", None) == 503
 
 
 # ── create_app wiring ─────────────────────────────────────────────────────────

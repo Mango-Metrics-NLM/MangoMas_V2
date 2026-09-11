@@ -13,7 +13,7 @@ identify structural risks, and produce concise, actionable recommendations.
 | Principle | Rule |
 |-----------|------|
 | Protocol-first | Every adapter satisfies a `@runtime_checkable Protocol`. Concrete types never cross layer boundaries. |
-| Single wiring point | All dependency construction in `composition.py::build_orchestrator`. |
+| Single wiring point | All dependency construction in `composition.build_orchestrator`. |
 | Stable contracts | `core/` types are the public surface — backward-compatible changes only. |
 | Config-driven | No hard-coded values — every tunable in `Settings`. |
 | Error hierarchy | All errors subclass `MangomasError`; HTTP mapping centralised in `api/errors.py`. |
@@ -22,7 +22,7 @@ identify structural risks, and produce concise, actionable recommendations.
 
 ## Checklist
 ### Layer Boundaries
-- [ ] No concrete adapter imported outside `composition.py`
+- [ ] No concrete adapter imported outside the `composition/` package
 - [ ] `TYPE_CHECKING` guard on cross-layer imports in `agent.py` / `core/`
 - [ ] No business logic in `api/routes/` handlers
 

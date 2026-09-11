@@ -109,7 +109,7 @@ plumbing.
 | Script | Role |
 |---|---|
 | `check_protected_paths.py` | The authoritative CI gate (`make protected-paths`) |
-| `lint_agent_frontmatter.py` | Frontmatter lint (`make frontmatter`) + both hook modes + the legacy staged-diff `--check-protected-paths` for pre-commit |
+| `lint_agent_frontmatter.py` | Frontmatter lint (`make frontmatter`) + PreToolUse/PostToolUse hook modes. Legacy `--check-protected-paths` is not a pre-commit hook; CI authority is `make protected-paths` |
 | `harness_config_audit.py` | `ConfigChange` hook for `.claude/settings.json` edits; defers its `mangomas` imports so it degrades rather than crashing when the package is absent |
 | `harness_session_start.py` | `SessionStart` probe (venv + LM Studio); always exits `EXIT_OK` |
 
@@ -118,7 +118,8 @@ plumbing.
 ## Runtime harness (`MANGOMAS_HARNESS__*`)
 
 Separate from the governance scripts above: when `enabled=True`,
-`composition.py::build_orchestrator` returns `_HarnessOrchestrator`, which wraps
+`composition.build_orchestrator` returns `_HarnessOrchestrator` (defined in
+`composition/harness.py`), which wraps
 `dispatch` and `stream_dispatch` in a `harness.agent_invoke` span.
 `stream_dispatch`'s span attaches and detaches OTel context **per chunk** and
 never across a `yield` — a span held across a yield leaks into the consumer's

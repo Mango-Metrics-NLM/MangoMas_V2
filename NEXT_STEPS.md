@@ -557,13 +557,18 @@ defects and a further round of duplication clusters via a full-repo audit:
   `--cov-fail-under` out of `pyproject.toml` and feeds it back to a pytest run
   whose addopts already set that value, a tautology on this branch where
   `scripts/check_coverage.py` is already the documented single source of
-  truth. **Still outstanding**: the `dag` node kind itself (ADR-0023 records
-  the design — compile to a `Sequence`/`FanOut` tree at load time, absorbing
-  only `main`'s `execution_levels()` algorithm — but does not implement it).
+  truth. This line's Stop hook stays `make typecheck format-check` plus
+  `pytest --no-cov`; it is not `main`'s stop-gate. **Copilot corpus on
+  `main`**: the GitHub-hosted agent/skill trees stay dropped — this
+  line's corpus is `.claude/`. **Still outstanding**: the `dag` node kind
+  itself (ADR-0023 records the design — compile to a `Sequence`/`FanOut`
+  tree at load time, absorbing only `main`'s `execution_levels()` algorithm
+  — but does not implement it).
 - **Deferred tooling** — ruff `RET`/`PERF`/`C90` rule families, a
   Python 3.13 matrix leg, and a `pre-commit run --all-files` CI job.
-  (`ASYNC`/`DTZ`/`C4`, `pip-audit`, `dependabot.yml`, scheduled automation,
-  and the `verify` job gating `deploy.yml` have landed.)
+  Already landed (do not re-propose): `ASYNC`/`DTZ`/`C4`, `pip-audit`,
+  `.github/dependabot.yml`, scheduled nightly automation (including the
+  optional SBOM/Trivy baseline), and the `verify` job gating `deploy.yml`.
 - **Protected-paths CI job is not yet a required status check.** Spec-0017 R1
   intends the `protected-paths` job to be a merge-blocking required status
   check, but GitHub branch-protection settings are a repo-admin action under

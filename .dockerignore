@@ -45,3 +45,14 @@ pyrightconfig.json
 .claude/
 scripts/harness_session_start.py
 scripts/lint_agent_frontmatter.py
+
+# Local scanner binaries / caches (make secret-scan, make sbom-scan, import-linter)
+.import_linter_cache/
+gitleaks
+gitleaks.tar.gz
+trivy
+trivy.tar.gz
+sbom.cdx.json
+
+# Dev-only pytest environment guard — not part of the runtime image
+sitecustomize.py
