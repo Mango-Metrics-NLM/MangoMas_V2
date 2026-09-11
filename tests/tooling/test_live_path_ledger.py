@@ -21,6 +21,7 @@ _VANISHED_PATHS: tuple[str, ...] = (
 )
 
 _LIVE_FILES: tuple[str, ...] = (
+    ".github/copilot-instructions.md",
     "README.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",

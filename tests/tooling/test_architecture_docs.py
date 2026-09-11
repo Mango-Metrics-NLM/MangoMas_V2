@@ -174,6 +174,11 @@ def test_c4_code_names_the_dispatch_surface() -> None:
     required = (
         "dispatch_fan_out_settled",
         "FanOutOutcome",
+        "aclose",
+        "AgentContext.embeddings",
+        "AgentContext.vector_store",
+        "AuthenticationError",
+        "401",
         "UnknownProvider",
         "composition/",
         "api/middleware/",

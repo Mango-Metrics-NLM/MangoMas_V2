@@ -73,8 +73,8 @@ classDiagram
         +repo: TurnRepository
         +memory: MemoryRepository
         +tools: ToolRegistry
-        +embeddings: EmbeddingClient
-        +vector_store: VectorStoreRepository
+        +embeddings: EmbeddingClient | None
+        +vector_store: VectorStoreRepository | None
         +extras: dict[str, Any]
     }
     
@@ -102,7 +102,7 @@ classDiagram
 
 - **`Agent`**: Minimal protocol requiring `name: str` and `async def handle(request: AgentRequest, ctx: AgentContext) -> AgentResponse`.
 - **`StreamingAgent`**: Extended protocol requiring `async def stream(request: AgentRequest, ctx: AgentContext) -> AsyncIterator[str]`. If an agent does not implement `StreamingAgent`, the `Orchestrator` falls back to buffering `handle()` and yielding a single chunk.
-- **`AgentContext`**: Runtime state carrier housing the injected `LLMClient`, `TurnRepository`, optional `MemoryRepository`, `ToolRegistry`, and extensibility `extras: dict[str, Any]` (e.g. cognitive sink hooks, tracing bags).
+- **`AgentContext`**: Runtime state carrier housing the injected `LLMClient`, `TurnRepository`, optional `MemoryRepository`, optional retrieval seams (`AgentContext.embeddings`, `AgentContext.vector_store`), optional `ToolRegistry`, and extensibility `extras: dict[str, Any]` (e.g. cognitive sink hooks, tracing bags).
 - **`AgentRequest` / `AgentResponse`**: Mutable Pydantic models. `AgentRequest` carries `messages`, `metadata`, and `max_steps`; `AgentResponse` carries `content`, `agent`, and `metadata`.
 
 ### 2.2 Orchestration & Topologies
@@ -113,7 +113,7 @@ classDiagram
   - `dispatch_pipeline(agent_names, request)`: Sequences execution across agent stages $A \to B \to C$, piping prior stage output to the next request.
   - `dispatch_fan_out(agent_names, request)`: Executes concurrent dispatches across multiple agents via `asyncio.gather` and collates results.
   - `dispatch_fan_out_settled(agent_names, request)`: Same fan-out with per-branch settlement; returns `list[FanOutOutcome]` so a failed branch does not cancel the rest.
-- **Lifecycle & inventory**: `aclose()` closes embeddings and the vector store (fault-tolerant, idempotent). `register`, `list_agents`, `context`, and `agent_supports_streaming` exist on the class and are not topology primitives.
+- **Lifecycle & inventory**: `aclose()` closes optional embeddings and the optional vector store when present (fault-tolerant, idempotent). `register`, `list_agents`, `context`, and `agent_supports_streaming` exist on the class and are not topology primitives.
 - **HTTP middleware** lives in `src/mangomas/api/middleware/` (ADR-0019 facade over `backpressure`, `tenancy`, `access_log`).
 - **Harness Extension**: `_HarnessOrchestrator` (in `composition/harness.py`) wraps execution in OpenTelemetry parent spans when `MANGOMAS_HARNESS__ENABLED=true`, attributing span events with topology and message metadata without altering domain logic.
 

@@ -1,7 +1,7 @@
 ---
 name: mango-layering-auditor
-description: "Audits cross-layer imports against the Mango-Mas V2 dependency direction (adapters and agents depend on core; api depends on composition only). Starts with make lint-imports. Read-only: reports findings, never edits. Invoked by name, not by topic match."
-tools: Read, Grep, Glob, Skill, Bash
+description: "Audits cross-layer imports against the Mango-Mas V2 dependency direction (adapters and agents depend on core; api depends on composition only). Starts from the checked-in import-linter contract and any provided make lint-imports output. Read-only: reports findings, never edits. Invoked by name, not by topic match."
+tools: Read, Grep, Glob, Skill
 model: inherit
 ---
 
@@ -54,7 +54,8 @@ and sibling independence of `workflow` / `eval` / `rag` / `cognitive`.
   the imported name at runtime is a bug)
 
 ## Workflow
-1. `make lint-imports` — the mechanical gate. It forbids `mangomas.core` from
+1. Read the checked-in `importlinter` contract and any pasted `make lint-imports`
+   output from the caller. That mechanical gate forbids `mangomas.core` from
    importing `adapters` / `api` / `agents` / `workflow` (TYPE_CHECKING imports
    excluded) and requires `workflow` / `eval` / `rag` / `cognitive` to stay
    mutually independent. A red run is a layering violation; fix the import,
