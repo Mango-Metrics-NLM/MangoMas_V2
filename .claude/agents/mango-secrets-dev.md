@@ -20,7 +20,7 @@ Invariants below win — see the first two rows.
 - `src/mangomas/secrets/env.py` — `EnvSecretsProvider`, the seeded default
 - `src/mangomas/secrets/gcp.py` — `GCPSecretManagerProvider`
 - `src/mangomas/secrets/registry.py` — `secrets_registry`
-- In `composition.py`: `ensure_secrets_provider`, `_build_gcp_secrets_provider`,
+- In `composition/`: `ensure_secrets_provider`, `_build_gcp_secrets_provider`,
   `_resolve_llm_secrets`
 - `SecretsSettings` in `mangomas.config`
 - Tests: `tests/test_secrets.py`, `tests/test_secrets_gcp.py`

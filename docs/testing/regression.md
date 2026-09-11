@@ -21,13 +21,17 @@ gates below, all of which are executable:
 
 | Gate | Command | Authority |
 |---|---|---|
+| Config JSON | `make validate-config` | `.mcp.json` / `.claude/settings.json` / `.claude/settings.local.json.example` |
 | Unit suite + global floor | `make test` | `pyproject.toml` addopts mirror the global floor |
 | Per-package floors | `make coverage` | **`scripts/check_coverage.py` — the authoritative gate** |
+| Scripts floor | `make scripts-coverage` | Makefile `SCRIPTS_FLOOR` |
 | Bridge floor (100%) | `make bridge-coverage` | `eval_harness_bridge` is gated separately |
 | Contracts floor (100%) | `make contracts-coverage` | `mango-integration-contracts` is gated separately |
 | Mypy (strict) | `make typecheck` | 0 errors required |
 | Ruff lint + format | `make lint` / `make format-check` | Clean required |
+| Import-linter | `make lint-imports` | `core` ↛ outer layers; `workflow`/`eval`/`rag`/`cognitive` independence |
 | Frontmatter lint | `make frontmatter` | `scripts/lint_agent_frontmatter.py` |
+| Protected paths | `make protected-paths` | `BREAKING-CHANGE` trailer on core contracts |
 | Everything above | `make gate` | Mirrors `.github/workflows/ci.yml` |
 
 `pyproject.toml`'s `--cov-fail-under` **mirrors** the global floor for local
@@ -38,7 +42,9 @@ the only place that also enforces the per-package floors.
 
 ```powershell
 # From the repo root with the venv activated
-make gate          # or: python -m pytest -q && python scripts/check_coverage.py
+make gate          # validate-config lint format-check typecheck lint-imports
+                   # frontmatter protected-paths test coverage
+                   # bridge-coverage contracts-coverage scripts-coverage
 ```
 
 Skips are expected: every opt-in suite (integration, LM Studio, Vertex,
@@ -256,3 +262,9 @@ lockstep with `.pre-commit-config.yaml`):
 ```powershell
 make precommit     # pre-commit run --all-files
 ```
+
+**Hooks ≠ gate.** Pre-commit is ruff, mypy (`src/` only), frontmatter,
+`validate-config`, and `lint-imports`. The Stop hook is
+`make typecheck format-check` plus `pytest --no-cov`. Neither includes
+coverage floors or `protected-paths`. `make gate` remains the pre-PR bar.
+A `pre-commit run --all-files` **CI job** is still deferred.

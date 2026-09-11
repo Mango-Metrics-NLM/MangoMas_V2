@@ -117,7 +117,7 @@ mangomas workflow run "ship it" -f graph.json
 ## Workflow
 
 1. Decide the shape: a single node, or a `sequence` of `agent` / `fan_out` / `loop`.
-2. Confirm every referenced agent name is registered in `composition.py::agent_registry`.
+2. Confirm every referenced agent name is registered in `composition.agent_registry`.
 3. For a `loop`: pick a declarative `accept` predicate and cap `max_steps`.
 4. `mangomas workflow validate -f graph.json` (parse-only) before `run`.
 5. Add a test using `FakeLLM(replies=[...])` proving parity with the imperative equivalent.
@@ -142,6 +142,6 @@ mangomas workflow run "ship it" -f graph.json
 
 1. `workflow run` exits 2 "disabled" → set `MANGOMAS_WORKFLOW__ENABLED=true` or pass `--definition`.
 2. `ConfigError: invalid workflow graph` → unknown `kind`, extra field, or empty `steps`/`branches`.
-3. `AgentNotFound` → a node names an agent not registered in `composition.py`.
+3. `AgentNotFound` → a node names an agent not registered in the `composition/` package.
 4. `MaxStepsExceeded` → a `loop` predicate never matched within `max_steps`; refine the predicate or raise the cap.
 5. Parity test fails on metadata → an executor mutated `AgentResponse.metadata`; move it to a span.

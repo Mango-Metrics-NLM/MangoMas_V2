@@ -18,6 +18,11 @@ pre-commit install
 `make help` lists every target. `make gate` runs the whole CI pipeline locally,
 in CI's order — run it before opening a PR, not after CI tells you to.
 
+**Hooks ≠ gate.** `pre-commit` is a subset (ruff, mypy on `src/`, frontmatter,
+`validate-config`, `lint-imports`). The Claude Code Stop hook is
+`make typecheck format-check` plus `pytest --no-cov`. Neither substitutes
+for `make gate`.
+
 ---
 
 ## The one rule that will surprise you

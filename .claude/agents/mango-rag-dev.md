@@ -21,7 +21,7 @@ gated-test commands.
   `_shared.py` `SingleTextEmbedMixin` / `NoTransportAcloseMixin` pair
 - `src/mangomas/adapters/vector/` — `base.py::VectorStoreRepository` +
   `VectorMatch`, and `chroma.py`
-- Wiring in `composition.py`: `embedding_registry`, `_vector_registry`, and
+- Wiring in `composition/`: `embedding_registry`, `_vector_registry`, and
   `_build_rag_tools` — the only place `ctx.tools` gains a `RetrievalTool`
 - `EmbeddingSettings`, `VectorSettings`, `RagSettings` in `mangomas.config`
 - The `rag ingest` / `rag query` CLI commands and their `_require_rag` guard

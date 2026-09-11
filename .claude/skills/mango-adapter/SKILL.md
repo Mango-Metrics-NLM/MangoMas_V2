@@ -6,7 +6,7 @@ description: >
   storage backend (Postgres, Cloud SQL), implementing the SecretsProvider
   protocol, or extending an existing adapter while preserving the
   Protocol-first contract. Covers the registry registration step in
-  composition.py, the @runtime_checkable Protocol surface, and the fake
+  the composition/ package, the @runtime_checkable Protocol surface, and the fake
   adapter pattern in tests/fakes.py.
 argument-hint: "Describe the adapter to add (e.g. 'vertex LLM provider') or paste a failing protocol-conformance test"
 ---
@@ -51,9 +51,9 @@ python -m pytest --tb=short -q
 | Rule | Detail |
 |------|--------|
 | Protocol-first | Implement against `@runtime_checkable Protocol` in `adapters/*/base.py`. Never import a concrete adapter from `core/` or `agents/`. |
-| Composition-root registration | Register the factory in `composition.py` via `llm_registry.register("name", factory)` / `_storage_registry.register(...)` / `_memory_registry.register(...)`. No other module registers adapters. |
+| Composition-root registration | Register the factory in the `composition/` package via `llm_registry.register("name", factory)` / `_storage_registry.register(...)` / `_memory_registry.register(...)`. No other module registers adapters. |
 | Config-driven | New tunables go in `LLMSettings`, `DBSettings`, `MemorySettings`, or `SecretsSettings` in `mangomas.config`. Never hard-code URLs, model IDs, or timeouts. |
-| Secrets seam | API keys / credentials resolve through `_resolve_llm_secrets()` in `composition.py`; do NOT call `os.environ` directly inside the adapter. |
+| Secrets seam | API keys / credentials resolve through `_resolve_llm_secrets()` in `composition/secrets.py`; do NOT call `os.environ` directly inside the adapter. |
 | Errors typed | Surface failures as `LLMTimeout`, `LLMUnavailable`, `LLMBadResponse`, `LLMError`, or `PersistenceError` — never bare `Exception`. Do not hand-roll the mapping: HTTP backends call `_http_errors.translate_httpx_error`, Vertex backends call `_vertex_errors.translate_vertex_error`. |
 | Reuse the shared base | An OpenAI-compatible HTTP upstream subclasses `adapters/_openai_client.py::OpenAICompatHTTPClient` rather than re-implementing base-URL normalisation, bearer-auth client construction, injected-vs-owned client tracking, and `aclose()`. |
 | Async I/O | All public methods are `async def`. Synchronous I/O wrapped in `asyncio.to_thread(...)`. |
@@ -76,7 +76,7 @@ python -m pytest --tb=short -q
 | `src/mangomas/adapters/storage/memory.py` | Reference file-backed `MemoryRepository` |
 | `src/mangomas/secrets/provider.py` | `SecretsProvider` Protocol |
 | `src/mangomas/secrets/env.py` | `EnvSecretsProvider` reference |
-| `src/mangomas/composition.py` | Single wiring point — `llm_registry`, `_storage_registry`, `_memory_registry`, `secrets_registry` |
+| `src/mangomas/composition/` | Single wiring point — `llm_registry`, `_storage_registry`, `_memory_registry`, `secrets_registry` |
 | `src/mangomas/registry.py` | Generic `Registry[T]` with `scoped()` ctx manager for test isolation |
 | `tests/fakes.py` | `FakeLLM`, `FakeRepository`, `FakeMemoryRepository`, `FakeSecretsProvider` — extend instead of using `mock.patch` |
 
@@ -154,7 +154,7 @@ For a **non-HTTP / SDK-backed provider** (e.g. Vertex), do not subclass the base
 and release SDK resources in your own `aclose()`. Wrap public methods in a span
 via `get_tracer(__name__).start_as_current_span("adapter.<provider>.<method>")`.
 
-Then register in `composition.py`:
+Then register in the `composition/` package:
 
 ```python
 from mangomas.adapters.llm.<provider> import <Provider>Client
@@ -175,7 +175,7 @@ Activate via `MANGOMAS_LLM__PROVIDER=<provider>`.
 3. Implement the adapter class in a new file under the matching adapter directory —
    subclass the shared base where one applies; only backend-specific calls are new code.
 4. Add any new tunables to `mangomas.config` (`LLMSettings` in `config/llm.py`, `DBSettings` in `config/storage.py`, etc.) with `DEFAULT_*` constants.
-4. Register the factory in `composition.py` only.
+4. Register the factory in the `composition/` package only.
 5. Write `tests/test_<adapter>.py` — assert `isinstance(instance, Protocol)` and exercise success + each error path.
 6. If the adapter needs a test double, extend `tests/fakes.py` (don't duplicate inline).
 7. Run `ruff check --fix src tests` + `mypy --strict` + `pytest`.
@@ -185,7 +185,7 @@ Activate via `MANGOMAS_LLM__PROVIDER=<provider>`.
 
 ## Constraints
 
-- DO NOT import a concrete adapter outside `composition.py`.
+- DO NOT import a concrete adapter outside the `composition/` package.
 - DO NOT raise bare `Exception` — use `LLMError`/`PersistenceError` subclasses.
 - DO NOT call `os.environ` in the adapter — use the `SecretsProvider` seam.
 - DO NOT hardcode URLs, timeouts, model names — they belong in `Settings`.
@@ -197,7 +197,7 @@ Activate via `MANGOMAS_LLM__PROVIDER=<provider>`.
 
 ## Diagnosing Failures
 
-1. `UnknownProvider` at startup → the factory is not registered in `composition.py`.
+1. `UnknownProvider` at startup → the factory is not registered in the `composition/` package.
 2. `isinstance(client, LLMClient)` returns `False` → a Protocol method is missing or has the wrong signature; cross-check `adapters/llm/base.py`.
 3. mypy errors about `Awaitable[str]` → an async method is missing `await` or returning the coroutine itself.
 4. `LLMBadResponse` in CI but not locally → upstream JSON schema drift; pin the SDK and add a regression test.

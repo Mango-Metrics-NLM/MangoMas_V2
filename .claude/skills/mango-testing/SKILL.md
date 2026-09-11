@@ -28,8 +28,17 @@ argument-hint: "Describe the module to test, paste a failing test, or say 'run a
 ## Quick Commands
 
 ```powershell
+# Pre-PR bar — the full CI chain, including lint-imports and coverage floors
+make gate
+
 # Unit tests (fast, no real I/O) — pyproject addopts already supply --cov
 python -m pytest -q
+
+# Isolated scripts coverage (Makefile SCRIPTS_FLOOR)
+make scripts-coverage
+
+# Import-linter (core ↛ outer layers; sibling independence)
+make lint-imports
 
 # Single module
 python -m pytest tests/test_<module>.py -v

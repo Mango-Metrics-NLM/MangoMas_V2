@@ -92,7 +92,7 @@ format-check: ## ruff format --check
 typecheck: ## mypy --strict
 	$(PYTHON) -m mypy --strict $(CODE_PATHS)
 
-lint-imports: ## import-linter contracts (core ↛ adapters/api/agents/workflow)
+lint-imports: ## import-linter contracts (core ↛ outer; workflow/eval/rag/cognitive independence)
 	# Invoked through $(PYTHON) so `make PYTHON=python3 lint-imports` cannot
 	# pick a different interpreter's copy of the exact-pinned extra.
 	$(PYTHON) -c "from importlinter.cli import lint_imports; raise SystemExit(lint_imports(no_logo=True))"

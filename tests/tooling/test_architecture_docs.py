@@ -160,3 +160,23 @@ def test_model_does_not_describe_landed_work_as_future() -> None:
         assert offending == [], (
             f"{label} has shipped ({artefact.name}) but C1 still says: {offending}"
         )
+
+
+def test_c4_code_names_the_dispatch_surface() -> None:
+    """C4 is a dispatch-surface doc; these names are the ones that rot first.
+
+    ``_MODEL_DOCS`` stays c1-c3 because C4 uses classDiagram/flowchart, not
+    C4 Rel(). This assertion is the mechanical claim worth making at level 4:
+    the topology methods, the composition root package, the middleware
+    package, and UnknownProvider stay named.
+    """
+    text = (_ARCH_DIR / "c4-code.md").read_text(encoding="utf-8")
+    required = (
+        "dispatch_fan_out_settled",
+        "FanOutOutcome",
+        "UnknownProvider",
+        "composition/",
+        "api/middleware/",
+    )
+    missing = [name for name in required if name not in text]
+    assert missing == [], f"c4-code.md no longer names {missing}"

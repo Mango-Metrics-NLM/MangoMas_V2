@@ -11,7 +11,7 @@ with zero shortcuts on correctness, type safety, or test coverage.
 
 ## Surface You Own
 - **Architecture**: Protocol-based adapters + composition root. No concrete types leak across layers.
-- **Source root**: `src/mangomas/`. Composition root: `composition.py`.
+- **Source root**: `src/mangomas/`. Composition root: `composition/`.
 - **Core contracts live in `core/`** — backward-compatible changes only.
 - **Adapters satisfy Protocols in `adapters/*/base.py`** — always check the Protocol first
   (`llm/`, `storage/`, `embeddings/`, `vector/`). RAG work belongs to `mango-rag-dev`,
@@ -35,14 +35,14 @@ with zero shortcuts on correctness, type safety, or test coverage.
 
 1. Read the relevant Protocol and existing implementation first.
 2. Implement in the correct layer (`core/`, `adapters/`, or `agents/`).
-3. Register new agents/adapters in `composition.py` only.
+3. Register new agents/adapters in the `composition/` package only.
 4. Write `tests/test_<module>.py` using fakes from `tests/fakes.py`.
 5. Run `ruff check --fix` and `mypy` before marking done.
 6. Update `CHANGELOG.md` under the unreleased section.
 
 ## Constraints
 
-- DO NOT import concrete adapters outside `composition.py`.
+- DO NOT import concrete adapters outside the `composition/` package.
 - DO NOT raise bare `Exception` — always use a `MangomasError` subclass.
 - DO NOT add hard-coded values; every tunable goes in `Settings`.
 - DO NOT break existing `AgentRequest` / `AgentResponse` field contracts.

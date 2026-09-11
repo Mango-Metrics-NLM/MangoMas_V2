@@ -58,6 +58,7 @@ chroma/
 # IDE
 .vscode/
 .idea/
+.cursor/
 .DS_Store
 
 # Runtime / local state

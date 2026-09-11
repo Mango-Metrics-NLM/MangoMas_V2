@@ -149,10 +149,10 @@ consumers that have not yet adopted the `event`/`data` structure.
 ## Agent registry
 
 Agents are registered via the module-level `agent_registry` in
-`src/mangomas/composition.py`.  Adding a new agent requires:
+`src/mangomas/composition/`.  Adding a new agent requires:
 
 1. Implement the `Agent` protocol in `src/mangomas/agents/`.
-2. Register a factory in `composition.py`:
+2. Register a factory in the `composition/` package:
 
 ```python
 from mangomas.composition import agent_registry
@@ -281,7 +281,7 @@ mangomas workflow run "ship the feature"            # prints the final node's re
 
 The feature adds no new error types: a malformed graph is a `ConfigError` (400),
 an unknown agent is `AgentNotFound` (404), and loop exhaustion is
-`MaxStepsExceeded` (422). `errors.py` and `composition.py` are unchanged.
+`MaxStepsExceeded` (422). `errors.py` and the `composition/` package are unchanged.
 
 ---
 
@@ -384,9 +384,9 @@ All gates must pass before merging. The `Makefile` wraps the exact commands
 CI runs, so one target reproduces the whole pipeline locally:
 
 ```powershell
-make gate     # validate-config + lint + format-check + typecheck + frontmatter
-              # + protected-paths + test + coverage + bridge-coverage
-              # + contracts-coverage + scripts-coverage
+make gate     # validate-config + lint + format-check + typecheck + lint-imports
+              # + frontmatter + protected-paths + test + coverage
+              # + bridge-coverage + contracts-coverage + scripts-coverage
 make help     # list every target
 ```
 
@@ -397,18 +397,26 @@ Individually — note the lint surface includes `eval_harness_bridge/src` and
 make lint            # python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 make format-check    # python -m ruff format --check ...
 make typecheck       # python -m mypy --strict ...
+make lint-imports    # import-linter (core ↛ outer; sibling independence)
 make frontmatter     # python scripts/lint_agent_frontmatter.py
+make protected-paths # BREAKING-CHANGE trailer on protected core files
 make test            # python -m pytest -q  (addopts supply --cov + the global floor)
 make coverage        # python scripts/check_coverage.py  — per-package floors
 make bridge-coverage # eval_harness_bridge isolated 100% floor
 make contracts-coverage # mango-integration-contracts isolated 100% floor
-make precommit       # pre-commit run --all-files
+make scripts-coverage # scripts/ isolated floor (Makefile SCRIPTS_FLOOR)
+make precommit       # pre-commit run --all-files (subset of the gate; see below)
 ```
 
 `make secret-scan` (gitleaks) is CI-only and deliberately outside `make
 gate` — every other gate step runs fully offline, and downloading a pinned
 release binary is the one exception. Run it directly to reproduce that CI job
 locally (needs network access).
+
+**Hooks ≠ gate.** The Claude Code Stop hook is
+`make typecheck format-check` plus `pytest --no-cov`. Pre-commit is ruff,
+mypy (`src/` only), frontmatter, `validate-config`, and `lint-imports`.
+Neither is `make gate`; run `make gate` before opening a PR.
 
 Per-package floors (`scripts/check_coverage.py` — the authoritative gate):
 `errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy`, `_headers`
@@ -476,7 +484,7 @@ src/mangomas/
   secrets/      SecretsProvider seam (env-var backend; cloud backends pluggable)
   config/       Pydantic-settings, one module per domain behind a permanent
                 re-export facade — all config is env-driven (MANGOMAS_*)
-  composition.py  Composition root — wires registries at startup
+  composition/  Composition root — wires registries at startup
   correlation.py  Per-request correlation id ContextVar + filter
   tenancy.py    Opt-in tenant ContextVar for tenant-scoped storage
   errors.py     Typed error hierarchy (MangomasError subclasses)

@@ -11,6 +11,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Pre-commit Makefile mirrors**: local hooks `validate-config` (the same
+  three JSON files as `make validate-config`) and `lint-imports` (the same
+  `lint_imports(no_logo=True)` invocation as the Makefile). Locked by
+  `tests/tooling/test_precommit_parity.py`. Pre-commit remains a subset of
+  `make gate`; Stop stays `typecheck + format-check + pytest --no-cov`.
+- **Backpressure reject logs**: `MaxBodySizeMiddleware` and
+  `ConcurrencyLimitMiddleware` emit WARNING records on the
+  `mangomas.api.middleware` logger with structured `error`, `path`,
+  `status_code`, and the configured limit. Locked by
+  `tests/test_backpressure.py::test_max_body_size_logs_warning_on_reject` and
+  the caplog assertions in `test_concurrency_limit_rejects_when_saturated`.
 - **Level 4 C4 Code Architecture Specification** (`docs/architecture/c4-code.md`).
   Formalizes concrete runtime protocols (`Agent`, `StreamingAgent`, `LLMClient`,
   `EmbeddingClient`, `TurnRepository`, `VectorStoreRepository`), adapter boundaries,
@@ -25,6 +36,29 @@ Versioning: [Semantic Versioning](https://semver.org/).
   are covered in their home suites (`tests/rag/test_loader.py`,
   `tests/test_secrets_gcp.py`,
   `tests/adapters/embeddings/test_sentence_transformers.py`).
+
+### Changed
+
+- **Live composition/middleware paths**: reader docs, C2/C3/C4, and the
+  Claude corpus teach `src/mangomas/composition/` and
+  `src/mangomas/api/middleware/` as packages. Vanished module files are
+  locked out of live surfaces by
+  `tests/tooling/test_live_path_ledger.py`. Historical CHANGELOG / ADR /
+  plan / spec / NEXT_STEPS citations stay dated records.
+- **C4 dispatch surface**: `dispatch_fan_out_settled`, `FanOutOutcome`,
+  `aclose`, `AgentContext.embeddings` / `vector_store`, `UnknownProvider`,
+  and HTTP-mapping prose for `AuthenticationError` (401). Locked by
+  `tests/tooling/test_architecture_docs.py::test_c4_code_names_the_dispatch_surface`
+  and `tests/tooling/test_doc_links.py` (`c4-code.md` in `_LINKED_DOCS`).
+- **Import-linter sibling independence**: `workflow` / `eval` / `rag` /
+  `cognitive` must not import each other. Locked by `make lint-imports`.
+- **Stop hook singleton**: `tests/tooling/test_claude_code_settings.py::test_stop_hook_is_the_singleton_preexisting_command`
+  requires the Stop matcher to be exactly the one `PREEXISTING_HOOKS`
+  command (the command itself is unchanged).
+- **NEXT_STEPS deferred tooling**: `pip-audit` / Dependabot / nightly SBOM
+  are recorded as landed; Copilot's GitHub-hosted corpus and `main`'s
+  stop-gate stay explicit non-ports. `dag` node, Python 3.13, and a
+  `pre-commit --all-files` CI job remain deferred.
 
 ### Fixed
 

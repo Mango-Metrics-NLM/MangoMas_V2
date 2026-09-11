@@ -373,3 +373,13 @@ forbidden_modules = [
     "mangomas.agents",
     "mangomas.workflow",
 ]
+
+[[tool.importlinter.contracts]]
+name = "workflow eval rag cognitive are independent"
+type = "independence"
+modules = [
+    "mangomas.workflow",
+    "mangomas.eval",
+    "mangomas.rag",
+    "mangomas.cognitive",
+]

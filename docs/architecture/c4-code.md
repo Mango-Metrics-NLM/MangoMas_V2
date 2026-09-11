@@ -64,6 +64,8 @@ classDiagram
         +stream_dispatch(name: str, request: AgentRequest) AsyncIterator[str]
         +dispatch_pipeline(agent_names: list[str], request: AgentRequest) AgentResponse
         +dispatch_fan_out(agent_names: list[str], request: AgentRequest) list[AgentResponse]
+        +dispatch_fan_out_settled(agent_names: list[str], request: AgentRequest) list[FanOutOutcome]
+        +aclose() None
     }
     
     class AgentContext {
@@ -71,6 +73,8 @@ classDiagram
         +repo: TurnRepository
         +memory: MemoryRepository
         +tools: ToolRegistry
+        +embeddings: EmbeddingClient
+        +vector_store: VectorStoreRepository
         +extras: dict[str, Any]
     }
     
@@ -103,12 +107,15 @@ classDiagram
 
 ### 2.2 Orchestration & Topologies
 
-- **`Orchestrator`**: Concrete dispatcher that stores registered agents internally and is typically wired by `Registry[T]`-backed composition code before requests are dispatched.
-- **Iterative Control Loop**: Supports `AcceptanceFn` predicates to drive multi-turn refinement loops with bounded step limits (`max_steps`).
+- **`Orchestrator`**: Concrete dispatcher that stores registered agents internally and is typically wired by `Registry[T]`-backed composition code (`src/mangomas/composition/`) before requests are dispatched.
+- **Iterative Control Loop**: Supports `AcceptanceFn` predicates to drive multi-turn refinement loops with bounded step limits (`max_steps`). `dispatch` is the single-agent entry; `stream_dispatch` is the streaming counterpart.
 - **Pipeline & Fan-Out Topologies**:
   - `dispatch_pipeline(agent_names, request)`: Sequences execution across agent stages $A \to B \to C$, piping prior stage output to the next request.
   - `dispatch_fan_out(agent_names, request)`: Executes concurrent dispatches across multiple agents via `asyncio.gather` and collates results.
-- **Harness Extension**: `_HarnessOrchestrator` wraps execution in OpenTelemetry parent spans when `MANGOMAS_HARNESS__ENABLED=true`, attributing span events with topology and message metadata without altering domain logic.
+  - `dispatch_fan_out_settled(agent_names, request)`: Same fan-out with per-branch settlement; returns `list[FanOutOutcome]` so a failed branch does not cancel the rest.
+- **Lifecycle & inventory**: `aclose()` closes embeddings and the vector store (fault-tolerant, idempotent). `register`, `list_agents`, `context`, and `agent_supports_streaming` exist on the class and are not topology primitives.
+- **HTTP middleware** lives in `src/mangomas/api/middleware/` (ADR-0019 facade over `backpressure`, `tenancy`, `access_log`).
+- **Harness Extension**: `_HarnessOrchestrator` (in `composition/harness.py`) wraps execution in OpenTelemetry parent spans when `MANGOMAS_HARNESS__ENABLED=true`, attributing span events with topology and message metadata without altering domain logic.
 
 ---
 
@@ -211,6 +218,7 @@ classDiagram
     class Exception
     class MangomasError
     class ConfigError
+    class UnknownProvider
     class AgentNotFound
     class MaxStepsExceeded
     class LLMError
@@ -225,6 +233,7 @@ classDiagram
 
     Exception <|-- MangomasError
     MangomasError <|-- ConfigError
+    ConfigError <|-- UnknownProvider
     MangomasError <|-- AgentNotFound
     MangomasError <|-- MaxStepsExceeded
     MangomasError <|-- LLMError
@@ -238,5 +247,5 @@ classDiagram
     MangomasError <|-- ToolExecutionError
 ```
 
-- **HTTP Status Mapping**: The FastAPI exception handler walks the exception MRO to yield canonical HTTP status codes (`ConfigError` $\to$ 400, `AgentNotFound` $\to$ 404, `MaxStepsExceeded` $\to$ 422, `LLMUnavailable` $\to$ 503, `LLMTimeout` $\to$ 504).
+- **HTTP Status Mapping**: The FastAPI exception handler walks the exception MRO to yield canonical HTTP status codes (`UnknownProvider` / `ConfigError` $\to$ 400, `AgentNotFound` $\to$ 404, `MaxStepsExceeded` $\to$ 422, `LLMUnavailable` $\to$ 503, `LLMTimeout` $\to$ 504). `AuthenticationError` is defined in `api/auth.py` (not `errors.py`) and maps to 401 via the same `_ERROR_STATUS` table.
 - **Correlation Propagation**: Every error envelope carries `error`, `message`, `correlation_id`, and ISO-8601 `timestamp`.
