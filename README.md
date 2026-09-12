@@ -188,6 +188,7 @@ Built-in scorers (registered through `mangomas.eval.scorer_registry`):
 | `json_keys` | Schema conformance — asserts the required keys in structured JSON output (`planner` / `reviewer`) |
 | `llm_judge` | Routes a structured JSON prompt through the orchestrator's LLM; pass = `score >= threshold` |
 | `embedding` | Cosine similarity of embeddings; resolves a real provider via `ScorerContext.embeddings` |
+| `cost_budget` | Estimates USD per row (explicit `cost_usd`, token counts, or output chars). Measure-only unless `max_cost_usd` is set; gate via `MANGOMAS_EVAL__MAX_MEAN_COST_USD` |
 
 `EvalSettings` is wired into top-level `Settings` with the
 `MANGOMAS_EVAL__*` env prefix; the CLI flags fall back to those values. See

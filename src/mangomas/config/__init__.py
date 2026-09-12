@@ -117,6 +117,18 @@ from mangomas.config.evaluation import (
     DEFAULT_EVAL_BASELINE_PATH as DEFAULT_EVAL_BASELINE_PATH,
 )
 from mangomas.config.evaluation import (
+    DEFAULT_EVAL_COST_MAX_USD as DEFAULT_EVAL_COST_MAX_USD,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS as DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS as DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS as DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
+)
+from mangomas.config.evaluation import (
     DEFAULT_EVAL_DATASET_SOURCE as DEFAULT_EVAL_DATASET_SOURCE,
 )
 from mangomas.config.evaluation import (
@@ -127,6 +139,9 @@ from mangomas.config.evaluation import (
 )
 from mangomas.config.evaluation import (
     DEFAULT_EVAL_GATE_ENABLED as DEFAULT_EVAL_GATE_ENABLED,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_MAX_MEAN_COST_USD as DEFAULT_EVAL_MAX_MEAN_COST_USD,
 )
 from mangomas.config.evaluation import (
     DEFAULT_EVAL_MAX_MEAN_SCORE_DROP as DEFAULT_EVAL_MAX_MEAN_SCORE_DROP,
@@ -160,6 +175,15 @@ from mangomas.config.evaluation import (
 )
 from mangomas.config.evaluation import (
     DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS as DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS,
+)
+from mangomas.config.evaluation import (
+    EVAL_COST_INPUT_TOKENS_METADATA_KEY as EVAL_COST_INPUT_TOKENS_METADATA_KEY,
+)
+from mangomas.config.evaluation import (
+    EVAL_COST_OUTPUT_TOKENS_METADATA_KEY as EVAL_COST_OUTPUT_TOKENS_METADATA_KEY,
+)
+from mangomas.config.evaluation import (
+    EVAL_COST_USD_METADATA_KEY as EVAL_COST_USD_METADATA_KEY,
 )
 from mangomas.config.evaluation import (
     EvalSettings as EvalSettings,
@@ -410,10 +434,15 @@ __all__ = [
     "DEFAULT_EVAL_AGENT",
     "DEFAULT_EVAL_ALLOW_NEW_FAILURES",
     "DEFAULT_EVAL_BASELINE_PATH",
+    "DEFAULT_EVAL_COST_MAX_USD",
+    "DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS",
+    "DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS",
+    "DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS",
     "DEFAULT_EVAL_DATASET_SOURCE",
     "DEFAULT_EVAL_FAIL_FAST",
     "DEFAULT_EVAL_FAIL_ON_ERROR",
     "DEFAULT_EVAL_GATE_ENABLED",
+    "DEFAULT_EVAL_MAX_MEAN_COST_USD",
     "DEFAULT_EVAL_MAX_MEAN_SCORE_DROP",
     "DEFAULT_EVAL_MAX_PASS_RATE_DROP",
     "DEFAULT_EVAL_MIN_MEAN_SCORE",
@@ -477,6 +506,9 @@ __all__ = [
     "DEFAULT_WORKFLOW_ENABLED",
     "DEFAULT_WORKFLOW_LOOP_MAX_STEPS",
     "DEFAULT_WORKFLOW_SCHEMA_VERSION",
+    "EVAL_COST_INPUT_TOKENS_METADATA_KEY",
+    "EVAL_COST_OUTPUT_TOKENS_METADATA_KEY",
+    "EVAL_COST_USD_METADATA_KEY",
     "APISettings",
     "AgentSettings",
     "AuthSettings",

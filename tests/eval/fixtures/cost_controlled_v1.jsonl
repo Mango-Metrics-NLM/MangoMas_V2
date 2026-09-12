@@ -1,0 +1,8 @@
+{"id": "cc-1", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 10, "output_tokens": 20, "cohort": "cost-controlled-v1"}}
+{"id": "cc-2", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 12, "output_tokens": 24, "cohort": "cost-controlled-v1"}}
+{"id": "cc-3", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 14, "output_tokens": 28, "cohort": "cost-controlled-v1"}}
+{"id": "cc-4", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 16, "output_tokens": 32, "cohort": "cost-controlled-v1"}}
+{"id": "cc-5", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 18, "output_tokens": 36, "cohort": "cost-controlled-v1"}}
+{"id": "cc-6", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 20, "output_tokens": 40, "cohort": "cost-controlled-v1"}}
+{"id": "cc-7", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 22, "output_tokens": 44, "cohort": "cost-controlled-v1"}}
+{"id": "cc-8", "messages": [{"role": "user", "content": "stub-reply"}], "expected": "stub-reply", "metadata": {"input_tokens": 24, "output_tokens": 48, "cohort": "cost-controlled-v1"}}

@@ -6,6 +6,7 @@ in a `from mangomas.config import eval` style import."""
 from __future__ import annotations
 
 import logging
+import math
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -53,6 +54,38 @@ DEFAULT_EVAL_MIN_PASS_RATE: float | None = None
 
 
 DEFAULT_EVAL_FAIL_ON_ERROR: bool = False
+
+
+# Cost dimension (Kapoor 2024 / analysis §9.B) — default OFF. USD is not a
+# unit score, so these are unbounded-above non-negative floats. The per-row
+# scorer budget lives in ``scorer_options["max_cost_usd"]``; the gate field
+# below is the only Settings-level cost threshold.
+DEFAULT_EVAL_COST_MAX_USD: float | None = None
+
+
+DEFAULT_EVAL_MAX_MEAN_COST_USD: float | None = None
+
+
+# Synthetic USD rates for the ``cost_budget`` scorer when a row does not
+# supply an explicit ``cost_usd``. Overridable via ``scorer_options``.
+DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS: float = 0.0005
+
+
+DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS: float = 0.0015
+
+
+DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS: float = 0.001
+
+
+# Metadata keys copied onto ``ScoreResult.metadata`` / row metadata. The
+# runner averages ``cost_usd`` into ``EvalReport.mean_cost_usd``.
+EVAL_COST_USD_METADATA_KEY: str = "cost_usd"
+
+
+EVAL_COST_INPUT_TOKENS_METADATA_KEY: str = "input_tokens"
+
+
+EVAL_COST_OUTPUT_TOKENS_METADATA_KEY: str = "output_tokens"
 
 
 # Regression / baseline gating — default OFF. A baseline is a prior json_file
@@ -128,6 +161,8 @@ class EvalSettings(BaseModel):
     min_mean_score: float | None = DEFAULT_EVAL_MIN_MEAN_SCORE
     min_pass_rate: float | None = DEFAULT_EVAL_MIN_PASS_RATE
     fail_on_error: bool = DEFAULT_EVAL_FAIL_ON_ERROR
+    # USD, not a ``[0, 1]`` score. ``None`` keeps the gate cost-blind.
+    max_mean_cost_usd: float | None = DEFAULT_EVAL_MAX_MEAN_COST_USD
 
     # ── Regression / baseline gating (CI) — default OFF ───────────────────────
     baseline_path: str | None = DEFAULT_EVAL_BASELINE_PATH
@@ -162,6 +197,13 @@ class EvalSettings(BaseModel):
         ):
             if value is not None and not 0.0 <= value <= 1.0:
                 raise ValueError(f"eval.{label} must be in [0.0, 1.0]; got {value}")
+        if self.max_mean_cost_usd is not None and (
+            not math.isfinite(self.max_mean_cost_usd) or self.max_mean_cost_usd < 0.0
+        ):
+            raise ValueError(
+                "eval.max_mean_cost_usd must be a finite number >= 0.0; "
+                f"got {self.max_mean_cost_usd}"
+            )
         if self.schema_version > DEFAULT_EVAL_SCHEMA_VERSION:
             logger.warning(
                 "Eval config declares a future schema_version; reading with current code",

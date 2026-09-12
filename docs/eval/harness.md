@@ -42,6 +42,7 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__MIN_MEAN_SCORE` | (unset) | Fail the gate if `mean_score` below this `[0,1]` |
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | (unset) | Fail the gate if `passed/size` below this `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Fail the gate if any row errored |
+| `MANGOMAS_EVAL__MAX_MEAN_COST_USD` | (unset) | Fail the gate if `mean_cost_usd` exceeds this USD amount |
 | `MANGOMAS_EVAL__BASELINE_PATH` | (unset) | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | (unset) | Max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | (unset) | Max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -102,6 +103,7 @@ thresholds without callers re-implementing the rule).
 | `RegexMatchScorer` | `regex_match` | `expected` is a **regex** (per row); pass iff it matches `prediction`. Options: `flags` (`ignorecase`/`multiline`/`dotall`), `fullmatch`. |
 | `ContainsScorer` | `contains` | `expected` is a **substring** (per row); pass iff contained in `prediction`. Option: `case_sensitive`. |
 | `JsonKeysScorer` | `json_keys` | Parses `prediction` as a JSON object and grades by required-key coverage (great for `planner`/`reviewer` structured output). Keys come from `required_keys` option, else from `expected` parsed as a JSON object. Option: `strict` (extra keys → score 0). Malformed prediction → failing row (`score=0`), not an error. |
+| `CostBudgetScorer` | `cost_budget` | Estimates USD per row (`metadata.cost_usd` explicit, else token counts, else `len(prediction)` × `usd_per_1k_output_chars`). Measure-only by default (`max_cost_usd` unset → always pass, `score=1.0`). The dollar figure is copied onto row metadata so `EvalReport.mean_cost_usd` can be gated via `MANGOMAS_EVAL__MAX_MEAN_COST_USD` (USD, default-off). |
 
 > Note: `regex_match` and `contains` reinterpret the per-row `expected` field
 > (as a pattern / needle) rather than a gold answer — keep their datasets
@@ -158,7 +160,11 @@ mangomas eval -d data.jsonl -s exact_match --min-mean-score 0.8
 
 `pass_rate = passed / dataset_size` (errored rows count against it), while
 `mean_score` excludes errored rows. Use `--fail-on-error` to fail the gate when
-any row errored regardless of thresholds.
+any row errored regardless of thresholds. `--max-mean-cost-usd` is a **USD**
+threshold on `EvalReport.mean_cost_usd` (populated by `cost_budget`); it is
+not clamped to `[0, 1]`. Non-finite values (`NaN`, infinities) are rejected
+at Settings, CLI, and scorer construction so a `NaN` cap cannot silently
+pass. The quality gate stays default-off.
 
 ### Regression gating (baseline diff)
 
@@ -224,12 +230,13 @@ Every event carries `extra={"event": ..., ...}` for structured-log filters:
 | `eval_dataset_load_start` | DEBUG | `path` |
 | `eval_dataset_loaded` | INFO | `path`, `row_count` |
 | `eval_start` | INFO | `dataset_size`, `scorer`, `agent_name`, `parallelism`, `fail_fast` |
-| `eval_row` | DEBUG | `row_id`, `score`, `passed`, `duration_ms` |
+| `eval_row` | DEBUG | `row_id`, `score`, `passed`, `duration_ms`, `cost_usd` |
 | `eval_error` | ERROR | `row_id`, `error_type`, `duration_ms` |
-| `eval_summary` | INFO | `dataset_size`, `passed`, `failed`, `errored`, `mean_score`, `duration_ms` |
+| `eval_summary` | INFO | `dataset_size`, `passed`, `failed`, `errored`, `mean_score`, `mean_cost_usd`, `duration_ms` |
+| `eval_cost_estimated` | DEBUG | `scorer`, `cost_usd`, `source`, `max_cost_usd`, `passed` |
 | `eval_llm_judge_request` | DEBUG | `scorer`, `threshold` |
 | `embedding_scorer_unavailable` | WARNING | `scorer`, `reason` |
-| `eval_gate` | INFO | `passed`, `mean_score`, `pass_rate`, `errored`, `reasons` |
+| `eval_gate` | INFO | `passed`, `mean_score`, `pass_rate`, `mean_cost_usd`, `errored`, `reasons` |
 | `eval_sink_json_file` | DEBUG | `path` |
 | `eval_sink_langfuse` | INFO | `scorer` |
 | `eval_plugin_load_failed` | WARNING | `group`, `plugin`, `error` |

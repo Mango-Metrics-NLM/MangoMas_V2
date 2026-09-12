@@ -11,7 +11,7 @@ from mangomas.eval._serialize import report_payload
 from mangomas.eval.baseline import load_baseline
 from mangomas.eval.gate import GateResult
 from mangomas.eval.runner import EvalReport, EvalRowResult
-from tests.constants import DEFAULT_AGENT_NAME, STUB_REPLY
+from tests.constants import DEFAULT_AGENT_NAME, EVAL_COST_USD_METADATA_KEY, STUB_REPLY
 
 _ROW_ID = "row-0"
 _DURATION_MS = 1.0
@@ -76,3 +76,35 @@ async def test_payload_round_trips_through_load_baseline(tmp_path: Path) -> None
     restored = await load_baseline(str(path))
 
     assert restored == report
+
+
+async def test_payload_round_trips_mean_cost_usd(tmp_path: Path) -> None:
+    report = EvalReport(
+        scorer=DEFAULT_EVAL_SCORER,
+        agent_name=DEFAULT_AGENT_NAME,
+        dataset_size=1,
+        passed=1,
+        failed=0,
+        errored=0,
+        mean_score=1.0,
+        duration_ms=_DURATION_MS,
+        rows=[
+            EvalRowResult(
+                row_id=_ROW_ID,
+                score=1.0,
+                passed=True,
+                duration_ms=_DURATION_MS,
+                prediction=STUB_REPLY,
+                expected=STUB_REPLY,
+                metadata={EVAL_COST_USD_METADATA_KEY: 0.05},
+            )
+        ],
+        target_name=DEFAULT_EVAL_TARGET,
+        mean_cost_usd=0.05,
+    )
+    path = tmp_path / "baseline.json"
+    path.write_text(json.dumps(report_payload(report), ensure_ascii=False), encoding="utf-8")
+    restored = await load_baseline(str(path))
+    assert restored == report
+    assert restored.mean_cost_usd == 0.05
+    assert restored.rows[0].metadata[EVAL_COST_USD_METADATA_KEY] == 0.05

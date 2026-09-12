@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -28,12 +27,12 @@ from mangomas import __version__ as _PACKAGE_VERSION
 from mangomas.cognitive.constants import (
     COGNITIVE_SETTINGS_EXTRAS_KEY,
     COGNITIVE_SINK_EXTRAS_KEY,
-    GENAI_INVOKE_AGENT_SPAN,
     METADATA_RUN_ID,
     METADATA_TASK_ID,
     UNPARSED_GOAL,
     UNPARSED_PLANNER_STEP,
 )
+from mangomas.cognitive.genai import genai_invoke_agent_span
 from mangomas.cognitive.roles import harness_role_for_agent
 from mangomas.correlation import get_correlation_id
 
@@ -245,15 +244,6 @@ def build_signal(
     return signal
 
 
-def _genai_span(settings: SignalSettings) -> AbstractContextManager[Any]:
-    if not settings.genai_spans:
-        return nullcontext()
-    from opentelemetry import trace  # noqa: PLC0415
-
-    tracer = trace.get_tracer(__name__)
-    return tracer.start_as_current_span(GENAI_INVOKE_AGENT_SPAN)
-
-
 async def emit_agent_signal(
     *,
     agent_name: str,
@@ -275,11 +265,10 @@ async def emit_agent_signal(
             extra={"event": "cognitive_sink_invalid", "agent": agent_name},
         )
         return
-    with _genai_span(settings) as span:
-        if span is not None:
-            span.set_attribute("gen_ai.operation.name", "invoke_agent")
-            span.set_attribute("gen_ai.agent.name", agent_name)
-            span.set_attribute("gen_ai.system", "mangomas")
+    with genai_invoke_agent_span(
+        enabled=settings.genai_spans,
+        agent_name=agent_name,
+    ):
         try:
             signal = build_signal(
                 agent_name=agent_name,

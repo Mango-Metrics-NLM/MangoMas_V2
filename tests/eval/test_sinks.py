@@ -59,6 +59,19 @@ async def test_console_sink_writes_summary_and_rows() -> None:
     assert any("[FAIL] row-1" in line for line in lines)
 
 
+async def test_console_sink_appends_mean_cost_usd_when_present() -> None:
+    lines: list[str] = []
+    report = dataclasses.replace(_report(), mean_cost_usd=0.01)
+    await ConsoleSink(write=lines.append).emit(report)
+    assert any("mean_cost_usd=0.010000" in line for line in lines)
+
+
+async def test_console_sink_omits_mean_cost_when_absent() -> None:
+    lines: list[str] = []
+    await ConsoleSink(write=lines.append).emit(_report())
+    assert all("mean_cost_usd=" not in line for line in lines)
+
+
 async def test_console_sink_renders_gate_line() -> None:
     lines: list[str] = []
     sink = ConsoleSink(write=lines.append)

@@ -31,6 +31,26 @@ GENAI_INVOKE_AGENT_SPAN: str = "gen_ai.invoke_agent"
 GENAI_SEMCONV_STATUS: str = "development-2026-09"
 
 
+# Attribute names / values for the optional GenAI alias. Live spans stay
+# ``orchestrator.*`` / ``harness.agent_invoke``; this helper never replaces them.
+GENAI_ATTR_OPERATION_NAME: str = "gen_ai.operation.name"
+
+
+GENAI_ATTR_AGENT_NAME: str = "gen_ai.agent.name"
+
+
+GENAI_ATTR_SYSTEM: str = "gen_ai.system"
+
+
+GENAI_ATTR_SEMCONV_STATUS: str = "gen_ai.semconv.status"
+
+
+GENAI_OPERATION_INVOKE_AGENT: str = "invoke_agent"
+
+
+GENAI_SYSTEM_NAME: str = "mangomas"
+
+
 # Default JSONL basename under ``SignalSettings.dir``. Not a Settings field:
 # renaming the file is a producer-side choice, not an operator tunable.
 JSONL_FILENAME: str = "signals.jsonl"

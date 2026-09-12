@@ -15,6 +15,7 @@ from mangomas.eval import evaluate_gate
 from mangomas.eval.runner import EvalReport, EvalRowResult
 from mangomas.eval.sink_registry import sink_registry
 from mangomas.eval.sinks.sqlite_results import SqliteResultsSink
+from tests.constants import EVAL_COST_USD_METADATA_KEY
 
 
 def _report() -> EvalReport:
@@ -79,6 +80,42 @@ async def test_sqlite_results_sink_writes_report_and_rows(tmp_path: Path) -> Non
     assert rows[0][1] == "r1"
     assert json.loads(rows[0][4]) == {"k": "v"}
     assert rows[1][3] == "boom"
+
+
+async def test_sqlite_results_sink_stores_cost_usd_in_metadata_json(tmp_path: Path) -> None:
+    report = EvalReport(
+        scorer="cost_budget",
+        agent_name="chat",
+        dataset_size=1,
+        passed=1,
+        failed=0,
+        errored=0,
+        mean_score=1.0,
+        duration_ms=1.0,
+        rows=[
+            EvalRowResult(
+                row_id="r1",
+                score=1.0,
+                passed=True,
+                duration_ms=1.0,
+                prediction="a",
+                expected="a",
+                metadata={EVAL_COST_USD_METADATA_KEY: 0.05},
+            )
+        ],
+        target_name="echo",
+        mean_cost_usd=0.05,
+    )
+    db = tmp_path / "eval.db"
+    await SqliteResultsSink(db_path=str(db)).emit(report)
+    conn = sqlite3.connect(str(db))
+    try:
+        metadata_json = conn.execute("SELECT metadata_json FROM eval_rows").fetchone()[0]
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(eval_reports)").fetchall()}
+    finally:
+        conn.close()
+    assert json.loads(metadata_json)[EVAL_COST_USD_METADATA_KEY] == 0.05
+    assert "mean_cost_usd" not in columns
 
 
 async def test_sqlite_results_sink_appends(tmp_path: Path) -> None:

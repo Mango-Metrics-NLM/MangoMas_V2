@@ -146,6 +146,7 @@ def _report_from_dict(data: Mapping[str, Any]) -> EvalReport:
             duration_ms=data["duration_ms"],
             rows=rows,
             target_name=data.get("target_name", ""),
+            mean_cost_usd=data.get("mean_cost_usd"),
         )
     except (KeyError, TypeError) as exc:
         raise ConfigError(f"Invalid baseline report structure: {exc}") from exc

@@ -82,6 +82,7 @@ async def _evaluate_run_gates(
     min_mean_score: float | None,
     min_pass_rate: float | None,
     fail_on_error: bool,
+    max_mean_cost_usd: float | None,
     baseline_path: str | None,
     max_mean_score_drop: float | None,
     max_pass_rate_drop: float | None,
@@ -98,6 +99,7 @@ async def _evaluate_run_gates(
             min_mean_score=min_mean_score,
             min_pass_rate=min_pass_rate,
             fail_on_error=fail_on_error,
+            max_mean_cost_usd=max_mean_cost_usd,
         )
         if gating_engaged
         else None
@@ -199,6 +201,11 @@ def eval_cmd(
         "--fail-on-error/--no-fail-on-error",
         help="Fail the gate (exit 3) if any row errored.",
     ),
+    max_mean_cost_usd: float | None = typer.Option(
+        None,
+        "--max-mean-cost-usd",
+        help="Fail (exit 3) if mean_cost_usd exceeds this USD threshold.",
+    ),
     baseline: str | None = typer.Option(
         None,
         "--baseline",
@@ -235,12 +242,15 @@ def eval_cmd(
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
     effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
 
-    gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error = _resolve_gating(
-        gate=gate,
-        min_mean_score=min_mean_score,
-        min_pass_rate=min_pass_rate,
-        fail_on_error=fail_on_error,
-        cfg=cfg,
+    gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error, eff_max_mean_cost = (
+        _resolve_gating(
+            gate=gate,
+            min_mean_score=min_mean_score,
+            min_pass_rate=min_pass_rate,
+            fail_on_error=fail_on_error,
+            max_mean_cost_usd=max_mean_cost_usd,
+            cfg=cfg,
+        )
     )
 
     effective_baseline, eff_max_mean_drop, eff_max_pass_drop, eff_allow_new = _resolve_regression(
@@ -290,6 +300,7 @@ def eval_cmd(
             min_mean_score=eff_min_mean,
             min_pass_rate=eff_min_pass,
             fail_on_error=eff_fail_on_error,
+            max_mean_cost_usd=eff_max_mean_cost,
             baseline_path=effective_baseline,
             max_mean_score_drop=eff_max_mean_drop,
             max_pass_rate_drop=eff_max_pass_drop,

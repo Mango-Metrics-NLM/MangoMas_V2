@@ -95,6 +95,22 @@ EVAL_BAD_REQUIRED_KEYS_OPTION: str = "not-a-list"
 # literal "sqlite:" directory instead of resolving to the intended file.
 EVAL_SQLITE_URL_PREFIX: str = "sqlite:///"
 
+# Versioned cost-controlled eval fixture (analysis §9.B). n>5; last-user
+# content equals ``STUB_REPLY`` so echo / agent / pipeline(["chat"]) share
+# prediction, tools, and token metadata.
+EVAL_COST_CONTROLLED_DATASET_FILENAME: str = "cost_controlled_v1.jsonl"
+EVAL_COST_CONTROLLED_MIN_ROWS: int = 6
+EVAL_COST_GATE_ABOVE_UNIT_USD: float = 2.5
+EVAL_COST_GATE_TINY_USD: float = 1e-12
+EVAL_COST_SCORER_NAME: str = "cost_budget"
+EVAL_COST_SOURCE_EXPLICIT: str = "explicit"
+EVAL_COST_SOURCE_OUTPUT_CHARS: str = "output_chars"
+EVAL_COST_SOURCE_TOKENS: str = "tokens"
+EVAL_COST_TOKENS_PER_THOUSAND: float = 1000.0
+EVAL_MAX_MEAN_COST_USD_ENV: str = "MANGOMAS_EVAL__MAX_MEAN_COST_USD"
+# Write-capable harness tool name that V2 ToolAgent must not execute.
+UNAUTHORIZED_TOOL_NAME: str = "run_command"
+
 # ── Declarative workflow graphs (spec 0005) ───────────────────────────────────
 WORKFLOW_NODE_KINDS: tuple[str, ...] = ("agent", "branch", "fan_out", "loop", "sequence")
 WORKFLOW_SCHEMA_VERSION_CURRENT: int = 1
@@ -175,6 +191,16 @@ __all__ = [
     "DEFAULT_VERTEX_EMBEDDING_MODEL",
     "EVAL_BAD_REGEX_FLAG",
     "EVAL_BAD_REQUIRED_KEYS_OPTION",
+    "EVAL_COST_CONTROLLED_DATASET_FILENAME",
+    "EVAL_COST_CONTROLLED_MIN_ROWS",
+    "EVAL_COST_GATE_ABOVE_UNIT_USD",
+    "EVAL_COST_GATE_TINY_USD",
+    "EVAL_COST_SCORER_NAME",
+    "EVAL_COST_SOURCE_EXPLICIT",
+    "EVAL_COST_SOURCE_OUTPUT_CHARS",
+    "EVAL_COST_SOURCE_TOKENS",
+    "EVAL_COST_TOKENS_PER_THOUSAND",
+    "EVAL_MAX_MEAN_COST_USD_ENV",
     "EVAL_SCHEMA_VERSION_CURRENT",
     "EVAL_SINK_CONSOLE",
     "EVAL_SINK_JSON_FILE",
@@ -222,6 +248,7 @@ __all__ = [
     "TEST_VERTEX_PROJECT",
     "TINY_STEP_TIMEOUT_SECONDS",
     "TOOL_MAX_STEPS_ENV",
+    "UNAUTHORIZED_TOOL_NAME",
     "UNPARSED_GOAL",
     "UNPARSED_PLANNER_STEP",
     "UNTIMED_AGENT_DELAY_SECONDS",

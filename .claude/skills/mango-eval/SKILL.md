@@ -3,7 +3,7 @@ name: mango-eval
 description: >
   The offline evaluation harness in Mango-Mas V2. Use when: adding or changing
   a Scorer (exact_match, regex_match, contains, json_keys, llm_judge,
-  embedding), a Sink (console, json_file, sqlite_results, webhook, langfuse), a
+  embedding, cost_budget), a Sink (console, json_file, sqlite_results, webhook, langfuse), a
   Target (agent, pipeline, fan_out, echo), or a DatasetSource (jsonl, inline,
   langfuse); wiring the CI quality gate or the regression/baseline gate; or
   running `mangomas eval`. Covers the scorer_registry / sink_registry /
@@ -31,7 +31,7 @@ argument-hint: "Describe the eval change (e.g. 'add a bleu scorer', 'add a csv d
 ```
 eval/protocol.py       Scorer, ScorerContext, ScoreResult protocols
 eval/registry.py       scorer_registry (+ sibling registries per component)
-eval/scorers/          exact_match, regex_match, contains, json_keys, llm_judge, embedding
+eval/scorers/          exact_match, regex_match, contains, json_keys, llm_judge, embedding, cost_budget
 eval/sink.py + sinks/  console, json_file, sqlite_results, webhook, langfuse
 eval/_serialize.py     report_payload(report, *, gate_result=None) — the one payload builder
 eval/target.py + targets/  agent (default), pipeline, fan_out, echo
@@ -92,8 +92,10 @@ mangomas eval -d <dataset.jsonl> -s <scorer> [-t <target>] `
 ```
 
 Gate flags map to `MANGOMAS_EVAL__GATE_ENABLED`, `MIN_MEAN_SCORE`,
-`MIN_PASS_RATE`, `FAIL_ON_ERROR`, and the regression flags (`--baseline`,
-`--max-mean-score-drop`, `--max-pass-rate-drop`, `--no-allow-new-failures`).
+`MIN_PASS_RATE`, `FAIL_ON_ERROR`, `MAX_MEAN_COST_USD` (USD, not a `[0, 1]`
+score), and the regression flags (`--baseline`, `--max-mean-score-drop`,
+`--max-pass-rate-drop`, `--no-allow-new-failures`). `--max-mean-cost-usd`
+engages the gate when set; `--no-gate` still disables it.
 
 ---
 
