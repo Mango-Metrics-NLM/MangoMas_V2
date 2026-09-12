@@ -17,6 +17,7 @@ import typer
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.errors import ConfigError
 from mangomas.eval import dataset_source_registry, sink_registry, target_registry
+from mangomas.eval._options import require_non_negative_float
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import EvalSettings
@@ -115,8 +116,8 @@ def _resolve_gating(
     An explicit ``--no-gate`` disables gating even when thresholds /
     ``fail_on_error`` / ``max_mean_cost_usd`` are configured via settings/env.
     Raises ``typer.Exit(EXIT_CONFIG_ERROR)`` on an out-of-range unit threshold
-    or a negative cost threshold — but only when gating is engaged, since an
-    unused threshold should not block a run.
+    or a non-finite / negative cost threshold — but only when gating is engaged,
+    since an unused threshold should not block a run.
     """
     eff_min_mean = min_mean_score if min_mean_score is not None else cfg.min_mean_score
     eff_min_pass = min_pass_rate if min_pass_rate is not None else cfg.min_pass_rate
@@ -144,13 +145,16 @@ def _resolve_gating(
                     err=True,
                 )
                 raise typer.Exit(code=EXIT_CONFIG_ERROR)
-        if eff_max_mean_cost is not None and eff_max_mean_cost < 0.0:
-            typer.echo(
-                "Eval configuration error: max-mean-cost-usd must be >= 0.0; "
-                f"got {eff_max_mean_cost}",
-                err=True,
-            )
-            raise typer.Exit(code=EXIT_CONFIG_ERROR)
+        if eff_max_mean_cost is not None:
+            try:
+                require_non_negative_float(
+                    eff_max_mean_cost,
+                    owner="eval",
+                    field="max-mean-cost-usd",
+                )
+            except ConfigError as exc:
+                typer.echo(f"Eval configuration error: {exc}", err=True)
+                raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
     return gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error, eff_max_mean_cost
 
 

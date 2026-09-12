@@ -162,7 +162,9 @@ mangomas eval -d data.jsonl -s exact_match --min-mean-score 0.8
 `mean_score` excludes errored rows. Use `--fail-on-error` to fail the gate when
 any row errored regardless of thresholds. `--max-mean-cost-usd` is a **USD**
 threshold on `EvalReport.mean_cost_usd` (populated by `cost_budget`); it is
-not clamped to `[0, 1]`. The quality gate stays default-off.
+not clamped to `[0, 1]`. Non-finite values (`NaN`, infinities) are rejected
+at Settings, CLI, and scorer construction so a `NaN` cap cannot silently
+pass. The quality gate stays default-off.
 
 ### Regression gating (baseline diff)
 

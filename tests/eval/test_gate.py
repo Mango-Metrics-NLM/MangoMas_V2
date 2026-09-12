@@ -155,6 +155,24 @@ def test_gate_cost_within_budget_passes() -> None:
     assert result.max_mean_cost_usd == 0.05
 
 
+def test_gate_fails_non_finite_max_mean_cost_usd() -> None:
+    result = evaluate_gate(
+        _report(dataset_size=2, passed=2, mean_score=1.0, mean_cost_usd=0.01),
+        max_mean_cost_usd=float("nan"),
+    )
+    assert result.passed is False
+    assert "max_mean_cost_usd is not a finite number" in result.reasons
+
+
+def test_gate_fails_non_finite_mean_cost_usd() -> None:
+    result = evaluate_gate(
+        _report(dataset_size=2, passed=2, mean_score=1.0, mean_cost_usd=float("inf")),
+        max_mean_cost_usd=0.05,
+    )
+    assert result.passed is False
+    assert "mean_cost_usd is not a finite number" in result.reasons
+
+
 def test_gate_emits_structured_log(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.INFO, logger="mangomas.eval.gate"):
         evaluate_gate(_report(dataset_size=2, passed=2), min_mean_score=0.5)

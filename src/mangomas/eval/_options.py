@@ -14,6 +14,7 @@ optional ``list | tuple`` ``required_keys``) are not forced onto these helpers.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from mangomas.errors import ConfigError
@@ -59,14 +60,16 @@ def require_unit_float(value: float, *, owner: str, field: str = "threshold") ->
 
 
 def require_non_negative_float(value: object, *, owner: str, field: str) -> float:
-    """Return *value* coerced to ``float`` when it is ``>= 0.0``.
+    """Return *value* coerced to ``float`` when it is finite and ``>= 0.0``.
 
     Rejects ``bool`` (a subclass of ``int``) so ``True`` cannot silently
-    become ``1.0``. Used for USD amounts, which are not unit scores.
+    become ``1.0``. Rejects ``NaN`` / infinities: those compare false
+    against ``>= 0.0`` / ``>`` and would otherwise bypass a USD cap.
+    Used for USD amounts, which are not unit scores.
     """
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ConfigError(f"{owner} '{field}' must be a number; got {type(value).__name__}")
     number = float(value)
-    if number < 0.0:
-        raise ConfigError(f"{owner} '{field}' must be >= 0.0; got {number}")
+    if not math.isfinite(number) or number < 0.0:
+        raise ConfigError(f"{owner} '{field}' must be a finite number >= 0.0; got {number}")
     return number

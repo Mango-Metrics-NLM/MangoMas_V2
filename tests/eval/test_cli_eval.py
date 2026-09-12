@@ -589,7 +589,30 @@ def test_eval_cli_negative_cost_threshold_exits_2(fixtures_dir: Path) -> None:
     assert result.exit_code == 2
     combined = result.stdout + result.stderr
     assert "max-mean-cost-usd" in combined
-    assert "must be >= 0.0" in combined
+    assert "must be a finite number >= 0.0" in combined
+
+
+@pytest.mark.parametrize("token", ["nan", "inf"])
+def test_eval_cli_non_finite_cost_threshold_exits_2(fixtures_dir: Path, token: str) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / EVAL_COST_CONTROLLED_DATASET_FILENAME),
+            "--scorer",
+            EVAL_COST_SCORER_NAME,
+            "--target",
+            "echo",
+            "--max-mean-cost-usd",
+            token,
+        ],
+    )
+    assert result.exit_code == 2
+    combined = result.stdout + result.stderr
+    assert "max-mean-cost-usd" in combined
+    assert "finite number" in combined
 
 
 # ── Sinks ─────────────────────────────────────────────────────────────────────

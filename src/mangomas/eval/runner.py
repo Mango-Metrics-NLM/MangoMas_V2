@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -38,7 +39,10 @@ def _row_cost_usd(row: EvalRowResult) -> float | None:
     raw = row.metadata.get(EVAL_COST_USD_METADATA_KEY)
     if isinstance(raw, bool) or not isinstance(raw, int | float):
         return None
-    return float(raw)
+    number = float(raw)
+    if not math.isfinite(number):
+        return None
+    return number
 
 
 def _mean_cost_usd(rows: list[EvalRowResult]) -> float | None:

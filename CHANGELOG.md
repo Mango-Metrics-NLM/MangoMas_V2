@@ -92,6 +92,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Non-finite USD amounts** (`NaN` / infinities) are rejected by
+  `require_non_negative_float`, `EvalSettings.max_mean_cost_usd`, the eval
+  CLI, `CostBudgetScorer` construction, row-cost aggregation, and
+  `evaluate_gate`, so a `NaN` cap cannot pass a configured cost gate.
+  Malformed row `cost_usd` falls through to the next estimate source.
+  References: `src/mangomas/eval/_options.py`, `src/mangomas/eval/gate.py`.
 - **Pytest ambient environment hardening**: Neutralized `pytest-randomly` NumPy 2.x
   integer overflow collision via `sitecustomize.py` and `tests/conftest.py` registration filter.
 - **GCP Secret Manager SDK exception binding**: Enabled dynamic `sys.modules` resolution in

@@ -61,6 +61,18 @@ def test_max_mean_cost_usd_rejects_negative() -> None:
         EvalSettings(max_mean_cost_usd=-0.01)
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_max_mean_cost_usd_rejects_non_finite(value: float) -> None:
+    with pytest.raises(ValidationError, match="finite number"):
+        EvalSettings(max_mean_cost_usd=value)
+
+
+def test_max_mean_cost_usd_env_rejects_nan(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(EVAL_MAX_MEAN_COST_USD_ENV, "nan")
+    with pytest.raises(ValidationError, match="finite number"):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
 def test_max_mean_cost_usd_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(EVAL_MAX_MEAN_COST_USD_ENV, "0.05")
     settings = Settings(_env_file=None)  # type: ignore[call-arg]

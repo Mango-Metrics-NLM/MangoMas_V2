@@ -21,6 +21,7 @@ Metric semantics (must stay aligned with :class:`~mangomas.eval.runner.EvalRunne
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
@@ -34,6 +35,8 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 _COST_UNAVAILABLE_NOTE = "mean_cost_usd unavailable — cost threshold not applied"
+_COST_NON_FINITE_THRESHOLD_NOTE = "max_mean_cost_usd is not a finite number"
+_COST_NON_FINITE_MEAN_NOTE = "mean_cost_usd is not a finite number"
 _EMPTY_DATASET_NOTE = "empty dataset — nothing to gate"
 
 
@@ -110,8 +113,12 @@ def evaluate_gate(
         if fail_on_error and report.errored > 0:
             reasons.append(f"{report.errored} row(s) errored (fail_on_error)")
         if max_mean_cost_usd is not None:
-            if report.mean_cost_usd is None:
+            if not math.isfinite(max_mean_cost_usd):
+                reasons.append(_COST_NON_FINITE_THRESHOLD_NOTE)
+            elif report.mean_cost_usd is None:
                 reasons.append(_COST_UNAVAILABLE_NOTE)
+            elif not math.isfinite(report.mean_cost_usd):
+                reasons.append(_COST_NON_FINITE_MEAN_NOTE)
             elif report.mean_cost_usd > max_mean_cost_usd:
                 reasons.append(
                     f"mean_cost_usd {report.mean_cost_usd} > max_mean_cost_usd {max_mean_cost_usd}"

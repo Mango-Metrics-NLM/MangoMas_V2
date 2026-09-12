@@ -177,8 +177,41 @@ async def test_factory_forwards_custom_char_rate() -> None:
 
 
 def test_require_non_negative_float_rejects_negative() -> None:
-    with pytest.raises(ConfigError, match=r">= 0.0"):
+    with pytest.raises(ConfigError, match=r"finite number >= 0.0"):
         require_non_negative_float(-0.01, owner=EVAL_COST_SCORER_NAME, field="max_cost_usd")
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_require_non_negative_float_rejects_non_finite(value: float) -> None:
+    with pytest.raises(ConfigError, match=r"finite number >= 0.0"):
+        require_non_negative_float(value, owner=EVAL_COST_SCORER_NAME, field="max_cost_usd")
+
+
+def test_constructor_rejects_negative_max_cost() -> None:
+    with pytest.raises(ConfigError, match="max_cost_usd"):
+        CostBudgetScorer(max_cost_usd=-1)
+
+
+def test_constructor_rejects_non_finite_rate() -> None:
+    with pytest.raises(ConfigError, match="usd_per_1k_output_chars"):
+        CostBudgetScorer(usd_per_1k_output_chars=float("nan"))
+
+
+def test_factory_rejects_non_finite_max_cost() -> None:
+    with pytest.raises(ConfigError, match="max_cost_usd"):
+        scorer_registry.get(EVAL_COST_SCORER_NAME)({"max_cost_usd": float("inf")})
+
+
+def test_estimate_ignores_non_finite_explicit_cost() -> None:
+    cost, source = estimate_cost_usd(
+        STUB_REPLY,
+        metadata={EVAL_COST_USD_METADATA_KEY: float("nan")},
+        usd_per_1k_input_tokens=DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
+        usd_per_1k_output_tokens=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
+        usd_per_1k_output_chars=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
+    )
+    assert source == EVAL_COST_SOURCE_OUTPUT_CHARS
+    assert cost == pytest.approx(_char_cost(STUB_REPLY))
 
 
 def test_estimate_ignores_negative_token_metadata() -> None:

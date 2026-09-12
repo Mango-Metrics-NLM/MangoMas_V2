@@ -124,7 +124,12 @@ async def test_duplicate_dispatch_reaches_the_same_terminal_state() -> None:
 
 
 async def test_repeated_plan_steps_do_not_reenter_the_sequence() -> None:
-    """FM-1.3: duplicate plan steps still run planner → tool → reviewer once."""
+    """FM-1.3: duplicate plan steps still run planner → tool → reviewer once.
+
+    The graph is a fixed sequence, not an ``ExecutionPlan`` interpreter, so
+    extra plan steps must appear in the tool agent's inbound message without
+    adding a fourth LLM call.
+    """
     assert MAST_FM_STEP_REPETITION in MAST_FAILURE_MODES
     graph = load_workflow(str(_GRAPH_PATH))
     llm = FakeLLM(replies=[_DUPLICATE_STEP_PLAN_JSON, _TOOL_REPLY, _REVIEW_JSON])
@@ -134,6 +139,10 @@ async def test_repeated_plan_steps_do_not_reenter_the_sequence() -> None:
 
     assert resp.content == _REVIEW_JSON
     assert len(llm.calls) == len(PLAN_EXECUTE_REVIEW_AGENTS)
+    inbound = ExecutionPlan.model_validate_json(llm.calls[1][-1].content)
+    scripted = ExecutionPlan.model_validate_json(_DUPLICATE_STEP_PLAN_JSON)
+    assert inbound == scripted
+    assert len(inbound.steps) > 1
 
 
 async def test_step_timeout_is_a_terminal_typed_error() -> None:

@@ -12,6 +12,7 @@ cost is a *dimension*, not a silent quality override.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from mangomas.config import (
@@ -40,7 +41,7 @@ def _metadata_non_negative_float(metadata: dict[str, Any], key: str) -> float | 
     if isinstance(raw, bool) or not isinstance(raw, int | float):
         return None
     number = float(raw)
-    if number < 0.0:
+    if not math.isfinite(number) or number < 0.0:
         return None
     return number
 
@@ -87,10 +88,26 @@ class CostBudgetScorer:
         usd_per_1k_output_tokens: float = DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
         usd_per_1k_output_chars: float = DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
     ) -> None:
-        self._max_cost_usd = max_cost_usd
-        self._usd_per_1k_input_tokens = usd_per_1k_input_tokens
-        self._usd_per_1k_output_tokens = usd_per_1k_output_tokens
-        self._usd_per_1k_output_chars = usd_per_1k_output_chars
+        self._max_cost_usd = (
+            None
+            if max_cost_usd is None
+            else require_non_negative_float(max_cost_usd, owner=self.name, field="max_cost_usd")
+        )
+        self._usd_per_1k_input_tokens = require_non_negative_float(
+            usd_per_1k_input_tokens,
+            owner=self.name,
+            field="usd_per_1k_input_tokens",
+        )
+        self._usd_per_1k_output_tokens = require_non_negative_float(
+            usd_per_1k_output_tokens,
+            owner=self.name,
+            field="usd_per_1k_output_tokens",
+        )
+        self._usd_per_1k_output_chars = require_non_negative_float(
+            usd_per_1k_output_chars,
+            owner=self.name,
+            field="usd_per_1k_output_chars",
+        )
 
     async def score(
         self,

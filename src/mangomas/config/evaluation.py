@@ -6,6 +6,7 @@ in a `from mangomas.config import eval` style import."""
 from __future__ import annotations
 
 import logging
+import math
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -196,8 +197,13 @@ class EvalSettings(BaseModel):
         ):
             if value is not None and not 0.0 <= value <= 1.0:
                 raise ValueError(f"eval.{label} must be in [0.0, 1.0]; got {value}")
-        if self.max_mean_cost_usd is not None and self.max_mean_cost_usd < 0.0:
-            raise ValueError(f"eval.max_mean_cost_usd must be >= 0.0; got {self.max_mean_cost_usd}")
+        if self.max_mean_cost_usd is not None and (
+            not math.isfinite(self.max_mean_cost_usd) or self.max_mean_cost_usd < 0.0
+        ):
+            raise ValueError(
+                "eval.max_mean_cost_usd must be a finite number >= 0.0; "
+                f"got {self.max_mean_cost_usd}"
+            )
         if self.schema_version > DEFAULT_EVAL_SCHEMA_VERSION:
             logger.warning(
                 "Eval config declares a future schema_version; reading with current code",

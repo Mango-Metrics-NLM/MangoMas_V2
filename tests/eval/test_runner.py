@@ -176,7 +176,7 @@ async def test_runner_forwards_embeddings_to_scorer_context(
 async def test_runner_mean_cost_averages_numeric_non_errored_rows(
     eval_orchestrator: Orchestrator,
 ) -> None:
-    """Mean cost excludes errored rows, bools, and missing ``cost_usd``."""
+    """Mean cost excludes errored rows, bools, non-finite values, and missing ``cost_usd``."""
     from mangomas.core.agent import Message  # noqa: PLC0415
     from mangomas.eval.dataset import DatasetRow  # noqa: PLC0415
     from mangomas.eval.protocol import ScoreResult  # noqa: PLC0415
@@ -186,6 +186,7 @@ async def test_runner_mean_cost_averages_numeric_non_errored_rows(
         RuntimeError("scorer exploded"),
         ScoreResult(score=1.0, passed=True, metadata={EVAL_COST_USD_METADATA_KEY: 3.0}),
         ScoreResult(score=1.0, passed=True, metadata={EVAL_COST_USD_METADATA_KEY: True}),
+        ScoreResult(score=1.0, passed=True, metadata={EVAL_COST_USD_METADATA_KEY: float("nan")}),
         ScoreResult(score=1.0, passed=True, metadata={}),
     ]
 
@@ -201,7 +202,7 @@ async def test_runner_mean_cost_averages_numeric_non_errored_rows(
     runner = EvalRunner(eval_orchestrator, _ScriptedCostScorer())
     rows = [
         DatasetRow(id=str(idx), messages=[Message(role="user", content="x")], expected="y")
-        for idx in range(5)
+        for idx in range(6)
     ]
     report = await runner.run(rows, agent_name="chat")
     assert report.errored == 1
