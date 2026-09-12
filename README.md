@@ -295,6 +295,17 @@ Claude Code harness (`MANGOMAS_HARNESS__*`): cognition proposes; the sibling
 harness disposes (INV-16). The sink hangs on `AgentContext.extras["cognitive_sink"]`
 — no new `AgentContext` field.
 
+This FastAPI runtime is **not** the Hugging Face Gradio demo
+([`ianshank/MangoMAS`](https://huggingface.co/spaces/ianshank/MangoMAS),
+[`MangoMas-Demo`](https://github.com/Mango-Metrics-NLM/MangoMas-Demo),
+[`MangoMAS-MoE-7M`](https://huggingface.co/ianshank/MangoMAS-MoE-7M)),
+not OFFIS [`mango-agents`](https://github.com/OFFIS-DAI/mango), and not
+the hospitality product [mangometrics.io](https://mangometrics.io/).
+The Hub MoE checkpoint is a separate research artifact;
+`routing.recommendation` is a reserved payload schema, not a capability
+grant. Identity and eval-honesty notes:
+[`docs/analysis/20260912-council-peer-review-rewrite.md`](docs/analysis/20260912-council-peer-review-rewrite.md).
+
 ```env
 MANGOMAS_SIGNAL__ENABLED=true
 MANGOMAS_SIGNAL__DIR=./data/cognitive-signals

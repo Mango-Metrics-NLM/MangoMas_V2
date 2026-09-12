@@ -11,6 +11,16 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Council-review rewrite**
+  (`docs/analysis/20260912-council-peer-review-rewrite.md`): second-pass
+  remap of the GLM / GPT-5.6 / Claude Opus 5 council onto three products
+  (HF/Gradio demo, this FastAPI runtime, Code Agent Harness). Keep
+  Kapoor cost-controlled eval, MAST as a trace taxonomy, and INV-16 as a
+  two-repo split; reject treating MoE-7M / ten cells as this tree, a
+  CognitiveSignal 1.0.0 freeze here, and A2A-this-quarter. README
+  Cognitive-signals section disambiguates the demo, OFFIS `mango-agents`,
+  and mangometrics.io.
+
 - **Pre-commit Makefile mirrors**: local hooks `validate-config` (the same
   three JSON files as `make validate-config`) and `lint-imports` (the same
   `lint_imports(no_logo=True)` invocation as the Makefile). Locked by
