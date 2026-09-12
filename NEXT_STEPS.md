@@ -8,6 +8,20 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: identity and eval honesty (2026-09-12)
+
+The August program below is still the sequenced delivery record. A 2026-09-12
+council review of public Hugging Face / Gradio artifacts mixed that demo with
+**this** runtime. The remap lives in
+[`docs/analysis/20260912-council-peer-review-rewrite.md`](docs/analysis/20260912-council-peer-review-rewrite.md).
+It does **not** reopen Phase 0 (lockfile, deploy-manifest apply) or Phase 1
+(planner→tool→reviewer, `validate_output`) as current gaps. Later work it
+does name: a cost-controlled eval **program** on top of the existing spine,
+harness ingest of CognitiveSignal 1.1.0, and public-demo honesty on
+`MangoMas-Demo` / the Hub (other remotes).
+
+---
+
 ## Next: the peer-reviewed development program (2026-08-22)
 
 The forward roadmap now lives in
