@@ -106,19 +106,24 @@ def _resolve_gating(
     min_mean_score: float | None,
     min_pass_rate: float | None,
     fail_on_error: bool | None,
+    max_mean_cost_usd: float | None,
     cfg: EvalSettings,
-) -> tuple[bool, float | None, float | None, bool]:
+) -> tuple[bool, float | None, float | None, bool, float | None]:
     """Resolve effective gate config (CLI over settings) and validate thresholds.
 
-    Returns ``(gating_engaged, min_mean, min_pass, fail_on_error)``. An explicit
-    ``--no-gate`` disables gating even when thresholds / ``fail_on_error`` are
-    configured via settings/env. Raises ``typer.Exit(EXIT_CONFIG_ERROR)`` on an out-of-range
-    threshold (these bypass the ``EvalSettings`` validator) — but only when
-    gating is engaged, since an unused threshold should not block a run.
+    Returns ``(gating_engaged, min_mean, min_pass, fail_on_error, max_mean_cost_usd)``.
+    An explicit ``--no-gate`` disables gating even when thresholds /
+    ``fail_on_error`` / ``max_mean_cost_usd`` are configured via settings/env.
+    Raises ``typer.Exit(EXIT_CONFIG_ERROR)`` on an out-of-range unit threshold
+    or a negative cost threshold — but only when gating is engaged, since an
+    unused threshold should not block a run.
     """
     eff_min_mean = min_mean_score if min_mean_score is not None else cfg.min_mean_score
     eff_min_pass = min_pass_rate if min_pass_rate is not None else cfg.min_pass_rate
     eff_fail_on_error = fail_on_error if fail_on_error is not None else cfg.fail_on_error
+    eff_max_mean_cost = (
+        max_mean_cost_usd if max_mean_cost_usd is not None else cfg.max_mean_cost_usd
+    )
     gate_enabled = gate if gate is not None else cfg.gate_enabled
     if gate is False:
         gating_engaged = False
@@ -128,6 +133,7 @@ def _resolve_gating(
             or eff_min_mean is not None
             or eff_min_pass is not None
             or eff_fail_on_error
+            or eff_max_mean_cost is not None
         )
 
     if gating_engaged:
@@ -138,7 +144,14 @@ def _resolve_gating(
                     err=True,
                 )
                 raise typer.Exit(code=EXIT_CONFIG_ERROR)
-    return gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error
+        if eff_max_mean_cost is not None and eff_max_mean_cost < 0.0:
+            typer.echo(
+                "Eval configuration error: max-mean-cost-usd must be >= 0.0; "
+                f"got {eff_max_mean_cost}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_CONFIG_ERROR)
+    return gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error, eff_max_mean_cost
 
 
 def _resolve_regression(

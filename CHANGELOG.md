@@ -11,6 +11,27 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Cost-controlled eval scorer** (`cost_budget`): estimates USD per row from
+  explicit `cost_usd`, token metadata, or output-character rates
+  (`DEFAULT_EVAL_COST_USD_PER_1K_*`). Measure-only unless
+  `scorer_options.max_cost_usd` is set. `EvalReport.mean_cost_usd` is additive
+  (`None` on historical artefacts). Gate
+  `MANGOMAS_EVAL__MAX_MEAN_COST_USD` / `--max-mean-cost-usd` is default-off and
+  is **not** a `[0, 1]` score. Fixture
+  `tests/eval/fixtures/cost_controlled_v1.jsonl` (n=8) holds echo / agent /
+  pipeline(["chat"]) on the same tokens. References:
+  `src/mangomas/eval/scorers/cost_budget.py`, `src/mangomas/eval/gate.py`.
+- **MAST-inspired injected failures** on
+  `examples/workflows/plan-execute-review.json`: duplicate dispatch, step
+  timeout, missing artefact, unauthorized `run_command` proposal. Uses MAST
+  v3's 14 codes; does not invent a 15th. References:
+  `tests/test_plan_execute_review_mast.py`, `tests/constants/mast.py`.
+- **GenAI span helper** (`mangomas.cognitive.genai.genai_invoke_agent_span`):
+  default-off `gen_ai.invoke_agent` alias with Development semconv attributes.
+  Live spans stay `orchestrator.*` / `harness.agent_invoke`. Planner/reviewer
+  still do not emit `routing.recommendation`. References:
+  `src/mangomas/cognitive/genai.py`,
+  `tests/cognitive/test_routing_recommendation_lock.py`.
 - **Pre-commit Makefile mirrors**: local hooks `validate-config` (the same
   three JSON files as `make validate-config`) and `lint-imports` (the same
   `lint_imports(no_logo=True)` invocation as the Makefile). Locked by

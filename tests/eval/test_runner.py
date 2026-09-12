@@ -10,7 +10,7 @@ import pytest
 from mangomas.core import Orchestrator
 from mangomas.eval import EvalRunner, load_jsonl
 from mangomas.eval.scorers.exact_match import ExactMatchScorer
-from tests.constants import STUB_REPLY
+from tests.constants import EVAL_COST_USD_METADATA_KEY, STUB_REPLY
 
 
 async def test_runner_empty_dataset_returns_zero_report(
@@ -22,6 +22,7 @@ async def test_runner_empty_dataset_returns_zero_report(
     assert report.passed == 0
     assert report.failed == 0
     assert report.rows == []
+    assert report.mean_cost_usd is None
 
 
 async def test_runner_all_pass(eval_orchestrator: Orchestrator, fixtures_dir: Path) -> None:
@@ -34,6 +35,7 @@ async def test_runner_all_pass(eval_orchestrator: Orchestrator, fixtures_dir: Pa
     assert report.passed == 2
     assert report.failed == 0
     assert report.mean_score == pytest.approx(1.0)
+    assert report.mean_cost_usd is None
     # The legacy agent_name path keeps populating agent_name AND mirrors it into
     # the new target_name field (default 'agent' target named after the agent).
     assert report.agent_name == "chat"
@@ -169,3 +171,38 @@ async def test_runner_forwards_embeddings_to_scorer_context(
     rows = [DatasetRow(id="x", messages=[Message(role="user", content="x")], expected="y")]
     await runner.run(rows, agent_name="chat")
     assert captured["embeddings"] is embeddings
+
+
+async def test_runner_mean_cost_averages_numeric_non_errored_rows(
+    eval_orchestrator: Orchestrator,
+) -> None:
+    """Mean cost excludes errored rows, bools, and missing ``cost_usd``."""
+    from mangomas.core.agent import Message  # noqa: PLC0415
+    from mangomas.eval.dataset import DatasetRow  # noqa: PLC0415
+    from mangomas.eval.protocol import ScoreResult  # noqa: PLC0415
+
+    scripted: list[ScoreResult | BaseException] = [
+        ScoreResult(score=1.0, passed=True, metadata={EVAL_COST_USD_METADATA_KEY: 1.0}),
+        RuntimeError("scorer exploded"),
+        ScoreResult(score=1.0, passed=True, metadata={EVAL_COST_USD_METADATA_KEY: 3.0}),
+        ScoreResult(score=1.0, passed=True, metadata={EVAL_COST_USD_METADATA_KEY: True}),
+        ScoreResult(score=1.0, passed=True, metadata={}),
+    ]
+
+    class _ScriptedCostScorer:
+        name = "cost_budget"
+
+        async def score(self, *_: object, **__: object) -> ScoreResult:
+            item = scripted.pop(0)
+            if isinstance(item, BaseException):
+                raise item
+            return item
+
+    runner = EvalRunner(eval_orchestrator, _ScriptedCostScorer())
+    rows = [
+        DatasetRow(id=str(idx), messages=[Message(role="user", content="x")], expected="y")
+        for idx in range(5)
+    ]
+    report = await runner.run(rows, agent_name="chat")
+    assert report.errored == 1
+    assert report.mean_cost_usd == pytest.approx(2.0)

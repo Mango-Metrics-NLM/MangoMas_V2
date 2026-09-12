@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from mangomas.config import EVAL_COST_USD_METADATA_KEY
 from mangomas.core import AgentRequest
 from mangomas.correlation import (
     generate_correlation_id,
@@ -30,6 +31,23 @@ logger = logging.getLogger(__name__)
 # Truncation for the persisted per-row ``error`` field. Longer than a transient
 # log-detail truncation because this value is surfaced in the report artifact.
 _ROW_ERROR_TRUNCATE: int = 500
+
+
+def _row_cost_usd(row: EvalRowResult) -> float | None:
+    """Return a numeric ``cost_usd`` from *row* metadata, or ``None``."""
+    raw = row.metadata.get(EVAL_COST_USD_METADATA_KEY)
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        return None
+    return float(raw)
+
+
+def _mean_cost_usd(rows: list[EvalRowResult]) -> float | None:
+    """Average cost over non-errored rows that reported ``cost_usd``."""
+    costs = [_row_cost_usd(row) for row in rows if row.error is None]
+    present = [cost for cost in costs if cost is not None]
+    if not present:
+        return None
+    return sum(present) / len(present)
 
 
 @dataclass(frozen=True)
@@ -63,6 +81,10 @@ class EvalReport:
     # baseline JSON artifacts (which predate target indirection) stay valid.
     # For the default ``agent`` target this equals ``agent_name``.
     target_name: str = ""
+    # Mean of per-row ``metadata[cost_usd]`` over non-errored rows that carry
+    # a numeric cost. ``None`` when no row reported a cost (every historical
+    # scorer, and any run that is not cost-aware).
+    mean_cost_usd: float | None = None
 
 
 class EvalRunner:
@@ -151,6 +173,7 @@ class EvalRunner:
                 "score": result.score,
                 "passed": result.passed,
                 "duration_ms": duration_ms,
+                "cost_usd": dict(result.metadata).get(EVAL_COST_USD_METADATA_KEY),
             },
         )
         return EvalRowResult(
@@ -191,6 +214,7 @@ class EvalRunner:
                 duration_ms=0.0,
                 rows=[],
                 target_name=label,
+                mean_cost_usd=None,
             )
         logger.info(
             "Eval run starting",
@@ -212,6 +236,7 @@ class EvalRunner:
         scored = sum(1 for r in rows if r.error is None)
         mean_score = sum(r.score for r in rows if r.error is None) / scored if scored else 0.0
         failed = len(rows) - passed - errored
+        mean_cost_usd = _mean_cost_usd(rows)
         report = EvalReport(
             scorer=self._scorer.name,
             agent_name=label,
@@ -223,6 +248,7 @@ class EvalRunner:
             duration_ms=duration_ms,
             rows=rows,
             target_name=label,
+            mean_cost_usd=mean_cost_usd,
         )
         logger.info(
             "Eval run complete",
@@ -233,6 +259,7 @@ class EvalRunner:
                 "failed": failed,
                 "errored": errored,
                 "mean_score": mean_score,
+                "mean_cost_usd": mean_cost_usd,
                 "duration_ms": duration_ms,
                 "target_name": label,
             },

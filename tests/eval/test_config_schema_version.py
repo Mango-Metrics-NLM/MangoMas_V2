@@ -8,8 +8,14 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from mangomas.config import DEFAULT_EVAL_SCHEMA_VERSION, EvalSettings
-from tests.constants import EVAL_SCHEMA_VERSION_CURRENT, EVAL_SINK_CONSOLE
+from mangomas.config import DEFAULT_EVAL_SCHEMA_VERSION, EvalSettings, Settings
+from tests.constants import (
+    DEFAULT_EVAL_MAX_MEAN_COST_USD,
+    EVAL_COST_GATE_ABOVE_UNIT_USD,
+    EVAL_MAX_MEAN_COST_USD_ENV,
+    EVAL_SCHEMA_VERSION_CURRENT,
+    EVAL_SINK_CONSOLE,
+)
 
 
 def test_schema_version_defaults_to_current() -> None:
@@ -40,6 +46,25 @@ def test_gate_defaults_are_off() -> None:
     assert cfg.min_mean_score is None
     assert cfg.min_pass_rate is None
     assert cfg.fail_on_error is False
+    assert cfg.max_mean_cost_usd is DEFAULT_EVAL_MAX_MEAN_COST_USD
+
+
+def test_max_mean_cost_usd_accepts_values_above_unit() -> None:
+    assert (
+        EvalSettings(max_mean_cost_usd=EVAL_COST_GATE_ABOVE_UNIT_USD).max_mean_cost_usd
+        == EVAL_COST_GATE_ABOVE_UNIT_USD
+    )
+
+
+def test_max_mean_cost_usd_rejects_negative() -> None:
+    with pytest.raises(ValidationError):
+        EvalSettings(max_mean_cost_usd=-0.01)
+
+
+def test_max_mean_cost_usd_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(EVAL_MAX_MEAN_COST_USD_ENV, "0.05")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.eval.max_mean_cost_usd == 0.05
 
 
 def test_sinks_default_to_console_only() -> None:

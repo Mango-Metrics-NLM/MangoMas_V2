@@ -227,7 +227,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
 | `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
-| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`) |
+| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`/`cost_budget`) |
 | `MANGOMAS_EVAL__SCORER_OPTIONS` | `{}` | Per-scorer options keyed by scorer name |
 | `MANGOMAS_EVAL__TARGET` | `agent` | Eval target (`agent`/`pipeline`/`fan_out`/`echo`) resolved via `target_registry` |
 | `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name (e.g. `{"pipeline": {"agents": [...]}}`) |
@@ -237,6 +237,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
+| `MANGOMAS_EVAL__MAX_MEAN_COST_USD` | _(none)_ | Gate threshold on `mean_cost_usd` in USD (not `[0,1]`; off when unset) |
 | `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -306,7 +307,7 @@ gates the run for CI. Everything is additive and default-OFF. See
 
 - **Scorers** (`eval/scorers/`, registered in `scorer_registry`): `exact_match`,
   `regex_match`, `contains`, `json_keys` (schema-conformance for `planner`/
-  `reviewer` JSON output), `llm_judge`, `embedding`.
+  `reviewer` JSON output), `llm_judge`, `embedding`, `cost_budget`.
 - **Targets** (`eval/target.py` + `eval/targets/`, registered in `target_registry`):
   `agent` (default — dispatch one agent), `pipeline`, `fan_out`, and `echo`
   (deterministic baseline). `EvalRunner.run` takes an optional `target=`; the
@@ -338,7 +339,7 @@ gates the run for CI. Everything is additive and default-OFF. See
   the shared `mangomas._entry_points`.
 - **Shared helpers**: `eval/_langfuse.py` (client bootstrap reused by the
   Langfuse sink and dataset source); `eval/_options.py`
-  (`require_str`/`require_list`/`require_unit_float` — factory-time option
+  (`require_str`/`require_list`/`require_unit_float`/`require_non_negative_float` — factory-time option
   validation shared across sinks/sources/targets).
 
 CLI: `mangomas eval -d <dataset> -s <scorer> [-t <target>] [--dataset-source <src>] [-o report.json]`.

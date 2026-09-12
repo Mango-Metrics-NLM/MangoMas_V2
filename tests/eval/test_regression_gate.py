@@ -132,8 +132,15 @@ def test_merge_sources_threshold_fields_regardless_of_order() -> None:
         duration_ms=1.0,
         rows=[],
         target_name="a",
+        mean_cost_usd=0.25,
     )
-    threshold = evaluate_gate(report, min_mean_score=0.9, min_pass_rate=0.9, fail_on_error=True)
+    threshold = evaluate_gate(
+        report,
+        min_mean_score=0.9,
+        min_pass_rate=0.9,
+        fail_on_error=True,
+        max_mean_cost_usd=0.5,
+    )
     regression = evaluate_regression_gate(_diff(mean_score_delta=-0.5), max_mean_score_drop=0.1)
 
     forward = merge_gate_results([threshold, regression])
@@ -147,6 +154,8 @@ def test_merge_sources_threshold_fields_regardless_of_order() -> None:
         "min_pass_rate",
         "fail_on_error",
         "errored",
+        "max_mean_cost_usd",
+        "actual_mean_cost_usd",
     ):
         assert getattr(forward, field_name) == getattr(backward, field_name), field_name
     # Both orders must carry the *threshold* gate's real configured values —
@@ -156,6 +165,8 @@ def test_merge_sources_threshold_fields_regardless_of_order() -> None:
     assert backward.min_pass_rate == 0.9
     assert backward.fail_on_error is True
     assert backward.errored == 1
+    assert backward.max_mean_cost_usd == 0.5
+    assert backward.actual_mean_cost_usd == 0.25
 
 
 def test_merge_falls_back_to_defaults_with_no_threshold_verdict() -> None:

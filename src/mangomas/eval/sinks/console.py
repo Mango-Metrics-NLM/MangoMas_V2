@@ -41,6 +41,11 @@ class ConsoleSink:
             f"size={report.dataset_size} passed={report.passed} "
             f"failed={report.failed} errored={report.errored} "
             f"mean_score={report.mean_score:.3f}"
+            + (
+                f" mean_cost_usd={report.mean_cost_usd:.6f}"
+                if report.mean_cost_usd is not None
+                else ""
+            )
         )
         for row in report.rows:
             flag = "PASS" if row.passed else "FAIL"

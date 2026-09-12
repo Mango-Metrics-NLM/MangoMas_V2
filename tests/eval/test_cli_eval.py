@@ -21,7 +21,13 @@ from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
 from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import (
+    EVAL_COST_CONTROLLED_DATASET_FILENAME,
+    EVAL_COST_GATE_ABOVE_UNIT_USD,
+    EVAL_COST_GATE_TINY_USD,
+    EVAL_COST_SCORER_NAME,
+    EVAL_COST_USD_METADATA_KEY,
     EVAL_GATE_EXIT_CODE,
+    EVAL_MAX_MEAN_COST_USD_ENV,
     EVAL_SINK_JSON_FILE,
     EVAL_THRESHOLD_LENIENT,
     EVAL_THRESHOLD_STRICT,
@@ -428,6 +434,162 @@ def test_eval_cli_invalid_threshold_exits_2(fixtures_dir: Path) -> None:
     )
     assert result.exit_code == 2
     assert "must be in [0.0, 1.0]" in (result.stdout + result.stderr)
+
+
+def test_eval_cli_cost_gate_failure(
+    fixtures_dir: Path,
+) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / EVAL_COST_CONTROLLED_DATASET_FILENAME),
+            "--scorer",
+            EVAL_COST_SCORER_NAME,
+            "--target",
+            "echo",
+            "--max-mean-cost-usd",
+            str(EVAL_COST_GATE_TINY_USD),
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE
+    combined = result.stdout + result.stderr
+    assert "mean_cost_usd" in combined
+    assert "gate=FAIL" in combined
+
+
+def test_eval_cli_cost_gate_from_settings(
+    fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(EVAL_MAX_MEAN_COST_USD_ENV, str(EVAL_COST_GATE_TINY_USD))
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / EVAL_COST_CONTROLLED_DATASET_FILENAME),
+            "--scorer",
+            EVAL_COST_SCORER_NAME,
+            "--target",
+            "echo",
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE
+    assert "gate=FAIL" in (result.stdout + result.stderr)
+
+
+def test_eval_cli_no_gate_overrides_cost_threshold(
+    fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(EVAL_MAX_MEAN_COST_USD_ENV, str(EVAL_COST_GATE_TINY_USD))
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / EVAL_COST_CONTROLLED_DATASET_FILENAME),
+            "--scorer",
+            EVAL_COST_SCORER_NAME,
+            "--target",
+            "echo",
+            "--no-gate",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "gate=" not in result.stdout
+
+
+def test_eval_cli_cost_threshold_above_unit_interval_passes(fixtures_dir: Path) -> None:
+    """USD is not a unit score — 2.5 must not be rejected as out of [0, 1]."""
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / EVAL_COST_CONTROLLED_DATASET_FILENAME),
+            "--scorer",
+            EVAL_COST_SCORER_NAME,
+            "--target",
+            "echo",
+            "--max-mean-cost-usd",
+            str(EVAL_COST_GATE_ABOVE_UNIT_USD),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "gate=PASS" in result.stdout
+
+
+def test_eval_cli_cost_gate_failure_still_writes_artifacts(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "report.json"
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / EVAL_COST_CONTROLLED_DATASET_FILENAME),
+            "--scorer",
+            EVAL_COST_SCORER_NAME,
+            "--target",
+            "echo",
+            "--max-mean-cost-usd",
+            str(EVAL_COST_GATE_TINY_USD),
+            "--output-json",
+            str(out),
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["gate"]["passed"] is False
+    assert payload["mean_cost_usd"] is not None
+    assert payload["rows"][0]["metadata"][EVAL_COST_USD_METADATA_KEY] is not None
+
+
+def test_eval_cli_cost_threshold_without_cost_scorer_exits_0(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--max-mean-cost-usd",
+            str(EVAL_COST_GATE_TINY_USD),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "gate=PASS" in result.stdout
+
+
+def test_eval_cli_negative_cost_threshold_exits_2(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / EVAL_COST_CONTROLLED_DATASET_FILENAME),
+            "--scorer",
+            EVAL_COST_SCORER_NAME,
+            "--target",
+            "echo",
+            "--max-mean-cost-usd",
+            "-1",
+        ],
+    )
+    assert result.exit_code == 2
+    combined = result.stdout + result.stderr
+    assert "max-mean-cost-usd" in combined
+    assert "must be >= 0.0" in combined
 
 
 # ── Sinks ─────────────────────────────────────────────────────────────────────

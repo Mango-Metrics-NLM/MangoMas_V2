@@ -44,6 +44,7 @@ EXPECTED_CLI_PARAMS: dict[str, tuple[str, ...]] = {
         "--fail-fast",
         "--fail-on-error",
         "--gate",
+        "--max-mean-cost-usd",
         "--max-mean-score-drop",
         "--max-pass-rate-drop",
         "--min-mean-score",

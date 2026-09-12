@@ -33,6 +33,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+_COST_UNAVAILABLE_NOTE = "mean_cost_usd unavailable — cost threshold not applied"
+_EMPTY_DATASET_NOTE = "empty dataset — nothing to gate"
+
 
 @dataclass(frozen=True)
 class GateResult:
@@ -47,10 +50,10 @@ class GateResult:
 
     ``kind`` discriminates a threshold-gate verdict (:func:`evaluate_gate`,
     which populates ``min_mean_score``/``min_pass_rate``/``fail_on_error``/
-    ``errored``) from a regression-gate verdict (:func:`evaluate_regression_gate`,
-    which leaves those four at their defaults). :func:`merge_gate_results`
-    uses it to source the threshold fields from the correct verdict
-    regardless of the order its inputs are passed in.
+    ``errored`` plus the additive cost fields) from a regression-gate verdict
+    (:func:`evaluate_regression_gate`, which leaves those at their defaults).
+    :func:`merge_gate_results` uses it to source the threshold fields from the
+    correct verdict regardless of the order its inputs are passed in.
     """
 
     passed: bool
@@ -62,11 +65,13 @@ class GateResult:
     errored: int = 0
     reasons: list[str] = field(default_factory=list)
     kind: Literal["threshold", "regression"] = "threshold"
+    actual_mean_cost_usd: float | None = None
+    max_mean_cost_usd: float | None = None
 
 
 # Sentinel supplying GateResult's own threshold-field defaults when
 # merge_gate_results() has no kind="threshold" verdict among its inputs.
-# Never surfaced directly — only its four threshold fields are read.
+# Never surfaced directly — only its threshold fields are read.
 _DEFAULT_THRESHOLDS = GateResult(passed=True, actual_mean_score=0.0, actual_pass_rate=0.0)
 
 
@@ -76,12 +81,16 @@ def evaluate_gate(
     min_mean_score: float | None = None,
     min_pass_rate: float | None = None,
     fail_on_error: bool = False,
+    max_mean_cost_usd: float | None = None,
 ) -> GateResult:
     """Return a :class:`GateResult` for *report* against the given thresholds.
 
     A no-op gate (all thresholds ``None`` and ``fail_on_error=False``) always
     passes. An empty dataset passes with a note — there is nothing to gate, and
-    the runner already returns a zeroed report for that case.
+    the runner already returns a zeroed report for that case. ``max_mean_cost_usd``
+    is USD (not a unit score); when the report has no ``mean_cost_usd`` the
+    cost check is skipped rather than failed, so a quality-only run stays
+    valid if an operator also set a cost threshold.
     """
     pass_rate = report.passed / report.dataset_size if report.dataset_size else 0.0
     reasons: list[str] = []
@@ -90,7 +99,7 @@ def evaluate_gate(
         # Nothing to gate — always passes; the threshold checks below are
         # skipped entirely rather than evaluated against a meaningless
         # pass_rate/mean_score of 0.0 (which would otherwise fail thresholds).
-        reasons.append("empty dataset — nothing to gate")
+        reasons.append(_EMPTY_DATASET_NOTE)
     else:
         if min_mean_score is not None and report.mean_score < min_mean_score:
             reasons.append(
@@ -100,9 +109,18 @@ def evaluate_gate(
             reasons.append(f"pass_rate {pass_rate:.3f} < min_pass_rate {min_pass_rate:.3f}")
         if fail_on_error and report.errored > 0:
             reasons.append(f"{report.errored} row(s) errored (fail_on_error)")
+        if max_mean_cost_usd is not None:
+            if report.mean_cost_usd is None:
+                reasons.append(_COST_UNAVAILABLE_NOTE)
+            elif report.mean_cost_usd > max_mean_cost_usd:
+                reasons.append(
+                    f"mean_cost_usd {report.mean_cost_usd} > max_mean_cost_usd {max_mean_cost_usd}"
+                )
 
+    informational = {_EMPTY_DATASET_NOTE, _COST_UNAVAILABLE_NOTE}
+    failing = [reason for reason in reasons if reason not in informational]
     result = GateResult(
-        passed=report.dataset_size == 0 or not reasons,
+        passed=report.dataset_size == 0 or not failing,
         actual_mean_score=report.mean_score,
         actual_pass_rate=pass_rate,
         min_mean_score=min_mean_score,
@@ -110,6 +128,8 @@ def evaluate_gate(
         fail_on_error=fail_on_error,
         errored=report.errored,
         reasons=reasons,
+        actual_mean_cost_usd=report.mean_cost_usd,
+        max_mean_cost_usd=max_mean_cost_usd,
     )
     _log(result)
     return result
@@ -159,9 +179,10 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
     are engaged.
 
     The merged verdict's threshold fields (``min_mean_score``/``min_pass_rate``/
-    ``fail_on_error``/``errored``) are sourced from the ``kind="threshold"``
-    verdict specifically — *not* positionally from ``results[0]`` — so the
-    merge is correct regardless of the order the caller passes its gates in.
+    ``fail_on_error``/``errored`` plus the additive cost fields) are sourced
+    from the ``kind="threshold"`` verdict specifically — *not* positionally
+    from ``results[0]`` — so the merge is correct regardless of the order the
+    caller passes its gates in.
     When no threshold-kind verdict is present (e.g. only a regression gate),
     the defaults on :class:`GateResult` apply.
     """
@@ -185,6 +206,8 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
         fail_on_error=threshold_result.fail_on_error,
         errored=threshold_result.errored,
         reasons=reasons,
+        actual_mean_cost_usd=threshold_result.actual_mean_cost_usd,
+        max_mean_cost_usd=threshold_result.max_mean_cost_usd,
     )
 
 
@@ -216,6 +239,10 @@ def _log(result: GateResult) -> None:
             span.set_attribute("gate.min_mean_score", result.min_mean_score)
         if result.min_pass_rate is not None:
             span.set_attribute("gate.min_pass_rate", result.min_pass_rate)
+        if result.actual_mean_cost_usd is not None:
+            span.set_attribute("gate.mean_cost_usd", result.actual_mean_cost_usd)
+        if result.max_mean_cost_usd is not None:
+            span.set_attribute("gate.max_mean_cost_usd", result.max_mean_cost_usd)
     logger.info(
         "Eval gate evaluated",
         extra={
@@ -223,6 +250,7 @@ def _log(result: GateResult) -> None:
             "passed": result.passed,
             "mean_score": result.actual_mean_score,
             "pass_rate": result.actual_pass_rate,
+            "mean_cost_usd": result.actual_mean_cost_usd,
             "errored": result.errored,
             "reasons": result.reasons,
         },

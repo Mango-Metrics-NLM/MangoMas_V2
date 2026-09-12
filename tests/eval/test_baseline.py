@@ -11,6 +11,7 @@ from mangomas.errors import ConfigError
 from mangomas.eval import evaluate_gate, load_baseline
 from mangomas.eval.runner import EvalReport, EvalRowResult
 from mangomas.eval.sinks.json_file import JsonFileSink
+from tests.constants import EVAL_COST_USD_METADATA_KEY
 
 
 def _report() -> EvalReport:
@@ -66,6 +67,55 @@ async def test_load_baseline_tolerates_missing_target_name(tmp_path: Path) -> No
     path = tmp_path / "old.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     assert (await load_baseline(path)).target_name == ""
+
+
+async def test_load_baseline_tolerates_missing_mean_cost_usd(tmp_path: Path) -> None:
+    data = {
+        "scorer": "exact_match",
+        "agent_name": "chat",
+        "dataset_size": 0,
+        "passed": 0,
+        "failed": 0,
+        "errored": 0,
+        "mean_score": 0.0,
+        "duration_ms": 0.0,
+        "rows": [],
+    }
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert (await load_baseline(path)).mean_cost_usd is None
+
+
+async def test_load_baseline_round_trips_mean_cost_usd(tmp_path: Path) -> None:
+    report = EvalReport(
+        scorer="cost_budget",
+        agent_name="chat",
+        dataset_size=1,
+        passed=1,
+        failed=0,
+        errored=0,
+        mean_score=1.0,
+        duration_ms=5.0,
+        rows=[
+            EvalRowResult(
+                row_id="r1",
+                score=1.0,
+                passed=True,
+                duration_ms=1.0,
+                prediction="a",
+                expected="a",
+                metadata={EVAL_COST_USD_METADATA_KEY: 0.05},
+            )
+        ],
+        target_name="chat",
+        mean_cost_usd=0.05,
+    )
+    path = tmp_path / "baseline.json"
+    await JsonFileSink(path=str(path)).emit(report)
+    loaded = await load_baseline(path)
+    assert loaded == report
+    assert loaded.mean_cost_usd == 0.05
+    assert loaded.rows[0].metadata[EVAL_COST_USD_METADATA_KEY] == 0.05
 
 
 async def test_load_baseline_missing_file_raises(tmp_path: Path) -> None:
