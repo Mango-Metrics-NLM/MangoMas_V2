@@ -84,6 +84,47 @@ async def test_max_body_size_ignores_non_numeric_content_length() -> None:
     assert response.status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("raw", "expect_passthrough"),
+    [
+        # U+00B2 SUPERSCRIPT TWO: ``isdigit()`` is True but ``int()`` raises,
+        # so the ``isdigit`` guard this replaced turned the documented
+        # "unknown size" pass-through into an unhandled ValueError -> 500.
+        (b"\xb2", True),
+        # U+0663 ARABIC-INDIC DIGIT THREE: both ``isdecimal()`` and ``int()``
+        # accept it, so it must still be parsed as a real length (3 is under
+        # the limit, so it passes through for a different, correct reason).
+        ("\u0663".encode(), True),
+    ],
+    ids=["superscript-two", "arabic-indic-three"],
+)
+async def test_max_body_size_digit_like_content_length_does_not_raise(
+    raw: bytes, expect_passthrough: bool
+) -> None:
+    """Digit-like but non-decimal Content-Length must not escape as a 500.
+
+    ASGI header values are raw bytes, so a client can put any byte here. The
+    guard must accept exactly what ``int()`` accepts; anything else falls
+    through to the documented "unknown size" path.
+    """
+    middleware = MaxBodySizeMiddleware(FastAPI(), max_bytes=BACKPRESSURE_MAX_BODY_BYTES)
+    scope: dict[str, Any] = {
+        "type": "http",
+        "method": "POST",
+        "path": "/x",
+        "headers": [(b"content-length", raw)],
+    }
+    called = {"passed": False}
+
+    async def call_next(_request: Request) -> Response:
+        called["passed"] = True
+        return PlainTextResponse("ok")
+
+    response = await middleware.dispatch(Request(scope), call_next)
+    assert called["passed"] is expect_passthrough
+    assert response.status_code == 200
+
+
 # ── ConcurrencyLimitMiddleware (isolation) ────────────────────────────────────
 
 

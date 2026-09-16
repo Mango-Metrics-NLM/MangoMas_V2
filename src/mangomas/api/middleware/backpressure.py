@@ -55,10 +55,19 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
         # A malformed / non-numeric Content-Length is treated as "unknown size"
         # and passed through (not a 500) — the ASGI server rejects bad values
         # upstream, and reject-by-guess would be worse than deferring the check.
+        #
+        # ``isdecimal`` rather than ``isdigit``: the two disagree on characters
+        # like U+00B2 SUPERSCRIPT TWO, where ``isdigit()`` is True but ``int()``
+        # raises ``ValueError`` — which would defeat the very pass-through this
+        # comment promises and surface as a 500 through the access-log
+        # middleware's catch-all. ``isdecimal`` is exactly the set ``int()``
+        # accepts, so genuine non-ASCII decimal digits (e.g. U+0663 ARABIC-INDIC
+        # DIGIT THREE) still parse, while non-decimal digit-likes fall through
+        # to the documented "unknown size" path.
         content_length = request.headers.get("content-length")
         if (
             content_length is not None
-            and content_length.isdigit()
+            and content_length.isdecimal()
             and int(content_length) > self._max_bytes
         ):
             logger.warning(
