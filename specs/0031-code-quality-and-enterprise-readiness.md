@@ -18,10 +18,18 @@ absent rather than because it is sound. That is the defect class specs 0020 and
 0021 were each written to hunt after the fact. This spec finds six more, one of
 which is in the wire-contract guard itself.
 
-There is also one unambiguous runtime bug, and a set of questions that are not
-bugs at all but **accepted decisions whose threat model was never written down**.
-Separating those two categories is the main thing revision 2 fixes; revision 1
-conflated them and overstated the result.
+There is also a set of questions that are not bugs at all but **accepted
+decisions whose threat model was never written down**. Separating those from real
+defects is the main thing revision 2 fixes; revision 1 conflated them and
+overstated the result.
+
+And there are **six reproduced runtime defects** — five of them found only after
+a pass that deliberately avoided every area the first audit had covered. That is
+the most useful thing this reflection produced, and the reason is worth stating:
+the first audit looked where the repo already looks at itself. Its governance,
+coverage and lint surfaces are heavily instrumented and came back clean, while
+`fail_fast`, the 404 envelope, the Postgres pool, the CLI telemetry path and the
+RAG ingestion pipeline are not instrumented and are where the defects were.
 
 ## What this spec does *not* claim
 
@@ -47,8 +55,11 @@ R2.
 Eight workstreams, ordered by how much of each is settled fact rather than open
 question: **R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8**.
 
-- **R1 — Bound the workflow graph.** The one unambiguous bug with no decision
-  behind it. Depth, node count and source size.
+- **R1 — Bound the workflow graph.** An unambiguous bug with no decision behind
+  it. Depth, node count and source size.
+- **R2′ — Correctness defects in shipped features.** Five features that do not do
+  what they say, found only after a pass that deliberately avoided every area the
+  first audit covered. Each is reproduced; see S13–S17.
 - **R2 — Correct the default and reference posture.** The deploy manifest, the
   docs endpoints, `GET /agents`, and the readiness probe's timeout and leakage.
 - **R3 — Gate integrity.** Six guards that cannot currently fire, including the
@@ -99,6 +110,75 @@ limit and the comment is false.
 
 This is the only finding in the whole audit with no closed decision behind it,
 no protected path, and no ADR to supersede. It leads.
+
+### R2′ — shipped features that do not do what they say
+
+**S13 — `fail_fast` must stop the run. [run]** `eval/runner.py:307` checks
+`stop_event.is_set()` **before** `async with semaphore` at `:317`, while
+`asyncio.gather` has already scheduled every worker — so by the time row 1 fails
+and sets the event, every other worker has passed its check and merely waits on
+the semaphore.
+
+| Parallelism | Fake agent awaits | Rows that ran | Skipped |
+|---|---|---|---|
+| 1 | no | 1 | 9 |
+| 1 | **yes** | **10** | **0** |
+| 4 | **yes** | **10** | **0** |
+
+- WHEN `fail_fast` is set and a row fails, THEN no further row is dispatched.
+  *Today every remaining row runs, because any real LLM call suspends. The
+  `{"skipped": True}` branch is dead code, and `MANGOMAS_EVAL__FAIL_FAST=true`
+  burns the whole dataset's spend on every CI run.*
+- WHEN `fail_fast` is unset, THEN every row runs as today.
+
+`tests/eval/test_runner.py:106` covers this and passes **only** because its fake
+agent contains no suspension point — the clearest case in the repo of a green
+test over a broken feature.
+
+**S14 — a 404 must carry a clean `message`. [run]** `errors.py:113` declares
+`AgentNotFound(MangomasError, KeyError)` so `except KeyError` callers keep
+working. `MangomasError` defines no `__str__`, so the MRO resolves it to
+`KeyError.__str__`, which returns `repr(args[0])`:
+
+```
+POST /agents/nosuch/invoke  ->  404
+{"error":"agent_not_found","message":"\"Unknown agent: 'nosuch'\"","detail":"agent_name='nosuch'"}
+```
+
+- WHEN a 404 is returned, THEN `message` carries no embedded quoting. *Today
+  every 404 from `/agents/{name}/invoke`, `/stream` and both workflow routes ships
+  the doubled form; `ConfigError` and siblings are unaffected.*
+- No test asserts `body["message"]` anywhere — all three assert only
+  `body["error"]` — and S6's snapshot pins property names, not values, so
+  nothing mechanical sees it.
+
+**S15 — the Postgres statement timeout must apply to the pool. [read]**
+`postgres.py:146-152` runs `SET statement_timeout` on one borrowed connection.
+The setting is session-scoped, so the other `pool_min..pool_max` connections never
+receive it, and asyncpg's `Connection.reset()` issues `RESET ALL` on release,
+discarding it even there.
+
+- WHEN `MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS` is set, THEN every pooled
+  connection enforces it. *Today the documented knob does nothing.*
+
+**S16 — CLI dispatch must record metrics. [run]** `configure_metrics` has exactly
+one call site in `src/`: `api/app.py:115`. `cli/_runtime.py:86` calls
+`configure_telemetry` and never `configure_metrics`.
+
+- WHEN metrics are enabled and an agent is dispatched from the CLI, THEN a real
+  `MeterProvider` is installed. *Today `_state.metrics_configured` is `False`
+  after CLI bootstrap and the global provider is `_ProxyMeterProvider`, so every
+  `mangomas chat` / `eval` / `workflow run` metric is dropped — contradicting the
+  ADR-0026 comment at `core/orchestrator.py:26-31` that "every dispatch path —
+  HTTP, CLI, workflow nodes … records unconditionally here."*
+
+**S17 — re-ingesting must not destroy the index on failure. [read]**
+`rag/pipeline.py:117` deletes a source's vectors, then chunks, embeds (`:142`)
+and upserts, with no transaction and no rollback.
+
+- WHEN the embedding provider fails between the delete and the upsert, THEN the
+  prior vectors survive. *Today they are gone with nothing replacing them, so
+  running `mangomas rag ingest` during an LLM outage is destructive.*
 
 ### R2 — default and reference posture
 
@@ -341,10 +421,15 @@ reviewed act (see `MANGOMAS_RAG__MIN_CHUNK_WORDS`, retired at `f8d37a1`).
 - **New/changed protocols:** none.
 - **New error types:** none. R1's bounds reuse `ConfigError` (400).
 - **Registry additions:** none.
-- **Protected paths — one touch, not two.** With D2 resolved as recommended,
-  `core/agent.py` is untouched and only `core/orchestrator.py` is edited (the
-  ceiling in `_effective_max_steps`, plus R6's seam extraction). Both need a
-  `BREAKING-CHANGE` trailer.
+- **Protected paths — `core/orchestrator.py` only.** With D2 resolved as
+  recommended, `core/agent.py` is untouched. `core/orchestrator.py` is edited four
+  times and each commit needs a `BREAKING-CHANGE` trailer: the D2 ceiling in
+  `_effective_max_steps`, R6's seam extraction, and two R2′ items — the span held
+  across a `yield` in `_stream_agent` (`:673-721`) and sibling cancellation in
+  `dispatch_fan_out` (`:536-539`).
+- **`errors.py` is a second protected path touched.** S14's fix defines `__str__`
+  on `MangomasError`. That is a one-line change to a protected file that alters a
+  published wire value, so it needs the trailer and its own note in the ADR.
 - **Wire contract:** unchanged, and S6 makes that claim checkable for the first
   time.
 
@@ -419,6 +504,13 @@ three-copy arrangement) and resolving the `parse_or_recover` contradiction
 - [ ] Every scenario S1–S12 has a test that fails before the fix and passes after,
       with the mutation from the table above actually performed and recorded.
 - [ ] A 16 KB nested graph raises `ConfigError`, not `RecursionError`.
+- [ ] With `fail_fast` set and an awaiting fake agent, exactly `len(rows) - 1`
+      rows are skipped — asserted as an exact count, not `assert cancelled`.
+- [ ] A 404 body's `message` carries no embedded quoting, asserted directly;
+      `tests/test_metrics.py:433,438` are deleted or rewritten to be able to fail.
+- [ ] `MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS` reaches pool configuration, and a
+      CLI dispatch with metrics enabled installs a real `MeterProvider`.
+- [ ] A RAG re-ingest that fails after the delete leaves the prior vectors intact.
 - [ ] With auth enabled, `GET /agents` returns 401; `/docs`, `/redoc` and
       `/openapi.json` are unreachable when `MANGOMAS_ENV != "local"`.
 - [ ] `deploy/service.yaml` sets auth and both backpressure knobs, asserted by a

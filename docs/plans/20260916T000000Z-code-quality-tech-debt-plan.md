@@ -22,11 +22,22 @@ rejected the remedy proposed. Three of its fixes would have reintroduced bugs
 that existing ADRs were written to prevent. The full correction list is in
 spec-0031's "Review record"; the sequencing below is rebuilt from it.
 
+A second pass then deliberately avoided every area the first audit had covered,
+and **that is where the real defects were**. Five shipped features do not do what
+they say, none of which the first audit found: `fail_fast` never stops anything
+under a real workload, every 404 ships a double-quoted `message`, the Postgres
+statement timeout is inert, CLI dispatch drops every metric, and re-ingesting RAG
+documents during an LLM outage destroys the index. The lesson for the sequencing
+is that the first audit looked where the repo already looks at itself.
+
 What survives is stronger for being narrower:
 
-- **One unambiguous bug**, with no decision behind it and no protected path: a
-  16 KB request body makes `RecursionError` escape the `ConfigError` boundary,
-  and the code comment asserting this is impossible is false. It leads.
+- **Five correctness defects in shipped features**, all reproduced, none behind a
+  closed decision. They lead, because unlike everything else in this plan they
+  are cases where the documentation and the behaviour disagree.
+- **One unambiguous bug** in the workflow loader: a 16 KB request body makes
+  `RecursionError` escape the `ConfigError` boundary, and the code comment
+  asserting this is impossible is false.
 - **A default posture that the reference manifest does not correct**, plus four
   routes outside the auth seam — one of them, `GET /agents`, unexplained.
 - **Six guards that cannot fire**, including a new one found by peer-reviewing
@@ -65,7 +76,24 @@ matcher over more hand-maintained rows.
 zero commented-out code, zero unused imports, every SQL query parameterised,
 every outbound client carries a configured timeout except Vertex, no broad
 `except` swallows cancellation, and the auth seam correctly returns 401 on every
-route that declares it.
+route that declares it. Every `Protocol` implementation was diffed against its
+protocol with zero signature drift, `metrics.py`'s double-checked locking is
+genuinely safe, `_traced_stream` ends its span exactly once on drain, error and
+abandonment alike, and the SQLite adapter reads its `ContextVar` on the event
+loop before entering `to_thread` — the subtle thing most codebases get wrong
+there is right.
+
+**The coverage number needs one qualification.** 98.88% is line coverage, and a
+deeper pass found three places where it is not behavioural coverage. Two tests in
+`tests/test_metrics.py:433,438` cannot fail: one asserts `get_meter(...) is not
+None`, which is true whether or not a provider was installed, and the other sets
+`_state.metrics_configured = True` itself, calls the function (which then early-
+returns) and asserts the value it just assigned. A third,
+`tests/eval/test_runner.py:106`, passes for the wrong reason — see PR B′-M1.
+Separately, `postgres.py:112-153` reports 80% file coverage with lines **114-153
+entirely unexecuted**, because every unit test monkeypatches `_ensure_pool` away
+and the real-Postgres suite is gated off. Three of the defects in PR B′ live in
+exactly that window, which is not a coincidence.
 
 ## PR A — Bound the workflow graph (spec-0031 R1)
 
@@ -171,6 +199,153 @@ no protected path, and no ADR to supersede.
   JSON body** (`composition/llm.py:61`) — and `DBSettings.url` carries a DSN with
   a password. No current call site logs a settings object, so this is a latent
   footgun rather than an active leak, but nothing prevents one.
+
+## PR B′ — Correctness defects in shipped features (spec-0031 R2′)
+
+Found by a blind-spot pass that deliberately avoided every area the first audit
+covered. These are not posture questions or governance gaps: each is a shipped
+feature that does not do what it says. All five were reproduced.
+
+### Milestone B′1 — `fail_fast` is a no-op under any real workload ⚠ highest impact
+
+- **Failing test first:** rewrite `tests/eval/test_runner.py:106` so the fake
+  agent contains one `await`, and assert the exact skipped count rather than
+  `assert cancelled` (≥1).
+- **Depends on:** nothing.
+- `eval/runner.py:307` checks `stop_event.is_set()` **before** `async with
+  semaphore` at line 317, while `asyncio.gather` has already scheduled every
+  worker. By the time row 1 fails and sets the event, every other worker has
+  passed its check and is queued on the semaphore, so they all run. Reproduced
+  with the exact worker shape:
+
+| Parallelism | Fake agent awaits | Rows that ran | Skipped |
+|---|---|---|---|
+| 1 | no | 1 | 9 |
+| 1 | **yes** | **10** | **0** |
+| 4 | no | 1 | 9 |
+| 4 | **yes** | **10** | **0** |
+
+- Any real LLM call suspends, so `MANGOMAS_EVAL__FAIL_FAST=true` burns the whole
+  dataset's spend and wall-clock on every CI run, and the `{"skipped": True}`
+  branch is dead code. **The existing test passes only because its fake never
+  suspends** — the clearest instance in the repo of a green test covering a
+  broken feature. Move the check inside the semaphore, or cancel pending tasks.
+
+### Milestone B′2 — every 404 ships a double-quoted `message`
+
+- **Failing test first:** assert `body["message"]` on a 404. No existing test
+  touches that field; all three assert only `body["error"]`.
+- **Depends on:** nothing.
+- `errors.py:113` declares `class AgentNotFound(MangomasError, KeyError)` so
+  existing `except KeyError` callers keep working. `MangomasError` defines no
+  `__str__`, so the MRO resolves it to `KeyError.__str__`, which returns
+  `repr(args[0])`. Verified on the wire:
+
+```
+POST /agents/nosuch/invoke  ->  404
+{"error":"agent_not_found","message":"\"Unknown agent: 'nosuch'\"","detail":"agent_name='nosuch'"}
+```
+
+- The embedded quotes reach every 404 from `/agents/{name}/invoke`, `/stream` and
+  both workflow routes. `ConfigError` and siblings are unaffected. One-line fix:
+  define `__str__` on `MangomasError`. Note this is a **public wire-format change**
+  and is invisible to the OpenAPI snapshot, which pins property names rather than
+  values — the same blindness C1 addresses from the other direction.
+
+### Milestone B′3 — `MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS` is inert
+
+- **Failing test first:** assert the setting reaches pool configuration.
+- **Depends on:** nothing. Feeds G2, which now has **four** inert settings, not
+  three.
+- `postgres.py:146-152` runs `SET statement_timeout` on **one** connection
+  borrowed from the pool. The setting is session-scoped, so the other
+  `pool_min..pool_max` connections never receive it, and asyncpg's
+  `Connection.reset()` issues `RESET ALL` on release, discarding it even there.
+  Correct form is `server_settings={"statement_timeout": ...}` on `create_pool`,
+  or the existing `init=` hook.
+
+### Milestone B′4 — CLI dispatch drops every metric
+
+- **Failing test first:** assert a real `MeterProvider` after CLI bootstrap with
+  `MANGOMAS_TELEMETRY__METRICS_ENABLED=true`.
+- **Depends on:** nothing.
+- `configure_metrics` has exactly one call site in `src/`: `api/app.py:115`.
+  `cli/_runtime.py:86` calls `configure_telemetry` and never `configure_metrics`,
+  so `mangomas chat`, `mangomas eval` and `mangomas workflow run` record into a
+  no-op proxy. This directly contradicts the ADR-0026 comment at
+  `core/orchestrator.py:26-31` — "every dispatch path — HTTP, CLI, workflow
+  nodes … records unconditionally here." `tests/test_metrics.py` has 22 tests and
+  none covers a CLI path.
+
+### Milestone B′5 — Postgres pool lifecycle and error vocabulary
+
+- **Failing test first:** these need the gated Postgres suite to run in CI, which
+  is the deeper fix — see the coverage note in the baseline.
+- **Depends on:** nothing.
+- **A failed DDL latches a broken pool permanently.** `postgres.py:139` assigns
+  `self._pool` *before* the schema and migration DDL at 151-152. If that DDL
+  raises, the exception escapes but the pool is already assigned, so the next
+  `_ensure_pool` returns early at line 114 with a pool whose table was never
+  created. Every later query fails until the process restarts.
+- **Pool-creation failures escape the typed-error vocabulary.** Connection
+  refused, bad credentials, wrong database and connect timeout never become
+  `PersistenceError`, because `_ensure_pool()` sits outside the `try` in both
+  `save_turn` (`:165`) and `list_turns` (`:210`). This is the same two lines
+  already listed in PR B-M5 for the leakage angle; fix once.
+- **The except clauses cannot catch what the code raises.** `:193` and `:219`
+  catch `asyncpg.PostgresError`, but `InterfaceError` (acquire on a closing
+  pool), `TimeoutError` (acquire exhaustion) and `InternalClientError` are all
+  outside that hierarchy. Widen to the real set.
+
+### Milestone B′6 — RAG re-ingest is destructive on a mid-run failure
+
+- **Failing test first:** fail the embedding provider between delete and upsert;
+  assert the prior vectors survive.
+- **Depends on:** nothing.
+- `rag/pipeline.py:117` calls `delete_by_source(doc.source)` and only then
+  chunks, embeds (`:142`) and upserts. There is no transaction and no rollback,
+  so if the embedding provider is down or rate-limits after the delete, that
+  source's vectors are gone with nothing replacing them. Running `mangomas rag
+  ingest` during an LLM outage is a destructive operation. Delete after a
+  successful upsert, or upsert into a new id namespace and swap.
+
+### Milestone B′7 — smaller correctness items
+
+- **`_stream_agent` holds a span across a `yield`.** `orchestrator.py:673-721`
+  wraps `start_as_current_span` around a body containing `yield chunk`, so the
+  span leaks into the consumer's ambient context between chunks and consumer
+  spans become its children. `composition/harness.py:131-142` explains at length
+  why this is wrong and rebuilds `_traced_stream` with per-chunk attach/detach to
+  avoid it — but only one layer up. The layer below still does it. Protected
+  path, so it needs the trailer.
+- **`dispatch_fan_out` leaks sibling work on failure.** `orchestrator.py:536-539`
+  uses bare `asyncio.gather`, which propagates the first exception without
+  cancelling siblings. After the caller has received a 500, the remaining agents
+  run to completion, each calling `record_agent_invocation` and `save_turn` — so
+  a failed fan-out writes turns for branches whose result was discarded, and pays
+  for their LLM calls. The docstring says "fail-fast"; it means "returns fast".
+  Same shape at `workflow/nodes/fan_out.py:53-57`.
+- **The persisted request is not what the agent saw.** `orchestrator.py:318`
+  saves the original request, but in a multi-step loop the agent saw
+  `current_messages` with re-injected assistant turns, so the stored turn cannot
+  reproduce the run.
+- **`isinstance(agent, StreamingAgent)` checks names, not shapes.**
+  `@runtime_checkable` verifies attribute presence only, so an object with
+  `stream = "not-a-method"` passes and then raises `TypeError: 'str' object is
+  not callable` *after* the route has committed `200 text/event-stream`. This
+  matters because `MANGOMAS_DISCOVERY_ENABLED` lets third-party entry points
+  register arbitrary agent factories and discovery validates only
+  `callable(factory)`. Same hole for `CognitiveSignalSink`, where a sync `emit`
+  passes the check and then fails the `await`.
+- **No index on `tenant`** on either backend, so every `/history` call scans
+  proportional to total rows rather than the tenant's. And there is **no
+  pagination** at all: `limit` with no offset or cursor, so `CLAUDE.md`'s "page
+  size" is a head-limit and older turns are unreachable past `HISTORY_MAX_LIMIT`.
+- **The tenant sanitiser aliases distinct ids.** `_headers.py:49` strips
+  disallowed characters rather than rejecting, and truncates to 64, so
+  `tenant-A!` and `tenant-A` collapse to one scope, as do any two ids sharing a
+  64-character prefix. Not an escalation, since the header is client-supplied by
+  design, but a silent isolation collision.
 
 ## PR C — Gate integrity (spec-0031 R3)
 
@@ -328,12 +503,35 @@ filterwarnings = [
 ]
 ```
 
-### Milestone C8 — two coverage-shaped gaps
+### Milestone C8 — coverage-shaped gaps and tests that cannot fail
 
+- **Delete or rewrite two vacuous tests.** `tests/test_metrics.py:433` asserts
+  `get_meter("x") is not None`, which holds whether or not a provider was
+  installed. `:438` sets `_state.metrics_configured = True` itself, calls the
+  function (which then early-returns) and asserts the value it just assigned, so
+  the code under test never runs and nothing checks the provider was not
+  replaced. Both were mutation-proven: replacing the whole body of
+  `configure_metrics` with `return` leaves both passing.
+- **Fix the test that passes for the wrong reason.**
+  `tests/eval/test_runner.py:106` asserts the `fail_fast` short-circuit and
+  passes only because its fake agent has no suspension point (B′1). It also uses
+  a 2-row fixture and asserts `assert cancelled`, the weakest possible form;
+  `assert len(cancelled) == len(rows) - 1` would have caught the defect.
+- **Close the `_ensure_pool` window.** `postgres.py` reports 80% with lines
+  114-153 entirely unexecuted, because every unit test monkeypatches
+  `_ensure_pool` away and the real suite is `RUN_POSTGRES=1`-gated. Three B′5
+  defects live there. The file sits below the documented `adapters` floor and is
+  invisible because the floor is measured on the package aggregate — a
+  `mango-coverage-audit` case. Run the Postgres suite in CI (testcontainers is
+  already a dev dependency) or add a per-file floor.
+- **85 `pytest.raises` carry no `match=`**, 40 of them on `ValidationError`,
+  concentrated in `tests/mango_contracts/test_cognitive_signal_rejects.py` (26),
+  `tests/test_workflow_graph.py` (9) and `tests/test_signal_settings.py` (3).
+  Tests named for a specific rejection rule currently assert only "something was
+  wrong", so a renamed field or a drifted builder keeps them green.
 - `MAX_TENANT_ID_LENGTH` (`tenancy.py:40`) has **no truncation test**, despite
   `tenancy.py` sitting in a 100%-floor group; its twin `MAX_CORRELATION_ID_LENGTH`
-  is asserted in two files. A security-relevant clamp reporting 100% with no pin
-  is what `mango-coverage-audit` exists to catch.
+  is asserted in two files.
 - Five `SIGNAL_*_ENV` constants are defined, exported and unused, while their
   three siblings are used — a missing env-override suite on the signal settings
   rather than surplus constants.
@@ -512,9 +710,13 @@ deliberate and mechanically pinned. The defects are at the edges.
 
 ### Milestone G2 — every documented setting has a consumer
 
-- **Failing test first:** red on three today — `api.ready_timeout_seconds`,
-  `api.host`, `api.port` — plus `log.body_truncate`, the same shape.
-- **Depends on:** B3 wires the first of them.
+- **Failing test first:** red on **five** today — `api.ready_timeout_seconds`,
+  `api.host`, `api.port`, `log.body_truncate`, and
+  `db.statement_timeout_seconds`, which the blind-spot pass added (B′3): it *is*
+  read, but the `SET` lands on one pooled session that `RESET ALL` then discards,
+  so a consumer-presence test must check it reaches pool configuration rather
+  than merely that the name appears somewhere.
+- **Depends on:** B3 and B′3 wire two of them.
 - For `host`/`port`, wire them to the serving bootstrap or retire them the way
   `MANGOMAS_RAG__MIN_CHUNK_WORDS` was retired at `f8d37a1`. Leaving an
   **uncommented** `MANGOMAS_API__PORT=8000` beside the real `PORT` contract is the
