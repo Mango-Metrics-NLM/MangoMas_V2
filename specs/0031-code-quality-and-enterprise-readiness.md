@@ -1,6 +1,6 @@
 # Spec-0031: Code quality, tech-debt reduction and enterprise readiness
 
-- **Status:** Draft (revision 2 — peer-reviewed, see "Review record")
+- **Status:** Draft (revision 3 — peer-reviewed and fact-checked; see "Review record")
 - **Linked ADRs:** four are required, not one. See "Protocol / contract impact".
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Changed` (on first landing)
 
@@ -42,13 +42,18 @@ withdrawn. The auth seam works. Verified by running the app with
 | `POST /workflows/run`, `POST /workflows/validate` | **401** |
 | `POST /agents/{name}/invoke`, `/stream`, `GET /history` | **401** |
 | `GET /healthz`, `/health`, `/readyz`, `/ready` | 200 — deliberate, ADR-0014 |
-| `GET /agents` | 200 — **unexplained** |
+| `GET /agents` | 200 — deliberate, ADR-0014:44-45 |
 | `/docs`, `/redoc`, `/openapi.json`, `/docs/oauth2-redirect` | 200 — **never configured** |
 
 So the workflow findings are reachable only when auth is off. That is the
-documented default for a local-first platform (ADR-0014), not a bypass. The real
-amplifier is that the reference deployment manifest does not turn auth on — see
-R2.
+documented default for a local-first platform (ADR-0014), not a bypass.
+
+Revision 2 then called `GET /agents` an unexplained exemption and the reference
+manifest an "unauthenticated LLM proxy". A fact-check falsified both:
+ADR-0014:44-45 decides the roster route explicitly, and the deploy path keeps the
+service private by Cloud Run IAM. Only the FastAPI docs endpoints remain
+genuinely unconsidered — `create_app` never passes `docs_url`/`redoc_url`/
+`openapi_url`, and no document records a decision either way.
 
 ## Requirements
 
@@ -60,16 +65,18 @@ question: **R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8**.
 - **R2′ — Correctness defects in shipped features.** Five features that do not do
   what they say, found only after a pass that deliberately avoided every area the
   first audit covered. Each is reproduced; see S13–S17.
-- **R2 — Correct the default and reference posture.** The deploy manifest, the
-  docs endpoints, `GET /agents`, and the readiness probe's timeout and leakage.
+- **R2 — Correct the default and reference posture.** The docs endpoints, the
+  readiness probe's unwired timeout, and the app-layer defences missing from the
+  reference manifest. `GET /agents` was withdrawn from this list — see S2.
 - **R3 — Gate integrity.** Six guards that cannot currently fire, including the
   wire-contract guard's blindness to constraint narrowing.
 - **R4 — CI/CD economics and release integrity.** Concurrency, timeouts, the
   deploy gate, the nightly reporter's fail-open, analyser caching.
 - **R5 — Dependency determinism.** CI installs the dev extra unconstrained.
 - **R6 — Oversized-module reduction.** Five modules in ascending risk order.
-- **R7 — Inert and hard-coded configuration.** Three settings with no consumer;
-  four `.env.example` values contradicting their defaults.
+- **R7 — Inert and hard-coded configuration.** Five settings with no effective
+  consumer; 27 `.env.example` values contradicting their defaults, of which the
+  allowlist decision is the real work.
 - **R8 — Dead code and enterprise organisation.** Surface that outlived its
   consumer; release mechanics; documentation entry points.
 
@@ -78,8 +85,10 @@ they are not defects and cannot be fixed by a patch: the per-invocation workflow
 opt-in over HTTP, and the absence of a loop-budget ceiling.
 
 R3–R8 must be additive or mechanical: none changes runtime behaviour when
-configuration is untouched. R1 and R2 change behaviour by intent, each with a
-regression test and a `CHANGELOG` entry under `Changed`.
+configuration is untouched. R2 and R2′ change behaviour by intent, each with a
+regression test and a `CHANGELOG` entry under `Changed`. R1 is a **bug fix, not a
+break**: a 16 KB nested graph returns 500 today, so turning it into a 400 needs no
+migration note — revision 2 wrongly listed it among the breaking shapes.
 
 ## Scenarios (WHEN/THEN)
 
@@ -109,7 +118,18 @@ limit and the comment is false.
 - WHEN a graph is within the bound, THEN it validates unchanged.
 
 This is the only finding in the whole audit with no closed decision behind it,
-no protected path, and no ADR to supersede. It leads.
+no protected path, and no ADR to supersede.
+
+**Two corrections from the fact-check.** First, the comment actually reads "no
+recursion **/ cycle** is possible"; revisions 1 and 2 quoted it with the clause
+that *is* true removed. Second, the `RecursionError` originates in `json.loads`
+inside `_parse_json`, not in `model_validate`, so a depth counter placed "before
+`model_validate`" can never run — only a byte cap on `source` and catching
+`RecursionError` can execute. Between roughly depth 300 and 400 the loader
+already returns a clean `ConfigError` via pydantic-core's own guard, so the gap
+is in one stage rather than the whole path. This also means the case does **not**
+belong in the "requests that succeed today must stop" list: a 16 KB graph returns
+500 today, and turning that into a 400 is a bug fix needing no migration note.
 
 ### R2′ — shipped features that do not do what they say
 
@@ -182,16 +202,13 @@ and upserts, with no transaction and no rollback.
 
 ### R2 — default and reference posture
 
-**S2 — `GET /agents` must honour the auth seam. [run]** `api/routes/system.py`'s
-module docstring justifies the probe exemption explicitly ("Health/readiness
-probes are deliberately never authenticated (ADR-0014) — an orchestration
-platform must be able to probe a pod that has lost its secret") and says nothing
-about the roster route, which sits in the same router and appears to have
-inherited the exemption by placement.
-
-- WHEN auth is enabled and no credential is presented, THEN `GET /agents` returns
-  401. *Today it returns 200 and lists every registered agent.*
-- WHEN auth is disabled, THEN it behaves as today.
+**S2 — `GET /agents` ⛔ WITHDRAWN.** Revisions 1 and 2 called this an
+unexplained exemption. It is a recorded decision:
+`docs/adr/0014-application-auth-seam.md:44-45` — "Probes (`/healthz`, `/readyz` +
+aliases) and **`GET /agents` stay unauthenticated so Cloud Run health checks and
+discovery keep working**", restated at `api/routes/system.py:3-5`. Gating it
+supersedes ADR-0014 and belongs with D1 and D2 as an open decision, not in a
+hardening workstream.
 
 **S3 — the API schema must not be public by default. [run]** `create_app` never
 passes `docs_url`/`redoc_url`/`openapi_url`, so all four FastAPI defaults serve
@@ -221,15 +238,23 @@ existing precedent instead: `create_app` already does
 `app.state.auth = resolve_auth_state(_settings)` at `api/app.py:177`, so store
 the resolved timeout on `app.state` the same way and pass it from the route.
 
-**S5 — the reference manifest must be safe to copy. [read]**
-`deploy/service.yaml:29-52` sets `MANGOMAS_ENV=prod`, telemetry, provider and
-secrets variables, and none of `AUTH__ENABLED`, `AUTH__SECRET_REF`,
-`API__MAX_BODY_BYTES` or `API__MAX_CONCURRENT_REQUESTS`. With
-`containerConcurrency: 80`, an operator following it verbatim publishes an
-unauthenticated LLM proxy. `deploy/README.md` mentions only CORS.
+**S5 — the reference manifest should carry the app-layer defences. [read]**
+`deploy/service.yaml` sets eight `MANGOMAS_*` vars and none of `AUTH__ENABLED`,
+`AUTH__SECRET_REF`, `API__MAX_BODY_BYTES` or `API__MAX_CONCURRENT_REQUESTS`, and
+its only annotations are autoscaling bounds, so there is no ingress restriction.
 
-- WHEN the manifest is applied, THEN auth and both backpressure knobs are set.
-- WHEN they are set, THEN `tests/deploy/` asserts it.
+**The severity claimed in revisions 1 and 2 is withdrawn.** They said an operator
+following it "publishes an unauthenticated LLM proxy". That is false: the deploy
+path leaves the service **private by Cloud Run IAM**, stated where the manifest
+is applied (`deploy.yml:114-116` — "`replace` never touches IAM: it creates no
+allUsers invoker binding, so the service stays private") and again at `:122-128`,
+and pinned by `tests/deploy/test_deploy_contract.py`. The related claim that
+`deploy/README.md` "mentions only CORS" is also false — it carries a 17-row
+settings table including `MANGOMAS_AUTH__` and a recommended production baseline.
+
+- WHEN the manifest is applied, THEN the app-layer defences are on as well as the
+  platform-layer one. This is defence in depth, not an exposure, and it does not
+  justify reordering the plan.
 
 ### R3 — guards that cannot fire
 
@@ -290,6 +315,13 @@ model was never registered either.
   package is absent from `_FACADES`, THEN the test fails.
 - WHEN every such package is registered and complete, THEN it passes.
 
+**Not the free ratchet it was billed as.** Implemented literally over on-disk
+submodules, the test is RED on `mangomas.cli` today: 9 modules exist, the 8
+registered plus `main`, which *is* the facade (`_FACADE_MODULES`,
+`test_import_compat.py:105`); a recursive walk also surfaces the `commands`
+subpackage `__init__`. Both need explicit exclusion, and that exclusion rule is
+the design work.
+
 **S9 — pre-commit revisions must match the pyproject pins. [read]** Both files
 carry a "keep in lockstep" comment; `tests/tooling/test_precommit_parity.py`'s
 four tests never check it. The identical duplication for the coverage floor *is*
@@ -324,6 +356,13 @@ contract test compares `CLAUDE.md`'s default column to `model_fields`, never
   recorded example allowlist, THEN a test fails.
 - WHEN values agree, or the line is an allowlisted illustrative override, THEN it
   passes.
+
+**The red set is 27 lines, not four.** A full comparison of every `MANGOMAS_*`
+line finds 27 mismatches, and at least six sit outside the allowlist revisions 1
+and 2 proposed: `API__CORS_ALLOW_ORIGINS`, `API__CORS_ALLOW_METHODS`,
+`AUTH__SECRET_REF`, `EMBEDDINGS__DEVICE`, `WORKFLOW__DEFINITION`,
+`EVAL__DATASET_PATH`. The test is trivial; **deciding which lines are
+illustrative is the deliverable.**
 
 **S12 — a documented setting must reach a consumer. [run]** Three `ApiSettings`
 fields resolve, parse and are documented, and are read by nothing outside
