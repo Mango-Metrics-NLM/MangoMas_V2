@@ -18,7 +18,7 @@ from mangomas.composition.harness import _HarnessOrchestrator
 from mangomas.composition.recording import UNTYPED_ERROR_CODE, _FailureRecordingMixin
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
-from mangomas.errors import LLMTimeout
+from mangomas.errors import AgentNotFound, LLMTimeout
 from tests.fakes import FakeLLM, FakeRepository
 
 
@@ -144,3 +144,40 @@ def test_both_composition_orchestrators_record_failures() -> None:
         assert mro.index(_FailureRecordingMixin) < mro.index(Orchestrator), (
             f"{cls.__name__} lists the mixin after Orchestrator; its dispatch would win"
         )
+
+
+async def test_an_unknown_agent_is_not_recorded_as_a_turn() -> None:
+    """A routing error is not a turn — nothing ran.
+
+    ``AgentNotFound`` is raised before any agent is invoked, so no side effect
+    was possible and the honest answer to "what did this system do?" is
+    "nothing". Recording it would also let any caller inflate the turn store by
+    requesting agents that do not exist, on a table whose whole value is that
+    it describes real work.
+    """
+    repo = FakeRepository()
+    orch = _orchestrator(_OkAgent(), repo)
+
+    with pytest.raises(AgentNotFound):
+        await orch.dispatch("nosuch", _request())
+
+    assert await repo.list_turns() == []
+
+
+async def test_an_error_raised_inside_an_agent_is_still_recorded() -> None:
+    """The exclusion must stay narrow.
+
+    An ordinary exception raised *inside* ``handle`` is an execution failure
+    however plain its type — that is exactly the case where a tool may already
+    have changed something outside this process. Without this, widening
+    ``NON_EXECUTION_ERRORS`` to a broad type would go unnoticed.
+    """
+    repo = FakeRepository()
+    orch = _orchestrator(_RaisingAgent(ValueError("bad input from the model")), repo)
+
+    with pytest.raises(ValueError, match="bad input"):
+        await orch.dispatch("boom", _request())
+
+    rows = await repo.list_turns()
+    assert len(rows) == 1
+    assert rows[0]["error_code"] == UNTYPED_ERROR_CODE

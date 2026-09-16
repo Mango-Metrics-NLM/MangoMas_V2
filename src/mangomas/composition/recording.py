@@ -19,9 +19,9 @@ the precedent.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
-from mangomas.errors import MangomasError
+from mangomas.errors import AgentNotFound, MangomasError
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core.agent import AgentRequest, AgentResponse
@@ -33,6 +33,21 @@ logger = logging.getLogger(__name__)
 # dispatch is a bug rather than a modelled outcome, and is recorded under this
 # code so it is greppable without pretending it was expected.
 UNTYPED_ERROR_CODE: str = "unhandled_error"
+
+# Failures raised *before* any agent runs, which are therefore not turns.
+#
+# ``AgentNotFound`` is a routing error: no agent was invoked, nothing executed,
+# and no side effect was possible, so the honest answer to "what did this
+# system do?" is "nothing". Recording it would also hand any caller a cheap way
+# to inflate the turn store by requesting agents that do not exist — a write
+# amplification vector on a table whose whole value is that it describes real
+# work.
+#
+# Deliberately narrow. An exception raised *inside* an agent's ``handle`` is an
+# execution failure however ordinary its type, and must be recorded: that is
+# the case where a tool may already have changed something outside this
+# process.
+NON_EXECUTION_ERRORS: Final[tuple[type[Exception], ...]] = (AgentNotFound,)
 
 # The repository method this mixin needs. Probed with ``hasattr`` rather than
 # ``isinstance`` against the Protocol: a runtime_checkable Protocol check is
@@ -70,6 +85,10 @@ class _FailureRecordingMixin:
                 acceptance_fn=acceptance_fn,
                 max_steps=max_steps,
             )
+        except NON_EXECUTION_ERRORS:
+            # Not a turn — nothing ran. Re-raised untouched; the caller's error
+            # surface is unchanged.
+            raise
         except MangomasError as exc:
             await self._record_failure(agent_name, request, exc.code, str(exc))
             raise
@@ -109,4 +128,4 @@ class _FailureRecordingMixin:
             )
 
 
-__all__ = ["UNTYPED_ERROR_CODE", "_FailureRecordingMixin"]
+__all__ = ["NON_EXECUTION_ERRORS", "UNTYPED_ERROR_CODE", "_FailureRecordingMixin"]

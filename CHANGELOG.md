@@ -104,7 +104,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `composition.recording._FailureRecordingMixin` wraps both concrete
   orchestrators — no edit to the protected `core/orchestrator.py`. Recording is
   best-effort: a broken repository is logged and never masks the caller's
-  original error.
+  original error, and a **routing** error (`AgentNotFound`) is not recorded at
+  all — nothing ran, so there is no turn, and recording it would let any caller
+  inflate the turn store by requesting agents that do not exist.
 
 - **The turn record is versioned and typed.** Rows gain `schema_version`,
   `status`, `error_code` and `error`. `adapters/storage/_schema.py` is the one

@@ -53,7 +53,17 @@ delegates through `super().dispatch(...)`, so the harness-enabled and
 harness-disabled builds are both wrapped without editing the contract. Same
 seam ADR-0028 chose for per-agent LLM overrides.
 
-**6. Recording is best-effort and never masks the original error.** A broken
+**6. A routing error is not a turn.** `AgentNotFound` is raised before any
+agent is invoked, so nothing executed and no side effect was possible; the
+honest answer to "what did this system do?" is "nothing". Recording it would
+also hand any caller a cheap write-amplification vector against the turn store
+— request agents that do not exist, inflate a table whose whole value is that
+it describes real work. `NON_EXECUTION_ERRORS` is deliberately narrow: an
+exception raised *inside* an agent's `handle` is an execution failure however
+ordinary its type, because that is exactly the case where a tool may already
+have changed something outside this process.
+
+**7. Recording is best-effort and never masks the original error.** A broken
 repository is logged and swallowed *inside* `_record_failure`; the caller's
 exception is re-raised untouched. Losing the real failure to a secondary
 persistence failure — while recording a failure — is a trade worth refusing.
@@ -87,6 +97,12 @@ one-off and bounded.
   migration instead of several and extensible without further DDL, but it makes
   `status` and the future `run_id` unqueryable. An audit record that cannot
   answer "show me the failures" with a `WHERE` clause is a worse record.
+- **Recording every failure, routing errors included.** How this first
+  shipped, and it was wrong in both directions: it logged turns that never
+  happened and it let an unauthenticated-shaped request write rows. Caught by
+  `tests/integration/`, which CI runs via `make gated-suites` and `make gate`
+  does not — the local gate was green when the defect went out.
+
 - **A tolerant row mapper (`row.get(name)`).** Rejected: it would have made
   this change land without touching the Postgres test fixtures, which is
   exactly the point — tolerating a missing column is how a backend quietly
