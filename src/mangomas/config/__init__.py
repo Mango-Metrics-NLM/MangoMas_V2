@@ -342,6 +342,12 @@ from mangomas.config.signal import (
     DEFAULT_SIGNAL_SCHEMA_VERSION as DEFAULT_SIGNAL_SCHEMA_VERSION,
 )
 from mangomas.config.signal import (
+    DEFAULT_SIGNAL_TTL_SECONDS as DEFAULT_SIGNAL_TTL_SECONDS,
+)
+from mangomas.config.signal import (
+    MAX_SIGNAL_TTL_SECONDS as MAX_SIGNAL_TTL_SECONDS,
+)
+from mangomas.config.signal import (
     SignalSettings as SignalSettings,
 )
 from mangomas.config.signal import (
@@ -488,6 +494,7 @@ __all__ = [
     "DEFAULT_SIGNAL_POLICY_SNAPSHOT_HASH",
     "DEFAULT_SIGNAL_POLICY_VERSION",
     "DEFAULT_SIGNAL_SCHEMA_VERSION",
+    "DEFAULT_SIGNAL_TTL_SECONDS",
     "DEFAULT_STORAGE_LIST_TURNS_LIMIT",
     "DEFAULT_SUMMARIZE_HISTORY_LIMIT",
     "DEFAULT_TELEMETRY_EXPORTER",
@@ -509,6 +516,7 @@ __all__ = [
     "EVAL_COST_INPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_OUTPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_USD_METADATA_KEY",
+    "MAX_SIGNAL_TTL_SECONDS",
     "APISettings",
     "AgentSettings",
     "AuthSettings",

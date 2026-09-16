@@ -11,6 +11,39 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Cognitive-signal expiry is now enforced** (ADR-0032). `CognitiveSignal` has
+  carried `created_at`/`expires_at`/`ttl_seconds` and an `is_expired()` since
+  1.1.0, and nothing in `src/` ever called it. Both sinks now refuse an
+  envelope past its TTL (`ExpiredSignalError`), the HTTP sink checking *before*
+  the request rather than after.
+
+- **`MANGOMAS_SIGNAL__TTL_SECONDS`** (default `86400`, max 30 days) makes the
+  envelope lifetime an operator tunable. The producer never passed
+  `ttl_seconds`, so every emitted signal used the envelope's own default.
+  `config/signal.py` mirrors the contracts bounds rather than importing them —
+  `SignalSettings` is built even when emission is off, and importing the
+  contracts package there would break the flag-off guarantee — with a test
+  pinning the mirror against the real envelope.
+
+- **Replay resistance on both sinks.** `ReplayGuard` is a bounded,
+  insertion-ordered set of recently-seen `signal_id`s; a repeat is dropped. A
+  hit deliberately does *not* refresh recency, so a caller replaying one
+  envelope cannot flush genuine ids out of the window. The HTTP sink also sends
+  `Idempotency-Key: <signal_id>` so a retry below this layer (a proxy, a client
+  retry) can be collapsed by the ingest endpoint.
+
+  These stop accidental duplication and stale reuse, **not an adversary**: the
+  envelope is unsigned, so a forged one is still indistinguishable from a
+  genuine one. The sink module says so where a reader would form the belief.
+
+### Changed
+
+- `test_jsonl_concurrent_appends` now emits eight **distinct** signals. It
+  reused one envelope, which stopped proving anything about concurrent appends
+  once the sink learned to deduplicate — eight emissions of one id are
+  correctly one line.
+
+
 - **Failed dispatches are now persisted** (ADR-0031). `Orchestrator.dispatch`
   reached `save_turn` only after its loop returned normally, so every failure
   path wrote nothing and the only durable log of the system's behaviour

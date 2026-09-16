@@ -234,6 +234,10 @@ def build_signal(
         policy_id=settings.policy_id,
         policy_version=settings.policy_version,
         policy_snapshot_hash=settings.policy_snapshot_hash,
+        # Operator-set lifetime (ADR-0032). Without this every envelope this
+        # repo emitted used the envelope's own 24h default, so the expiry the
+        # sinks now enforce was not tunable at all.
+        ttl_seconds=settings.ttl_seconds,
         payload=payload,
         evidence=_evidence_for(agent_name, content),
         # Join keys live in lineage: PlanningProposalPayload / ReviewFindingPayload

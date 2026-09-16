@@ -256,6 +256,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_SIGNAL__DIR` | `./data/cognitive-signals` | JSONL directory for `signals.jsonl` when enabled |
 | `MANGOMAS_SIGNAL__SCHEMA_VERSION` | `1.1.0` | Envelope version; a 1.0.0 override is rejected at Settings parse |
 | `MANGOMAS_SIGNAL__GENAI_SPANS` | `false` | Additive OTel `gen_ai.invoke_agent` alias (Development semconv; default-off) |
+| `MANGOMAS_SIGNAL__TTL_SECONDS` | `86400` | Envelope lifetime; sinks refuse an expired signal (ADR-0032). Max 30 days |
 | `MANGOMAS_SIGNAL__POLICY_ID` | `mangomas.cognitive.default` | Identity/policy binding copied onto each envelope (not a grant) |
 | `MANGOMAS_SIGNAL__POLICY_VERSION` | `1` | Policy version string copied onto each envelope |
 | `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | Default `sha256:` digest of `policy_id:policy_version`; rebinds when only id/version change |

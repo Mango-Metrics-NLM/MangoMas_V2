@@ -27,6 +27,18 @@ DEFAULT_SIGNAL_SCHEMA_VERSION: Literal["1.1.0"] = "1.1.0"
 DEFAULT_SIGNAL_GENAI_SPANS: bool = False
 
 
+# Envelope lifetime, in seconds. Mirrors mango_contracts' DEFAULT_TTL_SECONDS /
+# MAX_TTL_SECONDS rather than importing them: this module is constructed on
+# every Settings build, including when MANGOMAS_SIGNAL__ENABLED is false, and
+# importing the contracts package here would break the flag-off guarantee that
+# nothing loads it. `tests/cognitive/test_replay_resistance.py` pins these
+# against the real envelope so the mirror cannot drift.
+DEFAULT_SIGNAL_TTL_SECONDS: int = 60 * 60 * 24
+
+
+MAX_SIGNAL_TTL_SECONDS: int = 60 * 60 * 24 * 30
+
+
 DEFAULT_SIGNAL_POLICY_ID: str = "mangomas.cognitive.default"
 
 
@@ -65,6 +77,16 @@ class SignalSettings(BaseModel):
     dir: str = DEFAULT_SIGNAL_DIR
     schema_version: Literal["1.1.0"] = DEFAULT_SIGNAL_SCHEMA_VERSION
     genai_spans: bool = DEFAULT_SIGNAL_GENAI_SPANS
+    ttl_seconds: int = Field(
+        default=DEFAULT_SIGNAL_TTL_SECONDS,
+        ge=1,
+        le=MAX_SIGNAL_TTL_SECONDS,
+        description=(
+            "How long an emitted envelope stays valid. Sinks refuse an expired "
+            "signal (ADR-0032), so this is the window a consumer may treat a "
+            "signal as current."
+        ),
+    )
     policy_id: str = DEFAULT_SIGNAL_POLICY_ID
     policy_version: str = DEFAULT_SIGNAL_POLICY_VERSION
     policy_snapshot_hash: str = Field(

@@ -2,6 +2,23 @@
 
 Failures at the HTTP inner sink are isolated so a JSONL write still lands.
 Agent ``handle`` additionally swallows sink errors so dispatch is unchanged.
+
+Two controls the envelope has always described and nothing enforced
+(ADR-0032):
+
+**Expiry.** ``CognitiveSignal`` carries ``created_at``/``expires_at``/
+``ttl_seconds``, validates that they agree, and offers ``is_expired()`` — which
+had no caller anywhere in ``src/``. Sinks now refuse a signal past its TTL, so
+a stale envelope cannot be presented as current.
+
+**Replay.** ``signal_id`` gives uniqueness but is not a nonce: nothing recorded
+which ids had been seen, so re-emitting the same envelope landed as many times
+as it was sent. Sinks now drop a repeat and the HTTP sink sends an
+``Idempotency-Key``, so a retry at any layer is recognisable as one delivery.
+
+Neither control is a substitute for a signature. The envelope is unsigned, so a
+*forged* envelope remains indistinguishable from a genuine one; these stop
+accidental duplication and stale reuse, not an adversary. See ADR-0032.
 """
 
 from __future__ import annotations
@@ -9,9 +26,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
 
 import httpx
 
@@ -22,6 +40,61 @@ if TYPE_CHECKING:
     from mangomas.config.signal import SignalSettings
 
 logger = logging.getLogger(__name__)
+
+
+# Header the HTTP sink sends so an ingest endpoint can collapse a retry.
+IDEMPOTENCY_HEADER: Final[str] = "Idempotency-Key"
+
+# How many recently-seen signal ids a sink remembers. Bounded on purpose: an
+# unbounded set in a long-lived process is a memory leak wearing a security
+# control's clothes. Sized generously relative to any realistic retry window —
+# a replay older than this is accepted again, which is why expiry, not this, is
+# the primary control.
+DEFAULT_REPLAY_GUARD_ENTRIES: Final[int] = 4096
+
+
+class ExpiredSignalError(ValueError):
+    """Raised when a sink is handed an envelope past its TTL.
+
+    A ``ValueError`` rather than a ``MangomasError``: this is a contract
+    violation by the *producer*, not a runtime failure with an HTTP status.
+    ``emit_agent_signal`` already contains every sink exception, so this never
+    reaches a dispatch caller.
+    """
+
+
+class ReplayGuard:
+    """Remembers recently-seen signal ids, oldest evicted first.
+
+    Deliberately not a plain ``set``: ``max_entries`` bounds the memory a
+    long-running process spends on this, and an ``OrderedDict`` gives the
+    eviction order for free.
+    """
+
+    def __init__(self, max_entries: int = DEFAULT_REPLAY_GUARD_ENTRIES) -> None:
+        if max_entries < 1:
+            raise ValueError("max_entries must be >= 1")
+        self._max_entries = max_entries
+        self._seen: OrderedDict[str, None] = OrderedDict()
+
+    def seen(self, signal_id: str) -> bool:
+        """Record *signal_id* and return whether it had already been seen."""
+        if signal_id in self._seen:
+            # Do NOT refresh recency here: a replayed id must not be able to
+            # keep itself alive in the window and evict genuine ids.
+            return True
+        self._seen[signal_id] = None
+        if len(self._seen) > self._max_entries:
+            self._seen.popitem(last=False)
+        return False
+
+
+def _reject_if_expired(signal: CognitiveSignal) -> None:
+    """Raise :class:`ExpiredSignalError` when *signal* is past its TTL."""
+    if signal.is_expired():
+        raise ExpiredSignalError(
+            f"signal {signal.signal_id} expired at {signal.expires_at.isoformat()}"
+        )
 
 
 @runtime_checkable
@@ -36,11 +109,19 @@ class CognitiveSignalSink(Protocol):
 class JsonlCognitiveSink:
     """Write one compact JSON object per line under ``path``."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, replay_guard: ReplayGuard | None = None) -> None:
         self._path = path
         self._lock = asyncio.Lock()
+        self._replay_guard = replay_guard if replay_guard is not None else ReplayGuard()
 
     async def emit(self, signal: CognitiveSignal) -> None:
+        _reject_if_expired(signal)
+        if self._replay_guard.seen(str(signal.signal_id)):
+            logger.debug(
+                "cognitive signal already written; dropping replay",
+                extra={"event": "cognitive_sink_replay", "signal_id": str(signal.signal_id)},
+            )
+            return
         # One write() of ``line + newline`` so POSIX O_APPEND stays atomic
         # under concurrent ``asyncio.to_thread`` workers.
         line = (
@@ -63,14 +144,35 @@ class JsonlCognitiveSink:
 class HttpCognitiveSink:
     """POST the envelope JSON to a harness ingest URL when one exists."""
 
-    def __init__(self, url: str, timeout_seconds: float) -> None:
+    def __init__(
+        self,
+        url: str,
+        timeout_seconds: float,
+        *,
+        replay_guard: ReplayGuard | None = None,
+    ) -> None:
         self._url = url
         self._timeout = timeout_seconds
+        self._replay_guard = replay_guard if replay_guard is not None else ReplayGuard()
 
     async def emit(self, signal: CognitiveSignal) -> None:
+        _reject_if_expired(signal)
+        if self._replay_guard.seen(str(signal.signal_id)):
+            logger.debug(
+                "cognitive signal already posted; dropping replay",
+                extra={"event": "cognitive_sink_replay", "signal_id": str(signal.signal_id)},
+            )
+            return
         payload = signal.model_dump(mode="json")
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(self._url, json=payload)
+            response = await client.post(
+                self._url,
+                json=payload,
+                # So an ingest endpoint can collapse a retry that happened
+                # below this layer (a proxy, a client-side retry) and that the
+                # in-process guard above therefore never sees.
+                headers={IDEMPOTENCY_HEADER: str(signal.signal_id)},
+            )
             response.raise_for_status()
         logger.debug(
             "cognitive signal posted",
