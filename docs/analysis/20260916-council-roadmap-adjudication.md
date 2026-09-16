@@ -115,57 +115,67 @@ behavioural-gating milestone's CI matrix rather than a phase of their own.
 
 ---
 
-## 3. Finding neither model made: acceptance is bound to self-report
+## 3. Finding neither model made: acceptance cannot be expressed correctly
 
-This is the sharpest defect in the tree and it is only visible by reading two
-files together.
+> **Revised 2026-09-16 after measurement.** The first version of this section
+> claimed the hazard was a false *positive* — a `contains` predicate matching
+> `"passed": true` inside `feedback` prose. **That mechanism is false.** JSON
+> escapes interior quotes, so a needle carrying quotes can never match inside a
+> string value. The probe that disproved it also proved something worse, below.
+> The conclusion survives; the asserted mechanism did not, and the published
+> version was wrong for several hours.
 
 `src/mangomas/workflow/predicate.py` defines the entire acceptance vocabulary
-for the `loop` node:
+for the `loop` node — and, via `BranchCase.when`, for branch routing too:
 
 ```python
 kind: Literal["contains", "regex"]
 ```
 
-Both compile to a closure over `response.content` — a **substring or regex match
-against the response text**.
+Both compile to a closure over `response.content` — a substring or regex match
+against the response **text**. `src/mangomas/agents/reviewer.py` emits
+structured JSON (`passed: bool`, `score: float`, `feedback: str`,
+`suggestions: list[str]`). So a workflow looping a reviewer until it approves
+can only text-match the reviewer's serialised self-report.
 
-`src/mangomas/agents/reviewer.py` emits structured JSON:
+Measured against the real `ReviewResult` class, not conjectured:
 
-```python
-class ReviewResult(BaseModel):
-    passed: bool
-    score: float = Field(ge=0.0, le=1.0)
-    feedback: str
-    suggestions: list[str] = Field(default_factory=list)
-```
+| Needle | Response | Truth | Predicate | Verdict |
+|---|---|---|---|---|
+| `"passed": true` | `model_dump_json()` → `{"passed":true,…}` | accept | **reject** | false negative |
+| `"passed":true` | pretty-printed (`indent=2`) | accept | **reject** | false negative |
+| `passed:true` | rejecting review, `feedback` mentions it | reject | **accept** | false positive |
+| `passed:true` | rejecting review, `suggestions` echo it | reject | **accept** | false positive |
 
-So a declarative workflow that loops a reviewer until it approves has exactly
-one way to express that today: string-match the reviewer's own serialised
-self-report — `{"kind": "contains", "value": "\"passed\": true"}`.
+The false negatives come first in practice. A human writes the JSON fragment
+the natural way, with a space after the colon; `model_dump_json()` emits it
+without one; the needle never matches; the loop runs to `max_steps` and raises
+`MaxStepsExceeded` **even though the reviewer approved**. Tuning the needle to
+the compact form then breaks the moment anything pretty-prints.
 
-That is MAST FM-3.3 rendered as a supported configuration. The acceptance
-criterion anchors on the agent's own confident completion signal with no
-ground truth, which is the failure mode the literature measures at **75.8 % of
-failures in architectures that emit explicit completion signals**. Three
-distinct hazards follow:
+The false positives are what the obvious fix produces. Dropping the quotes to
+survive formatting drift makes the needle match prose inside `feedback` and
+`suggestions` — accepting a review that rejected. **Fixing the false negative
+manufactures the false positive.** That trap is the actual finding, and it is a
+sharper one than the claim it replaces: there is no spelling of a substring
+match that is correct here, and the two wrong spellings fail in opposite
+directions.
 
-1. **No ground truth.** The loop terminates when the reviewer *says* it passed.
-2. **No schema binding.** `contains` is a raw substring match, so
-   `"passed": true` appearing anywhere — including inside `feedback` prose
-   quoting the criterion, or inside a `suggestions` entry — accepts the loop.
-3. **Silent divergence from `validate_output`.** `MANGOMAS_AGENTS__REVIEWER__VALIDATE_OUTPUT`
-   exists and can enforce the schema, but the predicate never consults the
-   parsed model, so the two guards cannot agree by construction.
+Two further consequences follow from the same root cause — acceptance expressed
+over serialised text rather than parsed structure:
 
-The fix is small, additive and default-safe: a third predicate kind that parses
-the response as JSON and tests a named field against an expected value or
-threshold. It closes a real correctness hole in the one surface the council
-correctly identified as "the novel surface and the least tested", and it is a
-precondition for any trajectory assertion being meaningful — you cannot
-meaningfully assert on a loop whose acceptance is a substring match.
+1. **`score >= 0.8` is inexpressible.** There is no numeric comparison in the
+   vocabulary at all.
+2. **Silent divergence from `validate_output`.** `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT`
+   enforces the schema via `model_validate_json`, but the predicate never
+   consults the parsed model, so the two guards cannot agree by construction.
 
----
+This is MAST FM-3.3 territory — acceptance bound to an agent's own completion
+signal with no ground truth — but the mechanism is more mundane and more
+certain than the literature framing suggests: the predicate cannot read the
+field it claims to test. The fix is small, additive and default-safe: a third
+kind that parses the response and tests a named field. See
+[spec-0032](../../specs/0032-structured-acceptance-predicates.md) and ADR-0031.
 
 ## 4. Procedural gotchas for the work that follows
 

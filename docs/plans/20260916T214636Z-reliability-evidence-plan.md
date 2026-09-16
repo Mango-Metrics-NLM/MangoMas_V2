@@ -4,7 +4,7 @@
 - **Date:** 2026-09-16
 - **Target release:** rolling (no version cut in this program)
 - **Status:** Draft
-- **Specs:** spec-0032 … spec-0036 (to be written per PR; none exist yet)
+- **Specs:** spec-0032 (PR B, written) · spec-0033 (PR A) · spec-0034–0036 (PRs C–E, not yet written)
 - **ADRs:** ADR-0031 (acceptance predicates), ADR-0032 (tool effect classes) — the
   other PRs change no boundary
 
@@ -33,7 +33,7 @@ gate.
 
 ---
 
-## PR A — Prove the gates can fail (spec-0032)
+## PR A — Prove the gates can fail (spec-0033)
 
 The repo's twelve-target `make gate` chain measures structure. Nothing
 establishes that any of it rejects a defect. This PR mechanises the procedure
@@ -90,24 +90,33 @@ establishes that any of it rejects a defect. This PR mechanises the procedure
 
 ---
 
-## PR B — Acceptance you can trust (spec-0033, ADR-0031)
+## PR B — Acceptance you can trust (spec-0032, ADR-0031) — **landed first**
 
 `workflow/predicate.py` offers `contains` and `regex` over `response.content`.
 `ReviewerAgent` emits `{"passed": bool, "score": float, …}`. A loop that
-iterates until review passes must therefore substring-match the reviewer's own
-self-report — MAST FM-3.3 as a supported configuration, in the surface the
-council correctly named as the least tested. See §3 of the adjudication.
+iterates until review passes must therefore text-match the reviewer's own
+serialised self-report — and **measurement showed it fails in both
+directions**: the natural needle `"passed": true` never matches compact
+`model_dump_json()` output (false negative, loop raises `MaxStepsExceeded` on
+an approved review), and the quoteless needle that fixes it then matches prose
+inside `feedback`/`suggestions` (false positive). Fixing one manufactures the
+other. See §3 of the adjudication, revised after probing. Spec-0032 / ADR-0031.
 
 ### Milestone B0 — a `json_field` predicate kind
 
-- **Failing test first:** `tests/workflow/test_predicate.py::test_contains_accepts_on_feedback_prose_quoting_the_criterion`
-  — a `ReviewResult` with `passed: false` whose `feedback` text contains the
-  string `"passed": true` is accepted by the `contains` predicate. This is the
-  live defect; it goes red before the fix and stays as a regression guard after.
-- **Depends on:** A0 (the new predicate needs a two-sided proof, and the probe
-  is what makes that mechanical).
+- **Failing test first:** four regression tests in
+  `tests/test_workflow_predicate.py`, each observed failing against `contains`
+  before `json_field` existed — two false negatives (compact and pretty-printed
+  serialisation of an *approving* `ReviewResult`) and two false positives (a
+  *rejecting* `ReviewResult` whose `feedback` / `suggestions` carry the
+  quoteless needle). Together they are the two-sided proof.
+- **Depends on:** nothing, in the event. The plan sequenced A first so the
+  probe harness would make the two-sided proof mechanical; that dependency was
+  soft, and the plan's own Notes said B0's check comes first. The four
+  regression tests were written by hand instead, and the measurement they
+  produced corrected §3 of the adjudication — which is why B landed ahead of A.
 - Extend `PredicateSpec.kind` to `Literal["contains", "regex", "json_field"]`
-  with optional `field`, `equals` and `at_least`. The model is
+  with optional `field`, `equals`, `at_least` and `at_most`. The model is
   `frozen=True, extra="forbid"`, so optional additions leave every existing
   graph valid — additive and default-safe.
 - Compile via `mangomas.core.structured.parse_llm_json_object`, which is already
