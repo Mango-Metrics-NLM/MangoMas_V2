@@ -38,13 +38,16 @@ What survives is stronger for being narrower:
 - **One unambiguous bug** in the workflow loader: a 16 KB request body makes
   `RecursionError` escape the `ConfigError` boundary, and the code comment
   asserting this is impossible is false.
-- **A default posture that the reference manifest does not correct**, plus four
-  routes outside the auth seam — one of them, `GET /agents`, unexplained.
+- **App-layer defences off behind a platform-layer one.** The reference manifest
+  sets no auth or backpressure vars, though the deployed service is private by
+  Cloud Run IAM. Worth closing as defence in depth, not as an exposure. The
+  `GET /agents` exemption turned out to be decided in ADR-0014 and is withdrawn.
 - **Six guards that cannot fire**, including a new one found by peer-reviewing
   revision 1: the wire-contract snapshot is structurally blind to constraint
   narrowing on a published DTO.
-- **Slack**: coverage floors below what the code holds, and ~1,000 lines of
-  import-formatting noise removable by one setting.
+- **Slack**: coverage floors below what the code holds, and **365 lines** of
+  import-formatting noise removable by one setting (revisions 1 and 2 said
+  ~1,000; the repo-wide figure was measured at 27 files, +361/−726).
 - **Two open decisions** that are not defects and are carried as questions.
 
 Sequencing runs settled-fact-first: the bug, then posture, then the guards, then
@@ -65,12 +68,21 @@ converting it to a package would silently disable the protected-path gate.
 | `bridge` / `contracts` / `scripts` coverage | 100% / 100% / 96% |
 
 16,326 source lines against 35,740 test lines (2.19×). 496 functions, 25 over 50
-lines, 6 over 80. Churn concentrates in the **governance meta-layer**, not the
-product: across 267 commits the most-edited files are `tests/constants.py` (56),
-`pyproject.toml` (32), `config.py` (21), `test_ci_make_parity.py` (19),
-`Makefile` (19), `ci.yml` (16). The tooling that enforces quality costs more
-maintenance than the code it enforces — which is why PR C prefers a generalising
-matcher over more hand-maintained rows.
+lines, 6 over 80. Peak cyclomatic complexity is **13** over the CI lint surface
+and 10 over `src` alone; revisions 1 and 2 said 15, which nothing measures.
+
+**The churn figures in revisions 1 and 2 were wrong and the conclusion drawn
+from them was overstated.** Recounted at `df92e3d`: `tests/constants.py` **64**
+(not 56), `pyproject.toml` **41** (not 32), `config.py` **28** (not 21),
+`ci.yml` **22** (not 16); only `test_ci_make_parity.py` and `Makefile`, both 19,
+were right. The list also silently excluded documentation, which dominates it —
+`CHANGELOG.md` 88, `CLAUDE.md` 61, `NEXT_STEPS.md` 38, `README.md` 34. And even
+among code, `cli/main.py` (24), `tests/test_composition.py` (22) and
+`api/app.py` (21) out-rank two entries that were listed, two of them product
+code. So "churn concentrates in the governance meta-layer, not the product" is
+not supported: churn concentrates in **documentation**, then splits between
+governance tooling and product. The argument for a generalising protected-path
+matcher (PR C) stands on its own merits, not on this table.
 
 **Verified clean, recorded so it is not re-audited:** zero TODO/FIXME markers,
 zero commented-out code, zero unused imports, every SQL query parameterised,
@@ -106,29 +118,57 @@ no protected path, and no ADR to supersede.
   `ConfigError`. Red today — measured: depth 500 (16 KB) → `RecursionError`;
   depth 200 validates cleanly.
 - **Depends on:** nothing.
-- `workflow/graph.py:81-86` comments that "v1 keeps nesting bounded to depth two,
-  so no recursion is possible". `WorkflowStep` includes `FanOutNode` and
-  `BranchNode`, so both recurse without limit and the comment is false. Fix the
-  comment in the same commit.
+- `workflow/graph.py:81-83` comments that "v1 keeps nesting bounded to depth two,
+  so no recursion / cycle is possible". Half of that is true — the graph is
+  acyclic — but `WorkflowStep` includes `FanOutNode` and `BranchNode`, so nesting
+  does recurse without limit. Fix the comment in the same commit. (Revisions 1
+  and 2 quoted this sentence with the "/ cycle" clause dropped, which flattered
+  the finding; restored here.)
+- **The fix revisions 1 and 2 specified cannot fire, and is corrected here.**
+  They said "add a depth counter and node-count cap **before `model_validate`**".
+  The `RecursionError` does not come from `model_validate` — it comes from
+  `json.loads` inside `_parse_json`, one stage earlier:
+
+```
+loader.py:65 load_workflow -> loader.py:50 _parse_json -> json/__init__.py:346 loads
+  -> json/decoder.py:337 decode -> json/decoder.py:353 raw_decode
+RecursionError: maximum recursion depth exceeded while decoding a JSON object
+```
+
+  The stack blows before any object exists, so a counter that needs a parsed
+  object can never run, and `max_length` on `branches`/`steps` is a pydantic
+  constraint evaluated after parse. Only two sub-fixes can actually execute: a
+  **byte cap on `source` before parsing**, and **catching `RecursionError` in
+  `load_workflow`** and normalising it to `ConfigError`.
+- **The bug is also narrower than stated.** Between roughly depth 300 and 400 the
+  loader already returns a clean `ConfigError`, because pydantic-core's own
+  recursion guard converts to `ValidationError`. Only past ~500 does the JSON
+  parse itself fail first. So this is a gap in one stage, not an unguarded path.
 - `RecursionError` derives from `RuntimeError`, so `except json.JSONDecodeError`
-  misses it and it surfaces as a 500 through the access-log middleware.
-- Add a depth counter and node-count cap before `model_validate`, a byte cap on
-  `source`, `max_length` on `branches`/`steps`, and catch `RecursionError` in
-  `load_workflow`. Bound the unbounded `asyncio.gather` at
-  `workflow/nodes/fan_out.py:54-56` while here.
+  misses it and it surfaces as a 500 through the access-log middleware. Turning
+  that 500 into a 400 is a bug fix, **not** a behavioural break needing a
+  migration note — revision 2 wrongly listed it among "requests that succeed
+  today must stop succeeding". It does not succeed today.
+- Bound the unbounded `asyncio.gather` at `workflow/nodes/fan_out.py:54-56` while
+  here.
 - **ADR-0030** covers the bounds together with D1's seam.
 
 ## PR B — Default and reference posture (spec-0031 R2)
 
-### Milestone B1 — `GET /agents` joins the auth seam
+### Milestone B1 — `GET /agents` is a decision, not a defect ⛔ WITHDRAWN
 
-- **Failing test first:** with auth enabled and no credential, assert 401. Red
-  today — returns 200 and lists every registered agent.
-- **Depends on:** nothing.
-- `api/routes/system.py`'s module docstring justifies the probe exemption
-  explicitly under ADR-0014 and says nothing about the roster route, which sits
-  in the same router and appears to have inherited the exemption by placement
-  rather than by decision.
+**Revisions 1 and 2 both got this wrong and it is withdrawn as a milestone.**
+`docs/adr/0014-application-auth-seam.md:44-45` decides it explicitly: "Probes
+(`/healthz`, `/readyz` + aliases) and **`GET /agents` stay unauthenticated so
+Cloud Run health checks and discovery keep working.**" Restated at
+`api/routes/system.py:3-5`. The route being outside the auth seam is the
+recorded design, not an exemption inherited by placement.
+
+Gating it is a supersession of ADR-0014 and belongs with D1 and D2 as an open
+decision, not in a hardening PR. The only defensible observation left is that
+the roster leaks the agent names to any caller who can reach the port — which
+on the reference deployment is nobody, because the service is private by Cloud
+Run IAM (see B4).
 
 ### Milestone B2 — the API schema is not public outside `local`
 
@@ -157,12 +197,23 @@ no protected path, and no ADR to supersede.
 - **Failing test first:** `tests/deploy/` asserts `deploy/service.yaml` sets auth
   and both backpressure knobs. Red today.
 - **Depends on:** nothing.
-- The manifest sets `MANGOMAS_ENV=prod`, telemetry, provider and secrets vars and
-  **none** of `AUTH__ENABLED`, `AUTH__SECRET_REF`, `API__MAX_BODY_BYTES`,
-  `API__MAX_CONCURRENT_REQUESTS`. With `containerConcurrency: 80` an operator
-  following it verbatim publishes an unauthenticated LLM proxy, and
-  `deploy/README.md` mentions only CORS. Add an ingress annotation and document
-  the required set.
+- **The severity claim in revisions 1 and 2 was false and is withdrawn.** They
+  said an operator following the manifest "publishes an unauthenticated LLM
+  proxy". The deploy path leaves the service **private by Cloud Run IAM**, and
+  says so where it applies the manifest: `deploy.yml:114-116` — "`replace` never
+  touches IAM: it creates no allUsers invoker binding, so the service stays
+  private" — and `deploy.yml:122-128` notes an anonymous probe would get 401/403,
+  which is why the smoke test mints an identity token. Pinned by
+  `tests/deploy/test_deploy_contract.py`. The claim that `deploy/README.md`
+  "mentions only CORS" was also false: `deploy/README.md:41-61` is a 17-row
+  settings table whose row 48 is `MANGOMAS_AUTH__`, plus a recommended production
+  baseline at 63-66.
+- **What remains true, at much lower severity.** The manifest sets eight
+  `MANGOMAS_*` vars and none of `AUTH__ENABLED`, `AUTH__SECRET_REF`,
+  `API__MAX_BODY_BYTES` or `API__MAX_CONCURRENT_REQUESTS`, and carries no ingress
+  annotation (its only annotations are autoscaling bounds). So the app-layer
+  defences are off behind a platform-layer one. That is worth closing as
+  defence in depth, not as an exposure.
 - **ADR-0033** records this as an amendment to ADR-0014's default posture.
 
 ### Milestone B5 — isolated correctness fixes
@@ -407,7 +458,14 @@ projection changed?  NO
 
 - **Mutation:** add a scratch re-export package absent from `_FACADES`; assert
   red.
-- **Depends on:** nothing.
+- **Depends on:** nothing. **Not the free ratchet revisions 1 and 2 billed it
+  as.** Implemented literally, enumerating every on-disk submodule, the test is
+  RED on `mangomas.cli` today: the package holds 9 non-`__init__` modules, the
+  8 registered plus `main` — which *is* the facade (`_FACADE_MODULES`,
+  `test_import_compat.py:105`) — and a recursive walk also surfaces the
+  `commands` subpackage `__init__`. Both need explicit exclusion, and the
+  exclusion rule is the design work. The other four packages are genuinely
+  6/6, 13/13, 12/12 and 3/3.
 - **Revision 1 specified this test backwards.** It checked that a *registered*
   package's submodules are all listed — but every extraction PR F proposes lands
   in an **unregistered** package: `adapters.llm`, `cognitive`, `core`, `scripts`,
@@ -434,7 +492,13 @@ projection changed?  NO
 - `nightly.yml:127` marks `sbom-scan` `continue-on-error: true` while listing it
   in `notify`'s `needs:`, so it can never reach a failed conclusion and
   `if: failure()` never fires for it. The existing guard asserts `needs:`
-  membership, not that the job can fail. Keep the scanner non-blocking via
+  membership, not that the job can fail.
+- **Not an undiscovered hole, though — revisions 1 and 2 framed it as one.**
+  `nightly.yml:131-133` states the tradeoff being reversed: "The Make target
+  uses `--exit-code 0` so findings do not fail the job. Not a PR CI gate.
+  `continue-on-error` covers download flakes on this first landing." The
+  mechanical consequence is real; the right framing is that the first landing is
+  now past, so revisit it. Keep the scanner non-blocking via
   `trivy --exit-code 0`; drop `continue-on-error` so a *crashed* scan reports.
 
 ### Milestone C6 — coverage floor ratchets, per row with a reason
@@ -540,9 +604,12 @@ filterwarnings = [
   `tests/test_workflow_graph.py` (9) and `tests/test_signal_settings.py` (3).
   Tests named for a specific rejection rule currently assert only "something was
   wrong", so a renamed field or a drifted builder keeps them green.
-- `MAX_TENANT_ID_LENGTH` (`tenancy.py:40`) has **no truncation test**, despite
-  `tenancy.py` sitting in a 100%-floor group; its twin `MAX_CORRELATION_ID_LENGTH`
-  is asserted in two files.
+- ~~`MAX_TENANT_ID_LENGTH` has no truncation test~~ — **withdrawn, this was
+  wrong.** `tests/test_tenancy.py:53` asserts `len(sanitize_tenant("x" * 200)) ==
+  64`, and `tests/test_headers_properties.py:39-41` property-tests the shared
+  invariant. The clamp is pinned twice. The real, much smaller finding is that
+  `test_tenancy.py:53` restates the literal `64` instead of importing the
+  constant — a G3-class re-export gap, not a missing guard.
 - Five `SIGNAL_*_ENV` constants are defined, exported and unused, while their
   three siblings are used — a missing env-override suite on the signal settings
   rather than surplus constants.
@@ -568,10 +635,11 @@ filterwarnings = [
 
 - **Failing test first:** `test_deploy_verify_runs_the_full_gate`. Red today.
 - `deploy.yml`'s `verify` runs `make test`, `make coverage` and
-  `make contracts-coverage` — three of twelve steps, omitting `lint`,
-  `format-check`, `typecheck`, `lint-imports`, `frontmatter`, `protected-paths`,
-  `bridge-coverage` and `scripts-coverage`. **A release can deploy code that
-  fails type-checking.** Replace the three with `make gate`.
+  `make contracts-coverage` — three of twelve steps, omitting all nine of
+  `validate-config`, `lint`, `format-check`, `typecheck`, `lint-imports`,
+  `frontmatter`, `protected-paths`, `bridge-coverage` and `scripts-coverage`.
+  (Revisions 1 and 2 listed eight, dropping `validate-config`.) **A release can
+  deploy code that fails type-checking.** Replace the three with `make gate`.
 
 ### Milestone D4 — cache the analysers, collapse redundant installs
 
@@ -636,11 +704,13 @@ filterwarnings = [
   `config/__init__.py` "has zero functions and zero classes — it is not a god
   file", and its proof is `test_import_compat.py` staying green, which exists
   today. Highest value/risk ratio in the plan; do not gate it.
-- **Measured twice.** On `config/__init__.py`: 533 → 305 lines with all 128 import
-  bindings and 127 `__all__` entries byte-identical. Repo-wide: enabling the
-  setting reports 26 findings, **all `I001`, all auto-fixable, no new rule
-  family**. 546 aliased import statements across 9 facade files, the largest
-  being `tests/constants/__init__.py` (277 aliases, 626 lines).
+- **Measured twice, and the repo-wide figure corrected.** On
+  `config/__init__.py`: 533 → 305 lines with all 128 import bindings and 127
+  `__all__` entries byte-identical. Repo-wide the reformat is **27 files,
+  +361/−726 — a net 365 lines**, not the ~1,000 revisions 1 and 2 claimed, and
+  the suite stays green (2683 passed). 546 aliased import statements across 9
+  facade files, the largest being `tests/constants/__init__.py` (277 aliases,
+  626 lines).
 - Check before landing that no module newly needs a `PLC0414` exemption; today
   only `cli/main.py` and `core/tools.py` carry one.
 
@@ -711,13 +781,20 @@ deliberate and mechanically pinned. The defects are at the edges.
 ### Milestone G1 — `.env.example` value contract
 
 - **Failing test first:** compare each `KEY=value` against
-  `model_fields[...].default` with an allowlist for illustrative blocks. Red on
-  four lines: `LOG__BODY_TRUNCATE` (2000 vs 512), `API__READY_TIMEOUT_SECONDS`
-  (5.0 vs 2.0), `API__HISTORY_DEFAULT_LIMIT` (50 vs 10), `API__HISTORY_MAX_LIMIT`
-  (500 vs 1000). All four are commented, and the file header says commented
-  blocks are opt-in features — but sibling commented lines in the same blocks
-  restate the real default, so nothing tells a reader which kind of line they are
-  looking at.
+  `model_fields[...].default` with an allowlist for illustrative blocks.
+- **The red set is 27 lines, not four.** Revisions 1 and 2 named four —
+  `LOG__BODY_TRUNCATE` (2000 vs 512), `API__READY_TIMEOUT_SECONDS` (5.0 vs 2.0),
+  `API__HISTORY_DEFAULT_LIMIT` (50 vs 10), `API__HISTORY_MAX_LIMIT` (500 vs
+  1000) — and proposed an allowlist covering only the vertex/gcp/postgres/eval
+  blocks. A full comparison of every `MANGOMAS_*` line finds 27 mismatches, and
+  at least six fall outside that allowlist: `API__CORS_ALLOW_ORIGINS`,
+  `API__CORS_ALLOW_METHODS`, `AUTH__SECRET_REF`, `EMBEDDINGS__DEVICE`,
+  `WORKFLOW__DEFINITION`, `EVAL__DATASET_PATH`. **The allowlist is therefore the
+  deliverable**, not an afterthought: the test is trivial, deciding which lines
+  are illustrative overrides is the work.
+- The four named are still the clearest cases, because sibling commented lines in
+  the same blocks restate the real default, so nothing tells a reader which kind
+  of line they are looking at.
 
 ### Milestone G2 — every documented setting has a consumer
 
@@ -731,7 +808,8 @@ deliberate and mechanically pinned. The defects are at the edges.
 - For `host`/`port`, wire them to the serving bootstrap or retire them the way
   `MANGOMAS_RAG__MIN_CHUNK_WORDS` was retired at `f8d37a1`. Leaving an
   **uncommented** `MANGOMAS_API__PORT=8000` beside the real `PORT` contract is the
-  trap; `8000` appears 12 times across 6 files with nothing binding them.
+  trap; `8000` appears **25 times across 12 files** with nothing binding them
+  (revisions 1 and 2 said 12 across 6).
 
 ### Milestone G3 — re-export restated test constants, name duplicated literals
 
@@ -812,12 +890,16 @@ consumer.
 
 ### Milestone H5 — small removals and organisation
 
-- Two unused fixtures (`tests/conftest.py:212,226`); nine unused
-  `tests/constants` members (five are C8's test gap). `#
-  approved-breaking-change`: **0 occurrences in 267 commits** against 16 for
-  `BREAKING-CHANGE`. `EvalRunner.run(agent_name=...)`: no production caller, kept
-  alive by ~18 test call sites — compat surface, so it needs a decision.
-  `CLAUDE.md:380` lists five fakes; thirteen ship.
+- Two unused fixtures (`tests/conftest.py:212,226`); **25** unused
+  `tests/constants` members, not the nine revisions 1 and 2 claimed — including
+  an 11-member `MAST_FM_*` cluster that is *deliberate taxonomy completeness*
+  (the module docstring says "do not invent a fifteenth"), so the removable set
+  is smaller than 25 and each needs a judgement. `# approved-breaking-change`:
+  **0 occurrences in 267 commits** against 16 for `BREAKING-CHANGE`.
+  `EvalRunner.run(agent_name=...)`: no production caller, kept alive by **10**
+  test call sites (not ~18), all in `tests/eval/test_runner.py` — compat
+  surface, so it needs a decision. `CLAUDE.md:380` lists five fakes; thirteen
+  ship.
 - **Release mechanics.** `pyproject.toml` declares `0.4.0` and the repository has
   **no git tags at all**; `deploy.yml` triggers on `release: published`, so the
   deploy path has never fired. Add a tag↔version check and a release workflow.
@@ -909,3 +991,65 @@ After PR C and PR F:
 python -m pytest tests/test_import_compat.py tests/test_openapi_snapshot.py -q
 make protected-paths BASE_REF=origin/feat/initial-release
 ```
+
+
+## Fact-check record (revision 3)
+
+Revision 2 was put through an adversarial fact-check that re-ran every
+measurement and checked every citation. It found **32 defects in the documents**.
+The material ones are corrected inline above and summarised here so the same
+errors are not reintroduced.
+
+**Claims withdrawn as false**
+
+1. "An operator following the manifest publishes an unauthenticated LLM proxy."
+   The deploy path keeps the service private by Cloud Run IAM
+   (`deploy.yml:114-116`, `:122-128`, pinned by `tests/deploy/test_deploy_contract.py`).
+   This sentence was the justification for ordering hardening first.
+2. "`deploy/README.md` mentions only CORS." It has a 17-row settings table
+   including `MANGOMAS_AUTH__` and a recommended production baseline.
+3. "`GET /agents` is unexplained." ADR-0014:44-45 decides it explicitly.
+4. "`MAX_TENANT_ID_LENGTH` has no truncation test." It is pinned twice.
+5. "Peak cyclomatic complexity 15" and "`C901` passes at 10." Peak is 13 on the
+   lint surface, 10 on `src` alone; 13 is the tightest passing threshold.
+6. "`/readyz` copies `str(exc)[:200]`." It uses the named
+   `DEFAULT_ERROR_DETAIL_TRUNCATE`, and `health.py:98-99,117-118` carry a comment
+   recording the bounded-disclosure decision as deliberate.
+7. "`llm_judge` should adopt the shared helper." `specs/0015:200-203` records the
+   non-adoption as deliberate, one line above the text cited. Only the
+   planner/reviewer half is a genuine doc/code discrepancy.
+
+**Fixes that could not have worked**
+
+8. The graph-bound fix specified a depth counter "before `model_validate`"; the
+   `RecursionError` comes from `json.loads` one stage earlier. Corrected in A1.
+9. The facade-completeness test was billed as trivially green; implemented
+   literally it is red on `mangomas.cli` today. Corrected in C3.
+10. The `.env.example` allowlist as written would leave the new test failing on
+    at least six lines outside it. Corrected in G1.
+
+**Measurements that did not reproduce**
+
+11. Churn: 64/41/28/22, not 56/32/21/16, and documentation dominates the ranking
+    that was presented as evidence of governance-layer churn.
+12. `combine-as-imports` saves 365 lines repo-wide, not ~1,000.
+13. Unused `tests/constants` members: 25, not 9. `EvalRunner` legacy call sites:
+    10, not ~18. Literal `8000`: 25 across 12 files, not 12 across 6. `_req`
+    definitions: 17, not 11.
+14. `tests/test_workflow_http.py` does not exist; the file is
+    `tests/test_workflow_api.py`. The plan's own verification command failed.
+
+**Citations off by a line or a range**: `rag/retrieval.py` (the clamp is at :80,
+not :154-156), `workflow/predicate.py` (13 duplicated lines at :30-34 and :53-60,
+not a contiguous :30-60), `agents/_structured.py`, `deploy/service.yaml`,
+`NEXT_STEPS.md`, `PULL_REQUEST_TEMPLATE.md`, `tests/composition/helpers.py`, and
+the `graph.py` comment, which was quoted with its true "/ cycle" clause removed.
+
+**What re-ran exactly**: 2683 passed / 66 skipped, 98.88% coverage, mypy 433
+files clean, import-linter 180 files and 2 contracts, 17 skills and 27 agents,
+scripts coverage 96 vs 94, bridge and contracts 100%, 267 commits, 16,326 vs
+35,740 lines, 496 functions with 25 over 50 and 6 over 80, 546 aliased imports
+across 9 facade files, `config/__init__.py` 533 → 305 with bindings preserved,
+zero TODO markers, and **all 14 proposed coverage floors pass**. The
+`combine-as-imports` and `filterwarnings` changes were both independently
+confirmed safe against the full suite.
