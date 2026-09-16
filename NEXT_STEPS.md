@@ -8,6 +8,32 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: reliability evidence (2026-09-16)
+
+A three-model council reviewed the next cycle. Its claims are adjudicated
+against the tree in
+[`docs/analysis/20260916-council-roadmap-adjudication.md`](docs/analysis/20260916-council-roadmap-adjudication.md)
+— confirmed, corrected, or marked as new, each with a file path. The delivery
+sequencing lives in
+[`docs/plans/20260916T214636Z-reliability-evidence-plan.md`](docs/plans/20260916T214636Z-reliability-evidence-plan.md).
+
+Thesis: the repo's strongest constraints are written as prose mandates in
+`specs/TEMPLATE.md` and `.claude/skills/mango-mutation-proof/`, where they
+cannot fail a build, while every mechanised gate measures structure rather than
+behaviour. Three corrections to the council worth carrying forward: a
+behavioural gate skeleton **already exists** (`.github/workflows/eval-gate.yml`
+— manual, default-off, five rows, `pass_rate >= 0.5`, one agent), the
+mutation-proof procedure **is already written** and merely unmechanised, and the
+GenAI semconv hedge in `cognitive/constants.py` **is already correct** and
+should be left alone. One defect neither council model found: `loop` acceptance
+can only substring-match a structured agent's own self-report — see §3 of the
+adjudication.
+
+This overlay does not reopen the August program below; it sequences what comes
+after it.
+
+---
+
 ## Overlay: identity and eval honesty (2026-09-12)
 
 The August program below is still the sequenced delivery record. A 2026-09-12
