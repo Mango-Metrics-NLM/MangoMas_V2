@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from mangomas.adapters.storage._schema import TURN_SCHEMA_VERSION, TurnStatus
 from mangomas.adapters.vector.base import VectorMatch
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolSpec
@@ -161,6 +162,41 @@ class FakeRepository:
                 "agent": agent,
                 "request": request.model_dump(),
                 "response": response.model_dump(),
+                "schema_version": TURN_SCHEMA_VERSION,
+                "status": TurnStatus.OK,
+                "error_code": None,
+                "error": None,
+            }
+        )
+        return row_id
+
+    async def save_failed_turn(
+        self,
+        agent: str,
+        request: AgentRequest,
+        *,
+        error_code: str,
+        error: str,
+    ) -> int:
+        """Record a dispatch that raised, mirroring the real backends' row shape.
+
+        Grows with the ``FailureRecordingRepository`` protocol it satisfies
+        (ADR-0031): a fake that silently lacked the method would make every
+        failure-recording test pass against an orchestrator that records
+        nothing.
+        """
+        row_id = len(self._turns) + 1
+        self._turns.append(
+            {
+                "id": row_id,
+                "ts": "2026-05-13T00:00:00+00:00",
+                "agent": agent,
+                "request": request.model_dump(),
+                "response": {},
+                "schema_version": TURN_SCHEMA_VERSION,
+                "status": TurnStatus.ERROR,
+                "error_code": error_code,
+                "error": error,
             }
         )
         return row_id

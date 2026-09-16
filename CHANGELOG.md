@@ -9,6 +9,26 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Failed dispatches are now persisted** (ADR-0031). `Orchestrator.dispatch`
+  reached `save_turn` only after its loop returned normally, so every failure
+  path wrote nothing and the only durable log of the system's behaviour
+  recorded successes. `FailureRecordingRepository` adds `save_failed_turn` as a
+  strict Protocol extension (probed with `hasattr`, like
+  `AsyncCloseableRepository`), implemented on both SQLite and Postgres, and
+  `composition.recording._FailureRecordingMixin` wraps both concrete
+  orchestrators — no edit to the protected `core/orchestrator.py`. Recording is
+  best-effort: a broken repository is logged and never masks the caller's
+  original error.
+
+- **The turn record is versioned and typed.** Rows gain `schema_version`,
+  `status`, `error_code` and `error`. `adapters/storage/_schema.py` is the one
+  definition both backends generate their DDL, `SELECT` list and row mapping
+  from, so a SQLite row and a Postgres row cannot drift apart. Migrations are
+  additive and generated: an existing database gains the columns in place and
+  its historical rows read as `status='ok'`, which is what they were.
+
 ### Security
 
 - **The protected-path gate now reads its policy from the base ref** (ADR-0030).

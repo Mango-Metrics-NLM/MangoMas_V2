@@ -31,6 +31,7 @@ from mangomas.composition.llm import (
 )
 from mangomas.composition.memory import _file_memory_factory
 from mangomas.composition.rag import _build_rag_tools
+from mangomas.composition.recording import _FailureRecordingMixin
 from mangomas.composition.secrets import _resolve_llm_secrets, ensure_secrets_provider
 from mangomas.composition.signal import _attach_cognitive_extras
 from mangomas.composition.storage import _postgres_factory, _sqlite_factory
@@ -41,7 +42,7 @@ from mangomas.core import AgentContext, Orchestrator
 logger = logging.getLogger(__name__)
 
 
-class _Orchestrator(_AgentLLMOverrideCloseMixin, Orchestrator):
+class _Orchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator):
     """``Orchestrator`` extended to also close per-agent LLM override clients.
 
     Used for the harness-disabled branch of :func:`build_orchestrator`; the

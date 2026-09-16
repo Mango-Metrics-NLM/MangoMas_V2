@@ -54,6 +54,37 @@ class AsyncCloseableRepository(TurnRepository, Protocol):
 
 
 @runtime_checkable
+class FailureRecordingRepository(TurnRepository, Protocol):
+    """TurnRepository that can also record a dispatch that did *not* succeed.
+
+    Strict extension, mirroring :class:`AsyncCloseableRepository`: callers
+    dispatch on ``hasattr(repo, "save_failed_turn")`` and simply skip the
+    record when a repository does not offer it, so a third-party backend
+    written against the bare :class:`TurnRepository` keeps satisfying its
+    protocol unchanged (ADR-0031).
+
+    Exists because ``dispatch`` only ever reached ``save_turn`` on the success
+    path, so the sole durable log of the system's behaviour recorded successes
+    and nothing else.
+    """
+
+    async def save_failed_turn(
+        self,
+        agent: str,
+        request: AgentRequest,
+        *,
+        error_code: str,
+        error: str,
+    ) -> int:
+        """Persist a terminal failure for *request*; return its assigned row ID.
+
+        *error_code* is the typed ``MangomasError.code`` so failures group
+        without parsing prose; *error* is the human-readable detail.
+        """
+        ...
+
+
+@runtime_checkable
 class MemoryRepository(Protocol):
     """Persistent episodic memory and index for an agent."""
 

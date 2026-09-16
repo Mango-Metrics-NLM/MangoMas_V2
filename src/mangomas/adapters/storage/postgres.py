@@ -28,6 +28,13 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from mangomas.adapters.storage._schema import (
+    TURN_RECORD_COLUMNS,
+    TURN_SCHEMA_VERSION,
+    TURN_SELECT_COLUMNS,
+    TurnStatus,
+    postgres_column_ddl,
+)
 from mangomas.config import (
     DEFAULT_ERROR_DETAIL_TRUNCATE,
     DEFAULT_STORAGE_LIST_TURNS_LIMIT,
@@ -58,6 +65,13 @@ CREATE TABLE IF NOT EXISTS turns (
 # existing rows adopt the column default. No-op on a fresh table.
 _PG_TENANT_MIGRATION: str = (
     f"ALTER TABLE turns ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT '{DEFAULT_TENANT}'"
+)
+
+# Same additive contract, generated from the shared column tuple rather than
+# hand-written, so this backend cannot fall behind the SQLite one (ADR-0031).
+_PG_RECORD_MIGRATIONS: tuple[str, ...] = tuple(
+    f"ALTER TABLE turns ADD COLUMN IF NOT EXISTS {postgres_column_ddl(column)}"
+    for column in TURN_RECORD_COLUMNS
 )
 
 
@@ -225,6 +239,8 @@ class PostgresRepository:
                 async with pool.acquire() as conn:
                     await conn.execute(_PG_SCHEMA)
                     await conn.execute(_PG_TENANT_MIGRATION)
+                    for migration in _PG_RECORD_MIGRATIONS:
+                        await conn.execute(migration)
             except BaseException as exc:
                 # ``BaseException`` so a cancelled bootstrap also releases the
                 # sockets it opened; the exception is always re-raised.
@@ -266,8 +282,9 @@ class PostgresRepository:
             pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 row_id = await conn.fetchval(
-                    "INSERT INTO turns (ts, agent, request, response, tenant) "
-                    "VALUES ($1, $2, $3, $4, $5) RETURNING id",
+                    "INSERT INTO turns (ts, agent, request, response, tenant, "
+                    "schema_version, status, error_code, error) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
                     datetime.now(UTC),
                     agent,
                     # model_dump(mode="json"), not model_dump_json(): the jsonb
@@ -279,6 +296,10 @@ class PostgresRepository:
                     request.model_dump(mode="json"),
                     response.model_dump(mode="json"),
                     tenant,
+                    TURN_SCHEMA_VERSION,
+                    str(TurnStatus.OK),
+                    None,
+                    None,
                 )
         except _driver_failures(asyncpg) as exc:
             # ``logger.error``, not ``logger.exception``: the traceback renders
@@ -304,6 +325,65 @@ class PostgresRepository:
         )
         return int_id
 
+    async def save_failed_turn(
+        self,
+        agent: str,
+        request: AgentRequest,
+        *,
+        error_code: str,
+        error: str,
+    ) -> int:
+        """Persist a dispatch that raised; returns the new row id.
+
+        Parity with :meth:`SQLiteRepository.save_failed_turn` — the same row
+        shape, the same ``status``/``error_code``/``error`` semantics, and the
+        same empty-object ``response`` for a turn that never produced one. A
+        deployment that swaps backends must not change what its audit trail
+        can answer.
+        """
+        import asyncpg  # noqa: PLC0415
+
+        tenant = get_tenant()
+        truncated = error[:DEFAULT_ERROR_DETAIL_TRUNCATE]
+        try:
+            pool = await self._ensure_pool()
+            async with pool.acquire() as conn:
+                row_id = await conn.fetchval(
+                    "INSERT INTO turns (ts, agent, request, response, tenant, "
+                    "schema_version, status, error_code, error) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+                    datetime.now(UTC),
+                    agent,
+                    request.model_dump(mode="json"),
+                    {},
+                    tenant,
+                    TURN_SCHEMA_VERSION,
+                    str(TurnStatus.ERROR),
+                    error_code,
+                    truncated,
+                )
+        except _driver_failures(asyncpg) as exc:
+            # Type name only — see the note in ``save_turn``.
+            logger.error(
+                "Postgres save_failed_turn failed",
+                extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
+            )
+            raise PersistenceError(
+                "Failed to persist turn",
+                detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+            ) from exc
+        int_id = int(row_id)
+        logger.debug(
+            "Postgres save_failed_turn persisted",
+            extra={
+                "row_id": int_id,
+                "agent": agent,
+                "error_code": error_code,
+                "dsn_host": _dsn_host(self._dsn),
+            },
+        )
+        return int_id
+
     async def list_turns(
         self, limit: int = DEFAULT_STORAGE_LIST_TURNS_LIMIT
     ) -> list[dict[str, Any]]:
@@ -317,7 +397,7 @@ class PostgresRepository:
             pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, ts, agent, request, response FROM turns "
+                    f"SELECT {', '.join(TURN_SELECT_COLUMNS)} FROM turns "  # noqa: S608
                     "WHERE tenant = $1 ORDER BY id DESC LIMIT $2",
                     tenant,
                     limit,
@@ -332,13 +412,15 @@ class PostgresRepository:
                 "Failed to list turns",
                 detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
+        # Built from the shared column tuple so a new record column reaches both
+        # backends' reads at once; ``id`` and ``ts`` keep their bespoke coercion
+        # because asyncpg hands back an int and a datetime where SQLite returns
+        # text, and row-shape parity across backends is the contract.
         return [
             {
+                **{name: row[name] for name in TURN_SELECT_COLUMNS},
                 "id": int(row["id"]),
                 "ts": row["ts"].isoformat() if row["ts"] is not None else None,
-                "agent": row["agent"],
-                "request": row["request"],
-                "response": row["response"],
             }
             for row in rows
         ]

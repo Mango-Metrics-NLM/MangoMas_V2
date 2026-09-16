@@ -18,7 +18,13 @@ from typing import Any
 import pytest
 
 from mangomas.adapters.storage import postgres as postgres_module
+from mangomas.adapters.storage._schema import (
+    TURN_SCHEMA_VERSION,
+    TURN_SELECT_COLUMNS,
+    TurnStatus,
+)
 from mangomas.adapters.storage.postgres import (
+    _PG_RECORD_MIGRATIONS,
     _PG_SCHEMA,
     _PG_TENANT_MIGRATION,
     PostgresRepository,
@@ -305,17 +311,40 @@ async def test_save_turn_translates_postgres_error() -> None:
 
 
 @_requires_asyncpg
+def _fake_row(**overrides: Any) -> dict[str, Any]:
+    """Build a fake asyncpg row carrying every column the real SELECT returns.
+
+    Driven from ``TURN_SELECT_COLUMNS`` so a column added to the record shows up
+    here automatically. A hand-written literal is what let these fixtures fall
+    behind the schema in the first place — and the mapper is deliberately
+    strict about missing keys, because tolerating them is how a backend
+    silently stops returning a column.
+    """
+    row: dict[str, Any] = dict.fromkeys(TURN_SELECT_COLUMNS)
+    row.update(
+        {
+            "id": 1,
+            "ts": datetime.now(UTC),
+            "agent": "bot",
+            "request": {},
+            "response": {},
+            "schema_version": TURN_SCHEMA_VERSION,
+            "status": str(TurnStatus.OK),
+        }
+    )
+    row.update(overrides)
+    return row
+
+
 async def test_list_turns_happy_path() -> None:
     """list_turns returns dicts with the expected keys."""
     ts = datetime.now(UTC)
     fake_rows = [
-        {
-            "id": 1,
-            "ts": ts,
-            "agent": "bot",
-            "request": {"messages": [{"role": "user", "content": "hi"}]},
-            "response": {"content": "hello", "agent": "bot"},
-        }
+        _fake_row(
+            ts=ts,
+            request={"messages": [{"role": "user", "content": "hi"}]},
+            response={"content": "hello", "agent": "bot"},
+        )
     ]
     repo = PostgresRepository(_make_cfg())
     pool = FakePool(conn=FakeConnection(fetch_return=fake_rows))
@@ -345,15 +374,7 @@ async def test_list_turns_empty_result() -> None:
 @_requires_asyncpg
 async def test_list_turns_handles_none_ts() -> None:
     """list_turns maps a NULL ts to Python None."""
-    fake_rows: list[dict[str, Any]] = [
-        {
-            "id": 2,
-            "ts": None,
-            "agent": "bot",
-            "request": {},
-            "response": {},
-        }
-    ]
+    fake_rows: list[dict[str, Any]] = [_fake_row(id=2, ts=None)]
     repo = PostgresRepository(_make_cfg())
     pool = FakePool(conn=FakeConnection(fetch_return=fake_rows))
     _inject_pool(repo, pool)
@@ -480,7 +501,11 @@ async def test_ensure_pool_creates_applies_ddl_and_caches(
 
     assert pool is creator.pool
     assert repo._pool is creator.pool
-    assert creator.pool.conn.executed == [_PG_SCHEMA, _PG_TENANT_MIGRATION]
+    assert creator.pool.conn.executed == [
+        _PG_SCHEMA,
+        _PG_TENANT_MIGRATION,
+        *_PG_RECORD_MIGRATIONS,
+    ]
 
     # Second call must reuse the cached pool rather than rebuild it.
     assert await repo._ensure_pool() is creator.pool
@@ -624,7 +649,7 @@ async def test_pool_is_retryable_after_a_failed_ddl(
     creator.pool = healthy
 
     assert await repo._ensure_pool() is healthy
-    assert healthy.conn.executed == [_PG_SCHEMA, _PG_TENANT_MIGRATION]
+    assert healthy.conn.executed == [_PG_SCHEMA, _PG_TENANT_MIGRATION, *_PG_RECORD_MIGRATIONS]
     assert len(creator.calls) == 2
 
 
