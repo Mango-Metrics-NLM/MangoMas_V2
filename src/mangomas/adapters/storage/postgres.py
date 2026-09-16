@@ -311,8 +311,10 @@ class PostgresRepository:
         import asyncpg  # noqa: PLC0415
 
         tenant = get_tenant()
-        pool = await self._ensure_pool()
         try:
+            # Inside the ``try`` for the same reason as ``save_turn`` — and it
+            # matters most here: /readyz probes the DB through ``list_turns``.
+            pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT id, ts, agent, request, response FROM turns "
@@ -321,7 +323,8 @@ class PostgresRepository:
                     limit,
                 )
         except _driver_failures(asyncpg) as exc:
-            logger.exception(
+            # Type name only — see the note in ``save_turn``.
+            logger.error(
                 "Postgres list_turns failed",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
@@ -340,12 +343,34 @@ class PostgresRepository:
             for row in rows
         ]
 
+    def _terminate_quietly(self, pool: asyncpg.Pool) -> None:
+        """Terminate *pool* immediately, absorbing a secondary failure.
+
+        Shared by :meth:`close` and the ``_ensure_pool`` failure path, which
+        must release the sockets of a pool it is about to discard.
+        ``terminate()`` rather than ``close()``: the latter waits for every
+        connection to be released, which would hang a bootstrap that is
+        already failing (or being cancelled).
+
+        Logs only the exception *type* — never the body. asyncpg exceptions
+        can in some failure modes embed connection-URL text in the message;
+        ``dsn_host`` is the only DSN-derived field we ever emit.
+        """
+        try:
+            pool.terminate()
+        except Exception as exc:  # pragma: no cover  -- defensive
+            logger.warning(
+                "Postgres pool terminate raised",
+                extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
+            )
+
     async def aclose(self) -> None:
         """Close the asyncpg pool cleanly (idempotent)."""
         if self._pool is None:
             return
         await self._pool.close()
         self._pool = None
+        logger.info("asyncpg pool closed", extra={"dsn_host": _dsn_host(self._dsn)})
 
     def close(self) -> None:
         """Best-effort synchronous close.
@@ -358,15 +383,6 @@ class PostgresRepository:
         """
         if self._pool is None:
             return
-        try:
-            self._pool.terminate()
-        except Exception as exc:  # pragma: no cover  -- defensive
-            # Log only the exception *type* — never the body. asyncpg
-            # exceptions can in some failure modes embed connection-URL
-            # text in the message; ``dsn_host`` is the only DSN-derived
-            # field we ever emit.
-            logger.warning(
-                "Postgres pool terminate raised",
-                extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
-            )
+        self._terminate_quietly(self._pool)
         self._pool = None
+        logger.info("asyncpg pool closed", extra={"dsn_host": _dsn_host(self._dsn)})

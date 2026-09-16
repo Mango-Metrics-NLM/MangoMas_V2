@@ -808,7 +808,7 @@ async def test_auth_failure_message_never_reaches_the_public_error_message(
     published ``password authentication failed for user "..."`` to anonymous
     callers. Wrapping restores the fixed, driver-free message.
     """
-    secret = 'password authentication failed for user "app_user"'
+    secret = 'password authentication failed for user "app_user"'  # noqa: S105  driver text
     _patch_create_pool(
         monkeypatch, RecordingCreatePool(side_effect=_asyncpg.InvalidPasswordError(secret))
     )
@@ -847,7 +847,7 @@ async def test_list_turns_defaults_to_the_default_tenant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With no tenant set the read still filters — on ``DEFAULT_TENANT``."""
-    creator = _patch_create_pool(monkeypatch, RecordingCreatePool())
+    _patch_create_pool(monkeypatch, RecordingCreatePool())
     repo = PostgresRepository(_make_cfg())
 
     token = tenant_id.set(None)
@@ -860,14 +860,31 @@ async def test_list_turns_defaults_to_the_default_tenant(
 
 # ── Pool-lifecycle logging: structured, and never credential-bearing ──────────
 
-_SECRET_DSN = "postgresql://app_user:sup3r-secret-pw@db.example.test:5432/appdb"
-_DSN_PASSWORD = "sup3r-secret-pw"
+#: A DSN with a distinctive password, so a leak into any log record is
+#: unambiguous rather than a substring coincidence.
+_SECRET_DSN = "postgresql://app_user:sup3r-secret-pw@db.example.test:5432/appdb"  # noqa: S105  test-only
+_DSN_PASSWORD = "sup3r-secret-pw"  # noqa: S105  test-only
+_DSN_HOST = "db.example.test"
 
 
 def _log_blob(caplog: pytest.LogCaptureFixture) -> str:
-    """Formatted log text plus every structured ``extra`` field, as one string."""
+    """Formatted log text plus every structured ``extra`` field, as one string.
+
+    Deliberately spans *every* logger, not just the adapter's: a credential
+    leaking out through some other logger is still a leak.
+    """
     extras = "".join(repr(record.__dict__) for record in caplog.records)
     return caplog.text + extras
+
+
+def _adapter_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """Only the adapter's own records.
+
+    ``caplog.at_level`` raises a logger's level but captures at the root
+    handler, so a sibling logger left at INFO by an earlier test would
+    otherwise fail the ``dsn_host``-on-every-record assertion below.
+    """
+    return [record for record in caplog.records if record.name == _PG_LOGGER]
 
 
 @_requires_asyncpg
@@ -878,17 +895,18 @@ async def test_pool_lifecycle_emits_structured_logs(
     repo = PostgresRepository(DBSettings(provider="postgres", url=_SECRET_DSN))
     _patch_create_pool(monkeypatch, RecordingCreatePool())
 
+    caplog.clear()
     with caplog.at_level(logging.DEBUG, logger=_PG_LOGGER):
         await repo._ensure_pool()
         await repo.aclose()
 
-    messages = [record.getMessage() for record in caplog.records]
+    records = _adapter_records(caplog)
+    messages = [record.getMessage() for record in records]
     assert any("pool created" in m for m in messages), messages
     assert any("schema" in m for m in messages), messages
     assert any("closed" in m for m in messages), messages
-    assert all(
-        getattr(record, "dsn_host", None) == "db.example.test" for record in caplog.records
-    ), messages
+    # Every lifecycle line is structured and host-scoped — never DSN-bearing.
+    assert all(getattr(record, "dsn_host", None) == _DSN_HOST for record in records), messages
 
 
 @_requires_asyncpg

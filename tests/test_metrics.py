@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import subprocess
 import sys
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -522,6 +524,21 @@ def test_cli_bootstrap_installs_a_meter_provider_only_when_enabled(
     )
 
 
+@pytest.fixture
+def _restore_root_log_level() -> Iterator[None]:
+    """Undo `configure_cli_logging`'s process-global root-level change.
+
+    Setting the root level is the CLI bootstrap's actual job, so a test that
+    calls it leaks one — and a leaked level silently changes `caplog` capture
+    in whatever test file runs next, failing there and passing in isolation.
+    """
+    root = logging.getLogger()
+    previous = root.level
+    yield
+    root.setLevel(previous)
+
+
+@pytest.mark.usefixtures("_restore_root_log_level")
 @pytest.mark.parametrize(
     ("metrics_env", "expected_enabled"),
     [("true", True), (None, False)],

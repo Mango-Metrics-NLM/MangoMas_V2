@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets as _secrets
+from typing import cast
 
 import httpx
 import pytest
@@ -373,8 +374,13 @@ def test_comparison_stays_constant_time_over_bytes(
     class _SpyingSecrets:
         @staticmethod
         def compare_digest(a: object, b: object) -> bool:
+            # Declared over ``object`` on purpose: the assertions below are what
+            # catch a regression to ``str`` operands, and a narrower annotation
+            # here would let mypy hide exactly the change this test exists to
+            # notice. The cast is therefore load-bearing, not a papered-over
+            # type error — at runtime the operands are checked explicitly.
             seen.append((a, b))
-            return _secrets.compare_digest(a, b)  # type: ignore[arg-type]
+            return _secrets.compare_digest(cast("bytes", a), cast("bytes", b))
 
     monkeypatch.setattr("mangomas.api.auth._secrets", _SpyingSecrets)
     with TestClient(auth_app) as client:

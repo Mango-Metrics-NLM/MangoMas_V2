@@ -151,10 +151,10 @@ class IngestionPipeline:
             # Embed before mutating: until every vector for this document is in
             # hand the store is untouched, so an embedding backend that is down,
             # rate-limiting or timing out cannot leave the index emptier than it
-            # started. ``texts == []`` needs no embedding at all and falls
-            # straight through to the replace, which purges the now-empty
-            # source — an emptied document must not keep its old passages.
-            batches = await self._embed_document(doc.source, texts)
+            # started. A document with no chunks needs no embedding call at all,
+            # and its replace degenerates to the purge it should be — an emptied
+            # document must not keep serving its old passages.
+            batches = await self._embed_document(doc.source, texts) if texts else []
             removed = await self._replace_source(doc.source, batches)
             # Only sources the store actually held vectors for count as
             # deletions — a first-time ingest reports 0 (spec 0014 / D10).

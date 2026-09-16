@@ -361,6 +361,11 @@ async def test_replace_logs_what_was_deleted_and_what_was_upserted(
     """One INFO line per source answers "what did that run do to my index?"."""
     f, store = await _ingest_once(tmp_path, "a b c d e f g h i")  # 3 chunks
 
+    # The fixture ingest above logs its own ledger line. `at_level` raises the
+    # logger's level but does not empty the handler, and a prior test that left
+    # the root logger at INFO makes that setup line visible here — so drop
+    # everything predating the run actually under test.
+    caplog.clear()
     with caplog.at_level(logging.INFO, logger="mangomas.rag.pipeline"):
         await _pipeline(FakeEmbeddingClient(), store, batch_size=2).ingest(str(f))
 
@@ -395,6 +400,7 @@ async def test_embedding_failure_is_logged_as_leaving_the_index_unchanged(
     f, store = await _ingest_once(tmp_path, "a b c d e f g h i")
     down = FakeEmbeddingClient(raise_on_batch=LLMUnavailable(_OUTAGE), raise_after_batches=1)
 
+    caplog.clear()  # drop the fixture ingest's own ledger line (see above)
     with (
         caplog.at_level(logging.INFO, logger="mangomas.rag.pipeline"),
         pytest.raises(LLMUnavailable),
