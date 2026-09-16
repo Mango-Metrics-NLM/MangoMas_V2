@@ -190,7 +190,6 @@ class IngestionPipeline:
         index exactly as it was. The caller only starts mutating once this
         returns a complete set of batches.
         """
-        await self._vector_store.delete_by_source(source)  # MUTATION B
         batches: list[_PreparedBatch] = []
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]

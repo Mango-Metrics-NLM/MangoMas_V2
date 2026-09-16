@@ -13,6 +13,7 @@ an accident, so the guard is correctly absent.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,26 @@ async def test_build_is_not_a_singleton(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 # ── configure_cli_logging (spec-0023 R1) ──────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_log_level() -> Iterator[None]:
+    """Put the root logger's level back after every test in this module.
+
+    These tests drive the real `configure_cli_logging`, whose job *is* to set
+    the root level — which is process-global and outlives the test. A leaked
+    level silently changes `caplog` capture in every later test file whose own
+    logger has no explicit level of its own, so the damage surfaces as an
+    unrelated failure in a full run that passes in isolation. Measured: the
+    `MANGOMAS_LOG_LEVEL=ERROR` case below took out four `tests/rag/test_pipeline.py`
+    assertions that way.
+    """
+    import logging  # noqa: PLC0415 -- exercising real logging state
+
+    root = logging.getLogger()
+    previous = root.level
+    yield
+    root.setLevel(previous)
 
 
 def _reset_telemetry_state() -> None:

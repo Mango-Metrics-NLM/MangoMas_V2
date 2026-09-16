@@ -329,6 +329,35 @@ async def test_prompt_reply_is_unaffected_by_the_budget() -> None:
     assert await client.complete([Message(role="user", content="hi")]) == "quick"
 
 
+async def test_call_start_debug_log_names_the_budget(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The budget in force is observable on every outbound call."""
+    fake = FakeVertexGenerativeModel()
+    client = _timed_client(fake)
+    with caplog.at_level(logging.DEBUG, logger="mangomas.adapters.llm.vertex"):
+        await client.complete([Message(role="user", content="hi")])
+    starts = [rec for rec in caplog.records if getattr(rec, "event", None) == "vertex_call_start"]
+    assert starts, "expected a structured vertex_call_start log record"
+    assert getattr(starts[0], "timeout_seconds", None) == _TINY_TIMEOUT_SECONDS
+
+
+async def test_timeout_logs_a_vertex_error_distinguishable_from_an_sdk_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An expiry is logged as ``TimeoutError``, not as whatever the SDK raised."""
+    client = _timed_client(_HangingVertexModel())
+    with (
+        caplog.at_level(logging.ERROR, logger="mangomas.adapters.llm.vertex"),
+        pytest.raises(LLMTimeout),
+    ):
+        await client.complete([Message(role="user", content="hi")])
+    matching = [rec for rec in caplog.records if getattr(rec, "event", None) == "vertex_error"]
+    assert matching, "expected a structured vertex_error log record"
+    assert getattr(matching[0], "error_type", None) == "TimeoutError"
+    assert getattr(matching[0], "timeout_seconds", None) == _TINY_TIMEOUT_SECONDS
+
+
 # ── aclose() ────────────────────────────────────────────────────────────────
 
 
