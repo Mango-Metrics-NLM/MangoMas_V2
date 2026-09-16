@@ -11,6 +11,20 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Code-quality / tech-debt program (spec-0031, planning only — no code
+  change).** A full-repo reflection run against a clean tree at `df92e3d`,
+  recording a measured baseline (all twelve `make gate` steps green; 2683 tests;
+  98.88% coverage) and sequencing eight workstreams. Four findings were verified
+  by running the application rather than reading it: with stock defaults
+  `/workflows/run` executes an inline graph although
+  `MANGOMAS_WORKFLOW__ENABLED` is `false`, `/workflows/validate` distinguishes an
+  existing path from a missing one, a 16 KB nested graph raises `RecursionError`
+  past the `ConfigError` boundary, and `AgentRequest(max_steps=10**9)` is
+  accepted. References:
+  `specs/0031-code-quality-and-enterprise-readiness.md`,
+  `docs/plans/20260916T000000Z-code-quality-tech-debt-plan.md`. No runtime
+  behaviour changes in this entry; each workstream lands with its own entry and
+  its own regression test.
 - **Cost-controlled eval scorer** (`cost_budget`): estimates USD per row from
   explicit `cost_usd`, token metadata, or output-character rates
   (`DEFAULT_EVAL_COST_USD_PER_1K_*`). Measure-only unless

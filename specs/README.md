@@ -71,6 +71,7 @@ thinking tool, not a gate.
 | [0028](0028-per-agent-model-override.md) | Per-agent LLM model override (`MODEL_OVERRIDE` wiring) |
 | [0029](0029-hardware-agnostic-e2e-suites.md) | Hardware-agnostic end-to-end suites for the Phase-1 deliveries |
 | [0030](0030-cognitive-authority-plugin.md) | Cognitive/execution boundary plugin (`mango-integration-contracts` 1.1.0) |
+| [0031](0031-code-quality-and-enterprise-readiness.md) | Code quality, tech-debt reduction and enterprise readiness |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
