@@ -204,3 +204,61 @@ def test_scripts_fallback_matches_the_pyproject_table() -> None:
     table = _pyproject_governance()
     assert frozenset(table["protected_paths"]) == linter._FALLBACK_PROTECTED_PATHS
     assert frozenset(table["aliases"]) == linter._FALLBACK_BREAKING_CHANGE_MARKER_ALIASES
+
+
+# ── The governance mechanism must protect itself (ADR-0030) ──────────────────
+
+
+def test_the_governance_surface_protects_itself() -> None:
+    """Every file the protected-path mechanism is made of is itself protected.
+
+    A gate whose own definition can be edited without leaving a record in
+    ``git log`` is a gate the governed tree can quietly retire. The failure
+    message names the offending files rather than reporting ``False``, so a
+    contributor who adds a new governance file learns exactly what to do.
+    """
+    unprotected = governance.unprotected_governance_surface()
+    assert unprotected == frozenset(), (
+        "these governance files are not in [tool.mangomas.governance] "
+        f"protected_paths: {sorted(unprotected)}"
+    )
+
+
+def test_governance_surface_entries_exist_on_disk() -> None:
+    """A surface entry naming a moved or deleted file would protect nothing.
+
+    The companion to the containment check above: that one proves the set is
+    covered by policy, this one proves the set still describes reality. A
+    renamed file would otherwise leave a green gate guarding a path that no
+    longer exists.
+    """
+    root = Path(__file__).resolve().parents[2]
+    missing = sorted(path for path in governance.GOVERNANCE_SURFACE if not (root / path).exists())
+    assert missing == [], f"GOVERNANCE_SURFACE names files that do not exist: {missing}"
+
+
+def test_unprotected_governance_surface_reports_a_shrunken_policy() -> None:
+    """The helper must actually *detect* an under-protecting policy.
+
+    Mutation proof, mechanised (``mango-mutation-proof``): pass a candidate
+    policy with the mechanism's own files removed and assert the helper names
+    them. Without this, ``test_the_governance_surface_protects_itself`` could
+    pass because the helper always returns an empty set.
+    """
+    shrunken = frozenset({"src/mangomas/core/agent.py"})
+
+    reported = governance.unprotected_governance_surface(shrunken)
+
+    assert reported == governance.GOVERNANCE_SURFACE
+
+
+def test_unprotected_governance_surface_normalizes_policy_separators() -> None:
+    """A Windows-style policy entry must still count as protecting the file.
+
+    ``PROTECTED_PATHS`` is read from TOML a human edits, and this repo is
+    developed on Windows as well as POSIX. Comparing raw strings would report
+    a correctly-protected file as unprotected.
+    """
+    windows_style = frozenset({path.replace("/", "\\") for path in governance.GOVERNANCE_SURFACE})
+
+    assert governance.unprotected_governance_surface(windows_style) == frozenset()

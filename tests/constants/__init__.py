@@ -145,6 +145,9 @@ from tests.constants.corpus import (
 )
 from tests.constants.corpus import SIGNAL_POLICY_VERSION_ENV as SIGNAL_POLICY_VERSION_ENV
 from tests.constants.corpus import SIGNAL_SCHEMA_VERSION_ENV as SIGNAL_SCHEMA_VERSION_ENV
+from tests.constants.corpus import (
+    SITECUSTOMIZE_INJECTED_ADDOPTS as SITECUSTOMIZE_INJECTED_ADDOPTS,
+)
 from tests.constants.corpus import SKILL_UNMAPPED_AGENT_SLUGS as SKILL_UNMAPPED_AGENT_SLUGS
 from tests.constants.corpus import SPELLED_NUMBERS as SPELLED_NUMBERS
 from tests.constants.corpus import SUBSET_COUNT_CLAIMS as SUBSET_COUNT_CLAIMS
@@ -558,6 +561,7 @@ __all__ = [
     "SIGNAL_POLICY_SNAPSHOT_HASH_ENV",
     "SIGNAL_POLICY_VERSION_ENV",
     "SIGNAL_SCHEMA_VERSION_ENV",
+    "SITECUSTOMIZE_INJECTED_ADDOPTS",
     "SKILL_UNMAPPED_AGENT_SLUGS",
     "SLOW_AGENT_DELAY_SECONDS",
     "SPELLED_NUMBERS",

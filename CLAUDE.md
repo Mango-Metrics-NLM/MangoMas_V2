@@ -249,6 +249,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Stop the run on the first errored row |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
+| `MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE` | `false` | Let a discovered eval plugin replace a built-in of the same name; default refuses the collision (ADR-0030) |
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
 | `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
 | `MANGOMAS_SIGNAL__ENABLED` | `false` | Emit CognitiveSignal 1.1.0 envelopes (planner/reviewer); default-off, byte-identical dispatch |
@@ -509,7 +510,15 @@ Protected core paths (`src/mangomas/core/agent.py`,
 `src/mangomas/core/tools.py`,
 `src/mangomas/errors.py`, `src/mangomas/registry.py`) require a
 `BREAKING-CHANGE` marker (the legacy `# approved-breaking-change` form is
-still accepted) on at least one commit message when touched. The
+still accepted) on at least one commit message when touched. Since ADR-0030
+the **governance mechanism itself** is protected on the same terms —
+`pyproject.toml`, `scripts/check_protected_paths.py`, `scripts/_governance.py`,
+`src/mangomas/harness/governance.py`, `sitecustomize.py` and `.mcp.json`
+(named by `harness.governance.GOVERNANCE_SURFACE`) — and a marker may name the
+path it approves: `BREAKING-CHANGE: <path> — <rationale>` binds to that file,
+while a bare `BREAKING-CHANGE: <rationale>` still approves every touched path.
+The gate reads the policy from the **base ref**, not the branch under test, so
+a branch cannot shrink the set it is judged by. The
 **authoritative** enforcement is `scripts/check_protected_paths.py`, a CI
 job (`make protected-paths`) that reads `git diff`/`git log` between the PR
 base and head — state an in-session agent cannot rewrite. The `PreToolUse`

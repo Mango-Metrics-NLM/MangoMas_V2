@@ -56,8 +56,21 @@ _discovered_registries: set[int] = set()
 _discovery_lock = Lock()
 
 
-def _discover(group: str, registry: Registry[Any], label: str) -> list[str]:
-    """Load and register every entry point in *group* into *registry*."""
+def _discover(
+    group: str,
+    registry: Registry[Any],
+    label: str,
+    *,
+    allow_builtin_override: bool = False,
+) -> list[str]:
+    """Load and register every entry point in *group* into *registry*.
+
+    A plugin whose name collides with an already-registered built-in is
+    **skipped with a WARNING** unless *allow_builtin_override* is set, mirroring
+    ``agents.discovery.discover_agents``. Keyword-only and defaulting to the
+    safe behaviour so every existing caller is refused-by-default without
+    changing its call site.
+    """
     existing = set(registry.available())
     discovered: list[str] = []
     with trace.get_tracer(__name__).start_as_current_span("eval.discovery") as span:
@@ -90,6 +103,19 @@ def _discover(group: str, registry: Registry[Any], label: str) -> list[str]:
                 )
                 continue
             if ep.name in existing:
+                if not allow_builtin_override:
+                    logger.warning(
+                        "Eval plugin %r collides with built-in %s; skipping",
+                        ep.name,
+                        label,
+                        extra={
+                            "event": "eval_plugin_collision",
+                            "group": group,
+                            # ``name`` is a reserved LogRecord attribute — use ``plugin``.
+                            "plugin": ep.name,
+                        },
+                    )
+                    continue
                 logger.info(
                     "Eval plugin overrides built-in %s %r",
                     label,
@@ -106,36 +132,42 @@ def discover_scorers(
     *,
     registry: Registry[Any] = scorer_registry,
     group: str = SCORER_ENTRY_POINT_GROUP,
+    allow_builtin_override: bool = False,
 ) -> list[str]:
     """Discover and register third-party scorers. Returns the names registered."""
-    return _discover(group, registry, "scorer")
+    return _discover(group, registry, "scorer", allow_builtin_override=allow_builtin_override)
 
 
 def discover_sinks(
     *,
     registry: Registry[Any] = sink_registry,
     group: str = SINK_ENTRY_POINT_GROUP,
+    allow_builtin_override: bool = False,
 ) -> list[str]:
     """Discover and register third-party sinks. Returns the names registered."""
-    return _discover(group, registry, "sink")
+    return _discover(group, registry, "sink", allow_builtin_override=allow_builtin_override)
 
 
 def discover_targets(
     *,
     registry: Registry[Any] = target_registry,
     group: str = TARGET_ENTRY_POINT_GROUP,
+    allow_builtin_override: bool = False,
 ) -> list[str]:
     """Discover and register third-party targets. Returns the names registered."""
-    return _discover(group, registry, "target")
+    return _discover(group, registry, "target", allow_builtin_override=allow_builtin_override)
 
 
 def discover_dataset_sources(
     *,
     registry: Registry[Any] = dataset_source_registry,
     group: str = DATASET_SOURCE_ENTRY_POINT_GROUP,
+    allow_builtin_override: bool = False,
 ) -> list[str]:
     """Discover and register third-party dataset sources. Returns names registered."""
-    return _discover(group, registry, "dataset_source")
+    return _discover(
+        group, registry, "dataset_source", allow_builtin_override=allow_builtin_override
+    )
 
 
 def ensure_eval_plugins(settings: Settings) -> None:
@@ -165,8 +197,9 @@ def ensure_eval_plugins(settings: Settings) -> None:
         # Double-checked under the lock so concurrent calls scan exactly once.
         if all(id(r) in _discovered_registries for r in registries):
             return
-        discover_scorers(registry=registries[0])
-        discover_sinks(registry=registries[1])
-        discover_targets(registry=registries[2])
-        discover_dataset_sources(registry=registries[3])
+        allow_override = settings.discovery_allow_builtin_override
+        discover_scorers(registry=registries[0], allow_builtin_override=allow_override)
+        discover_sinks(registry=registries[1], allow_builtin_override=allow_override)
+        discover_targets(registry=registries[2], allow_builtin_override=allow_override)
+        discover_dataset_sources(registry=registries[3], allow_builtin_override=allow_override)
         _discovered_registries.update(id(r) for r in registries)

@@ -9,6 +9,65 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **The protected-path gate now reads its policy from the base ref** (ADR-0030).
+  `scripts/check_protected_paths.py` loaded `[tool.mangomas.governance]` from
+  the working tree — the same commit it was judging — so one branch could both
+  remove a file from `protected_paths` and edit it, marker-free. It now loads
+  the table from `git show <base-ref>:./pyproject.toml`, which the branch
+  cannot rewrite, falling back to the working tree **with a loud stderr
+  notice** when the base ref has no readable policy (a base branch predating
+  the table, or a shallow clone).
+
+- **The governance mechanism is itself protected.** `pyproject.toml`,
+  `scripts/check_protected_paths.py`, `scripts/_governance.py`,
+  `src/mangomas/harness/governance.py`, `sitecustomize.py` and `.mcp.json`
+  joined `protected_paths`. `harness.governance.GOVERNANCE_SURFACE` names the
+  set and `unprotected_governance_surface()` reports any member missing from
+  the policy, so the containment is asserted rather than assumed. `Makefile`,
+  `.github/workflows/ci.yml` and `scripts/lint_agent_frontmatter.py` are
+  deliberately excluded — see the ADR for the marker-fatigue reasoning.
+
+- **An eval plugin can no longer replace a built-in by default.**
+  `eval/discovery.py` registered a colliding entry point last-call-wins, and
+  those registries feed the CI quality gate (exit 3) and the regression
+  baseline — so an installed package could decide whether the gate passed.
+  It now skips the collision with a WARNING, mirroring `agents/discovery.py`,
+  which always refused it. **Behaviour change:** set
+  `MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE=true` to restore the previous
+  last-call-wins behaviour.
+
+- **Nothing model-chosen reaches a shell.** The `PostToolUse` hook substituted
+  a model-supplied `file_path` into a double-quoted word inside a string handed
+  to `sh -c`, so a path containing `"` escaped the quoting. It is now two plain
+  `xargs -r` pipelines with no `sh -c`, where the path is a literal argv
+  element that is never re-parsed, and `--emit-path` additionally refuses to
+  emit a path containing shell metacharacters.
+
+### Added
+
+- **Scoped approval markers.** `BREAKING-CHANGE: <protected-path> — <rationale>`
+  now binds an approval to the path it names; the gate requires every touched
+  protected path to be approved. A bare `BREAKING-CHANGE: <rationale>` still
+  approves every touched path, so existing markers keep working. A marker
+  counts as scoped only when its first token is an **exact** protected path —
+  a typo reads as prose and approves broadly rather than silently narrowing to
+  nothing. `scripts/_governance.py` gains `find_marker_scopes` / `MarkerScopes`
+  and a reusable `parse_governance` (policy validation split from file I/O so a
+  git-blob policy is checked exactly as strictly as one read from disk).
+
+### Fixed
+
+- **The `sitecustomize.py` guard was one-sided.** `tests/regression/test_origin_defects.py`
+  asserted `-p no:randomly` was *present* in the injected `PYTEST_ADDOPTS`, not
+  that nothing else was. `PYTEST_ADDOPTS` carries `--cov-fail-under` and `-k`
+  and applies to every pytest run, so an added `--cov-fail-under=0` would have
+  disarmed the coverage gate — CI included — with the guard still green. The
+  assertion is now an exact token match, with a mechanised mutation proof
+  (`test_a_stray_injected_token_is_detected`) that tampers with a *copy* and
+  confirms the comparison discriminates.
+
 ### Changed
 
 - **`AgentNotFound` 404 bodies no longer double-quote `message`** (wire-format

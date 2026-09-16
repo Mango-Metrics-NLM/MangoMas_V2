@@ -19,16 +19,19 @@ from mangomas.harness.config_audit import (
 from mangomas.harness.governance import (
     BREAKING_CHANGE_MARKER,
     BREAKING_CHANGE_MARKER_ALIASES,
+    GOVERNANCE_SURFACE,
     PROTECTED_PATHS,
     has_breaking_change_marker,
     is_protected_path,
     normalize_path,
     read_staged_diff,
+    unprotected_governance_surface,
 )
 
 __all__ = [
     "BREAKING_CHANGE_MARKER",
     "BREAKING_CHANGE_MARKER_ALIASES",
+    "GOVERNANCE_SURFACE",
     "PROTECTED_PATHS",
     "ConfigAuditDecision",
     "ConfigChangeAction",
@@ -38,4 +41,5 @@ __all__ = [
     "is_protected_path",
     "normalize_path",
     "read_staged_diff",
+    "unprotected_governance_surface",
 ]
