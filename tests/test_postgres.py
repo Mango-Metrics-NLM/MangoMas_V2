@@ -32,7 +32,7 @@ from mangomas.adapters.storage.postgres import (
     _dsn_host,
     _normalise_dsn,
 )
-from mangomas.config import DBSettings
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DBSettings
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant, set_tenant, tenant_id
@@ -274,6 +274,93 @@ def _inject_pool(repo: PostgresRepository, pool: FakePool) -> None:
         return pool
 
     repo._ensure_pool = _noop_ensure  # type: ignore[method-assign]
+
+
+# ── save_failed_turn (ADR-0031) ───────────────────────────────────────────────
+
+
+@_requires_asyncpg
+async def test_save_failed_turn_happy_path() -> None:
+    """A failed dispatch persists on Postgres too, returning the row id.
+
+    Parity with SQLite is the contract (ADR-0031): a deployment that swaps
+    backends must not change what its audit trail can answer. This backend
+    shipped the method for parity and nothing exercised it — the "parity
+    claimed but not proven" shape the governance audit itself flags.
+    """
+    repo = PostgresRepository(_make_cfg())
+    pool = FakePool(conn=FakeConnection(fetchval_return=11))
+    _inject_pool(repo, pool)
+
+    row_id = await repo.save_failed_turn(
+        "bot", _make_request(), error_code="llm_timeout", error="upstream slow"
+    )
+
+    assert row_id == 11
+    assert isinstance(row_id, int)
+
+
+@_requires_asyncpg
+async def test_save_failed_turn_binds_the_error_status_and_an_empty_response() -> None:
+    """The row says *error*, names the code, and carries no response.
+
+    The status column, not a sentinel inside the payload, is what distinguishes
+    a failure — and ``response`` is an empty object rather than NULL because the
+    column is NOT NULL on every existing database.
+    """
+    repo = PostgresRepository(_make_cfg())
+    pool = FakePool(conn=FakeConnection(fetchval_return=1))
+    _inject_pool(repo, pool)
+
+    await repo.save_failed_turn("bot", _make_request(), error_code="step_timeout", error="too slow")
+
+    # Positional order: ts, agent, request, response, tenant, schema_version,
+    # status, error_code, error.
+    args = pool.conn.fetchval_args
+    assert args[3] == {}
+    assert args[5] == TURN_SCHEMA_VERSION
+    assert args[6] == str(TurnStatus.ERROR)
+    assert args[7] == "step_timeout"
+    assert args[8] == "too slow"
+
+
+@_requires_asyncpg
+async def test_save_failed_turn_truncates_a_runaway_error() -> None:
+    """A huge driver message must not be written to the record verbatim.
+
+    Same bound ``save_turn``'s own error detail uses. Without it a single
+    pathological traceback could dominate the table this record exists to keep
+    readable.
+    """
+    repo = PostgresRepository(_make_cfg())
+    pool = FakePool(conn=FakeConnection(fetchval_return=1))
+    _inject_pool(repo, pool)
+
+    await repo.save_failed_turn("bot", _make_request(), error_code="llm_error", error="x" * 10_000)
+
+    assert len(pool.conn.fetchval_args[8]) == DEFAULT_ERROR_DETAIL_TRUNCATE
+
+
+@_requires_asyncpg
+async def test_save_failed_turn_translates_postgres_error() -> None:
+    """A driver failure while recording a failure is still a PersistenceError.
+
+    The double-fault path: the repository itself breaking while writing the
+    failure row. It must raise the typed error rather than leaking the driver's
+    exception — ``_FailureRecordingMixin`` then swallows it so the caller keeps
+    the original error, which is the one the operator needs.
+    """
+    pg_err = _asyncpg.PostgresError("boom")
+    repo = PostgresRepository(_make_cfg())
+    pool = FakePool(conn=FakeConnection(fetchval_side_effect=pg_err))
+    _inject_pool(repo, pool)
+
+    with pytest.raises(PersistenceError, match="Failed to persist turn") as exc_info:
+        await repo.save_failed_turn(
+            "bot", _make_request(), error_code="llm_timeout", error="upstream slow"
+        )
+
+    assert exc_info.value.__cause__ is pg_err
 
 
 # ── save_turn ─────────────────────────────────────────────────────────────────
