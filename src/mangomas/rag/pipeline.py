@@ -4,11 +4,28 @@ Drives an :class:`~mangomas.adapters.embeddings.base.EmbeddingClient` and a
 :class:`~mangomas.adapters.vector.base.VectorStoreRepository` to turn raw
 documents into persisted, queryable vectors.
 
-Re-ingestion is idempotent: each document is *first* deleted by source, so a
-document that has shrunk since the last run cannot leave orphaned high-index
-chunks behind (stable ``{source}#{index}`` ids would otherwise only overwrite
-the surviving prefix). Embeddings are computed in ``batch_size`` slices to bound
-request/payload size against the embedding backend.
+Re-ingestion both *replaces* and *survives failure*.
+
+**Replace.** Each document's prior vectors are deleted by source before the new
+ones are written, so a document that has shrunk since the last run cannot leave
+orphaned high-index chunks behind (stable ``{source}#{index}`` ids would
+otherwise only overwrite the surviving prefix).
+
+**Survive failure.** Every embedding call for a document completes *before* that
+delete, so an embedding backend that is down, rate-limiting or timing out fails
+the run without having touched the index. Re-running ``mangomas rag ingest``
+during a provider outage is a no-op, not a deletion. Embeddings are still
+computed in ``batch_size`` slices to bound request/payload size against the
+backend; only the store writes are deferred.
+
+The replace step itself is not atomic, and cannot be made so with the primitives
+:class:`~mangomas.adapters.vector.base.VectorStoreRepository` exposes: there is
+no transaction, and ``delete_by_source`` is the only deletion primitive — it
+matches on the ``source`` metadata that the *new* vectors also carry, so moving
+the delete after the upsert would erase what was just written. A failure of the
+store between its own delete and the following upserts can therefore still lose
+that source's vectors; re-ingesting the same path repairs it. Closing that
+remaining window needs an id-targeted delete on the protocol.
 """
 
 from __future__ import annotations
@@ -45,6 +62,21 @@ class IngestReport:
     chunks: int
     batches: int
     deleted_sources: int
+
+
+@dataclass(frozen=True)
+class _PreparedBatch:
+    """One embedded slice of a document, ready to hand to the vector store.
+
+    Internal. Exists so every embedding call can finish before the first index
+    mutation: the pipeline accumulates prepared batches in memory (bounded by
+    one document) rather than a half-written index.
+    """
+
+    ids: list[str]
+    embeddings: list[list[float]]
+    documents: list[str]
+    metadatas: list[dict[str, Any]]
 
 
 class IngestionPipeline:
@@ -111,21 +143,23 @@ class IngestionPipeline:
         total_batches = 0
         deleted = 0
         for doc in docs:
-            # Idempotent re-ingest: clear prior chunks for this source first.
-            # Only sources the store actually held vectors for count as
-            # deletions — a first-time ingest reports 0 (spec 0014 / D10).
-            removed = await self._vector_store.delete_by_source(doc.source)
-            if removed > 0:
-                deleted += 1
-            logger.debug(
-                "Prior vectors cleared",
-                extra={"event": "rag_source_cleared", "source": doc.source, "removed": removed},
-            )
             texts = chunk_text(
                 doc.text,
                 size=self._settings.chunk_words,
                 overlap=self._settings.chunk_overlap,
             )
+            # Embed before mutating: until every vector for this document is in
+            # hand the store is untouched, so an embedding backend that is down,
+            # rate-limiting or timing out cannot leave the index emptier than it
+            # started. ``texts == []`` needs no embedding at all and falls
+            # straight through to the replace, which purges the now-empty
+            # source — an emptied document must not keep its old passages.
+            batches = await self._embed_document(doc.source, texts)
+            removed = await self._replace_source(doc.source, batches)
+            # Only sources the store actually held vectors for count as
+            # deletions — a first-time ingest reports 0 (spec 0014 / D10).
+            if removed > 0:
+                deleted += 1
             if not texts:
                 # ``chunk_text`` returns [] only for a document with no words
                 # (empty or whitespace-only content). This is the "my file did
@@ -135,11 +169,12 @@ class IngestionPipeline:
                     extra={
                         "event": "rag_document_skipped",
                         "source": doc.source,
+                        "removed": removed,
                     },
                 )
                 continue
             total_chunks += len(texts)
-            total_batches += await self._embed_and_upsert(doc.source, texts)
+            total_batches += len(batches)
         return IngestReport(
             documents=len(docs),
             chunks=total_chunks,
@@ -147,33 +182,96 @@ class IngestionPipeline:
             deleted_sources=deleted,
         )
 
-    async def _embed_and_upsert(self, source: str, texts: list[str]) -> int:
-        """Embed ``texts`` in batches and upsert them; return the batch count."""
-        batches = 0
+    async def _embed_document(self, source: str, texts: list[str]) -> list[_PreparedBatch]:
+        """Embed ``texts`` in ``batch_size`` slices, touching no store state.
+
+        This is the whole crash-safety mechanism: the vector store is not called
+        from here, so whatever the embedding client raises propagates with the
+        index exactly as it was. The caller only starts mutating once this
+        returns a complete set of batches.
+        """
+        batches: list[_PreparedBatch] = []
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]
             with trace.get_tracer(__name__).start_as_current_span("rag.embed_batch") as span:
                 span.set_attribute("rag.source", source)
                 span.set_attribute("rag.batch_size", len(batch))
-                embeddings = await self._embeddings.embed_batch(batch)
-            ids = [f"{source}#{start + offset}" for offset in range(len(batch))]
-            metadatas = [
-                {"source": source, "index": start + offset} for offset in range(len(batch))
-            ]
-            await self._vector_store.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                documents=batch,
-                metadatas=metadatas,
+                try:
+                    embeddings = await self._embeddings.embed_batch(batch)
+                except Exception:
+                    # Re-raised: the run must fail. Logged first because the
+                    # operator-relevant fact — that the index was left intact —
+                    # is invisible in the traceback the CLI prints.
+                    logger.exception(
+                        "Embedding failed; index left unchanged for this source",
+                        extra={
+                            "event": "rag_source_embed_failed",
+                            "source": source,
+                            "chunks": len(texts),
+                            "batches_completed": len(batches),
+                        },
+                    )
+                    raise
+            batches.append(
+                _PreparedBatch(
+                    ids=[f"{source}#{start + offset}" for offset in range(len(batch))],
+                    embeddings=embeddings,
+                    documents=batch,
+                    metadatas=[
+                        {"source": source, "index": start + offset} for offset in range(len(batch))
+                    ],
+                )
             )
-            batches += 1
+        logger.debug(
+            "Document embedded; index not yet modified",
+            extra={
+                "event": "rag_source_embedded",
+                "source": source,
+                "chunks": len(texts),
+                "batches": len(batches),
+            },
+        )
+        return batches
+
+    async def _replace_source(self, source: str, batches: list[_PreparedBatch]) -> int:
+        """Swap ``source``'s stored vectors for ``batches``; return the count removed.
+
+        Delete first, then upsert. The ids are ``{source}#{index}``, so upserting
+        a shrunk document over its predecessor would overwrite only the surviving
+        prefix and leave orphaned high-index chunks; and ``delete_by_source``
+        matches the ``source`` metadata the new vectors also carry, so it cannot
+        run afterwards without erasing them. An empty ``batches`` is a purge,
+        which is the correct outcome for a document that has become empty.
+        """
+        removed = await self._vector_store.delete_by_source(source)
+        upserted = 0
+        for batch_index, prepared in enumerate(batches, start=1):
+            await self._vector_store.upsert(
+                ids=prepared.ids,
+                embeddings=prepared.embeddings,
+                documents=prepared.documents,
+                metadatas=prepared.metadatas,
+            )
+            upserted += len(prepared.ids)
             logger.debug(
-                "Batch embedded and upserted",
+                "Batch upserted",
                 extra={
                     "event": "rag_batch_upserted",
                     "source": source,
-                    "batch_index": batches,
-                    "vectors": len(batch),
+                    "batch_index": batch_index,
+                    "vectors": len(prepared.ids),
                 },
             )
-        return batches
+        # The per-source ledger an operator needs to answer "what did that run
+        # actually do to my index?" — one line, both halves of the swap.
+        logger.info(
+            "Source replaced",
+            extra={
+                "event": "rag_source_replaced",
+                "source": source,
+                "removed": removed,
+                "upserted": upserted,
+                "batches": len(batches),
+            },
+        )
+        return removed

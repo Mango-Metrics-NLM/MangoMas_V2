@@ -23,9 +23,10 @@ from typing import TYPE_CHECKING
 
 from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
-from mangomas.telemetry import configure_telemetry
+from mangomas.telemetry import configure_metrics, configure_telemetry
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.config import Settings
     from mangomas.core import Orchestrator
 
 # Windows default console codec is cp1252; LLM replies routinely contain
@@ -59,8 +60,61 @@ async def _close_orchestrator(orch: Orchestrator) -> None:
 VERBOSE_LOG_LEVEL: str = "DEBUG"
 
 
+def _configure_cli_metrics(cfg: Settings) -> None:
+    """Engage the opt-in metrics pipeline for a CLI run. Idempotent.
+
+    Mirrors the FastAPI lifespan (``api/app.py::_lifespan``) exactly — same
+    ``Settings`` object, same ``exporter`` token, same ``enabled`` flag — so
+    ``mangomas chat`` / ``eval`` / ``workflow run`` and
+    ``POST /agents/{name}/invoke`` install metrics on identical terms.
+
+    Without this call :func:`configure_metrics` had a single call site in the
+    whole package, the HTTP one. :meth:`Orchestrator.dispatch` records
+    unconditionally on the ADR-0026 premise that *every* dispatch path — HTTP,
+    CLI, workflow nodes — reaches an installed provider; on the CLI path it did
+    not, so with ``MANGOMAS_TELEMETRY__METRICS_ENABLED=true`` the global
+    provider stayed the OTel no-op and every ``record_agent_invocation`` was
+    dropped, with no error anywhere to say so.
+
+    Default-OFF is preserved by ``configure_metrics`` itself: ``enabled=False``
+    returns before touching the global provider, so a run with
+    ``MANGOMAS_TELEMETRY__METRICS_ENABLED`` unset is unchanged.
+
+    Called under its own guard rather than the telemetry one above, and after
+    the log level has been re-applied: the trace and metric GCP exporters are
+    separate distributions, so ``gcp`` with only ``opentelemetry-exporter-gcp-trace``
+    installed fails *here* while telemetry succeeded. That must cost the command
+    neither its configured log level nor its exit code.
+    """
+    try:
+        configure_metrics(
+            exporter=cfg.telemetry.exporter,
+            enabled=cfg.telemetry.metrics_enabled,
+        )
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Metrics not configured; continuing without them",
+            exc_info=True,
+        )
+        return
+    # Debug, not info: this fires on every command. It is the one line that
+    # tells an operator whether the metrics this run recorded reached a real
+    # MeterProvider or a no-op — the question the missing call made
+    # unanswerable from outside the process.
+    logging.getLogger(__name__).debug(
+        "CLI metrics bootstrap (enabled=%s, exporter=%s)",
+        cfg.telemetry.metrics_enabled,
+        cfg.telemetry.exporter,
+        extra={
+            "event": "cli_metrics_bootstrap",
+            "metrics_enabled": cfg.telemetry.metrics_enabled,
+            "exporter": cfg.telemetry.exporter,
+        },
+    )
+
+
 def configure_cli_logging(*, verbose: bool = False) -> None:
-    """Bootstrap logging + tracing for a CLI command. Idempotent.
+    """Bootstrap logging, tracing and metrics for a CLI command. Idempotent.
 
     Commands used to call ``logging.basicConfig(level=DEBUG)`` directly, which
     was silently undone mid-run: the first ``get_tracer()`` deep in the
@@ -73,6 +127,11 @@ def configure_cli_logging(*, verbose: bool = False) -> None:
     ``MANGOMAS_TELEMETRY__EXPORTER`` instead of hard-coded defaults, and gets
     the ``TraceContextFilter``/``CorrelationFilter`` that carry ``trace_id``
     and ``correlation_id`` onto every record.
+
+    Metrics are engaged last, via :func:`_configure_cli_metrics`, on exactly
+    the terms the HTTP app uses. They are opt-in and default-OFF, so an unset
+    ``MANGOMAS_TELEMETRY__METRICS_ENABLED`` leaves this function's observable
+    behaviour unchanged.
 
     A telemetry-setup failure degrades to ``basicConfig`` rather than killing
     the command — observability must not be the reason a CLI invocation dies.
@@ -110,3 +169,4 @@ def configure_cli_logging(*, verbose: bool = False) -> None:
     # forbids module-level `mangomas.telemetry.get_tracer` bindings anywhere
     # under `src/`.
     logging.getLogger().setLevel(getattr(logging, level.upper(), logging.INFO))
+    _configure_cli_metrics(cfg)

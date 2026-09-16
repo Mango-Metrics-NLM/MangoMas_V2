@@ -33,6 +33,24 @@ class MangomasError(Exception):
         super().__init__(message)
         self.detail = detail
 
+    def __str__(self) -> str:
+        """Render *message* verbatim, whatever else the subclass co-inherits.
+
+        The API handler publishes ``str(exc)`` as the error envelope's
+        ``message`` field, so this is a wire value. Rooting the rendering here
+        makes it identical for every subclass instead of depending on each
+        one's MRO: ``AgentNotFound`` co-inherits ``KeyError`` (a deliberate
+        back-compat guarantee), and ``KeyError.__str__`` returns
+        ``repr(args[0])``, so every 404 body used to ship
+        ``'"Unknown agent: \'chat\'"'`` — embedded quotes included.
+
+        ``Exception.__str__`` is bound explicitly rather than reached via
+        ``super()``: on ``AgentNotFound``'s MRO the class after
+        ``MangomasError`` is ``KeyError``, so ``super()`` here would resolve
+        right back to the offending implementation.
+        """
+        return Exception.__str__(self)
+
 
 # ── Config / Registry ─────────────────────────────────────────────────────────
 

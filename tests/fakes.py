@@ -266,6 +266,14 @@ class FakeEmbeddingClient:
     vectors: dict[str, list[float]] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
     closed: bool = False
+    # Raised from `embed_batch` once `raise_after_batches` batches have been
+    # answered successfully — the provider-outage shape (backend down, rate
+    # limit, timeout) that an ingest must survive without emptying the index.
+    # Mirrors FakeLLM's `raise_on_stream` / `raise_after_chunks` pair; the
+    # attempted call is still recorded in `calls` before the raise, because the
+    # provider genuinely was called.
+    raise_on_batch: BaseException | None = None
+    raise_after_batches: int = 0
 
     async def embed(self, text: str) -> list[float]:
         result = await self.embed_batch([text])
@@ -273,6 +281,8 @@ class FakeEmbeddingClient:
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         self.calls.append(list(texts))
+        if self.raise_on_batch is not None and len(self.calls) > self.raise_after_batches:
+            raise self.raise_on_batch
         return [self._vector_for(t) for t in texts]
 
     def _vector_for(self, text: str) -> list[float]:

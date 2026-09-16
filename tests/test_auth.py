@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets as _secrets
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from mangomas.api.app import create_app
-from mangomas.api.auth import resolve_auth_state
+from mangomas.api.auth import _to_comparable_bytes, resolve_auth_state
 from mangomas.composition import ensure_secrets_provider
 from mangomas.config import AuthSettings, SecretsSettings, Settings, get_settings
 from mangomas.core import Orchestrator
@@ -272,3 +274,127 @@ def test_unresolvable_secret_ref_logs_before_failing_closed(
 
     assert state.expected_token is None
     assert "resolved to nothing" in " ".join(r.getMessage() for r in caplog.records)
+
+
+# ── Non-ASCII credentials (regression) ────────────────────────────────────────
+#
+# ASGI decodes header bytes as latin-1 (PEP 3333), so any wire byte >= 0x80
+# reaches the auth check as a non-ASCII ``str``. ``secrets.compare_digest``
+# raises ``TypeError`` for such a ``str``, which escaped as a 500 through
+# ``AccessLogMiddleware``'s catch-all — bypassing the JSON error envelope and
+# writing a full traceback per request. Any unauthenticated client could drive
+# those tracebacks into the logs, so these cases are reachable pre-auth.
+
+# A non-ASCII token and the UTF-8 bytes a conventional HTTP client puts on the
+# wire for it. Sent as ``bytes`` because httpx refuses to encode a non-ASCII
+# ``str`` header value — an attacker has no such scruples.
+_NON_ASCII_TOKEN = "tökén"  # noqa: S105 — test fixture value, not a real secret
+_NON_ASCII_WIRE = _NON_ASCII_TOKEN.encode("utf-8")
+
+
+def _assert_error_envelope(response: httpx.Response) -> None:
+    """Assert a 401 JSON error envelope rather than the catch-all 500."""
+    assert response.status_code == 401, (
+        f"expected a 401 envelope, got {response.status_code} "
+        f"{response.content!r} — compare_digest raised instead of comparing"
+    )
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["error"] == "authentication_error"
+
+
+def test_non_ascii_bearer_credential_is_rejected_not_crashed(
+    auth_app: FastAPI, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A non-ASCII bearer credential must 401, not 500 with a traceback."""
+    caplog.set_level(logging.ERROR, logger="mangomas.api.middleware")
+    with TestClient(auth_app) as client:
+        r = client.post(
+            "/agents/chat/invoke",
+            json=_MSG,
+            headers={"Authorization": b"Bearer " + _NON_ASCII_WIRE},
+        )
+    _assert_error_envelope(r)
+    assert not [rec for rec in caplog.records if rec.exc_info], (
+        "an unauthenticated client drove a traceback into the logs"
+    )
+
+
+def test_non_ascii_api_key_credential_is_rejected_not_crashed(auth_app: FastAPI) -> None:
+    """The X-API-Key path reaches the same comparison, so it needs the same guard."""
+    with TestClient(auth_app) as client:
+        r = client.post("/agents/chat/invoke", json=_MSG, headers={"X-API-Key": _NON_ASCII_WIRE})
+    _assert_error_envelope(r)
+
+
+@pytest.fixture
+def non_ascii_auth_app(orchestrator: Orchestrator, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+    """An app whose *configured* token is non-ASCII."""
+    monkeypatch.setenv("MANGOMAS_AUTH__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_AUTH__SECRET_REF", AUTH_SECRET_REF_ENV)
+    monkeypatch.setenv(AUTH_SECRET_REF_ENV, _NON_ASCII_TOKEN)
+    get_settings.cache_clear()
+    return create_app(orchestrator=orchestrator)
+
+
+def test_non_ascii_configured_token_rejects_a_wrong_credential(
+    non_ascii_auth_app: FastAPI,
+) -> None:
+    """A non-ASCII *configured* token 500'd every request, right or wrong."""
+    with TestClient(non_ascii_auth_app) as client:
+        r = client.post(
+            "/agents/chat/invoke", json=_MSG, headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
+        )
+    _assert_error_envelope(r)
+
+
+def test_non_ascii_configured_token_accepts_the_matching_credential(
+    non_ascii_auth_app: FastAPI,
+) -> None:
+    """...and the operator's own token must still authenticate."""
+    with TestClient(non_ascii_auth_app) as client:
+        r = client.post(
+            "/agents/chat/invoke",
+            json=_MSG,
+            headers={"Authorization": b"Bearer " + _NON_ASCII_WIRE},
+        )
+    assert r.status_code == 200, f"got {r.status_code} {r.content!r}"
+
+
+def test_comparison_stays_constant_time_over_bytes(
+    auth_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Structural proof of the timing property: the credential check still goes
+    through ``secrets.compare_digest``, and now on ``bytes`` operands — the
+    branch of that function that is fixed-time. A benchmark would be flaky; the
+    call being made at all with the right operand types is the real invariant.
+    """
+    seen: list[tuple[object, object]] = []
+
+    class _SpyingSecrets:
+        @staticmethod
+        def compare_digest(a: object, b: object) -> bool:
+            seen.append((a, b))
+            return _secrets.compare_digest(a, b)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("mangomas.api.auth._secrets", _SpyingSecrets)
+    with TestClient(auth_app) as client:
+        r = client.post(
+            "/agents/chat/invoke", json=_MSG, headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
+        )
+
+    assert r.status_code == 200
+    assert seen, "the credential check no longer routes through compare_digest"
+    for presented, expected in seen:
+        assert isinstance(presented, bytes), f"presented operand is {type(presented).__name__}"
+        assert isinstance(expected, bytes), f"expected operand is {type(expected).__name__}"
+
+
+def test_unencodable_token_fails_closed_instead_of_raising() -> None:
+    """A str that no ``errors=`` handler can encode must fail closed, not 500.
+
+    ``surrogateescape`` round-trips the lone *low* surrogates os.environ smuggles
+    in for non-UTF-8 env bytes, but a lone *high* surrogate defeats it. That is
+    the one residual encode failure, and it must not become a traceback.
+    """
+    assert _to_comparable_bytes("\udcff", "utf-8") == b"\xff"
+    assert _to_comparable_bytes("\ud800", "utf-8") is None

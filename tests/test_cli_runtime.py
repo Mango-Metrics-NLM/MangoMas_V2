@@ -222,6 +222,63 @@ def test_telemetry_failure_degrades_instead_of_killing_the_command(
     assert "falling back to basicConfig" in caplog.text
 
 
+def test_metrics_failure_degrades_instead_of_killing_the_command(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A broken *metric* exporter is no more fatal than a broken span exporter.
+
+    This is its own guard rather than an arm of the telemetry one because the
+    two calls are guarded separately on purpose: the GCP trace and monitoring
+    exporters ship as separate distributions, so `exporter=gcp` with only
+    `opentelemetry-exporter-gcp-trace` installed succeeds at
+    `configure_telemetry` and fails at `configure_metrics`. Folding it into the
+    telemetry `except` would take the command's re-applied log level with it.
+    """
+    import logging  # noqa: PLC0415
+
+    from mangomas.config import get_settings  # noqa: PLC0415
+
+    def _boom(**_kwargs: object) -> None:
+        raise RuntimeError("metric exporter unreachable")
+
+    _reset_telemetry_state()
+    monkeypatch.setenv("MANGOMAS_LOG_LEVEL", "WARNING")
+    get_settings.cache_clear()
+    monkeypatch.setattr(_runtime, "configure_metrics", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.cli._runtime"):
+        _runtime.configure_cli_logging(verbose=False)
+
+    assert "Metrics not configured" in caplog.text
+    # The level survived the failure — the reason for the separate guard.
+    assert logging.getLogger().getEffectiveLevel() == logging.WARNING
+
+
+def test_metrics_bootstrap_logs_its_outcome_at_debug(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The operator-facing answer to "did this run install metrics?".
+
+    Emitted on both directions of the flag, so a default-off run says so
+    explicitly instead of logging nothing and leaving the question open.
+    """
+    import logging  # noqa: PLC0415
+
+    from mangomas.config import get_settings  # noqa: PLC0415
+
+    _reset_telemetry_state()
+    monkeypatch.delenv("MANGOMAS_TELEMETRY__METRICS_ENABLED", raising=False)
+    get_settings.cache_clear()
+
+    with caplog.at_level(logging.DEBUG, logger="mangomas.cli._runtime"):
+        _runtime.configure_cli_logging(verbose=True)
+
+    records = [r for r in caplog.records if getattr(r, "event", None) == "cli_metrics_bootstrap"]
+    assert records, "no cli_metrics_bootstrap record emitted"
+    assert records[-1].metrics_enabled is False
+    assert records[-1].exporter == get_settings().telemetry.exporter
+
+
 def test_config_error_is_not_swallowed_as_a_logging_problem(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

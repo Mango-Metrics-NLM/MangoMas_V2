@@ -26,6 +26,22 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _BEARER_PREFIX = "Bearer "
 
+# Credentials are compared as *bytes*, and each side is re-encoded with the
+# inverse of the decode that produced its ``str`` — so the comparison is over
+# exactly the bytes the client sent versus exactly the bytes the operator
+# configured, with no lossy round-trip in between.
+#
+# ASGI/PEP 3333 decodes header bytes as latin-1, which is byte-transparent, so
+# latin-1 is its exact inverse. The expected token is text and encodes as UTF-8.
+_HEADER_ENCODING = "latin-1"
+_EXPECTED_ENCODING = "utf-8"
+
+# ``surrogateescape`` is the inverse of the decode ``os.environ`` itself uses:
+# on POSIX a non-UTF-8 env byte arrives as a lone *low* surrogate, and a plain
+# ``.encode("utf-8")`` would raise on it — reintroducing, for the env secrets
+# backend, the very 500 this encoding step exists to remove.
+_ENCODE_ERRORS = "surrogateescape"
+
 
 class AuthenticationError(MangomasError):
     """Raised when a request fails API authentication (mapped to HTTP 401)."""
@@ -90,6 +106,21 @@ def _extract_token(request: Request) -> str | None:
     return None
 
 
+def _to_comparable_bytes(value: str, encoding: str) -> bytes | None:
+    """Encode ``value`` for a constant-time comparison, or ``None`` if it cannot be.
+
+    Returning ``None`` rather than propagating ``UnicodeEncodeError`` keeps the
+    caller fail-closed (401) instead of letting an encoding accident escape as a
+    500. ``surrogateescape`` covers the lone low surrogates ``os.environ``
+    produces; a lone *high* surrogate still cannot be encoded by any handler, and
+    that residue is what this guard absorbs.
+    """
+    try:
+        return value.encode(encoding, errors=_ENCODE_ERRORS)
+    except UnicodeEncodeError:
+        return None
+
+
 async def require_auth(request: Request) -> None:
     """FastAPI dependency: enforce API auth when enabled (no-op otherwise)."""
     auth: AuthState = request.app.state.auth
@@ -102,5 +133,27 @@ async def require_auth(request: Request) -> None:
             detail="unresolved auth secret_ref",
         )
     presented = _extract_token(request)
-    if presented is None or not _secrets.compare_digest(presented, auth.expected_token):
+    if presented is None:
+        raise AuthenticationError("invalid or missing API credentials")
+
+    # Compare bytes, never str. ``compare_digest`` accepts a ``str`` only when it
+    # is pure ASCII and raises ``TypeError`` otherwise, and ASGI hands us header
+    # text decoded from arbitrary wire bytes — so one 0x80+ byte from an
+    # *unauthenticated* client used to escape as a 500 through
+    # AccessLogMiddleware's catch-all, skipping the JSON error envelope and
+    # writing a traceback per request. A non-ASCII configured token did the same
+    # on every request.
+    #
+    # Encoding, rather than ``==`` or an ASCII pre-check, is what preserves the
+    # property this comparison exists for: ``compare_digest``'s bytes path is the
+    # same fixed-time comparison as its ASCII-str path, so no timing signal about
+    # the expected token is reintroduced. Both encodings are injective, so this
+    # neither merges two distinct credentials nor splits a matching pair.
+    presented_bytes = _to_comparable_bytes(presented, _HEADER_ENCODING)
+    expected_bytes = _to_comparable_bytes(auth.expected_token, _EXPECTED_ENCODING)
+    if (
+        presented_bytes is None
+        or expected_bytes is None
+        or not _secrets.compare_digest(presented_bytes, expected_bytes)
+    ):
         raise AuthenticationError("invalid or missing API credentials")

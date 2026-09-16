@@ -8,10 +8,15 @@ genuinely missing and the caller did not inject a test double.
 
 Error translation is qualname-based (``type(exc).__module__ + __qualname__``)
 so unit tests can exercise the matrix without installing the Google SDK.
+
+Every outbound call is issued through :meth:`VertexClient._generate`, which
+bounds it with the configured ``timeout_seconds`` budget
+(``MANGOMAS_LLM__TIMEOUT_SECONDS``) before translating failures.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -25,7 +30,7 @@ from mangomas.config import (
     DEFAULT_LLM_TIMEOUT_SECONDS,
 )
 from mangomas.core.agent import Message
-from mangomas.errors import LLMBadResponse
+from mangomas.errors import LLMBadResponse, LLMTimeout
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -226,6 +231,85 @@ class VertexClient:
             config["max_output_tokens"] = max_tokens
         return config
 
+    # ── Outbound call ─────────────────────────────────────────────────────
+
+    def _translate_call_error(self, exc: BaseException) -> Exception:
+        """Map a failed outbound call to the typed Mango-Mas error vocabulary.
+
+        SDK failures go through the shared qualname matrix in
+        :mod:`mangomas.adapters._vertex_errors`. A budget expiry is different in
+        kind: it is raised by *this adapter's own* ``asyncio.timeout``, not by
+        the SDK, so it carries no SDK qualname for that matrix to key on. It is
+        mapped here — in the single place every call site funnels through — to
+        the same :class:`~mangomas.errors.LLMTimeout` (504) that the LM Studio
+        path returns for an ``httpx.TimeoutException``.
+        """
+        if isinstance(exc, TimeoutError):
+            return LLMTimeout(
+                f"Vertex AI request timed out (project={self._project_id!r})",
+                detail=f"exceeded timeout_seconds={self._timeout_seconds}",
+            )
+        return _translate_vertex_error(exc, project=self._project_id)
+
+    async def _generate(
+        self,
+        contents: Any,
+        *,
+        generation_config: dict[str, Any],
+        stream: bool = False,
+        log_event: str,
+    ) -> Any:
+        """Issue one ``generate_content_async`` call under the configured budget.
+
+        Every outbound Vertex call — ``complete``, ``ping``, and the opening
+        request of ``stream`` — funnels through here, mirroring
+        :meth:`~mangomas.adapters._openai_client.OpenAICompatHTTPClient._request`
+        on the HTTP side: call → bound → log → translate. Centralising it is
+        what stops a call site from quietly dropping the
+        ``MANGOMAS_LLM__TIMEOUT_SECONDS`` budget, which is exactly how all three
+        of them came to ignore it.
+
+        ``asyncio.timeout`` is the same stdlib primitive the orchestrator uses
+        for its per-step budget — no hand-rolled timer, and the pending SDK call
+        is cancelled rather than merely abandoned.
+
+        With ``stream=True`` the budget bounds the *opening* request only, not
+        the drain: a stream is expected to outlive a per-request budget, and the
+        httpx client bounds the LM Studio path at the same boundary.
+        """
+        logger.debug(
+            "Vertex call start",
+            extra={
+                "event": "vertex_call_start",
+                "model": self._model,
+                "project": self._project_id,
+                "stream": stream,
+                "timeout_seconds": self._timeout_seconds,
+            },
+        )
+        started = time.monotonic()
+        try:
+            async with asyncio.timeout(self._timeout_seconds):
+                return await self._client.generate_content_async(
+                    contents,
+                    generation_config=generation_config,
+                    stream=stream,
+                )
+        except Exception as exc:
+            duration_ms = (time.monotonic() - started) * 1000
+            logger.error(
+                log_event,
+                extra={
+                    "event": "vertex_error",
+                    "model": self._model,
+                    "project": self._project_id,
+                    "error_type": type(exc).__name__,
+                    "duration_ms": duration_ms,
+                    "timeout_seconds": self._timeout_seconds,
+                },
+            )
+            raise self._translate_call_error(exc) from exc
+
     # ── Protocol surface ──────────────────────────────────────────────────
 
     async def complete(
@@ -249,24 +333,11 @@ class VertexClient:
             },
         )
         started = time.monotonic()
-        try:
-            response = await self._client.generate_content_async(
-                contents,
-                generation_config=config,
-            )
-        except Exception as exc:
-            duration_ms = (time.monotonic() - started) * 1000
-            logger.error(
-                "Vertex request failed",
-                extra={
-                    "event": "vertex_error",
-                    "model": self._model,
-                    "project": self._project_id,
-                    "error_type": type(exc).__name__,
-                    "duration_ms": duration_ms,
-                },
-            )
-            raise _translate_vertex_error(exc, project=self._project_id) from exc
+        response = await self._generate(
+            contents,
+            generation_config=config,
+            log_event="Vertex request failed",
+        )
         text = _extract_text(response)
         duration_ms = (time.monotonic() - started) * 1000
         logger.debug(
@@ -291,24 +362,16 @@ class VertexClient:
         validation is a one-token completion request. Errors are translated
         through the same exception map as ``complete``.
         """
-        try:
-            await self._client.generate_content_async(
-                [{"role": "user", "content": _PING_PROMPT}]
-                if self._Content is None
-                else [self._Content(role="user", parts=[self._Part.from_text(_PING_PROMPT)])],
-                generation_config={"temperature": 0.0, "max_output_tokens": 1},
-            )
-        except Exception as exc:
-            logger.error(
-                "Vertex ping failed",
-                extra={
-                    "event": "vertex_error",
-                    "model": self._model,
-                    "project": self._project_id,
-                    "error_type": type(exc).__name__,
-                },
-            )
-            raise _translate_vertex_error(exc, project=self._project_id) from exc
+        contents = (
+            [{"role": "user", "content": _PING_PROMPT}]
+            if self._Content is None
+            else [self._Content(role="user", parts=[self._Part.from_text(_PING_PROMPT)])]
+        )
+        await self._generate(
+            contents,
+            generation_config={"temperature": 0.0, "max_output_tokens": 1},
+            log_event="Vertex ping failed",
+        )
         logger.debug(
             "Vertex ping OK",
             extra={"event": "vertex_ping_ok", "model": self._model},
@@ -341,23 +404,12 @@ class VertexClient:
                 "project": self._project_id,
             },
         )
-        try:
-            stream_result = await self._client.generate_content_async(
-                contents,
-                generation_config=config,
-                stream=True,
-            )
-        except Exception as exc:
-            logger.error(
-                "Vertex stream request failed",
-                extra={
-                    "event": "vertex_error",
-                    "model": self._model,
-                    "project": self._project_id,
-                    "error_type": type(exc).__name__,
-                },
-            )
-            raise _translate_vertex_error(exc, project=self._project_id) from exc
+        stream_result = await self._generate(
+            contents,
+            generation_config=config,
+            stream=True,
+            log_event="Vertex stream request failed",
+        )
 
         async for chunk in _aiter(stream_result):
             text = _extract_text(chunk)

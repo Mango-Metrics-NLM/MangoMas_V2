@@ -33,6 +33,25 @@ logger = logging.getLogger(__name__)
 # log-detail truncation because this value is surfaced in the report artifact.
 _ROW_ERROR_TRUNCATE: int = 500
 
+# Value written into a skipped row's ``error`` field when ``fail_fast`` trips.
+# Part of the report artifact's observable shape — rewording it changes what
+# every downstream sink and baseline diff sees.
+_FAIL_FAST_ERROR: str = "cancelled by fail_fast"
+
+
+def _skipped_row(row: DatasetRow) -> EvalRowResult:
+    """Placeholder result for a row ``fail_fast`` skipped before dispatch."""
+    return EvalRowResult(
+        row_id=row.id,
+        score=0.0,
+        passed=False,
+        duration_ms=0.0,
+        prediction="",
+        expected=row.expected,
+        metadata={"skipped": True},
+        error=_FAIL_FAST_ERROR,
+    )
+
 
 def _row_cost_usd(row: EvalRowResult) -> float | None:
     """Return a numeric ``cost_usd`` from *row* metadata, or ``None``."""
@@ -300,25 +319,54 @@ class EvalRunner:
         dataset: list[DatasetRow],
         target: Target,
     ) -> list[EvalRowResult]:
+        """Run rows under a ``parallelism`` semaphore, short-circuiting on ``fail_fast``.
+
+        ``asyncio.gather`` schedules *every* worker up front, so the check
+        before the semaphore only catches rows that reach it after a failure
+        has already been recorded. For any target that suspends — that is, any
+        real LLM call — no row does: they all clear the pre-check and then park
+        on the semaphore, so the pre-check alone let a ``fail_fast`` run burn
+        the whole dataset's spend. Re-checking *after* the acquire is what
+        makes the guarantee hold.
+
+        Skipping at that point rather than cancelling the pending tasks keeps
+        ``gather``'s return shape intact: every row still yields exactly one
+        :class:`EvalRowResult`, and a row already in flight still records the
+        work it paid for.
+        """
         semaphore = asyncio.Semaphore(self._parallelism)
         stop_event = asyncio.Event()
+        trigger_row_id: str | None = None
 
         async def _worker(row: DatasetRow) -> EvalRowResult:
+            nonlocal trigger_row_id
+            # Cheap fast path — never queue on the semaphore at all.
             if stop_event.is_set():
-                return EvalRowResult(
-                    row_id=row.id,
-                    score=0.0,
-                    passed=False,
-                    duration_ms=0.0,
-                    prediction="",
-                    expected=row.expected,
-                    metadata={"skipped": True},
-                    error="cancelled by fail_fast",
-                )
+                return _skipped_row(row)
             async with semaphore:
+                # Authoritative check: this worker may have waited here while
+                # an earlier row failed and set the event.
+                if stop_event.is_set():
+                    return _skipped_row(row)
                 result = await self._score_row(row, target=target)
             if self._fail_fast and not result.passed:
+                if not stop_event.is_set():
+                    trigger_row_id = row.id
                 stop_event.set()
             return result
 
-        return await asyncio.gather(*(_worker(row) for row in dataset))
+        results = await asyncio.gather(*(_worker(row) for row in dataset))
+        if stop_event.is_set():
+            skipped = sum(1 for result in results if result.error == _FAIL_FAST_ERROR)
+            logger.warning(
+                "Eval run fail_fast tripped at row %s; %s remaining row(s) skipped",
+                trigger_row_id,
+                skipped,
+                extra={
+                    "event": "eval_fail_fast",
+                    "row_id": trigger_row_id,
+                    "skipped": skipped,
+                    "dataset_size": len(dataset),
+                },
+            )
+        return results
