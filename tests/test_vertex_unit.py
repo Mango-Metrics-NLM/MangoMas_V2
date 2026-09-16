@@ -8,7 +8,9 @@ matches against — no Google packages required.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any
 
 import pytest
@@ -223,6 +225,137 @@ async def test_stream_translates_sdk_exception_on_start() -> None:
         stream = await client.stream([Message(role="user", content="hi")])
         async for _tok in stream:  # pragma: no cover - generator should not yield
             pass
+
+
+# ── Timeout budget (MANGOMAS_LLM__TIMEOUT_SECONDS) ──────────────────────────
+# A budget far below the stub's hang, so the timeout fires fast and
+# deterministically; the stub's sleep is cancelled by the expiring
+# `asyncio.timeout`, so its nominal length is never actually waited out.
+# Module-private for the same reason `_TEST_PROJECT` is: these are test-scoped
+# values with no config counterpart to re-export.
+_TINY_TIMEOUT_SECONDS: float = 0.02
+_HANGING_CALL_SECONDS: float = 5.0
+
+
+class _HangingVertexModel:
+    """Stub ``GenerativeModel`` whose calls outlive any sane request budget.
+
+    Local to this module rather than a flag on :class:`FakeVertexGenerativeModel`
+    because it models the *upstream SDK going unresponsive* — the one condition
+    ``timeout_seconds`` exists to bound — and never returns a usable response.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def generate_content_async(
+        self,
+        contents: Any,
+        *,
+        generation_config: dict[str, Any] | None = None,
+        stream: bool = False,
+        **_: Any,
+    ) -> Any:
+        self.calls.append(
+            {"contents": contents, "generation_config": generation_config, "stream": stream}
+        )
+        await asyncio.sleep(_HANGING_CALL_SECONDS)
+        # Unreachable once the adapter applies its budget: the sleep above is
+        # cancelled first. Raising keeps an un-bounded adapter honest instead of
+        # letting it pass on a late-but-valid reply.
+        raise AssertionError("hanging stub was not cancelled by the adapter's timeout")
+
+
+def _timed_client(stub: Any, *, timeout_seconds: float = _TINY_TIMEOUT_SECONDS) -> VertexClient:
+    """Build a client around *stub* with an explicit request budget."""
+    return VertexClient(
+        project_id=_TEST_PROJECT,
+        location=DEFAULT_VERTEX_LOCATION,
+        model=_TEST_MODEL,
+        timeout_seconds=timeout_seconds,
+        client=stub,
+    )
+
+
+async def test_complete_applies_configured_timeout() -> None:
+    """``timeout_seconds`` bounds ``complete``'s outbound call.
+
+    Before the fix the constructor stored ``timeout_seconds`` and no call site
+    ever read it, so this waited out the stub's full hang and surfaced the
+    stub's own failure as ``LLMUnavailable`` — ``MANGOMAS_LLM__TIMEOUT_SECONDS``
+    was silently ignored by the Vertex provider while LM Studio honoured it.
+    """
+    stub = _HangingVertexModel()
+    client = _timed_client(stub)
+    started = time.monotonic()
+    with pytest.raises(LLMTimeout) as excinfo:
+        await client.complete([Message(role="user", content="hi")])
+    elapsed = time.monotonic() - started
+    assert elapsed < _HANGING_CALL_SECONDS, "adapter waited out the stub instead of cancelling it"
+    assert len(stub.calls) == 1
+    # The budget named in the error is the constructor's value, not a literal.
+    assert str(_TINY_TIMEOUT_SECONDS) in excinfo.value.detail
+
+
+async def test_ping_applies_configured_timeout() -> None:
+    """The readiness probe is bounded too — an unbounded ping stalls /readyz."""
+    stub = _HangingVertexModel()
+    client = _timed_client(stub)
+    started = time.monotonic()
+    with pytest.raises(LLMTimeout):
+        await client.ping()
+    assert time.monotonic() - started < _HANGING_CALL_SECONDS
+    assert len(stub.calls) == 1
+
+
+async def test_stream_applies_configured_timeout_to_opening_request() -> None:
+    """The budget bounds the opening stream request (not the drain)."""
+    stub = _HangingVertexModel()
+    client = _timed_client(stub)
+    started = time.monotonic()
+    with pytest.raises(LLMTimeout):
+        stream = await client.stream([Message(role="user", content="hi")])
+        async for _tok in stream:  # pragma: no cover - generator must not yield
+            pass
+    assert time.monotonic() - started < _HANGING_CALL_SECONDS
+    assert len(stub.calls) == 1
+    assert stub.calls[0]["stream"] is True
+
+
+async def test_prompt_reply_is_unaffected_by_the_budget() -> None:
+    """The other half of the guard: a call inside budget must not be cancelled."""
+    fake = FakeVertexGenerativeModel(reply="quick")
+    client = _timed_client(fake)
+    assert await client.complete([Message(role="user", content="hi")]) == "quick"
+
+
+async def test_call_start_debug_log_names_the_budget(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The budget in force is observable on every outbound call."""
+    fake = FakeVertexGenerativeModel()
+    client = _timed_client(fake)
+    with caplog.at_level(logging.DEBUG, logger="mangomas.adapters.llm.vertex"):
+        await client.complete([Message(role="user", content="hi")])
+    starts = [rec for rec in caplog.records if getattr(rec, "event", None) == "vertex_call_start"]
+    assert starts, "expected a structured vertex_call_start log record"
+    assert getattr(starts[0], "timeout_seconds", None) == _TINY_TIMEOUT_SECONDS
+
+
+async def test_timeout_logs_a_vertex_error_distinguishable_from_an_sdk_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An expiry is logged as ``TimeoutError``, not as whatever the SDK raised."""
+    client = _timed_client(_HangingVertexModel())
+    with (
+        caplog.at_level(logging.ERROR, logger="mangomas.adapters.llm.vertex"),
+        pytest.raises(LLMTimeout),
+    ):
+        await client.complete([Message(role="user", content="hi")])
+    matching = [rec for rec in caplog.records if getattr(rec, "event", None) == "vertex_error"]
+    assert matching, "expected a structured vertex_error log record"
+    assert getattr(matching[0], "error_type", None) == "TimeoutError"
+    assert getattr(matching[0], "timeout_seconds", None) == _TINY_TIMEOUT_SECONDS
 
 
 # ── aclose() ────────────────────────────────────────────────────────────────

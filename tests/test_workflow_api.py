@@ -20,7 +20,10 @@ from tests.constants import (
 )
 
 _AGENT_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "chat"}})
-_GHOST_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "ghost"}})
+_GHOST_AGENT = "ghost"
+_GHOST_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": _GHOST_AGENT}})
+# Spelled out, not rebuilt with ``!r`` — see tests/test_errors.py.
+_GHOST_AGENT_MESSAGE = f"Unknown agent: '{_GHOST_AGENT}'"
 _FANOUT_CONCAT_GRAPH = json.dumps(
     {
         "name": "t",
@@ -119,7 +122,10 @@ def test_run_unknown_agent_returns_404(orchestrator: Orchestrator) -> None:
             json={"request": _RUN_BODY, "definition": _GHOST_GRAPH},
         )
         assert r.status_code == 404
-        assert r.json()["error"] == "agent_not_found"
+        body = r.json()
+        assert body["error"] == "agent_not_found"
+        # The second route that publishes AgentNotFound: same unquoted message.
+        assert body["message"] == _GHOST_AGENT_MESSAGE
 
 
 def test_validate_ok_returns_name_and_root_kind(orchestrator: Orchestrator) -> None:

@@ -26,6 +26,7 @@ from mangomas.errors import (
     UnknownProvider,
 )
 from mangomas.eval.dataset import DatasetError
+from tests.constants import DEFAULT_AGENT_NAME
 
 # ── MangomasError ─────────────────────────────────────────────────────────────
 
@@ -89,6 +90,36 @@ def test_unknown_provider_attrs() -> None:
 
 
 # ── AgentNotFound ─────────────────────────────────────────────────────────────
+
+# The exact published wire value for a missing agent: the API handler puts
+# ``str(exc)`` straight into the envelope's ``message``. Spelled out
+# character-for-character rather than rebuilt with ``!r`` — restating
+# errors.py's own format string would re-derive the bug instead of detecting it.
+_AGENT_NOT_FOUND_MESSAGE = f"Unknown agent: '{DEFAULT_AGENT_NAME}'"
+
+
+def test_agent_not_found_str_is_the_bare_message() -> None:
+    """``KeyError.__str__`` must not re-quote the client-facing message.
+
+    ``AgentNotFound`` co-inherits ``KeyError`` on purpose (see the back-compat
+    test below), and ``KeyError.__str__`` returns ``repr(args[0])``. Until
+    ``MangomasError`` defined its own ``__str__`` the MRO resolved to it, so
+    every 404 body shipped a ``message`` with embedded quotes.
+    """
+    assert str(AgentNotFound(DEFAULT_AGENT_NAME)) == _AGENT_NOT_FOUND_MESSAGE
+
+
+def test_agent_not_found_keeps_key_error_back_compat() -> None:
+    """Rooting ``__str__`` at MangomasError must not cost the KeyError base.
+
+    The dual inheritance is a documented guarantee in the class docstring, so
+    the fix for the rendering may not narrow the bases to get there.
+    """
+    exc = AgentNotFound(DEFAULT_AGENT_NAME)
+    assert isinstance(exc, KeyError)
+    with pytest.raises(KeyError) as excinfo:
+        raise exc
+    assert excinfo.value is exc
 
 
 def test_agent_not_found_caught_as_key_error() -> None:
@@ -308,4 +339,37 @@ def test_no_unexempted_class_resolves_through_the_root_fallback() -> None:
         assert non_root_hit, (
             f"{cls.__name__} resolves only via the root MangomasError→500 "
             "fallback; decide its status in _ERROR_STATUS or exempt it here."
+        )
+
+
+# ── Exhaustive subclass → message-rendering walk ──────────────────────────────
+#
+# The status walk above covers one half of the error envelope; this covers the
+# other. ``api/errors.py`` publishes ``str(exc)`` verbatim as the body's
+# ``message``, so a subclass that co-inherits a builtin carrying its own
+# ``__str__`` silently reshapes a wire value with no test in sight —
+# ``AgentNotFound`` did exactly that through ``KeyError``. Reuses the same
+# recursive discovery as the status walk, so a new subclass is swept the day
+# it lands.
+
+_RENDERING_PROBE_MESSAGE = "probe message"
+
+
+def test_every_subclass_renders_its_message_verbatim() -> None:
+    """``str(exc)`` is the message handed to ``MangomasError.__init__``."""
+    for cls in _all_error_classes() | {MangomasError}:
+        # Initialise through the root, bypassing each subclass's own __init__:
+        # the signatures differ (steps / ref+provider / name+available / ...),
+        # so this isolates the rendering contract and needs no per-class
+        # constructor table to stay complete.
+        exc = cls.__new__(cls)
+        MangomasError.__init__(exc, _RENDERING_PROBE_MESSAGE)
+        assert str(exc) == _RENDERING_PROBE_MESSAGE, (
+            f"{cls.__name__} renders {str(exc)!r} instead of the message it was "
+            "given; a co-inherited __str__ is shadowing MangomasError's."
+        )
+        assert cls.__str__ is MangomasError.__str__, (
+            f"{cls.__name__} resolves __str__ to "
+            f"{cls.__str__.__qualname__}, not MangomasError.__str__; the JSON "
+            "envelope's message is whatever that returns."
         )

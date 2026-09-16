@@ -2,15 +2,50 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
 import pytest
 
-from mangomas.core import Orchestrator
+from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
 from mangomas.eval import EvalRunner, load_jsonl
 from mangomas.eval.scorers.exact_match import ExactMatchScorer
 from tests.constants import EVAL_COST_USD_METADATA_KEY, STUB_REPLY
+
+# The literal the runner writes into a skipped row's ``error`` field. Asserted
+# as a literal on purpose: it is the observable contract a report artifact
+# carries, so a rename must break this test.
+FAIL_FAST_ERROR = "cancelled by fail_fast"
+
+
+class _CountingAgent:
+    """Agent that records how many rows actually reached it.
+
+    ``suspends`` decides whether ``handle`` yields to the event loop. Every
+    real target suspends — an LLM call awaits I/O — while ``FakeLLM``'s default
+    ``delay_seconds=0.0`` deliberately skips its sleep. That difference is not
+    cosmetic: ``asyncio.gather`` schedules every worker up front, so with no
+    suspension point worker 1 runs to completion before worker 2 is ever
+    scheduled, and a fail_fast test backed by the plain ``eval_orchestrator``
+    passes without exercising the short-circuit at all.
+    """
+
+    name = "chat"
+
+    def __init__(self, *, suspends: bool) -> None:
+        self.calls = 0
+        self._suspends = suspends
+
+    async def handle(
+        self,
+        request: AgentRequest,  # noqa: ARG002
+        ctx: AgentContext,  # noqa: ARG002
+    ) -> AgentResponse:
+        self.calls += 1
+        if self._suspends:
+            await asyncio.sleep(0)
+        return AgentResponse(content=STUB_REPLY, agent=self.name)
 
 
 async def test_runner_empty_dataset_returns_zero_report(
@@ -103,16 +138,97 @@ async def test_runner_concurrent_execution_preserves_counts(
     assert report.passed + report.failed + report.errored == 3
 
 
+@pytest.mark.parametrize("suspends", [False, True])
 async def test_runner_fail_fast_short_circuits(
-    eval_orchestrator: Orchestrator, fixtures_dir: Path
+    eval_orchestrator: Orchestrator, fixtures_dir: Path, suspends: bool
 ) -> None:
+    """At parallelism=1, fail_fast runs exactly one row and skips the rest.
+
+    The ``suspends=True`` case is the one that bites: every worker clears the
+    pre-semaphore ``stop_event`` check while row 1 is still in flight, so only
+    a re-check *after* the semaphore is acquired makes the guarantee real.
+    ``suspends=False`` pins the cheap fast path, where row 1 finishes before
+    row 2 is scheduled at all.
+    """
     rows = await load_jsonl(fixtures_dir / "all_fail.jsonl")
+    agent = _CountingAgent(suspends=suspends)
+    eval_orchestrator.register(agent)  # last registration wins over ChatAgent
     runner = EvalRunner(eval_orchestrator, ExactMatchScorer(), parallelism=1, fail_fast=True)
     report = await runner.run(rows, agent_name="chat")
-    # With parallelism=1 and fail_fast, every row after the first failure is
-    # cancelled — exactly one row runs, the rest are recorded as cancelled.
-    cancelled = [r for r in report.rows if r.error == "cancelled by fail_fast"]
-    assert cancelled, "expected at least one cancelled row"
+    cancelled = [r for r in report.rows if r.error == FAIL_FAST_ERROR]
+    assert len(report.rows) == len(rows)
+    assert len(cancelled) == len(rows) - 1
+    assert all(r.metadata["skipped"] is True for r in cancelled)
+    assert agent.calls == 1, "fail_fast must not dispatch a row after the first failure"
+
+
+async def test_runner_fail_fast_bounds_rows_by_parallelism(
+    eval_orchestrator: Orchestrator,
+) -> None:
+    """At parallelism P, only the rows already holding the semaphore may run.
+
+    Rows still queued on the semaphore when the first failure lands must be
+    skipped rather than dispatched, so a P-wide run over N rows can never pay
+    for more than P of them.
+    """
+    from mangomas.core import Message  # noqa: PLC0415
+    from mangomas.eval.dataset import DatasetRow  # noqa: PLC0415
+
+    parallelism = 4
+    dataset_size = 10
+    agent = _CountingAgent(suspends=True)
+    eval_orchestrator.register(agent)
+    rows = [
+        DatasetRow(
+            id=str(index),
+            messages=[Message(role="user", content="x")],
+            expected="never-matches",
+        )
+        for index in range(dataset_size)
+    ]
+    runner = EvalRunner(
+        eval_orchestrator, ExactMatchScorer(), parallelism=parallelism, fail_fast=True
+    )
+    report = await runner.run(rows, agent_name="chat")
+    cancelled = [r for r in report.rows if r.error == FAIL_FAST_ERROR]
+    assert agent.calls <= parallelism, "queued rows must not dispatch after the first failure"
+    assert len(cancelled) == dataset_size - agent.calls
+    assert len(cancelled) >= dataset_size - parallelism
+
+
+async def test_runner_logs_fail_fast_short_circuit(
+    eval_orchestrator: Orchestrator,
+    fixtures_dir: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The short-circuit names the row that tripped it and how many were skipped."""
+    rows = await load_jsonl(fixtures_dir / "all_fail.jsonl")
+    eval_orchestrator.register(_CountingAgent(suspends=True))
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer(), parallelism=1, fail_fast=True)
+    with caplog.at_level(logging.WARNING, logger="mangomas.eval.runner"):
+        await runner.run(rows, agent_name="chat")
+    tripped = [rec for rec in caplog.records if getattr(rec, "event", None) == "eval_fail_fast"]
+    assert len(tripped) == 1, "expected exactly one eval_fail_fast record"
+    assert getattr(tripped[0], "row_id", None) == rows[0].id
+    assert getattr(tripped[0], "skipped", None) == len(rows) - 1
+    assert getattr(tripped[0], "dataset_size", None) == len(rows)
+
+
+async def test_runner_no_fail_fast_log_without_fail_fast(
+    eval_orchestrator: Orchestrator,
+    fixtures_dir: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A concurrent run without ``fail_fast`` scores every row and logs nothing extra."""
+    rows = await load_jsonl(fixtures_dir / "all_fail.jsonl")
+    agent = _CountingAgent(suspends=True)
+    eval_orchestrator.register(agent)
+    runner = EvalRunner(eval_orchestrator, ExactMatchScorer(), parallelism=2, fail_fast=False)
+    with caplog.at_level(logging.WARNING, logger="mangomas.eval.runner"):
+        report = await runner.run(rows, agent_name="chat")
+    assert agent.calls == len(rows)
+    assert not [r for r in report.rows if r.error == FAIL_FAST_ERROR]
+    assert not [rec for rec in caplog.records if getattr(rec, "event", None) == "eval_fail_fast"]
 
 
 async def test_runner_records_scorer_error(eval_orchestrator: Orchestrator) -> None:

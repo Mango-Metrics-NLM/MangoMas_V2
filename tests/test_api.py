@@ -57,6 +57,15 @@ def test_invoke_ok(orchestrator: Orchestrator) -> None:
         assert body["content"] == STUB_REPLY
 
 
+# The wire value a missing agent publishes. Written out character-for-character
+# rather than rebuilt with ``!r``: the historical bug was the envelope shipping
+# ``'"Unknown agent: \'nope\'"'`` — KeyError.__str__ re-quoting the message —
+# and a test that reused errors.py's own formatting would have shipped with it.
+_UNKNOWN_AGENT = "nope"
+_UNKNOWN_AGENT_INVOKE_ROUTE = f"/agents/{_UNKNOWN_AGENT}/invoke"
+_UNKNOWN_AGENT_MESSAGE = f"Unknown agent: '{_UNKNOWN_AGENT}'"
+
+
 def test_invoke_unknown_agent(
     orchestrator: Orchestrator,
     caplog: pytest.LogCaptureFixture,
@@ -64,13 +73,30 @@ def test_invoke_unknown_agent(
     app = create_app(orchestrator=orchestrator)
     with caplog.at_level(logging.WARNING, logger="mangomas.api.app"), TestClient(app) as client:
         r = client.post(
-            "/agents/nope/invoke",
+            _UNKNOWN_AGENT_INVOKE_ROUTE,
             json={"messages": [{"role": "user", "content": "hi"}]},
         )
         assert r.status_code == 404
         body = r.json()
         assert body["error"] == "agent_not_found"
         assert "Request error agent_not_found" in caplog.text
+
+
+def test_invoke_unknown_agent_message_is_not_re_quoted(orchestrator: Orchestrator) -> None:
+    """The 404 envelope's ``message`` carries no embedded quoting.
+
+    End-to-end guard for the ``AgentNotFound`` / ``KeyError`` MRO defect: the
+    unit-level contract lives in ``tests/test_errors.py``, this pins what the
+    route actually puts on the wire.
+    """
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            _UNKNOWN_AGENT_INVOKE_ROUTE,
+            json={"messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert r.status_code == 404
+    assert r.json()["message"] == _UNKNOWN_AGENT_MESSAGE
 
 
 def test_invoke_validation_error(orchestrator: Orchestrator) -> None:

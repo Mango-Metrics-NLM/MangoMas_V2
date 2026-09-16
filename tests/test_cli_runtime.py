@@ -13,6 +13,7 @@ an accident, so the guard is correctly absent.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,26 @@ async def test_build_is_not_a_singleton(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 # ── configure_cli_logging (spec-0023 R1) ──────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_log_level() -> Iterator[None]:
+    """Put the root logger's level back after every test in this module.
+
+    These tests drive the real `configure_cli_logging`, whose job *is* to set
+    the root level — which is process-global and outlives the test. A leaked
+    level silently changes `caplog` capture in every later test file whose own
+    logger has no explicit level of its own, so the damage surfaces as an
+    unrelated failure in a full run that passes in isolation. Measured: the
+    `MANGOMAS_LOG_LEVEL=ERROR` case below took out four `tests/rag/test_pipeline.py`
+    assertions that way.
+    """
+    import logging  # noqa: PLC0415 -- exercising real logging state
+
+    root = logging.getLogger()
+    previous = root.level
+    yield
+    root.setLevel(previous)
 
 
 def _reset_telemetry_state() -> None:
@@ -220,6 +241,78 @@ def test_telemetry_failure_degrades_instead_of_killing_the_command(
         _runtime.configure_cli_logging(verbose=True)
 
     assert "falling back to basicConfig" in caplog.text
+
+
+def test_metrics_failure_degrades_instead_of_killing_the_command(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A broken *metric* exporter is no more fatal than a broken span exporter.
+
+    This is its own guard rather than an arm of the telemetry one because the
+    two calls are guarded separately on purpose: the GCP trace and monitoring
+    exporters ship as separate distributions, so `exporter=gcp` with only
+    `opentelemetry-exporter-gcp-trace` installed succeeds at
+    `configure_telemetry` and fails at `configure_metrics`. Folding it into the
+    telemetry `except` would take the command's re-applied log level with it —
+    which is what the second assertion pins.
+
+    `configure_telemetry` is stubbed out, not left real: it calls
+    `logging.basicConfig(force=True)`, which removes pytest's own root handlers
+    and leaves `caplog.text` empty for the rest of the test (see the note on
+    `tests/conftest.py::cli_logging_calls`).
+    """
+    import logging  # noqa: PLC0415
+
+    from mangomas.config import get_settings  # noqa: PLC0415
+
+    def _boom(**_kwargs: object) -> None:
+        raise RuntimeError("metric exporter unreachable")
+
+    monkeypatch.setattr(_runtime, "configure_telemetry", lambda **_kw: None)
+    monkeypatch.setattr(_runtime, "configure_metrics", _boom)
+    # ERROR, not WARNING: caplog already forces the root logger to WARNING, so
+    # asserting WARNING would hold whether or not the level was re-applied.
+    monkeypatch.setenv("MANGOMAS_LOG_LEVEL", "ERROR")
+    get_settings.cache_clear()
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.cli._runtime"):
+        _runtime.configure_cli_logging(verbose=False)
+
+    assert "Metrics not configured" in caplog.text
+    assert logging.getLogger().getEffectiveLevel() == logging.ERROR
+
+
+def test_metrics_bootstrap_logs_its_outcome_at_debug(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The operator-facing answer to "did this run install metrics?".
+
+    Emitted on both directions of the flag, so a default-off run says so
+    explicitly rather than logging nothing and leaving the question open — the
+    state that made the missing `configure_metrics` call invisible for as long
+    as it was.
+    """
+    import logging  # noqa: PLC0415
+
+    from mangomas.config import get_settings  # noqa: PLC0415
+
+    monkeypatch.setattr(_runtime, "configure_telemetry", lambda **_kw: None)
+    monkeypatch.delenv("MANGOMAS_TELEMETRY__METRICS_ENABLED", raising=False)
+    get_settings.cache_clear()
+
+    with caplog.at_level(logging.DEBUG, logger="mangomas.cli._runtime"):
+        _runtime.configure_cli_logging(verbose=True)
+
+    records = [r for r in caplog.records if getattr(r, "event", None) == "cli_metrics_bootstrap"]
+    assert records, "no cli_metrics_bootstrap record emitted"
+    # `getattr` rather than attribute access: these are `extra=` fields, which
+    # `logging.LogRecord` does not declare, so mypy --strict rejects the direct
+    # form. Same idiom the rest of the suite uses for structured-log assertions
+    # (see tests/test_harness_config_audit.py, tests/test_postgres.py).
+    assert getattr(records[-1], "metrics_enabled", None) is False
+    assert getattr(records[-1], "exporter", None) == get_settings().telemetry.exporter
+    # `%s` lazy formatting, not an f-string: the record still carries its args.
+    assert "enabled=False" in records[-1].getMessage()
 
 
 def test_config_error_is_not_swallowed_as_a_logging_problem(

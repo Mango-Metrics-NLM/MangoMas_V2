@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 from datetime import UTC, datetime
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -91,6 +92,41 @@ def _dsn_host(url: str) -> str | None:
         return None
 
 
+def _driver_failures(driver: ModuleType) -> tuple[type[BaseException], ...]:
+    """Driver failure modes that must surface as :class:`PersistenceError`.
+
+    ``asyncpg.PostgresError`` alone is **not** the driver's error vocabulary —
+    it is only the server-reported half. Verified against the installed
+    asyncpg, none of these is a ``PostgresError`` subclass:
+
+    * ``InterfaceError`` — ``acquire()`` on a closing/closed pool, bad bind
+      types. Its own root (``InterfaceMessage``).
+    * ``InternalClientError`` — driver protocol/state faults. Its own root too.
+    * ``OSError`` — the transport: connection refused, reset, and DNS failure
+      (``socket.gaierror``). This is how a wrong host reaches us.
+    * ``TimeoutError`` — connect budget or pool-acquire exhaustion. An
+      ``OSError`` subclass since 3.10, and ``asyncio.TimeoutError`` is an
+      alias of it on 3.11; named anyway because it is a distinct failure mode
+      an operator will look for.
+
+    ``asyncio.CancelledError`` is deliberately absent: it is a ``BaseException``
+    and must propagate, so shutdown is never reported as a persistence fault.
+
+    Takes the ``asyncpg`` module rather than importing it, so this module stays
+    importable without the optional ``postgres`` extra and the caller keeps its
+    existing fail-fast ``import asyncpg``. The expression is evaluated only
+    when an exception is actually being matched, so the happy path pays
+    nothing.
+    """
+    return (
+        driver.PostgresError,
+        driver.InterfaceError,
+        driver.InternalClientError,
+        OSError,
+        TimeoutError,
+    )
+
+
 class PostgresRepository:
     """Async Postgres-backed :class:`TurnRepository` using an asyncpg pool.
 
@@ -109,8 +145,39 @@ class PostgresRepository:
         # Single async lock guards lazy pool creation only — never per-query.
         self._init_lock: asyncio.Lock = asyncio.Lock()
 
+    def _server_settings(self) -> dict[str, str] | None:
+        """Startup-packet parameters applied to **every** pooled connection.
+
+        ``statement_timeout`` used to be issued as ``SET statement_timeout``
+        on the single connection borrowed for DDL. That is a *session* GUC, so
+        the other ``pool_min..pool_max`` connections never received it — and
+        asyncpg's ``Connection.reset()`` sends ``RESET ALL`` when a connection
+        is released, discarding it even for that one. The documented
+        ``MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS`` knob was inert.
+
+        asyncpg forwards ``server_settings`` in the startup packet of every
+        connection it opens, and ``RESET ALL`` restores a session to its
+        *start-up* values — so the timeout both reaches the whole pool and
+        survives connection reuse.
+
+        Returns ``None`` when the knob is unset, which is asyncpg's own
+        default, so a deployment that never set it is byte-identical.
+        """
+        if self._statement_timeout is None:
+            return None
+        # Postgres reads a unit-less statement_timeout as milliseconds.
+        return {"statement_timeout": str(int(self._statement_timeout * 1000))}
+
     async def _ensure_pool(self) -> asyncpg.Pool:
-        """Create the asyncpg pool on first call (idempotent, async-safe)."""
+        """Create the asyncpg pool on first call (idempotent, async-safe).
+
+        ``self._pool`` is published **only after** the schema + migration DDL
+        succeeds. Assigning it first latched a pool whose table was never
+        created: the early return above then handed every later call that same
+        schema-less pool, and each query failed on a missing relation until the
+        process restarted. On failure the half-built pool is terminated and the
+        attribute left ``None``, so the next call retries from scratch.
+        """
         if self._pool is not None:
             return self._pool
         async with self._init_lock:
@@ -136,21 +203,49 @@ class PostgresRepository:
                     "pool_max": self._pool_max,
                 },
             )
-            self._pool = await asyncpg.create_pool(
-                self._dsn,
-                min_size=self._pool_min,
-                max_size=self._pool_max,
-                timeout=self._connect_timeout,
-                init=_init_codecs,
+            pool: asyncpg.Pool | None = None
+            try:
+                pool = await asyncpg.create_pool(
+                    self._dsn,
+                    min_size=self._pool_min,
+                    max_size=self._pool_max,
+                    timeout=self._connect_timeout,
+                    init=_init_codecs,
+                    server_settings=self._server_settings(),
+                )
+                logger.info(
+                    "asyncpg pool created",
+                    extra={
+                        "dsn_host": _dsn_host(self._dsn),
+                        "pool_min": self._pool_min,
+                        "pool_max": self._pool_max,
+                        "statement_timeout_seconds": self._statement_timeout,
+                    },
+                )
+                async with pool.acquire() as conn:
+                    await conn.execute(_PG_SCHEMA)
+                    await conn.execute(_PG_TENANT_MIGRATION)
+            except BaseException as exc:
+                # ``BaseException`` so a cancelled bootstrap also releases the
+                # sockets it opened; the exception is always re-raised.
+                # Log the exception *type* only — see ``_terminate_quietly``.
+                logger.error(
+                    "asyncpg pool initialisation failed",
+                    extra={
+                        "error": type(exc).__name__,
+                        "phase": "create_pool" if pool is None else "schema",
+                        "dsn_host": _dsn_host(self._dsn),
+                    },
+                )
+                if pool is not None:
+                    self._terminate_quietly(pool)
+                raise
+            logger.info(
+                "asyncpg schema applied",
+                extra={"dsn_host": _dsn_host(self._dsn)},
             )
-            async with self._pool.acquire() as conn:
-                if self._statement_timeout is not None:
-                    # statement_timeout is in milliseconds.
-                    ms = int(self._statement_timeout * 1000)
-                    await conn.execute(f"SET statement_timeout = {ms}")
-                await conn.execute(_PG_SCHEMA)
-                await conn.execute(_PG_TENANT_MIGRATION)
-            return self._pool
+            self._pool = pool
+            return pool
 
     async def save_turn(
         self,
@@ -162,8 +257,13 @@ class PostgresRepository:
         import asyncpg  # noqa: PLC0415
 
         tenant = get_tenant()
-        pool = await self._ensure_pool()
         try:
+            # Inside the ``try``: pool creation is an I/O boundary like any
+            # other. With it outside, connection-refused, bad-credentials,
+            # wrong-database and connect-timeout escaped the typed vocabulary
+            # and surfaced raw — including into the *unauthenticated* /readyz
+            # body, which publishes ``str(exc)`` of whatever the repo raises.
+            pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 row_id = await conn.fetchval(
                     "INSERT INTO turns (ts, agent, request, response, tenant) "
@@ -180,18 +280,12 @@ class PostgresRepository:
                     response.model_dump(mode="json"),
                     tenant,
                 )
-            int_id = int(row_id)
-            logger.debug(
-                "Postgres save_turn persisted",
-                extra={
-                    "row_id": int_id,
-                    "agent": agent,
-                    "dsn_host": _dsn_host(self._dsn),
-                },
-            )
-            return int_id
-        except asyncpg.PostgresError as exc:
-            logger.exception(
+        except _driver_failures(asyncpg) as exc:
+            # ``logger.error``, not ``logger.exception``: the traceback renders
+            # ``str(exc)``, and now that connection failures reach this handler
+            # that body can be ``password authentication failed for user "…"``.
+            # Same rule as ``_terminate_quietly`` — the type name only.
+            logger.error(
                 "Postgres save_turn failed",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
@@ -199,6 +293,16 @@ class PostgresRepository:
                 "Failed to persist turn",
                 detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
+        int_id = int(row_id)
+        logger.debug(
+            "Postgres save_turn persisted",
+            extra={
+                "row_id": int_id,
+                "agent": agent,
+                "dsn_host": _dsn_host(self._dsn),
+            },
+        )
+        return int_id
 
     async def list_turns(
         self, limit: int = DEFAULT_STORAGE_LIST_TURNS_LIMIT
@@ -207,8 +311,10 @@ class PostgresRepository:
         import asyncpg  # noqa: PLC0415
 
         tenant = get_tenant()
-        pool = await self._ensure_pool()
         try:
+            # Inside the ``try`` for the same reason as ``save_turn`` — and it
+            # matters most here: /readyz probes the DB through ``list_turns``.
+            pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT id, ts, agent, request, response FROM turns "
@@ -216,8 +322,9 @@ class PostgresRepository:
                     tenant,
                     limit,
                 )
-        except asyncpg.PostgresError as exc:
-            logger.exception(
+        except _driver_failures(asyncpg) as exc:
+            # Type name only — see the note in ``save_turn``.
+            logger.error(
                 "Postgres list_turns failed",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
@@ -236,12 +343,34 @@ class PostgresRepository:
             for row in rows
         ]
 
+    def _terminate_quietly(self, pool: asyncpg.Pool) -> None:
+        """Terminate *pool* immediately, absorbing a secondary failure.
+
+        Shared by :meth:`close` and the ``_ensure_pool`` failure path, which
+        must release the sockets of a pool it is about to discard.
+        ``terminate()`` rather than ``close()``: the latter waits for every
+        connection to be released, which would hang a bootstrap that is
+        already failing (or being cancelled).
+
+        Logs only the exception *type* — never the body. asyncpg exceptions
+        can in some failure modes embed connection-URL text in the message;
+        ``dsn_host`` is the only DSN-derived field we ever emit.
+        """
+        try:
+            pool.terminate()
+        except Exception as exc:  # pragma: no cover  -- defensive
+            logger.warning(
+                "Postgres pool terminate raised",
+                extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
+            )
+
     async def aclose(self) -> None:
         """Close the asyncpg pool cleanly (idempotent)."""
         if self._pool is None:
             return
         await self._pool.close()
         self._pool = None
+        logger.info("asyncpg pool closed", extra={"dsn_host": _dsn_host(self._dsn)})
 
     def close(self) -> None:
         """Best-effort synchronous close.
@@ -254,15 +383,6 @@ class PostgresRepository:
         """
         if self._pool is None:
             return
-        try:
-            self._pool.terminate()
-        except Exception as exc:  # pragma: no cover  -- defensive
-            # Log only the exception *type* — never the body. asyncpg
-            # exceptions can in some failure modes embed connection-URL
-            # text in the message; ``dsn_host`` is the only DSN-derived
-            # field we ever emit.
-            logger.warning(
-                "Postgres pool terminate raised",
-                extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
-            )
+        self._terminate_quietly(self._pool)
         self._pool = None
+        logger.info("asyncpg pool closed", extra={"dsn_host": _dsn_host(self._dsn)})

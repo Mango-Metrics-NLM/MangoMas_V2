@@ -9,8 +9,119 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`AgentNotFound` 404 bodies no longer double-quote `message`** (wire-format
+  change). `AgentNotFound` co-inherits `KeyError` — a deliberate back-compat
+  guarantee so `except KeyError` callers keep working — and `MangomasError`
+  defined no `__str__`, so the MRO resolved rendering to `KeyError.__str__`,
+  which returns `repr(args[0])`. Every 404 from `/agents/{name}/invoke`,
+  `/agents/{name}/stream` and both `/workflows/*` routes shipped embedded
+  quotes:
+
+  ```
+  before: {"error":"agent_not_found","message":"\"Unknown agent: 'nosuch'\"", ...}
+  after:  {"error":"agent_not_found","message":"Unknown agent: 'nosuch'", ...}
+  ```
+
+  `MangomasError` now owns `__str__`, binding `Exception.__str__` explicitly
+  rather than via `super()` — on `AgentNotFound`'s MRO the class after
+  `MangomasError` *is* `KeyError`, so `super()` would resolve back to the
+  offending implementation. A sweep of all 19 taxonomy classes confirms
+  `AgentNotFound` is the only one whose rendering changes; `detail` is a plain
+  attribute and is untouched. Python-level compatibility is preserved:
+  `isinstance(exc, KeyError)` is still `True` and the bases are unchanged.
+  **Migration:** a client string-matching the old quoted form must match the
+  bare message instead. References: `src/mangomas/errors.py`,
+  `tests/test_errors.py::test_every_subclass_renders_its_message_verbatim`
+  (a recursive subclass sweep, so a new subclass is covered the day it lands).
+
+### Fixed
+
+- **`MANGOMAS_EVAL__FAIL_FAST` never stopped a run.** `_dispatch_concurrent`
+  checked its stop event *before* acquiring the semaphore, while
+  `asyncio.gather` had already scheduled every worker — so for any target that
+  suspends (that is, any real LLM call) every row cleared the pre-check and ran
+  anyway, and the `{"skipped": True}` branch was dead code. Measured: 10 of 10
+  rows ran at parallelism 1 and 4. Now re-checked after the acquire, so 1 and 4
+  rows run respectively. Cancelling pending tasks was rejected deliberately: it
+  would break `gather`'s return shape and abort in-flight rows whose spend was
+  already committed. References: `src/mangomas/eval/runner.py`,
+  `tests/eval/test_runner.py`. The existing guard passed only because its fake
+  agent had no suspension point; it now awaits and asserts exact counts.
+- **CLI dispatch dropped every metric.** `configure_metrics` had one call site,
+  in the FastAPI lifespan, so `mangomas chat` / `eval` / `workflow run` recorded
+  into a no-op proxy with `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` —
+  contradicting ADR-0026's "every dispatch path … records unconditionally".
+  References: `src/mangomas/cli/_runtime.py`, `tests/test_metrics.py`. Guarded in
+  a subprocess, because `set_meter_provider` is process-global and one-shot.
+- **Non-ASCII credentials returned 500 instead of 401.**
+  `secrets.compare_digest` raises `TypeError` on non-ASCII `str` operands, and
+  ASGI decodes header bytes as latin-1, so any byte ≥ 0x80 produced an unhandled
+  traceback through the access-log catch-all. Now compared as bytes, re-encoded
+  with the inverse of each side's decode — latin-1 for the header (byte-
+  transparent, so a non-ASCII configured token still authenticates) and
+  `surrogateescape` UTF-8 for the environment-sourced secret. The constant-time
+  property is preserved. References: `src/mangomas/api/auth.py`,
+  `tests/test_auth.py`.
+- **`MANGOMAS_LLM__TIMEOUT_SECONDS` was ignored by the Vertex provider.**
+  `_timeout_seconds` was assigned and never read, leaving all three
+  `generate_content_async` calls unbounded — the only unbounded outbound call in
+  the repo. All three now funnel through one `_generate` helper under
+  `asyncio.timeout`, mirroring `OpenAICompatHTTPClient._request`; expiry maps to
+  `LLMTimeout` (504). References: `src/mangomas/adapters/llm/vertex.py`,
+  `tests/test_vertex_unit.py`.
+- **Re-ingesting RAG documents during an embedding outage destroyed the index.**
+  `delete_by_source` ran before chunk/embed/upsert with no transaction, so a
+  provider failure after the delete left that source with nothing. Every
+  embedding call is now hoisted ahead of the first index mutation. Verified: the
+  store retains its vectors across a failed re-ingest where it was previously
+  emptied. Delete-after-upsert is *not* reachable with the current primitives —
+  `delete_by_source` matches the same metadata the new vectors carry — and the
+  id-keyed `delete_by_ids` that would allow it is a protocol change, left
+  undone. A residual window (vector-store failure between its own delete and
+  upsert) is documented in the module docstring. References:
+  `src/mangomas/rag/pipeline.py`, `tests/rag/test_pipeline.py`.
+- **`MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS` was inert**, and two further
+  Postgres pool defects. The `SET` ran on one borrowed connection and was
+  session-scoped, so `RESET ALL` on release discarded it; it is now
+  `server_settings` on `create_pool`. A failed schema DDL latched a pool whose
+  table was never created, breaking every later query until restart; the pool is
+  now assigned only after the DDL succeeds and is terminated on failure.
+  `_ensure_pool()` sat outside the `try` in `save_turn`/`list_turns`, and the
+  handlers caught only `PostgresError` — so connection-refused, bad-credentials
+  and acquire-timeout escaped untyped, and an auth failure could reach the
+  unauthenticated `/readyz` body. Both moved inside, vocabulary widened to the
+  verified real set, and `logger.exception` replaced with `logger.error` because
+  the rendered traceback embeds the driver message. `postgres.py` coverage rose
+  80% → 100% with no live database. References:
+  `src/mangomas/adapters/storage/postgres.py`, `tests/test_postgres.py`.
+- **`MaxBodySizeMiddleware` 500ed on a digit-like `Content-Length`.**
+  `str.isdigit()` is true for characters `int()` rejects (U+00B2), so the guard
+  defeated the pass-through its own comment promises. Now `isdecimal()`, which
+  is exactly what `int()` accepts. References:
+  `src/mangomas/api/middleware/backpressure.py`, `tests/test_backpressure.py`.
+
 ### Added
 
+- **Code-quality / tech-debt program (spec-0031, planning only — no code
+  change).** A full-repo reflection against a clean tree at `df92e3d`, recording
+  a measured baseline (all twelve `make gate` steps green; 2683 tests; 98.88%
+  coverage) and sequencing eight workstreams, then adversarially peer-reviewed
+  and revised. Verified by running the application: a 16 KB nested graph raises
+  `RecursionError` past the `ConfigError` boundary (`workflow/graph.py`'s comment
+  claiming depth-two nesting is false); `GET /agents` and the FastAPI docs
+  endpoints serve 200 even with `MANGOMAS_AUTH__ENABLED=true`; and
+  `tests/test_openapi_snapshot.py`'s projection is blind to a narrowed DTO
+  constraint, so tightening `le`/`max_length` on a published field ships with no
+  diff. Two behaviours initially filed as defects are recorded instead as
+  decisions requiring their own ADR: the per-invocation workflow opt-in over HTTP
+  (specified by spec-0008, decided by ADR-0012, which rejected the remedy first
+  proposed) and the absence of a loop-budget ceiling. References:
+  `specs/0031-code-quality-and-enterprise-readiness.md`,
+  `docs/plans/20260916T000000Z-code-quality-tech-debt-plan.md`. No runtime
+  behaviour changes in this entry; each workstream lands with its own entry and
+  its own regression test.
 - **Cost-controlled eval scorer** (`cost_budget`): estimates USD per row from
   explicit `cost_usd`, token metadata, or output-character rates
   (`DEFAULT_EVAL_COST_USD_PER_1K_*`). Measure-only unless

@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import logging
+import os
+import subprocess
+import sys
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -28,6 +34,7 @@ from mangomas import telemetry
 from mangomas.agents import ChatAgent
 from mangomas.api import app as app_module
 from mangomas.api.app import create_app
+from mangomas.cli import _runtime as cli_runtime
 from mangomas.config import LoopSettings, get_settings
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Message, Orchestrator
 from mangomas.errors import AgentNotFound, ConfigError, LLMUnavailable, StepTimeout
@@ -428,6 +435,139 @@ def test_lifespan_engages_metrics_when_enabled(
     with TestClient(fastapi_app):
         pass
     assert captured.get("enabled") is True
+
+
+# ── CLI entry point: bootstrap parity with the HTTP lifespan ──────────────────
+# `Orchestrator.dispatch` records unconditionally (spec-0026 / ADR-0026) on the
+# premise that "every dispatch path — HTTP, CLI, workflow nodes" reaches an
+# installed MeterProvider. The CLI half of that premise was false: the CLI
+# bootstrap called `configure_telemetry` and nothing else, so with
+# MANGOMAS_TELEMETRY__METRICS_ENABLED=true the global provider stayed the OTel
+# no-op proxy and every metric from `mangomas chat|eval|workflow run` was
+# silently dropped. `configure_metrics` had exactly one call site in `src/`.
+#
+# Two levels, both directions each: the subprocess pair asserts the *effect*
+# (a real provider is installed / is not), the spy pair asserts the *call* is
+# byte-identical to the one in `api/app.py::_lifespan`.
+
+_METRICS_ENABLED_ENV = "MANGOMAS_TELEMETRY__METRICS_ENABLED"
+_PROBE_PREFIX = "CLI_METRICS_PROBE:"
+
+# Run in a fresh interpreter: `set_meter_provider` is process-global and
+# one-shot, and this module's `metric_reader` fixture has already spent it.
+# In-process this could only ever observe that earlier provider — green
+# whether or not the CLI configured anything, the exact silent pass this test
+# exists to remove.
+_PROBE_CODE = (
+    "import json;"
+    "from mangomas.cli._runtime import configure_cli_logging;"
+    "configure_cli_logging();"
+    "from opentelemetry import metrics as _otel_metrics;"
+    "from opentelemetry.sdk.metrics import MeterProvider as _SdkMeterProvider;"
+    "from mangomas.telemetry import _state;"
+    "_provider = _otel_metrics.get_meter_provider();"
+    f"print('{_PROBE_PREFIX}' + json.dumps({{"
+    "'configured': _state.metrics_configured,"
+    "'real_provider': isinstance(_provider, _SdkMeterProvider),"
+    "'provider': type(_provider).__name__}))"
+)
+
+
+def _cli_bootstrap_probe(metrics_env: str | None) -> dict[str, Any]:
+    """Bootstrap the CLI runtime in a subprocess; report the installed provider."""
+    env = {**os.environ}
+    if metrics_env is None:
+        env.pop(_METRICS_ENABLED_ENV, None)  # the documented default: unset
+    else:
+        env[_METRICS_ENABLED_ENV] = metrics_env
+    result = subprocess.run(  # noqa: S603 -- trusted: fixed code string + sys.executable
+        [sys.executable, "-c", _PROBE_CODE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    # Prefix-matched, not last-line: an enabled run installs a
+    # PeriodicExportingMetricReader whose ConsoleMetricExporter may flush to
+    # stdout at exit.
+    lines = [ln for ln in result.stdout.splitlines() if ln.startswith(_PROBE_PREFIX)]
+    assert lines, f"probe line missing from stdout:\n{result.stdout}\n{result.stderr}"
+    parsed: dict[str, Any] = json.loads(lines[-1][len(_PROBE_PREFIX) :])
+    return parsed
+
+
+@pytest.mark.parametrize(
+    ("metrics_env", "expect_installed"),
+    [("true", True), (None, False)],
+    ids=["metrics-enabled", "default-off"],
+)
+def test_cli_bootstrap_installs_a_meter_provider_only_when_enabled(
+    metrics_env: str | None, expect_installed: bool
+) -> None:
+    """`configure_cli_logging` must engage metrics on the HTTP app's terms.
+
+    Mutation proof: drop the `configure_metrics` call from
+    `cli/_runtime.configure_cli_logging` and the `metrics-enabled` case fails
+    with `configured False / provider _ProxyMeterProvider` — the state the bug
+    report measured. The `default-off` case passes either way by design: it is
+    the guard that the fix did not turn the opt-in pipeline on for everyone.
+    """
+    probe = _cli_bootstrap_probe(metrics_env)
+    assert probe["configured"] is expect_installed, (
+        f"telemetry._state.metrics_configured={probe['configured']} with "
+        f"{_METRICS_ENABLED_ENV}={metrics_env!r}"
+    )
+    assert probe["real_provider"] is expect_installed, (
+        f"global MeterProvider is {probe['provider']!r} with "
+        f"{_METRICS_ENABLED_ENV}={metrics_env!r}; CLI dispatch records into it"
+    )
+
+
+@pytest.fixture
+def _restore_root_log_level() -> Iterator[None]:
+    """Undo `configure_cli_logging`'s process-global root-level change.
+
+    Setting the root level is the CLI bootstrap's actual job, so a test that
+    calls it leaks one — and a leaked level silently changes `caplog` capture
+    in whatever test file runs next, failing there and passing in isolation.
+    """
+    root = logging.getLogger()
+    previous = root.level
+    yield
+    root.setLevel(previous)
+
+
+@pytest.mark.usefixtures("_restore_root_log_level")
+@pytest.mark.parametrize(
+    ("metrics_env", "expected_enabled"),
+    [("true", True), (None, False)],
+    ids=["metrics-enabled", "default-off"],
+)
+def test_cli_bootstrap_mirrors_the_lifespan_metrics_call(
+    monkeypatch: pytest.MonkeyPatch, metrics_env: str | None, expected_enabled: bool
+) -> None:
+    """Same settings source, same kwargs, same conditionality as `_lifespan`.
+
+    Equality on the whole captured mapping rather than a membership check: it
+    is what pins *parity* with `api/app.py`, which passes both arguments by
+    keyword off one `Settings` object. A positional call, a hard-coded exporter
+    token, or an extra argument all fail here.
+    """
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(cli_runtime, "configure_telemetry", lambda **_kw: None)
+    monkeypatch.setattr(cli_runtime, "configure_metrics", lambda **kw: captured.update(kw))
+    if metrics_env is None:
+        monkeypatch.delenv(_METRICS_ENABLED_ENV, raising=False)
+    else:
+        monkeypatch.setenv(_METRICS_ENABLED_ENV, metrics_env)
+    get_settings.cache_clear()
+
+    cli_runtime.configure_cli_logging()
+
+    telemetry_cfg = get_settings().telemetry
+    assert captured == {"exporter": telemetry_cfg.exporter, "enabled": expected_enabled}
+    assert telemetry_cfg.metrics_enabled is expected_enabled  # the settings source itself
 
 
 def test_configure_metrics_disabled_is_noop() -> None:
