@@ -6,8 +6,15 @@
   sub-packages.
 - **Method:** static source walk of `src/mangomas/`,
   `mango-integration-contracts/src/`, `scripts/`, `tests/`, `.claude/`,
-  `.github/workflows/`, `pyproject.toml`, `specs/`, `docs/adr/`. No runtime
-  execution; no network. Every verdict below cites a file and line.
+  `.github/workflows/`, `pyproject.toml`, `sitecustomize.py`, `.mcp.json`,
+  `specs/`, `docs/adr/`. No runtime execution; no network. Every verdict below
+  cites a file and line.
+- **Passes:** two. The nine numbered sections are the first pass. **Peer review
+  — second pass** (below) re-reads them adversarially: it corrects two claims,
+  reworks one verdict's reasoning, and adds four findings (N1–N4) the first
+  sweep missed. Read the second pass before acting on the first — N1 changes
+  what §3 is about.
+- **Plan:** `docs/plans/20260916T140000Z-governance-hardening-plan.md`.
 - **Frame:** the nine questions describe an **execution-governance** posture
   (a governed agent acting on a repository through a policy decision point).
   Mango-Mas V2 is not that system. It is an **LLM dispatch runtime** whose
@@ -26,13 +33,22 @@
 |---|----------|---------|----------|
 | 1 | Canonical workflow state | **No** — in-memory call tree only | High |
 | 2 | Stable identifiers | **Partial** — human IDs exist, no machine link | Medium |
-| 3 | Policy authority | **No** — the project can amend its own policy | **Critical** |
+| 3 | Policy authority | **No** — four paths let the tree weaken its own gates (§3, N1, N2, N4) | **Critical** |
 | 4 | Approval binding | **No** — one shared bearer grants everything | High |
 | 5 | Replay resistance | **Partial** — expiry modelled, never enforced; no nonce | High |
 | 6 | Evidence schemas | **Partial** — one strong schema, four surfaces unversioned | Medium |
 | 7 | Failure containment | **Partial** — loops bounded, failures leave no record | High |
 | 8 | Idempotency | **No** — key type exists, unwired; turns duplicate | High |
 | 9 | Model selection | **Partial** — centrally configured, not reviewable | Medium |
+
+Second-pass additions, not numbered above because they cut across sections:
+
+| # | Finding | Section | Severity |
+|---|---------|---------|----------|
+| N1 | `sitecustomize.py` can silently disarm the test + coverage gates | 3, 7 | High |
+| N2 | A plugin can override the scorer the CI eval gate reads | 3, 6 | High |
+| N3 | `PostToolUse` runs a model-chosen path through `sh -c` | 4 | Medium |
+| N4 | `.mcp.json` auto-loads six servers, unprotected (versions pinned) | 3 | Low-med |
 
 ---
 
@@ -521,134 +537,235 @@ is the missing half.
 
 ## Remediation plan
 
-Ordered by (governance value ÷ blast radius). Every item is additive and
-default-OFF unless noted, per the repo's own conventions. None requires
-editing a protected path.
+Superseded. The plan that shipped with the first pass of this audit was a flat
+P0–P3 list of one-line items — the wrong shape for work that spans four
+reviewable units and has real ordering constraints between them. It has been
+rewritten as a proper delivery plan, per this repo's own convention that
+`specs/` holds the WHAT, `docs/adr/` the decisions, and `docs/plans/` the
+sequencing:
 
-### P0 — close the self-amendment hole (§3, §4a)
+> **`docs/plans/20260916T140000Z-governance-hardening-plan.md`**
 
-**P0.1 — Protect the policy and the verifier.** Add to
-`pyproject.toml:135`'s `protected_paths`: `pyproject.toml` itself,
-`scripts/check_protected_paths.py`, `scripts/_governance.py`,
-`src/mangomas/harness/governance.py`, `.github/workflows/ci.yml`, `Makefile`.
-Update both fallback constants in the same commit (the
-`test_package_fallback_matches_the_pyproject_table` /
-`test_scripts_fallback_matches_the_pyproject_table` pins will otherwise fail —
-which is the pin working).
+Four PR blocks (gate integrity → the run record → replay and idempotency →
+boundary honesty), eighteen milestones, each with the failing test that must go
+red before it and green after, its honest dependency status, and the specs and
+ADRs it needs written first. Nothing in it is implemented.
 
-This makes the policy self-referentially protected: weakening it now requires a
-`BREAKING-CHANGE` commit message, which lives in history the branch cannot
-rewrite. It does **not** make the policy externally authoritative — only a
-gate whose definition lives outside the audited tree (org-level required
-workflow, or a base-ref pin) achieves that. Record which of the two the
-project wants.
+The one sequencing claim worth repeating here: **PR A comes first because every
+other control is worth exactly what the gate protecting it is worth.** Sections
+3, 4a and the second-pass findings N1–N3 below all describe the same failure —
+a gate that reads its policy from the tree it is judging — and until that is
+closed, hardening anything else is building on a foundation the builder can
+move.
 
-**P0.2 — Evaluate the gate against the base ref.** Have
-`check_protected_paths.py` read `protected_paths` from
-`git show <base-ref>:pyproject.toml` rather than the working tree, so a PR
-cannot shrink the set it is judged by. Fall back to the working tree only when
-the base read fails, and say so loudly on stderr. Small change, closes the
-ordering hole directly. Spec + ADR (boundary change).
+---
 
-**P0.3 — Scope the approval marker.** Extend the trailer to name its target:
-`BREAKING-CHANGE: src/mangomas/errors.py — <rationale>`. Gate: every protected
-path in the diff must be named by some marker in the range. Keeps the existing
-bare form accepted (back-compat), adds per-path binding. Update
-`_governance.find_breaking_change_marker` and its `harness/governance.py`
-mirror together — the fallback-drift pins will enforce that.
+# Peer review — second pass
 
-**P0.4 — Say what `policy_snapshot_hash` is.** Either (a) document at
-`config/signal.py:40` and in the `mango-cognitive` skill that it is a
-provenance label over `id:version`, not an attestation over policy content; or
-(b) make it a digest of an actual policy document loaded from a path. (a) is
-one docstring and honest; (b) is the real control. Do (a) now regardless.
+The first pass was written in one sweep and read the load-bearing paths. This
+pass re-read it adversarially, asking two questions: **which verdicts are
+wrong or overstated**, and **what did the sweep not look at?** It changed one
+verdict's reasoning, corrected two claims, and found four issues the first pass
+missed entirely — one of which is arguably the sharpest finding in the whole
+audit.
 
-### P1 — make failure and identity visible (§1, §7, §2)
+## Corrections to the first pass
 
-**P1.1 — Persist attempts, not just successes.** Wrap
-`orchestrator.py:317-318` so a failed dispatch writes a terminal record with
-`status`, `error_code`, and `steps_taken`. Requires an additive
-`TurnRepository` method (`save_failed_turn`, or a `status` parameter defaulting
-to `"ok"`) — `adapters/storage/base.py` is not protected, and the Protocol
-extension pattern at `:41-55` (`AsyncCloseableRepository`) is the template.
-Without this, §7's "a failed run leaves no record" stands unchanged.
+**C1 — "Requirement IDs dangle" was wrong.** The first draft's measurement
+grepped only for `- **RN`, found 5 of 31 specs matching, and concluded that
+code citing `spec-0026 R2` pointed at a spec with no R-numbers. It does not.
+Specs use three heading forms — `### RN` (9 uses), `- **RN` (38), `- RN ` (29)
+— and **all five requirement-level citations in `src/` resolve**:
+`spec-0015 R4` → `specs/0015-package-decomposition.md:95`; `spec-0017 R7` →
+`:67`; `spec-0022 R14` → `:60`; `spec-0026 R2` → `:59`; `spec-0029 R5` →
+`:148`. The §2 verdict stays **Partial**, but for a different and weaker
+reason: the citations resolve *by care, not by construction*. There is no
+convention in `specs/TEMPLATE.md` and no link checker, so the next one is as
+likely to dangle as not. That is a real gap; "they already dangle" was not.
 
-**P1.2 — Give the turn row a schema and join keys.** Add
-`schema_version`, `run_id`, `task_id`, `trace_id`, `model`, and `actor` columns,
-following `_ensure_tenant_column`'s additive-migration pattern
-(`sqlite.py:62-72`). This is the single highest-leverage change for §2, §6 and
-§9 at once: it makes the side-effect record joinable to the cognitive record
-and to the trace, and answers "which model produced this?".
+**C2 — The `.claude/settings.json` deny-list claim was dropped, correctly.**
+An earlier draft was going to argue that `"Edit(/.claude/settings.json)"` has a
+leading-slash path pattern that may not match the repo-relative file. That
+depends on Claude Code's pattern semantics, which are not verifiable from this
+repository, and the entry may well be correct. It is not in the audit and
+should not be — an unverifiable claim about a security control is worse than
+no claim. The point that *does* hold, and is in §3c, needs no pattern
+semantics: the rule matches `Edit`/`Write`, and `Bash` writes are not covered.
 
-**P1.3 — Thread `run_id`/`task_id` from the edge.** Accept them as optional
-request metadata at the API boundary, echo them in the access log, and pass
-them into `AgentRequest.metadata` so `cognitive/producer.py:75-87` stops
-minting throwaway UUIDs. No protected-path edit: `metadata` is already an open
-dict (`core/agent.py:35`).
+**C3 — §7's "repository changes are out of scope" needed its condition
+stated.** It now carries one, but it is worth sharpening: the boundary holds
+because no write-capable tool is registered today, and `RetrievalTool` is
+read-only. Nothing in the `Tool` protocol (`core/tools.py:62-77`) keeps it that
+way. The scope decision is sound; it is one tool registration away from not
+being.
 
-**P1.4 — A workflow run ledger (spec first).** The real answer to §1 is a
-`workflow_runs` / `workflow_steps` table written by a `NodeExecutor` decorator,
-with node ids added to `workflow/graph.py`'s models. That is a design change —
-write the spec and ADR before code, and gate it default-OFF behind a settings
-flag. P1.1–P1.3 deliver most of the audit value first at a fraction of the
-cost.
+## N1 — `sitecustomize.py` can silently disarm the test and coverage gates
 
-### P2 — bind approvals and resist replay (§4, §5, §8)
+**Severity: high. The first pass did not look at this file at all.**
 
-**P2.1 — Enforce signal expiry.** Call `is_expired()` at the sink boundary and
-reject stale envelopes; add `MANGOMAS_SIGNAL__TTL_SECONDS` to `SignalSettings`
-and pass it through `CognitiveSignal.create`. The mechanism is already built
-(`cognitive_signal.py:172-182`) — this is wiring, not design.
+The repo ships a 15-line `sitecustomize.py` at its root. Python imports
+`sitecustomize` automatically at interpreter startup when it is importable, and
+this one mutates the environment of **every** Python process that loads it:
 
-**P2.2 — Dedupe on `signal_id`.** A bounded seen-id set in the sinks, plus an
-`Idempotency-Key` header on `HttpCognitiveSink` derived from `signal_id`. Turns
-uniqueness into replay resistance.
+```python
+# sitecustomize.py:12-15
+if "-p no:randomly" not in os.environ.get("PYTEST_ADDOPTS", ""):
+    existing = os.environ.get("PYTEST_ADDOPTS", "").strip()
+    os.environ["PYTEST_ADDOPTS"] = f"-p no:randomly {existing}".strip()
+```
 
-**P2.3 — Wire `ProposedAction`.** Populate `recommendation.proposed_action_refs`
-in the producer and compute keys with `compute_idempotency_key`. The
-primitive is already correct and tested; it just needs a producer. This is the
-cheapest fix in the plan relative to what it buys for §8.
+`PYTEST_ADDOPTS` is applied by pytest to every run. It can carry
+`--cov-fail-under=0`, `-k`, `--deselect`, or `-p no:cacheprovider`. So an edit
+to this one file — which **is not a protected path**, is not referenced by
+`make gate`, and reads as inert plumbing — can silently weaken the test and
+coverage gates for every invocation in the repo, including CI's `make test`.
 
-**P2.4 — Bind tenant to credential.** Move from one shared token to
-per-principal tokens carrying a tenant claim, and reject an `X-Tenant-ID` that
-disagrees. Until then, document plainly in `docs/` and the auth docstring that
-`MANGOMAS_TENANCY__ENABLED` is **storage partitioning, not an access-control
-boundary** — the current docstrings do not say this, and a reader could
-reasonably assume otherwise.
+The guard that exists is one-sided:
 
-**P2.5 — Gate inline workflow definitions.** `POST /workflows/run` executing a
-caller-supplied graph while `workflow.enabled=false`
-(`api/routes/workflows.py:40-41`) is surprising enough to deserve its own
-switch. Add `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION` (default `true` to
-preserve behaviour; flip in the deploy manifest) so a deployment can require
-server-configured graphs only.
+```python
+# tests/regression/test_origin_defects.py:35
+assert "-p no:randomly" in result.stdout.strip()
+```
 
-### P3 — schemas, IDs and model policy (§2, §6, §9)
+That asserts the expected token is **present**. It does not assert that nothing
+else was injected. Append `--cov-fail-under=0` to what `sitecustomize.py`
+writes and this test still passes, `make test` still passes, and the coverage
+gate is off.
 
-**P3.1 — `schema_version` on `EvalReport` and `ProposedAction`,** defaulting so
-existing baseline artifacts stay valid — the same tolerance `target_name`
-already uses (`eval/runner.py:103-106`).
+This is precisely the fail-open defect class this repo has already hunted
+twice. `scripts/check_coverage.py:37-42` names it in its own comment — "the
+failure mode is **fail-open, not fail-closed**" — and specs 0020 and 0021 were
+spent on it. The `mango-mutation-proof` skill exists to catch exactly this
+shape. The skill's own method, applied to this test, fails it immediately.
 
-**P3.2 — One requirement-ID convention + a link checker.** Fix
-`specs/TEMPLATE.md:16-20` on `- **RN — <text>**`, and add a
-`make spec-links` target (stdlib-only, like the other `scripts/` gates) that
-fails when source cites a `spec-NNNN RN` that no spec defines. Five citations
-resolve today by care; make it by construction.
+*Verification note, stated because it bounds the claim:* in this audit
+container the repo's `sitecustomize.py` does **not** execute — a system
+`/usr/lib/python3.11/sitecustomize.py` shadows it, and a probe run from the
+repo root showed `PYTEST_ADDOPTS` unset. So the finding is conditional on the
+file being on the startup path, which `tests/regression/test_origin_defects.py`
+asserts it is (by putting the repo root on `PYTHONPATH`). Either it executes —
+and the gate-mutation surface is real — or it does not, and the pytest-randomly
+protection it exists to provide is silently absent. **Both are findings**, and
+nothing currently distinguishes them. (`pyproject.toml:307` also carries
+`-p no:randomly` in `addopts`, so the protection is belt-and-braces; that
+redundancy is good, and it also means a silently-inert `sitecustomize.py` would
+never be noticed.)
 
-**P3.3 — Architecture-element IDs.** Assign stable ids to the C4 components in
-`docs/architecture/c3-component.md` and cite them from module docstrings. This
-is the missing third leg of §2's "requirement, ADR, and architecture-element".
+## N2 — A third-party plugin can override the scorer the CI gate reads
 
-**P3.4 — Model allowlist.** Add `MANGOMAS_LLM__ALLOWED_MODELS` (empty = allow
-all, preserving today's behaviour) validated in `build_agent_llm_overrides`
-(`composition/llm.py:92-103`) and at base-client construction. Pair with
-P1.2's `model` column so selection is both constrained and recorded.
+**Severity: high.** `MANGOMAS_DISCOVERY_ENABLED=true` makes
+`eval/discovery.py` call `ep.load()` — arbitrary import and module-level
+execution — for every installed distribution declaring a `mangomas.eval.*`
+entry point. That much is inherent to entry-point plugins. What is not
+inherent is what happens on a name collision:
 
-**P3.5 — Safety metadata on `Tool`.** Add an optional `read_only` / `effects`
-declaration to `ToolSpec` (`core/tools.py:43-49` — not a protected-path edit if
-added to `ToolSpec` rather than the `Tool` protocol) so a future broker can
-distinguish a retrieval from a write. Prerequisite for any real containment
-story once a write-capable tool is registered.
+```python
+# eval/discovery.py:93-100
+if ep.name in existing:
+    logger.info("Eval plugin overrides built-in %s %r", label, ep.name, ...)
+registry.register(ep.name, factory)
+```
+
+Last-call-wins. A plugin named `exact_match` **replaces the built-in scorer**.
+The same applies to `json_file` (which writes the regression baseline),
+`cost_budget` (the cost gate), and every target and dataset source.
+
+These registries are the inputs to the CI quality gate that exits 3
+(`eval/gate.py`) and to the regression baseline diff. So an installed package
+can decide whether the eval gate passes, and the only trace is an INFO log line.
+
+The asymmetry is what makes this a finding rather than a design choice: the
+**agent** discovery path already refuses this. `agents/discovery.py:73-76`
+skips a built-in collision with a WARNING and does not load it. Two discovery
+modules, written to the same shape, sharing
+`_entry_points.load_entry_point_factory` — and the one that guards the gate is
+the permissive one. Whichever policy is right, they should not disagree by
+accident.
+
+## N3 — The `PostToolUse` hook runs a model-chosen string through `sh -c`
+
+**Severity: medium.** `.claude/settings.json`'s `PostToolUse` hook:
+
+```
+python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path \
+  | xargs -r -I{} sh -c 'python -m ruff check --fix "{}" …'
+```
+
+`--emit-path` prints `tool_input.file_path` verbatim.
+`_extract_tool_path` (`scripts/lint_agent_frontmatter.py:554-568`) does one
+`isinstance(value, str)` check and returns the raw string — no normalisation,
+no metacharacter rejection. `xargs -I{}` substitutes it inside a double-quoted
+word in a string handed to `sh -c`, so a path containing `"` closes the quote
+and everything after it is shell.
+
+The interpolated value is a path the **model** chose, and a model can be
+steered by file content it has read. This is not the highest-severity item in
+the audit — it needs a model already behaving adversarially — but it is the
+only place in the repo where untrusted-ish text reaches a shell, and the fix is
+two small changes (reject metacharacters in `--emit-path`; use `xargs -r -0`
+instead of `sh -c`).
+
+The irony is worth stating because it shows the standard the repo already
+holds elsewhere: `ProposedAction.intent`
+(`mango-integration-contracts/.../proposed_action.py:51-56`) **does** reject
+shell metacharacters — for a string that is never executed by anything. The
+contracts package is stricter about a description than the hook is about a
+string it feeds to `sh -c`.
+
+## N4 — `.mcp.json` loads six servers with no approval step in cloud sessions
+
+**Severity: low-medium, and partly already handled well.** `CLAUDE.md` states
+plainly that cloud/Agent-SDK sessions "load them with no approval step", unlike
+an interactive terminal session's one-time workspace-trust prompt. The file
+grants a `filesystem` server rooted at the project and a `git` server, among
+others.
+
+Credit where it is due, and it is real: **every server version is pinned** —
+`@modelcontextprotocol/server-filesystem@2026.7.10`, `mcp-server-git@2026.7.10`,
+`repomix@1.18.0`, `ghcr.io/github/github-mcp-server:v0.20.1`. That is better
+supply-chain hygiene than most repos manage, and it blunts this finding
+considerably.
+
+What remains: `npx -y` and `uvx` resolve those pinned versions from a public
+registry at run time with no integrity hash, and `.mcp.json` is **not a
+protected path** — so the set of servers a cloud session auto-loads can be
+changed without a `BREAKING-CHANGE` marker. Protecting the file is the
+actionable half (plan milestone A0); hash pinning needs upstream support and is
+not actionable here.
+
+## What the second pass confirmed rather than changed
+
+Re-checked and unchanged:
+
+- **Postgres/SQLite tenancy parity is genuine.** `postgres.py:259-322` reads
+  `get_tenant()` inside `save_turn`/`list_turns` and scopes both statements,
+  exactly as `sqlite.py:82-131` does. §4b's criticism is of the trust boundary,
+  not the implementation — the storage-layer isolation is correctly built on
+  both backends.
+- **The coverage gate is the strongest gate in the repo**, and is the model PR
+  A should copy. `tests/test_check_coverage.py` proves its own gate
+  non-vacuous: every top-level source path has a floor
+  (`test_every_top_level_source_path_has_a_floor`), directory floors must use
+  a recursive glob (`test_directory_floors_use_a_recursive_glob`), no exclude
+  pattern may swallow real code (`test_no_exclude_pattern_swallows_real_code`),
+  and the doc table must match the script
+  (`test_regression_doc_floor_table_matches_the_script`). Fifteen tests, and
+  they check the *denominator*, not just the number. Nothing equivalent exists
+  for the protected-path gate — which is the whole of §3.
+- **The fallback-drift pins are correct and worth keeping**
+  (`tests/harness/test_governance.py:179-206`). §3a's "drift detector, not an
+  authority boundary" stands, and is not a criticism of the tests.
+
+## Revised severity, after the second pass
+
+Only §3 moves, and only upward. The first pass called policy authority
+critical on one finding: the policy table is self-amendable. There are now
+**four** independent paths by which the governed tree can weaken its own gates
+— `pyproject.toml` (§3a), `sitecustomize.py` (N1), eval plugin override (N2),
+and `.mcp.json` (N4) — of which only the first was known. Three of the four are
+closed by one change: putting the file in `protected_paths`. That is milestone
+A0, it is roughly a ten-line diff, and it is the highest ratio of governance
+value to blast radius anywhere in this audit.
 
 ---
 
