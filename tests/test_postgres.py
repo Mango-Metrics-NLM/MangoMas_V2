@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -661,13 +661,13 @@ _DRIVER_FAILURE_KINDS: list[str] = [
 ]
 
 
-def _driver_failure(kind: str) -> BaseException:
+def _driver_failure(kind: str) -> Exception:
     """Build one representative driver failure.
 
     Constructed lazily inside a test rather than at import, so this module
     still imports when the optional ``postgres`` extra is absent.
     """
-    builders: dict[str, Any] = {
+    builders: dict[str, Callable[[], Exception]] = {
         "connection_refused": lambda: ConnectionRefusedError(111, "Connection refused"),
         "dns_failure": lambda: OSError("[Errno -2] Name or service not known"),
         "bad_credentials": lambda: _asyncpg.InvalidPasswordError(
