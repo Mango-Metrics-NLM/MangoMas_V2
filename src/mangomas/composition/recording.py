@@ -21,10 +21,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Final
 
-from mangomas.errors import AgentNotFound, MangomasError
+from mangomas.errors import MangomasError
 
 if TYPE_CHECKING:  # pragma: no cover
-    from mangomas.core.agent import AgentRequest, AgentResponse
+    from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse
     from mangomas.core.loop import AcceptanceFn
 
 logger = logging.getLogger(__name__)
@@ -33,21 +33,6 @@ logger = logging.getLogger(__name__)
 # dispatch is a bug rather than a modelled outcome, and is recorded under this
 # code so it is greppable without pretending it was expected.
 UNTYPED_ERROR_CODE: str = "unhandled_error"
-
-# Failures raised *before* any agent runs, which are therefore not turns.
-#
-# ``AgentNotFound`` is a routing error: no agent was invoked, nothing executed,
-# and no side effect was possible, so the honest answer to "what did this
-# system do?" is "nothing". Recording it would also hand any caller a cheap way
-# to inflate the turn store by requesting agents that do not exist — a write
-# amplification vector on a table whose whole value is that it describes real
-# work.
-#
-# Deliberately narrow. An exception raised *inside* an agent's ``handle`` is an
-# execution failure however ordinary its type, and must be recorded: that is
-# the case where a tool may already have changed something outside this
-# process.
-NON_EXECUTION_ERRORS: Final[tuple[type[Exception], ...]] = (AgentNotFound,)
 
 # The lower bound ``Orchestrator.dispatch`` enforces on ``max_steps``.
 MIN_MAX_STEPS: Final[int] = 1
@@ -64,7 +49,21 @@ class _FailureRecordingMixin:
 
     Deliberately re-raises: this records, it never swallows. A caller that
     handled ``StepTimeout`` before must keep seeing ``StepTimeout``.
+
+    What is *not* recorded is decided **by position, never by exception type**:
+    the two pre-execution failures are both settled before the recording
+    ``try`` is entered. Type-matching around the dispatch cannot distinguish
+    them — the orchestrator's own routing lookup and an agent's ``handle``
+    can raise the very same class, and the second one ran.
     """
+
+    if TYPE_CHECKING:  # pragma: no cover
+        # Supplied by ``Orchestrator`` further along the MRO. Declared, not
+        # defined: this mixin is never composed on its own, and a stub body
+        # here would shadow the real implementation at runtime.
+        def list_agents(self) -> list[str]: ...
+
+        context: AgentContext
 
     async def dispatch(
         self,
@@ -84,14 +83,24 @@ class _FailureRecordingMixin:
         # Mirrors ``Orchestrator.dispatch``'s own argument check, performed
         # *outside* the recording try. A caller passing max_steps < 1 is an
         # argument error: nothing is dispatched, so it is not a turn, and
-        # recording it would reopen the same write-amplification
-        # NON_EXECUTION_ERRORS exists to close. Discriminating on the exception
-        # type instead would be wrong — a ValueError raised from inside an
-        # agent's handle IS an execution failure and must still be recorded.
-        # The duplication is deliberate and pinned by
+        # recording it would amplify writes on a table whose whole value is
+        # that it describes real work. The duplication is deliberate and
+        # pinned by
         # ``test_the_mixin_and_the_orchestrator_agree_on_the_max_steps_bound``.
         if max_steps is not None and max_steps < MIN_MAX_STEPS:
             raise ValueError("max_steps must be >= 1")
+
+        # Settled *before* dispatching, because it is only answerable before
+        # dispatching. An unregistered name means the orchestrator's routing
+        # lookup fails and no agent is ever invoked — not a turn. But a
+        # *registered* agent is free to raise ``AgentNotFound`` from inside its
+        # own ``handle`` (an agent that dispatches onward, a tool that routes
+        # by name), and that one executed: the request reached user code,
+        # a tool may already have changed something outside this process, and
+        # it must be recorded like any other execution failure. Both arrive at
+        # this ``except`` as the identical class, so the origin has to be
+        # captured here or it is gone.
+        routable = agent_name in self.list_agents()
 
         try:
             response: AgentResponse = await super().dispatch(  # type: ignore[misc]
@@ -100,15 +109,13 @@ class _FailureRecordingMixin:
                 acceptance_fn=acceptance_fn,
                 max_steps=max_steps,
             )
-        except NON_EXECUTION_ERRORS:
-            # Not a turn — nothing ran. Re-raised untouched; the caller's error
-            # surface is unchanged.
-            raise
         except MangomasError as exc:
-            await self._record_failure(agent_name, request, exc.code, str(exc))
+            if routable:
+                await self._record_failure(agent_name, request, exc.code, str(exc))
             raise
         except Exception as exc:
-            await self._record_failure(agent_name, request, UNTYPED_ERROR_CODE, str(exc))
+            if routable:
+                await self._record_failure(agent_name, request, UNTYPED_ERROR_CODE, str(exc))
             raise
         return response
 
@@ -126,7 +133,11 @@ class _FailureRecordingMixin:
         operator needs, and losing it to a secondary failure while *recording*
         a failure would be a particularly unhelpful trade.
         """
-        repo = getattr(self, "context", None) and self.context.repo  # type: ignore[attr-defined]
+        # ``getattr`` rather than ``self.context`` so a mixin composed over
+        # something without the attribute degrades to "unrecorded" instead of
+        # raising while it is already handling a failure.
+        ctx = getattr(self, "context", None)
+        repo = None if ctx is None else ctx.repo
         writer = getattr(repo, _FAILURE_WRITER, None)
         if not callable(writer):
             logger.debug(
@@ -145,7 +156,6 @@ class _FailureRecordingMixin:
 
 __all__ = [
     "MIN_MAX_STEPS",
-    "NON_EXECUTION_ERRORS",
     "UNTYPED_ERROR_CODE",
     "_FailureRecordingMixin",
 ]

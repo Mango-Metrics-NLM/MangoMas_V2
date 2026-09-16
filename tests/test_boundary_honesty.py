@@ -7,16 +7,30 @@ and ``model_override`` accepted any string at all.
 
 from __future__ import annotations
 
+import json
 from typing import cast
 
 import pytest
+from pydantic import ValidationError
 
 from mangomas.composition.llm import build_agent_llm_overrides
-from mangomas.config import AgentSettings, LLMSettings, WorkflowSettings
+from mangomas.config import AgentSettings, LLMSettings, WorkflowSettings, get_settings
 from mangomas.core.tools import ToolEffects, ToolSpec
 from mangomas.errors import ConfigError
 from mangomas.rag.retrieval import RetrievalTool, Retriever
 from mangomas.workflow.loader import resolve_workflow_source
+from tests.constants import (
+    ALLOWLISTED_MODEL,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_SIGNAL_TTL_SECONDS,
+    DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION,
+    LLM_ALLOWED_MODELS_ENV,
+    LLM_MODEL_ENV,
+    MAX_SIGNAL_TTL_SECONDS,
+    SHORT_SIGNAL_TTL_SECONDS,
+    SIGNAL_TTL_SECONDS_ENV,
+    WORKFLOW_ALLOW_INLINE_DEFINITION_ENV,
+)
 
 _GRAPH = '{"name": "g", "root": {"kind": "agent", "agent": "chat"}}'
 
@@ -139,3 +153,111 @@ def test_the_retrieval_tool_declares_itself_read_only() -> None:
     tool = RetrievalTool(retriever=cast("Retriever", object()))
 
     assert tool.spec.effects is ToolEffects.READ_ONLY
+
+
+# ── Every switch above must survive the trip through the environment ──
+#
+# The tests above construct the settings models directly, which proves the
+# *logic* and nothing about the *name*. These three settings all live in nested
+# groups, where the env name carries a double-underscore delimiter: get it
+# wrong — ``MANGOMAS_LLM_ALLOWED_MODELS``, ``MANGOMAS_SIGNAL__TTL`` — and
+# pydantic-settings does not raise. It sees no override at all, and the field
+# quietly keeps its default. For these three that default is *permissive*:
+# an empty roster, an inline definition allowed, a full-day TTL. So the
+# operator sets the control, the deployment reports no error, and the control
+# is not applied. Only a round trip through the real env can catch that.
+
+
+def test_allowed_models_round_trips_through_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The roster arrives as a JSON list under the real env name."""
+    monkeypatch.setenv(LLM_MODEL_ENV, ALLOWLISTED_MODEL)
+    monkeypatch.setenv(LLM_ALLOWED_MODELS_ENV, json.dumps([ALLOWLISTED_MODEL]))
+    get_settings.cache_clear()
+    try:
+        llm = get_settings().llm
+        assert llm.allowed_models == [ALLOWLISTED_MODEL], (
+            f"{LLM_ALLOWED_MODELS_ENV} did not reach LLMSettings.allowed_models; "
+            "the roster would be empty and every model permitted"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_an_env_roster_that_excludes_the_base_model_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The validator fires on the env path too, not only on direct construction.
+
+    The two-sided half: without this, the test above passes against a build
+    that parses the roster and never checks it.
+    """
+    monkeypatch.setenv(LLM_MODEL_ENV, DEFAULT_LLM_MODEL)
+    monkeypatch.setenv(LLM_ALLOWED_MODELS_ENV, json.dumps([ALLOWLISTED_MODEL]))
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValidationError, match="allowed_models"):
+            get_settings()
+    finally:
+        get_settings.cache_clear()
+
+
+def test_allow_inline_definition_round_trips_through_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``false`` under the real env name actually refuses a caller's graph."""
+    monkeypatch.setenv(WORKFLOW_ALLOW_INLINE_DEFINITION_ENV, "false")
+    get_settings.cache_clear()
+    try:
+        cfg = get_settings().workflow
+        assert cfg.allow_inline_definition is False, (
+            f"{WORKFLOW_ALLOW_INLINE_DEFINITION_ENV} did not reach "
+            "WorkflowSettings; a caller-supplied graph would still run"
+        )
+        with pytest.raises(ConfigError, match="inline workflow definitions are disabled"):
+            resolve_workflow_source(_GRAPH, cfg)
+    finally:
+        get_settings.cache_clear()
+
+
+def test_allow_inline_definition_defaults_permissive_without_the_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other direction: absent the variable, today's behaviour is unchanged."""
+    monkeypatch.delenv(WORKFLOW_ALLOW_INLINE_DEFINITION_ENV, raising=False)
+    get_settings.cache_clear()
+    try:
+        cfg = get_settings().workflow
+        assert cfg.allow_inline_definition is DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION
+        assert resolve_workflow_source(_GRAPH, cfg) == _GRAPH
+    finally:
+        get_settings.cache_clear()
+
+
+def test_signal_ttl_round_trips_through_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shortened TTL under the real env name reaches ``SignalSettings``."""
+    monkeypatch.setenv(SIGNAL_TTL_SECONDS_ENV, str(SHORT_SIGNAL_TTL_SECONDS))
+    get_settings.cache_clear()
+    try:
+        assert get_settings().signal.ttl_seconds == SHORT_SIGNAL_TTL_SECONDS, (
+            f"{SIGNAL_TTL_SECONDS_ENV} did not reach SignalSettings.ttl_seconds; "
+            f"envelopes would stay valid for the default {DEFAULT_SIGNAL_TTL_SECONDS}s"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_a_signal_ttl_over_the_ceiling_is_refused_through_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ceiling is enforced on the env path, not only on direct construction."""
+    monkeypatch.setenv(SIGNAL_TTL_SECONDS_ENV, str(MAX_SIGNAL_TTL_SECONDS + 1))
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValidationError, match="ttl_seconds"):
+            get_settings()
+    finally:
+        get_settings.cache_clear()

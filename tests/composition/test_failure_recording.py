@@ -175,8 +175,8 @@ async def test_an_error_raised_inside_an_agent_is_still_recorded() -> None:
 
     An ordinary exception raised *inside* ``handle`` is an execution failure
     however plain its type — that is exactly the case where a tool may already
-    have changed something outside this process. Without this, widening
-    ``NON_EXECUTION_ERRORS`` to a broad type would go unnoticed.
+    have changed something outside this process. Without this, a mixin that
+    excluded a whole exception class would go unnoticed.
     """
     repo = FakeRepository()
     orch = _orchestrator(_RaisingAgent(ValueError("bad input from the model")), repo)
@@ -189,12 +189,58 @@ async def test_an_error_raised_inside_an_agent_is_still_recorded() -> None:
     assert rows[0]["error_code"] == UNTYPED_ERROR_CODE
 
 
+async def test_an_agent_not_found_raised_inside_handle_is_recorded() -> None:
+    """The other side of the same exception class.
+
+    ``AgentNotFound`` means "not a turn" only when the *orchestrator's* routing
+    lookup raised it. A registered agent that raises it from inside ``handle``
+    — one that dispatches onward, or routes a tool by name — has executed: the
+    request reached user code and a tool may already have changed something
+    outside this process. Discriminating on the exception type cannot tell the
+    two apart, and this is the case such a mixin silently drops.
+    """
+    repo = FakeRepository()
+    orch = _orchestrator(_RaisingAgent(AgentNotFound("inner-agent")), repo)
+
+    with pytest.raises(AgentNotFound):
+        await orch.dispatch("boom", _request())
+
+    rows = await repo.list_turns()
+    assert len(rows) == 1, "an AgentNotFound from inside handle was treated as a routing error"
+    assert rows[0]["status"] == TurnStatus.ERROR
+    assert rows[0]["error_code"] == AgentNotFound("x").code
+
+
+async def test_the_routing_exclusion_is_positional_not_type_based() -> None:
+    """Pin the mechanism, not just the two outcomes it produces.
+
+    The two tests above are satisfiable by a mixin that matches on the
+    exception type *and* happens to be lucky. This asserts the discriminator
+    itself: the mixin must settle routability before it dispatches, so the
+    origin of an exception is known rather than guessed from its class.
+    """
+    source = inspect.getsource(_FailureRecordingMixin.dispatch)
+    body = source.split("try:", 1)
+
+    assert len(body) == 2, "the recording try block has moved; this guard is stale"
+    before_try, after_try = body
+
+    assert "list_agents()" in before_try, (
+        "routability is no longer settled before dispatch; a handle-raised "
+        "AgentNotFound would be misread as a routing error"
+    )
+    assert "AgentNotFound" not in after_try, (
+        "the mixin discriminates on the exception type again; that cannot "
+        "distinguish the orchestrator's lookup from an agent's own handle"
+    )
+
+
 async def test_an_invalid_max_steps_is_not_recorded_as_a_turn() -> None:
     """A caller-argument error is not a turn either.
 
     ``Orchestrator.dispatch`` rejects ``max_steps < 1`` before it looks up the
-    agent, so nothing is dispatched. Recording it would reopen the same
-    write-amplification ``NON_EXECUTION_ERRORS`` exists to close.
+    agent, so nothing is dispatched. Recording it would amplify writes on a
+    table whose whole value is that it describes real work.
     """
     repo = FakeRepository()
     orch = _orchestrator(_OkAgent(), repo)

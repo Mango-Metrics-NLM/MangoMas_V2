@@ -10,13 +10,18 @@ many times as it was sent.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 import respx
-from tests.constants import SIGNAL_MOCK_INGEST_URL
+from tests.constants import (
+    DEFAULT_SIGNAL_TTL_SECONDS,
+    MAX_SIGNAL_TTL_SECONDS,
+    SIGNAL_MOCK_INGEST_URL,
+)
 from tests.mango_contracts.constants import envelope_base
 
 from mango_contracts import CognitiveSignal
@@ -28,9 +33,9 @@ from mangomas.cognitive.sink import (
     HttpCognitiveSink,
     JsonlCognitiveSink,
     ReplayGuard,
+    _PerKeyLock,
 )
 from mangomas.config import SignalSettings
-from mangomas.config.signal import DEFAULT_SIGNAL_TTL_SECONDS, MAX_SIGNAL_TTL_SECONDS
 from mangomas.core.agent import AgentRequest, Message
 
 
@@ -301,3 +306,99 @@ def test_release_is_idempotent_and_reopens_the_id() -> None:
     guard.release("a")
 
     assert guard.seen("a") is False, "the id should be reservable again"
+
+
+async def test_a_concurrent_follower_does_not_report_success_for_a_failed_write(
+    tmp_path: Path,
+) -> None:
+    """Two concurrent emits of one id must not both finish with nothing written.
+
+    The hole the ``release`` fix alone left open (Copilot, PR #64): the guard
+    reserves before writing, so a concurrent follower returned immediately as a
+    replay; if the owner's write then failed and released the id, *both* calls
+    were done and nothing was on disk — and the follower's caller believed it
+    had been persisted. Measured before the fix as
+    ``['RAISED', 'REPORTED-OK'], file_written=False``.
+
+    Serializing per id means the follower waits and re-checks: it either sees a
+    committed id (a genuine replay) or a released one (and writes).
+    """
+    path = tmp_path / JSONL_FILENAME
+    sink = JsonlCognitiveSink(path)
+    signal = _signal()
+
+    def _boom(line: str) -> None:
+        raise OSError(f"disk gone before writing {len(line)} bytes")
+
+    sink._append = _boom  # type: ignore[method-assign]
+
+    results = await asyncio.gather(sink.emit(signal), sink.emit(signal), return_exceptions=True)
+
+    assert all(isinstance(r, OSError) for r in results), (
+        "a caller reported success for a signal that was never written: "
+        f"{['raised' if isinstance(r, BaseException) else 'REPORTED-OK' for r in results]}"
+    )
+    assert not path.exists()
+
+
+async def test_concurrent_emits_of_one_id_still_write_exactly_once(tmp_path: Path) -> None:
+    """The other direction: per-id serialization must not defeat dedupe.
+
+    A sink that let both concurrent callers through would pass the test above
+    while writing the envelope twice.
+    """
+    path = tmp_path / JSONL_FILENAME
+    sink = JsonlCognitiveSink(path)
+    signal = _signal()
+
+    await asyncio.gather(*[sink.emit(signal) for _ in range(6)])
+
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+async def test_per_key_lock_does_not_serialize_distinct_keys() -> None:
+    """Distinct ids must keep their own locks.
+
+    One sink-wide lock would also close the race, and would queue every emitter
+    behind the slowest write — on the HTTP sink, behind the slowest POST, so a
+    hung endpoint would stall unrelated signals. Holding one key while
+    acquiring another proves the lock is keyed rather than global.
+    """
+    locks = _PerKeyLock()
+
+    async with locks.hold("a"):
+        async with asyncio.timeout(1):
+            async with locks.hold("b"):
+                pass
+
+
+async def test_per_key_lock_serializes_the_same_key() -> None:
+    """Same key must not interleave — that is the whole point of the lock."""
+    locks = _PerKeyLock()
+    events: list[str] = []
+
+    async def _worker(name: str) -> None:
+        async with locks.hold("shared"):
+            events.append(f"enter:{name}")
+            await asyncio.sleep(0)
+            events.append(f"exit:{name}")
+
+    await asyncio.gather(_worker("one"), _worker("two"))
+
+    assert events in (
+        ["enter:one", "exit:one", "enter:two", "exit:two"],
+        ["enter:two", "exit:two", "enter:one", "exit:one"],
+    ), f"the two holders interleaved: {events}"
+
+
+def test_per_key_lock_does_not_leak_entries() -> None:
+    """The lock dict must shrink again, or it is an unbounded map of ids."""
+    locks = _PerKeyLock()
+
+    async def _touch() -> None:
+        async with locks.hold("transient"):
+            pass
+
+    asyncio.run(_touch())
+
+    assert locks._locks == {}

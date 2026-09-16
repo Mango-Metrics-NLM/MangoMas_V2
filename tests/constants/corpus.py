@@ -34,6 +34,8 @@ model: inherit
 # migrating corpus. Kept as data so a new rejection rule adds a row, not a test.
 INVALID_AGENT_MODEL_VALUES: tuple[str, ...] = (
     "Claude Sonnet 4.5 (copilot)",  # every one of the 19 agents carried this
+    "ALLOWLISTED_MODEL",
+    "LLM_MODEL_ENV",
     "Opus",
     "claude opus 5",
 )
@@ -108,6 +110,25 @@ SIGNAL_POLICY_ID_ENV: str = "MANGOMAS_SIGNAL__POLICY_ID"
 SIGNAL_POLICY_VERSION_ENV: str = "MANGOMAS_SIGNAL__POLICY_VERSION"
 SIGNAL_POLICY_SNAPSHOT_HASH_ENV: str = "MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH"
 SIGNAL_SCHEMA_VERSION_ENV: str = "MANGOMAS_SIGNAL__SCHEMA_VERSION"
+SIGNAL_TTL_SECONDS_ENV: str = "MANGOMAS_SIGNAL__TTL_SECONDS"
+
+# ADR-0033 boundary-honesty switches. Both are nested groups, so the env
+# names are the part a direct-construction test cannot reach: a wrong
+# delimiter parses as no override at all and the setting silently keeps its
+# default, which for these two means the restriction is simply not applied.
+LLM_ALLOWED_MODELS_ENV: str = "MANGOMAS_LLM__ALLOWED_MODELS"
+WORKFLOW_ALLOW_INLINE_DEFINITION_ENV: str = "MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION"
+WORKFLOW_ENABLED_ENV: str = "MANGOMAS_WORKFLOW__ENABLED"
+WORKFLOW_DEFINITION_ENV: str = "MANGOMAS_WORKFLOW__DEFINITION"
+LLM_MODEL_ENV: str = "MANGOMAS_LLM__MODEL"
+
+# A model name that is *not* the LLM default, so an allowlist built from it
+# genuinely excludes the default rather than accidentally containing it.
+ALLOWLISTED_MODEL: str = "approved-model"
+
+# A TTL well under the ceiling and unmistakably not the default, so an
+# assertion cannot pass on a settings object that ignored the override.
+SHORT_SIGNAL_TTL_SECONDS: int = 60
 SIGNAL_MOCK_INGEST_URL: str = "https://harness.example.test/ingest/cognitive"
 SIGNAL_CUSTOM_POLICY_ID: str = "team.policy"
 PLANNER_SIGNAL_GOAL: str = "ship it"
@@ -674,6 +695,7 @@ __all__ = [
     "INVALID_AGENT_TOOL_TOKENS",
     "LEGACY_AGENT_FIELDS",
     "LIVE_CORPUS_COUNT_DOCS",
+    "LLM_ALLOWED_MODELS_ENV",
     "MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS",
     "MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION",
     "MAX_ROUTER_DESCRIPTION_JACCARD",
@@ -708,6 +730,7 @@ __all__ = [
     "RTK_HOOK_MATCHER",
     "RTK_TELEMETRY_DISABLED_ENV",
     "SCOPED_DELEGATION_TOOL_SPEC",
+    "SHORT_SIGNAL_TTL_SECONDS",
     "SIGNAL_CUSTOM_POLICY_ID",
     "SIGNAL_DIR_ENV",
     "SIGNAL_ENABLED_ENV",
@@ -719,6 +742,7 @@ __all__ = [
     "SIGNAL_POLICY_SNAPSHOT_HASH_ENV",
     "SIGNAL_POLICY_VERSION_ENV",
     "SIGNAL_SCHEMA_VERSION_ENV",
+    "SIGNAL_TTL_SECONDS_ENV",
     "SITECUSTOMIZE_INJECTED_ADDOPTS",
     "SKILL_UNMAPPED_AGENT_SLUGS",
     "SPELLED_NUMBERS",
@@ -730,5 +754,8 @@ __all__ = [
     "VALID_CLAUDE_AGENT_SLUG",
     "VALID_MCP_TOOL_NAME",
     "VALID_SKILL_FRONTMATTER",
+    "WORKFLOW_ALLOW_INLINE_DEFINITION_ENV",
+    "WORKFLOW_DEFINITION_ENV",
+    "WORKFLOW_ENABLED_ENV",
     "WRITE_CAPABLE_AGENT_SLUGS",
 ]

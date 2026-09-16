@@ -26,14 +26,16 @@ def resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> st
     """Return the effective graph source, or raise ``ConfigError``.
 
     Single source of the opt-in precedence rule shared by the CLI and the HTTP
-    surface: an explicit *definition* runs even when the feature is disabled
-    (per-invocation opt-in); otherwise ``cfg.enabled`` **and** a configured
-    ``cfg.definition`` are required.
+    surface. While ``cfg.allow_inline_definition`` is ``True`` (the default,
+    preserving today's documented behaviour) an explicit *definition* runs even
+    when the feature is disabled — a per-invocation opt-in; otherwise
+    ``cfg.enabled`` **and** a configured ``cfg.definition`` are required.
 
     That per-invocation opt-in is surprising enough to deserve its own switch
     (ADR-0033): ``allow_inline_definition=False`` refuses a caller-supplied
-    graph outright, so a deployment can require server-configured graphs only.
-    It defaults to ``True``, preserving today's documented behaviour.
+    graph outright — it is rejected, not silently ignored in favour of
+    ``cfg.definition`` — so a deployment can require server-configured graphs
+    only.
 
     Surface-neutral — callers map the raised
     :class:`~mangomas.errors.ConfigError` onto their own error surface (HTTP 400 /

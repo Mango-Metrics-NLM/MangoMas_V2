@@ -27,7 +27,8 @@ import asyncio
 import json
 import logging
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
 
@@ -107,6 +108,44 @@ class ReplayGuard:
         self._seen.pop(signal_id, None)
 
 
+class _PerKeyLock:
+    """Serialize callers that share a key, without serializing distinct keys.
+
+    The replay guard reserves an id *before* the write, which is what makes two
+    concurrent emits resolve to one write. On its own that leaves a hole: the
+    follower returns immediately as a replay, and if the owner's write then
+    fails and releases the id, the follower has already reported success and
+    nothing was written. Serializing per id closes it — the follower waits and
+    re-checks, so it either sees a committed id (correctly a replay) or an
+    released one (and writes).
+
+    Per *key* rather than one lock per sink on purpose: an HTTP sink holding a
+    single lock across a POST would queue every emitter behind the slowest
+    request, turning a hung endpoint into a stall for unrelated signals.
+
+    Refcounted so the dict does not grow without bound. The get/set pairs never
+    span an ``await``, so they are atomic on the event loop.
+    """
+
+    def __init__(self) -> None:
+        self._locks: dict[str, tuple[asyncio.Lock, int]] = {}
+
+    @asynccontextmanager
+    async def hold(self, key: str) -> AsyncIterator[None]:
+        """Hold *key*'s lock for the duration of the block."""
+        lock, holders = self._locks.get(key, (asyncio.Lock(), 0))
+        self._locks[key] = (lock, holders + 1)
+        try:
+            async with lock:
+                yield
+        finally:
+            current, count = self._locks[key]
+            if count <= 1:
+                del self._locks[key]
+            else:
+                self._locks[key] = (current, count - 1)
+
+
 def _reject_if_expired(signal: CognitiveSignal) -> None:
     """Raise :class:`ExpiredSignalError` when *signal* is past its TTL."""
     if signal.is_expired():
@@ -131,29 +170,36 @@ class JsonlCognitiveSink:
         self._path = path
         self._lock = asyncio.Lock()
         self._replay_guard = replay_guard if replay_guard is not None else ReplayGuard()
+        self._emit_locks = _PerKeyLock()
 
     async def emit(self, signal: CognitiveSignal) -> None:
         _reject_if_expired(signal)
-        if self._replay_guard.seen(str(signal.signal_id)):
-            logger.debug(
-                "cognitive signal already written; dropping replay",
-                extra={"event": "cognitive_sink_replay", "signal_id": str(signal.signal_id)},
+        signal_id = str(signal.signal_id)
+        # Per-id, so a concurrent follower waits for the in-flight write and
+        # re-checks rather than reporting success for a write that then failed.
+        async with self._emit_locks.hold(signal_id):
+            if self._replay_guard.seen(signal_id):
+                logger.debug(
+                    "cognitive signal already written; dropping replay",
+                    extra={"event": "cognitive_sink_replay", "signal_id": signal_id},
+                )
+                return
+            # One write() of ``line + newline`` so POSIX O_APPEND stays atomic
+            # under concurrent ``asyncio.to_thread`` workers.
+            line = (
+                json.dumps(
+                    signal.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":")
+                )
+                + "\n"
             )
-            return
-        # One write() of ``line + newline`` so POSIX O_APPEND stays atomic
-        # under concurrent ``asyncio.to_thread`` workers.
-        line = (
-            json.dumps(signal.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
-            + "\n"
-        )
-        try:
-            async with self._lock:
-                await asyncio.to_thread(self._append, line)
-        except BaseException:
-            # The reservation is only valid if the write landed. Releasing it
-            # keeps a retry of a transient failure from being read as a replay.
-            self._replay_guard.release(str(signal.signal_id))
-            raise
+            try:
+                async with self._lock:
+                    await asyncio.to_thread(self._append, line)
+            except BaseException:
+                # The reservation is only valid if the write landed. Releasing
+                # it keeps a retry from being read as a replay.
+                self._replay_guard.release(signal_id)
+                raise
         logger.debug(
             "cognitive signal written",
             extra={"event": "cognitive_sink_jsonl", "path": str(self._path)},
@@ -178,34 +224,39 @@ class HttpCognitiveSink:
         self._url = url
         self._timeout = timeout_seconds
         self._replay_guard = replay_guard if replay_guard is not None else ReplayGuard()
+        self._emit_locks = _PerKeyLock()
 
     async def emit(self, signal: CognitiveSignal) -> None:
         _reject_if_expired(signal)
-        if self._replay_guard.seen(str(signal.signal_id)):
-            logger.debug(
-                "cognitive signal already posted; dropping replay",
-                extra={"event": "cognitive_sink_replay", "signal_id": str(signal.signal_id)},
-            )
-            return
-        payload = signal.model_dump(mode="json")
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(
-                    self._url,
-                    json=payload,
-                    # So an ingest endpoint can collapse a retry that happened
-                    # below this layer (a proxy, a client-side retry) and that
-                    # the in-process guard above therefore never sees.
-                    headers={IDEMPOTENCY_HEADER: str(signal.signal_id)},
+        signal_id = str(signal.signal_id)
+        # Per-id (see _PerKeyLock): distinct signals still POST concurrently,
+        # so a slow endpoint cannot stall unrelated emitters.
+        async with self._emit_locks.hold(signal_id):
+            if self._replay_guard.seen(signal_id):
+                logger.debug(
+                    "cognitive signal already posted; dropping replay",
+                    extra={"event": "cognitive_sink_replay", "signal_id": signal_id},
                 )
-                response.raise_for_status()
-        except BaseException:
-            # A 5xx, a timeout or a dropped connection must not poison the
-            # guard: the envelope was not delivered, so a retry has to be
-            # allowed through. The Idempotency-Key above is what protects the
-            # endpoint if the request in fact arrived.
-            self._replay_guard.release(str(signal.signal_id))
-            raise
+                return
+            payload = signal.model_dump(mode="json")
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    response = await client.post(
+                        self._url,
+                        json=payload,
+                        # So an ingest endpoint can collapse a retry that
+                        # happened below this layer (a proxy, a client-side
+                        # retry) and that the in-process guard never sees.
+                        headers={IDEMPOTENCY_HEADER: signal_id},
+                    )
+                    response.raise_for_status()
+            except BaseException:
+                # A 5xx, a timeout or a dropped connection must not poison the
+                # guard: the envelope was not delivered, so a retry has to be
+                # allowed through. The Idempotency-Key above is what protects
+                # the endpoint if the request in fact arrived.
+                self._replay_guard.release(signal_id)
+                raise
         logger.debug(
             "cognitive signal posted",
             extra={"event": "cognitive_sink_http", "url": self._url},

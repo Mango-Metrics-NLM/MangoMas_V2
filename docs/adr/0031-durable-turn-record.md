@@ -57,15 +57,24 @@ delegates through `super().dispatch(...)`, so the harness-enabled and
 harness-disabled builds are both wrapped without editing the contract. Same
 seam ADR-0028 chose for per-agent LLM overrides.
 
-**6. A routing error is not a turn.** `AgentNotFound` is raised before any
-agent is invoked, so nothing executed and no side effect was possible; the
-honest answer to "what did this system do?" is "nothing". Recording it would
-also hand any caller a cheap write-amplification vector against the turn store
-— request agents that do not exist, inflate a table whose whole value is that
-it describes real work. `NON_EXECUTION_ERRORS` is deliberately narrow: an
-exception raised *inside* an agent's `handle` is an execution failure however
-ordinary its type, because that is exactly the case where a tool may already
-have changed something outside this process.
+**6. A routing error is not a turn, and origin is decided by position.** When
+the orchestrator's own lookup raises `AgentNotFound`, no agent was invoked, so
+nothing executed and no side effect was possible; the honest answer to "what
+did this system do?" is "nothing". Recording it would also hand any caller a
+cheap write-amplification vector against the turn store — request agents that
+do not exist, inflate a table whose whole value is that it describes real work.
+
+What the mixin must *not* do is infer that from the exception's class. A
+registered agent is free to raise `AgentNotFound` from inside its own `handle`
+— one that dispatches onward, or routes a tool by name — and that one
+executed: the request reached user code and a tool may already have changed
+something outside this process. Both failures arrive at the same `except` as
+the identical class, so the mixin settles routability *before* it dispatches
+(`agent_name in self.list_agents()`) and uses that, never the type. The
+`max_steps` argument check is excluded the same way, by being performed outside
+the recording `try` rather than by matching `ValueError` — which would swallow
+a `ValueError` raised from inside `handle`, an execution failure that must be
+recorded.
 
 **7. Recording is best-effort and never masks the original error.** A broken
 repository is logged and swallowed *inside* `_record_failure`; the caller's
