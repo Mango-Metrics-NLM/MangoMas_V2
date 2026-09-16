@@ -305,8 +305,12 @@ def test_metrics_bootstrap_logs_its_outcome_at_debug(
 
     records = [r for r in caplog.records if getattr(r, "event", None) == "cli_metrics_bootstrap"]
     assert records, "no cli_metrics_bootstrap record emitted"
-    assert records[-1].metrics_enabled is False
-    assert records[-1].exporter == get_settings().telemetry.exporter
+    # `getattr` rather than attribute access: these are `extra=` fields, which
+    # `logging.LogRecord` does not declare, so mypy --strict rejects the direct
+    # form. Same idiom the rest of the suite uses for structured-log assertions
+    # (see tests/test_harness_config_audit.py, tests/test_postgres.py).
+    assert getattr(records[-1], "metrics_enabled", None) is False
+    assert getattr(records[-1], "exporter", None) == get_settings().telemetry.exporter
     # `%s` lazy formatting, not an f-string: the record still carries its args.
     assert "enabled=False" in records[-1].getMessage()
 
