@@ -311,13 +311,17 @@ POST /agents/nosuch/invoke  ->  404
 
 ### Milestone B′7 — smaller correctness items
 
-- **`_stream_agent` holds a span across a `yield`.** `orchestrator.py:673-721`
-  wraps `start_as_current_span` around a body containing `yield chunk`, so the
-  span leaks into the consumer's ambient context between chunks and consumer
-  spans become its children. `composition/harness.py:131-142` explains at length
-  why this is wrong and rebuilds `_traced_stream` with per-chunk attach/detach to
-  avoid it — but only one layer up. The layer below still does it. Protected
-  path, so it needs the trailer.
+- **`_stream_agent` holds a span across a `yield`, and the repo already documents
+  why that is wrong.** `orchestrator.py:673-721` wraps `start_as_current_span`
+  around a body containing `yield chunk`. One layer up,
+  `composition/harness.py:131-142` deliberately refuses the same construct and
+  explains it: "holding an OTel context across a `yield` leaks it into the
+  *consumer*'s subsequent spans … every span the consumer creates between chunks
+  would become a child of `harness.agent_invoke` instead of whatever it should
+  actually be a child of." `_traced_stream` then pairs `attach`/`detach` tightly
+  around each `__anext__`. The diagnosis and the remedy both already exist in this
+  codebase; they were never applied to the layer below. Protected path, so the
+  fix needs the trailer.
 - **`dispatch_fan_out` leaks sibling work on failure.** `orchestrator.py:536-539`
   uses bare `asyncio.gather`, which propagates the first exception without
   cancelling siblings. After the caller has received a 500, the remaining agents
