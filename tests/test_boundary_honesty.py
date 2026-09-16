@@ -7,11 +7,15 @@ and ``model_override`` accepted any string at all.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from mangomas.composition.llm import build_agent_llm_overrides
 from mangomas.config import AgentSettings, LLMSettings, WorkflowSettings
+from mangomas.core.tools import ToolEffects, ToolSpec
 from mangomas.errors import ConfigError
+from mangomas.rag.retrieval import RetrievalTool, Retriever
 from mangomas.workflow.loader import resolve_workflow_source
 
 _GRAPH = '{"name": "g", "root": {"kind": "agent", "agent": "chat"}}'
@@ -96,3 +100,42 @@ def test_the_base_model_must_itself_be_allowlisted() -> None:
     """An allowlist that exempts the default is a loophole, not a control."""
     with pytest.raises(ValueError, match="base-model"):
         LLMSettings(model="base-model", allowed_models=["approved-model"])
+
+
+# ── D4: a tool declares whether it changes anything ─────────────────────────
+
+
+def test_tool_spec_effects_default_to_undeclared() -> None:
+    """A tool that says nothing must not be *assumed* safe.
+
+    ``read_only: bool = True`` was the obvious shape and is a lie: it would
+    label every existing tool read-only on the strength of its author never
+    having considered the question. ``UNDECLARED`` is the honest default, and
+    lets a future broker fail closed without the field having misrepresented
+    anything.
+    """
+    spec = ToolSpec(name="whatever", description="does a thing")
+
+    assert spec.effects is ToolEffects.UNDECLARED
+
+
+def test_tool_spec_effects_round_trip() -> None:
+    """The field is additive and carries the value it was given."""
+    spec = ToolSpec(name="writer", description="writes", effects=ToolEffects.MUTATES)
+
+    assert spec.effects is ToolEffects.MUTATES
+    assert spec.model_dump()["effects"] == "mutates"
+
+
+def test_the_retrieval_tool_declares_itself_read_only() -> None:
+    """The one built-in tool knows the answer, so it should say it.
+
+    A default that means "unknown" is only honest if the tools that *do* know
+    declare — otherwise the vocabulary exists and nothing ever uses it, which
+    is the unwired-control pattern this whole audit is about.
+    """
+    # No importorskip: ``RetrievalTool`` imports without chromadb (the store is
+    # injected, not constructed here), and a skipped test proves nothing.
+    tool = RetrievalTool(retriever=cast("Retriever", object()))
+
+    assert tool.spec.effects is ToolEffects.READ_ONLY

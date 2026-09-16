@@ -11,6 +11,24 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`ToolSpec.effects`** — a tool can declare whether executing it changes
+  anything outside the process (ADR-0033). `ToolEffects` is
+  `UNDECLARED` (default) / `READ_ONLY` / `MUTATES`, and `RetrievalTool`
+  declares itself read-only. Additive with a default, so every existing
+  construction and every third-party tool is untouched.
+
+  `UNDECLARED` rather than `read_only: bool = True` on purpose: a boolean
+  defaulting to true would label every existing tool read-only on the strength
+  of its author never having considered the question — a field that lies. A
+  consumer that must decide should treat `UNDECLARED` as `MUTATES` and fail
+  closed; the difference is the record then says "nobody declared" instead of
+  "declared safe".
+
+  Advisory metadata, not enforcement: nothing gates on it today. It exists so
+  the day a write-capable tool is registered, the vocabulary is already on the
+  contract rather than being added under pressure.
+
+
 - **`MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION`** (default `true`, ADR-0033).
   `POST /workflows/run` executes a caller-supplied inline `definition` *even
   when* `MANGOMAS_WORKFLOW__ENABLED=false` — documented behaviour, but

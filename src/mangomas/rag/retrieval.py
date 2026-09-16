@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
 
-from mangomas.core.tools import ToolSpec
+from mangomas.core.tools import ToolEffects, ToolSpec
 from mangomas.rag.models import Chunk, SearchResult
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -127,6 +127,10 @@ class RetrievalTool:
                 "Retrieve relevant context passages from the knowledge base. "
                 "Use when you need grounded facts to answer the user."
             ),
+            # This tool reads the vector store and writes nothing. Declared
+            # rather than left UNDECLARED because a vocabulary no tool ever
+            # uses is the unwired-control pattern (ADR-0033).
+            effects=ToolEffects.READ_ONLY,
             parameters_schema={
                 "type": "object",
                 "properties": {
