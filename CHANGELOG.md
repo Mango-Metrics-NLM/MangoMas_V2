@@ -47,6 +47,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The ruff/mypy toolchain pin is now enforced, not just asserted.**
+  `pyproject.toml` pins `ruff` and `mypy` exactly and its comments claimed they
+  were "kept in lockstep with the ruff-pre-commit rev in
+  `.pre-commit-config.yaml`" — but nothing checked it. Dependabot's `pip`
+  ecosystem never touches `.pre-commit-config.yaml`, so the open ruff bump
+  (#57, green on every check) would have merged into a silently desynced
+  toolchain: contributors running pre-commit on a different ruff than CI, with
+  the symptom a formatting diff nobody can reproduce.
+  `tests/tooling/test_toolchain_pin_parity.py` now fails when the two drift,
+  and carries its own mutation proof that the guard fires. `.github/dependabot.yml`
+  gains a `pre-commit` ecosystem so both halves get update PRs, and
+  `tests/deploy/test_workflow_hardening.py` pins that ecosystem so it cannot be
+  deleted silently. Groups cannot span ecosystems, so the two PRs still arrive
+  separately — the parity test is what makes forgetting one visible.
+
 - **`json_field` acceptance predicates** (spec-0032, ADR-0031). A workflow
   `loop` or `branch` could only match a structured agent's *serialised text*,
   and measurement showed that fails in both directions: the natural needle

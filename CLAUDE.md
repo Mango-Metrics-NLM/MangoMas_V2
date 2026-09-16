@@ -665,8 +665,13 @@ under `asyncio.gather`. See spec 0005 / ADR-0011 and
 - **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;
   metadata-transparent executors, so an all-agent `sequence` equals
   `dispatch_pipeline`.
-- **Predicate** (`workflow/predicate.py`) — `PredicateSpec` (`contains`/`regex`)
-  compiles once to a pure sync `AcceptanceFn`.
+- **Predicate** (`workflow/predicate.py`) — `PredicateSpec`
+  (`contains`/`regex`/`json_field`) compiles once to a pure sync `AcceptanceFn`.
+  `json_field` (spec-0032 / ADR-0031) binds acceptance to a **parsed** field —
+  dotted path, exactly one of `equals`/`at_least`/`at_most`, strict whole-text
+  JSON parsing so it agrees with `VALIDATE_OUTPUT`. Use it for `planner` /
+  `reviewer`: no substring spelling over their JSON is correct in both
+  directions. The compiled closure never raises.
 - **Registry** (`workflow/registry.py`) — `node_registry` (mirrors
   `eval.target_registry`); seeded by `import mangomas.workflow`.
 - **Errors** reuse `ConfigError` (400) / `AgentNotFound` (404) /

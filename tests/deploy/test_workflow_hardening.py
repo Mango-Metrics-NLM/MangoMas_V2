@@ -146,9 +146,14 @@ def test_third_party_action_set_is_the_reviewed_one() -> None:
 _EXTERNAL_INSTALL_MARKER = "github.com/ianshank/Agents"
 _EVAL_GATE_WORKFLOW = "eval-gate.yml"
 _DEPENDABOT = _workflows.REPO_ROOT / ".github" / "dependabot.yml"
-# Both halves of the dependency surface: the actions the workflows run, and
-# the Python packages the project itself resolves.
-_EXPECTED_DEPENDABOT_ECOSYSTEMS = frozenset({"github-actions", "pip"})
+# Every half of the dependency surface: the actions the workflows run, the
+# Python packages the project itself resolves, and the pre-commit hook revs.
+# `pre-commit` is not optional garnish — `ruff` and `mypy` are exact-pinned in
+# BOTH pyproject.toml and .pre-commit-config.yaml, and
+# tests/tooling/test_toolchain_pin_parity.py fails when the two drift. Without
+# this ecosystem only the pip half gets update PRs, so every bump arrives
+# pre-desynced.
+_EXPECTED_DEPENDABOT_ECOSYSTEMS = frozenset({"github-actions", "pip", "pre-commit"})
 
 
 def test_eval_gate_external_install_has_no_floating_default_ref() -> None:
@@ -177,8 +182,10 @@ def test_dependabot_covers_actions_and_python_ecosystems() -> None:
     """Dependabot must watch both halves of the pinned dependency surface.
 
     The SHA-pinned actions rot without the ``github-actions`` entry; the
-    ``requirements.lock`` pins and pyproject ranges rot without ``pip``.
-    Asserted as a superset so adding an ecosystem is not a failure.
+    ``requirements.lock`` pins and pyproject ranges rot without ``pip``; and
+    the exact-pinned ruff/mypy revs desync from pyproject without
+    ``pre-commit``. Asserted as a superset so adding an ecosystem is not a
+    failure.
     """
     doc = yaml.safe_load(_DEPENDABOT.read_text(encoding="utf-8"))
     ecosystems = {entry["package-ecosystem"] for entry in doc["updates"]}
