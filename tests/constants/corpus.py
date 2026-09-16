@@ -188,6 +188,13 @@ CORPUS_DOC_RELPATHS: tuple[str, ...] = (
 # shape). Named so the two tuples below cannot drift apart.
 PRE_TOOL_USE_HOOK_COMMAND: str = "python scripts/lint_agent_frontmatter.py --hook pre-tool-use"
 
+# Exactly what repo-root ``sitecustomize.py`` may inject into PYTEST_ADDOPTS.
+# An *exhaustive* set, not a minimum: PYTEST_ADDOPTS is applied to every pytest
+# run, and it carries `--cov-fail-under` and `-k`, so a stray extra token there
+# silently weakens the test and coverage gates. The guard in
+# tests/regression/test_origin_defects.py asserts equality against this.
+SITECUSTOMIZE_INJECTED_ADDOPTS: frozenset[str] = frozenset({"-p", "no:randomly"})
+
 PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
     ("SessionStart", "*", "python scripts/harness_session_start.py"),
     (
@@ -204,13 +211,27 @@ PREEXISTING_HOOKS: tuple[tuple[str, str, str], ...] = (
         # identical defect.
         "PostToolUse",
         "Edit|Write",
-        # spec-0020: `ruff format` runs beside `check --fix` on the same emitted
-        # path. Formatting is the one thing a per-file autofix hook genuinely
-        # could not do before, so drift surfaced only at `make gate`. `-I{}`
-        # replaces the bare `xargs` so both commands see the same argument.
+        # ADR-0030: the `xargs -r -I{} sh -c '... "{}" ...'` form substituted a
+        # MODEL-CHOSEN path into a double-quoted word inside a string handed to
+        # `sh -c`, so a path containing `"` escaped the quoting and the rest was
+        # shell. Split into two `xargs -r` pipelines with no `sh -c` at all:
+        # xargs appends the path as a literal argv element, which is never
+        # re-parsed. Two entries rather than one because dropping the shell
+        # also drops the `;` that chained them — membership, not singleton, is
+        # what `test_preexisting_hook_survives_verbatim` asserts for this pair.
+        #
+        # spec-0020 (retained): `ruff format` still runs beside `check --fix` on
+        # the same emitted path. Formatting is the one thing a per-file autofix
+        # hook genuinely could not do before, so drift surfaced only at
+        # `make gate`.
         "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path "
-        '| xargs -r -I{} sh -c \'python -m ruff check --fix "{}" >/dev/null 2>&1; '
-        'python -m ruff format "{}" >/dev/null 2>&1\' || true',
+        "| xargs -r python -m ruff check --fix >/dev/null 2>&1 || true",
+    ),
+    (
+        "PostToolUse",
+        "Edit|Write",
+        "python scripts/lint_agent_frontmatter.py --hook post-tool-use --emit-path "
+        "| xargs -r python -m ruff format >/dev/null 2>&1 || true",
     ),
     (
         # spec-0023 R8: `|| exit 1` replaced `|| true`. The recorded rationale
@@ -698,6 +719,7 @@ __all__ = [
     "SIGNAL_POLICY_SNAPSHOT_HASH_ENV",
     "SIGNAL_POLICY_VERSION_ENV",
     "SIGNAL_SCHEMA_VERSION_ENV",
+    "SITECUSTOMIZE_INJECTED_ADDOPTS",
     "SKILL_UNMAPPED_AGENT_SLUGS",
     "SPELLED_NUMBERS",
     "SUBSET_COUNT_CLAIMS",

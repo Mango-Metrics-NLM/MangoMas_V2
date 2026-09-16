@@ -149,7 +149,10 @@ def test_discover_override_logs_info(
         lambda **_: [_FakeEntryPoint(FAKE_PLUGIN_SCORER_NAME, _scorer_factory)],
     )
     with caplog.at_level(logging.INFO, logger="mangomas.eval.discovery"):
-        discovery.discover_scorers(registry=registry, group="x")
+        # ADR-0030: overriding a built-in is now opt-in. The behaviour this
+        # test pins — that an override announces itself at INFO — is unchanged;
+        # only the path to reaching it is explicit.
+        discovery.discover_scorers(registry=registry, group="x", allow_builtin_override=True)
     assert any(getattr(rec, "event", None) == "eval_plugin_override" for rec in caplog.records)
 
 
@@ -200,3 +203,132 @@ def test_ensure_eval_plugins_rescans_when_a_registry_is_swapped(
         discovery.TARGET_ENTRY_POINT_GROUP,
         discovery.DATASET_SOURCE_ENTRY_POINT_GROUP,
     ]
+
+
+# ── A plugin must not silently replace a built-in (ADR-0030) ─────────────────
+
+_BUILTIN_SCORER_NAME = "exact_match"
+
+
+class _HijackedScorer:
+    """A plugin double registered under a built-in's name."""
+
+    name = _BUILTIN_SCORER_NAME
+
+    async def score(
+        self,
+        prediction: str,  # noqa: ARG002
+        expected: str,  # noqa: ARG002
+        *,
+        context: ScorerContext | None = None,  # noqa: ARG002
+    ) -> ScoreResult:
+        return ScoreResult(score=1.0, passed=True)
+
+
+def _hijack_factory(options: dict[str, Any]) -> _HijackedScorer:  # noqa: ARG001
+    return _HijackedScorer()
+
+
+def _registry_with_builtin() -> Registry[Any]:
+    """A registry already holding a built-in under the contested name."""
+    registry: Registry[Any] = Registry("scorer-test")
+    registry.register(_BUILTIN_SCORER_NAME, _builtin_factory)
+    return registry
+
+
+def _builtin_factory(options: dict[str, Any]) -> object:  # noqa: ARG001
+    return object()
+
+
+def test_plugin_cannot_override_a_builtin_scorer(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A third-party entry point must not replace a built-in scorer.
+
+    These registries are the inputs to the CI quality gate (exit 3) and the
+    regression baseline, so last-call-wins here means an installed package
+    decides whether the gate passes. ``agents/discovery.py`` already refuses
+    the identical collision; the permissive side was the one guarding the gate.
+    """
+    registry = _registry_with_builtin()
+    monkeypatch.setattr(
+        discovery,
+        "entry_points",
+        lambda *, group: [_FakeEntryPoint(_BUILTIN_SCORER_NAME, _hijack_factory)],  # noqa: ARG005
+    )
+
+    with caplog.at_level(logging.WARNING):
+        registered = discovery.discover_scorers(registry=registry)
+
+    assert registered == []
+    assert registry.get(_BUILTIN_SCORER_NAME) is _builtin_factory
+    assert any(getattr(rec, "event", None) == "eval_plugin_collision" for rec in caplog.records)
+
+
+def test_builtin_override_is_available_behind_the_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The documented last-call-wins behaviour survives as an explicit opt-in.
+
+    The other direction of the guard (``mango-mutation-proof``): closing the
+    default must not delete the capability, or a deployment that legitimately
+    ships a replacement scorer has no path forward.
+    """
+    registry = _registry_with_builtin()
+    monkeypatch.setattr(
+        discovery,
+        "entry_points",
+        lambda *, group: [_FakeEntryPoint(_BUILTIN_SCORER_NAME, _hijack_factory)],  # noqa: ARG005
+    )
+
+    registered = discovery.discover_scorers(registry=registry, allow_builtin_override=True)
+
+    assert registered == [_BUILTIN_SCORER_NAME]
+    assert registry.get(_BUILTIN_SCORER_NAME) is _hijack_factory
+
+
+def test_a_non_colliding_plugin_still_registers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refusing collisions must not refuse ordinary plugins.
+
+    Without this, ``test_plugin_cannot_override_a_builtin_scorer`` would also
+    pass against a discovery function that registered nothing at all.
+    """
+    registry = _registry_with_builtin()
+    monkeypatch.setattr(
+        discovery,
+        "entry_points",
+        lambda *, group: [_FakeEntryPoint(FAKE_PLUGIN_SCORER_NAME, _scorer_factory)],  # noqa: ARG005
+    )
+
+    registered = discovery.discover_scorers(registry=registry)
+
+    assert registered == [FAKE_PLUGIN_SCORER_NAME]
+    assert registry.get(FAKE_PLUGIN_SCORER_NAME) is _scorer_factory
+
+
+def test_ensure_eval_plugins_forwards_the_override_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The setting must actually reach ``_discover``, not just exist.
+
+    A flag wired nowhere is the defect this whole audit is about.
+    """
+    seen: list[bool] = []
+
+    def _record(
+        group: str,  # noqa: ARG001 — the recorder cares only about the flag
+        registry: Registry[Any],  # noqa: ARG001
+        label: str,  # noqa: ARG001
+        *,
+        allow_builtin_override: bool,
+    ) -> list[str]:
+        seen.append(allow_builtin_override)
+        return []
+
+    monkeypatch.setattr(discovery, "_discover", _record)
+    monkeypatch.setattr(discovery, "_discovered_registries", set())
+    settings = Settings(discovery_enabled=True, discovery_allow_builtin_override=True)
+
+    discovery.ensure_eval_plugins(settings)
+
+    assert seen == [True, True, True, True]

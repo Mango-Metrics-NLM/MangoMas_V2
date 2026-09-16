@@ -109,6 +109,69 @@ def _run_git(args: list[str]) -> str:
     return result.stdout
 
 
+def _policy_blob_path(pyproject_path: Path) -> str:
+    """Return *pyproject_path* as a cwd-relative POSIX path for ``git show``.
+
+    ``git show <ref>:./<path>`` resolves relative to the current directory, so
+    the gate works from a subdirectory as well as the repo root. An absolute
+    path outside the tree (or on another drive, on Windows) cannot be made
+    relative; fall back to the path as given and let git report it.
+    """
+    try:
+        relative = Path(pyproject_path).resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        relative = Path(pyproject_path)
+    return relative.as_posix()
+
+
+def _read_blob(ref: str, blob_path: str) -> str | None:
+    """Return ``<ref>:<blob_path>``'s contents, or ``None`` if git cannot."""
+    try:
+        return _run_git(["show", f"{ref}:./{blob_path}"])
+    except GovernanceConfigError:
+        return None
+
+
+def _load_base_governance(
+    base_ref: str, pyproject_path: Path
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Return the governance policy as it stands on *base_ref*.
+
+    This is the whole point of ADR-0030. Reading the policy out of the working
+    tree lets a single branch both remove a file from ``protected_paths`` and
+    edit it, marker-free: the gate would be checking the candidate change
+    against a policy the candidate change controls. The base ref is state the
+    branch cannot rewrite, so that is what the branch is judged by.
+
+    Falls back to the working tree — never hard-fails — when the base ref has
+    no readable policy, which is the honest outcome for a base branch that
+    predates the table or a clone too shallow to resolve it. The fallback is
+    announced on stderr because a *silent* downgrade would quietly reopen the
+    hole this function exists to close.
+    """
+    blob_path = _policy_blob_path(pyproject_path)
+    blob = _read_blob(base_ref, blob_path)
+    if blob is None:
+        reason = f"{base_ref}:{blob_path} could not be read from git"
+    else:
+        try:
+            policy = _governance.parse_governance(blob, source=f"{base_ref}:{blob_path}")
+        except _governance.GovernanceLoadError as exc:
+            reason = str(exc)
+        else:
+            print(f"Policy source: {base_ref}:{blob_path} ({len(policy[0])} protected paths).")
+            return policy
+
+    print(
+        f"WARNING: {reason}; falling back to the working tree's {pyproject_path}. "
+        "The gate cannot guarantee this branch did not widen its own exemptions.",
+        file=sys.stderr,
+    )
+    policy = _load_governance(pyproject_path)
+    print(f"Policy source: working tree {pyproject_path} ({len(policy[0])} protected paths).")
+    return policy
+
+
 def _changed_files(base_ref: str, head_ref: str) -> list[str]:
     """Return paths changed on *head_ref* since it diverged from *base_ref*."""
     output = _run_git(["diff", "--name-only", f"{base_ref}...{head_ref}"])
@@ -123,7 +186,7 @@ def _commit_messages(base_ref: str, head_ref: str) -> str:
 def check(base_ref: str, head_ref: str, pyproject_path: Path) -> int:
     """Run the gate; return one of the module's ``EXIT_*`` codes."""
     try:
-        protected_paths, marker_aliases = _load_governance(pyproject_path)
+        protected_paths, marker_aliases = _load_base_governance(base_ref, pyproject_path)
         changed = _changed_files(base_ref, head_ref)
         touched_protected = sorted(set(changed) & protected_paths)
         if not touched_protected:
@@ -135,19 +198,26 @@ def check(base_ref: str, head_ref: str, pyproject_path: Path) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT_GIT_ERROR
 
-    matched_marker = _governance.find_breaking_change_marker(messages, marker_aliases)
+    scopes = _governance.find_marker_scopes(messages, marker_aliases, protected_paths)
     print("Protected core contracts changed on this branch:")
     for path in touched_protected:
-        print(f"  - {path}")
+        status = "approved" if scopes.approves(path) else "NOT APPROVED"
+        print(f"  - {path} [{status}]")
 
-    if matched_marker is not None:
-        print(f"Found approval marker {matched_marker!r} in a commit message. OK.")
+    unapproved = [path for path in touched_protected if not scopes.approves(path)]
+    if not unapproved:
+        scope_note = (
+            "an unscoped marker" if scopes.has_unscoped else f"{len(scopes.paths)} scoped marker(s)"
+        )
+        print(f"Approved by {scope_note} in a commit message. OK.")
         return EXIT_OK
 
     print(
-        "FAIL: no commit in this range carries a BREAKING-CHANGE marker.\n"
-        "Add a commit whose message contains 'BREAKING-CHANGE' explaining the "
-        "backwards-compatibility impact of the change above.",
+        "FAIL: these protected paths changed with no approving marker:\n"
+        + "\n".join(f"  - {path}" for path in unapproved)
+        + "\n\nAdd a commit whose message carries, for each path above, either\n"
+        "  BREAKING-CHANGE: <path> - <why this change is deliberate>\n"
+        "or a bare 'BREAKING-CHANGE: <rationale>' to approve every path at once.",
         file=sys.stderr,
     )
     return EXIT_MISSING_MARKER

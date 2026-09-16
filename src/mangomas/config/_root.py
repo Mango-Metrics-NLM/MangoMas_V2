@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     # (mangomas.agents). Default False keeps only built-in providers registered.
     discovery_enabled: bool = False
 
+    # Set to True (MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE=true) to let a
+    # discovered eval plugin replace a built-in scorer/sink/target/source of
+    # the same name. Default False refuses the collision (ADR-0030): those
+    # registries feed the CI quality gate and the regression baseline, so
+    # last-call-wins let an installed package decide whether the gate passes.
+    # Agent discovery has always refused built-in collisions; this closes the
+    # asymmetry without removing the capability.
+    discovery_allow_builtin_override: bool = False
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

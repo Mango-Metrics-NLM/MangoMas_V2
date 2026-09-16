@@ -46,6 +46,12 @@ _FALLBACK_PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
         "src/mangomas/core/tools.py",
         "src/mangomas/errors.py",
         "src/mangomas/registry.py",
+        ".mcp.json",
+        "pyproject.toml",
+        "scripts/_governance.py",
+        "scripts/check_protected_paths.py",
+        "sitecustomize.py",
+        "src/mangomas/harness/governance.py",
     }
 )
 _FALLBACK_BREAKING_CHANGE_MARKER_ALIASES: Final[frozenset[str]] = frozenset(
@@ -75,6 +81,67 @@ def _load_governance(
 
 PROTECTED_PATHS, BREAKING_CHANGE_MARKER_ALIASES = _load_governance()
 BREAKING_CHANGE_MARKER: Final[str] = "BREAKING-CHANGE"
+
+# The files the protected-path mechanism is *itself* made of. A gate whose own
+# definition is editable without leaving a record is a gate the governed tree
+# can quietly retire, so every entry here is expected to appear in
+# :data:`PROTECTED_PATHS` — the containment is asserted by
+# ``tests/harness/test_governance.py``, not assumed.
+#
+# Deliberately narrower than "everything the gate touches". Three files were
+# considered and left out, because a marker requirement on a high-churn file
+# devalues the marker on the six core contracts (a trailer reviewers stop
+# reading governs nothing):
+#
+# * ``Makefile`` and ``.github/workflows/ci.yml`` — they *invoke* the gate but
+#   do not define it, they change with routine CI work, and the control that
+#   actually defends them is branch protection (a required status check),
+#   which lives outside this repository entirely.
+# * ``scripts/lint_agent_frontmatter.py`` — advisory-only by ADR-0021 and the
+#   highest-churn script in the tree; its copy of the fallback set is already
+#   pinned against drift by ``test_scripts_fallback_matches_the_pyproject_table``.
+#
+# The load-bearing control is not this set: it is
+# ``scripts/check_protected_paths.py`` reading the policy from the *base ref*
+# (ADR-0030), so a branch cannot shrink the set it is judged by. This set makes
+# a change to the mechanism visible in ``git log``; that one makes shrinking it
+# ineffective.
+GOVERNANCE_SURFACE: Final[frozenset[str]] = frozenset(
+    {
+        # The policy table itself — the single source of truth every consumer reads.
+        "pyproject.toml",
+        # The authoritative CI gate.
+        "scripts/check_protected_paths.py",
+        # The shared, stdlib-only loader + marker matcher both scripts use.
+        "scripts/_governance.py",
+        # This module: the in-package mirror, and the coverage-visible copy.
+        "src/mangomas/harness/governance.py",
+        # Auto-imported by every interpreter that can see the repo root, and it
+        # mutates PYTEST_ADDOPTS — which carries --cov-fail-under and -k, so an
+        # edit here can disarm the test and coverage gates without touching them.
+        "sitecustomize.py",
+        # Declares the MCP servers a session loads; cloud sessions load them
+        # with no approval step.
+        ".mcp.json",
+    }
+)
+
+
+def unprotected_governance_surface(
+    protected_paths: frozenset[str] | None = None,
+) -> frozenset[str]:
+    """Return the :data:`GOVERNANCE_SURFACE` entries *not* in *protected_paths*.
+
+    Empty is the healthy answer. Returns the offenders rather than a bool so a
+    failing assertion names the files a contributor has to act on, instead of
+    reporting ``False``.
+
+    *protected_paths* defaults to the live :data:`PROTECTED_PATHS`; it is a
+    parameter so a caller can check a *candidate* policy — e.g. the base ref's
+    table — without reimporting the module.
+    """
+    resolved = PROTECTED_PATHS if protected_paths is None else protected_paths
+    return GOVERNANCE_SURFACE - {normalize_path(path) for path in resolved}
 
 
 def normalize_path(path: str) -> str:

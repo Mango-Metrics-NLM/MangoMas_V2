@@ -129,6 +129,12 @@ _FALLBACK_PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
         "src/mangomas/core/tools.py",
         "src/mangomas/errors.py",
         "src/mangomas/registry.py",
+        ".mcp.json",
+        "pyproject.toml",
+        "scripts/_governance.py",
+        "scripts/check_protected_paths.py",
+        "sitecustomize.py",
+        "src/mangomas/harness/governance.py",
     }
 )
 _FALLBACK_BREAKING_CHANGE_MARKER_ALIASES: Final[frozenset[str]] = frozenset(
@@ -650,18 +656,50 @@ def _pre_tool_use_hook(stream: IO[str]) -> int:
     return EXIT_OK
 
 
+# Characters that carry meaning to a shell, or break the one-path-per-line
+# framing `xargs` relies on. Mirrors the intent of
+# ``mango_contracts.proposed_action.SHELL_INTENT_MARKERS``, which refuses shell
+# syntax in a string that is never even executed — this mode's output *is* fed
+# to a pipeline, so it has strictly more reason to be strict.
+#
+# A denylist rather than a path allowlist because legitimate paths are
+# unicode-open-ended; the cost of a false positive is only that one file skips
+# its autofix, which the ``Stop`` hook's ``format-check`` then catches.
+SHELL_UNSAFE_PATH_CHARACTERS: Final[frozenset[str]] = frozenset(";|&`$()<>\n\r\t\"'\\*?!{}[]~")
+
+
+def is_shell_safe_path(path: str) -> bool:
+    """Return whether *path* is free of shell metacharacters and framing breaks."""
+    return not any(char in SHELL_UNSAFE_PATH_CHARACTERS for char in path)
+
+
 def _post_tool_use_emit_path(stream: IO[str]) -> int:
     """Print the edited file's path (or nothing). Always returns ``EXIT_OK``.
 
     Companion to the ``PostToolUse`` ruff-autofix hook, which had the same
     ``$CLAUDE_TOOL_INPUT_path`` defect. ``.claude/settings.json`` pipes this
-    mode's stdout into ``xargs -r python -m ruff check --fix`` — ``xargs -r``
+    mode's stdout into ``xargs -r python -m ruff ...`` — ``xargs -r``
     treats empty input as "run nothing", so a payload naming no path is a
     silent no-op rather than an error.
+
+    A path carrying shell syntax is dropped rather than emitted (ADR-0030).
+    The path comes from the model's own tool call, and a model can be steered
+    by file content it has read, so it is not trusted input. The hook's
+    pipeline no longer wraps it in ``sh -c``, which is the primary fix; this is
+    the defence that survives someone reintroducing a shell later.
     """
     path = _extract_tool_path(_read_hook_payload(stream))
-    if path:
-        print(path)
+    if not path:
+        return EXIT_OK
+    if not is_shell_safe_path(path):
+        # stderr, not stdout: stdout is the pipeline's input. A hook mode must
+        # never fail the calling process, so this notices without exiting.
+        print(
+            f"lint_agent_frontmatter: refusing to emit path with shell syntax: {path!r}",
+            file=sys.stderr,
+        )
+        return EXIT_OK
+    print(path)
     return EXIT_OK
 
 

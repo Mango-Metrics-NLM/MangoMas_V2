@@ -639,6 +639,59 @@ def test_post_tool_use_emit_path_prints_nothing_for_empty_payload(
     assert capsys.readouterr().out == ""
 
 
+# ── --emit-path feeds a shell pipeline; it must not emit shell syntax ────────
+
+
+@pytest.mark.parametrize(
+    "hostile_path",
+    [
+        'src/a.py"; id; echo "',
+        "src/a.py; rm -f /tmp/x",
+        "src/a.py | tee /tmp/x",
+        "src/a.py && id",
+        "src/$(id).py",
+        "src/`id`.py",
+        "src/a.py\nsrc/b.py",
+    ],
+    ids=["quote-break", "semicolon", "pipe", "and", "dollar-paren", "backtick", "newline"],
+)
+def test_emit_path_rejects_shell_metacharacters(
+    hostile_path: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A path carrying shell syntax must never reach stdout.
+
+    ``.claude/settings.json`` pipes this mode's stdout into ``xargs``, and the
+    path it emits is chosen by the model — which can be steered by file content
+    it has read. Defence in depth beside dropping the ``sh -c`` wrapper: even
+    if a future edit reintroduces a shell in the pipeline, nothing shell-shaped
+    is available to it.
+    """
+    payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": hostile_path}})
+
+    result = linter._post_tool_use_emit_path(StringIO(payload))
+
+    assert result == linter.EXIT_OK, "a hook mode must never fail the calling process"
+    assert capsys.readouterr().out == ""
+
+
+def test_emit_path_still_emits_an_ordinary_path_with_spaces(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Rejection must not degrade into refusing every real path.
+
+    The other direction (``mango-mutation-proof``): a guard that emitted
+    nothing at all would pass every case above while silently switching the
+    ruff autofix hook off for the whole repo.
+    """
+    ordinary = "src/mangomas/some dir/chat.py"
+    payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": ordinary}})
+
+    result = linter._post_tool_use_emit_path(StringIO(payload))
+
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out.strip() == ordinary
+
+
 # ── Subprocess-level: the real invocation shape .claude/settings.json uses ───
 
 

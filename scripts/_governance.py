@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -29,34 +30,57 @@ class GovernanceLoadError(Exception):
     """Raised when ``[tool.mangomas.governance]`` is missing, empty, or malformed."""
 
 
-def load_governance(
-    pyproject_path: Path = DEFAULT_PYPROJECT_PATH,
-) -> tuple[frozenset[str], frozenset[str]]:
-    """Return ``(protected_paths, marker_aliases)`` from *pyproject_path*.
+def parse_governance(toml_text: str, *, source: str) -> tuple[frozenset[str], frozenset[str]]:
+    """Return ``(protected_paths, marker_aliases)`` parsed from *toml_text*.
 
-    Raises :class:`GovernanceLoadError` on any read/parse/shape failure —
-    callers decide whether to fail loudly (the CI gate) or fall back to
-    safe defaults with a logged warning (the advisory hook).
+    Split out from :func:`load_governance` so the same shape validation serves
+    a policy that never touches the filesystem — ``scripts/check_protected_paths.py``
+    reads the base ref's table out of ``git show`` (ADR-0030), and a policy
+    read from a git blob must be validated exactly as strictly as one read
+    from disk.
+
+    *source* is used only to name the origin in error messages ("which
+    pyproject did this come from?"), which is the difference between a
+    debuggable CI failure and a puzzling one.
+
+    Raises :class:`GovernanceLoadError` on any parse/shape failure — callers
+    decide whether to fail loudly (the CI gate) or fall back to safe defaults
+    with a logged warning (the advisory hook).
     """
     try:
-        raw = pyproject_path.read_bytes()
-    except OSError as exc:
-        raise GovernanceLoadError(f"cannot read {pyproject_path}: {exc}") from exc
-    try:
-        doc = tomllib.loads(raw.decode("utf-8"))
+        doc = tomllib.loads(toml_text)
     except tomllib.TOMLDecodeError as exc:
-        raise GovernanceLoadError(f"malformed TOML in {pyproject_path}: {exc}") from exc
+        raise GovernanceLoadError(f"malformed TOML in {source}: {exc}") from exc
     try:
         governance = doc["tool"]["mangomas"]["governance"]
         protected_paths = frozenset(governance["protected_paths"])
         marker_aliases = frozenset(governance["breaking_change_marker_aliases"])
     except (KeyError, TypeError) as exc:
         raise GovernanceLoadError(
-            f"[tool.mangomas.governance] missing or malformed key: {exc}"
+            f"[tool.mangomas.governance] in {source} missing or malformed key: {exc}"
         ) from exc
     if not protected_paths or not marker_aliases:
-        raise GovernanceLoadError("[tool.mangomas.governance] tables must be non-empty")
+        raise GovernanceLoadError(
+            f"[tool.mangomas.governance] tables in {source} must be non-empty"
+        )
     return protected_paths, marker_aliases
+
+
+def load_governance(
+    pyproject_path: Path = DEFAULT_PYPROJECT_PATH,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Return ``(protected_paths, marker_aliases)`` from *pyproject_path*.
+
+    Thin filesystem wrapper over :func:`parse_governance`; the validation
+    lives there so a git-blob policy cannot drift from a file policy.
+
+    Raises :class:`GovernanceLoadError` on any read/parse/shape failure.
+    """
+    try:
+        raw = pyproject_path.read_bytes()
+    except OSError as exc:
+        raise GovernanceLoadError(f"cannot read {pyproject_path}: {exc}") from exc
+    return parse_governance(raw.decode("utf-8"), source=str(pyproject_path))
 
 
 def find_breaking_change_marker(text: str, marker_aliases: frozenset[str]) -> str | None:
@@ -81,3 +105,72 @@ def find_breaking_change_marker(text: str, marker_aliases: frozenset[str]) -> st
         if pattern.search(text):
             return marker
     return None
+
+
+@dataclass(frozen=True)
+class MarkerScopes:
+    """Which protected paths a range's approval markers cover.
+
+    ``paths`` are the protected paths named by a scoped
+    ``BREAKING-CHANGE: <path> - <rationale>`` trailer. ``has_unscoped`` records
+    whether any marker named no path at all — the historical form, which still
+    approves everything, so adopting the scoped form is additive rather than a
+    cliff for branches carrying older markers.
+    """
+
+    paths: frozenset[str]
+    has_unscoped: bool
+
+    def approves(self, path: str) -> bool:
+        """Return whether *path*'s change is approved by these markers."""
+        return self.has_unscoped or normalize_repo_path(path) in self.paths
+
+
+def normalize_repo_path(path: str) -> str:
+    """Return *path* with Windows separators folded and a leading ``./`` stripped.
+
+    The policy table is hand-edited on both Windows and POSIX, and a commit
+    message may name either style, so comparisons happen on one canonical form.
+    Mirrors ``mangomas.harness.governance.normalize_path`` — kept separate for
+    the same reason the rest of this module is (``scripts/`` must not import
+    ``mangomas``), and deliberately does not touch a leading ``.`` beyond that
+    prefix so ``.mcp.json`` survives.
+    """
+    normalized = path.replace("\\", "/")
+    return normalized[2:] if normalized.startswith("./") else normalized
+
+
+def find_marker_scopes(
+    text: str, marker_aliases: frozenset[str], known_paths: frozenset[str]
+) -> MarkerScopes:
+    """Return the :class:`MarkerScopes` the markers in *text* establish.
+
+    A marker line is **scoped** when the first token after its colon is a path
+    in *known_paths*, and **unscoped** otherwise. That split is what keeps the
+    historical ``BREAKING-CHANGE: reworked the error taxonomy`` approving
+    everything while ``BREAKING-CHANGE: src/mangomas/errors.py - agreed`` binds
+    to one file.
+
+    The discriminator is deliberately "the first token is a *known* protected
+    path" rather than "looks path-ish". The looser test has a bad failure
+    mode in the safe direction and a worse one in the unsafe direction: a
+    mis-typed path would be recognised as a scope, silently approving nothing
+    and failing the gate confusingly, while this way a typo reads as prose and
+    approves broadly — visibly, in a line a reviewer can see. Only an exact
+    protected path narrows an approval, so narrowing is always deliberate.
+    """
+    scoped: set[str] = set()
+    has_unscoped = False
+    for marker in marker_aliases:
+        pattern = re.compile(
+            rf"^\+?[ \t]*{re.escape(marker)}[ \t]*(?::(?P<detail>.*))?$", re.MULTILINE
+        )
+        for match in pattern.finditer(text):
+            detail = (match.group("detail") or "").strip()
+            first_token = detail.split(maxsplit=1)[0].rstrip(",;") if detail else ""
+            candidate = normalize_repo_path(first_token)
+            if candidate in known_paths:
+                scoped.add(candidate)
+            else:
+                has_unscoped = True
+    return MarkerScopes(paths=frozenset(scoped), has_unscoped=has_unscoped)
