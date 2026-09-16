@@ -3,13 +3,34 @@
 - **Branch:** `claude/workflow-governance-audit-c6otlb` (plan only); one branch per PR block below
 - **Date:** 2026-09-16
 - **Target release:** rolling
-- **Status:** Draft
+- **Status:** In progress
 - **Specs:** spec-0032 … spec-0035 — **none written yet.** Each PR block below
   names the spec it needs; the spec lands before that block's code, per
   `CLAUDE.md` § Spec-Driven Development.
 - **ADRs:** ADR-0030 (base-ref policy evaluation), ADR-0031 (turn record
   extension), ADR-0032 (workflow run ledger — deferred). None written yet.
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md`
+
+## Status — 2026-09-16
+
+**Delivered:** PR A in full (A0–A5), PR B milestone B0 plus the versioned/typed
+half of B1, PR C milestones C0–C2, PR D in full (D0–D4). `make gate` green at
+every commit (2822 tests).
+
+**Outstanding, and why:**
+
+- **B1 (identity columns)** — `schema_version`, `status`, `error_code` and
+  `error` landed; `run_id`, `task_id`, `trace_id`, `model` and `actor` did not.
+  The record is versioned and records failures, but still cannot be *joined*
+  to a `CognitiveSignal` or answer "which model produced this?".
+- **B2 (thread `run_id`/`task_id` from the edge)** — not started; depends on
+  the identity columns above.
+- **B3 (actor)** — still blocked on the per-principal auth decision, as
+  recorded below. D1 shipped the honest interim.
+- **C3 (give `ProposedAction` a producer)** — deliberately not started. Its
+  idempotency key derives from `run_id`/`task_id`, which are not real until
+  B2. Wiring it now would mint stable-looking keys over per-call UUIDs, which
+  is worse than leaving the primitive unused.
 
 ## Executive summary
 
@@ -47,7 +68,7 @@ swallows real code (`test_no_exclude_pattern_swallows_real_code`). Nothing does
 this for the protected-path gate. PR A is that test file's discipline, applied
 to governance.
 
-### Milestone A0 — Protect the policy and the verifier ✅ *(not started)*
+### Milestone A0 — Protect the policy and the verifier ✅
 
 - **Failing test first:** `tests/harness/test_governance.py` —
   `test_the_governance_surface_protects_itself`, parametrised over the
@@ -69,7 +90,7 @@ to governance.
   externally authoritative — a branch that carries the marker can still shrink
   the set. A1 is what closes that.
 
-### Milestone A1 — Evaluate the policy against the base ref
+### Milestone A1 — Evaluate the policy against the base ref ✅
 
 - **Failing test first:** `tests/test_check_protected_paths.py` —
   `test_gate_uses_the_base_refs_policy_not_the_heads`: build a two-commit
@@ -84,7 +105,7 @@ to governance.
 - Needs **ADR-0030**: this changes what the gate's input *is*, which is a
   boundary.
 
-### Milestone A2 — Make the `sitecustomize` guard two-sided
+### Milestone A2 — Make the `sitecustomize` guard two-sided ✅
 
 - **Failing test first:** in `tests/regression/test_origin_defects.py`, replace
   the `in` assertion with an exact-token assertion, then run the
@@ -99,7 +120,7 @@ to governance.
   and coverage gates for every invocation including CI's `make test`.
 - Assert the injected value contains *only* the expected tokens.
 
-### Milestone A3 — Refuse built-in override in eval plugin discovery
+### Milestone A3 — Refuse built-in override in eval plugin discovery ✅
 
 - **Failing test first:** `tests/eval/test_discovery.py` —
   `test_plugin_cannot_override_a_builtin_scorer`: register an entry point named
@@ -114,7 +135,7 @@ to governance.
   (`MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE`, default `false`) so the
   documented last-call-wins behaviour is not removed, only closed by default.
 
-### Milestone A4 — Scope the `BREAKING-CHANGE` trailer to a path
+### Milestone A4 — Scope the `BREAKING-CHANGE` trailer to a path ✅
 
 - **Failing test first:** `tests/test_check_protected_paths.py` —
   `test_marker_naming_one_file_does_not_approve_another`: two protected files
@@ -128,7 +149,7 @@ to governance.
 - Update `scripts/_governance.py` and its `harness/governance.py` mirror
   together; the fallback-drift pins enforce that they stay in step.
 
-### Milestone A5 — Stop interpolating a model-chosen path into a shell
+### Milestone A5 — Stop interpolating a model-chosen path into a shell ✅
 
 - **Failing test first:** `tests/test_lint_agent_frontmatter.py` —
   `test_emit_path_rejects_shell_metacharacters`: a payload whose
@@ -155,7 +176,7 @@ and 9 all reduce to the same missing thing: nothing durable describes a run.
 `(ts, agent, request, response, tenant)` — no id linking it to anything, no
 model, no actor, no status.
 
-### Milestone B0 — Additive failure write on `TurnRepository`
+### Milestone B0 — Additive failure write on `TurnRepository` ✅
 
 - **Failing test first:** `tests/test_orchestrator.py` —
   `test_a_failed_dispatch_is_persisted`: a `FakeLLM` that raises, assert the
@@ -170,7 +191,7 @@ model, no actor, no status.
 - `tests/fakes.py` `FakeRepository` grows with the Protocol
   (`mango-fake-builder`).
 
-### Milestone B1 — Schema version and join keys on the turn row
+### Milestone B1 — Schema version and join keys on the turn row — **partial**
 
 - **Failing test first:** `tests/adapters/storage/test_sqlite.py` —
   `test_turn_row_carries_run_and_model_identity`: assert a saved row exposes
@@ -213,7 +234,7 @@ Every primitive this block needs is already built, tested, and unused. This is
 wiring, not design — which is why it is cheap and why leaving it undone is hard
 to justify.
 
-### Milestone C0 — Enforce expiry at the sink boundary
+### Milestone C0 — Enforce expiry at the sink boundary ✅
 
 - **Failing test first:** `tests/cognitive/test_sink.py` —
   `test_expired_signal_is_rejected`: build a signal with `created_at` in the
@@ -221,7 +242,7 @@ to justify.
   (`cognitive_signal.py:172-174`) and has **zero callers** in `src/`.
 - **Depends on:** nothing — parallel-safe.
 
-### Milestone C1 — TTL becomes an operator tunable
+### Milestone C1 — TTL becomes an operator tunable ✅
 
 - **Failing test first:** `tests/config/test_signal.py` —
   `test_ttl_seconds_is_configurable`. Red today: `SignalSettings`
@@ -232,7 +253,7 @@ to justify.
 - `MANGOMAS_SIGNAL__TTL_SECONDS`, bounded by the envelope's own
   `1 … MAX_TTL_SECONDS`, per the `mango-config` skill.
 
-### Milestone C2 — Dedupe on `signal_id`
+### Milestone C2 — Dedupe on `signal_id` ✅
 
 - **Failing test first:** `tests/cognitive/test_sink.py` —
   `test_replayed_signal_is_written_once`: emit the same envelope twice, assert
@@ -261,7 +282,7 @@ Each item here is a place where a name promises a control the code does not
 implement. Cheap to fix, and until fixed a reader will reasonably over-trust the
 system. Documentation-only items ship first because they carry no risk.
 
-### Milestone D0 — Say what `policy_snapshot_hash` is
+### Milestone D0 — Say what `policy_snapshot_hash` is ✅
 
 - **Failing test first:** none — documentation. Verified by review.
 - **Depends on:** nothing.
@@ -273,7 +294,7 @@ system. Documentation-only items ship first because they carry no risk.
   trusting a self-signed assertion.
 - The real control — digesting an actual policy file — is deferred below.
 
-### Milestone D1 — Say what tenancy is not
+### Milestone D1 — Say what tenancy is not ✅
 
 - **Failing test first:** none — documentation.
 - **Depends on:** nothing.
@@ -284,7 +305,7 @@ system. Documentation-only items ship first because they carry no risk.
   `src/mangomas/tenancy.py` and the CLAUDE.md config table: **storage
   partitioning, not access control.**
 
-### Milestone D2 — Gate inline workflow definitions
+### Milestone D2 — Gate inline workflow definitions ✅
 
 - **Failing test first:** `tests/api/test_workflows_routes.py` —
   `test_inline_definition_is_refused_when_disallowed`. Red today.
@@ -295,7 +316,7 @@ system. Documentation-only items ship first because they carry no risk.
   switch. Add `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION`, default `true` to
   preserve behaviour, flipped to `false` in `deploy/`.
 
-### Milestone D3 — Model allowlist
+### Milestone D3 — Model allowlist ✅
 
 - **Failing test first:** `tests/composition/test_llm.py` —
   `test_model_override_outside_the_allowlist_is_refused`. Red today:
@@ -306,7 +327,7 @@ system. Documentation-only items ship first because they carry no risk.
   the default. Validate in `build_agent_llm_overrides`
   (`composition/llm.py:92-103`) and at base-client construction.
 
-### Milestone D4 — Effects metadata on `ToolSpec`
+### Milestone D4 — Effects metadata on `ToolSpec` ✅
 
 - **Failing test first:** `tests/test_tools.py` —
   `test_tool_spec_declares_effects`. Red today.

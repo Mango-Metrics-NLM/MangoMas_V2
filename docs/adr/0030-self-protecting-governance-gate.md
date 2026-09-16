@@ -85,6 +85,16 @@ Only a GitHub-side **required status check** does, and that lives outside this
 repository. Decision 2 is visibility, not prevention; decision 1 is the part
 that changes outcomes.
 
+**A sharp edge worth naming.** Because the policy comes from the base ref, a
+commit that *widens* `protected_paths` and names one of the newly-protected
+files in its marker is judged against a base policy that does not contain that
+path yet. The marker therefore reads as prose and approves every touched path
+in the range, rather than binding to one. That is the intended direction of
+failure — broad and visible in a line a reviewer can read, never silently
+narrowed to nothing — and it is why widening the protected set is a reviewable
+event in its own right. Pinned by
+`test_a_marker_naming_a_path_the_base_does_not_protect_reads_as_unscoped`.
+
 **Deliberate exclusions from `GOVERNANCE_SURFACE`.** `Makefile`,
 `.github/workflows/ci.yml` and `scripts/lint_agent_frontmatter.py` are *not*
 protected. They invoke or mirror the gate but do not define it, and they change
