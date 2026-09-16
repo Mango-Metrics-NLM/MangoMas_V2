@@ -83,6 +83,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `Idempotency-Key: <signal_id>` so a retry below this layer (a proxy, a client
   retry) can be collapsed by the ingest endpoint.
 
+  A failed write **releases** its reservation. Reserving before the write is
+  what makes two concurrent emits of one id resolve to a single write, but a
+  reservation that outlived a failed write turned a transient disk or network
+  error into permanent loss — the retry read as a replay and dropped. A control
+  against duplication must not become a cause of disappearance.
+
   These stop accidental duplication and stale reuse, **not an adversary**: the
   envelope is unsigned, so a forged one is still indistinguishable from a
   genuine one. The sink module says so where a reader would form the belief.
@@ -104,9 +110,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `composition.recording._FailureRecordingMixin` wraps both concrete
   orchestrators — no edit to the protected `core/orchestrator.py`. Recording is
   best-effort: a broken repository is logged and never masks the caller's
-  original error, and a **routing** error (`AgentNotFound`) is not recorded at
-  all — nothing ran, so there is no turn, and recording it would let any caller
-  inflate the turn store by requesting agents that do not exist.
+  original error, and a **pre-execution** failure is not recorded at all —
+  a routing error (`AgentNotFound`) or an invalid `max_steps`. Nothing ran, so
+  there is no turn, and recording either would let any caller inflate the turn
+  store. A row migrated from a pre-column database carries
+  `TURN_SCHEMA_VERSION_LEGACY`, not the current version, so the field can
+  actually answer the question it exists for.
 
 - **The turn record is versioned and typed.** Rows gain `schema_version`,
   `status`, `error_code` and `error`. `adapters/storage/_schema.py` is the one

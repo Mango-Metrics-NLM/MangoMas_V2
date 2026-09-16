@@ -12,8 +12,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from mangomas.adapters import storage
 from mangomas.adapters.storage import SQLiteRepository
-from mangomas.adapters.storage._schema import TURN_SCHEMA_VERSION, TurnStatus
+from mangomas.adapters.storage._schema import (
+    TURN_SCHEMA_VERSION,
+    TURN_SCHEMA_VERSION_LEGACY,
+    TurnStatus,
+)
 from mangomas.adapters.storage.base import FailureRecordingRepository, TurnRepository
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 from tests.constants import IN_MEMORY_SQLITE_URL
@@ -111,3 +116,42 @@ async def test_a_pre_existing_table_is_migrated_in_place(tmp_path: Path) -> None
         assert rows[0]["error"] is None
     finally:
         repo.close()
+
+
+async def test_a_migrated_row_is_distinguishable_from_a_new_one(tmp_path: Path) -> None:
+    """A legacy row must not claim the current schema version.
+
+    The migration's column DEFAULT is what pre-existing rows adopt. Defaulting
+    it to ``TURN_SCHEMA_VERSION`` would stamp a row written before the column
+    existed with the same version as one written by this build — leaving the
+    field unable to answer the only question it exists for.
+    """
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE turns (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, "
+        "agent TEXT NOT NULL, request TEXT NOT NULL, response TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO turns (ts, agent, request, response) VALUES ('t', 'chat', '{}', '{}')"
+    )
+    conn.commit()
+    conn.close()
+
+    repo = SQLiteRepository(f"sqlite:///{db}")
+    try:
+        await repo.save_turn("chat", _request(), _response())
+        rows = await repo.list_turns()
+
+        by_agent = {row["id"]: row["schema_version"] for row in rows}
+        assert by_agent[1] == TURN_SCHEMA_VERSION_LEGACY, "the migrated row claims a newer schema"
+        assert by_agent[2] == TURN_SCHEMA_VERSION, "the new row did not stamp the current schema"
+        assert TURN_SCHEMA_VERSION_LEGACY != TURN_SCHEMA_VERSION
+    finally:
+        repo.close()
+
+
+def test_the_storage_facade_exports_the_failure_protocol() -> None:
+    """The documented package-level import must work, not just ``base``."""
+    assert storage.FailureRecordingRepository is FailureRecordingRepository
+    assert "FailureRecordingRepository" in storage.__all__

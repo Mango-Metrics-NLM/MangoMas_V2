@@ -26,6 +26,14 @@ from typing import Final
 # answer (governance audit §6).
 TURN_SCHEMA_VERSION: Final[int] = 2
 
+# Stamped on rows that predate the record columns. The migration's column
+# DEFAULT is what existing rows adopt, so it must NOT be TURN_SCHEMA_VERSION:
+# that would give a legacy row the same version as one written by this build
+# and make the field unable to answer the only question it exists for. Every
+# INSERT binds TURN_SCHEMA_VERSION explicitly, so this default reaches legacy
+# rows and nothing else.
+TURN_SCHEMA_VERSION_LEGACY: Final[int] = 1
+
 
 class TurnStatus(StrEnum):
     """Terminal outcome of one dispatch.
@@ -58,8 +66,8 @@ class TurnColumn:
 TURN_RECORD_COLUMNS: Final[tuple[TurnColumn, ...]] = (
     TurnColumn(
         name="schema_version",
-        sqlite_type=f"INTEGER NOT NULL DEFAULT {TURN_SCHEMA_VERSION}",
-        postgres_type=f"INTEGER NOT NULL DEFAULT {TURN_SCHEMA_VERSION}",
+        sqlite_type=f"INTEGER NOT NULL DEFAULT {TURN_SCHEMA_VERSION_LEGACY}",
+        postgres_type=f"INTEGER NOT NULL DEFAULT {TURN_SCHEMA_VERSION_LEGACY}",
     ),
     TurnColumn(
         # Pre-existing rows default to ``ok`` because that is what they were:
@@ -118,6 +126,7 @@ def postgres_column_ddl(column: TurnColumn) -> str:
 __all__ = [
     "TURN_RECORD_COLUMNS",
     "TURN_SCHEMA_VERSION",
+    "TURN_SCHEMA_VERSION_LEGACY",
     "TURN_SELECT_COLUMNS",
     "TurnColumn",
     "TurnStatus",

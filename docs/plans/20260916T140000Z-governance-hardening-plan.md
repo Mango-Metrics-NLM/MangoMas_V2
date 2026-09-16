@@ -7,15 +7,18 @@
 - **Specs:** spec-0032 … spec-0035 — **none written yet.** Each PR block below
   names the spec it needs; the spec lands before that block's code, per
   `CLAUDE.md` § Spec-Driven Development.
-- **ADRs:** ADR-0030 (base-ref policy evaluation), ADR-0031 (turn record
-  extension), ADR-0032 (workflow run ledger — deferred). None written yet.
+- **ADRs written:** ADR-0030 (self-protecting governance gate), ADR-0031
+  (durable turn record), ADR-0032 (signal expiry and replay resistance),
+  ADR-0033 (boundary honesty).
+- **ADR still owed:** the deferred **workflow run ledger** has no number
+  allocated — it is *not* ADR-0032, which this work used for signal expiry.
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md`
 
 ## Status — 2026-09-16
 
 **Delivered:** PR A in full (A0–A5), PR B milestone B0 plus the versioned/typed
 half of B1, PR C milestones C0–C2, PR D in full (D0–D4). `make gate` green at
-every commit (2822 tests).
+every commit.
 
 **Outstanding, and why:**
 
@@ -346,9 +349,11 @@ system. Documentation-only items ship first because they carry no risk.
 
 - **Workflow run ledger** (`workflow_runs` / `workflow_steps` tables, node ids
   on `workflow/graph.py`, a persisting `NodeExecutor` decorator). The complete
-  answer to audit §1, and a design change, not a wiring change. Needs
-  **ADR-0032** and a spec before any code. PR B delivers most of the audit
-  value at a fraction of the cost; re-open this only against that ADR.
+  answer to audit §1, and a design change, not a wiring change. Needs **its own
+  ADR** — the number is deliberately not allocated here, because ADR-0032 went
+  to signal expiry and a placeholder that drifts is worse than none — and a
+  spec before any code. PR B delivers most of the audit value at a fraction of
+  the cost; re-open this only against that ADR.
 - **Per-principal credentials** (subject, scopes, audience, expiry) replacing
   the single shared bearer. Revisiting **ADR-0014**, which chose the shared-token
   seam deliberately. B3 is blocked on this; D1 is the honest interim.

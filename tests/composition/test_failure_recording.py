@@ -10,12 +10,18 @@ and behaviour tests against a hand-assembled subclass cannot see it.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from mangomas.adapters.storage._schema import TurnStatus
 from mangomas.composition.builder import _Orchestrator
 from mangomas.composition.harness import _HarnessOrchestrator
-from mangomas.composition.recording import UNTYPED_ERROR_CODE, _FailureRecordingMixin
+from mangomas.composition.recording import (
+    MIN_MAX_STEPS,
+    UNTYPED_ERROR_CODE,
+    _FailureRecordingMixin,
+)
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 from mangomas.errors import AgentNotFound, LLMTimeout
@@ -181,3 +187,38 @@ async def test_an_error_raised_inside_an_agent_is_still_recorded() -> None:
     rows = await repo.list_turns()
     assert len(rows) == 1
     assert rows[0]["error_code"] == UNTYPED_ERROR_CODE
+
+
+async def test_an_invalid_max_steps_is_not_recorded_as_a_turn() -> None:
+    """A caller-argument error is not a turn either.
+
+    ``Orchestrator.dispatch`` rejects ``max_steps < 1`` before it looks up the
+    agent, so nothing is dispatched. Recording it would reopen the same
+    write-amplification ``NON_EXECUTION_ERRORS`` exists to close.
+    """
+    repo = FakeRepository()
+    orch = _orchestrator(_OkAgent(), repo)
+
+    with pytest.raises(ValueError, match="max_steps"):
+        await orch.dispatch("fine", _request(), max_steps=0)
+
+    assert await repo.list_turns() == []
+
+
+def test_the_mixin_and_the_orchestrator_agree_on_the_max_steps_bound() -> None:
+    """Pin the deliberate duplication of the ``max_steps`` lower bound.
+
+    The mixin re-checks the bound so the error is raised *outside* its
+    recording try. Discriminating on the exception type instead would be wrong:
+    a ``ValueError`` from inside an agent's ``handle`` is an execution failure
+    and must still be recorded. The cost of that choice is one duplicated
+    constant, so this asserts the two cannot drift apart silently — if
+    ``Orchestrator``'s bound moves, the mixin would start recording a turn the
+    orchestrator rejects, or reject one it accepts.
+    """
+    source = inspect.getsource(Orchestrator.dispatch)
+
+    assert f"max_steps < {MIN_MAX_STEPS}" in source, (
+        "Orchestrator.dispatch no longer rejects max_steps below "
+        f"{MIN_MAX_STEPS}; composition.recording.MIN_MAX_STEPS must follow it"
+    )

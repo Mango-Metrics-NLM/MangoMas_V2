@@ -397,7 +397,6 @@ async def test_save_turn_translates_postgres_error() -> None:
 # ── list_turns ────────────────────────────────────────────────────────────────
 
 
-@_requires_asyncpg
 def _fake_row(**overrides: Any) -> dict[str, Any]:
     """Build a fake asyncpg row carrying every column the real SELECT returns.
 
@@ -423,6 +422,7 @@ def _fake_row(**overrides: Any) -> dict[str, Any]:
     return row
 
 
+@_requires_asyncpg
 async def test_list_turns_happy_path() -> None:
     """list_turns returns dicts with the expected keys."""
     ts = datetime.now(UTC)

@@ -49,6 +49,9 @@ UNTYPED_ERROR_CODE: str = "unhandled_error"
 # process.
 NON_EXECUTION_ERRORS: Final[tuple[type[Exception], ...]] = (AgentNotFound,)
 
+# The lower bound ``Orchestrator.dispatch`` enforces on ``max_steps``.
+MIN_MAX_STEPS: Final[int] = 1
+
 # The repository method this mixin needs. Probed with ``hasattr`` rather than
 # ``isinstance`` against the Protocol: a runtime_checkable Protocol check is
 # method-name-based anyway, and this keeps a third-party backend that satisfies
@@ -78,6 +81,18 @@ class _FailureRecordingMixin:
         the subclass that sits above it in the MRO, and it would silently drop
         a keyword a future dispatch grows.
         """
+        # Mirrors ``Orchestrator.dispatch``'s own argument check, performed
+        # *outside* the recording try. A caller passing max_steps < 1 is an
+        # argument error: nothing is dispatched, so it is not a turn, and
+        # recording it would reopen the same write-amplification
+        # NON_EXECUTION_ERRORS exists to close. Discriminating on the exception
+        # type instead would be wrong — a ValueError raised from inside an
+        # agent's handle IS an execution failure and must still be recorded.
+        # The duplication is deliberate and pinned by
+        # ``test_the_mixin_and_the_orchestrator_agree_on_the_max_steps_bound``.
+        if max_steps is not None and max_steps < MIN_MAX_STEPS:
+            raise ValueError("max_steps must be >= 1")
+
         try:
             response: AgentResponse = await super().dispatch(  # type: ignore[misc]
                 agent_name,
@@ -128,4 +143,9 @@ class _FailureRecordingMixin:
             )
 
 
-__all__ = ["NON_EXECUTION_ERRORS", "UNTYPED_ERROR_CODE", "_FailureRecordingMixin"]
+__all__ = [
+    "MIN_MAX_STEPS",
+    "NON_EXECUTION_ERRORS",
+    "UNTYPED_ERROR_CODE",
+    "_FailureRecordingMixin",
+]

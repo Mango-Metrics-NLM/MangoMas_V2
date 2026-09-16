@@ -224,3 +224,80 @@ async def test_http_sink_refuses_an_expired_signal() -> None:
         await HttpCognitiveSink(SIGNAL_MOCK_INGEST_URL, 5.0).emit(_expired_signal())
 
     assert route.call_count == 0
+
+
+# ── A failed write must not poison the guard (Copilot review, PR #64) ────────
+
+
+async def test_a_failed_jsonl_write_does_not_block_the_retry(tmp_path: Path) -> None:
+    """A transient disk failure must not turn dedupe into permanent loss.
+
+    The guard reserves the id *before* writing, which is what makes two
+    concurrent emits resolve to one write. If the write then fails and the
+    reservation stands, the caller's retry is read as a replay and dropped —
+    a control against duplication becoming a cause of disappearance.
+    """
+    path = tmp_path / JSONL_FILENAME
+    sink = JsonlCognitiveSink(path)
+    signal = _signal()
+    calls: list[int] = []
+    real_append = sink._append
+
+    def _fail_once(line: str) -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("no space left on device")
+        real_append(line)
+
+    sink._append = _fail_once  # type: ignore[method-assign]
+
+    with pytest.raises(OSError, match="no space left"):
+        await sink.emit(signal)
+
+    await sink.emit(signal)
+
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 1, "the retry did not land"
+
+
+async def test_a_successful_jsonl_write_still_blocks_a_replay(tmp_path: Path) -> None:
+    """Releasing on failure must not release on success.
+
+    The discriminating direction: a sink that released unconditionally would
+    pass the test above while silently disabling dedupe entirely.
+    """
+    path = tmp_path / JSONL_FILENAME
+    sink = JsonlCognitiveSink(path)
+    signal = _signal()
+
+    await sink.emit(signal)
+    await sink.emit(signal)
+
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+@respx.mock
+async def test_a_failed_http_post_does_not_block_the_retry() -> None:
+    """Same for the network sink: a 5xx must leave the envelope retryable."""
+    route = respx.post(SIGNAL_MOCK_INGEST_URL).mock(
+        side_effect=[httpx.Response(503), httpx.Response(202)]
+    )
+    sink = HttpCognitiveSink(SIGNAL_MOCK_INGEST_URL, 5.0)
+    signal = _signal()
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await sink.emit(signal)
+
+    await sink.emit(signal)
+
+    assert route.call_count == 2, "the retry was swallowed as a replay"
+
+
+def test_release_is_idempotent_and_reopens_the_id() -> None:
+    """``release`` undoes a reservation and tolerates being called twice."""
+    guard = ReplayGuard(max_entries=4)
+
+    assert guard.seen("a") is False
+    guard.release("a")
+    guard.release("a")
+
+    assert guard.seen("a") is False, "the id should be reservable again"

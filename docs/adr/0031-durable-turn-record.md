@@ -2,7 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-16
-- **Spec:** spec-0033 (to be written alongside the remaining PR B milestones)
+- **Spec:** spec-0033 — **not yet written.** This repo's convention is
+  spec-before-code for a non-trivial feature, and this ADR records a
+  persistence-contract change that landed ahead of it. Flagged rather than
+  glossed: the requirements and acceptance criteria owe a spec, and the
+  remaining PR B milestones should not start until it exists.
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md` §1, §6, §7
 
 ## Context
@@ -78,8 +82,9 @@ out of step fails loudly at the first read instead of silently dropping a field.
 
 **What it does not buy.** This records that a dispatch failed; it does not make
 the failure *recoverable*. There is still no step-level state, so a workflow
-that dies part-way cannot be resumed — that is the deferred run-ledger work
-(ADR-0032). It also does not yet carry identity: `run_id`, `task_id`,
+that dies part-way cannot be resumed — that is the deferred run-ledger work,
+which has **no ADR yet** — it needs one before any code, and the number is not
+allocated here so this reference cannot point at the wrong decision. It also does not yet carry identity: `run_id`, `task_id`,
 `trace_id`, `model` and `actor` are the next milestone, and until they land the
 turn record still cannot be joined to a `CognitiveSignal` or answer "which
 model produced this?".

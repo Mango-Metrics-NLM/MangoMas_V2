@@ -78,7 +78,14 @@ class ReplayGuard:
         self._seen: OrderedDict[str, None] = OrderedDict()
 
     def seen(self, signal_id: str) -> bool:
-        """Record *signal_id* and return whether it had already been seen."""
+        """**Reserve** *signal_id* and return whether it had already been seen.
+
+        Reserving inside the check — rather than recording after a successful
+        write — is what makes two concurrent emits of one id resolve to a
+        single write: there is no await between the test and the insert, so the
+        pair is atomic on the event loop. The caller owes a :meth:`release` if
+        the work it reserved for then fails.
+        """
         if signal_id in self._seen:
             # Do NOT refresh recency here: a replayed id must not be able to
             # keep itself alive in the window and evict genuine ids.
@@ -87,6 +94,17 @@ class ReplayGuard:
         if len(self._seen) > self._max_entries:
             self._seen.popitem(last=False)
         return False
+
+    def release(self, signal_id: str) -> None:
+        """Undo a reservation whose write did not land.
+
+        Without this, a guard that reserves before writing turns a *transient*
+        failure — a full disk, a 503, a dropped connection — into permanent
+        loss: the id is remembered, so the caller's retry is read as a replay
+        and dropped silently. A control against duplication must not become a
+        cause of disappearance. Idempotent, so a double release is harmless.
+        """
+        self._seen.pop(signal_id, None)
 
 
 def _reject_if_expired(signal: CognitiveSignal) -> None:
@@ -128,8 +146,14 @@ class JsonlCognitiveSink:
             json.dumps(signal.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
             + "\n"
         )
-        async with self._lock:
-            await asyncio.to_thread(self._append, line)
+        try:
+            async with self._lock:
+                await asyncio.to_thread(self._append, line)
+        except BaseException:
+            # The reservation is only valid if the write landed. Releasing it
+            # keeps a retry of a transient failure from being read as a replay.
+            self._replay_guard.release(str(signal.signal_id))
+            raise
         logger.debug(
             "cognitive signal written",
             extra={"event": "cognitive_sink_jsonl", "path": str(self._path)},
@@ -164,16 +188,24 @@ class HttpCognitiveSink:
             )
             return
         payload = signal.model_dump(mode="json")
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                self._url,
-                json=payload,
-                # So an ingest endpoint can collapse a retry that happened
-                # below this layer (a proxy, a client-side retry) and that the
-                # in-process guard above therefore never sees.
-                headers={IDEMPOTENCY_HEADER: str(signal.signal_id)},
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    self._url,
+                    json=payload,
+                    # So an ingest endpoint can collapse a retry that happened
+                    # below this layer (a proxy, a client-side retry) and that
+                    # the in-process guard above therefore never sees.
+                    headers={IDEMPOTENCY_HEADER: str(signal.signal_id)},
+                )
+                response.raise_for_status()
+        except BaseException:
+            # A 5xx, a timeout or a dropped connection must not poison the
+            # guard: the envelope was not delivered, so a retry has to be
+            # allowed through. The Idempotency-Key above is what protects the
+            # endpoint if the request in fact arrived.
+            self._replay_guard.release(str(signal.signal_id))
+            raise
         logger.debug(
             "cognitive signal posted",
             extra={"event": "cognitive_sink_http", "url": self._url},
