@@ -35,6 +35,8 @@ model: inherit
 INVALID_AGENT_MODEL_VALUES: tuple[str, ...] = (
     "Claude Sonnet 4.5 (copilot)",  # every one of the 19 agents carried this
     "ALLOWLISTED_MODEL",
+    "DECISION_RECORD_DIRS",
+    "DECISION_RECORD_UNNUMBERED_STEMS",
     "LLM_MODEL_ENV",
     "Opus",
     "claude opus 5",
@@ -129,6 +131,21 @@ ALLOWLISTED_MODEL: str = "approved-model"
 # A TTL well under the ceiling and unmistakably not the default, so an
 # assertion cannot pass on a settings object that ignored the override.
 SHORT_SIGNAL_TTL_SECONDS: int = 60
+
+# The numbered decision-record directories, each with a floor on how many
+# numbered records it must hold. The floors are lower bounds on what exists
+# today, not targets: they exist so a directory that moved fails the
+# uniqueness contract instead of passing it vacuously over zero files —
+# the same defect ``MIN_AGENT_FILES`` closes for the frontmatter lint.
+DECISION_RECORD_DIRS: tuple[tuple[str, int], ...] = (
+    ("docs/adr", 25),
+    ("specs", 25),
+)
+
+# Files in those directories that legitimately carry no number.
+DECISION_RECORD_UNNUMBERED_STEMS: frozenset[str] = frozenset(
+    {"_template.md", "TEMPLATE.md", "README.md"}
+)
 SIGNAL_MOCK_INGEST_URL: str = "https://harness.example.test/ingest/cognitive"
 SIGNAL_CUSTOM_POLICY_ID: str = "team.policy"
 PLANNER_SIGNAL_GOAL: str = "ship it"

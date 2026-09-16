@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-09-16
 - **Extends:** ADR-0029 (cognitive execution boundary)
-- **Spec:** spec-0034 (to be written)
+- **Spec:** the *signal expiry and replay resistance* spec — to be written,
+  deliberately unnumbered until it exists (see ADR-0031 on why)
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md` §5, §8
 
 ## Context

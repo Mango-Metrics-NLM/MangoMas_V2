@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-09-16
 - **Revisits:** ADR-0014 (application auth seam), ADR-0012 (workflow HTTP endpoint)
-- **Spec:** spec-0035 (to be written)
+- **Spec:** the *boundary honesty* spec — to be written, deliberately
+  unnumbered until it exists (see ADR-0031 on why)
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md` §3b, §4b, §4c, §9
 
 ## Context

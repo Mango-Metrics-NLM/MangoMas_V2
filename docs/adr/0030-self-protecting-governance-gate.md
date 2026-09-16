@@ -3,7 +3,11 @@
 - **Status:** Accepted
 - **Date:** 2026-09-16
 - **Supersedes / amends:** extends ADR-0021 (protected-path governance contract)
-- **Spec:** spec-0032 (to be written alongside the remaining PR A milestones)
+- **Spec:** the *gate integrity* spec — to be written alongside the remaining
+  PR A milestones, deliberately unnumbered. This line originally reserved
+  `spec-0032`; a concurrent branch has since written that number as an
+  unrelated document, which is the drift ADR-0031 records and
+  `tests/tooling/test_decision_record_numbering.py` now guards against.
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md` §3, §4a, N1, N2, N3
 
 ## Context

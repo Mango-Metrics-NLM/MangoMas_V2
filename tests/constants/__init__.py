@@ -88,6 +88,10 @@ from tests.constants.corpus import CLAUDE_SETTINGS_RELPATH as CLAUDE_SETTINGS_RE
 from tests.constants.corpus import CLAUDE_SKILLS_DIR_RELPATH as CLAUDE_SKILLS_DIR_RELPATH
 from tests.constants.corpus import CORPUS_DOC_RELPATHS as CORPUS_DOC_RELPATHS
 from tests.constants.corpus import CREDENTIALED_MCP_SERVERS as CREDENTIALED_MCP_SERVERS
+from tests.constants.corpus import DECISION_RECORD_DIRS as DECISION_RECORD_DIRS
+from tests.constants.corpus import (
+    DECISION_RECORD_UNNUMBERED_STEMS as DECISION_RECORD_UNNUMBERED_STEMS,
+)
 from tests.constants.corpus import ENV_FLAG_OFF as ENV_FLAG_OFF
 from tests.constants.corpus import ENV_FLAG_ON as ENV_FLAG_ON
 from tests.constants.corpus import ENV_INTERPOLATION_PREFIX as ENV_INTERPOLATION_PREFIX
@@ -388,6 +392,8 @@ __all__ = [
     "CORPUS_DOC_RELPATHS",
     "CREDENTIALED_MCP_SERVERS",
     "DB_URL_ENV",
+    "DECISION_RECORD_DIRS",
+    "DECISION_RECORD_UNNUMBERED_STEMS",
     "DEFAULT_AGENT_NAME",
     "DEFAULT_EMBEDDINGS_BATCH_SIZE",
     "DEFAULT_EMBEDDINGS_DEVICE",

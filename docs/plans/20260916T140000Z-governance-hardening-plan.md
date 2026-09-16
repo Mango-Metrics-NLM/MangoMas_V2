@@ -4,9 +4,13 @@
 - **Date:** 2026-09-16
 - **Target release:** rolling
 - **Status:** In progress
-- **Specs:** spec-0032 … spec-0035 — **none written yet.** Each PR block below
-  names the spec it needs; the spec lands before that block's code, per
-  `CLAUDE.md` § Spec-Driven Development.
+- **Specs:** **none written yet**, and deliberately **unnumbered**. Each PR
+  block below names the spec it needs by slug; the spec lands before that
+  block's code, per `CLAUDE.md` § Spec-Driven Development, and takes the next
+  free integer *at the moment it is created*. An earlier draft of this plan
+  reserved `spec-0032 … spec-0035`; a concurrent branch wrote `spec-0032` and
+  `spec-0033` as entirely different documents while those reservations sat
+  unwritten. A reserved number that drifts is worse than no number at all.
 - **ADRs written:** ADR-0030 (self-protecting governance gate), ADR-0031
   (durable turn record), ADR-0032 (signal expiry and replay resistance),
   ADR-0033 (boundary honesty).
@@ -58,7 +62,7 @@ one-sided guard that would pass while the thing it guards is disabled.
 
 ---
 
-## PR A — Gate integrity (spec-0032)
+## PR A — Gate integrity (spec: *gate integrity*, unnumbered)
 
 The gates are the load-bearing controls. Until they cannot be weakened from
 inside the tree they govern, every item in PR B–D is advisory.
@@ -171,7 +175,7 @@ to governance.
 
 ---
 
-## PR B — The run record (spec-0033)
+## PR B — The run record (spec: *durable turn record*, unnumbered)
 
 **This is the highest-value block in the plan.** Audit sections 1, 2, 6, 7, 8
 and 9 all reduce to the same missing thing: nothing durable describes a run.
@@ -231,7 +235,7 @@ model, no actor, no status.
 
 ---
 
-## PR C — Replay resistance and idempotency (spec-0034)
+## PR C — Replay resistance and idempotency (spec: *replay resistance*, unnumbered)
 
 Every primitive this block needs is already built, tested, and unused. This is
 wiring, not design — which is why it is cheap and why leaving it undone is hard
@@ -279,7 +283,7 @@ to justify.
 
 ---
 
-## PR D — Boundary honesty (spec-0035)
+## PR D — Boundary honesty (spec: *boundary honesty*, unnumbered)
 
 Each item here is a place where a name promises a control the code does not
 implement. Cheap to fix, and until fixed a reader will reasonably over-trust the

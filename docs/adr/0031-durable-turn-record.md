@@ -2,11 +2,15 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-16
-- **Spec:** spec-0033 — **not yet written.** This repo's convention is
-  spec-before-code for a non-trivial feature, and this ADR records a
-  persistence-contract change that landed ahead of it. Flagged rather than
-  glossed: the requirements and acceptance criteria owe a spec, and the
-  remaining PR B milestones should not start until it exists.
+- **Spec:** the *durable turn record* spec — **not yet written, and
+  deliberately unnumbered.** This repo's convention is spec-before-code for a
+  non-trivial feature, and this ADR records a persistence-contract change that
+  landed ahead of it. Flagged rather than glossed: the requirements and
+  acceptance criteria owe a spec, and the remaining PR B milestones should not
+  start until it exists. Reserving a number here would be worse than naming
+  none — an earlier draft reserved `spec-0033`, which a concurrent branch then
+  wrote as something else entirely. The number is allocated when the file is
+  created, from the next free integer at that moment.
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md` §1, §6, §7
 
 ## Context

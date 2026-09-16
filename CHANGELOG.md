@@ -11,6 +11,20 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Decision-record numbering is now enforced.**
+  `tests/tooling/test_decision_record_numbering.py` asserts that no two files
+  in `docs/adr/` or `specs/` claim the same `NNNN` number, that every record
+  matches the documented `NNNN-kebab-slug.md` shape, and that each directory
+  holds at least a floor of records so a moved directory fails loudly instead
+  of passing over zero files.
+
+  `CLAUDE.md` has always stated the rule — "next free integer, mirroring the
+  `docs/adr/` numbering" — with nothing behind it. The failure it permitted is
+  silent: two branches allocate the same number, write different slugs, and
+  git merges both cleanly because the filenames differ. It happened during this
+  work. Gaps stay legal (`docs/adr/` already skips 0006, 0007 and 0022);
+  uniqueness is the property that matters.
+
 - **`ToolSpec.effects`** — a tool can declare whether executing it changes
   anything outside the process (ADR-0033). `ToolEffects` is
   `UNDECLARED` (default) / `READ_ONLY` / `MUTATES`, and `RetrievalTool`
