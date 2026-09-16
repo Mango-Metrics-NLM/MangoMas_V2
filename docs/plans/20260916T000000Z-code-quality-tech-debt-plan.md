@@ -285,6 +285,12 @@ projection changed?  NO
 The global floor also lives in `pyproject.toml`'s `--cov-fail-under`; both move
 in one commit, already enforced at `test_ci_make_parity.py:226`.
 
+**Every row above was run, not assumed.** All 22 proposed floors pass against the
+current coverage data. The mechanism was separately shown able to fire: a floor
+one point above measured exits non-zero (`adapters` at 96 → exit 2, `cli` at 101
+→ exit 1), so a passing row means the code holds the level rather than the gate
+being inert.
+
 ### Milestone C7 — complexity and warning ceilings
 
 - **Mutation:** a scratch function above the threshold; a scratch
