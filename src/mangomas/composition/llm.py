@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from mangomas.adapters.llm import LMStudioClient
 from mangomas.config import AgentSettings, LLMSettings
+from mangomas.errors import ConfigError
 
 if TYPE_CHECKING:
     from mangomas.adapters.llm.base import LLMClient
@@ -95,6 +96,14 @@ def build_agent_llm_overrides(
             continue
         if override_model == base_llm_cfg.model:
             continue
+        if base_llm_cfg.allowed_models and override_model not in base_llm_cfg.allowed_models:
+            # Raised, not skipped: silently ignoring an unapproved override
+            # would run the agent on the *base* model while its configuration
+            # claimed otherwise — a worse outcome than refusing to start.
+            raise ConfigError(
+                f"agent {agent_name!r} requests model {override_model!r}, which is not in "
+                f"MANGOMAS_LLM__ALLOWED_MODELS {base_llm_cfg.allowed_models!r}"
+            )
         if override_model not in built_by_model:
             override_cfg = base_llm_cfg.model_copy(update={"model": override_model})
             built_by_model[override_model] = llm_registry.get(override_cfg.provider)(override_cfg)

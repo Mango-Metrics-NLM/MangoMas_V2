@@ -11,6 +11,39 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION`** (default `true`, ADR-0033).
+  `POST /workflows/run` executes a caller-supplied inline `definition` *even
+  when* `MANGOMAS_WORKFLOW__ENABLED=false` — documented behaviour, but
+  surprising enough to deserve its own switch. Set it `false` to require
+  server-configured graphs only.
+
+- **`MANGOMAS_LLM__ALLOWED_MODELS`** (default empty = unconstrained,
+  ADR-0033). `model_override` was an unconstrained `str | None`: nothing
+  declared which models a deployment approved and nothing rejected one that was
+  not. A non-empty roster must include the base `MANGOMAS_LLM__MODEL` itself —
+  exempting the default would make the allowlist a loophole — and is validated
+  at `Settings` parse so a misconfiguration surfaces at startup. An agent
+  requesting an unlisted model raises `ConfigError` rather than being skipped:
+  silently ignoring it would run the agent on the base model while its
+  configuration claimed otherwise.
+
+### Documentation
+
+- **`policy_snapshot_hash` is a provenance label, not an attestation**
+  (ADR-0033). It is `sha256("policy_id:policy_version")` — a checksum of two
+  environment variables, not a digest of a policy document — and is
+  operator-settable to any 64-hex value. The caveat now lives in
+  `policy_snapshot_hash_for`'s docstring and the `CLAUDE.md` config table,
+  where a reader would otherwise form the belief.
+
+- **Tenancy is storage partitioning, not access control** (ADR-0033).
+  `X-Tenant-ID` is client-asserted with nothing binding it to a credential, and
+  API auth is a single shared bearer with no principal, so any holder of that
+  token can name any tenant. The SQL scoping is real on both backends; the
+  trust boundary is not. Stated in `mangomas.tenancy`'s module docstring and
+  the config table.
+
+
 - **Cognitive-signal expiry is now enforced** (ADR-0032). `CognitiveSignal` has
   carried `created_at`/`expires_at`/`ttl_seconds` and an `is_expired()` since
   1.1.0, and nothing in `src/` ever called it. Both sinks now refuse an

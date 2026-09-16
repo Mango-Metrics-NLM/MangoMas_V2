@@ -50,7 +50,22 @@ def _prefixed_sha256(payload: str) -> str:
 
 
 def policy_snapshot_hash_for(policy_id: str, policy_version: str) -> str:
-    """Digest ``id:version`` with the ``sha256:`` prefix the envelope requires."""
+    """Digest ``id:version`` with the ``sha256:`` prefix the envelope requires.
+
+    **This is a provenance label, not an attestation.** It is a checksum of two
+    environment variables, not a digest of a policy document: it proves nothing
+    about policy *content*, it cannot detect a changed rule, and the emitting
+    process computes it itself. ``MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH`` is
+    also operator-settable to any 64-hex value, so a signal can claim any
+    snapshot.
+
+    A verifier that reads ``policy_snapshot_hash`` as "this signal was produced
+    under approved policy P" is trusting a self-signed assertion. Read it as
+    "the producer said it was running policy P" — useful for correlating and
+    grouping, worthless as authorization. Making it real means digesting an
+    actual policy document; that is deferred until a policy document exists to
+    digest (ADR-0032, ADR-0033).
+    """
     return _prefixed_sha256(f"{policy_id}:{policy_version}")
 
 

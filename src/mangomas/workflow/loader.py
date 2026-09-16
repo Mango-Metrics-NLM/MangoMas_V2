@@ -28,10 +28,23 @@ def resolve_workflow_source(definition: str | None, cfg: WorkflowSettings) -> st
     Single source of the opt-in precedence rule shared by the CLI and the HTTP
     surface: an explicit *definition* runs even when the feature is disabled
     (per-invocation opt-in); otherwise ``cfg.enabled`` **and** a configured
-    ``cfg.definition`` are required. Surface-neutral — callers map the raised
+    ``cfg.definition`` are required.
+
+    That per-invocation opt-in is surprising enough to deserve its own switch
+    (ADR-0033): ``allow_inline_definition=False`` refuses a caller-supplied
+    graph outright, so a deployment can require server-configured graphs only.
+    It defaults to ``True``, preserving today's documented behaviour.
+
+    Surface-neutral — callers map the raised
     :class:`~mangomas.errors.ConfigError` onto their own error surface (HTTP 400 /
     CLI exit 2).
     """
+    if definition is not None and not cfg.allow_inline_definition:
+        raise ConfigError(
+            "inline workflow definitions are disabled "
+            "(MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION=false); "
+            "use the server-configured MANGOMAS_WORKFLOW__DEFINITION instead"
+        )
     if definition is None and not cfg.enabled:
         raise ConfigError(
             "workflow disabled; enable it (MANGOMAS_WORKFLOW__ENABLED=true + "

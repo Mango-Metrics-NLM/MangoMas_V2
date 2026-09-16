@@ -207,6 +207,9 @@ from mangomas.config.harness import (
     HarnessSettings as HarnessSettings,
 )
 from mangomas.config.llm import (
+    DEFAULT_LLM_ALLOWED_MODELS as DEFAULT_LLM_ALLOWED_MODELS,
+)
+from mangomas.config.llm import (
     DEFAULT_LLM_API_KEY as DEFAULT_LLM_API_KEY,
 )
 from mangomas.config.llm import (
@@ -393,6 +396,9 @@ from mangomas.config.storage import (
     MemorySettings as MemorySettings,
 )
 from mangomas.config.workflow import (
+    DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION as DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION,
+)
+from mangomas.config.workflow import (
     DEFAULT_WORKFLOW_DEFINITION as DEFAULT_WORKFLOW_DEFINITION,
 )
 from mangomas.config.workflow import (
@@ -467,6 +473,7 @@ __all__ = [
     "DEFAULT_HARNESS_HOOK_LOG_LEVEL",
     "DEFAULT_HARNESS_METRICS_EXPORTER",
     "DEFAULT_HARNESS_METRICS_NAMESPACE",
+    "DEFAULT_LLM_ALLOWED_MODELS",
     "DEFAULT_LLM_API_KEY",
     "DEFAULT_LLM_BASE_URL",
     "DEFAULT_LLM_MODEL",
@@ -509,6 +516,7 @@ __all__ = [
     "DEFAULT_VECTOR_PROVIDER",
     "DEFAULT_VECTOR_TOP_K",
     "DEFAULT_VERTEX_LOCATION",
+    "DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION",
     "DEFAULT_WORKFLOW_DEFINITION",
     "DEFAULT_WORKFLOW_ENABLED",
     "DEFAULT_WORKFLOW_LOOP_MAX_STEPS",

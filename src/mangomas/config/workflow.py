@@ -21,6 +21,13 @@ DEFAULT_WORKFLOW_SCHEMA_VERSION: int = 1
 DEFAULT_WORKFLOW_LOOP_MAX_STEPS: int = 5
 
 
+# True preserves the documented behaviour: a per-request ``definition`` runs
+# even when the feature is disabled. Set False to require server-configured
+# graphs only (ADR-0033) — a deployment where one shared credential should not
+# authorise composing and running an arbitrary agent graph.
+DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION: bool = True
+
+
 class WorkflowSettings(BaseModel):
     """Declarative multi-agent workflow-graph configuration (spec 0005).
 
@@ -34,6 +41,7 @@ class WorkflowSettings(BaseModel):
 
     enabled: bool = DEFAULT_WORKFLOW_ENABLED
     definition: str | None = DEFAULT_WORKFLOW_DEFINITION
+    allow_inline_definition: bool = DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION
 
     @model_validator(mode="after")
     def _validate_workflow(self) -> WorkflowSettings:
