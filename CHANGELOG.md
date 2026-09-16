@@ -9,6 +9,33 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`AgentNotFound` 404 bodies no longer double-quote `message`** (wire-format
+  change). `AgentNotFound` co-inherits `KeyError` — a deliberate back-compat
+  guarantee so `except KeyError` callers keep working — and `MangomasError`
+  defined no `__str__`, so the MRO resolved rendering to `KeyError.__str__`,
+  which returns `repr(args[0])`. Every 404 from `/agents/{name}/invoke`,
+  `/agents/{name}/stream` and both `/workflows/*` routes shipped embedded
+  quotes:
+
+  ```
+  before: {"error":"agent_not_found","message":"\"Unknown agent: 'nosuch'\"", ...}
+  after:  {"error":"agent_not_found","message":"Unknown agent: 'nosuch'", ...}
+  ```
+
+  `MangomasError` now owns `__str__`, binding `Exception.__str__` explicitly
+  rather than via `super()` — on `AgentNotFound`'s MRO the class after
+  `MangomasError` *is* `KeyError`, so `super()` would resolve back to the
+  offending implementation. A sweep of all 19 taxonomy classes confirms
+  `AgentNotFound` is the only one whose rendering changes; `detail` is a plain
+  attribute and is untouched. Python-level compatibility is preserved:
+  `isinstance(exc, KeyError)` is still `True` and the bases are unchanged.
+  **Migration:** a client string-matching the old quoted form must match the
+  bare message instead. References: `src/mangomas/errors.py`,
+  `tests/test_errors.py::test_every_subclass_renders_its_message_verbatim`
+  (a recursive subclass sweep, so a new subclass is covered the day it lands).
+
 ### Added
 
 - **Code-quality / tech-debt program (spec-0031, planning only — no code
