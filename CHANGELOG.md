@@ -12,15 +12,19 @@ Versioning: [Semantic Versioning](https://semver.org/).
 ### Added
 
 - **Code-quality / tech-debt program (spec-0031, planning only — no code
-  change).** A full-repo reflection run against a clean tree at `df92e3d`,
-  recording a measured baseline (all twelve `make gate` steps green; 2683 tests;
-  98.88% coverage) and sequencing eight workstreams. Four findings were verified
-  by running the application rather than reading it: with stock defaults
-  `/workflows/run` executes an inline graph although
-  `MANGOMAS_WORKFLOW__ENABLED` is `false`, `/workflows/validate` distinguishes an
-  existing path from a missing one, a 16 KB nested graph raises `RecursionError`
-  past the `ConfigError` boundary, and `AgentRequest(max_steps=10**9)` is
-  accepted. References:
+  change).** A full-repo reflection against a clean tree at `df92e3d`, recording
+  a measured baseline (all twelve `make gate` steps green; 2683 tests; 98.88%
+  coverage) and sequencing eight workstreams, then adversarially peer-reviewed
+  and revised. Verified by running the application: a 16 KB nested graph raises
+  `RecursionError` past the `ConfigError` boundary (`workflow/graph.py`'s comment
+  claiming depth-two nesting is false); `GET /agents` and the FastAPI docs
+  endpoints serve 200 even with `MANGOMAS_AUTH__ENABLED=true`; and
+  `tests/test_openapi_snapshot.py`'s projection is blind to a narrowed DTO
+  constraint, so tightening `le`/`max_length` on a published field ships with no
+  diff. Two behaviours initially filed as defects are recorded instead as
+  decisions requiring their own ADR: the per-invocation workflow opt-in over HTTP
+  (specified by spec-0008, decided by ADR-0012, which rejected the remedy first
+  proposed) and the absence of a loop-budget ceiling. References:
   `specs/0031-code-quality-and-enterprise-readiness.md`,
   `docs/plans/20260916T000000Z-code-quality-tech-debt-plan.md`. No runtime
   behaviour changes in this entry; each workstream lands with its own entry and

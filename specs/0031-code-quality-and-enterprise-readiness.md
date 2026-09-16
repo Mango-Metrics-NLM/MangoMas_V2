@@ -1,308 +1,480 @@
 # Spec-0031: Code quality, tech-debt reduction and enterprise readiness
 
-- **Status:** Draft
-- **Linked ADR:** ADR-0030 — required for the two protected-path touches:
-  W7's `max_steps` ceiling on `core/agent.py`, and W3's `orchestrator.py` seam
-  extraction. Every other workstream here is additive or mechanical.
+- **Status:** Draft (revision 2 — peer-reviewed, see "Review record")
+- **Linked ADRs:** four are required, not one. See "Protocol / contract impact".
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Changed` (on first landing)
 
 ## Problem
 
 A full-repo reflection was run on 2026-09-16 against a clean working tree at
 `df92e3d`. Its first finding is that **the gate is already green** — all twelve
-`make gate` steps pass locally, 2683 tests pass, and coverage sits at 98.88%
-against a 95% floor. This is not a remediation program for broken code.
+`make gate` steps pass, 2683 tests pass, coverage sits at 98.88% against a 95%
+floor, and `mypy --strict` is clean over 433 files. This is not a remediation
+program for broken code.
 
-Its second finding reorders everything else: **the HTTP surface has an
-unauthenticated cluster that the feature flags do not gate.** Verified by
-running the app in-process against stock defaults — `WORKFLOW__ENABLED=false`,
-`AUTH__ENABLED=false`, `API__MAX_BODY_BYTES=0` — a client can execute arbitrary
-agent topologies, probe the filesystem for existence, and escape the error
-boundary with a 16 KB body. W7 therefore lands first, not last.
+The debt is **slack between what the code already achieves and what the gates
+actually require**, plus a set of guards that pass because their subject is
+absent rather than because it is sound. That is the defect class specs 0020 and
+0021 were each written to hunt after the fact. This spec finds six more, one of
+which is in the wire-contract guard itself.
 
-The rest of the debt is **slack between what the code already achieves and what
-the gates actually require**, plus a set of fail-open holes in the governance
-layer that guards it. A gate that passes because its subject silently vanished
-is the defect class specs 0020 and 0021 were each written to hunt after the
-fact; this spec finds five more instances and closes them before they fire.
+There is also one unambiguous runtime bug, and a set of questions that are not
+bugs at all but **accepted decisions whose threat model was never written down**.
+Separating those two categories is the main thing revision 2 fixes; revision 1
+conflated them and overstated the result.
 
-The measured baseline is recorded in
-[`docs/plans/20260916T000000Z-code-quality-tech-debt-plan.md`](../docs/plans/20260916T000000Z-code-quality-tech-debt-plan.md).
+## What this spec does *not* claim
+
+Revision 1 asserted an "unauthenticated HTTP cluster". That was wrong and is
+withdrawn. The auth seam works. Verified by running the app with
+`MANGOMAS_AUTH__ENABLED=true`:
+
+| Route | Without credentials |
+|---|---|
+| `POST /workflows/run`, `POST /workflows/validate` | **401** |
+| `POST /agents/{name}/invoke`, `/stream`, `GET /history` | **401** |
+| `GET /healthz`, `/health`, `/readyz`, `/ready` | 200 — deliberate, ADR-0014 |
+| `GET /agents` | 200 — **unexplained** |
+| `/docs`, `/redoc`, `/openapi.json`, `/docs/oauth2-redirect` | 200 — **never configured** |
+
+So the workflow findings are reachable only when auth is off. That is the
+documented default for a local-first platform (ADR-0014), not a bypass. The real
+amplifier is that the reference deployment manifest does not turn auth on — see
+R2.
 
 ## Requirements
 
-Eight workstreams, delivered in the order **W7 → W4 → W1 → W2 → W3 → W6 → W5 →
-W8**. Each is independently landable and each must leave `make gate` green.
+Eight workstreams, ordered by how much of each is settled fact rather than open
+question: **R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8**.
 
-- **W7 — Runtime hardening (first).** Make the workflow flag gate the HTTP
-  surface; remove filesystem reads driven by a request body; bound graph depth,
-  node count and `max_steps`; harden the reference deployment manifest and the
-  default docs exposure; stop leaking upstream URLs, project ids and raw driver
-  text into unauthenticated bodies; contain secrets behind `SecretStr`.
-- **W1 — CI/CD economics and integrity.** Add `concurrency:` groups and
-  `timeout-minutes` to all four workflows; make `deploy.yml`'s `verify` job run
-  the real gate; close the `sbom-scan` fail-open that mutes the nightly
-  reporter; cache the type-checker and linter caches.
-- **W2 — Dependency determinism.** CI installs the dev extra unconstrained, so
-  a green pipeline can turn red from an upstream release with no local change.
-  Constrain it, and make new deprecation warnings visible rather than silent.
-- **W3 — Oversized-module reduction.** Five modules, in ascending risk order,
-  ending at `core/orchestrator.py`.
-- **W4 — Gate-integrity ratchets.** Raise every per-package coverage floor to
-  the level the code already holds, and make three hand-maintained registries
-  self-checking.
-- **W5 — Hard-coded values.** Close the drift between `Settings` defaults,
-  `.env.example` and the `CLAUDE.md` table, and move genuine tunables into
-  `Settings`.
-- **W6 — Dead and redundant code.** Remove unreferenced symbols and vestigial
-  shims; collapse measured duplication clusters; correct four documents that
-  describe a defence layer with no invoker.
-- **W8 — Enterprise organisation.** Release mechanics, documentation entry
-  points, and repository-layout consistency.
+- **R1 — Bound the workflow graph.** The one unambiguous bug with no decision
+  behind it. Depth, node count and source size.
+- **R2 — Correct the default and reference posture.** The deploy manifest, the
+  docs endpoints, `GET /agents`, and the readiness probe's timeout and leakage.
+- **R3 — Gate integrity.** Six guards that cannot currently fire, including the
+  wire-contract guard's blindness to constraint narrowing.
+- **R4 — CI/CD economics and release integrity.** Concurrency, timeouts, the
+  deploy gate, the nightly reporter's fail-open, analyser caching.
+- **R5 — Dependency determinism.** CI installs the dev extra unconstrained.
+- **R6 — Oversized-module reduction.** Five modules in ascending risk order.
+- **R7 — Inert and hard-coded configuration.** Three settings with no consumer;
+  four `.env.example` values contradicting their defaults.
+- **R8 — Dead code and enterprise organisation.** Surface that outlived its
+  consumer; release mechanics; documentation entry points.
 
-W1–W6 and W8 must be **additive or mechanical**: none changes runtime behaviour
-when configuration is untouched.
+**Two open decisions are carried separately** (see "Decisions required"), because
+they are not defects and cannot be fixed by a patch: the per-invocation workflow
+opt-in over HTTP, and the absence of a loop-budget ceiling.
 
-**W7 is the deliberate exception, and it is a breaking change by intent.** The
-whole point is that requests which succeed today must stop succeeding: an
-inline workflow definition with the feature disabled, a `max_steps` of one
-billion, a 16 KB nested graph, a filesystem path in a request body. Each
-refusal is a named scenario below with a regression test, and each is called
-out in `CHANGELOG.md` under `Changed` with the migration note — an operator who
-was relying on per-invocation workflow opt-in over HTTP sets
-`MANGOMAS_WORKFLOW__ENABLED=true`.
+R3–R8 must be additive or mechanical: none changes runtime behaviour when
+configuration is untouched. R1 and R2 change behaviour by intent, each with a
+regression test and a `CHANGELOG` entry under `Changed`.
 
 ## Scenarios (WHEN/THEN)
 
-Every scenario below was **verified against the running application**, not
-inferred from source. Each is stated in both directions per the template's rule
-that a gate must be proven able to fire.
+Each scenario below is marked **[run]** if it has a recorded reproduction
+transcript, or **[read]** if it is a source reading. Revision 1 labelled
+everything "verified against the running application"; that was not true of all
+of them, and the distinction is restored here.
 
-### The unauthenticated HTTP cluster (W7)
+### R1 — the one unambiguous bug
 
-**S7 — the workflow flag must gate the HTTP surface.**
-`workflow/loader.py:35-45` consults `cfg.enabled` only when `definition is
-None`. The docstring calls this "per-invocation opt-in", which is correct for
-the CLI, where the caller is the operator. On the HTTP surface the caller is
-anonymous.
+**S1 — graph nesting must be bounded. [run]** `workflow/graph.py:81-86`'s comment
+claims "v1 keeps nesting bounded to depth two, so no recursion is possible".
+`WorkflowStep` includes `FanOutNode` and `BranchNode`, so both recurse without
+limit and the comment is false.
 
-- WHEN `workflow.enabled` is `false` and a request body carries an inline
-  `definition`, THEN `/workflows/run` must refuse. *Verified today: it returns
-  **200** and executes the graph over every registered agent.*
-- WHEN `workflow.enabled` is `true`, THEN it runs.
+| Nesting depth | Body size | `load_workflow` result |
+|---|---|---|
+| 200 | ~6 KB | validates cleanly |
+| 500 | 16 KB | `RecursionError` |
+| 2000 | 64 KB | `RecursionError` |
+| 5000 | 160 KB | `RecursionError` |
 
-**S8 — a request body must not name a filesystem path.** `loader.py:63-77`
-reads any `definition` not starting with `{` via `Path(stripped).read_text()`
-— no allow-list, no root confinement, no size cap, and synchronously inside an
-async route.
+- WHEN a graph exceeds the bound, THEN `load_workflow` raises `ConfigError`.
+  *Today it raises `RecursionError`, which derives from `RuntimeError`, so it is
+  not caught by `except json.JSONDecodeError` and never reaches the `ConfigError`
+  normalisation — it surfaces as a 500 through the access-log middleware.*
+- WHEN a graph is within the bound, THEN it validates unchanged.
 
-- WHEN two paths differ only in existence, THEN the responses must be
-  indistinguishable. *Verified today they are not:* `/etc/passwd` returns "not
-  valid JSON" (read succeeded) while `/nonexistent/zz` returns "cannot read …
-  No such file or directory" — a full-filesystem existence oracle.
-- WHEN a definition is inline JSON, THEN it parses normally.
+This is the only finding in the whole audit with no closed decision behind it,
+no protected path, and no ADR to supersede. It leads.
 
-**S9 — graph nesting must be bounded.** `WorkflowStep` includes `FanOutNode`
-and `BranchNode`, so both recurse without limit — contradicting the comment at
-`graph.py:81-83` that "v1 keeps nesting bounded to depth two, so no recursion
-is possible".
+### R2 — default and reference posture
 
-- WHEN a deeply nested graph is submitted, THEN `load_workflow` must raise
-  `ConfigError`. *Verified today it raises `RecursionError`, which derives from
-  `RuntimeError` and so escapes the `ConfigError` boundary entirely — at depth
-  500, a **16 KB** body. With `max_body_bytes=0` by default this is reachable
-  unauthenticated.*
-- WHEN a graph is within the bound, THEN it validates.
+**S2 — `GET /agents` must honour the auth seam. [run]** `api/routes/system.py`'s
+module docstring justifies the probe exemption explicitly ("Health/readiness
+probes are deliberately never authenticated (ADR-0014) — an orchestration
+platform must be able to probe a pod that has lost its secret") and says nothing
+about the roster route, which sits in the same router and appears to have
+inherited the exemption by placement.
 
-**S10 — `max_steps` must have a ceiling.** `core/agent.py:36` declares `ge=1`
-with no `le`, and `orchestrator.py:322-338` returns the request value verbatim.
+- WHEN auth is enabled and no credential is presented, THEN `GET /agents` returns
+  401. *Today it returns 200 and lists every registered agent.*
+- WHEN auth is disabled, THEN it behaves as today.
 
-- WHEN a request sets `max_steps` above the configured ceiling, THEN it must be
-  rejected or clamped. *Verified today `AgentRequest(max_steps=10**9)` is
-  accepted, and each iteration also appends an assistant message, so the prompt
-  grows alongside the call count.*
-- WHEN `max_steps` is within the ceiling, THEN the loop runs as before.
+**S3 — the API schema must not be public by default. [run]** `create_app` never
+passes `docs_url`/`redoc_url`/`openapi_url`, so all four FastAPI defaults serve
+200 regardless of auth.
 
-### The gate-integrity holes (W4)
+- WHEN `MANGOMAS_ENV != "local"`, THEN `/docs`, `/redoc` and `/openapi.json` are
+  unreachable.
+- WHEN `MANGOMAS_ENV == "local"`, THEN they serve as today.
 
-**S1 — protected-path governance survives a module→package conversion.**
+**S4 — the readiness probe must honour its own budget. [read]**
+`MANGOMAS_API__READY_TIMEOUT_SECONDS` is declared at `config/api.py:19,57`,
+documented in `CLAUDE.md` as the "`/readyz` LLM-ping budget" and in
+`.env.example:65` — and read nowhere outside `config/`. `api/health.py:77-123`
+awaits `ctx.llm.ping()` and `ctx.repo.list_turns(limit=1)` unbounded, so the
+effective budget on an unauthenticated probe is `llm.timeout_seconds` (60.0s),
+30× the documented 2.0s. The only `asyncio.timeout` in the package is
+`orchestrator.py:354`. No test references the field.
+
+- WHEN a readiness dependency hangs past the budget, THEN `/readyz` reports it
+  as failed within the budget.
+- WHEN dependencies respond, THEN the report is unchanged.
+
+**Wiring note.** `check_ready(orchestrator)` takes only an orchestrator and never
+calls `get_settings()`. Reaching for settings inside `health.py` would put a
+service locator in a helper module, against the composition-root rule. Follow the
+existing precedent instead: `create_app` already does
+`app.state.auth = resolve_auth_state(_settings)` at `api/app.py:177`, so store
+the resolved timeout on `app.state` the same way and pass it from the route.
+
+**S5 — the reference manifest must be safe to copy. [read]**
+`deploy/service.yaml:29-52` sets `MANGOMAS_ENV=prod`, telemetry, provider and
+secrets variables, and none of `AUTH__ENABLED`, `AUTH__SECRET_REF`,
+`API__MAX_BODY_BYTES` or `API__MAX_CONCURRENT_REQUESTS`. With
+`containerConcurrency: 80`, an operator following it verbatim publishes an
+unauthenticated LLM proxy. `deploy/README.md` mentions only CORS.
+
+- WHEN the manifest is applied, THEN auth and both backpressure knobs are set.
+- WHEN they are set, THEN `tests/deploy/` asserts it.
+
+### R3 — guards that cannot fire
+
+**S6 — the wire-contract guard must see a narrowed constraint. [run]** This is a
+new finding produced by peer-reviewing revision 1, and it is the most important
+one in R3. `tests/test_openapi_snapshot.py:46-62` pins a normalized projection of
+property **names** and **required** sets only. Adding an upper bound to a DTO
+field emits a `maximum` keyword *inside* the property schema, which the
+projection discards.
+
+Measured by adding `le=100` to `AgentRequest.max_steps` in memory and rebuilding:
+
+```
+raw schema:  {'type': 'integer', 'maximum': 100.0, 'minimum': 1.0, ...}
+projection changed?  NO
+```
+
+The snapshot's own docstring says it exists because "nothing mechanical noticed a
+DTO field turning required, a route disappearing, or a schema being reshaped".
+**Constraint narrowing is a fourth case it never covered.** Any PR that tightens
+`le`/`ge`/`max_length`/`enum` on a published DTO ships with no diff and no review
+record.
+
+- WHEN a published DTO field's validation range is narrowed, THEN the snapshot
+  test fails until regenerated.
+- WHEN nothing narrows, THEN it passes.
+
+**S7 — protected-path governance must survive a package conversion. [run]**
 `scripts/check_protected_paths.py:128` computes `set(changed) & protected_paths`
 — an exact string intersection against the `pyproject.toml` table.
 
-- WHEN `src/mangomas/core/orchestrator.py` is converted to a package and a file
-  under it is edited without a `BREAKING-CHANGE` trailer, THEN the gate must
-  fail. *Today it prints "No protected core contracts changed. OK." and exits 0.*
-- WHEN no protected path is touched, THEN the gate still passes.
+- WHEN a protected module becomes a package and a file under it is edited without
+  a `BREAKING-CHANGE` trailer, THEN the gate fails. *Today it prints "No protected
+  core contracts changed. OK." and exits 0.*
+- WHEN nothing protected is touched, THEN it still passes.
 
-**S2 — the facade registry cannot silently stop covering a package.**
-`tests/test_import_compat.py:45`'s `_FACADES` dict is hand-maintained. It is
-complete today — verified: cli 8/8, telemetry 6/6, config 13/13,
-composition 12/12, api.middleware 3/3.
+**Scope correction.** Revision 1 proposed adding one new row to the governance
+table per extraction. Prefer **glob matching**: replace the four `core/*.py` rows
+with `src/mangomas/core/**/*.py`. That closes the package-conversion hole, the
+new-sibling hole, and the currently-unprotected `core/__init__.py` and
+`core/loop.py` in one change, and it stops the table growing by a row per future
+split — which matters given that the governance meta-layer is already the
+highest-churn part of this repo.
 
-- WHEN a new submodule is added to a registered facade package and is not added
-  to `_FACADES`, THEN the contract test must fail. *Today nothing notices.*
-- WHEN every on-disk submodule is registered, THEN it passes.
+**S8 — the facade registry must notice an unregistered facade. [run]**
+`tests/test_import_compat.py:45` keys `_FACADES` on five packages: `cli`,
+`telemetry`, `config`, `composition`, `api.middleware`. Each is complete today
+(8/8, 6/6, 13/13, 12/12, 3/3).
 
-**S3 — the pre-commit tool revisions cannot drift from the pyproject pins.**
-`.pre-commit-config.yaml` documents `ruff` and `mypy` revs as kept "in lockstep"
-with the `==` pins in the dev extra. `tests/tooling/test_precommit_parity.py`
-has four tests; none of them checks this.
+**Revision 1's version of this test was useless for its stated purpose.** It
+checked that a *registered* package's submodules are all listed. Every extraction
+R6 proposes lands in an **unregistered** package — `adapters.llm`, `cognitive`,
+`core`, `scripts`, `tests.constants`. `mangomas.core` is absent from `_FACADES`
+entirely, which means the `tools.py` → `structured.py` precedent R6 cites as its
+model was never registered either.
 
-- WHEN `ruff==` in `pyproject.toml` and `rev:` in `.pre-commit-config.yaml`
-  disagree, THEN a test must fail. *Today the hook silently runs a different
-  linter than CI — the "green locally, red in CI" class.*
+- WHEN a package's `__init__.py` re-exports names it does not define and the
+  package is absent from `_FACADES`, THEN the test fails.
+- WHEN every such package is registered and complete, THEN it passes.
+
+**S9 — pre-commit revisions must match the pyproject pins. [read]** Both files
+carry a "keep in lockstep" comment; `tests/tooling/test_precommit_parity.py`'s
+four tests never check it. The identical duplication for the coverage floor *is*
+guarded at `test_ci_make_parity.py:226`.
+
+- WHEN `ruff==` / `mypy==` and the corresponding `rev:` disagree, THEN a test
+  fails. *Today the hook can silently run a different linter than CI.*
 - WHEN they agree, THEN it passes.
 
-**S4 — the nightly reporter can actually report.** `nightly.yml:127` sets
-`continue-on-error: true` on `sbom-scan`, which is in the `notify` job's
-`needs:` list. The job can therefore never reach a failed conclusion, so
-`if: failure()` never fires for it.
+**S10 — the nightly reporter must be able to report. [read]**
+`nightly.yml:127` sets `continue-on-error: true` on `sbom-scan` while listing it
+in `notify`'s `needs:`, so it can never reach a failed conclusion and
+`if: failure()` never fires for it. The existing guard
+(`test_workflow_hardening.py:234`) asserts `needs:` membership, not that the job
+can fail.
 
-- WHEN `sbom-scan` fails, THEN `notify` must open an issue.
-- WHEN every nightly job passes, THEN no issue is opened.
+- WHEN a job in `notify`'s `needs:` sets `continue-on-error`, THEN a test fails.
+- WHEN none does, THEN it passes.
 
-`tests/deploy/test_workflow_hardening.py:234` asserts membership in `needs:`,
-not that the job can fail — which is exactly why it passes today.
+**S11 — `.env.example` values must not contradict the defaults. [run]** The
+contract test compares `CLAUDE.md`'s default column to `model_fields`, never
+`.env.example`'s values.
 
-**S5 — a documented setting must reach a consumer.** Three `ApiSettings`
-fields resolve, parse, are documented in both `CLAUDE.md` and `.env.example`,
-and are read by nothing: `ready_timeout_seconds`, `host`, `port`. Verified by
-grep across `src/` — the only `asyncio.timeout` in the package is
-`core/orchestrator.py:354`, the loop step timeout.
+| Line | States | Real default |
+|---|---|---|
+| `LOG__BODY_TRUNCATE` | 2000 | 512 |
+| `API__READY_TIMEOUT_SECONDS` | 5.0 | 2.0 |
+| `API__HISTORY_DEFAULT_LIMIT` | 50 | 10 |
+| `API__HISTORY_MAX_LIMIT` | 500 | 1000 |
 
-The consequence is a live defect, not just dead config.
-`api/health.py:77-123` awaits `ctx.llm.ping()` and `ctx.repo.list_turns(limit=1)`
-**unbounded**, so the effective budget for the unauthenticated `/readyz` probe
-is `MANGOMAS_LLM__TIMEOUT_SECONDS` (60.0s), not the documented 2.0s — a 30×
-gap. No test references `ready_timeout_seconds` at all. `host` and `port` are
-worse-shaped: they are *uncommented* in `.env.example:63-64`, so they read as
-live knobs, while the real serving contract is the plain `PORT` variable
-(`Dockerfile:31,62`).
+- WHEN a line states a value differing from the field default and is not on the
+  recorded example allowlist, THEN a test fails.
+- WHEN values agree, or the line is an allowlisted illustrative override, THEN it
+  passes.
 
-- WHEN a `Settings` field is documented in `.env.example` or `CLAUDE.md` and no
-  module outside `config/` reads it, THEN a test must fail. *Today
-  `test_env_example_contract.py` checks name↔field resolution in both
-  directions but never field↔consumer, which is the blind spot these three sit
-  in.*
-- WHEN every documented field has a consumer, THEN it passes.
+**S12 — a documented setting must reach a consumer. [run]** Three `ApiSettings`
+fields resolve, parse and are documented, and are read by nothing outside
+`config/`: `ready_timeout_seconds` (S4), `host`, `port`. A fourth,
+`log.body_truncate`, is the same shape. `host`/`port` are *uncommented* in
+`.env.example:63-64`, so they read as live knobs while the real serving contract
+is the plain `PORT` variable (`Dockerfile:31,62`).
 
-**S6 — `.env.example` values must not contradict the defaults.** The contract
-test compares `CLAUDE.md`'s default *column* to `model_fields`, but never
-`.env.example`'s *values*. Four lines state a value that is not the default:
-`LOG__BODY_TRUNCATE=2000` (real 512), `API__READY_TIMEOUT_SECONDS=5.0` (real
-2.0), `API__HISTORY_DEFAULT_LIMIT=50` (real 10), `API__HISTORY_MAX_LIMIT=500`
-(real 1000). All four are commented, and the file's header says commented
-blocks are opt-in features — but sibling commented lines in the same blocks
-(`LOG__FORMAT=text`) *do* restate the real default, so nothing tells a reader
-which kind of line they are looking at.
+- WHEN a documented field has no consumer outside `config/`, THEN a test fails.
+- WHEN every documented field is consumed, THEN it passes.
 
-- WHEN an `.env.example` line states a value differing from the field default
-  and is not on the recorded example allowlist, THEN a test must fail.
-- WHEN values agree or the line is an allowlisted illustrative override
-  (the vertex / gcp / postgres / eval-threshold blocks, which legitimately show
-  non-defaults), THEN it passes.
+## Decisions required (not defects)
+
+These two are carried as questions, not milestones. Revision 1 filed both as
+security fixes; both are in fact recorded decisions, and treating them as bugs
+was the single largest error in it.
+
+### D1 — per-invocation workflow opt-in over HTTP
+
+`workflow/loader.py:35-45` runs a per-request `definition` even when
+`workflow.enabled` is false. This is **not** an accidental flag bypass:
+
+- `specs/0008-workflow-http-endpoint.md:24-26` states it as a requirement:
+  "a per-request `definition` (inline JSON or path) runs even when the feature is
+  disabled (per-invocation opt-in)". The spec's status is **Implemented**.
+- Its acceptance criterion is ticked: "[x] A per-request `definition` runs a
+  graph over HTTP regardless of the enabled flag".
+- `docs/adr/0012-workflow-http-endpoint.md:47-50` considered and **rejected** the
+  exact remedy revision 1 proposed: "**Conditionally mount routes when
+  `enabled`** — rejected: a disabled deployment would 404 and lose the
+  per-request `definition` opt-in the CLI already offers."
+- Three tests in `tests/test_workflow_api.py` pin the behaviour, and its module
+  docstring states it.
+
+What is genuinely missing is that **ADR-0012's trade-off section considers only
+400-vs-404 error modelling and contains no threat analysis**, and spec-0008 has
+no security section. The same applies to the path-reading half: spec-0008 says
+"inline JSON or path", so `Path(stripped).read_text()` on a request body — no
+allow-list, no root confinement, no size cap, and synchronous inside an async
+route — is also specified rather than accidental. Its observable consequence is
+a filesystem existence oracle, verified: `/etc/passwd` returns "not valid JSON"
+(the read succeeded) while `/nonexistent/zz` returns "cannot read … No such file
+or directory".
+
+**Recommended resolution:** do not reverse ADR-0012. Add an additive
+`WorkflowSettings.allow_inline_definition: bool = False`, which is config-driven,
+default-safe under this repo's additive rule, needs no supersession, and leaves
+ADR-0012's ergonomics reachable. Record the threat analysis ADR-0012 lacks,
+including the path-read decision, as an amendment.
+
+### D2 — loop-budget ceiling
+
+`core/agent.py:36` declares `max_steps` as `ge=1` with no upper bound, and
+`AgentRequest(max_steps=10**9)` is accepted **[run]**. No spec or ADR anywhere
+discusses a ceiling, so unlike D1 this is a genuine gap rather than a closed
+decision. But three things make revision 1's proposed fix wrong:
+
+1. **The proposed clamp inverts a recorded decision.** Revision 1 said "clamp
+   against `loop_settings.max_steps` as a server-side ceiling, not merely a
+   fallback". `specs/0026` records the opposite precedence deliberately: "a
+   caller who explicitly set `request.max_steps` or the kwarg has stated intent
+   that beats the deployment default."
+2. **`le=` on the DTO has no review record.** Per S6 the snapshot cannot see it,
+   so revision 1's claim that "one regeneration is the review record" was false —
+   there would be nothing to regenerate.
+3. **`le=` plus a clamp is uncoverable.** If the DTO rejects the value, the clamp
+   branch is unreachable; `core` carries a **100%** floor, so `make coverage`
+   would fail. And a literal frozen into a protected DTO is unreachable by
+   `Settings`, which the no-hard-coded-values rule forbids. Revision 1's migration
+   note ("raise `MANGOMAS_LOOP__MAX_STEPS`") also does not work, because a
+   pydantic `Field(le=...)` is resolved at class-definition time.
+
+**Recommended resolution:** leave `core/agent.py` untouched. Add
+`LoopSettings.max_steps_ceiling` and enforce it server-side in
+`_effective_max_steps`, preserving spec-0026's precedence while bounding the
+absolute value. This removes a protected-path touch, keeps the ceiling
+operator-raisable, and is testable in both directions.
 
 ## Config / env additions
 
-No env var is added by W1–W4, W6 or W8. W5 and W7 add the tunables their own
-audits name; each follows the existing rule — a `DEFAULT_*` module constant
-surfaced through a `Settings` group, documented in the same commit in all three
-places (`config/`, `.env.example`, `CLAUDE.md`), so
-`tests/deploy/test_env_example_contract.py` stays green in both directions.
+| Env var | Default | Purpose |
+|---|---|---|
+| `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION` | `false` | D1: permit a per-request graph when the feature is disabled |
+| `MANGOMAS_LOOP__MAX_STEPS_CEILING` | _(to be chosen)_ | D2: absolute server-side cap on loop steps |
+| `MANGOMAS_WORKFLOW__MAX_DEPTH` / `__MAX_NODES` | _(to be chosen)_ | R1: graph bounds |
 
-The one *removal*: none. Retiring an inert setting is a separate, reviewed act
-(see `MANGOMAS_RAG__MIN_CHUNK_WORDS`, retired at `f8d37a1`).
+Each follows the existing rule — a `DEFAULT_*` module constant surfaced through a
+`Settings` group, documented in the same commit in `config/`, `.env.example` and
+`CLAUDE.md`, so `test_env_example_contract.py` stays green both directions. R3–R8
+add no env var. Nothing is removed; retiring an inert setting is a separate
+reviewed act (see `MANGOMAS_RAG__MIN_CHUNK_WORDS`, retired at `f8d37a1`).
 
 ## Protocol / contract impact
 
 - **New/changed protocols:** none.
-- **New error types:** none. W7's bounds reuse `ConfigError` (400) and the
-  existing 413/503 backpressure envelopes.
+- **New error types:** none. R1's bounds reuse `ConfigError` (400).
 - **Registry additions:** none.
-- **Protected paths — two touches, both needing a `BREAKING-CHANGE` trailer and
-  ADR-0030:**
-  1. W7's `max_steps` ceiling adds `le=` to `AgentRequest.max_steps` in
-     `src/mangomas/core/agent.py`, and clamps in `core/orchestrator.py`.
-  2. W3 adds `src/mangomas/core/_topology.py` to
-     `[tool.mangomas.governance].protected_paths` **in the same commit that
-     creates it**, with a pin test mirroring
-     `test_core_structured_is_a_protected_path`. The governance table grows; it
-     never shrinks.
-- **Wire contract:** `tests/test_openapi_snapshot.py` must stay green **without
-  regeneration for every workstream except W7's `max_steps` ceiling**, which
-  narrows a DTO field's validation range and therefore legitimately reshapes the
-  schema. That single regeneration is the review record for the contract change,
-  per the snapshot module's own docstring. Any *other* workstream needing a
-  regeneration is a signal that the change exceeded this spec's scope.
+- **Protected paths — one touch, not two.** With D2 resolved as recommended,
+  `core/agent.py` is untouched and only `core/orchestrator.py` is edited (the
+  ceiling in `_effective_max_steps`, plus R6's seam extraction). Both need a
+  `BREAKING-CHANGE` trailer.
+- **Wire contract:** unchanged, and S6 makes that claim checkable for the first
+  time.
+
+**ADRs required — four, not one.** Revision 1 scoped a single ADR to cover what
+are separate boundary decisions; one ADR saying four things cannot be reviewed as
+one decision.
+
+| ADR | Subject | Relationship |
+|---|---|---|
+| ADR-0030 | Workflow graph bounds + the `allow_inline_definition` seam | amends ADR-0012 with the threat analysis it lacks |
+| ADR-0031 | Loop-budget ceiling | amends ADR-0026's precedence chain |
+| ADR-0032 | Protected-path glob matching + the `core` seam | amends ADR-0021 |
+| ADR-0033 | Default and reference posture (`GET /agents`, docs endpoints, manifest) | amends ADR-0014 |
+
+Two R8 items each need their own decision before landing and are not covered by
+the four above: retiring `harness/governance.py` (touches ADR-0021's deliberate
+three-copy arrangement) and resolving the `parse_or_recover` contradiction
+(spans `core/structured.py:117-118` and `specs/0015:203-205`).
 
 ## Backwards-compatibility
 
-- Every existing import path keeps working. W3 extractions leave a permanent
-  re-export facade per ADR-0019, and each new facade is registered in
-  `_FACADES` in the same commit — which W4's completeness test then enforces.
-- `from mangomas.core.orchestrator import FanOutOutcome` and
-  `from mangomas.core import FanOutOutcome` both survive the W3 extraction
-  (plan PR E-M5).
-- `EvalReport` is a **persisted artifact schema**, read back by
-  `eval/baseline.py`. Any W3 move relocates the class, never its field set.
-- The `combine-as-imports` change (plan PR E-M1) is formatting only. Verified on
-  `config/__init__.py`: 128 import bindings and 127 `__all__` entries identical
-  before and after; 533 lines become 305.
-- No symbol is removed from a public surface, so no import-level migration is
-  required.
-- **W7 is the one behavioural break, by intent** (see Requirements). Four
-  request shapes that succeed today must fail afterwards. The migration is
-  configuration, not code: an operator relying on per-invocation workflow
-  opt-in over HTTP sets `MANGOMAS_WORKFLOW__ENABLED=true`; one relying on a
-  `max_steps` above the new ceiling raises `MANGOMAS_LOOP__MAX_STEPS`. Both go
-  in `CHANGELOG.md` under `Changed` with the note, not under `Fixed`.
-- The W6 removals each need a recorded decision before landing, because two of
-  them are compat surface rather than dead weight: `EvalRunner.run`'s legacy
-  `agent_name` positional (no production caller, ~18 test call sites) and the
-  `# approved-breaking-change` marker alias (zero occurrences in 267 commits).
+- No symbol is removed from a public surface; no import-level migration.
+- R6 extractions leave a permanent re-export facade per ADR-0019, registered in
+  `_FACADES` in the same commit — which S8's corrected test then enforces.
+- `EvalReport` is a persisted artifact schema read back by `eval/baseline.py`;
+  any move relocates the class, never its field set.
+- The `combine-as-imports` change is formatting only. Verified twice: on
+  `config/__init__.py` all 128 import bindings and 127 `__all__` entries are
+  identical before and after (533 → 305 lines); repo-wide, enabling it reports 26
+  findings, **all `I001` and all auto-fixable**, with no new rule family.
+- **R1 and R2 change behaviour by intent.** Requests that succeed today must stop:
+  a deeply nested graph, an unauthenticated roster read, a docs fetch outside
+  `local`. Each goes in `CHANGELOG.md` under `Changed` with its migration, not
+  under `Fixed`.
 
 ## Test plan
 
-- **Unit:** each workstream extends the suite that already owns its surface —
-  `tests/test_workflow_http.py` and `tests/test_api.py` for W7,
-  `tests/deploy/` for W1/W2, `tests/test_import_compat.py` for W3/W4,
-  `tests/tooling/` for the parity pins, `tests/deploy/test_env_example_contract.py`
-  for W5.
-- **Gates:** S1–S10 are each written as a two-sided test before the fix, per the
-  `mango-mutation-proof` skill. S7–S10 already have a verified reproduction —
-  the in-process check that found them becomes the test, so the red direction is
-  established rather than asserted. S1's negative direction is proven by
-  converting a **scratch copy**, never the real module, to a package and
-  asserting the gate fails.
-- **Coverage:** W4 raises floors to `measured − 2`, the two-point margin the
-  `SCRIPTS_FLOOR` comment already established as this repo's convention. No
-  floor is set to its exact measured value, because a one-point fluctuation
-  would then break CI for no defect.
-- **Gated suites:** untouched. No workstream needs LM Studio, Vertex, Postgres
-  or a live GCP project.
+- **Unit:** `tests/test_workflow_api.py` (**not** `test_workflow_http.py`, which
+  does not exist — a revision 1 error) and `tests/test_api.py` for R1/R2;
+  `tests/deploy/` for R4/R5; `tests/test_import_compat.py` and
+  `tests/test_openapi_snapshot.py` for R3/R6; `tests/tooling/` for the parity
+  pins; `test_env_example_contract.py` for R7.
+- **Mutation proof is mandatory and named per guard.** Six R3 milestones are
+  ratchets over properties already held, so "failing test first" is impossible —
+  the test passes on arrival. `specs/TEMPLATE.md:26-30` is explicit that a guard
+  which cannot be shown to fire is the defect. Each carries its named mutation:
+
+| Guard | Mutation that must turn it red |
+|---|---|
+| S6 snapshot | add `le=` to a scratch DTO field |
+| S7 governance | convert a scratch copy of a protected module to a package |
+| S8 facades | add a scratch re-export package absent from `_FACADES` |
+| S9 lockstep | bump `ruff==` on one side only |
+| S10 nightly | add `continue-on-error` to a job in `needs:` |
+| coverage floors | delete one test and confirm the *specific* floor goes red |
+
+- **Coverage floors:** set per row with a stated reason, **not** by a blanket
+  rule. Revision 1 claimed `measured − 2` was "this repo's convention"; there are
+  two precedents pointing opposite ways, and citing one without the other was an
+  inference presented as fact. `Makefile:36-39` uses a two-point margin for
+  `SCRIPTS_FLOOR`; `scripts/check_coverage.py:66-69` records the opposite for
+  `_entry_points` — "already at 100%, so the floor is set where the code actually
+  is rather than below it" — and eight current floors sit at 100/100 with no
+  margin. Use a margin only where a cloud SDK or subprocess boundary makes the
+  number jitter (`adapters`, `scripts`); set the rest at measured.
+- **Gated suites:** untouched. Nothing here needs LM Studio, Vertex, Postgres or
+  a live GCP project.
 
 ## Acceptance criteria
 
 - [ ] `make gate` green at every landing, not merely at the end.
-- [ ] S1–S10 each have a test that fails before the fix and passes after
-      (mutation-proven, both directions).
-- [ ] With stock defaults, `/workflows/run` refuses an inline definition,
-      `/workflows/validate` returns one indistinguishable error for any
-      filesystem path, a 16 KB nested graph raises `ConfigError` not
-      `RecursionError`, and `AgentRequest(max_steps=10**9)` is rejected.
-- [ ] `/docs`, `/redoc` and `/openapi.json` are unreachable when
-      `MANGOMAS_ENV != "local"`; `GET /agents` requires auth when auth is on.
-- [ ] `deploy/service.yaml` sets auth and both backpressure knobs, and
-      `deploy/README.md` documents the required set.
-- [ ] `repr(Settings(...))` contains no credential value.
-- [ ] No per-package coverage floor is lower than `measured − 2`.
-- [ ] `tests/test_openapi_snapshot.py` passes without regeneration, except for
-      the single reviewed regeneration carrying W7's `max_steps` ceiling.
-- [ ] Every W3 extraction is registered in `_FACADES` and covered by the new
-      completeness test.
-- [ ] `CHANGELOG.md` `[Unreleased]` names the test for each landed workstream,
-      with W7's four refusals under `Changed` and their configuration migration.
-- [ ] ADR-0030 recorded before either protected-path touch lands;
-      `BREAKING-CHANGE` trailer present on both commits.
-- [ ] The four documents describing `--check-protected-paths` as a live
-      pre-commit hook either become true or are corrected.
+- [ ] Every scenario S1–S12 has a test that fails before the fix and passes after,
+      with the mutation from the table above actually performed and recorded.
+- [ ] A 16 KB nested graph raises `ConfigError`, not `RecursionError`.
+- [ ] With auth enabled, `GET /agents` returns 401; `/docs`, `/redoc` and
+      `/openapi.json` are unreachable when `MANGOMAS_ENV != "local"`.
+- [ ] `deploy/service.yaml` sets auth and both backpressure knobs, asserted by a
+      test; `deploy/README.md` documents the required set.
+- [ ] `/readyz` honours `ready_timeout_seconds`, wired via `app.state` rather than
+      a `get_settings()` call inside `health.py`.
+- [ ] The snapshot projection includes per-property validation keywords, proven
+      by the S6 mutation.
+- [ ] No per-package coverage floor is below its measured value minus its stated,
+      per-row margin.
+- [ ] Every R6 extraction is registered in `_FACADES` and covered by the corrected
+      S8 test.
+- [ ] `CHANGELOG.md` `[Unreleased]` names the test for each landed workstream;
+      R1/R2 behavioural changes sit under `Changed` with their migration.
+- [ ] ADR-0030 through ADR-0033 recorded before their workstreams land;
+      `BREAKING-CHANGE` trailer on every `core/orchestrator.py` commit.
+- [ ] D1 and D2 are resolved by a written decision before any code implementing
+      them is merged.
+
+## Review record
+
+Revision 1 was adversarially peer-reviewed and came back **request changes**.
+Corrections carried into revision 2, recorded so the errors are not repeated:
+
+1. **"Unauthenticated cluster" was false.** Both workflow routes carry
+   `Depends(require_auth)`. Withdrawn and replaced with the measured auth map.
+2. **D1 re-opened a rejected alternative.** ADR-0012 explicitly rejected
+   "conditionally mount routes when enabled"; neither revision-1 document named
+   ADR-0012, and three tests pin the current behaviour.
+3. **The snapshot cannot see `le=`.** Revision 1's "one regeneration is the review
+   record" was false. This became S6, a new finding.
+4. **`le=` plus a clamp is uncoverable** under `core`'s 100% floor, and the stated
+   migration path does not work.
+5. **Collapsing the two precedence chains would reintroduce a fixed bug.**
+   ADR-0027 and the `_pipeline_effective_max_steps` docstring both record that
+   `request.max_steps` is *deliberately* excluded from the pipeline chain to avoid
+   double-applying. Revision 1 called them "near-identical".
+6. **The streaming cap contradicted ADR-0025**, whose recorded invariant is that
+   "a persisted streamed turn is always the complete answer the client received".
+   Moved out of scope pending an ADR amendment.
+7. **The facade completeness test could not police any proposed extraction.**
+   Respecified in the other direction (S8).
+8. **`C901` at 15 was an anti-ratchet**, and the reviewer's proposed 10 fails too.
+   Measured on the full lint surface: 13 is the tightest passing threshold (two
+   `tests/` functions at complexity 12 and 13 bind it); `src/` alone passes at 10.
+9. **`measured − 2` is not this repo's convention** — there is a recorded
+   counter-precedent in the file the ratchet edits.
+10. **`NEXT_STEPS.md:581` defers `RET`/`PERF`/`C90`**, and revision 1 quoted that
+    line with `C90` silently removed while proposing to adopt it.
+11. **`tests/test_workflow_http.py` does not exist**; cited three times.
+12. **`health.py` uses `[:DEFAULT_ERROR_DETAIL_TRUNCATE]`**, not a bare `[:200]`,
+    with a comment giving the reasoning revision 1 said was absent.
+13. **The dead `--check-protected-paths` flag is not a new finding** — already
+    recorded at `docs/analysis/20260822-ssd-template-pack-analysis.md:71`.
+
+One reviewer objection was **not accepted**: that ratcheting the `adapters` floor
+to 93 depends on the Vertex extraction landing first. Measured — `adapters` is at
+95% today and a 93 floor passes with exit 0 independently. The extraction raises
+the reachable ceiling; it is not a prerequisite.
