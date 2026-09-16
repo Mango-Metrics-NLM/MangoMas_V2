@@ -321,3 +321,118 @@ async def test_shrunk_document_still_drops_orphan_chunks(tmp_path: Path) -> None
 
     assert sorted(store.records) == [f"{f.as_posix()}#0"]
     assert report.deleted_sources == 1
+
+
+# ── Per-source ingest ledger (operator observability) ─────────────────────────
+#
+# Same discipline as the section above: assert on `caplog.records` and the
+# structured `extra=` fields, never on `caplog.text`.
+
+
+def _record(caplog: pytest.LogCaptureFixture, event: str) -> logging.LogRecord:
+    """The single record carrying ``event``; fails loudly if absent."""
+    return next(r for r in caplog.records if getattr(r, "event", "") == event)
+
+
+# Everything `logging` puts on a record by itself, so `_extras` can isolate the
+# fields this module chose to attach. Derived from a real record rather than
+# hand-listed: a hand-list silently goes stale across Python versions (3.12
+# added `taskName`), and the stale name would be scanned as if it were ours.
+_STANDARD_RECORD_ATTRS = frozenset(
+    vars(logging.LogRecord("n", logging.INFO, "p", 0, "m", None, None))
+) | {"asctime", "message"}
+
+
+def _extras(record: logging.LogRecord) -> dict[str, object]:
+    """Only the fields the pipeline passed via ``extra=``."""
+    return {k: v for k, v in vars(record).items() if k not in _STANDARD_RECORD_ATTRS}
+
+
+def _looks_like_a_vector(value: object) -> bool:
+    """True for a list of numbers (or a list of those) — i.e. an embedding."""
+    if not isinstance(value, list):
+        return False
+    return any(isinstance(item, int | float) or _looks_like_a_vector(item) for item in value)
+
+
+async def test_replace_logs_what_was_deleted_and_what_was_upserted(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One INFO line per source answers "what did that run do to my index?"."""
+    f, store = await _ingest_once(tmp_path, "a b c d e f g h i")  # 3 chunks
+
+    with caplog.at_level(logging.INFO, logger="mangomas.rag.pipeline"):
+        await _pipeline(FakeEmbeddingClient(), store, batch_size=2).ingest(str(f))
+
+    replaced = _record(caplog, "rag_source_replaced")
+    # getattr: LogRecord has no static schema for `extra=` fields.
+    assert getattr(replaced, "source", None) == f.as_posix()
+    assert getattr(replaced, "removed", None) == 3  # the prior generation
+    assert getattr(replaced, "upserted", None) == 3  # the new one
+    assert getattr(replaced, "batches", None) == 2
+
+
+async def test_first_ingest_logs_zero_removed(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``removed`` in the ledger tracks the store, not the document count."""
+    f = tmp_path / "doc.txt"
+    f.write_text("one two three", encoding="utf-8")
+
+    with caplog.at_level(logging.INFO, logger="mangomas.rag.pipeline"):
+        await _pipeline(FakeEmbeddingClient(), FakeVectorStore(), batch_size=10).ingest(str(f))
+
+    replaced = _record(caplog, "rag_source_replaced")
+    assert getattr(replaced, "removed", None) == 0
+    assert getattr(replaced, "upserted", None) == 1
+
+
+async def test_embedding_failure_is_logged_as_leaving_the_index_unchanged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The outage must be legible: which source, how far it got, and that the
+    index survived. A bare traceback says none of that."""
+    f, store = await _ingest_once(tmp_path, "a b c d e f g h i")
+    down = FakeEmbeddingClient(raise_on_batch=LLMUnavailable(_OUTAGE), raise_after_batches=1)
+
+    with (
+        caplog.at_level(logging.INFO, logger="mangomas.rag.pipeline"),
+        pytest.raises(LLMUnavailable),
+    ):
+        await _pipeline(down, store, batch_size=2).ingest(str(f))
+
+    failed = _record(caplog, "rag_source_embed_failed")
+    assert failed.levelno == logging.ERROR
+    assert getattr(failed, "source", None) == f.as_posix()
+    assert getattr(failed, "chunks", None) == 3
+    assert getattr(failed, "batches_completed", None) == 1
+    assert "index left unchanged" in failed.getMessage()
+    # No swap was attempted, so there is no ledger line to mislead the operator.
+    assert "rag_source_replaced" not in _events(caplog)
+
+
+async def test_ingest_never_logs_document_text_or_embeddings(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ingest logs carry counts and ids, never content.
+
+    The same rule ``Retriever.search`` follows for the query: the RAG layer
+    cannot know whether a corpus holds anything sensitive, so no document text
+    and no embedding vector may reach a log record — not in the message, and
+    not in a structured field.
+    """
+    confidential = "alpha bravo charlie delta echo foxtrot"
+    f = tmp_path / "doc.txt"
+    f.write_text(confidential, encoding="utf-8")
+
+    with caplog.at_level(logging.DEBUG, logger="mangomas.rag.pipeline"):
+        await _pipeline(FakeEmbeddingClient(), FakeVectorStore(), batch_size=1).ingest(str(f))
+
+    assert caplog.records, "fixture must produce records to inspect"
+    assert any(_extras(r) for r in caplog.records), "fixture must produce extras to inspect"
+    words = confidential.split()
+    for record in caplog.records:
+        assert not any(w in record.getMessage() for w in words)
+        for name, value in _extras(record).items():
+            assert not _looks_like_a_vector(value), f"embedding leaked via {name}"
+            assert not any(w in str(value) for w in words), f"document text leaked via {name}"

@@ -157,15 +157,21 @@ def _make_response() -> AgentResponse:
 
 @dataclass
 class FakeConnection:
-    """Stub that records ``fetchval`` / ``fetch`` calls."""
+    """Stub that records ``fetchval`` / ``fetch`` / ``execute`` calls."""
 
     fetchval_return: Any = 42
     fetch_return: list[dict[str, Any]] = field(default_factory=list)
     fetchval_side_effect: Exception | None = None
     fetch_side_effect: Exception | None = None
+    execute_side_effect: Exception | None = None
     #: Parameters bound by the most recent ``fetchval`` call, so a test can
     #: assert what was actually handed to the jsonb codec.
     fetchval_args: tuple[Any, ...] = ()
+    #: Every statement passed to ``execute``, in order — the DDL a real
+    #: ``_ensure_pool`` runs against a borrowed connection.
+    executed: list[str] = field(default_factory=list)
+    #: Type codecs registered by the pool's ``init`` hook.
+    codecs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     async def fetchval(self, _query: str, *args: Any) -> Any:
         self.fetchval_args = args
@@ -177,6 +183,15 @@ class FakeConnection:
         if self.fetch_side_effect is not None:
             raise self.fetch_side_effect
         return self.fetch_return
+
+    async def execute(self, query: str, *_args: Any) -> str:
+        self.executed.append(query)
+        if self.execute_side_effect is not None:
+            raise self.execute_side_effect
+        return "OK"
+
+    async def set_type_codec(self, name: str, **kwargs: Any) -> None:
+        self.codecs[name] = kwargs
 
 
 @dataclass
@@ -196,6 +211,41 @@ class FakePool:
 
     def terminate(self) -> None:
         self.terminate_called = True
+
+
+@dataclass
+class RecordingCreatePool:
+    """Stub for ``asyncpg.create_pool`` — the seam the real ``_ensure_pool`` uses.
+
+    Substituted for ``asyncpg.create_pool`` (a third-party callable, not an
+    internal Protocol) so the production ``_ensure_pool`` body actually
+    executes without a live database. It records every keyword it was handed,
+    drives the ``init=`` hook exactly as asyncpg does, and can be told to fail.
+    """
+
+    pool: FakePool = field(default_factory=FakePool)
+    side_effect: BaseException | None = None
+    #: One dict of call kwargs per invocation, ``dsn`` included.
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    #: Connection handed to the ``init=`` hook (asyncpg runs it per connection).
+    init_conn: FakeConnection = field(default_factory=FakeConnection)
+
+    async def __call__(self, dsn: str, **kwargs: Any) -> FakePool:
+        self.calls.append({"dsn": dsn, **kwargs})
+        if self.side_effect is not None:
+            raise self.side_effect
+        init = kwargs.get("init")
+        if init is not None:
+            await init(self.init_conn)
+        return self.pool
+
+
+def _patch_create_pool(
+    monkeypatch: pytest.MonkeyPatch, creator: RecordingCreatePool
+) -> RecordingCreatePool:
+    """Swap ``asyncpg.create_pool`` for *creator* for the duration of a test."""
+    monkeypatch.setattr(_asyncpg, "create_pool", creator)
+    return creator
 
 
 def _inject_pool(repo: PostgresRepository, pool: FakePool) -> None:
