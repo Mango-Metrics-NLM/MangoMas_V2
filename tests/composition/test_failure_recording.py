@@ -10,7 +10,9 @@ and behaviour tests against a hand-assembled subclass cannot see it.
 
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 
 import pytest
 
@@ -211,27 +213,46 @@ async def test_an_agent_not_found_raised_inside_handle_is_recorded() -> None:
     assert rows[0]["error_code"] == AgentNotFound("x").code
 
 
-async def test_the_routing_exclusion_is_positional_not_type_based() -> None:
+def test_the_routing_exclusion_is_positional_not_type_based() -> None:
     """Pin the mechanism, not just the two outcomes it produces.
 
     The two tests above are satisfiable by a mixin that matches on the
     exception type *and* happens to be lucky. This asserts the discriminator
-    itself: the mixin must settle routability before it dispatches, so the
-    origin of an exception is known rather than guessed from its class.
+    itself: routability is settled before the dispatch, and no handler narrows
+    on a type — so the origin of an exception is *known* rather than guessed
+    from its class.
+
+    Parsed rather than grepped. A substring search for a class name also
+    matches the comment explaining why that class must not be matched on,
+    which makes the guard fail for writing down its own rationale.
     """
-    source = inspect.getsource(_FailureRecordingMixin.dispatch)
-    body = source.split("try:", 1)
+    tree = ast.parse(textwrap.dedent(inspect.getsource(_FailureRecordingMixin.dispatch)))
+    function = tree.body[0]
+    assert isinstance(function, ast.AsyncFunctionDef), "dispatch is no longer an async def"
 
-    assert len(body) == 2, "the recording try block has moved; this guard is stale"
-    before_try, after_try = body
+    tries = [node for node in function.body if isinstance(node, ast.Try)]
+    assert len(tries) == 1, f"expected exactly one recording try, found {len(tries)}"
+    recording_try = tries[0]
 
-    assert "list_agents()" in before_try, (
+    before_try = function.body[: function.body.index(recording_try)]
+    called = {
+        node.func.attr
+        for statement in before_try
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "list_agents" in called, (
         "routability is no longer settled before dispatch; a handle-raised "
         "AgentNotFound would be misread as a routing error"
     )
-    assert "AgentNotFound" not in after_try, (
-        "the mixin discriminates on the exception type again; that cannot "
-        "distinguish the orchestrator's lookup from an agent's own handle"
+
+    handled = [
+        handler.type.id for handler in recording_try.handlers if isinstance(handler.type, ast.Name)
+    ]
+    assert handled == ["Exception"], (
+        f"the mixin narrows its handlers to {handled}; a type-based arm cannot "
+        "distinguish the orchestrator's routing lookup from an agent's own "
+        "handle raising the identical class"
     )
 
 

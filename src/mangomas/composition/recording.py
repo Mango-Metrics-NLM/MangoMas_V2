@@ -109,13 +109,16 @@ class _FailureRecordingMixin:
                 acceptance_fn=acceptance_fn,
                 max_steps=max_steps,
             )
-        except MangomasError as exc:
-            if routable:
-                await self._record_failure(agent_name, request, exc.code, str(exc))
-            raise
         except Exception as exc:
+            # One arm, not two. ``MangomasError`` is an ``Exception``, so
+            # splitting them bought nothing but a second copy of the
+            # ``routable`` check — and a copy whose false branch was
+            # unreachable, since the only unroutable failure the orchestrator
+            # raises is ``AgentNotFound``, which is typed. The error code is
+            # the only thing that actually differs.
             if routable:
-                await self._record_failure(agent_name, request, UNTYPED_ERROR_CODE, str(exc))
+                code = exc.code if isinstance(exc, MangomasError) else UNTYPED_ERROR_CODE
+                await self._record_failure(agent_name, request, code, str(exc))
             raise
         return response
 
