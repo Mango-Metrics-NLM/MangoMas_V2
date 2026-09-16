@@ -201,6 +201,9 @@ from tests.constants.fixtures import GCP_SECRETS_SECRET_NAME_ENV as GCP_SECRETS_
 from tests.constants.fixtures import JSONL_FILENAME as JSONL_FILENAME
 from tests.constants.fixtures import LARGE_UPSTREAM_BODY_CHARS as LARGE_UPSTREAM_BODY_CHARS
 from tests.constants.fixtures import LMSTUDIO_EMBEDDING_MODEL_ENV as LMSTUDIO_EMBEDDING_MODEL_ENV
+from tests.constants.fixtures import PASSED_NEEDLE_COMPACT as PASSED_NEEDLE_COMPACT
+from tests.constants.fixtures import PASSED_NEEDLE_QUOTELESS as PASSED_NEEDLE_QUOTELESS
+from tests.constants.fixtures import PASSED_NEEDLE_SPACED as PASSED_NEEDLE_SPACED
 from tests.constants.fixtures import PLAN_EXECUTE_REVIEW_AGENTS as PLAN_EXECUTE_REVIEW_AGENTS
 from tests.constants.fixtures import (
     PLAN_EXECUTE_REVIEW_GRAPH_NAME as PLAN_EXECUTE_REVIEW_GRAPH_NAME,
@@ -212,6 +215,25 @@ from tests.constants.fixtures import POSTGRES_TEST_DB as POSTGRES_TEST_DB
 from tests.constants.fixtures import POSTGRES_TEST_IMAGE as POSTGRES_TEST_IMAGE
 from tests.constants.fixtures import POSTGRES_TEST_PASSWORD as POSTGRES_TEST_PASSWORD
 from tests.constants.fixtures import POSTGRES_TEST_USER as POSTGRES_TEST_USER
+from tests.constants.fixtures import PREDICATE_INT_FIELD as PREDICATE_INT_FIELD
+from tests.constants.fixtures import PREDICATE_INT_VALUE as PREDICATE_INT_VALUE
+from tests.constants.fixtures import PREDICATE_INVALID_JSON as PREDICATE_INVALID_JSON
+from tests.constants.fixtures import PREDICATE_JSON_ARRAY as PREDICATE_JSON_ARRAY
+from tests.constants.fixtures import REVIEW_APPROVED_FEEDBACK as REVIEW_APPROVED_FEEDBACK
+from tests.constants.fixtures import REVIEW_BOOL_THRESHOLD as REVIEW_BOOL_THRESHOLD
+from tests.constants.fixtures import REVIEW_FEEDBACK_FIELD as REVIEW_FEEDBACK_FIELD
+from tests.constants.fixtures import REVIEW_NESTED_PASSED_PATH as REVIEW_NESTED_PASSED_PATH
+from tests.constants.fixtures import REVIEW_PASSED_FIELD as REVIEW_PASSED_FIELD
+from tests.constants.fixtures import REVIEW_REJECTED_FEEDBACK as REVIEW_REJECTED_FEEDBACK
+from tests.constants.fixtures import REVIEW_REJECTED_SUGGESTION as REVIEW_REJECTED_SUGGESTION
+from tests.constants.fixtures import REVIEW_SCORE_ABOVE as REVIEW_SCORE_ABOVE
+from tests.constants.fixtures import REVIEW_SCORE_AT_LEAST as REVIEW_SCORE_AT_LEAST
+from tests.constants.fixtures import REVIEW_SCORE_AT_MOST as REVIEW_SCORE_AT_MOST
+from tests.constants.fixtures import REVIEW_SCORE_BELOW as REVIEW_SCORE_BELOW
+from tests.constants.fixtures import REVIEW_SCORE_FIELD as REVIEW_SCORE_FIELD
+from tests.constants.fixtures import REVIEW_SCORE_LOW as REVIEW_SCORE_LOW
+from tests.constants.fixtures import REVIEW_SUGGESTIONS_FIELD as REVIEW_SUGGESTIONS_FIELD
+from tests.constants.fixtures import REVIEW_WRAPPER_FIELD as REVIEW_WRAPPER_FIELD
 from tests.constants.fixtures import SLOW_AGENT_DELAY_SECONDS as SLOW_AGENT_DELAY_SECONDS
 from tests.constants.fixtures import STUB_REPLY as STUB_REPLY
 from tests.constants.fixtures import SUMMARIZE_HISTORY_LIMIT_ENV as SUMMARIZE_HISTORY_LIMIT_ENV
@@ -249,6 +271,7 @@ from tests.constants.fixtures import WORKFLOW_E2E_FAILURE_MESSAGE as WORKFLOW_E2
 from tests.constants.fixtures import WORKFLOW_E2E_SCRIPT as WORKFLOW_E2E_SCRIPT
 from tests.constants.fixtures import WORKFLOW_LOOP_SENTINEL as WORKFLOW_LOOP_SENTINEL
 from tests.constants.fixtures import WORKFLOW_NODE_KINDS as WORKFLOW_NODE_KINDS
+from tests.constants.fixtures import WORKFLOW_PREDICATE_KINDS as WORKFLOW_PREDICATE_KINDS
 from tests.constants.fixtures import WORKFLOW_RUN_ROUTE as WORKFLOW_RUN_ROUTE
 from tests.constants.fixtures import WORKFLOW_RUNTIME_EXIT_CODE as WORKFLOW_RUNTIME_EXIT_CODE
 from tests.constants.fixtures import (
@@ -511,6 +534,9 @@ __all__ = [
     "MIN_HARDWARE_CONTRACT_FILES",
     "MISSING_TOOLS_AGENT_SLUG",
     "OVERRIDE_MODEL_ID",
+    "PASSED_NEEDLE_COMPACT",
+    "PASSED_NEEDLE_QUOTELESS",
+    "PASSED_NEEDLE_SPACED",
     "PATH_SCOPED_DENY_RULE_PREFIX",
     "PATH_SCOPED_MCP_SERVERS",
     "PLANNER_SIGNAL_GOAL",
@@ -525,6 +551,10 @@ __all__ = [
     "POSTGRES_TEST_IMAGE",
     "POSTGRES_TEST_PASSWORD",
     "POSTGRES_TEST_USER",
+    "PREDICATE_INT_FIELD",
+    "PREDICATE_INT_VALUE",
+    "PREDICATE_INVALID_JSON",
+    "PREDICATE_JSON_ARRAY",
     "PREEXISTING_HOOKS",
     "PRE_TOOL_USE_HOOK_COMMAND",
     "PROCEDURE_SECTION_HEADING",
@@ -541,6 +571,21 @@ __all__ = [
     "REVIEWER_SIGNAL_REMEDIATION",
     "REVIEWER_SIGNAL_REPLY",
     "REVIEWER_VALIDATE_OUTPUT_ENV",
+    "REVIEW_APPROVED_FEEDBACK",
+    "REVIEW_BOOL_THRESHOLD",
+    "REVIEW_FEEDBACK_FIELD",
+    "REVIEW_NESTED_PASSED_PATH",
+    "REVIEW_PASSED_FIELD",
+    "REVIEW_REJECTED_FEEDBACK",
+    "REVIEW_REJECTED_SUGGESTION",
+    "REVIEW_SCORE_ABOVE",
+    "REVIEW_SCORE_AT_LEAST",
+    "REVIEW_SCORE_AT_MOST",
+    "REVIEW_SCORE_BELOW",
+    "REVIEW_SCORE_FIELD",
+    "REVIEW_SCORE_LOW",
+    "REVIEW_SUGGESTIONS_FIELD",
+    "REVIEW_WRAPPER_FIELD",
     "ROUTER_AGENT_SLUGS",
     "RTK_BINARY_GUARD_FRAGMENT",
     "RTK_DISABLE_ENV",
@@ -619,6 +664,7 @@ __all__ = [
     "WORKFLOW_E2E_SCRIPT",
     "WORKFLOW_LOOP_SENTINEL",
     "WORKFLOW_NODE_KINDS",
+    "WORKFLOW_PREDICATE_KINDS",
     "WORKFLOW_RUNTIME_EXIT_CODE",
     "WORKFLOW_RUN_ROUTE",
     "WORKFLOW_SCHEMA_VERSION_CURRENT",

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from mangomas.config import DEFAULT_WORKFLOW_LOOP_MAX_STEPS, DEFAULT_WORKFLOW_SCHEMA_VERSION
 from mangomas.workflow import WorkflowGraph
-from mangomas.workflow.graph import AgentNode, FanOutNode, LoopNode, SequenceNode
+from mangomas.workflow.graph import AgentNode, BranchNode, FanOutNode, LoopNode, SequenceNode
 from mangomas.workflow.predicate import PredicateSpec
 
 
@@ -122,3 +122,33 @@ def test_graph_is_frozen() -> None:
     node = AgentNode(agent="chat")
     with pytest.raises(ValidationError):
         node.agent = "other"
+
+
+def test_json_field_predicate_round_trips_through_loop_and_branch() -> None:
+    """spec-0032: the new kind reaches both `PredicateSpec` sites via graph JSON."""
+    accept = {"kind": "json_field", "field": "passed", "equals": True}
+    graph = WorkflowGraph.model_validate(
+        {
+            "name": "x",
+            "root": {
+                "kind": "branch",
+                "branches": [
+                    {
+                        "when": {"kind": "json_field", "field": "score", "at_least": 0.8},
+                        "then": {
+                            "kind": "loop",
+                            "agent": "reviewer",
+                            "accept": accept,
+                            "max_steps": 3,
+                        },
+                    }
+                ],
+                "default": {"kind": "agent", "agent": "chat"},
+            },
+        }
+    )
+    assert isinstance(graph.root, BranchNode)
+    case = graph.root.branches[0]
+    assert case.when.kind == "json_field"
+    assert isinstance(case.then, LoopNode)
+    assert case.then.accept == PredicateSpec.model_validate(accept)

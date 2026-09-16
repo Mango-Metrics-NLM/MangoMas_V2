@@ -17,7 +17,7 @@ argument-hint: "Describe the graph or node kind (e.g. 'planner then fan-out revi
   or over HTTP (`POST /workflows/run|validate`)
 - Compose a `sequence` of `agent` / `fan_out` / `loop` / `branch` steps
 - Route conditionally with a `branch` node (predicate-selected child; spec 0012 / ADR-0016)
-- Add a node kind or an acceptance predicate (`contains` / `regex`)
+- Add a node kind or an acceptance predicate (`contains` / `regex` / `json_field`)
 - Diagnose parity gaps vs the imperative `dispatch_pipeline` / `dispatch_fan_out`
 - Enable the feature (`MANGOMAS_WORKFLOW__ENABLED` + `__DEFINITION`)
 
@@ -51,7 +51,8 @@ mangomas workflow run "ship it" -f graph.json
 | Sequence threading | A step's `content` becomes the next step's user message; `metadata` threads too — identical to `Orchestrator.dispatch_pipeline`. |
 | Metadata-transparent | An all-agent `sequence` result **equals** `dispatch_pipeline([names], request)` (full model, incl. metadata). |
 | Fan-out reduce | `first` returns the first branch verbatim; `concat` newline-joins `content` (`agent="fan_out"`, empty metadata). |
-| Predicate is sync | `PredicateSpec` (`contains`/`regex`) compiles once to a sync `AcceptanceFn`; never async, never I/O. |
+| Predicate is sync | `PredicateSpec` (`contains`/`regex`/`json_field`) compiles once to a sync `AcceptanceFn`; never async, never I/O. |
+| Never text-match a structured agent | `contains`/`regex` match response **text**. `planner`/`reviewer` emit JSON, and *no* substring spelling is correct: the quoted needle is a false negative (`model_dump_json()` emits no space after the colon, so an **approving** review raises `MaxStepsExceeded`), and the quoteless needle that fixes that is a false positive (it matches prose inside `feedback`/`suggestions`, accepting a **rejecting** review). Use `json_field` — spec-0032 / ADR-0031. |
 | Default-OFF | `MANGOMAS_WORKFLOW__ENABLED=false` by default; `--definition` overrides per-invocation. |
 | No `errors.py` change | Bad graph → `ConfigError` (400); unknown agent → `AgentNotFound` (404); loop exhaustion → `MaxStepsExceeded` (422). |
 
@@ -118,7 +119,11 @@ mangomas workflow run "ship it" -f graph.json
 
 1. Decide the shape: a single node, or a `sequence` of `agent` / `fan_out` / `loop`.
 2. Confirm every referenced agent name is registered in `composition.agent_registry`.
-3. For a `loop`: pick a declarative `accept` predicate and cap `max_steps`.
+3. For a `loop`: pick a declarative `accept` predicate and cap `max_steps`. For a
+   structured agent use `{"kind": "json_field", "field": "passed", "equals": true}`
+   — `field` is a dotted path, and exactly one of `equals` / `at_least` / `at_most`
+   applies. Parsing is strict (whole-text JSON object), matching `VALIDATE_OUTPUT`;
+   unparseable content is "not accepted" rather than an error.
 4. `mangomas workflow validate -f graph.json` (parse-only) before `run`.
 5. Add a test using `FakeLLM(replies=[...])` proving parity with the imperative equivalent.
 
