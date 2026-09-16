@@ -322,13 +322,20 @@ POST /agents/nosuch/invoke  ->  404
   around each `__anext__`. The diagnosis and the remedy both already exist in this
   codebase; they were never applied to the layer below. Protected path, so the
   fix needs the trailer.
-- **`dispatch_fan_out` leaks sibling work on failure.** `orchestrator.py:536-539`
-  uses bare `asyncio.gather`, which propagates the first exception without
-  cancelling siblings. After the caller has received a 500, the remaining agents
-  run to completion, each calling `record_agent_invocation` and `save_turn` — so
-  a failed fan-out writes turns for branches whose result was discarded, and pays
-  for their LLM calls. The docstring says "fail-fast"; it means "returns fast".
-  Same shape at `workflow/nodes/fan_out.py:53-57`.
+- **`dispatch_fan_out` leaks sibling work on failure — measured.**
+  `orchestrator.py:536-539` uses bare `asyncio.gather`, which propagates the first
+  exception without cancelling siblings. Reproduced with a failing agent and a
+  slow one:
+
+```
+caller received:              LLMUnavailable
+turns right after the error:  0
+turns after siblings settle:  1   -> ['slow']
+```
+
+  The caller gets its error, and the discarded branch then finishes and persists
+  a turn, having paid for its LLM call. The docstring says "fail-fast"; it means
+  "returns fast". Same shape at `workflow/nodes/fan_out.py:53-57`.
 - **The persisted request is not what the agent saw.** `orchestrator.py:318`
   saves the original request, but in a multi-step loop the agent saw
   `current_messages` with re-injected assistant turns, so the stored turn cannot
