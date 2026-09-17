@@ -45,7 +45,7 @@ dev = [
     "ruff==0.16.6",
     # Exact-pinned in lockstep with the mirrors-mypy rev in
     # .pre-commit-config.yaml, for the same reason as the ruff pin above.
-    "mypy==2.3.0",
+    "mypy==2.3.1",
     # Exact-pinned: contract semantics and the TYPE_CHECKING exclusion flag
     # change between releases. `make lint-imports` is the one invocation.
     "import-linter==2.15",
