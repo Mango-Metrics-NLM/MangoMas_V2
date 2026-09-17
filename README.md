@@ -261,7 +261,10 @@ down to the existing `dispatch_pipeline` / `dispatch_fan_out` / acceptance-loop
 primitives. Every leaf is one public dispatch call, so an all-agent `sequence` is
 identical to the imperative `dispatch_pipeline`. The `branch` node (spec 0012 /
 ADR-0016) routes on the threaded content via a predicate, enabling
-`planner → route → specialised agent`. A `fan_out` branch may itself be a
+`planner → route → specialised agent`. Predicates come in three kinds —
+`contains` and `regex` match the response text, and `json_field` (spec 0032 /
+ADR-0031) tests a parsed field, which is the only correct way to loop or route
+on a structured agent such as `planner` or `reviewer`. A `fan_out` branch may itself be a
 composite (spec 0013 / ADR-0018) — an all-agent fan_out keeps byte-identical
 `dispatch_fan_out` parity, while a composite branch runs through its own
 executor. Graphs are also runnable over HTTP (`POST /workflows/run|validate`).

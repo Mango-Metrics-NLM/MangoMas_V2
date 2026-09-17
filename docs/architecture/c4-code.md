@@ -179,7 +179,7 @@ The workflow engine executes a bounded workflow tree defined as inline JSON or a
   - `FanOutNode`: Dispatches parallel branch evaluation.
   - `LoopNode`: Iterates execution until an `AcceptanceFn` returns true or step limits are reached.
   - `BranchNode`: Evaluates conditional branching based on compiled `PredicateSpec` rules.
-- **Predicate Compilation (`predicate.py`)**: Compiles JSON predicate expressions (`contains` and `regex`) into synchronous acceptance predicates executed over node responses.
+- **Predicate Compilation (`predicate.py`)**: Compiles JSON predicate expressions into synchronous acceptance predicates executed over node responses. Three kinds: `contains` and `regex` match the response **text**; `json_field` (spec-0032 / ADR-0031) parses the response as a JSON object and tests one addressed field via a dotted path, with exactly one of `equals` / `at_least` / `at_most`. The structured agents (`planner`, `reviewer`) emit JSON, and no substring spelling over their serialised output is correct — a quoted needle is a false negative against `model_dump_json()`'s compact form, and the quoteless needle that survives formatting drift is a false positive against `feedback` / `suggestions` prose. Parsing is strict (whole-text, object-only) so the predicate and `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT` agree by construction, and the compiled closure is **total** — unparseable content is "not accepted" rather than an error, so non-convergence still surfaces as `MaxStepsExceeded`.
 
 ---
 

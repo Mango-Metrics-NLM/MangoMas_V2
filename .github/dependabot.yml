@@ -20,3 +20,18 @@ updates:
     directory: /mango-integration-contracts
     schedule:
       interval: monthly
+
+  # Pre-commit hook revs. `ruff` and `mypy` are exact-pinned in BOTH
+  # pyproject.toml's dev extra and .pre-commit-config.yaml, and
+  # tests/tooling/test_toolchain_pin_parity.py fails CI when the two drift.
+  # Dependabot's pip ecosystem never touches this file, so without this entry
+  # a ruff bump arrives as a pip-only PR that silently desyncs the toolchain —
+  # contributors then run pre-commit on a different ruff than CI, which shows
+  # up as a formatting diff nobody can reproduce. Groups cannot span
+  # ecosystems, so the two PRs still arrive separately: merge them together,
+  # or land one commit that bumps both files. The parity test is what makes
+  # forgetting visible rather than silent.
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: monthly

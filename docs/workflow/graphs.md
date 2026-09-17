@@ -32,6 +32,40 @@ pure, **synchronous** `AcceptanceFn`:
 - `{"kind": "contains", "value": "DONE", "case_sensitive": false}`
 - `{"kind": "regex", "value": "^OK", "flags": ["ignorecase"]}` — flags are any of
   `ignorecase` / `multiline` / `dotall`.
+- `{"kind": "json_field", "field": "passed", "equals": true}` — parse the response
+  as a JSON object and test one addressed field. `field` is a dotted path over
+  mappings (`"review.passed"`); exactly one of `equals` (a JSON scalar),
+  `at_least` or `at_most` (numeric) selects the comparison.
+
+The same vocabulary drives `branch`'s `when`, since both are typed `PredicateSpec`.
+
+### Never text-match a structured agent
+
+`contains` and `regex` match the response **text**, which is correct for an agent
+that emits prose and wrong for one that emits JSON. `ReviewerAgent` emits
+`{"passed": …, "score": …, "feedback": …, "suggestions": […]}`, and **no spelling
+of a substring match over that is correct** — measured, both directions:
+
+| Needle | Response | Truth | Predicate | |
+|---|---|---|---|---|
+| `"passed": true` | compact `model_dump_json()` | accept | **reject** | false negative |
+| `"passed":true` | pretty-printed | accept | **reject** | false negative |
+| `passed:true` | rejecting review, `feedback` mentions it | reject | **accept** | false positive |
+| `passed:true` | rejecting review, `suggestions` echo it | reject | **accept** | false positive |
+
+A human writes the needle with a space after the colon; `model_dump_json()` emits
+it without one; the loop runs to `max_steps` and raises `MaxStepsExceeded` **on an
+approving review**. Dropping the quotes to survive that then matches prose inside
+`feedback` — accepting a **rejecting** review. Fixing the first manufactures the
+second. Use `json_field` for `planner` and `reviewer`; `contains` / `regex` remain
+correct for `chat`, `summarize` and `tool`.
+
+Parsing is **strict** — the whole response must be a JSON object, matching
+`MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT`, so the two guards agree. A response
+that is not parseable JSON, is a JSON array, or whose path does not resolve is
+simply **not accepted**: the predicate never raises, so non-convergence still
+surfaces as `MaxStepsExceeded` (422). Set the `mangomas.workflow.predicate` logger
+to `DEBUG` to see the addressed path, whether it resolved, and the verdict per step.
 
 ## Example
 

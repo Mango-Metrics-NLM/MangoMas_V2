@@ -125,6 +125,46 @@ WORKFLOW_RUNTIME_EXIT_CODE: int = EXIT_RUNTIME_ERROR
 WORKFLOW_RUN_ROUTE: str = "/workflows/run"
 WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
 
+# ── Structured acceptance predicates (spec 0032) ──────────────────────────────
+WORKFLOW_PREDICATE_KINDS: tuple[str, ...] = ("contains", "json_field", "regex")
+# ``ReviewResult`` field names the ``json_field`` predicate addresses. Pinned
+# against the real schema by ``tests/test_workflow_predicate.py`` so a rename in
+# ``agents/reviewer.py`` fails a test rather than silently rotting the fixtures.
+REVIEW_PASSED_FIELD: str = "passed"
+REVIEW_SCORE_FIELD: str = "score"
+REVIEW_FEEDBACK_FIELD: str = "feedback"
+REVIEW_SUGGESTIONS_FIELD: str = "suggestions"
+# Dotted-path fixture: one wrapper level above a ``ReviewResult``-shaped body.
+REVIEW_WRAPPER_FIELD: str = "review"
+REVIEW_NESTED_PASSED_PATH: str = "review.passed"
+# The three text needles measured in spec 0032, all of them wrong. The first two
+# are false negatives against one another's serialisation (a human writes the
+# spaced form; ``model_dump_json()`` emits the compact one; ``indent=2`` moves it
+# back). The quoteless third survives that drift and becomes a false positive,
+# matching prose inside ``feedback`` / ``suggestions``.
+PASSED_NEEDLE_SPACED: str = '"passed": true'
+PASSED_NEEDLE_COMPACT: str = '"passed":true'
+PASSED_NEEDLE_QUOTELESS: str = "passed:true"
+# Review bodies: one approving, one rejecting while quoting the quoteless needle.
+REVIEW_APPROVED_FEEDBACK: str = "ships as-is"
+REVIEW_REJECTED_FEEDBACK: str = f"do not report {PASSED_NEEDLE_QUOTELESS} while tests are red"
+REVIEW_REJECTED_SUGGESTION: str = f"re-run the suite before writing {PASSED_NEEDLE_QUOTELESS}"
+# Score thresholds and the values that straddle them.
+REVIEW_SCORE_AT_LEAST: float = 0.8
+REVIEW_SCORE_ABOVE: float = 0.9
+REVIEW_SCORE_BELOW: float = 0.7
+REVIEW_SCORE_AT_MOST: float = 0.2
+REVIEW_SCORE_LOW: float = 0.1
+# R4: a threshold a boolean must NOT satisfy (``True >= 0.5`` is otherwise true).
+REVIEW_BOOL_THRESHOLD: float = 0.5
+# Integer/bool equals fixtures — ``True == 1`` in Python, so both directions of
+# the conflation need a value to test against.
+PREDICATE_INT_FIELD: str = "attempts"
+PREDICATE_INT_VALUE: int = 1
+# A JSON document that is valid JSON but not an object.
+PREDICATE_JSON_ARRAY: str = "[1, 2]"
+PREDICATE_INVALID_JSON: str = "not json at all"
+
 # ── Workflow E2E demo script (scripts/run_workflow_e2e.py) ────────────────────
 WORKFLOW_E2E_SCRIPT: str = "run_workflow_e2e.py"
 # Marker the script prints on its elapsed-time report line (happy path only).
@@ -216,6 +256,9 @@ __all__ = [
     "JSONL_FILENAME",
     "LARGE_UPSTREAM_BODY_CHARS",
     "LMSTUDIO_EMBEDDING_MODEL_ENV",
+    "PASSED_NEEDLE_COMPACT",
+    "PASSED_NEEDLE_QUOTELESS",
+    "PASSED_NEEDLE_SPACED",
     "PLAN_EXECUTE_REVIEW_AGENTS",
     "PLAN_EXECUTE_REVIEW_GRAPH_NAME",
     "PLAN_EXECUTE_REVIEW_GRAPH_RELPATH",
@@ -223,6 +266,25 @@ __all__ = [
     "POSTGRES_TEST_IMAGE",
     "POSTGRES_TEST_PASSWORD",
     "POSTGRES_TEST_USER",
+    "PREDICATE_INT_FIELD",
+    "PREDICATE_INT_VALUE",
+    "PREDICATE_INVALID_JSON",
+    "PREDICATE_JSON_ARRAY",
+    "REVIEW_APPROVED_FEEDBACK",
+    "REVIEW_BOOL_THRESHOLD",
+    "REVIEW_FEEDBACK_FIELD",
+    "REVIEW_NESTED_PASSED_PATH",
+    "REVIEW_PASSED_FIELD",
+    "REVIEW_REJECTED_FEEDBACK",
+    "REVIEW_REJECTED_SUGGESTION",
+    "REVIEW_SCORE_ABOVE",
+    "REVIEW_SCORE_AT_LEAST",
+    "REVIEW_SCORE_AT_MOST",
+    "REVIEW_SCORE_BELOW",
+    "REVIEW_SCORE_FIELD",
+    "REVIEW_SCORE_LOW",
+    "REVIEW_SUGGESTIONS_FIELD",
+    "REVIEW_WRAPPER_FIELD",
     "SLOW_AGENT_DELAY_SECONDS",
     "STUB_REPLY",
     "SUMMARIZE_HISTORY_LIMIT_ENV",
@@ -260,6 +322,7 @@ __all__ = [
     "WORKFLOW_E2E_SCRIPT",
     "WORKFLOW_LOOP_SENTINEL",
     "WORKFLOW_NODE_KINDS",
+    "WORKFLOW_PREDICATE_KINDS",
     "WORKFLOW_RUNTIME_EXIT_CODE",
     "WORKFLOW_RUN_ROUTE",
     "WORKFLOW_SCHEMA_VERSION_CURRENT",
