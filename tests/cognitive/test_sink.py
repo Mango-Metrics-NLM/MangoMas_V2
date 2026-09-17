@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -117,13 +118,25 @@ async def test_http_sink_timeout_raises() -> None:
 
 
 async def test_jsonl_concurrent_appends(tmp_path: Path) -> None:
+    """Concurrent writers interleave without corrupting a line.
+
+    Each emit carries a **distinct** ``signal_id``. It used to reuse one
+    envelope, which stopped proving anything once the sink learned to drop
+    replays (ADR-0032) — eight emissions of one id are now correctly one line.
+    Distinct ids keep the property this test exists for (atomic O_APPEND under
+    concurrency) and make it independent of the dedupe behaviour.
+    """
     path = tmp_path / JSONL_FILENAME
     sink = JsonlCognitiveSink(path)
-    await asyncio.gather(*[sink.emit(_signal()) for _ in range(8)])
+    signals = [_signal().model_copy(update={"signal_id": uuid4()}) for _ in range(8)]
+
+    await asyncio.gather(*[sink.emit(signal) for signal in signals])
+
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 8
     for line in lines:
         CognitiveSignal.model_validate_json(line)
+    assert len({CognitiveSignal.model_validate_json(line).signal_id for line in lines}) == 8
 
 
 async def test_composite_all_success() -> None:

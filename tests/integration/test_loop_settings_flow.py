@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pytest
 
+from mangomas.adapters.storage._schema import TurnStatus
 from mangomas.errors import StepTimeout
 from tests.constants import (
     FLOW_LOOP_MAX_STEPS,
@@ -62,8 +63,17 @@ async def test_env_step_timeout_surfaces_as_a_504_envelope(compose_app: ComposeF
 
     assert response.status_code == _STEP_TIMEOUT_STATUS, response.text
     assert response.json()["error"] == StepTimeout(TINY_STEP_TIMEOUT_SECONDS).code
-    # The turn never completed, so no half-turn may be persisted.
-    assert await read_history(composed) == []
+    # The turn never completed, so no *half-turn* may be persisted — but the
+    # attempt itself is now recorded (ADR-0031). Before that, a timed-out
+    # dispatch wrote nothing at all, so the only durable log of the system's
+    # behaviour recorded successes and the failure was invisible. Asserting the
+    # row's shape is a stronger claim than the `== []` this replaced: it pins
+    # that the response half is empty *and* that the failure is attributable.
+    rows = await read_history(composed)
+    assert len(rows) == 1
+    assert rows[0]["status"] == TurnStatus.ERROR
+    assert rows[0]["error_code"] == StepTimeout(TINY_STEP_TIMEOUT_SECONDS).code
+    assert rows[0]["response"] == {}
 
 
 async def test_default_step_timeout_leaves_a_normal_request_alone(

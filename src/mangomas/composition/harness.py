@@ -15,6 +15,7 @@ from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from mangomas.composition.llm import _AgentLLMOverrideCloseMixin
+from mangomas.composition.recording import _FailureRecordingMixin
 from mangomas.config import HarnessSettings, LoopSettings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import AgentRequest, AgentResponse
@@ -29,7 +30,7 @@ _HARNESS_TOPOLOGY_DISPATCH = "dispatch"
 _HARNESS_TOPOLOGY_STREAM = "stream"
 
 
-class _HarnessOrchestrator(_AgentLLMOverrideCloseMixin, Orchestrator):
+class _HarnessOrchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator):
     """Orchestrator subclass that wraps dispatch paths in a harness-level span.
 
     Engaged only when ``Settings.harness.enabled`` is ``True``. The parent

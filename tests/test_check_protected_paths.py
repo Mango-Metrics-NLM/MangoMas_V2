@@ -525,3 +525,29 @@ def test_policy_blob_path_survives_a_path_outside_the_tree(tmp_path: Path) -> No
     outside = tmp_path / "elsewhere" / "pyproject.toml"
 
     assert check_protected_paths._policy_blob_path(outside).endswith("pyproject.toml")
+
+
+def test_a_marker_naming_a_path_the_base_does_not_protect_reads_as_unscoped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A marker naming a not-yet-protected file approves broadly, not narrowly.
+
+    The sharp edge of "scoped only when the first token is an *exact* protected
+    path", and worth pinning rather than discovering. A commit that widens
+    ``protected_paths`` and names one of the *newly* protected files in its
+    marker is judged against the **base** policy (ADR-0030), which does not
+    contain that path yet — so the marker reads as prose and approves every
+    touched path in the range.
+
+    This is the intended direction of failure: broad-and-visible in a line a
+    reviewer can see, never silently-narrowed-to-nothing. It is also why
+    widening the protected set is a reviewable event in its own right.
+    """
+    repo = _init_two_protected_repo(tmp_path)
+    _commit_touching(
+        repo,
+        _PROTECTED_FILE,
+        "chore: widen governance\n\nBREAKING-CHANGE: docs/not-protected.md — new scope",
+    )
+
+    assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_OK

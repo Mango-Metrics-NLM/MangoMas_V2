@@ -21,19 +21,31 @@ DEFAULT_WORKFLOW_SCHEMA_VERSION: int = 1
 DEFAULT_WORKFLOW_LOOP_MAX_STEPS: int = 5
 
 
+# True preserves the documented behaviour: a per-request ``definition`` runs
+# even when the feature is disabled. Set False to require server-configured
+# graphs only (ADR-0033) — a deployment where one shared credential should not
+# authorise composing and running an arbitrary agent graph.
+DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION: bool = True
+
+
 class WorkflowSettings(BaseModel):
     """Declarative multi-agent workflow-graph configuration (spec 0005).
 
     Gated by ``enabled`` (default ``False``) exactly like :class:`MemorySettings`
     / :class:`EmbeddingSettings`, so an environment without ``MANGOMAS_WORKFLOW__*``
     sees no behaviour change. ``definition`` is either a filesystem path to a JSON
-    graph or an inline JSON string; it is only consulted when ``enabled`` (or when
-    the CLI ``--definition`` flag overrides it). The graph itself declares its
+    graph or an inline JSON string; it is consulted when ``enabled``, and a
+    caller-supplied graph (the CLI ``--definition`` flag, the HTTP request body)
+    takes precedence over it — but only while ``allow_inline_definition`` is
+    ``True``. Set that to ``False`` and a caller-supplied graph is refused
+    outright rather than overriding (ADR-0033), leaving ``definition`` the only
+    graph a deployment will run. The graph itself declares its
     ``schema_version``, validated by :func:`mangomas.workflow.load_workflow`.
     """
 
     enabled: bool = DEFAULT_WORKFLOW_ENABLED
     definition: str | None = DEFAULT_WORKFLOW_DEFINITION
+    allow_inline_definition: bool = DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION
 
     @model_validator(mode="after")
     def _validate_workflow(self) -> WorkflowSettings:

@@ -7,7 +7,6 @@ repository satisfies the async surface the orchestrator expects.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sqlite3
 import threading
@@ -15,6 +14,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from mangomas.adapters.storage._schema import (
+    TURN_RECORD_COLUMNS,
+    TURN_SCHEMA_VERSION,
+    TURN_SELECT_COLUMNS,
+    TurnStatus,
+    sqlite_column_ddl,
+    turn_row_to_dict,
+)
 from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_STORAGE_LIST_TURNS_LIMIT
 from mangomas.core.agent import AgentRequest, AgentResponse
@@ -56,6 +63,7 @@ class SQLiteRepository:
         with self._lock:
             self._conn.execute(self._SCHEMA)
             self._ensure_tenant_column()
+            self._ensure_record_columns()
             self._conn.commit()
         logger.debug("SQLiteRepository initialised", extra={"db_path": self._path})
 
@@ -72,6 +80,127 @@ class SQLiteRepository:
                 f"ALTER TABLE turns ADD COLUMN tenant TEXT NOT NULL DEFAULT '{DEFAULT_TENANT}'"
             )
 
+    def _existing_columns(self) -> set[str]:
+        """Return the ``turns`` table's current column names. Called under ``self._lock``."""
+        return {row[1] for row in self._conn.execute("PRAGMA table_info(turns)")}
+
+    def _ensure_record_columns(self) -> None:
+        """Idempotently append any missing :data:`TURN_RECORD_COLUMNS`.
+
+        Additive only — never drops or alters — so a database written by an
+        older build keeps working and its rows adopt each column's default.
+        Driven from the shared column tuple rather than a hand-written list, so
+        this backend cannot fall behind the Postgres one. Called under
+        ``self._lock``.
+        """
+        columns = self._existing_columns()
+        for column in TURN_RECORD_COLUMNS:
+            if column.name in columns:
+                continue
+            self._conn.execute(f"ALTER TABLE turns ADD COLUMN {sqlite_column_ddl(column)}")
+            logger.info(
+                "turns table migrated",
+                extra={
+                    "event": "turn_schema_migrated",
+                    "column": column.name,
+                    "schema_version": TURN_SCHEMA_VERSION,
+                    "db_path": self._path,
+                },
+            )
+
+    def _insert_turn(
+        self,
+        *,
+        agent: str,
+        request_json: str,
+        response_json: str,
+        tenant: str,
+        status: TurnStatus,
+        error_code: str | None,
+        error: str | None,
+        operation: str,
+    ) -> int:
+        """Write one row and return its id. Shared by the success and failure paths.
+
+        One INSERT statement for both outcomes, so a column added to the record
+        cannot reach only one of them — the asymmetry that let failures go
+        unrecorded in the first place.
+        """
+        with self._lock:
+            try:
+                cur = self._conn.execute(
+                    "INSERT INTO turns "
+                    "(ts, agent, request, response, tenant, schema_version, status, "
+                    "error_code, error) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        datetime.now(UTC).isoformat(),
+                        agent,
+                        request_json,
+                        response_json,
+                        tenant,
+                        TURN_SCHEMA_VERSION,
+                        str(status),
+                        error_code,
+                        error,
+                    ),
+                )
+                self._conn.commit()
+                row_id = int(cur.lastrowid or 0)
+            except sqlite3.Error as exc:
+                logger.exception(
+                    "%s failed",
+                    operation,
+                    extra={"agent": agent, "db_path": self._path},
+                )
+                raise PersistenceError(
+                    "Failed to persist turn",
+                    detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+                ) from exc
+        logger.debug(
+            "%s ok",
+            operation,
+            extra={
+                "row_id": row_id,
+                "agent": agent,
+                "status": str(status),
+                "db_path": self._path,
+            },
+        )
+        return row_id
+
+    async def save_failed_turn(
+        self,
+        agent: str,
+        request: AgentRequest,
+        *,
+        error_code: str,
+        error: str,
+    ) -> int:
+        """Persist a dispatch that raised; returns the new row id.
+
+        ``response`` is stored as an empty JSON object rather than NULL: the
+        column is ``NOT NULL`` on every existing database, and a failure has no
+        response by definition. The ``status`` column, not a sentinel in the
+        payload, is what distinguishes the two.
+        """
+        tenant = get_tenant()
+        truncated = error[:DEFAULT_ERROR_DETAIL_TRUNCATE]
+
+        def _write() -> int:
+            return self._insert_turn(
+                agent=agent,
+                request_json=request.model_dump_json(),
+                response_json="{}",
+                tenant=tenant,
+                status=TurnStatus.ERROR,
+                error_code=error_code,
+                error=truncated,
+                operation="save_failed_turn",
+            )
+
+        return await asyncio.to_thread(_write)
+
     async def save_turn(
         self,
         agent: str,
@@ -84,35 +213,16 @@ class SQLiteRepository:
         tenant = get_tenant()
 
         def _write() -> int:
-            with self._lock:
-                try:
-                    cur = self._conn.execute(
-                        "INSERT INTO turns (ts, agent, request, response, tenant) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (
-                            datetime.now(UTC).isoformat(),
-                            agent,
-                            request.model_dump_json(),
-                            response.model_dump_json(),
-                            tenant,
-                        ),
-                    )
-                    self._conn.commit()
-                    row_id = int(cur.lastrowid or 0)
-                except sqlite3.Error as exc:
-                    logger.exception(
-                        "save_turn failed",
-                        extra={"agent": agent, "db_path": self._path},
-                    )
-                    raise PersistenceError(
-                        "Failed to persist turn",
-                        detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
-                    ) from exc
-            logger.debug(
-                "save_turn ok",
-                extra={"row_id": row_id, "agent": agent, "db_path": self._path},
+            return self._insert_turn(
+                agent=agent,
+                request_json=request.model_dump_json(),
+                response_json=response.model_dump_json(),
+                tenant=tenant,
+                status=TurnStatus.OK,
+                error_code=None,
+                error=None,
+                operation="save_turn",
             )
-            return row_id
 
         return await asyncio.to_thread(_write)
 
@@ -126,7 +236,7 @@ class SQLiteRepository:
             with self._lock:
                 try:
                     cur = self._conn.execute(
-                        "SELECT id, ts, agent, request, response "
+                        f"SELECT {', '.join(TURN_SELECT_COLUMNS)} "  # noqa: S608
                         "FROM turns WHERE tenant = ? ORDER BY id DESC LIMIT ?",
                         (tenant, limit),
                     )
@@ -144,16 +254,7 @@ class SQLiteRepository:
                 "list_turns ok",
                 extra={"count": len(rows), "db_path": self._path},
             )
-            return [
-                {
-                    "id": row[0],
-                    "ts": row[1],
-                    "agent": row[2],
-                    "request": json.loads(row[3]),
-                    "response": json.loads(row[4]),
-                }
-                for row in rows
-            ]
+            return [turn_row_to_dict(row) for row in rows]
 
         return await asyncio.to_thread(_read)
 

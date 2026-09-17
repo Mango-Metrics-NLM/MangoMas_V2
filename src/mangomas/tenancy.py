@@ -1,5 +1,20 @@
 """Per-request tenant identity for tenant-scoped storage (spec 0007 / ADR-0017).
 
+.. warning::
+
+   **This is storage partitioning, not access control.** The tenant id is read
+   straight from a client-supplied header (``X-Tenant-ID`` by default) and
+   nothing binds it to the caller's credential. API auth, when enabled, is a
+   single shared bearer token with no principal
+   (:mod:`mangomas.api.auth`), so any holder of that token can name any tenant
+   and read that tenant's history through ``GET /history``.
+
+   The SQL scoping below is real and correctly applied on both backends; the
+   *trust boundary* is not. Treat ``MANGOMAS_TENANCY__ENABLED`` as "keep
+   tenants' rows apart", never as "keep tenants out of each other's rows".
+   Binding a tenant to a credential needs per-principal auth, which revisits
+   ADR-0014 and is deferred (ADR-0033).
+
 A tenant id is a coarse, opaque scope that isolates one tenant's conversation
 turns from another's in a shared deployment. It is distinct from the per-request
 **correlation id** (:mod:`mangomas.correlation`): correlation is one-request-wide

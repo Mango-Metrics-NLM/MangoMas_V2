@@ -3,7 +3,11 @@
 - **Status:** Accepted
 - **Date:** 2026-09-16
 - **Supersedes / amends:** extends ADR-0021 (protected-path governance contract)
-- **Spec:** spec-0032 (to be written alongside the remaining PR A milestones)
+- **Spec:** the *gate integrity* spec — to be written alongside the remaining
+  PR A milestones, deliberately unnumbered. This line originally reserved
+  `spec-0032`; a concurrent branch has since written that number as an
+  unrelated document, which is the drift ADR-0031 records and
+  `tests/tooling/test_decision_record_numbering.py` now guards against.
 - **Source:** `docs/analysis/20260916-workflow-governance-audit.md` §3, §4a, N1, N2, N3
 
 ## Context
@@ -84,6 +88,16 @@ to `.github/workflows/ci.yml` or the `Makefile` that removes the gate job.
 Only a GitHub-side **required status check** does, and that lives outside this
 repository. Decision 2 is visibility, not prevention; decision 1 is the part
 that changes outcomes.
+
+**A sharp edge worth naming.** Because the policy comes from the base ref, a
+commit that *widens* `protected_paths` and names one of the newly-protected
+files in its marker is judged against a base policy that does not contain that
+path yet. The marker therefore reads as prose and approves every touched path
+in the range, rather than binding to one. That is the intended direction of
+failure — broad and visible in a line a reviewer can read, never silently
+narrowed to nothing — and it is why widening the protected set is a reviewable
+event in its own right. Pinned by
+`test_a_marker_naming_a_path_the_base_does_not_protect_reads_as_unscoped`.
 
 **Deliberate exclusions from `GOVERNANCE_SURFACE`.** `Makefile`,
 `.github/workflows/ci.yml` and `scripts/lint_agent_frontmatter.py` are *not*

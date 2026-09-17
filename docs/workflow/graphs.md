@@ -76,9 +76,16 @@ mangomas workflow run "ship the release" -f examples/workflows/plan-execute-revi
 |---|---|---|
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative graph dispatch |
 | `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
+| `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION` | `true` | Allow a caller-supplied graph (CLI `-f`, `POST /workflows/run` body). `false` refuses one outright (ADR-0033) |
 
 The graph declares its own `schema_version`, validated at load (an unsupported
 version is a `ConfigError`, unlike the settings' forward-compat warn).
+
+`ALLOW_INLINE_DEFINITION` exists because the per-invocation opt-in below is a
+real capability: a caller who can reach `POST /workflows/run` can compose and
+run an arbitrary agent graph, even with the feature disabled. Set it to `false`
+where one shared credential should not carry that, and only the
+server-configured `DEFINITION` runs.
 
 ## CLI
 
@@ -87,13 +94,14 @@ export MANGOMAS_WORKFLOW__ENABLED=true
 export MANGOMAS_WORKFLOW__DEFINITION=./graph.json
 mangomas workflow validate            # parse + validate, no LLM I/O
 mangomas workflow run "ship it"       # execute; prints the final node's content
-# --definition / -f overrides the setting (and runs even when disabled)
+# --definition / -f overrides the setting (and runs even when disabled),
+# unless MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION=false, which refuses it
 mangomas workflow run "ship it" -f ./graph.json
 ```
 
 Exit codes mirror the eval CLI: **2** for a config error (disabled + no
-`--definition`, malformed graph), **1** for a runtime error (unknown agent, LLM
-failure).
+`--definition`, a `--definition` refused by `ALLOW_INLINE_DEFINITION=false`,
+malformed graph), **1** for a runtime error (unknown agent, LLM failure).
 
 ## Programmatic use
 

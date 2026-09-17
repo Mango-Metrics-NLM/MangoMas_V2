@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from enum import StrEnum
 from typing import Any, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -40,12 +41,37 @@ logger = logging.getLogger(__name__)
 # ── Tool specification models ─────────────────────────────────────────────────
 
 
+class ToolEffects(StrEnum):
+    """What executing a tool does to the world outside this process.
+
+    ``UNDECLARED`` is the default, and is the honest one. The obvious
+    alternative — ``read_only: bool = True`` — would label every existing tool
+    read-only on the strength of its author never having considered the
+    question, which is a field that lies. A consumer that must decide (a
+    broker, a policy check) should treat ``UNDECLARED`` as ``MUTATES`` and fail
+    closed; the difference is that the record then says "nobody declared"
+    rather than "declared safe".
+
+    Advisory metadata, not enforcement: nothing in this repository gates on it
+    today. It exists so that the day a write-capable tool is registered, the
+    vocabulary to distinguish it already exists on the contract rather than
+    needing to be added under pressure (ADR-0033).
+    """
+
+    UNDECLARED = "undeclared"
+    READ_ONLY = "read_only"
+    MUTATES = "mutates"
+
+
 class ToolSpec(BaseModel):
     """Declarative description of a tool exposed to the LLM."""
 
     name: str
     description: str
     parameters_schema: dict[str, Any] = Field(default_factory=dict)
+    # Additive with a default, so every existing construction and every
+    # third-party tool keeps working untouched.
+    effects: ToolEffects = ToolEffects.UNDECLARED
 
 
 class ToolCall(BaseModel):

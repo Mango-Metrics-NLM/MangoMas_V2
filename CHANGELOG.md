@@ -9,6 +9,135 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Decision-record numbering is now enforced.**
+  `tests/tooling/test_decision_record_numbering.py` asserts that no two files
+  in `docs/adr/` or `specs/` claim the same `NNNN` number, that every record
+  matches the documented `NNNN-kebab-slug.md` shape, and that each directory
+  holds at least a floor of records so a moved directory fails loudly instead
+  of passing over zero files.
+
+  `CLAUDE.md` has always stated the rule — "next free integer, mirroring the
+  `docs/adr/` numbering" — with nothing behind it. The failure it permitted is
+  silent: two branches allocate the same number, write different slugs, and
+  git merges both cleanly because the filenames differ. It happened during this
+  work. Gaps stay legal (`docs/adr/` already skips 0006, 0007 and 0022);
+  uniqueness is the property that matters.
+
+- **`ToolSpec.effects`** — a tool can declare whether executing it changes
+  anything outside the process (ADR-0033). `ToolEffects` is
+  `UNDECLARED` (default) / `READ_ONLY` / `MUTATES`, and `RetrievalTool`
+  declares itself read-only. Additive with a default, so every existing
+  construction and every third-party tool is untouched.
+
+  `UNDECLARED` rather than `read_only: bool = True` on purpose: a boolean
+  defaulting to true would label every existing tool read-only on the strength
+  of its author never having considered the question — a field that lies. A
+  consumer that must decide should treat `UNDECLARED` as `MUTATES` and fail
+  closed; the difference is the record then says "nobody declared" instead of
+  "declared safe".
+
+  Advisory metadata, not enforcement: nothing gates on it today. It exists so
+  the day a write-capable tool is registered, the vocabulary is already on the
+  contract rather than being added under pressure.
+
+
+- **`MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION`** (default `true`, ADR-0033).
+  `POST /workflows/run` executes a caller-supplied inline `definition` *even
+  when* `MANGOMAS_WORKFLOW__ENABLED=false` — documented behaviour, but
+  surprising enough to deserve its own switch. Set it `false` to require
+  server-configured graphs only.
+
+- **`MANGOMAS_LLM__ALLOWED_MODELS`** (default empty = unconstrained,
+  ADR-0033). `model_override` was an unconstrained `str | None`: nothing
+  declared which models a deployment approved and nothing rejected one that was
+  not. A non-empty roster must include the base `MANGOMAS_LLM__MODEL` itself —
+  exempting the default would make the allowlist a loophole — and is validated
+  at `Settings` parse so a misconfiguration surfaces at startup. An agent
+  requesting an unlisted model raises `ConfigError` rather than being skipped:
+  silently ignoring it would run the agent on the base model while its
+  configuration claimed otherwise.
+
+### Documentation
+
+- **`policy_snapshot_hash` is a provenance label, not an attestation**
+  (ADR-0033). It is `sha256("policy_id:policy_version")` — a checksum of two
+  environment variables, not a digest of a policy document — and is
+  operator-settable to any 64-hex value. The caveat now lives in
+  `policy_snapshot_hash_for`'s docstring and the `CLAUDE.md` config table,
+  where a reader would otherwise form the belief.
+
+- **Tenancy is storage partitioning, not access control** (ADR-0033).
+  `X-Tenant-ID` is client-asserted with nothing binding it to a credential, and
+  API auth is a single shared bearer with no principal, so any holder of that
+  token can name any tenant. The SQL scoping is real on both backends; the
+  trust boundary is not. Stated in `mangomas.tenancy`'s module docstring and
+  the config table.
+
+
+- **Cognitive-signal expiry is now enforced** (ADR-0032). `CognitiveSignal` has
+  carried `created_at`/`expires_at`/`ttl_seconds` and an `is_expired()` since
+  1.1.0, and nothing in `src/` ever called it. Both sinks now refuse an
+  envelope past its TTL (`ExpiredSignalError`), the HTTP sink checking *before*
+  the request rather than after.
+
+- **`MANGOMAS_SIGNAL__TTL_SECONDS`** (default `86400`, max 30 days) makes the
+  envelope lifetime an operator tunable. The producer never passed
+  `ttl_seconds`, so every emitted signal used the envelope's own default.
+  `config/signal.py` mirrors the contracts bounds rather than importing them —
+  `SignalSettings` is built even when emission is off, and importing the
+  contracts package there would break the flag-off guarantee — with a test
+  pinning the mirror against the real envelope.
+
+- **Replay resistance on both sinks.** `ReplayGuard` is a bounded,
+  insertion-ordered set of recently-seen `signal_id`s; a repeat is dropped. A
+  hit deliberately does *not* refresh recency, so a caller replaying one
+  envelope cannot flush genuine ids out of the window. The HTTP sink also sends
+  `Idempotency-Key: <signal_id>` so a retry below this layer (a proxy, a client
+  retry) can be collapsed by the ingest endpoint.
+
+  A failed write **releases** its reservation. Reserving before the write is
+  what makes two concurrent emits of one id resolve to a single write, but a
+  reservation that outlived a failed write turned a transient disk or network
+  error into permanent loss — the retry read as a replay and dropped. A control
+  against duplication must not become a cause of disappearance.
+
+  These stop accidental duplication and stale reuse, **not an adversary**: the
+  envelope is unsigned, so a forged one is still indistinguishable from a
+  genuine one. The sink module says so where a reader would form the belief.
+
+### Changed
+
+- `test_jsonl_concurrent_appends` now emits eight **distinct** signals. It
+  reused one envelope, which stopped proving anything about concurrent appends
+  once the sink learned to deduplicate — eight emissions of one id are
+  correctly one line.
+
+
+- **Failed dispatches are now persisted** (ADR-0031). `Orchestrator.dispatch`
+  reached `save_turn` only after its loop returned normally, so every failure
+  path wrote nothing and the only durable log of the system's behaviour
+  recorded successes. `FailureRecordingRepository` adds `save_failed_turn` as a
+  strict Protocol extension (probed with `hasattr`, like
+  `AsyncCloseableRepository`), implemented on both SQLite and Postgres, and
+  `composition.recording._FailureRecordingMixin` wraps both concrete
+  orchestrators — no edit to the protected `core/orchestrator.py`. Recording is
+  best-effort: a broken repository is logged and never masks the caller's
+  original error, and a **pre-execution** failure is not recorded at all —
+  a routing error (`AgentNotFound`) or an invalid `max_steps`. Nothing ran, so
+  there is no turn, and recording either would let any caller inflate the turn
+  store. A row migrated from a pre-column database carries
+  `TURN_SCHEMA_VERSION_LEGACY`, not the current version, so the field can
+  actually answer the question it exists for.
+
+- **The turn record is versioned and typed.** Rows gain `schema_version`,
+  `status`, `error_code` and `error`. `adapters/storage/_schema.py` is the one
+  definition both backends generate their DDL, `SELECT` list and row mapping
+  from, so a SQLite row and a Postgres row cannot drift apart. Migrations are
+  additive and generated: an existing database gains the columns in place and
+  its historical rows read as `status='ok'`, which is what they were.
+
 ### Security
 
 - **The protected-path gate now reads its policy from the base ref** (ADR-0030).

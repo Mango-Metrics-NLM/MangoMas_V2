@@ -167,6 +167,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_LLM__PROVIDER` | `lmstudio` | LLM registry entry; `vertex` enables Vertex AI |
 | `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
 | `MANGOMAS_LLM__MODEL` | `local-model` | Model id |
+| `MANGOMAS_LLM__ALLOWED_MODELS` | `[]` | Approved-model roster; empty = unconstrained. A non-empty list must include `MODEL` itself (ADR-0033) |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
 | `MANGOMAS_LLM__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
 | `MANGOMAS_LLM__TIMEOUT_SECONDS` | `60.0` | httpx timeout for LLM calls |
@@ -198,7 +199,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; ADR-0015) |
 | `MANGOMAS_AUTH__ENABLED` | `false` | Enforce bearer / API-key auth on data + execution routes (ADR-0014) |
 | `MANGOMAS_AUTH__SECRET_REF` | _(none)_ | `SecretsProvider` ref resolving to the expected API token (required when enabled) |
-| `MANGOMAS_TENANCY__ENABLED` | `false` | Tenant-scoped conversation storage via a row filter (ADR-0017) |
+| `MANGOMAS_TENANCY__ENABLED` | `false` | Tenant-scoped conversation storage via a row filter (ADR-0017). **Storage partitioning, not access control** — the header is client-asserted and unbound to any credential (ADR-0033) |
 | `MANGOMAS_TENANCY__HEADER` | `X-Tenant-ID` | Inbound tenant header → per-request `ContextVar` |
 | `MANGOMAS_TENANCY__DEFAULT` | `default` | Implicit tenant when the header is absent/disabled |
 | `MANGOMAS_TELEMETRY__METRICS_ENABLED` | `false` | Install an OTel `MeterProvider` (agent invocation/error/duration; ADR-0013) |
@@ -252,13 +253,15 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE` | `false` | Let a discovered eval plugin replace a built-in of the same name; default refuses the collision (ADR-0030) |
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
 | `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
+| `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION` | `true` | Allow a caller-supplied graph on `POST /workflows/run` (which runs even when `ENABLED=false`); set `false` to require server-configured graphs only (ADR-0033) |
 | `MANGOMAS_SIGNAL__ENABLED` | `false` | Emit CognitiveSignal 1.1.0 envelopes (planner/reviewer); default-off, byte-identical dispatch |
 | `MANGOMAS_SIGNAL__DIR` | `./data/cognitive-signals` | JSONL directory for `signals.jsonl` when enabled |
 | `MANGOMAS_SIGNAL__SCHEMA_VERSION` | `1.1.0` | Envelope version; a 1.0.0 override is rejected at Settings parse |
 | `MANGOMAS_SIGNAL__GENAI_SPANS` | `false` | Additive OTel `gen_ai.invoke_agent` alias (Development semconv; default-off) |
+| `MANGOMAS_SIGNAL__TTL_SECONDS` | `86400` | Envelope lifetime; sinks refuse an expired signal (ADR-0032). Max 30 days |
 | `MANGOMAS_SIGNAL__POLICY_ID` | `mangomas.cognitive.default` | Identity/policy binding copied onto each envelope (not a grant) |
 | `MANGOMAS_SIGNAL__POLICY_VERSION` | `1` | Policy version string copied onto each envelope |
-| `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | Default `sha256:` digest of `policy_id:policy_version`; rebinds when only id/version change |
+| `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | Default `sha256:` digest of `policy_id:policy_version`; rebinds when only id/version change. **Provenance label, not attestation** — a checksum of two env vars, not of a policy document (ADR-0033) |
 | `MANGOMAS_SIGNAL__HTTP_URL` | _(none)_ | Optional harness ingest URL; JSONL is always written when enabled |
 | `MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS` | `5.0` | Timeout for the optional HTTP sink |
 | `MANGOMAS_AGENTS__<NAME>__SYSTEM_PROMPT` | _(none)_ | Per-agent system-prompt override (`AgentSettings.system_prompt`) |

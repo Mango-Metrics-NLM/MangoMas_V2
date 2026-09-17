@@ -27,6 +27,18 @@ DEFAULT_SIGNAL_SCHEMA_VERSION: Literal["1.1.0"] = "1.1.0"
 DEFAULT_SIGNAL_GENAI_SPANS: bool = False
 
 
+# Envelope lifetime, in seconds. Mirrors mango_contracts' DEFAULT_TTL_SECONDS /
+# MAX_TTL_SECONDS rather than importing them: this module is constructed on
+# every Settings build, including when MANGOMAS_SIGNAL__ENABLED is false, and
+# importing the contracts package here would break the flag-off guarantee that
+# nothing loads it. `tests/cognitive/test_replay_resistance.py` pins these
+# against the real envelope so the mirror cannot drift.
+DEFAULT_SIGNAL_TTL_SECONDS: int = 60 * 60 * 24
+
+
+MAX_SIGNAL_TTL_SECONDS: int = 60 * 60 * 24 * 30
+
+
 DEFAULT_SIGNAL_POLICY_ID: str = "mangomas.cognitive.default"
 
 
@@ -38,7 +50,22 @@ def _prefixed_sha256(payload: str) -> str:
 
 
 def policy_snapshot_hash_for(policy_id: str, policy_version: str) -> str:
-    """Digest ``id:version`` with the ``sha256:`` prefix the envelope requires."""
+    """Digest ``id:version`` with the ``sha256:`` prefix the envelope requires.
+
+    **This is a provenance label, not an attestation.** It is a checksum of two
+    environment variables, not a digest of a policy document: it proves nothing
+    about policy *content*, it cannot detect a changed rule, and the emitting
+    process computes it itself. ``MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH`` is
+    also operator-settable to any 64-hex value, so a signal can claim any
+    snapshot.
+
+    A verifier that reads ``policy_snapshot_hash`` as "this signal was produced
+    under approved policy P" is trusting a self-signed assertion. Read it as
+    "the producer said it was running policy P" — useful for correlating and
+    grouping, worthless as authorization. Making it real means digesting an
+    actual policy document; that is deferred until a policy document exists to
+    digest (ADR-0032, ADR-0033).
+    """
     return _prefixed_sha256(f"{policy_id}:{policy_version}")
 
 
@@ -65,6 +92,16 @@ class SignalSettings(BaseModel):
     dir: str = DEFAULT_SIGNAL_DIR
     schema_version: Literal["1.1.0"] = DEFAULT_SIGNAL_SCHEMA_VERSION
     genai_spans: bool = DEFAULT_SIGNAL_GENAI_SPANS
+    ttl_seconds: int = Field(
+        default=DEFAULT_SIGNAL_TTL_SECONDS,
+        ge=1,
+        le=MAX_SIGNAL_TTL_SECONDS,
+        description=(
+            "How long an emitted envelope stays valid. Sinks refuse an expired "
+            "signal (ADR-0032), so this is the window a consumer may treat a "
+            "signal as current."
+        ),
+    )
     policy_id: str = DEFAULT_SIGNAL_POLICY_ID
     policy_version: str = DEFAULT_SIGNAL_POLICY_VERSION
     policy_snapshot_hash: str = Field(
