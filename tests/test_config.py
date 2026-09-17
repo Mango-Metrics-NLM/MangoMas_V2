@@ -106,6 +106,13 @@ def test_loop_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.loop.step_timeout_seconds == 5.0
 
 
+from pydantic import ValidationError
+def test_loop_settings_type_coercion_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_LOOP__MAX_STEPS", "not_an_int")
+    with pytest.raises(ValidationError):
+        config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+
+
 # ── MemorySettings ────────────────────────────────────────────────────────────
 
 
@@ -284,3 +291,4 @@ def test_secrets_gcp_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.secrets.project_id == "my-gcp-project"
     assert s.secrets.timeout_seconds == 10.0
     assert s.secrets.default_version == "3"
+

@@ -6,12 +6,15 @@ orchestration platform must be able to probe a pod that has lost its secret.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from mangomas.api.health import check_ready
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator

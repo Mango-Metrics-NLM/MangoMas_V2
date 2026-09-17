@@ -305,7 +305,7 @@ def test_real_repo_pyproject_has_governance_table() -> None:
     protected_paths, marker_aliases = check_protected_paths._load_governance(
         repo_root / "pyproject.toml"
     )
-    assert "src/mangomas/core/orchestrator.py" in protected_paths
+    assert "src/mangomas/core/orchestrator/__init__.py" in protected_paths
     assert "BREAKING-CHANGE" in marker_aliases
 
 
@@ -551,3 +551,4 @@ def test_a_marker_naming_a_path_the_base_does_not_protect_reads_as_unscoped(
     )
 
     assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_OK
+

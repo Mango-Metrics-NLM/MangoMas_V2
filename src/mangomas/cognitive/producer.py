@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -35,6 +34,7 @@ from mangomas.cognitive.constants import (
 from mangomas.cognitive.genai import genai_invoke_agent_span
 from mangomas.cognitive.roles import harness_role_for_agent
 from mangomas.correlation import get_correlation_id
+from mangomas.utils import clock
 
 if TYPE_CHECKING:
     from mangomas.config.signal import SignalSettings
@@ -177,7 +177,7 @@ def _review_payload(content: str) -> dict[str, Any]:
 
 def _evidence_for(agent_name: str, content: str) -> EvidenceBundle:
     digest = _prefixed_sha256(content)
-    now = datetime.now(UTC)
+    now = clock.now()
     return EvidenceBundle(
         status=EvidenceStatus.PARTIAL,
         refs=[

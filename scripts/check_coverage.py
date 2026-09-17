@@ -63,6 +63,7 @@ FLOORS: list[Floor] = [
     # ADR-0021 / spec-0017: PROTECTED_PATHS/marker-alias governance +
     # ConfigChange decision logic. New package; 95% matches its siblings.
     Floor("src/mangomas/harness/**/*.py", 95, "harness"),
+    Floor("src/mangomas/utils/**/*.py", 100, "utils"),
     # spec-0020 R1: the one top-level module that had no floor. Shared
     # entry-point iteration for the two discovery modules; already at 100%,
     # so the floor is set where the code actually is rather than below it.
@@ -124,3 +125,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

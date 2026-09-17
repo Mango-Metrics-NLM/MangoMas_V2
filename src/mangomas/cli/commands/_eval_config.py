@@ -10,6 +10,7 @@ Every one of them resolves precedence and validates; none of them execute.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import typer
@@ -18,6 +19,8 @@ from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.errors import ConfigError
 from mangomas.eval import dataset_source_registry, sink_registry, target_registry
 from mangomas.eval._options import require_non_negative_float
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import EvalSettings

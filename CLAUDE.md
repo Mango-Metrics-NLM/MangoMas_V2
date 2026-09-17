@@ -670,7 +670,7 @@ under `asyncio.gather`. See spec 0005 / ADR-0011 and
   `dispatch_pipeline`.
 - **Predicate** (`workflow/predicate.py`) — `PredicateSpec`
   (`contains`/`regex`/`json_field`) compiles once to a pure sync `AcceptanceFn`.
-  `json_field` (spec-0032 / ADR-0031) binds acceptance to a **parsed** field —
+  `json_field` (spec-0032 / ADR-0034) binds acceptance to a **parsed** field —
   dotted path, exactly one of `equals`/`at_least`/`at_most`, strict whole-text
   JSON parsing so it agrees with `VALIDATE_OUTPUT`. Use it for `planner` /
   `reviewer`: no substring spelling over their JSON is correct in both

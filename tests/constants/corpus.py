@@ -181,12 +181,14 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-adapter",
         "mango-agent-add",
         "mango-cognitive",
+        "mango-composition-builder",
         "mango-config",
         "mango-coverage-audit",
         "mango-decompose",
         "mango-deploy",
         "mango-error",
         "mango-eval",
+        "mango-eval-runner",
         "mango-harness",
         "mango-mutation-proof",
         "mango-observability",
@@ -195,6 +197,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-testing",
         "mango-topology",
         "mango-workflow",
+        "mango-workflow-generator",
     }
 )
 
@@ -494,7 +497,7 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
 # Everything else must be claimed. `test_every_source_surface_has_a_write_capable_owner`
 # derives ownership from the agent bodies themselves rather than a second
 # hand-maintained table, so the corpus cannot desync from its own claims.
-UNOWNED_SOURCE_SURFACES: frozenset[str] = frozenset({"registry.py"})
+UNOWNED_SOURCE_SURFACES: frozenset[str] = frozenset({"registry.py", "utils"})
 
 # ── Corpus-count claims in prose ─────────────────────────────────────────────
 #

@@ -3,7 +3,7 @@ repos:
   # Keep this rev in lockstep with the `ruff==` pin in pyproject's dev extra so
   # the hook, local pip, and CI all run the identical linter/formatter.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.0
+    rev: v0.16.6
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]

@@ -195,7 +195,7 @@ def test_protected_path_with_marker_returns_ok(
     "protected",
     [
         "src/mangomas/core/agent.py",
-        "src/mangomas/core/orchestrator.py",
+        "src/mangomas/core/orchestrator/__init__.py",
         # spec-0015 R4: extracted contract code stays governed — the new
         # structured-output module joined the table the commit it was created.
         "src/mangomas/core/structured.py",
@@ -441,7 +441,7 @@ def test_passing_log_message_carries_the_counts(
     assert len(passed) == 1
     message = passed[0].getMessage()
     assert "skills" in message and "agents" in message
-    assert "0 skills" not in message
+    assert " 0 skills" not in message
 
 
 def test_main_protected_mode_unprotected_path() -> None:
@@ -913,3 +913,6 @@ def test_legacy_corpus_fixture_fails_on_every_axis() -> None:
     assert "kebab-case" in joined
     assert "model" in joined
     assert "unrecognised tool token" in joined
+
+
+

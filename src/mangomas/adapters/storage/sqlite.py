@@ -10,7 +10,6 @@ import asyncio
 import logging
 import sqlite3
 import threading
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +26,7 @@ from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_STORAGE_LIST_
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
+from mangomas.utils import clock
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ class SQLiteRepository:
                     "error_code, error) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        datetime.now(UTC).isoformat(),
+                        clock.now().isoformat(),
                         agent,
                         request_json,
                         response_json,

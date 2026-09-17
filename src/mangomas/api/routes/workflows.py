@@ -7,6 +7,7 @@ factory, keeping the graph-source resolution on the shared
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Request
@@ -20,6 +21,8 @@ from mangomas.api.models import (
 from mangomas.config import get_settings
 from mangomas.core import AgentResponse
 from mangomas.workflow import execute_workflow, load_workflow, resolve_workflow_source
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator

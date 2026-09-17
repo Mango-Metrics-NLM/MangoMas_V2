@@ -54,6 +54,7 @@ _COVERAGE_EXEMPT: dict[str, str] = {
     "metrics.py": "described by the C3 `meters` component (ADR-0013)",
     "registry.py": "appears as the `Registry[T]` component in C3",
     "config": "settings are described per-boundary as the MANGOMAS_* vars each reads",
+    "utils": "shared utilities without architectural boundary",
 }
 
 

@@ -124,7 +124,7 @@ logger = logging.getLogger(__name__)
 _FALLBACK_PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
     {
         "src/mangomas/core/agent.py",
-        "src/mangomas/core/orchestrator.py",
+        "src/mangomas/core/orchestrator/__init__.py",
         "src/mangomas/core/structured.py",
         "src/mangomas/core/tools.py",
         "src/mangomas/errors.py",
@@ -883,3 +883,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

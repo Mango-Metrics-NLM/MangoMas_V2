@@ -13,10 +13,14 @@ keeps its own distinguishable error type without duplicating the dispatch logic.
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
+
+logger = logging.getLogger(__name__)
 
 
 def translate_httpx_error(

@@ -11,6 +11,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
 - **Decision-record numbering is now enforced.**
   `tests/tooling/test_decision_record_numbering.py` asserts that no two files
   in `docs/adr/` or `specs/` claim the same `NNNN` number, that every record
@@ -176,6 +179,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
 - **The ruff/mypy toolchain pin is now enforced, not just asserted.**
   `pyproject.toml` pins `ruff` and `mypy` exactly and its comments claimed they
   were "kept in lockstep with the ruff-pre-commit rev in
@@ -191,7 +197,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   deleted silently. Groups cannot span ecosystems, so the two PRs still arrive
   separately — the parity test is what makes forgetting one visible.
 
-- **`json_field` acceptance predicates** (spec-0032, ADR-0031). A workflow
+- **`json_field` acceptance predicates** (spec-0032, ADR-0034). A workflow
   `loop` or `branch` could only match a structured agent's *serialised text*,
   and measurement showed that fails in both directions: the natural needle
   `"passed": true` never matches `model_dump_json()`'s compact `"passed":true`,
@@ -218,6 +224,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
   git-blob policy is checked exactly as strictly as one read from disk).
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **The `sitecustomize.py` guard was one-sided.** `tests/regression/test_origin_defects.py`
   asserted `-p no:randomly` was *present* in the injected `PYTEST_ADDOPTS`, not
@@ -256,6 +268,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
   (a recursive subclass sweep, so a new subclass is covered the day it lands).
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **`MANGOMAS_EVAL__FAIL_FAST` never stopped a run.** `_dispatch_concurrent`
   checked its stop event *before* acquiring the semaphore, while
@@ -322,6 +340,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `src/mangomas/api/middleware/backpressure.py`, `tests/test_backpressure.py`.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **Code-quality / tech-debt program (spec-0031, planning only — no code
   change).** A full-repo reflection against a clean tree at `df92e3d`, recording
@@ -421,6 +442,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `pre-commit --all-files` CI job remain deferred.
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **Non-finite USD amounts** (`NaN` / infinities) are rejected by
   `require_non_negative_float`, `EvalSettings.max_mean_cost_usd`, the eval
@@ -556,6 +583,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **Planner plans longer than 64 steps no longer vanish.** The producer
   truncates `PlanningProposalPayload.steps` to the envelope cap so
   `validate_signal_payload` cannot swallow the emit. CamelCase nested
@@ -582,6 +615,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   while the reporter succeeded and filed nothing.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **Per-agent `MODEL_OVERRIDE` wiring** (spec-0028 / ADR-0028 — closes the
   Phase-1 roadmap item): `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE`, reserved
@@ -622,6 +658,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   in the first commit undetected by anything but manual review.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **Whole-pipeline acceptance loops** (spec-0027 / ADR-0027 — governed
   Batch B-c): `dispatch_pipeline` gains keyword-only optional
@@ -680,6 +719,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **`mangomas.__version__` no longer drifts from the package** (review
   finding on the v0.4.0 cut): it was a hardcoded copy still reading
   `0.3.1`. Both it and the OpenAPI `info.version` now derive from one
@@ -703,6 +748,12 @@ Batch B-a, `BREAKING-CHANGE`-trailered protected-path edit)._
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **Streamed conversations are no longer invisible.** `stream_dispatch`
   persisted nothing and the stream route recorded no metrics, so every SSE
   conversation was missing from `GET /history`, `SummarizeAgent`'s window,
@@ -715,6 +766,9 @@ Batch B-a, `BREAKING-CHANGE`-trailered protected-path edit)._
   non-streaming agents now logs a warning and is labelled.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **SSE `metadata` terminal event** — `{"event": "metadata", "data":
   {"agent", "degraded", "chunks"}}` emitted after the token stream and
@@ -734,6 +788,9 @@ _Structured-output validation + the shipped planner→tool→reviewer pipeline �
 roadmap Phase 1 item 1.3._
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **`StructuredOutputAgent.parse()`** — the caller the planner/reviewer
   docstrings always promised: validates the agent's JSON reply against its
@@ -758,6 +815,12 @@ roadmap Phase 1 item 1.3._
 _Deploy integrity + supply-chain baseline — Spec-0024 / roadmap Phase 0._
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **`deploy.yml` now applies `deploy/service.yaml`.** The deploy job
   previously ran an image-only `gcloud run deploy`, so none of the manifest's
@@ -788,6 +851,9 @@ _Deploy integrity + supply-chain baseline — Spec-0024 / roadmap Phase 0._
 
 ### Added
 
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
 - **Supply-chain baseline** (roadmap 0.3): `requirements.lock` — the full
   pinned transitive runtime closure compiled by pip-compile under the image's
   Python 3.11, consumed as a pip constraints file by the Docker runtime
@@ -808,6 +874,9 @@ _Deploy integrity + supply-chain baseline — Spec-0024 / roadmap Phase 0._
 _Next-steps roadmap — a peer-reviewed case for the development program._
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **`docs/analysis/20260822-next-steps-roadmap-analysis.md`** — full-repo
   strategic review (three parallel surveys; load-bearing claims verified
@@ -831,6 +900,12 @@ _Next-steps roadmap — a peer-reviewed case for the development program._
 _Post-review hardening (peer review of spec-0022) — Spec-0023._
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **The injection guard added by spec-0022 was bypassable by deleting one
   space.** `test_no_run_body_interpolates_forbidden_expressions` matched the
@@ -913,6 +988,9 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
   `embeddings-local`.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **`CONTRIBUTING.md`.** A repo with five protected paths, a
   `BREAKING-CHANGE` trailer convention, spec-before-code, twenty coverage
@@ -1012,6 +1090,12 @@ _Governance-hardening adoptions (SSD-pack Tier 1 + 2) — Spec-0022._
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **`make secret-scan` ran the deprecated, history-only `gitleaks detect`.**
   An uncommitted `.env` holding a real credential passed the gate. The recipe
   now runs both supported passes — `gitleaks dir` (working tree) and
@@ -1031,6 +1115,9 @@ _Governance-hardening adoptions (SSD-pack Tier 1 + 2) — Spec-0022._
   degrade to warnings; a subprocess test proves exit 0 on a bare interpreter.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **MCP write/mutation deny rules** in `.claude/settings.json` — the ten
   `mcp__filesystem__*` write tools and `mcp__git__*` mutation tools bypassed
@@ -1088,6 +1175,12 @@ _CI/Makefile parity and corpus-validation completion — Spec-0021._
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **CI's `pull_request` trigger named branches that don't apply here.**
   `branches: ["main", "develop"]` — `develop` doesn't exist anywhere in this
   repository (checked against local and remote branches), and `main` has
@@ -1140,6 +1233,12 @@ _CI/Makefile parity and corpus-validation completion — Spec-0021._
 _Gate integrity and corpus completion — Spec-0020._
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **The coverage floor list had no completeness guard.** 19 floors covered every
   top-level path under `src/mangomas/` except `_entry_points.py`, and nothing
@@ -1227,6 +1326,12 @@ _Package decomposition — Spec-0015 / ADR-0019._
   every module that reads a constant.
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **Thirteen CLI tests were passing against the wrong system.** Measured, not
   suspected: with the orchestrator patches neutralised and a counter on
@@ -1354,6 +1459,9 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 ### Added
 
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
 - **Four owner agents close the deferred "B5" gap** (spec-0019):
   `mango-rag-dev`, `mango-eval-dev`, `mango-secrets-dev` and
   `mango-agent-impl-dev`. The 2026-08-09 delivery plan named seven unowned
@@ -1415,6 +1523,12 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
   contributor-facing doc points at a retired path.
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **A GCP + auth deployment rejected every request.** `create_app` resolves the
   expected API token during app *construction*, but the `gcp` secrets provider
@@ -1500,6 +1614,12 @@ _Protected-path governance contract — Spec-0017 / ADR-0021._
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **Protected-path `PreToolUse` hook was silently inert.** It read
   `$CLAUDE_TOOL_INPUT_path`, an environment variable Claude Code does not
   define (hook input arrives as JSON on stdin), so the check always resolved
@@ -1532,6 +1652,9 @@ _Protected-path governance contract — Spec-0017 / ADR-0021._
   stream promptly rather than eventually via GC.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - `[tool.mangomas.governance]` in `pyproject.toml` — the protected-path set
   and `BREAKING-CHANGE` marker aliases, the single source of truth read (via
@@ -1567,6 +1690,12 @@ _Protected-path governance contract — Spec-0017 / ADR-0021._
 _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - `ToolAgent`: no longer discards the tool-format system prompt when a custom
   `system_prompt` is configured — both are sent (custom first), so the LLM
@@ -1675,6 +1804,9 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 
 ### Added
 
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
 - `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` per-agent setting
   (`AgentSettings.max_tool_steps`, default `None` → `DEFAULT_TOOL_MAX_STEPS=5`)
   replacing `ToolAgent`'s hard-coded step cap; resolution order is constructor
@@ -1701,7 +1833,13 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 
 ### Removed
 
-### Fixed — Docker build context excluded a file the Dockerfile copies
+### Fixed - **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
+— Docker build context excluded a file the Dockerfile copies
 
 `deploy.yml` builds the production image with `docker build .`, the builder
 stage runs `COPY pyproject.toml README.md ./`, and `pyproject.toml` declares
@@ -1772,7 +1910,10 @@ existing protocols (the `adapters/_http_errors.py` precedent).
   config-mirroring defaults are now re-exported from `mangomas.config` (via the
   explicit `X as X` idiom) instead of hand-restated, so they cannot desync.
 
-### Added — Composite fan_out branches (workflow) + gated embedding smoke tests
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Composite fan_out branches (workflow) + gated embedding smoke tests
 
 Widen a `fan_out` branch to any `WorkflowStep` (spec 0013 / ADR-0018),
 backwards-compatible (a superset).
@@ -1788,7 +1929,10 @@ backwards-compatible (a superset).
   (`RUN_VERTEX=1`) exercise `LMStudioEmbeddingClient` / `VertexEmbeddingClient`
   against a real backend (skipped by default).
 
-### Added — Multi-tenancy Phase 1 (storage isolation, opt-in)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Multi-tenancy Phase 1 (storage isolation, opt-in)
 
 Tenant-scoped conversation storage (spec 0007 / ADR-0017), additive and
 default-OFF. Phase 2 (per-tenant `AgentSettings` at dispatch) is deferred.
@@ -1830,7 +1974,10 @@ default; all still additive/default-OFF):
   the concurrency-wiring test now asserts the guard is actually installed; added
   negative tests for the auth validator and the metrics lifespan wiring.
 
-### Added — Conditional workflow branch node
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Conditional workflow branch node
 
 Add a `branch` node to the declarative workflow graph (spec 0012 / ADR-0016),
 additive and default-OFF (existing graphs never carry `kind="branch"`).
@@ -1845,7 +1992,10 @@ additive and default-OFF (existing graphs never carry `kind="branch"`).
 - Enables the `planner → route by output → specialised agent` pattern; the node
   selects one child and adds no back-edge, so the graph stays an acyclic tree.
 
-### Added — HTTP surface parity (workflows, history, CORS)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— HTTP surface parity (workflows, history, CORS)
 
 Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
 
@@ -1864,6 +2014,12 @@ Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **`cli/main.py`**: typed `_require_rag`'s return as
   `tuple[EmbeddingClient, VectorStoreRepository]` under `TYPE_CHECKING`, deleting
   the four `# type: ignore[arg-type]` comments (now redundant under
@@ -1872,7 +2028,10 @@ Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
   line with the real gate (`scripts/check_coverage.py` @ 95 % + per-package
   floors) and current counts.
 
-### Added — Request backpressure (opt-in)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Request backpressure (opt-in)
 
 Bound request size and concurrency for a service fronting one slow upstream
 (spec 0011 / ADR-0015), additive and default-OFF.
@@ -1884,7 +2043,10 @@ Bound request size and concurrency for a service fronting one slow upstream
 - **Config**: `MANGOMAS_API__MAX_BODY_BYTES` / `MANGOMAS_API__MAX_CONCURRENT_REQUESTS`
   (both default `0` = off → the middleware is not installed).
 
-### Added — Application authentication seam (opt-in)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Application authentication seam (opt-in)
 
 Add a default-OFF bearer / API-key check on the data + execution routes
 (spec 0010 / ADR-0014). Prerequisite for multi-tenancy.
@@ -1901,7 +2063,10 @@ Add a default-OFF bearer / API-key check on the data + execution routes
 - **Config**: `MANGOMAS_AUTH__ENABLED` (default `false`), `MANGOMAS_AUTH__SECRET_REF`
   (required when enabled).
 
-### Added — OpenTelemetry metrics (opt-in)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— OpenTelemetry metrics (opt-in)
 
 Add a metrics pipeline alongside the existing span pipeline, additive and
 default-OFF (spec 0009 / ADR-0013). Pays down the harness `METRICS_*` naming debt.
@@ -1919,7 +2084,10 @@ default-OFF (spec 0009 / ADR-0013). Pays down the harness `METRICS_*` naming deb
 - **Config**: `MANGOMAS_TELEMETRY__METRICS_ENABLED` (default `false`); reuses
   `MANGOMAS_TELEMETRY__EXPORTER` for the metric exporter.
 
-### Added — Declarative multi-agent workflow graphs
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Declarative multi-agent workflow graphs
 
 Compose agents through a declarative JSON graph consumed by the `Orchestrator`,
 additive and default-OFF (`MANGOMAS_WORKFLOW__ENABLED=false`). See spec 0005 and
@@ -1941,7 +2109,10 @@ ADR-0011.
   `backend/workflow-graph-dev` sub-agent, a `workflow` per-package coverage floor,
   and `scripts/run_workflow_e2e.py`.
 
-### Added — Cloud Run deploy pipeline (Milestone E)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Cloud Run deploy pipeline (Milestone E)
 
 Author-only deploy artifacts (ADR-0001, spec 0004). No GCP resources are
 provisioned by this repo and no live deploy is validated by tests.
@@ -1956,7 +2127,10 @@ provisioned by this repo and no live deploy is validated by tests.
 - **`tests/deploy/`**: contract tests — manifest/workflow YAML validity, probe
   presence, WIF usage, and README doc-sync against `Settings.model_fields`.
 
-### Added — Secrets strict mode (Milestone D)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Secrets strict mode (Milestone D)
 
 Opt-in "fail loud" secret resolution (ADR-0010, amends ADR-002; spec 0003).
 Additive and default-OFF.
@@ -1971,7 +2145,10 @@ Additive and default-OFF.
 - `secrets/gcp.py` honours `strict` via a single `_raise_if_strict` helper;
   `SecretsSettings.strict` wired through `composition.py`.
 
-### Added — Telemetry exporter selection + harness routing (Milestone C)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Telemetry exporter selection + harness routing (Milestone C)
 
 Cloud Trace export and separate harness-span routing, both additive and
 default-OFF (see ADR-0009, specs 0001/0002).
@@ -1988,7 +2165,10 @@ default-OFF (see ADR-0009, specs 0001/0002).
   `build_scoped_tracer`; `_HarnessOrchestrator` uses the latter.
 - New gated test marker `gcp_trace` (`RUN_GCP_TRACE=1`).
 
-### Added — Dynamic agent loading via entry points (Milestone B)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Dynamic agent loading via entry points (Milestone B)
 
 Third-party packages can register agents into `agent_registry` without editing
 `composition.py`. Additive and default-OFF (see ADR-0008, spec 0006).
@@ -2006,7 +2186,10 @@ Third-party packages can register agents into `agent_registry` without editing
   third-party↔third-party keeps last-call-wins.
 - `pyproject.toml` documents the `mangomas.agents` entry-point group.
 
-### Added — Spec-driven workflow + Claude Code ecosystem refresh
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Spec-driven workflow + Claude Code ecosystem refresh
 
 Groundwork for the next-steps roadmap (see `specs/README.md`). Additive; no
 runtime behaviour change.
@@ -2020,7 +2203,13 @@ runtime behaviour change.
 - **New sub-agent**: `telemetry-exporter-dev` under `backend`
   (`.github/agents/backend/`), owning the OTel exporter seam.
 
-### Fixed — protected-path hook Windows bypass
+### Fixed - **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
+— protected-path hook Windows bypass
 
 - **`scripts/lint_agent_frontmatter.py`**: `_check_protected_path` now normalises
   the candidate path via the existing `_normalize_path` helper instead of
@@ -2050,7 +2239,10 @@ runtime behaviour change.
   against any `EmbeddingClient` via `ScorerContext.embeddings`; the
   `NotImplementedError` guard applies only when no embedder is configured.
 
-### Added — Evaluation harness: gating, sinks, scorers, plugins
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Evaluation harness: gating, sinks, scorers, plugins
 
 Adopts eval-harness patterns natively (see ADR-0003). All additions are
 opt-in and default-OFF, so existing `mangomas eval` runs are unchanged.
@@ -2073,7 +2265,10 @@ opt-in and default-OFF, so existing `mangomas eval` runs are unchanged.
 - **Config version marker**: `EvalSettings.schema_version` (forward-compatible;
   a future version warns instead of crashing).
 
-### Added — Evaluation harness: target indirection
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Evaluation harness: target indirection
 
 Lets a run evaluate something other than a single registered agent (see
 ADR-0004). Additive and default-OFF — `target` defaults to `agent`, so existing
@@ -2092,7 +2287,10 @@ unchanged.
 - **Plugin discovery**: new entry-point group `mangomas.eval.targets`
   (gated by `MANGOMAS_DISCOVERY_ENABLED`).
 
-### Added — Evaluation harness: dataset source abstraction
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Evaluation harness: dataset source abstraction
 
 Lets a dataset come from more than a local JSONL file (see ADR-0004). Additive
 and default-OFF — `dataset_source` defaults to `jsonl`, so existing `--dataset`
@@ -2108,7 +2306,10 @@ runs are byte-for-byte unchanged.
   `dataset_source_options`.
 - **Plugin discovery**: new entry-point group `mangomas.eval.dataset_sources`.
 
-### Added — Evaluation harness: SQLite + webhook sinks, per-row Langfuse
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Evaluation harness: SQLite + webhook sinks, per-row Langfuse
 
 More result destinations, all additive and default-OFF (sinks default to
 `["console"]`).
@@ -2123,7 +2324,10 @@ More result destinations, all additive and default-OFF (sinks default to
   `false`) — when `true` it also emits one trace + `row_score` per row in
   addition to the aggregate trace + `mean_score`.
 
-### Added — Evaluation harness: regression / baseline gating
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Evaluation harness: regression / baseline gating
 
 Fail CI when a run regresses against a saved baseline (see ADR-0005). Additive
 and default-OFF — engaged only when `--baseline` / `MANGOMAS_EVAL__BASELINE_PATH`
@@ -2141,7 +2345,10 @@ is set.
   New `EvalSettings.baseline_path` / `max_mean_score_drop` / `max_pass_rate_drop`
   / `allow_new_failures`.
 
-### Added — Retrieval-augmented generation (RAG)
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Retrieval-augmented generation (RAG)
 
 The full RAG port lands as a non-breaking, opt-in layer. Embeddings and the
 vector store are both gated `enabled=False` by default, so existing
@@ -2199,7 +2406,10 @@ no provider exposed `.embed()`) and gives agents retrieval context via a
   README, and C4 component/container diagrams document the embeddings/vector/rag
   seams; NEXT_STEPS graduates the "embedding-capable provider" long-term item.
 
-### Added — Claude Code enterprise harness
+### Added - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
+— Claude Code enterprise harness
 
 The first end-to-end Claude Code harness lands as a non-breaking,
 opt-in layer on top of v0.3.0. Production callers behave identically
@@ -2303,6 +2513,9 @@ the project's no-hard-coded-values and protocol-first rules.
 
 ### Added
 
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
+
 - **GCP swap-in implementation plan** (`docs/plans/20260523T133844Z-gcp-swapin-and-evals-plan.md`):
   Cherry-picked from PR #6 — 7-milestone roadmap covering Cloud Logging/Trace
   exporter, Vertex AI provider hardening, Postgres parity, Cloud Run deployment,
@@ -2314,6 +2527,12 @@ the project's no-hard-coded-values and protocol-first rules.
   coverage 51 % → 80 %.
 
 ### Fixed
+
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
   number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
@@ -2344,6 +2563,9 @@ Workload Identity Federation only — service-account JSON keys are never
 accepted by code or configuration.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **Vertex AI LLM provider** (`vertex` extra,
   `src/mangomas/adapters/llm/vertex.py`). `VertexClient` satisfies
@@ -2505,6 +2727,9 @@ accepted by code or configuration.
 ## [0.2.0] — 2026-05-13
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 - **Harness gap-analysis sweep**:
   - `_HarnessOrchestrator` now also wraps `stream_dispatch` so streaming
@@ -2672,6 +2897,12 @@ accepted by code or configuration.
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - **CI lint job (PLC0415)**: Local ruff 0.8.0 and CI's newer ruff disagreed on
   whether `PLC0415` (lazy import) was enabled, causing CI to fail with errors
   local couldn't reproduce. Root cause addressed structurally: the lazy import
@@ -2699,6 +2930,12 @@ accepted by code or configuration.
 
 ### Fixed
 
+- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
+- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
+  safely decomposed into packages using the Facade pattern for API compatibility.
+
 - `LMStudioClient`: wrap raw `httpx` exceptions into typed `LLMTimeout` /
   `LLMUnavailable` / `LLMBadResponse` subclasses across `complete()`, `ping()`,
   and `_stream_impl()` so API responses always carry the structured error
@@ -2724,6 +2961,9 @@ accepted by code or configuration.
   non-root runtime user.
 
 ### Added
+
+- **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
+  discrimination guards (POSIX path mismatch, numbering uniqueness, toolchain lockstep).
 
 **Core platform**
 - `Agent` protocol with `handle(request, ctx)` contract; `StreamingAgent` extension protocol for token-level streaming.
@@ -2790,3 +3030,4 @@ accepted by code or configuration.
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0
+

@@ -5,7 +5,7 @@
 - **Target release:** rolling (no version cut in this program)
 - **Status:** Draft
 - **Specs:** spec-0032 (PR B, written) · spec-0033 (PR A) · spec-0034–0036 (PRs C–E, not yet written)
-- **ADRs:** ADR-0031 (acceptance predicates), ADR-0032 (tool effect classes) — the
+- **ADRs:** ADR-0034 (acceptance predicates), ADR-0032 (tool effect classes) — the
   other PRs change no boundary
 
 ## Executive summary
@@ -90,7 +90,7 @@ establishes that any of it rejects a defect. This PR mechanises the procedure
 
 ---
 
-## PR B — Acceptance you can trust (spec-0032, ADR-0031) — **landed first**
+## PR B — Acceptance you can trust (spec-0032, ADR-0034) — **landed first**
 
 `workflow/predicate.py` offers `contains` and `regex` over `response.content`.
 `ReviewerAgent` emits `{"passed": bool, "score": float, …}`. A loop that
@@ -100,7 +100,7 @@ directions**: the natural needle `"passed": true` never matches compact
 `model_dump_json()` output (false negative, loop raises `MaxStepsExceeded` on
 an approved review), and the quoteless needle that fixes it then matches prose
 inside `feedback`/`suggestions` (false positive). Fixing one manufactures the
-other. See §3 of the adjudication, revised after probing. Spec-0032 / ADR-0031.
+other. See §3 of the adjudication, revised after probing. Spec-0032 / ADR-0034.
 
 ### Milestone B0 — a `json_field` predicate kind
 

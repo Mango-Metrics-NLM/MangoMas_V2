@@ -1,7 +1,7 @@
 # Spec-0032: Structured acceptance predicates (`json_field`)
 
 - **Status:** In progress
-- **Linked ADR:** ADR-0031
+- **Linked ADR:** ADR-0034
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added`
 
 ## Problem
@@ -158,6 +158,6 @@ constants required by R8 are module-level `_UPPER_CASE` names in
 - [ ] No exception escapes a compiled predicate for any response content.
 - [ ] `ruff`, `mypy --strict`, `pytest` (95% gate), `check_coverage.py`,
       `lint_agent_frontmatter.py` all clean.
-- [ ] CHANGELOG updated; ADR-0031 added.
+- [ ] CHANGELOG updated; ADR-0034 added.
 - [ ] `docs/workflow/graphs.md` and the `mango-workflow` skill document the kind
       and state why a substring match over a structured agent is unsound.

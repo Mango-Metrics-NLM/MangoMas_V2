@@ -8,6 +8,7 @@ adds the group.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING
 
 import typer
@@ -18,6 +19,8 @@ from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
 from mangomas.errors import MangomasError
 from mangomas.workflow import execute_workflow, load_workflow, resolve_workflow_source
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.workflow import WorkflowGraph

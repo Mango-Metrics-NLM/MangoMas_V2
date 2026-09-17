@@ -1,0 +1,43 @@
+{
+  "workflow_name": "fanout_concat",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "trigger"
+    },
+    {
+      "id": "process_a",
+      "type": "llm_agent",
+      "prompt_template": "Analyze aspect A"
+    },
+    {
+      "id": "process_b",
+      "type": "llm_agent",
+      "prompt_template": "Analyze aspect B"
+    },
+    {
+      "id": "concat_results",
+      "type": "combiner",
+      "strategy": "concatenate"
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "process_a"
+    },
+    {
+      "source": "start",
+      "target": "process_b"
+    },
+    {
+      "source": "process_a",
+      "target": "concat_results"
+    },
+    {
+      "source": "process_b",
+      "target": "concat_results"
+    }
+  ]
+}

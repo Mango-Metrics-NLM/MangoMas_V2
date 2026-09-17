@@ -17,6 +17,7 @@ _ALLOWED_MANGOMAS_PREFIXES = (
     "mangomas.config",
     "mangomas.errors",
     "mangomas.correlation",
+    "mangomas.utils",
 )
 
 _BANNED_PREFIXES = (
@@ -130,3 +131,4 @@ def test_sink_does_not_runtime_import_contracts() -> None:
     assert not any(
         name == "mango_contracts" or name.startswith("mango_contracts.") for name in names
     )
+
