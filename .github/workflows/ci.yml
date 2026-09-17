@@ -87,7 +87,7 @@ jobs:
         # Third-party action pinned to a full commit SHA (supply-chain
         # hardening — codecov's 2021 uploader compromise is the case study);
         # Dependabot's github-actions ecosystem keeps the pin fresh.
-        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
+        uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
         with:
           file: coverage.xml
           fail_ci_if_error: false
