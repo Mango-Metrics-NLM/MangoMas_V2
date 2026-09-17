@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 
 import pytest
+from pydantic import ValidationError
 
 from mangomas import config as config_module
 
@@ -106,7 +107,6 @@ def test_loop_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.loop.step_timeout_seconds == 5.0
 
 
-from pydantic import ValidationError
 def test_loop_settings_type_coercion_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MANGOMAS_LOOP__MAX_STEPS", "not_an_int")
     with pytest.raises(ValidationError):

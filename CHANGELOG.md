@@ -9,6 +9,16 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+
+- **RAG pipeline POSIX path mismatch on Windows** (`test_pipeline.py:168`).
+- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
+- **Ruff pre-commit rev desync** (`0.16.0` -> `0.16.6` lockstep with pyproject.toml).
+- **God file decomposition**: `orchestrator.py`, `predicate.py`, and `vertex.py` safely decomposed into packages using the Facade pattern for API compatibility.
+
+
+
 ### Added
 
 - **7 regression tests** in 	ests/regression/test_sdlc_gate_defects.py with
@@ -223,13 +233,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   and a reusable `parse_governance` (policy validation split from file I/O so a
   git-blob policy is checked exactly as strictly as one read from disk).
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **The `sitecustomize.py` guard was one-sided.** `tests/regression/test_origin_defects.py`
   asserted `-p no:randomly` was *present* in the injected `PYTEST_ADDOPTS`, not
@@ -267,13 +271,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `tests/test_errors.py::test_every_subclass_renders_its_message_verbatim`
   (a recursive subclass sweep, so a new subclass is covered the day it lands).
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **`MANGOMAS_EVAL__FAIL_FAST` never stopped a run.** `_dispatch_concurrent`
   checked its stop event *before* acquiring the semaphore, while
@@ -441,13 +439,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   stop-gate stay explicit non-ports. `dag` node, Python 3.13, and a
   `pre-commit --all-files` CI job remain deferred.
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **Non-finite USD amounts** (`NaN` / infinities) are rejected by
   `require_non_negative_float`, `EvalSettings.max_mean_cost_usd`, the eval
@@ -581,13 +573,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   separately from local JSONL; C3 names chat/summarize as unmapped
   observation.
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **Planner plans longer than 64 steps no longer vanish.** The producer
   truncates `PlanningProposalPayload.steps` to the envelope cap so
@@ -717,13 +703,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   governance table. **Backwards-compatibility:** every pre-extraction
   import path and object identity is preserved; zero behavior change.
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **`mangomas.__version__` no longer drifts from the package** (review
   finding on the v0.4.0 cut): it was a hardcoded copy still reading
@@ -746,13 +726,7 @@ this release cut closes out.
 _Streaming turn persistence + metrics — Spec-0025 / ADR-0025 (governed
 Batch B-a, `BREAKING-CHANGE`-trailered protected-path edit)._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **Streamed conversations are no longer invisible.** `stream_dispatch`
   persisted nothing and the stream route recorded no metrics, so every SSE
@@ -814,13 +788,7 @@ roadmap Phase 1 item 1.3._
 
 _Deploy integrity + supply-chain baseline — Spec-0024 / roadmap Phase 0._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **`deploy.yml` now applies `deploy/service.yaml`.** The deploy job
   previously ran an image-only `gcloud run deploy`, so none of the manifest's
@@ -899,13 +867,7 @@ _Next-steps roadmap — a peer-reviewed case for the development program._
 
 _Post-review hardening (peer review of spec-0022) — Spec-0023._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **The injection guard added by spec-0022 was bypassable by deleting one
   space.** `test_no_run_body_interpolates_forbidden_expressions` matched the
@@ -1088,13 +1050,7 @@ _Post-review hardening (peer review of spec-0022) — Spec-0023._
 
 _Governance-hardening adoptions (SSD-pack Tier 1 + 2) — Spec-0022._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **`make secret-scan` ran the deprecated, history-only `gitleaks detect`.**
   An uncommitted `.env` holding a real credential passed the gate. The recipe
@@ -1173,13 +1129,7 @@ _Governance-hardening adoptions (SSD-pack Tier 1 + 2) — Spec-0022._
 
 _CI/Makefile parity and corpus-validation completion — Spec-0021._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **CI's `pull_request` trigger named branches that don't apply here.**
   `branches: ["main", "develop"]` — `develop` doesn't exist anywhere in this
@@ -1232,13 +1182,7 @@ _CI/Makefile parity and corpus-validation completion — Spec-0021._
 
 _Gate integrity and corpus completion — Spec-0020._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **The coverage floor list had no completeness guard.** 19 floors covered every
   top-level path under `src/mangomas/` except `_entry_points.py`, and nothing
@@ -1325,13 +1269,7 @@ _Package decomposition — Spec-0015 / ADR-0019._
   pull the whole command tree and four eval-registry side-effect imports into
   every module that reads a constant.
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **Thirteen CLI tests were passing against the wrong system.** Measured, not
   suspected: with the orchestrator patches neutralised and a counter on
@@ -1522,13 +1460,7 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
   each directory name matches its frontmatter `name`, and that no
   contributor-facing doc points at a retired path.
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **A GCP + auth deployment rejected every request.** `create_app` resolves the
   expected API token during app *construction*, but the `gcp` secrets provider
@@ -1612,13 +1544,7 @@ _Live Claude Code corpus — Spec-0018 / ADR-0024._
 
 _Protected-path governance contract — Spec-0017 / ADR-0021._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **Protected-path `PreToolUse` hook was silently inert.** It read
   `$CLAUDE_TOOL_INPUT_path`, an environment variable Claude Code does not
@@ -1689,13 +1615,7 @@ _Protected-path governance contract — Spec-0017 / ADR-0021._
 
 _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - `ToolAgent`: no longer discards the tool-format system prompt when a custom
   `system_prompt` is configured — both are sent (custom first), so the LLM
@@ -1833,11 +1753,6 @@ _Code hygiene & modularity overhaul — Spec-0014 / ADR-0019._
 
 ### Removed
 
-### Fixed - **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 — Docker build context excluded a file the Dockerfile copies
 
@@ -2012,13 +1927,7 @@ Bring the FastAPI surface up to parity with the CLI, additive and default-OFF.
 - **Opt-in CORS**: `MANGOMAS_API__CORS_ALLOW_ORIGINS` (default empty →
   `CORSMiddleware` not installed, so behaviour is byte-identical unless set).
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **`cli/main.py`**: typed `_require_rag`'s return as
   `tuple[EmbeddingClient, VectorStoreRepository]` under `TYPE_CHECKING`, deleting
@@ -2203,11 +2112,6 @@ runtime behaviour change.
 - **New sub-agent**: `telemetry-exporter-dev` under `backend`
   (`.github/agents/backend/`), owning the OTel exporter seam.
 
-### Fixed - **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 — protected-path hook Windows bypass
 
@@ -2526,13 +2430,7 @@ the project's no-hard-coded-values and protocol-first rules.
   with injected pool, empty results, null timestamp handling. Postgres module
   coverage 51 % → 80 %.
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **ruff PLR2004** in `scripts/lint_agent_frontmatter.py`: extracted magic
   number `3` to named constant `_MIN_SUBAGENT_PATH_DEPTH`.
@@ -2895,13 +2793,7 @@ accepted by code or configuration.
 - `ruff` pinned to `>=0.11,<1.0` in dev deps; `respx`/`tests.*` mypy
   overrides added so the CI scope (`src tests scripts`) passes `--strict`.
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - **CI lint job (PLC0415)**: Local ruff 0.8.0 and CI's newer ruff disagreed on
   whether `PLC0415` (lazy import) was enabled, causing CI to fail with errors
@@ -2928,13 +2820,7 @@ accepted by code or configuration.
 
 ## [0.1.0] — 2026-05-13
 
-### Fixed
 
-- **RAG pipeline POSIX path mismatch on Windows** (	est_pipeline.py:168).
-- **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).
-- **Ruff pre-commit rev desync** (0.16.0 -> 0.16.6 lockstep with pyproject.toml).
-- **God file decomposition**: orchestrator.py, predicate.py, and ertex.py
-  safely decomposed into packages using the Facade pattern for API compatibility.
 
 - `LMStudioClient`: wrap raw `httpx` exceptions into typed `LLMTimeout` /
   `LLMUnavailable` / `LLMBadResponse` subclasses across `complete()`, `ping()`,
@@ -3030,4 +2916,5 @@ accepted by code or configuration.
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.1.0
+
 

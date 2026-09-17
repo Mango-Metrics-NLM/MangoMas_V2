@@ -136,7 +136,7 @@ packages = ["src/mangomas"]
 protected_paths = [
     # Core contracts: a change here is a change to a public API.
     "src/mangomas/core/agent.py",
-    "src/mangomas/core/orchestrator/__init__.py",
+    "src/mangomas/core/orchestrator/__init__.py",    "src/mangomas/core/orchestrator/_client.py",
     "src/mangomas/core/structured.py",
     "src/mangomas/core/tools.py",
     "src/mangomas/errors.py",
@@ -394,4 +394,6 @@ modules = [
     "mangomas.rag",
     "mangomas.cognitive",
 ]
+
+
 

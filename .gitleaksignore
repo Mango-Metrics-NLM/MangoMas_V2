@@ -1,6 +1,1 @@
-# Ignore test files that contain fake credentials and fingerprints
-[allowlist]
-paths = [
-    '''tests/.*''',
-    '''test_.*''',
-]
+dummy-fingerprint-1234567890

@@ -26,6 +26,7 @@ def test_module_level_constants_match_the_real_pyproject_toml() -> None:
     real repo pyproject.toml — same single source of truth as
     scripts/check_protected_paths.py and scripts/lint_agent_frontmatter.py."""
     assert "src/mangomas/core/orchestrator/__init__.py" in governance.PROTECTED_PATHS
+    assert "src/mangomas/core/orchestrator/_client.py" in governance.PROTECTED_PATHS
     assert "BREAKING-CHANGE" in governance.BREAKING_CHANGE_MARKER_ALIASES
 
 
@@ -262,4 +263,5 @@ def test_unprotected_governance_surface_normalizes_policy_separators() -> None:
     windows_style = frozenset({path.replace("/", "\\") for path in governance.GOVERNANCE_SURFACE})
 
     assert governance.unprotected_governance_surface(windows_style) == frozenset()
+
 

@@ -196,6 +196,7 @@ def test_protected_path_with_marker_returns_ok(
     [
         "src/mangomas/core/agent.py",
         "src/mangomas/core/orchestrator/__init__.py",
+    "src/mangomas/core/orchestrator/_client.py",
         # spec-0015 R4: extracted contract code stays governed — the new
         # structured-output module joined the table the commit it was created.
         "src/mangomas/core/structured.py",

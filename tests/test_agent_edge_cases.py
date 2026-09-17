@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from mangomas.agents import ChatAgent
 from mangomas.core.agent import AgentContext, AgentRequest, Message
-from tests.fakes import FakeLLM
+from tests.fakes import FakeLLM, FakeRepository
 
-
-from tests.fakes import FakeRepository
 
 async def test_agent_handles_empty_response() -> None:
     llm = FakeLLM(reply="")
@@ -20,7 +18,6 @@ async def test_agent_handles_empty_response() -> None:
     assert resp.content == ""
 
 
-from tests.fakes import FakeRepository
 
 async def test_agent_handles_whitespace_response() -> None:
     llm = FakeLLM(reply="   \n  \t  ")
@@ -31,4 +28,5 @@ async def test_agent_handles_whitespace_response() -> None:
     resp = await agent.handle(req, ctx)
     assert resp.agent == "chat"
     assert resp.content == "   \n  \t  "
+
 

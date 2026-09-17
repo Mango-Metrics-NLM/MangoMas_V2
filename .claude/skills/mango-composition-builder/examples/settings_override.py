@@ -1,17 +1,16 @@
 from typing import Any, Dict
+from mangomas.config import Settings
 
-def apply_settings_override(base_settings: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
-    """
+def apply_settings_override(base_settings: Settings, overrides: Dict[str, Any]) -> Settings:
+    "\""
     Dynamically applies setting overrides to a base configuration.
     Useful for environment-specific or user-specific runtime overrides.
-    """
-    merged_settings = base_settings.copy()
+    Returns a validated Settings model.
+    "\""
+    # Dump base settings to a dict, merge overrides, and re-validate
+    base_dict = base_settings.model_dump()
     
-    for key, value in overrides.items():
-        if isinstance(value, dict) and key in merged_settings and isinstance(merged_settings[key], dict):
-            # Recursively apply overrides for nested dictionaries
-            merged_settings[key] = apply_settings_override(merged_settings[key], value)
-        else:
-            merged_settings[key] = value
-            
-    return merged_settings
+    # Simple top-level merge for demonstration
+    merged_dict = {**base_dict, **overrides}
+    
+    return Settings.model_validate(merged_dict)
