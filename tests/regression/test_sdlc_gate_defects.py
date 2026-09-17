@@ -23,12 +23,14 @@ cross-reference integrity guard for defect 2.
 
 from __future__ import annotations
 
+import asyncio
 import re
-import sys
 from collections import defaultdict
 from pathlib import Path
 
 import pytest
+
+from mangomas.rag.loader import load_documents
 
 # ── Repo root (same derivation as test_origin_defects.py) ────────────────────
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -45,27 +47,17 @@ class TestPosixPathCanonicalization:
     ``str()`` produces backslashes.
     """
 
-    def test_as_posix_never_contains_backslashes(self, tmp_path: Path) -> None:
-        """``Path.as_posix()`` on any platform produces only forward slashes."""
-        posix = tmp_path.as_posix()
-        assert "\\" not in posix, (
-            f"Path.as_posix() returned backslashes: {posix!r}. "
+    def test_loader_source_uses_forward_slashes(self, tmp_path: Path) -> None:
+        """``load_documents`` must store source paths with forward slashes."""
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (sub / "test.txt").write_text("hello", encoding="utf-8")
+        docs = asyncio.run(load_documents(str(tmp_path)))
+        assert len(docs) == 1
+        assert "\\" not in docs[0].source, (
+            f"RawDoc.source contains backslashes: {docs[0].source!r}. "
             "This would break source-path equality in the RAG pipeline."
         )
-
-    def test_str_vs_as_posix_diverge_on_windows(self, tmp_path: Path) -> None:
-        """Prove the discrimination: on Windows ``str()`` != ``as_posix()``."""
-        native = str(tmp_path)
-        posix = tmp_path.as_posix()
-        if sys.platform == "win32":
-            assert native != posix, (
-                "str(path) and path.as_posix() should differ on Windows. "
-                "If they don't, this guard cannot discriminate."
-            )
-        else:
-            # On POSIX platforms the two are identical — guard is a no-op
-            # but must not fail.
-            assert native == posix
 
 
 # ── Defect 2: ADR / spec numbering uniqueness ────────────────────────────────

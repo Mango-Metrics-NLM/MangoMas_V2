@@ -1,16 +1,20 @@
-from typing import Any, Dict
+"""Settings override example for the mango-composition-builder skill."""
+
+from __future__ import annotations
+
+from typing import Any
+
 from mangomas.config import Settings
 
-def apply_settings_override(base_settings: Settings, overrides: Dict[str, Any]) -> Settings:
-    "\""
-    Dynamically applies setting overrides to a base configuration.
-    Useful for environment-specific or user-specific runtime overrides.
-    Returns a validated Settings model.
-    "\""
-    # Dump base settings to a dict, merge overrides, and re-validate
+
+def apply_settings_override(
+    base_settings: Settings,
+    overrides: dict[str, Any],
+) -> Settings:
+    """Dynamically apply overrides to a base configuration.
+
+    Return a validated Settings model for environment-specific runtime overrides.
+    """
     base_dict = base_settings.model_dump()
-    
-    # Simple top-level merge for demonstration
     merged_dict = {**base_dict, **overrides}
-    
     return Settings.model_validate(merged_dict)

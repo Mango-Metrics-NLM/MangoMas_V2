@@ -52,7 +52,7 @@ mangomas workflow run "ship it" -f graph.json
 | Metadata-transparent | An all-agent `sequence` result **equals** `dispatch_pipeline([names], request)` (full model, incl. metadata). |
 | Fan-out reduce | `first` returns the first branch verbatim; `concat` newline-joins `content` (`agent="fan_out"`, empty metadata). |
 | Predicate is sync | `PredicateSpec` (`contains`/`regex`/`json_field`) compiles once to a sync `AcceptanceFn`; never async, never I/O. |
-| Never text-match a structured agent | `contains`/`regex` match response **text**. `planner`/`reviewer` emit JSON, and *no* substring spelling is correct: the quoted needle is a false negative (`model_dump_json()` emits no space after the colon, so an **approving** review raises `MaxStepsExceeded`), and the quoteless needle that fixes that is a false positive (it matches prose inside `feedback`/`suggestions`, accepting a **rejecting** review). Use `json_field` — spec-0032 / ADR-0031. |
+| Never text-match a structured agent | `contains`/`regex` match response **text**. `planner`/`reviewer` emit JSON, and *no* substring spelling is correct: the quoted needle is a false negative (`model_dump_json()` emits no space after the colon, so an **approving** review raises `MaxStepsExceeded`), and the quoteless needle that fixes that is a false positive (it matches prose inside `feedback`/`suggestions`, accepting a **rejecting** review). Use `json_field` — spec-0032 / ADR-0034. |
 | Default-OFF | `MANGOMAS_WORKFLOW__ENABLED=false` by default; `--definition` overrides per-invocation. |
 | No `errors.py` change | Bad graph → `ConfigError` (400); unknown agent → `AgentNotFound` (404); loop exhaustion → `MaxStepsExceeded` (422). |
 

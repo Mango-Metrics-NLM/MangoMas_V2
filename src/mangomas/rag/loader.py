@@ -60,10 +60,10 @@ def _load_documents_sync(path: str) -> list[RawDoc]:
                 text = p.read_text(encoding="utf-8")
                 docs.append(RawDoc(source=p.relative_to(root).as_posix(), text=text))
             except UnicodeDecodeError:
-                docs.append(RawDoc(source=p.relative_to(root).as_posix(), text=""))
+                continue
         return docs
     try:
         text = root.read_text(encoding="utf-8")
         return [RawDoc(source=root.as_posix(), text=text)]
     except UnicodeDecodeError:
-        return [RawDoc(source=root.as_posix(), text="")]
+        return []

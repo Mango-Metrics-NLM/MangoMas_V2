@@ -199,6 +199,7 @@ The workflow engine executes a bounded workflow tree defined as inline JSON or a
 protected_paths = [
     "src/mangomas/core/agent.py",
     "src/mangomas/core/orchestrator/__init__.py",
+    "src/mangomas/core/orchestrator/_client.py",
     "src/mangomas/core/structured.py",
     "src/mangomas/core/tools.py",
     "src/mangomas/errors.py",

@@ -1,33 +1,55 @@
-from typing import Any, Dict, Optional
+"""Custom LLM factory example for the mango-composition-builder skill.
+
+Demonstrates how to register a custom LLM adapter that conforms to the
+``LLMClient`` protocol, so ``build_orchestrator`` can wire it in without
+any code changes to the core.
+"""
+
+from __future__ import annotations
+
 import logging
+from typing import Any
+
+from mangomas.core.agent import Message
 
 logger = logging.getLogger(__name__)
 
-class CustomLLMFactory:
+
+class StubLLMClient:
+    """Protocol-conforming stub useful for test or offline scenarios.
+
+    Implements the ``LLMClient`` contract (``complete`` + ``aclose``).
+    Replace the ``complete`` body with your real HTTP call.
     """
-    Factory for instantiating custom LLM clients dynamically.
-    Ensures backwards compatibility and dynamic configuration.
+
+    def __init__(self, model: str = "default-model-v1", temperature: float = 0.7) -> None:
+        self.model = model
+        self.temperature = temperature
+
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Return a placeholder response (swap for a real backend call)."""
+        temp = temperature if temperature is not None else self.temperature
+        logger.info("StubLLMClient.complete model=%s temp=%s", self.model, temp)
+        return f"[stub] echoed {len(messages)} messages"
+
+    async def aclose(self) -> None:
+        """Release resources (no-op for this stub)."""
+
+
+def custom_llm_factory(config: dict[str, Any] | None = None) -> StubLLMClient:
+    """Build a ``StubLLMClient`` from free-form config.
+
+    Register this factory with ``_llm_registry`` in ``composition/llm.py``
+    to make it available under a custom provider name.
     """
-    
-    def __init__(self, default_model: str = "default-model-v1") -> None:
-        self.default_model = default_model
-        
-    def build_client(self, config: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Any:
-        """
-        Builds the LLM client based on the provided configuration.
-        """
-        config = config or {}
-        model_name = config.get("model_name", self.default_model)
-        temperature = config.get("temperature", 0.7)
-        
-        logger.info(f"Building LLM client for model: {model_name} with temp: {temperature}")
-        
-        # Merge kwargs for backwards compatibility
-        client_config = {
-            "model": model_name,
-            "temperature": temperature,
-            **kwargs
-        }
-        
-        # Instantiate and return the mock client
-        return type("MockLLMClient", (), {"config": client_config})()
+    config = config or {}
+    return StubLLMClient(
+        model=config.get("model_name", "default-model-v1"),
+        temperature=float(config.get("temperature", 0.7)),
+    )
