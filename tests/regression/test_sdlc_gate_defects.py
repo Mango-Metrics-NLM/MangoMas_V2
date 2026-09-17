@@ -38,6 +38,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # ── Defect 1: POSIX source paths are cross-platform ──────────────────────────
 
+
 class TestPosixPathCanonicalization:
     """Guard against the path separator mismatch that broke on Windows.
 
@@ -79,16 +80,12 @@ class TestDecisionRecordIntegrity:
         """The renumbered ADR file must exist at its new location."""
         target = _ADR_DIR / "0034-structured-acceptance-predicates.md"
         assert target.exists(), (
-            f"{target.name} is missing — the ADR-0031 collision fix "
-            "may have been reverted."
+            f"{target.name} is missing — the ADR-0031 collision fix may have been reverted."
         )
 
     def test_no_duplicate_0031_adrs(self) -> None:
         """Only one ADR may claim number 0031."""
-        files_0031 = [
-            p.name
-            for p in _ADR_DIR.glob("0031-*.md")
-        ]
+        files_0031 = [p.name for p in _ADR_DIR.glob("0031-*.md")]
         assert len(files_0031) == 1, (
             f"Expected exactly 1 ADR-0031 file, found {len(files_0031)}: "
             f"{files_0031}. The numbering collision has regressed."
@@ -104,12 +101,11 @@ class TestDecisionRecordIntegrity:
             if match is not None:
                 by_number[match.group("number")].append(path.name)
         collisions = {n: names for n, names in by_number.items() if len(names) > 1}
-        assert not collisions, (
-            f"{directory.name} contains numbering collisions: {collisions}"
-        )
+        assert not collisions, f"{directory.name} contains numbering collisions: {collisions}"
 
 
 # ── Defect 3: ruff pre-commit lockstep ───────────────────────────────────────
+
 
 class TestToolchainLockstep:
     """Guard that the ruff pin desync stays fixed.
@@ -127,4 +123,3 @@ class TestToolchainLockstep:
             ".pre-commit-config.yaml still has ruff rev v0.16.0 — "
             "the toolchain lockstep fix has regressed."
         )
-

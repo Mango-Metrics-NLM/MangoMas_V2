@@ -291,4 +291,3 @@ def test_secrets_gcp_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.secrets.project_id == "my-gcp-project"
     assert s.secrets.timeout_seconds == 10.0
     assert s.secrets.default_version == "3"
-

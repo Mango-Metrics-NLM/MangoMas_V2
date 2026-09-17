@@ -55,7 +55,8 @@ def _run_pytest(
             "-m",
             "pytest",
             str(tree),
-            "-q", "--no-cov",
+            "-q",
+            "--no-cov",
             "-rs",
             "-p",
             "no:cacheprovider",
@@ -206,4 +207,3 @@ def test_collection_level_importorskip_fails_the_session(tmp_path: Path) -> None
     result = _run_pytest(tmp_path)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "SKIP (collection)" in result.stdout
-

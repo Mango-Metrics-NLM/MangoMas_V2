@@ -552,5 +552,3 @@ def test_a_marker_naming_a_path_the_base_does_not_protect_reads_as_unscoped(
     )
 
     assert _run_in_repo(monkeypatch, repo) == check_protected_paths.EXIT_OK
-
-

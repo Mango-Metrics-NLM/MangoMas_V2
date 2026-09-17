@@ -131,4 +131,3 @@ def test_sink_does_not_runtime_import_contracts() -> None:
     assert not any(
         name == "mango_contracts" or name.startswith("mango_contracts.") for name in names
     )
-

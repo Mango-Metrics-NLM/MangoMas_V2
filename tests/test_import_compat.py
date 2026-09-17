@@ -95,15 +95,9 @@ _FACADES: dict[str, tuple[str, ...]] = {
         "backpressure",
         "tenancy",
     ),
-    "mangomas.core.orchestrator": (
-        "_client",
-    ),
-    "mangomas.workflow.predicate": (
-        "_client",
-    ),
-    "mangomas.adapters.llm.vertex": (
-        "_client",
-    ),
+    "mangomas.core.orchestrator": ("_client",),
+    "mangomas.workflow.predicate": ("_client",),
+    "mangomas.adapters.llm.vertex": ("_client",),
 }
 
 
@@ -681,11 +675,14 @@ def test_console_script_entry_point_matches_the_facade() -> None:
 # the same as config/telemetry/cli above: identity, not just importability.
 
 
-@pytest.mark.parametrize("package", [
-    "mangomas.core.orchestrator",
-    "mangomas.workflow.predicate",
-    "mangomas.adapters.llm.vertex",
-])
+@pytest.mark.parametrize(
+    "package",
+    [
+        "mangomas.core.orchestrator",
+        "mangomas.workflow.predicate",
+        "mangomas.adapters.llm.vertex",
+    ],
+)
 def test_decomposed_facade_reexports_are_identical_objects(package: str) -> None:
     """Every public name in the facade is the same object as in `_client`."""
     facade_mod = importlib.import_module(package)
@@ -698,11 +695,14 @@ def test_decomposed_facade_reexports_are_identical_objects(package: str) -> None
         )
 
 
-@pytest.mark.parametrize("package", [
-    "mangomas.core.orchestrator",
-    "mangomas.workflow.predicate",
-    "mangomas.adapters.llm.vertex",
-])
+@pytest.mark.parametrize(
+    "package",
+    [
+        "mangomas.core.orchestrator",
+        "mangomas.workflow.predicate",
+        "mangomas.adapters.llm.vertex",
+    ],
+)
 def test_decomposed_facade_exports_are_non_empty(package: str) -> None:
     """The facade must export at least one name (vacuity guard)."""
     facade_mod = importlib.import_module(package)

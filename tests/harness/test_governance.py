@@ -263,5 +263,3 @@ def test_unprotected_governance_surface_normalizes_policy_separators() -> None:
     windows_style = frozenset({path.replace("/", "\\") for path in governance.GOVERNANCE_SURFACE})
 
     assert governance.unprotected_governance_surface(windows_style) == frozenset()
-
-

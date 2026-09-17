@@ -185,9 +185,7 @@ async def test_empty_path_warns_rather_than_reporting_zero_silently(
     assert "rag_ingest_empty" in _events(caplog)
 
 
-async def test_ingest_skips_binary_files(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_ingest_skips_binary_files(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """A binary file should be skipped gracefully."""
     f = tmp_path / "binary.bin"
     f.write_bytes(b"\xff\xfe\x00\x01\x80\xff")
