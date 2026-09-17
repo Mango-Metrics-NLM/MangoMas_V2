@@ -33,7 +33,7 @@ repos:
           - opentelemetry-api>=1.25
           - opentelemetry-sdk>=1.25
           - typer>=0.12
-          - starlette>=0.40
+          - starlette>=1.6.0
 
   # ── Misc: file hygiene ─────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
