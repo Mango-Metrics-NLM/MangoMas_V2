@@ -67,7 +67,7 @@ class TestPosixPathCanonicalization:
         file.write_text("hello", encoding="utf-8")
         docs = asyncio.run(load_documents(str(file)))
         assert len(docs) == 1
-        
+
         # Test binary drop
         binary_file = tmp_path / "binary.bin"
         binary_file.write_bytes(b"\x80\x81")

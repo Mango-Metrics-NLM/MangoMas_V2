@@ -8,12 +8,15 @@ Guards:
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from mangomas.adapters.storage.memory import FileMemoryRepository
 from mangomas.config import MemorySettings
+from mangomas.eval.runner import EvalReport
+from mangomas.eval.sinks.sqlite_results import SqliteResultsSink
 from mangomas.utils import clock
 
 
@@ -37,8 +40,6 @@ def test_clock_is_patchable_through_module(tmp_path: Path) -> None:
         assert path.name == "test-2026-01-01.md"
 
         # Test sqlite sink uses the mocked clock too
-        from mangomas.eval.sinks.sqlite_results import SqliteResultsSink
-        from mangomas.eval.runner import EvalReport
 
         db_path = str(tmp_path / "test.db")
         sink = SqliteResultsSink(db_path=db_path)
@@ -56,8 +57,6 @@ def test_clock_is_patchable_through_module(tmp_path: Path) -> None:
         )
 
         sink._write(report, None)
-
-        import sqlite3
 
         conn = sqlite3.connect(db_path)
         cursor = conn.execute("SELECT ts FROM eval_reports LIMIT 1")
