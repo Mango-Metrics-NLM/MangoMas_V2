@@ -179,7 +179,7 @@ The workflow engine executes a bounded workflow tree defined as inline JSON or a
   - `FanOutNode`: Dispatches parallel branch evaluation.
   - `LoopNode`: Iterates execution until an `AcceptanceFn` returns true or step limits are reached.
   - `BranchNode`: Evaluates conditional branching based on compiled `PredicateSpec` rules.
-- **Predicate Compilation (`predicate.py`)**: Compiles JSON predicate expressions into synchronous acceptance predicates executed over node responses. Three kinds: `contains` and `regex` match the response **text**; `json_field` (spec-0032 / ADR-0031) parses the response as a JSON object and tests one addressed field via a dotted path, with exactly one of `equals` / `at_least` / `at_most`. The structured agents (`planner`, `reviewer`) emit JSON, and no substring spelling over their serialised output is correct — a quoted needle is a false negative against `model_dump_json()`'s compact form, and the quoteless needle that survives formatting drift is a false positive against `feedback` / `suggestions` prose. Parsing is strict (whole-text, object-only) so the predicate and `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT` agree by construction, and the compiled closure is **total** — unparseable content is "not accepted" rather than an error, so non-convergence still surfaces as `MaxStepsExceeded`.
+- **Predicate Compilation (`predicate/ package`)**: Compiles JSON predicate expressions into synchronous acceptance predicates executed over node responses. Three kinds: `contains` and `regex` match the response **text**; `json_field` (spec-0032 / ADR-0034) parses the response as a JSON object and tests one addressed field via a dotted path, with exactly one of `equals` / `at_least` / `at_most`. The structured agents (`planner`, `reviewer`) emit JSON, and no substring spelling over their serialised output is correct — a quoted needle is a false negative against `model_dump_json()`'s compact form, and the quoteless needle that survives formatting drift is a false positive against `feedback` / `suggestions` prose. Parsing is strict (whole-text, object-only) so the predicate and `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT` agree by construction, and the compiled closure is **total** — unparseable content is "not accepted" rather than an error, so non-convergence still surfaces as `MaxStepsExceeded`.
 
 ---
 
@@ -198,7 +198,8 @@ The workflow engine executes a bounded workflow tree defined as inline JSON or a
 [tool.mangomas.governance]
 protected_paths = [
     "src/mangomas/core/agent.py",
-    "src/mangomas/core/orchestrator.py",
+    "src/mangomas/core/orchestrator/__init__.py",
+    "src/mangomas/core/orchestrator/_client.py",
     "src/mangomas/core/structured.py",
     "src/mangomas/core/tools.py",
     "src/mangomas/errors.py",
@@ -249,3 +250,4 @@ classDiagram
 
 - **HTTP Status Mapping**: The FastAPI exception handler walks the exception MRO to yield canonical HTTP status codes (`UnknownProvider` / `ConfigError` $\to$ 400, `AgentNotFound` $\to$ 404, `MaxStepsExceeded` $\to$ 422, `LLMUnavailable` $\to$ 503, `LLMTimeout` $\to$ 504). `AuthenticationError` is defined in `api/auth.py` (not `errors.py`) and maps to 401 via the same `_ERROR_STATUS` table.
 - **Correlation Propagation**: Every error envelope carries `error`, `message`, `correlation_id`, and ISO-8601 `timestamp`.
+

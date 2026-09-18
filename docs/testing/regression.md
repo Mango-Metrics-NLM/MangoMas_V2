@@ -86,6 +86,7 @@ Enforced by `scripts/check_coverage.py` in CI and locally:
 | `secrets` | 100% |
 | `correlation` | 100% |
 | `tenancy` | 100% |
+| `utils` | 100% |
 | `headers` | 100% |
 | `entry_points` | 100% |
 | `composition` | 95% |
@@ -268,3 +269,4 @@ make precommit     # pre-commit run --all-files
 `make typecheck format-check` plus `pytest --no-cov`. Neither includes
 coverage floors or `protected-paths`. `make gate` remains the pre-PR bar.
 A `pre-commit run --all-files` **CI job** is still deferred.
+

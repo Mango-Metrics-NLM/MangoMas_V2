@@ -305,7 +305,8 @@ def test_real_repo_pyproject_has_governance_table() -> None:
     protected_paths, marker_aliases = check_protected_paths._load_governance(
         repo_root / "pyproject.toml"
     )
-    assert "src/mangomas/core/orchestrator.py" in protected_paths
+    assert "src/mangomas/core/orchestrator/__init__.py" in protected_paths
+    assert "src/mangomas/core/orchestrator/_client.py" in protected_paths
     assert "BREAKING-CHANGE" in marker_aliases
 
 

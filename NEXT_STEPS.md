@@ -157,8 +157,7 @@ Enterprise gap analysis, defect triage, and Level 4 C4 code architecture:
    with backward-compatible mock fallback in `src/mangomas/adapters/embeddings/sentence_transformers.py`.
 6. **Level 4 C4 Code Architecture**: Authored `docs/architecture/c4-code.md` formalizing runtime
    protocols, adapter boundaries, declarative workflows, RAG pipeline, error taxonomy, and ADR-0021 governance.
-7. **Enterprise AQA Regression Suite**: Added `tests/regression/test_origin_defects.py` with 15
-   parameterized tests guarding against defect regressions.
+7. **Enterprise AQA Regression Suite**: Added `tests/regression/test_origin_defects.py` and `test_sdlc_gate_defects.py` with 22 tests guarding against defect regressions.
 
 ---
 
@@ -676,3 +675,4 @@ spec 0006.
 - GCP resource provisioning scripts (no cloud resources created by this repo).
 - Model fine-tuning or RLHF pipelines.
 - UI / chat interface (out of scope; existing `cli/` covers local interaction).
+

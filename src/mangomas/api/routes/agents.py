@@ -10,6 +10,7 @@ process-wide values instead.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import aclosing
 from typing import TYPE_CHECKING, Any, cast
@@ -19,6 +20,8 @@ from fastapi.responses import StreamingResponse
 
 from mangomas.api.auth import require_auth
 from mangomas.core import AgentRequest, AgentResponse
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import APISettings

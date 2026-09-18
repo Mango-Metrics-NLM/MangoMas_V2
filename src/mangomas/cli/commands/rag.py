@@ -9,6 +9,7 @@ it. That keeps the `ingest, query` listing order pinned by statement order.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING
 
 import typer
@@ -17,6 +18,8 @@ from mangomas.cli import _runtime
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.config import get_settings
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient

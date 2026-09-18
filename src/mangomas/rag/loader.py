@@ -14,10 +14,13 @@ re-ingestion can target it for deletion.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from mangomas.errors import ConfigError
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RawDoc", "load_documents"]
 
@@ -54,11 +57,18 @@ def _load_documents_sync(path: str) -> list[RawDoc]:
         raise ConfigError(f"Ingestion path does not exist: {path!r}", detail=f"path={path!r}")
     if root.is_dir():
         files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix in _TEXT_SUFFIXES)
-        return [
-            RawDoc(
-                source=p.relative_to(root).as_posix(),
-                text=p.read_text(encoding="utf-8"),
-            )
-            for p in files
-        ]
-    return [RawDoc(source=root.as_posix(), text=root.read_text(encoding="utf-8"))]
+        docs = []
+        for p in files:
+            try:
+                text = p.read_text(encoding="utf-8")
+                docs.append(RawDoc(source=p.relative_to(root).as_posix(), text=text))
+            except UnicodeDecodeError:
+                logger.warning("Skipped non-UTF-8 binary file: %s", p)
+                continue
+        return docs
+    try:
+        text = root.read_text(encoding="utf-8")
+        return [RawDoc(source=root.as_posix(), text=text)]
+    except UnicodeDecodeError:
+        logger.warning("Skipped non-UTF-8 binary file: %s", root)
+        return []

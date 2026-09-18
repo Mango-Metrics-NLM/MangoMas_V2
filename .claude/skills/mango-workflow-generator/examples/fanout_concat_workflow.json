@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "name": "fanout_concat",
+  "root": {
+    "kind": "fan_out",
+    "branches": [
+      {
+        "kind": "agent",
+        "agent": "analyzer_a"
+      },
+      {
+        "kind": "agent",
+        "agent": "analyzer_b"
+      }
+    ],
+    "join": "concat"
+  }
+}

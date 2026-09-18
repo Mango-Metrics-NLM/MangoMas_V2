@@ -17,6 +17,7 @@ _ALLOWED_MANGOMAS_PREFIXES = (
     "mangomas.config",
     "mangomas.errors",
     "mangomas.correlation",
+    "mangomas.utils",
 )
 
 _BANNED_PREFIXES = (

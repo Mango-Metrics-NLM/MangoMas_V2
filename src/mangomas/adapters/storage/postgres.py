@@ -23,7 +23,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -43,6 +42,7 @@ from mangomas.config import (
 from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
+from mangomas.utils import clock
 
 if TYPE_CHECKING:  # pragma: no cover
     import asyncpg
@@ -285,7 +285,7 @@ class PostgresRepository:
                     "INSERT INTO turns (ts, agent, request, response, tenant, "
                     "schema_version, status, error_code, error) "
                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
-                    datetime.now(UTC),
+                    clock.now(),
                     agent,
                     # model_dump(mode="json"), not model_dump_json(): the jsonb
                     # codec registered in _ensure_pool applies json.dumps on the
@@ -352,7 +352,7 @@ class PostgresRepository:
                     "INSERT INTO turns (ts, agent, request, response, tenant, "
                     "schema_version, status, error_code, error) "
                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
-                    datetime.now(UTC),
+                    clock.now(),
                     agent,
                     request.model_dump(mode="json"),
                     {},

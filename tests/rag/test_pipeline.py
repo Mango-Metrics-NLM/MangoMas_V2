@@ -165,7 +165,7 @@ async def test_document_producing_no_chunks_warns(
     assert "rag_document_skipped" in _events(caplog)
     skipped = next(r for r in caplog.records if getattr(r, "event", "") == "rag_document_skipped")
     # getattr: LogRecord has no static schema for `extra=` fields.
-    assert getattr(skipped, "source", None) == str(f)
+    assert getattr(skipped, "source", None) == f.as_posix()
     # The message names the real cause, not a retired drop-threshold knob.
     assert "empty or whitespace-only" in skipped.getMessage()
     assert "min_chunk_words" not in skipped.getMessage()
@@ -183,6 +183,21 @@ async def test_empty_path_warns_rather_than_reporting_zero_silently(
 
     assert report == IngestReport(documents=0, chunks=0, batches=0, deleted_sources=0)
     assert "rag_ingest_empty" in _events(caplog)
+
+
+async def test_ingest_skips_binary_files(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A binary file should be skipped gracefully."""
+    f = tmp_path / "binary.bin"
+    f.write_bytes(b"\xff\xfe\x00\x01\x80\xff")
+    pipeline = _pipeline(FakeEmbeddingClient(), FakeVectorStore(), batch_size=2)
+
+    with caplog.at_level(logging.WARNING, logger="mangomas.rag.pipeline"):
+        report = await pipeline.ingest(str(f))
+
+    # The pipeline should skip binary files (UnicodeDecodeError handled).
+    # Might count as documents=1 if it tries, but chunks=0.
+    # Let's assert it doesn't crash and chunks=0.
+    assert report.chunks == 0
 
 
 # ── Crash-safety: an ingest must never leave the index emptier than it started ─

@@ -263,7 +263,7 @@ identical to the imperative `dispatch_pipeline`. The `branch` node (spec 0012 /
 ADR-0016) routes on the threaded content via a predicate, enabling
 `planner → route → specialised agent`. Predicates come in three kinds —
 `contains` and `regex` match the response text, and `json_field` (spec 0032 /
-ADR-0031) tests a parsed field, which is the only correct way to loop or route
+ADR-0034) tests a parsed field, which is the only correct way to loop or route
 on a structured agent such as `planner` or `reviewer`. A `fan_out` branch may itself be a
 composite (spec 0013 / ADR-0018) — an all-agent fan_out keeps byte-identical
 `dispatch_fan_out` parity, while a composite branch runs through its own
@@ -358,7 +358,7 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 17 skills — live in Claude Code and VS Code Copilot |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 20 skills — live in Claude Code and VS Code Copilot |
 | Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |

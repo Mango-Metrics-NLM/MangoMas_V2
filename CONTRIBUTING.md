@@ -32,7 +32,7 @@ Six files are **protected paths**:
 | Path | Why |
 |---|---|
 | `src/mangomas/core/agent.py` | The `Agent` protocol and its request/response contracts |
-| `src/mangomas/core/orchestrator.py` | The whole dispatch surface |
+| `src/mangomas/core/orchestrator/` | The whole dispatch surface |
 | `src/mangomas/core/structured.py` | Structured-output prompt + JSON-recovery helpers |
 | `src/mangomas/core/tools.py` | Tool contracts and the call parser |
 | `src/mangomas/errors.py` | The typed error hierarchy behind the HTTP status map |

@@ -56,6 +56,7 @@ def _run_pytest(
             "pytest",
             str(tree),
             "-q",
+            "--no-cov",
             "-rs",
             "-p",
             "no:cacheprovider",

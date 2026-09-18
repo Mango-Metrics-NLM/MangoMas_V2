@@ -18,8 +18,8 @@ import pytest
 from mangomas.adapters.llm.vertex import (
     VertexClient,
     VertexError,
-    _translate_vertex_error,
 )
+from mangomas.adapters.llm.vertex._client import _translate_vertex_error
 from mangomas.config import DEFAULT_VERTEX_LOCATION
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
@@ -399,7 +399,7 @@ def test_constructor_without_sdk_raises_import_error(
     """If no client is injected and the SDK is missing, raise ImportError."""
     # In-test import keeps the patched module local to this test so it doesn't
     # affect other tests that exercise the real lazy-import path.
-    import mangomas.adapters.llm.vertex as vertex_module  # noqa: PLC0415
+    import mangomas.adapters.llm.vertex._client as vertex_module  # noqa: PLC0415
 
     def _fail_import() -> tuple[Any, Any, Any]:
         raise ImportError("vertexai not installed")
@@ -441,7 +441,7 @@ def test_credentials_json_parse_error_raises_vertex_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # In-test import keeps the monkeypatched module local to this test.
-    import mangomas.adapters.llm.vertex as vertex_module  # noqa: PLC0415
+    import mangomas.adapters.llm.vertex._client as vertex_module  # noqa: PLC0415
 
     monkeypatch.setattr(
         vertex_module,
@@ -480,7 +480,7 @@ class _StubCredentialsCls:
 
 
 def test_resolve_credentials_uses_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    import mangomas.adapters.llm.vertex as vertex_module  # noqa: PLC0415
+    import mangomas.adapters.llm.vertex._client as vertex_module  # noqa: PLC0415
 
     monkeypatch.setattr(vertex_module, "_lazy_import_credentials", lambda: _StubCredentialsCls)
     out = VertexClient._resolve_credentials(
@@ -492,7 +492,7 @@ def test_resolve_credentials_uses_json_body(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_resolve_credentials_uses_file_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    import mangomas.adapters.llm.vertex as vertex_module  # noqa: PLC0415
+    import mangomas.adapters.llm.vertex._client as vertex_module  # noqa: PLC0415
 
     monkeypatch.setattr(vertex_module, "_lazy_import_credentials", lambda: _StubCredentialsCls)
     out = VertexClient._resolve_credentials(

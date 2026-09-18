@@ -41,7 +41,8 @@ _DEFAULT_PYPROJECT_PATH: Final[Path] = Path("pyproject.toml")
 _FALLBACK_PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
     {
         "src/mangomas/core/agent.py",
-        "src/mangomas/core/orchestrator.py",
+        "src/mangomas/core/orchestrator/__init__.py",
+        "src/mangomas/core/orchestrator/_client.py",
         "src/mangomas/core/structured.py",
         "src/mangomas/core/tools.py",
         "src/mangomas/errors.py",

@@ -1,4 +1,4 @@
-# ADR-0031: Structured acceptance predicates
+# ADR-0034: Structured acceptance predicates
 
 ## Status
 

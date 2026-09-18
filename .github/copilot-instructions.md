@@ -92,7 +92,7 @@ tests/                   # Mirrors src/ structure; fakes.py + tests.constants ar
   directory, no parent/child hierarchy. Four are routers (`mango-architect`,
   `mango-backend`, `mango-api-dev`, `mango-test-engineer`) and carry `Use when:`
   trigger conditions; the other 23 specialists are named directly.
-- Skills live at `.claude/skills/<name>/SKILL.md` (17 skills) — VS Code Copilot
+- Skills live at `.claude/skills/<name>/SKILL.md` (20 skills) — VS Code Copilot
   reads that directory as well as the legacy `.github/` one, so a single tree
   serves Copilot and Claude Code (spec-0018). See `mango-testing` for the
   canonical layout; `mango-cognitive` covers `MANGOMAS_SIGNAL__*` emission.

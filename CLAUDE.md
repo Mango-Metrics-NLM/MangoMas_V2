@@ -55,7 +55,7 @@ over retyping paths: CI's lint surface is
 src/mangomas/
 ├── core/           # Stable domain contracts (Agent, Orchestrator, tools, loop)
 │   ├── agent.py        Protocol: Agent, AgentContext, AgentRequest, AgentResponse
-│   ├── orchestrator.py Dispatch + iterative loop + pipeline/fan-out topologies
+│   ├── orchestrator/   Dispatch + iterative loop + pipeline/fan-out topologies
 │   ├── structured.py   Structured-output helpers: build_structured_prompt,
 │   │                   parse_or_recover, parse_llm_json_object (spec-0015 R4)
 │   ├── tools.py        ToolSpec, ToolCallParser, ToolRegistry, tool prompt
@@ -509,7 +509,7 @@ and `scripts/check_protected_paths.py`), and the `ConfigChange` hook's
 decision table.
 
 Protected core paths (`src/mangomas/core/agent.py`,
-`src/mangomas/core/orchestrator.py`, `src/mangomas/core/structured.py`,
+`src/mangomas/core/orchestrator/`, `src/mangomas/core/structured.py`,
 `src/mangomas/core/tools.py`,
 `src/mangomas/errors.py`, `src/mangomas/registry.py`) require a
 `BREAKING-CHANGE` marker (the legacy `# approved-breaking-change` form is
@@ -670,7 +670,7 @@ under `asyncio.gather`. See spec 0005 / ADR-0011 and
   `dispatch_pipeline`.
 - **Predicate** (`workflow/predicate.py`) — `PredicateSpec`
   (`contains`/`regex`/`json_field`) compiles once to a pure sync `AcceptanceFn`.
-  `json_field` (spec-0032 / ADR-0031) binds acceptance to a **parsed** field —
+  `json_field` (spec-0032 / ADR-0034) binds acceptance to a **parsed** field —
   dotted path, exactly one of `equals`/`at_least`/`at_most`, strict whole-text
   JSON parsing so it agrees with `VALIDATE_OUTPUT`. Use it for `planner` /
   `reviewer`: no substring spelling over their JSON is correct in both
@@ -697,7 +697,7 @@ response = await execute_workflow(graph, request, orch=orchestrator)
 | Path | Change with care |
 |------|-----------------|
 | `src/mangomas/core/agent.py` | Stable public contract — backward-compat required (protected path) |
-| `src/mangomas/core/orchestrator.py` | Dispatch surface — backward-compat required (protected path) |
+| `src/mangomas/core/orchestrator/` | Dispatch surface — backward-compat required (protected path) |
 | `src/mangomas/core/structured.py` | Structured-output prompt + JSON-recovery helpers — backward-compat required (protected path) |
 | `src/mangomas/core/tools.py` | Tool contracts + parser; re-export facade over `structured.py` — backward-compat required (protected path) |
 | `src/mangomas/errors.py` | Typed error hierarchy + HTTP mapping (protected path) |

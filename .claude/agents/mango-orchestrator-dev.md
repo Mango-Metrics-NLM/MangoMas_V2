@@ -1,6 +1,6 @@
 ---
 name: mango-orchestrator-dev
-description: "Owns src/mangomas/core/orchestrator.py and the whole dispatch surface, including stream_dispatch. A protected path: changes need a BREAKING-CHANGE commit trailer and must preserve every existing signature. Invoked by name, not by topic match."
+description: "Owns src/mangomas/core/orchestrator/ and the whole dispatch surface, including stream_dispatch. A protected path: changes need a BREAKING-CHANGE commit trailer and must preserve every existing signature. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -13,13 +13,13 @@ Use the `mango-topology` skill for topology shape and `mango-observability` for 
 
 ## Protected path
 
-`src/mangomas/core/orchestrator.py` is a **protected path**: the edit needs a `BREAKING-CHANGE`
+`src/mangomas/core/orchestrator/` is a **protected path**: the edit needs a `BREAKING-CHANGE`
 commit trailer or the CI gate fails the build. Use the `mango-harness` skill
 for the trailer contract and for why a quiet `PreToolUse` hook proves nothing.
 
 ## Surface You Own
 
-- `src/mangomas/core/orchestrator.py`:
+- `src/mangomas/core/orchestrator/`:
   - `dispatch` — single-agent, with optional acceptance loop
   - `dispatch_pipeline`
   - `dispatch_fan_out`

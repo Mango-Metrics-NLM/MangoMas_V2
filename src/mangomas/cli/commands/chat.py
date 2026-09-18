@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 import typer
 
@@ -16,6 +17,8 @@ from mangomas.cli import _runtime
 from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR
 from mangomas.config import DEFAULT_API_HISTORY_DEFAULT_LIMIT
 from mangomas.core import AgentRequest, Message
+
+logger = logging.getLogger(__name__)
 
 
 def agents() -> None:

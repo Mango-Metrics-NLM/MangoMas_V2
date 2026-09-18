@@ -95,6 +95,9 @@ _FACADES: dict[str, tuple[str, ...]] = {
         "backpressure",
         "tenancy",
     ),
+    "mangomas.core.orchestrator": ("_client",),
+    "mangomas.workflow.predicate": ("_client",),
+    "mangomas.adapters.llm.vertex": ("_client",),
 }
 
 
@@ -217,6 +220,9 @@ _PRIVATE_FACADE_CONTRACT: dict[str, dict[str, str]] = {
     },
     "mangomas.api.middleware": {
         "_BAGGAGE_KEY": "access_log",
+    },
+    "mangomas.adapters.llm.vertex": {
+        "_translate_vertex_error": "_client",
     },
 }
 
@@ -660,3 +666,57 @@ def test_console_script_entry_point_matches_the_facade() -> None:
     """
     pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["scripts"]["mangomas"] == "mangomas.cli.main:app"
+
+
+# ── God-file decomposition facades (ADR-0019) ────────────────────────────────
+
+# These three modules were decomposed from single-file modules into packages
+# with `__init__.py` facades re-exporting from `_client.py`. The contract is
+# the same as config/telemetry/cli above: identity, not just importability.
+
+
+@pytest.mark.parametrize(
+    "package",
+    [
+        "mangomas.core.orchestrator",
+        "mangomas.workflow.predicate",
+        "mangomas.adapters.llm.vertex",
+    ],
+)
+def test_decomposed_facade_reexports_are_identical_objects(package: str) -> None:
+    """Every public name in the facade is the same object as in `_client`."""
+    facade_mod = importlib.import_module(package)
+    home = importlib.import_module(f"{package}._client")
+    for name in _owned_names(package, "_client"):
+        assert hasattr(facade_mod, name), f"{package} does not re-export {name!r}"
+        assert getattr(facade_mod, name) is getattr(home, name), (
+            f"{package}.{name} is not the same object as {package}._client.{name}"
+        )
+
+
+@pytest.mark.parametrize(
+    "package",
+    [
+        "mangomas.core.orchestrator",
+        "mangomas.workflow.predicate",
+        "mangomas.adapters.llm.vertex",
+    ],
+)
+def test_decomposed_facade_exports_are_non_empty(package: str) -> None:
+    """The facade must export valid names (vacuity and typo guard)."""
+    facade_mod = importlib.import_module(package)
+    names = _public_names(facade_mod)
+    assert names, f"{package} facade exports nothing"
+    for name in names:
+        assert hasattr(facade_mod, name), f"{package}.__all__ advertises undefined {name!r}"
+
+
+@pytest.mark.parametrize(
+    ("name", "home"), sorted(_PRIVATE_FACADE_CONTRACT["mangomas.adapters.llm.vertex"].items())
+)
+def test_vertex_private_contract_names_are_identical(name: str, home: str) -> None:
+    """``_translate_vertex_error`` must be the same object through the facade."""
+    facade_mod = importlib.import_module("mangomas.adapters.llm.vertex")
+    home_mod = importlib.import_module(f"mangomas.adapters.llm.vertex.{home}")
+    assert hasattr(facade_mod, name), f"mangomas.adapters.llm.vertex no longer re-exports {name!r}"
+    assert getattr(facade_mod, name) is getattr(home_mod, name)

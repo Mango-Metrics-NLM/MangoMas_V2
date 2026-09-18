@@ -175,7 +175,7 @@ signal with no ground truth — but the mechanism is more mundane and more
 certain than the literature framing suggests: the predicate cannot read the
 field it claims to test. The fix is small, additive and default-safe: a third
 kind that parses the response and tests a named field. See
-[spec-0032](../../specs/0032-structured-acceptance-predicates.md) and ADR-0031.
+[spec-0032](../../specs/0032-structured-acceptance-predicates.md) and ADR-0034.
 
 ## 4. Procedural gotchas for the work that follows
 
