@@ -53,12 +53,25 @@ class TestPosixPathCanonicalization:
         sub = tmp_path / "sub"
         sub.mkdir()
         (sub / "test.txt").write_text("hello", encoding="utf-8")
+        (sub / "binary.txt").write_bytes(b"\x80\x81")
         docs = asyncio.run(load_documents(str(tmp_path)))
         assert len(docs) == 1
         assert docs[0].source == "sub/test.txt", (
             f"Expected 'sub/test.txt', got {docs[0].source!r}. "
             "RawDoc.source must always be a forward-slash POSIX path."
         )
+
+    def test_loader_single_file_success_and_binary(self, tmp_path: Path) -> None:
+        """Single file loading must succeed for text and gracefully drop binary."""
+        file = tmp_path / "single.txt"
+        file.write_text("hello", encoding="utf-8")
+        docs = asyncio.run(load_documents(str(file)))
+        assert len(docs) == 1
+        
+        # Test binary drop
+        binary_file = tmp_path / "binary.bin"
+        binary_file.write_bytes(b"\x80\x81")
+        assert len(asyncio.run(load_documents(str(binary_file)))) == 0
 
 
 # ── Defect 2: ADR / spec numbering uniqueness ────────────────────────────────

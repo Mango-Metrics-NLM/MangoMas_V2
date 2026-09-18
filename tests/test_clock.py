@@ -35,3 +35,31 @@ def test_clock_is_patchable_through_module(tmp_path: Path) -> None:
         # We access a private helper here to observe the patched clock.
         path = repo._episodic_path(prefix="test")
         assert path.name == "test-2026-01-01.md"
+
+        # Test sqlite sink uses the mocked clock too
+        from mangomas.eval.sinks.sqlite_results import SqliteResultsSink
+        from mangomas.eval.runner import EvalReport
+
+        db_path = str(tmp_path / "test.db")
+        sink = SqliteResultsSink(db_path=db_path)
+
+        report = EvalReport(
+            scorer="test",
+            agent_name="agent",
+            target_name="target",
+            dataset_size=1,
+            passed=1,
+            failed=0,
+            errored=0,
+            mean_score=1.0,
+            duration_ms=10.0,
+        )
+
+        sink._write(report, None)
+
+        import sqlite3
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("SELECT ts FROM eval_reports LIMIT 1")
+        row = cursor.fetchone()
+        assert row[0] == "2026-01-01T00:00:00+00:00"
