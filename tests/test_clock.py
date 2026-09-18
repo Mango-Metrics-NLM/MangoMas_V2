@@ -29,7 +29,7 @@ def test_clock_is_patchable_through_module(tmp_path: Path) -> None:
     """Monkeypatching the clock seam freezes time for consumers."""
     settings = MemorySettings(memory_dir=str(tmp_path), index_file="index.md")
     repo = FileMemoryRepository(settings)
-    
+
     frozen = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
     with patch.object(clock, "now", return_value=frozen):
         # We access a private helper here to observe the patched clock.
