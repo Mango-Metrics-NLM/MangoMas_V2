@@ -86,7 +86,7 @@ rag = [
 # The sink lazy-imports the SDK so it stays optional. Pinned below the v3 API
 # rewrite to keep the trace/score surface stable.
 langfuse = [
-    "langfuse>=2,<3",
+    "langfuse>=2,<5",
 ]
 # GCP Secret Manager provider + Cloud Trace exporter — `pip install 'mangomas[gcp]'`.
 gcp = [
