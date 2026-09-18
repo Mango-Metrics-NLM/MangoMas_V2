@@ -28,13 +28,19 @@ class SemanticSimilarityScorer:
     ) -> ScoreResult:
         """Calculate the similarity score."""
         logger.debug(
-            "Scoring outputs. Expected: %s..., Actual: %s...",
-            expected[:20],
-            prediction[:20],
+            "Scoring outputs",
+            extra={"expected_length": len(expected), "prediction_length": len(prediction)},
         )
 
         # Replace with a real similarity calculation (e.g. embedding cosine).
-        similarity = 0.85
+        # We use a simple length-ratio fallback for this example.
+        if not expected and not prediction:
+            similarity = 1.0
+        elif not expected or not prediction:
+            similarity = 0.0
+        else:
+            similarity = min(len(expected), len(prediction)) / max(len(expected), len(prediction))
+            
         passed = similarity >= self.threshold
 
         return ScoreResult(
@@ -51,5 +57,7 @@ def _semantic_similarity_factory(options: dict[str, Any]) -> Scorer:
     )
 
 
-# Register the scorer so it can be discovered by the CLI.
-scorer_registry.register("semantic_similarity", _semantic_similarity_factory)
+# Do not register at import-time. The CLI discovers scorers via entry points.
+# Add to your pyproject.toml:
+# [project.entry-points."mangomas.eval.scorers"]
+# semantic_similarity = "my_package.my_module:_semantic_similarity_factory"

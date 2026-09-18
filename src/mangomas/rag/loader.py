@@ -14,10 +14,13 @@ re-ingestion can target it for deletion.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from mangomas.errors import ConfigError
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RawDoc", "load_documents"]
 
@@ -60,10 +63,12 @@ def _load_documents_sync(path: str) -> list[RawDoc]:
                 text = p.read_text(encoding="utf-8")
                 docs.append(RawDoc(source=p.relative_to(root).as_posix(), text=text))
             except UnicodeDecodeError:
+                logger.warning("Skipped non-UTF-8 binary file: %s", p)
                 continue
         return docs
     try:
         text = root.read_text(encoding="utf-8")
         return [RawDoc(source=root.as_posix(), text=text)]
     except UnicodeDecodeError:
+        logger.warning("Skipped non-UTF-8 binary file: %s", root)
         return []

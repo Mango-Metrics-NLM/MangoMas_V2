@@ -688,8 +688,7 @@ def test_decomposed_facade_reexports_are_identical_objects(package: str) -> None
     facade_mod = importlib.import_module(package)
     home = importlib.import_module(f"{package}._client")
     for name in _owned_names(package, "_client"):
-        if not hasattr(facade_mod, name):
-            continue
+        assert hasattr(facade_mod, name), f"{package} does not re-export {name!r}"
         assert getattr(facade_mod, name) is getattr(home, name), (
             f"{package}.{name} is not the same object as {package}._client.{name}"
         )
@@ -704,9 +703,12 @@ def test_decomposed_facade_reexports_are_identical_objects(package: str) -> None
     ],
 )
 def test_decomposed_facade_exports_are_non_empty(package: str) -> None:
-    """The facade must export at least one name (vacuity guard)."""
+    """The facade must export valid names (vacuity and typo guard)."""
     facade_mod = importlib.import_module(package)
-    assert _public_names(facade_mod), f"{package} facade exports nothing"
+    names = _public_names(facade_mod)
+    assert names, f"{package} facade exports nothing"
+    for name in names:
+        assert hasattr(facade_mod, name), f"{package}.__all__ advertises undefined {name!r}"
 
 
 @pytest.mark.parametrize(

@@ -55,9 +55,9 @@ class TestPosixPathCanonicalization:
         (sub / "test.txt").write_text("hello", encoding="utf-8")
         docs = asyncio.run(load_documents(str(tmp_path)))
         assert len(docs) == 1
-        assert "\\" not in docs[0].source, (
-            f"RawDoc.source contains backslashes: {docs[0].source!r}. "
-            "This would break source-path equality in the RAG pipeline."
+        assert docs[0].source == "sub/test.txt", (
+            f"Expected 'sub/test.txt', got {docs[0].source!r}. "
+            "RawDoc.source must always be a forward-slash POSIX path."
         )
 
 

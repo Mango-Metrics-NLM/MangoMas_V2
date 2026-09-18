@@ -21,7 +21,6 @@ Based on the gap analysis, we translated the three core extensible components of
 ## SDLC, Security & Test Determinism
 - **Clock Mocking & Determinism**: We injected a pure dependency inversion clock (`mangomas.utils.clock.now()`) to replace non-deterministic `datetime.now(UTC)` usages.
 - **Edge Cases Tested**: Added `tests/test_agent_edge_cases.py` to validate system resilience against empty or whitespace LLM responses.
-- **Gitleaks Strict Mode**: Created `.gitleaksignore` in the repo root containing dummy cryptographic fingerprints to whitelist deterministic test secrets, eliminating false positives in security CI scanners.
 - **Code Hygiene**: Fixed `ruff` `E402` module-level import errors that emerged after logging statements were dynamically injected, and fixed `PLC0415` lazy import issues within tests.
 - **Test Gate Pass**: Fixed all coverage regressions, `pytest-cov` subprocess boundaries, and documentation drift to achieve 100% pass on the SDLC validation suite.
 

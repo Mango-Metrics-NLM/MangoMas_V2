@@ -6,11 +6,11 @@
     "branches": [
       {
         "kind": "agent",
-        "agent_name": "analyzer_a"
+        "agent": "analyzer_a"
       },
       {
         "kind": "agent",
-        "agent_name": "analyzer_b"
+        "agent": "analyzer_b"
       }
     ],
     "join": "concat"

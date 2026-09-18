@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from mangomas.config import LLMSettings
 from mangomas.core.agent import Message
 
 logger = logging.getLogger(__name__)
@@ -42,14 +43,13 @@ class StubLLMClient:
         """Release resources (no-op for this stub)."""
 
 
-def custom_llm_factory(config: dict[str, Any] | None = None) -> StubLLMClient:
-    """Build a ``StubLLMClient`` from free-form config.
+def custom_llm_factory(settings: LLMSettings) -> StubLLMClient:
+    """Build a ``StubLLMClient`` from an ``LLMSettings`` instance.
 
-    Register this factory with ``_llm_registry`` in ``composition/llm.py``
+    Register this factory with ``llm_registry`` from ``mangomas.composition._registries``
     to make it available under a custom provider name.
     """
-    config = config or {}
     return StubLLMClient(
-        model=config.get("model_name", "default-model-v1"),
-        temperature=float(config.get("temperature", 0.7)),
+        model=settings.model,
+        temperature=settings.temperature,
     )

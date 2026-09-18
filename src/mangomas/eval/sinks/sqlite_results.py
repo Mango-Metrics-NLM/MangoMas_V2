@@ -15,7 +15,6 @@ import dataclasses
 import json
 import logging
 import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +24,7 @@ from mangomas.errors import PersistenceError
 from mangomas.eval._options import require_str
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
+from mangomas.utils import clock
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.gate import GateResult
@@ -100,7 +100,7 @@ class SqliteResultsSink:
                 "errored, mean_score, duration_ms, gate_json) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    datetime.now(UTC).isoformat(),
+                    clock.now().isoformat(),
                     report.scorer,
                     report.agent_name,
                     report.target_name,
