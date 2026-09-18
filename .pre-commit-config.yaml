@@ -26,7 +26,7 @@ repos:
         args: [--strict]
         files: ^src/
         additional_dependencies:
-          - fastapi>=0.115
+          - fastapi>=0.141.1
           - pydantic>=2.7
           - pydantic-settings>=2.3
           - httpx>=0.27
