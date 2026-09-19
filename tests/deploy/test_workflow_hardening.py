@@ -179,13 +179,25 @@ def test_eval_gate_external_install_has_no_floating_default_ref() -> None:
 
 
 def test_dependabot_covers_actions_and_python_ecosystems() -> None:
-    """Dependabot must watch both halves of the pinned dependency surface.
+    """The three expected ecosystems are configured.
 
-    The SHA-pinned actions rot without the ``github-actions`` entry; the
-    ``requirements.lock`` pins and pyproject ranges rot without ``pip``; and
-    the exact-pinned ruff/mypy revs desync from pyproject without
-    ``pre-commit``. Asserted as a superset so adding an ecosystem is not a
-    failure.
+    That is the whole of what this test verifies — an earlier docstring claimed
+    more. The SHA-pinned actions rot without the ``github-actions`` entry;
+    pyproject's ranges rot without ``pip``; and the exact-pinned ruff/mypy revs
+    desync from pyproject without ``pre-commit``. Asserted as a superset so
+    adding an ecosystem is not a failure.
+
+    **Not** claimed here: that ``requirements.lock`` stays fresh. Dependabot's
+    ``pip`` ecosystem reads the manifests it recognises — ``requirements.txt``,
+    ``requirements/*.txt``, ``pyproject.toml``, ``setup.py``, ``Pipfile``,
+    ``poetry.lock`` — and a file named ``requirements.lock`` is not among them.
+    ``git log -- requirements.lock`` bears this out: one commit, the one that
+    created it, under a ``pip`` ecosystem configured since. Lockfile freshness is
+    enforced mechanically by
+    ``tests/deploy/test_lockfile_freshness.py::test_every_runtime_distribution_is_pinned_in_the_lockfile``
+    instead, and its CVE exposure by ``make pip-audit``'s second pass. A green
+    test asserting an absent control is worse than prose, because prose does not
+    read as verified.
     """
     doc = yaml.safe_load(_DEPENDABOT.read_text(encoding="utf-8"))
     ecosystems = {entry["package-ecosystem"] for entry in doc["updates"]}

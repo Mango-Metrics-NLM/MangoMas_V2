@@ -53,6 +53,11 @@ GITLEAKS_CONFIG ?= .gitleaks.toml
 # gitleaks pattern above — its version is pinned here rather than in
 # pyproject. Update deliberately; the pin is the review record.
 PIP_AUDIT_VERSION ?= 2.10.1
+# The constraints file the runtime image installs through (Dockerfile's `-c`).
+# Named once so `pip-audit` and any future lockfile target cannot disagree about
+# which file is authoritative; tests/deploy/test_lockfile_freshness.py and
+# tests/deploy/test_ci_make_parity.py both read this contract.
+RUNTIME_LOCKFILE ?= requirements.lock
 # SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
 TRIVY_VERSION ?= 0.74.0
@@ -205,15 +210,25 @@ secret-scan: ## Gitleaks secret scan (downloads a pinned, checksum-verified rele
 	./gitleaks dir --no-banner --redact --exit-code 1 -c $(GITLEAKS_CONFIG) .
 	./gitleaks git --no-banner --redact --exit-code 1 -c $(GITLEAKS_CONFIG) .
 
-pip-audit: ## Audit installed dependencies for known CVEs (downloads the advisory DB; needs network, not part of gate)
+pip-audit: ## Audit the installed env AND the runtime lockfile for known CVEs (downloads the advisory DB; needs network, not part of gate)
 	$(PYTHON) -m pip install --quiet "pip-audit==$(PIP_AUDIT_VERSION)"
-	# Audits the *installed environment* (CI runs this after `pip install -e
-	# ".[dev]"`), not a requirements file: the environment is what CI actually
-	# tests and what the runtime wheel resolves against, and it covers the dev
-	# pins and extras a runtime-only lockfile audit would never see.
-	# --skip-editable excludes the local editable mangomas checkout itself,
-	# which is not on PyPI and would otherwise fail resolution.
+	# Two surfaces, neither subsuming the other — the same shape as secret-scan.
+	#
+	# 1. The *installed environment* (CI runs this after `pip install -e
+	#    ".[dev]"`). This is what CI actually tests, and it covers the dev pins
+	#    and extras a runtime-only lockfile audit would never see.
+	#    --skip-editable excludes the local editable mangomas checkout itself,
+	#    which is not on PyPI and would otherwise fail resolution.
 	$(PYTHON) -m pip_audit --skip-editable
+	# 2. The *runtime lockfile*. An earlier revision of this comment claimed the
+	#    installed environment was "what the runtime wheel resolves against" and
+	#    audited it alone. That was wrong: the Dockerfile passes
+	#    `-c requirements.lock` (see tests/deploy/test_docker_build_context.py),
+	#    so the lock's pins are exactly what the production image installs — the
+	#    one artefact that reaches production was the one surface nothing
+	#    scanned. tests/deploy/test_lockfile_freshness.py keeps the lock in sync
+	#    with pyproject; this keeps it free of known CVEs.
+	$(PYTHON) -m pip_audit -r $(RUNTIME_LOCKFILE)
 
 sbom-scan: ## CycloneDX SBOM + Trivy fs scan (downloads a pinned binary; needs network, not part of gate)
 	# Same download-and-verify pattern as secret-scan. Baseline scan: findings

@@ -97,6 +97,18 @@ score), and the regression flags (`--baseline`, `--max-mean-score-drop`,
 `--max-pass-rate-drop`, `--no-allow-new-failures`). `--max-mean-cost-usd`
 engages the gate when set; `--no-gate` still disables it.
 
+**`mean_cost_usd` is declared, not measured.** `Target.run` returns a `str`, so
+the `AgentResponse` and its metadata are dropped at that boundary and
+`ScorerContext.row_metadata` carries the *dataset row's* metadata. `cost_budget`
+therefore reads token counts the JSONL declared, or falls through to
+`len(prediction)` × a rate; no adapter emits token usage. A cost gate consequently
+fires on **verbosity** and is blind to a `MODEL_OVERRIDE` swap, a per-token price
+change, or extra tool steps. Only gate `mean_cost_usd` over a declared-cost
+dataset (the `cost_controlled_v1.jsonl` shape), and say so next to any published
+threshold. See `docs/eval/harness.md` § "What the cost threshold measures" and
+`tests/eval/test_cost_measurement_basis.py`, which pins it. Measuring cost for
+real is D15, not a present capability.
+
 ---
 
 ## Verification

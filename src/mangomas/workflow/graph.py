@@ -10,6 +10,7 @@ construction — no cycle detection is needed.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -112,3 +113,35 @@ class WorkflowGraph(BaseModel):
 # Resolve the discriminated-union annotations eagerly so a malformed graph fails
 # at load time rather than at first validation deep inside a run.
 WorkflowGraph.model_rebuild()
+
+
+def iter_nodes(node: WorkflowNode) -> Iterator[WorkflowNode]:
+    """Yield *node* and every node beneath it, depth-first, parents before children.
+
+    A reusable static walk over the graph. The tree is bounded but genuinely
+    recursive: a ``fan_out`` branch may itself be a ``fan_out`` or ``branch``
+    (spec 0013 / ADR-0018), so a two-level loop misses nodes. The tree is acyclic
+    by construction — ``sequence`` cannot nest and ``branch`` adds no back-edge —
+    so no ``seen`` set is needed.
+
+    Kept here beside the models rather than in a consumer, because it depends
+    only on the node shapes and every static check over a graph wants it. The
+    executor's :func:`~mangomas.workflow.registry.resolve_executor` recursion is
+    the *runtime* counterpart and deliberately separate: it resolves one child at
+    a time as it dispatches, and cannot enumerate a graph without running it.
+    """
+    yield node
+    if isinstance(node, SequenceNode):
+        children: tuple[WorkflowStep, ...] = tuple(node.steps)
+    elif isinstance(node, FanOutNode):
+        children = tuple(node.branches)
+    elif isinstance(node, BranchNode):
+        children = tuple(case.then for case in node.branches)
+        if node.default is not None:
+            children += (node.default,)
+    else:
+        # ``agent`` and ``loop`` are leaves: a loop iterates one agent by name and
+        # holds no child node.
+        return
+    for child in children:
+        yield from iter_nodes(child)

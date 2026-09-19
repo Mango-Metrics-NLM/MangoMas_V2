@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
 from mangomas.config import DEFAULT_WORKFLOW_SCHEMA_VERSION, WorkflowSettings
 from mangomas.errors import ConfigError
 from mangomas.workflow.graph import WorkflowGraph
+from mangomas.workflow.validation import validate_structured_acceptance
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.workflow.validation import StructuredAgentFields
 
 # Graph schema versions this build understands. Unlike the settings' forward-compat
 # *warn*, an unknown graph version is rejected: executing an unknown structure
@@ -67,13 +72,26 @@ def _parse_json(raw: str) -> object:
         raise ConfigError(f"workflow definition is not valid JSON: {exc}") from exc
 
 
-def load_workflow(source: str) -> WorkflowGraph:
+def load_workflow(
+    source: str,
+    *,
+    structured_agents: StructuredAgentFields | None = None,
+) -> WorkflowGraph:
     """Parse *source* into a validated :class:`WorkflowGraph`.
 
     *source* is treated as inline JSON when its stripped form starts with ``{``,
     otherwise as a path to a JSON file. Raises
     :class:`~mangomas.errors.ConfigError` on an unreadable file, invalid JSON, a
     schema-validation failure, or an unsupported ``schema_version``.
+
+    *structured_agents* maps an agent name to its schema's top-level field names
+    (``mangomas.composition.agents.STRUCTURED_AGENT_FIELDS``). When supplied, a
+    ``loop`` over one of those agents may not accept on a text predicate, and a
+    ``json_field`` path must address a field the schema actually has — see
+    :mod:`mangomas.workflow.validation`. Keyword-only with a ``None`` default, so
+    every pre-existing caller and every previously valid graph behaves
+    identically; the checks are opt-in by construction, and the three in-repo call
+    sites opt in.
     """
     stripped = source.strip()
     if stripped.startswith("{"):
@@ -101,4 +119,6 @@ def load_workflow(source: str) -> WorkflowGraph:
             f"unsupported workflow schema_version {graph.schema_version}; "
             f"supported: {sorted(SUPPORTED_SCHEMA_VERSIONS)}"
         )
+    # Last: the semantic checks, which need a fully validated graph to walk.
+    validate_structured_acceptance(graph, structured_agents)
     return graph

@@ -61,6 +61,17 @@ _KIND_JSON_FIELD: Final[str] = "json_field"
 #: The kinds that match response *text* — everything else addresses parsed JSON.
 _TEXT_MATCH_KINDS: Final[frozenset[str]] = frozenset({_KIND_CONTAINS, _KIND_REGEX})
 
+# Public aliases. ``mangomas.workflow.validation`` refuses a text predicate bound
+# to a structured agent and must name the same kinds this module compiles; an
+# alias keeps that vocabulary in one place rather than restating the literals at
+# the call site (a restated literal is how a fourth kind would quietly bypass the
+# guard). Aliases, not renames: the private names are used throughout below.
+KIND_JSON_FIELD: Final[str] = _KIND_JSON_FIELD
+TEXT_MATCH_KINDS: Final[frozenset[str]] = _TEXT_MATCH_KINDS
+#: Dotted-path separator for a ``json_field`` spec's ``field``, re-exported so a
+#: consumer splitting a path cannot disagree with how the compiler splits it.
+FIELD_PATH_SEPARATOR: Final[str] = "."
+
 # ── Model field names (R8) ────────────────────────────────────────────────────
 # Named once so the per-kind applicability sets and every error message derive
 # from the same strings, following the ``_FLAG_BY_NAME`` precedent above.
@@ -82,7 +93,7 @@ _NOT_APPLICABLE_TO_JSON_FIELD: Final[tuple[str, ...]] = (_VALUE, _CASE_SENSITIVE
 
 #: Separator for the dotted ``field`` path: ``"review.passed"`` → two segments,
 #: ``"passed"`` → the one-segment case.
-_FIELD_PATH_SEPARATOR: Final[str] = "."
+_FIELD_PATH_SEPARATOR: Final[str] = FIELD_PATH_SEPARATOR
 
 #: Defaults that instruct nothing. ``case_sensitive`` / ``flags`` default to
 #: ``False`` / ``[]`` rather than ``None``, so "was it given?" cannot be a bare

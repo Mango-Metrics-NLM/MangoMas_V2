@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from pydantic import BaseModel, ValidationError
 
@@ -36,6 +36,13 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
+#: Subclass attribute naming the Pydantic model an agent's output conforms to.
+#: Read off the **class** (never an instance) by
+#: ``mangomas.composition.agents``, which derives the structured-agent schema map
+#: from it; named once here so the reader and the declaration cannot drift.
+SCHEMA_CLASS_ATTRIBUTE: Final[str] = "schema"
+
+
 class StructuredOutputAgent:
     """Base agent that instructs the LLM to emit JSON matching a fixed schema.
 
@@ -56,6 +63,17 @@ class StructuredOutputAgent:
     """
 
     name: str
+
+    #: The Pydantic model this agent's output conforms to. Declared by each
+    #: subclass (``schema: ClassVar[type[BaseModel]] = ReviewResult``) so
+    #: "which schema does this agent emit?" is answerable from the **class**,
+    #: without constructing an agent — building one resolves a system prompt and
+    #: sampling settings as a side effect, which is the wrong cost for a lookup.
+    #: Annotation-only here, like ``name``: the base class has no schema of its
+    #: own, and a subclass that omits it is rejected at composition import rather
+    #: than silently losing its workflow-acceptance guard (spec slug
+    #: ``structured-acceptance-enforcement``).
+    schema: ClassVar[type[BaseModel]]
 
     def __init__(
         self,

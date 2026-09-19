@@ -43,6 +43,11 @@ TEST_VECTOR_COLLECTION: str = "test-col"
 # ── Agent / reply stubs ───────────────────────────────────────────────────────
 DEFAULT_AGENT_NAME: str = "chat"
 STUB_REPLY: str = "stub-reply"
+# The two structured built-ins, by the name they dispatch under. Pinned against
+# ``composition.agents.DEFAULT_AGENTS`` by ``tests/composition/test_agents.py``,
+# so a rename there fails a test rather than silently rotting these fixtures.
+PLANNER_AGENT_NAME: str = "planner"
+REVIEWER_AGENT_NAME: str = "reviewer"
 
 # ── Tool stubs ────────────────────────────────────────────────────────────────
 DEFAULT_TOOL_NAME: str = "echo"
@@ -208,6 +213,18 @@ PLAN_EXECUTE_REVIEW_GRAPH_NAME = "plan-execute-review"
 # Ordered roster of the pipeline's agent slugs (mirrors the example file).
 PLAN_EXECUTE_REVIEW_AGENTS: tuple[str, ...] = ("planner", "tool", "reviewer")
 
+# The acceptance-gated sibling of the graph above. Kept as a *second* example
+# rather than folding the loop into the first: `plan-execute-review.json` is the
+# all-`agent` graph whose equality with `dispatch_pipeline` is the parity proof
+# four suites depend on (`test_plan_execute_review.py`,
+# `test_plan_execute_review_mast.py`, `tests/integration/test_workflow_http_flow.py`,
+# `tests/lmstudio/`). This one demonstrates the acceptance pattern the docs
+# recommend — a `json_field` predicate bound to `ReviewResult.passed` — which the
+# parity example deliberately has no room for.
+PLAN_REVIEW_UNTIL_PASSED_GRAPH_RELPATH = "examples/workflows/plan-review-until-passed.json"
+PLAN_REVIEW_UNTIL_PASSED_GRAPH_NAME = "plan-review-until-passed"
+PLAN_REVIEW_UNTIL_PASSED_MAX_STEPS: int = 3
+
 # ── Per-step timeout test values (spec-0026) ──────────────────────────────────
 # A step budget far below the slow agent's sleep, so the timeout test fires
 # fast and deterministically; the sleep itself is cancelled by the expiring
@@ -259,9 +276,13 @@ __all__ = [
     "PASSED_NEEDLE_COMPACT",
     "PASSED_NEEDLE_QUOTELESS",
     "PASSED_NEEDLE_SPACED",
+    "PLANNER_AGENT_NAME",
     "PLAN_EXECUTE_REVIEW_AGENTS",
     "PLAN_EXECUTE_REVIEW_GRAPH_NAME",
     "PLAN_EXECUTE_REVIEW_GRAPH_RELPATH",
+    "PLAN_REVIEW_UNTIL_PASSED_GRAPH_NAME",
+    "PLAN_REVIEW_UNTIL_PASSED_GRAPH_RELPATH",
+    "PLAN_REVIEW_UNTIL_PASSED_MAX_STEPS",
     "POSTGRES_TEST_DB",
     "POSTGRES_TEST_IMAGE",
     "POSTGRES_TEST_PASSWORD",
@@ -270,6 +291,7 @@ __all__ = [
     "PREDICATE_INT_VALUE",
     "PREDICATE_INVALID_JSON",
     "PREDICATE_JSON_ARRAY",
+    "REVIEWER_AGENT_NAME",
     "REVIEW_APPROVED_FEEDBACK",
     "REVIEW_BOOL_THRESHOLD",
     "REVIEW_FEEDBACK_FIELD",

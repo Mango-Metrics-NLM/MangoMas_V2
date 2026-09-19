@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "name": "plan-review-until-passed",
+  "root": {
+    "kind": "sequence",
+    "steps": [
+      {"kind": "agent", "agent": "planner"},
+      {"kind": "agent", "agent": "tool"},
+      {
+        "kind": "loop",
+        "agent": "reviewer",
+        "max_steps": 3,
+        "accept": {"kind": "json_field", "field": "passed", "equals": true}
+      }
+    ]
+  }
+}
