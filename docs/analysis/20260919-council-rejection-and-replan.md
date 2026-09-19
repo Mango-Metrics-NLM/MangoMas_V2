@@ -10,11 +10,18 @@
 - **Subject:** a three-model council review of the next development cycle, and
   the five-finding rejection written against it.
 - **Plan:** [`docs/plans/20260919T000000Z-toolchain-and-acceptance-parity-plan.md`](../plans/20260919T000000Z-toolchain-and-acceptance-parity-plan.md).
+- **Revision:** second pass (2026-09-19). The first pass carried findings N1–N2;
+  this pass adds **N3** and **N4** from a deeper read of the `eval` target seam
+  and the predicate compiler, corrects N1's scope against
+  `tests/tooling/test_precommit_parity.py`, and rebuts the recorded decision
+  that argues against N2's remedy. §1 is unchanged — nothing in the second pass
+  disturbed it.
 - **Relationship to prior work:** this document does **not** supersede
   [`20260916-council-roadmap-adjudication.md`](20260916-council-roadmap-adjudication.md)
   or [`20260916T214636Z-reliability-evidence-plan.md`](../plans/20260916T214636Z-reliability-evidence-plan.md).
   It confirms that the plan of record already covers most of what was proposed
-  as new, and adds the two findings nothing in the tree covers.
+  as new, adds the four findings nothing in the tree covers, and records two
+  corrections against that plan (§5).
 
 ---
 
@@ -205,16 +212,29 @@ run** — it is contract-tested only, exactly as D2 predicted.
 
 ## 2. Findings nothing in the tree covers
 
-These two are not in the council document, not in the rejection, and not in any
-in-tree analysis or plan. Both are in the repo's own signature defect class — a
-constraint asserted in prose while the mechanism does something narrower — and
-in the second case a **passing test** asserts the effect that is missing.
+These four are not in the council document, not in the rejection, and not in any
+in-tree analysis or plan. All four are in the repo's own signature defect class —
+a constraint asserted in prose while the mechanism does something narrower. In
+N2 a **passing test** asserts the missing effect; in N3 a **protocol return
+type** makes the asserted effect unreachable; in N4 the guard exists and is
+simply never consulted.
+
+N1 and N2 are supply chain and land first. N3 and N4 change what the plan of
+record's behavioural-gate work can actually claim, so they are sequenced against
+it rather than ahead of it.
 
 ### N1 — the mypy hook's `additional_dependencies` has no parity guard · High
 
 `tests/tooling/test_toolchain_pin_parity.py` was written for exactly this
 failure mode, and its `TOOL_PINS` tuple covers two things: `ruff` and `mypy`,
-rev-versus-pin. `grep -rn additional_dependencies tests/` returns **nothing**.
+rev-versus-pin. There is a **second** parity test —
+`tests/tooling/test_precommit_parity.py` — and it does not close the gap
+either: it checks that the local hooks mirror the Makefile
+(`_REQUIRED_LOCAL_HOOK_IDS`), that the `validate-config` hook covers the same
+files as `make validate-config`, and that the `lint-imports` hook matches its
+Makefile invocation. `grep -rn additional_dependencies tests/` returns
+**nothing**. Two parity tests, neither covering the eight entries most likely
+to drift.
 
 So the eight entries under the mypy hook
 (`.pre-commit-config.yaml:29-36`: `fastapi>=0.115`, `pydantic>=2.7`,
@@ -239,11 +259,21 @@ copies it and passes `-c /tmp/requirements.lock` to `pip install`. It holds 32
 
 Three gaps:
 
-1. **Not audited.** `grep -n requirements.lock .github/workflows/*.yml Makefile`
-   returns nothing. The `pip-audit` job (`ci.yml:192-212`) runs `make pip-audit`
+1. **Not audited, by a recorded decision whose stated reason is wrong.**
+   `grep -n requirements.lock .github/workflows/*.yml Makefile` returns nothing.
+   The `pip-audit` job (`ci.yml:192-212`) runs `make pip-audit`
    over the `make install` environment — resolved from pyproject's `>=` ranges,
-   **not** the lock's pins. The versions production actually ships are never
-   scanned.
+   **not** the lock's pins. `Makefile:210-213` argues this is deliberate,
+   because the installed environment "is what CI actually tests and what the
+   runtime wheel resolves against, and it covers the dev pins and extras a
+   runtime-only lockfile audit would never see."
+
+   The second half is correct and is why the environment audit must stay. The
+   first half is **false**: `Dockerfile:47` passes `-c /tmp/requirements.lock`,
+   so the runtime wheel resolves against the **lock**, not the dev environment.
+   The one artefact that reaches production is the one nothing scans. This is
+   not an argument against the decision's caution — it is an argument that the
+   decision was taken on an incorrect premise and covers one of two surfaces.
 2. **Not updated.** [Likely] `git log -- requirements.lock` shows exactly one
    commit: the one that created it. None of the 14 open Dependabot branches
    touches it. Dependabot's `pip` ecosystem recognises `requirements.txt`,
@@ -265,6 +295,92 @@ effect its docstring claims, and per (2) that effect does not occur. A green
 test asserting a control that is absent is worse than prose, because prose does
 not read as verified.
 
+### N3 — eval cost is declared in the dataset, never measured, so a cost gate cannot catch a cost regression · High
+
+`MANGOMAS_EVAL__MAX_MEAN_COST_USD`, `mean_cost_usd` on `EvalReport`, the
+`cost_budget` scorer and `estimate_cost_usd`'s three-tier precedence all exist
+and are tested. What does not exist is any path by which a run's actual
+consumption reaches them.
+
+The chain, end to end:
+
+1. `Target.run(request, *, orch) -> str` (`eval/target.py:31`). The signature
+   returns a **string**. `AgentTarget.run` awaits `orch.dispatch(...)` and
+   returns `response.content` (`eval/targets/agent.py:30`) — the
+   `AgentResponse` and every field on it, `metadata` included, are discarded at
+   this boundary.
+2. `EvalRunner._score_row` builds `ScorerContext(row_metadata=dict(row.metadata))`
+   (`eval/runner.py:165`). That is the **dataset row's** metadata — the input
+   the JSONL file declared, not anything the run produced.
+3. `CostBudgetScorer.score` reads `metadata = dict(context.row_metadata)` and
+   passes it to `estimate_cost_usd`, whose precedence is explicit `cost_usd` →
+   token counts → output-character rate.
+
+So `cost_budget` can only ever see token counts a human typed into the dataset.
+`tests/eval/fixtures/cost_controlled_v1.jsonl` does exactly that —
+`{"metadata": {"input_tokens": 10, "output_tokens": 20, "cohort": "cost-controlled-v1"}}`
+— which confirms the design is **deliberate**, not an oversight: it is a
+fixed-budget cohort for comparing targets at equal declared cost, and
+`tests/eval/test_cost_controlled_dataset.py` exercises `echo` / `agent` /
+`pipeline` against it. That is a legitimate thing to have.
+
+The defect is what the repository then claims. No adapter emits token usage at
+all — `grep -rn "usage\|prompt_tokens\|completion_tokens" src/mangomas/adapters/llm/ src/mangomas/core/`
+returns only Vertex's `max_output_tokens` **request** field — so for any dataset
+that does not hand-declare counts, cost falls through to characters × a rate.
+A gate on `mean_cost_usd` therefore fails when the model becomes **wordier**,
+and passes unchanged when it becomes more expensive per token, switches to a
+costlier model via `MODEL_OVERRIDE`, or takes more tool steps. Nothing states
+this limit, and no test pins it.
+
+This matters directly to the plan of record's PR C, and it is the third
+independent reason the rejection's "wire `cost_budget` +
+`MANGOMAS_EVAL__MAX_MEAN_COST_USD`, both of which already exist" does not hold:
+wrong harness (§1.2), and the wiring is blocked by a protocol return type that
+discards the only data that would make it meaningful.
+
+### N4 — a misspelled `json_field` path loads clean and can never accept · Medium-high
+
+`json_field` is validated for structural correctness — `field` non-empty,
+exactly one comparison — but the **path is never checked against anything**.
+Probed:
+
+```
+ReviewResult schema props: ['feedback', 'passed', 'score', 'suggestions']
+typo'd field loads OK -> pased
+typo predicate on passing review -> False  (never accepts -> MaxStepsExceeded)
+correct predicate               -> True
+```
+
+A `loop` over `reviewer` accepting on `field: "pased"` validates, compiles, and
+returns `False` for **every** response. The loop exhausts `max_steps` and raises
+`MaxStepsExceeded`.
+
+The runtime behaviour is correct and deliberate — `predicate/_client.py`'s
+`compile_predicate` docstring states the closure is total, so "a path that does
+not resolve is simply 'not accepted', so non-convergence keeps surfacing as
+`MaxStepsExceeded` rather than as a new error type." Nothing to change there.
+The gap is that **a typo and a genuinely non-converging model produce the
+identical symptom**, and one of them is free to detect at load time: the
+addressed agent's schema is right there. `ReviewResult.model_json_schema()`
+names its four properties, and `StructuredOutputAgent` already holds the model
+(`agents/_structured.py:68`, as `self._schema`).
+
+Note the interaction with §1.1: `json_field` is the *recommended* fix for
+self-report matching, and adopting it as recommended moves a silent-acceptance
+bug (`contains` accepting a rejecting review) to a silent-never-accepts bug
+(a typo'd path). The recommendation is still right; it needs the load-time check
+to be safe to follow.
+
+This also replaces the plan of record's milestone B1 as written. That milestone
+asks a `json_field` predicate to "reject output that `VALIDATE_OUTPUT` would
+reject", but the predicate is compiled from pure data at graph-load time and has
+no agent instance, no schema, and — under the `workflow`/`eval`/`rag`/`cognitive`
+independence contract and the pure-domain rule — no business importing
+`agents/`. Validating the **path** against a schema supplied by the caller
+achieves the same intent, is implementable without a layering breach, and
+additionally catches the typo. See the plan's PR C.
+
 ---
 
 ## 3. SDLC lenses
@@ -274,10 +390,10 @@ Where the repository stands per role, on executed evidence at `92d5e9d`.
 | Lens | State | The one thing that matters next |
 |---|---|---|
 | **Requirements / architecture** | Strong. 33 specs, 34 ADRs, boundary honesty enforced (ADR-0033), INV-16 scope discipline holds under three council attempts to breach it | Nothing. Stop re-deciding settled scope |
-| **Development** | Healthy. 2935 tests green, `mypy --strict` clean, import-linter contracts pass, god-file decomposition done | PR B1 — make `json_field` and `VALIDATE_OUTPUT` provably agree |
-| **QA / test** | Broad but structural. 23 coverage floors, nine at 100 %; no mutation score; no behavioural gate that can fail | Plan-of-record PR A (`make guard-probe`), then PR C |
+| **Development** | Healthy. 2935 tests green, `mypy --strict` clean, import-linter contracts pass, god-file decomposition done | Load-time validation of `json_field` paths (N4) — the recommended fix for §1.1 is unsafe to adopt at scale without it |
+| **QA / test** | Broad but structural. 23 coverage floors, nine at 100 %; no mutation score; no behavioural gate that can fail; the cost dimension measures characters, not spend (N3) | Plan-of-record PR A (`make guard-probe`), then PR C — but settle N3 first, or PR C ships a gate that cannot detect the regression it names |
 | **Release / ops** | **Blocked and inconsistent.** Version claims 0.4.0, tag says v0.1.0, deploy has never executed | Cut v0.4.0 — spec-0024 is done, D8 set the cadence a month ago |
-| **Security / supply chain** | **Weakest lens, and newly so.** Production's pinned closure is neither audited nor updated (N2); toolchain parity has a hole (N1) | N2 first — it is the only finding here touching what ships |
+| **Security / supply chain** | **Weakest lens, and newly so.** Production's pinned closure is neither audited nor updated (N2); toolchain parity has a hole two parity tests miss (N1) | N2 first — it is the only finding here touching the artefact that reaches production |
 | **Governance** | Mechanised in-repo, **unenforced at the forge** | D1. One settings change, open 28 days |
 
 The asymmetry is the finding: development and architecture are in better shape
@@ -285,6 +401,17 @@ than the process around them. Three councils in seven days produced no code and
 one net-new correct finding between them, while D1 — a single settings change
 identified on 2026-08-22 — remains open and makes the headline differentiator
 unfalsifiable regardless of how good the in-repo mechanism is.
+
+The second pattern, visible only across all four new findings, is narrower and
+more useful: **this repository's failures now cluster at boundaries where a
+capability was built and the constraint that makes it correct was written as
+prose instead.** `json_field` shipped without a guard on which predicate kinds
+are legal (§1.1) or on whether the path resolves (N4); the cost dimension
+shipped without stating that it measures characters (N3); the lockfile shipped
+with a Dockerfile contract and no freshness or audit gate (N2); the mypy hook's
+dependency list shipped with a comment claiming parity that two parity tests do
+not check (N1). Every one is small. None is a design error. All four are the same
+omission, and spec-0022 R15 already names it.
 
 ---
 
@@ -301,24 +428,38 @@ D1–D9 there are unchanged. These cannot be taken by an agent.
 | D12 | **Release-number reconciliation.** `pyproject.toml` says 0.4.0; the newest tag is v0.1.0. Either tag v0.4.0 from the default branch (D8's cadence) or reset the version string to reflect what has actually shipped. | Tag v0.4.0. spec-0024 is delivered; deploy has never executed and a release publish is what exercises it |
 | D13 | **`requirements.lock` ownership** (N2). Keep the file and gate it, or drop it and pin through a manifest Dependabot parses (`requirements.txt`). Keeping it unmanaged is the one option the evidence rules out. | Keep and gate — the Dockerfile contract and its two-directional tests are already built. Rename to `requirements.txt` only if Dependabot coverage is judged more valuable than the filename's signal |
 | D14 | **Review-input protocol.** Adopt the rejection's fetch-receipt rule — URL, HTTP status, commit SHA — and discard any contribution lacking one. | Adopt. Three councils, seven days, one net-new finding is the cost case |
+| D15 | **Cost semantics** (N3). Either (a) keep cost declared-in-dataset, document the limit, and pin it with a test — cheap, honest, and the cost gate then only ever claims to compare targets at equal declared budget; or (b) thread response metadata through the `Target` seam so cost is measured, which needs token usage from the adapters and an additive protocol change. | (a) now, (b) only if a cost gate is ever meant to **block** a merge. Do not ship (b)'s gate on (a)'s data |
 
 ---
 
 ## 5. What this changes about the plan of record
 
-Very little, which is the point.
+Less than the volume of this document suggests.
 `docs/plans/20260916T214636Z-reliability-evidence-plan.md` remains correct and
 correctly ordered. PR A (prove the gates can fail) → PR C (a behavioural gate)
 is the right spine, and its reasoning about mutation-test scope is better than
 the alternative proposed against it.
 
-Three amendments:
+Four amendments, in the order they bite:
 
-1. **PR B is not done.** B0 landed; B1 did not. Add the loader guard from §1.1
-   to it — the capability shipped without the constraint that makes it the
-   supported path.
-2. **Two new milestones ahead of PR A**, in the new plan: N1 and N2 are days of
-   work, block nothing, and N2 is the only open finding that touches production
-   artefacts.
-3. **A2's count is stale.** "Freeze all twenty-two floors" — there are 23, nine
+1. **Milestone B1 is not implementable as written**, which is the likeliest
+   reason it did not land with B0. It asks the predicate to agree with
+   `VALIDATE_OUTPUT`; the predicate is compiled from pure data at graph-load
+   time with no agent, no schema, and no licence to import `agents/`. N4 gives
+   the achievable form — validate the addressed **path** against a schema the
+   caller supplies — which serves the same intent and also catches the typo.
+2. **PR C needs N3 settled before it sets a cost threshold.** As built, a
+   `mean_cost_usd` gate fires on verbosity and is blind to a model swap, a
+   pricier token, or extra tool steps. Publishing a threshold over that number
+   without stating what it measures would put a figure in
+   `docs/testing/regression.md` that does not mean what its name says.
+3. **Two supply-chain milestones belong ahead of PR A.** N1 and N2 are days of
+   work, block nothing, and N2 is the only open finding touching the artefact
+   that reaches production. N1 additionally has a deadline: it must land before
+   the Dependabot queue is drained, or the four `pre_commit` PRs merge clean and
+   the guard arrives red.
+4. **A2's count is stale.** "Freeze all twenty-two floors" — there are 23, nine
    at 100 %.
+
+Nothing here re-sequences PR A's internals, PR C's `pass^k` work, the
+`llm_judge` demotion, or PRs D–F. Those stand.
