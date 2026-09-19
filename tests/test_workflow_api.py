@@ -12,7 +12,11 @@ import json
 from fastapi.testclient import TestClient
 
 from mangomas.api.app import create_app
+from mangomas.composition.agents import (
+    STRUCTURED_AGENT_FIELDS_EXTRAS_KEY,
+)
 from mangomas.core import Orchestrator
+from mangomas.workflow.validation import StructuredAgentSchema
 from tests.constants import (
     STUB_REPLY,
     WORKFLOW_RUN_ROUTE,
@@ -151,3 +155,98 @@ def test_validate_disabled_without_definition_returns_400(orchestrator: Orchestr
         r = client.post(WORKFLOW_VALIDATE_ROUTE, json={})
         assert r.status_code == 400
         assert r.json()["error"] == "config_error"
+
+
+# ── structured-acceptance map selection (spec-0034) ───────────────────────────
+# The routes validate acceptance predicates against the **published** map when
+# ``build_orchestrator`` put one on ``AgentContext.extras`` — that is what gives an
+# entry-point structured agent the same guards a built-in gets — and fall back to
+# the import-time built-ins constant for a hand-assembled orchestrator.
+#
+# Both tests below route on ``chat``, which is deliberately *not* in the constant.
+# A refusal is therefore only possible if the published map was the one consulted,
+# so these discriminate between the two sources rather than merely executing them.
+
+_CHAT_TEXT_LOOP_GRAPH = json.dumps(
+    {
+        "name": "t",
+        "root": {
+            "kind": "loop",
+            "agent": "chat",
+            "max_steps": 2,
+            "accept": {"kind": "contains", "value": "stub"},
+        },
+    }
+)
+
+#: A map that declares ``chat`` structured. Fictional on purpose: it cannot come
+#: from ``STRUCTURED_AGENT_FIELDS``, so any refusal traces to this map alone.
+_PUBLISHED_MAP = {
+    "chat": StructuredAgentSchema(fields=frozenset({"passed"}), object_fields=frozenset())
+}
+
+
+def test_run_prefers_the_orchestrator_published_map(orchestrator: Orchestrator) -> None:
+    """A published map wins over the built-ins constant.
+
+    ``chat`` is not structured according to the constant, so this graph loads
+    normally (see the companion test below). Publishing a map that calls it
+    structured must make the same graph a 400 — the only way that happens is if
+    the route read the published map.
+    """
+    orchestrator.context.extras[STRUCTURED_AGENT_FIELDS_EXTRAS_KEY] = _PUBLISHED_MAP
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            WORKFLOW_RUN_ROUTE,
+            json={"request": _RUN_BODY, "definition": _CHAT_TEXT_LOOP_GRAPH},
+        )
+        assert r.status_code == 400
+        assert "self-report" in r.text
+
+
+def test_run_falls_back_to_the_builtin_map_without_extras(orchestrator: Orchestrator) -> None:
+    """The other side: a hand-assembled orchestrator carries no published map.
+
+    Without this the test above could pass because *every* text predicate over
+    ``chat`` is refused, which would be the guard's most damaging false positive.
+    """
+    assert STRUCTURED_AGENT_FIELDS_EXTRAS_KEY not in orchestrator.context.extras
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            WORKFLOW_RUN_ROUTE,
+            json={"request": _RUN_BODY, "definition": _CHAT_TEXT_LOOP_GRAPH},
+        )
+        assert r.status_code == 200
+
+
+def test_validate_uses_the_same_map_as_run(orchestrator: Orchestrator) -> None:
+    """``/workflows/validate`` must accept exactly what ``/workflows/run`` accepts.
+
+    This is why ``workflow_validate`` takes the request at all — it needs the
+    orchestrator to reach the published map. Validating against a different map
+    than the runner uses would make the endpoint a liar.
+    """
+    orchestrator.context.extras[STRUCTURED_AGENT_FIELDS_EXTRAS_KEY] = _PUBLISHED_MAP
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(WORKFLOW_VALIDATE_ROUTE, json={"definition": _CHAT_TEXT_LOOP_GRAPH})
+        assert r.status_code == 400
+        assert "self-report" in r.text
+
+
+def test_a_non_mapping_published_value_falls_back(orchestrator: Orchestrator) -> None:
+    """A junk extras value degrades to the constant rather than crashing.
+
+    ``extras`` is an untyped side channel, so the route guards with ``isinstance``
+    rather than trusting it. Without this the guard would read as dead code.
+    """
+    orchestrator.context.extras[STRUCTURED_AGENT_FIELDS_EXTRAS_KEY] = "not-a-mapping"
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            WORKFLOW_RUN_ROUTE,
+            json={"request": _RUN_BODY, "definition": _CHAT_TEXT_LOOP_GRAPH},
+        )
+        assert r.status_code == 200
