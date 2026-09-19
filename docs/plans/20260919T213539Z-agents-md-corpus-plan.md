@@ -1,645 +1,430 @@
-# Per-directory AGENTS.md corpus — delivery plan
+# Agent instruction files — delivery plan
 
-- **Branch:** `claude/agent-md-documentation-u08et8` (plan only); one branch per PR block below
+- **Branch:** `claude/agent-md-documentation-u08et8` (plan + analysis only); one branch per PR block below
 - **Date:** 2026-09-19
+- **Revision:** **second pass — the first pass's central design is withdrawn.**
+  Pass 1 proposed 60 per-directory `AGENTS.md` files. Probe 9 in
+  [`docs/analysis/20260919-agents-md-corpus-peer-review.md`](../analysis/20260919-agents-md-corpus-peer-review.md)
+  runs that exact design against `claude` 2.1.278 and the nested files **do not
+  load**. All 60 would have been invisible — the same defect that retired the
+  `agent.md` corpus, at sixty times the scale. This pass keeps what survived
+  review and drops the rest.
 - **Target release:** rolling
-- **Status:** Draft — **PR A milestone A0 is a go/no-go gate for the rest**
-- **Specs:** `spec-0035` (owed — **unwritten**; takes the next free integer at creation time, per the root instruction file's § Spec-Driven Development. `0035` is free as of this writing; if a concurrent branch claims it, this plan's slug — `agents-md-corpus` — is the stable reference, not the number.)
-- **ADRs:** `ADR-0035` (owed, and **load-bearing**: this plan reverses a recorded decision. See § The retirement precedent.)
+- **Status:** Draft — PR 1 is ready to write; PR 2 is a citation, not a new design
+- **Specs:** none owed. Pass 1 owed `spec-0035`; nothing that survives needs it.
+- **ADRs:** `ADR-0035` owed by **PR 2 only**, and scoped to the root-split
+  boundary. Pass 1 proposed an ADR reversing the `agent.md` retirement —
+  **withdrawn**; nothing here reverses it.
+- **Source:** [`docs/analysis/20260919-agents-md-corpus-peer-review.md`](../analysis/20260919-agents-md-corpus-peer-review.md)
+  (10 probes, 3 specialist reviews, suite executed: 3029 passed / 66 skipped)
+- **Relationship to the plan of record:**
+  [`20260916T214636Z-reliability-evidence-plan.md`](20260916T214636Z-reliability-evidence-plan.md)
+  is unchanged and remains the spine. **PR 2 below *is* its PR F** — pass 1
+  re-derived it without citing it, under a worse design. This plan does not
+  restate it; it supplies the empirical validation PR F never had, and defers
+  to it on everything else.
 
 ## Executive summary
 
-Add an `AGENTS.md` to every directory where an agent does work — 60 files
-covering 83 directories — each carrying a scope statement, a local Mermaid
-diagram, the `mango-*` sub-agent and skill that own the surface, and the
-boundaries an agent must not cross.
+Three PRs, in dependency order, none of which is the corpus pass 1 proposed.
 
-Two constraints shape the sequencing, and both were discovered by reading the
-repository rather than assumed from the request:
+**PR 1** fixes two live defects found while reviewing pass 1 — a stale module
+path and a nine-family-stale lint claim, both in
+`.github/copilot-instructions.md`, both passing all 3029 tests today — and
+repairs the four guards that failed to catch them. It depends on nothing and is
+worth landing whatever happens to the rest.
 
-1. **This repository already tried per-directory agent files and retired them.**
-   Five `agent.md` files were deleted, and `test_no_stray_agent_md_files_remain`
-   mechanically prevents their return. The recorded reason —
-   *"a file nothing loads cannot be kept honest"* — is exactly right, and it is
-   the bar this plan has to clear rather than route around. § The retirement
-   precedent argues that the 2026 `AGENTS.md` standard clears it, because the
-   standard's whole point is that the files **are** loaded. That argument is the
-   ADR, and if it does not survive review the corpus should not be built.
-2. **spec-0022 R15** — a convention written only as prose decays. So the
-   mechanism lands first (PR A), and each corpus PR afterwards grows an explicit
-   inventory that CI enforces in both directions. A file cannot be added without
-   being listed, and a listed directory cannot go missing.
+**PR 2** is the plan of record's PR F: split generic content into a root
+`AGENTS.md`, keep Claude-specific surfaces in `CLAUDE.md` with `@AGENTS.md` as
+its first line. Probe 10 confirms all three layers load. This is the entire
+vendor-neutral benefit pass 1 was chasing, at roughly an afternoon.
 
-The third finding is **visibility**: Claude Code 2.1.277 (2026-09-18 — one day
-old) reads `AGENTS.md` only when no `CLAUDE.md` sits at or above the working
-directory. This repo has a 710-line root `CLAUDE.md`, which under the default
-setting would make the entire corpus invisible to the tool it is written for.
-A0 probes this against the installed binary before a single content file is
-written.
+**PR 3** delivers per-directory agent documentation with Mermaid maps and
+sub-agent ownership tables — the original request — for **three** new
+directories rather than sixty, each carrying one mechanically-checkable
+semantic claim, and named **`CLAUDE.md`** because probes 3 and 9 show
+`AGENTS.md` cannot be read in a tree that keeps a root `CLAUDE.md`. It extends
+the convention this repo already has (`src/mangomas/core/CLAUDE.md`,
+`tests/CLAUDE.md`) rather than founding a new one.
+
+The constraint that shaped the sequencing is the repository's own, quoted in
+the plan of record's Deferred section: *"adding to it before C4 measures it
+increases maintenance without evidence."* PR 3 is therefore a **staged tranche
+with an expansion gate**, not a corpus.
 
 ---
 
-## The retirement precedent
+## What the request asked for, and what is delivered
 
-**This is the part of the plan to review first.** Everything else is mechanics.
+The request was per-directory agent files, with Mermaid, naming sub-agents.
+Measurement changed two of the four parameters. Stated plainly so the
+substitution is visible rather than silent:
 
-`tests/constants/corpus.py` records:
-
-```python
-# Five dormant `agent.md` files sat in the source tree, all containing claims
-# that were false rather than stale. Two earned promotion to a nested
-# CLAUDE.md; the other three were deleted as skill duplicates. Nothing may
-# reintroduce the convention — a file nothing loads cannot be kept honest.
-RETIRED_STRAY_AGENT_FILENAME: str = "agent.md"
-```
-
-and `tests/tooling/test_corpus_contract.py::test_no_stray_agent_md_files_remain`
-fails the build if any `agent.md` reappears anywhere in the tree. The two
-survivors were promoted to **nested `CLAUDE.md`** files, which is the convention
-in force today:
-
-| File | Lines | Shape |
+| Asked | Delivered | Why |
 |---|---|---|
-| `src/mangomas/core/CLAUDE.md` | 58 | scope → file/protected table → editing rules → **Owners** (agent table) → Invariants |
-| `tests/CLAUDE.md` | 132 | scope → Structure → baseline → Constants contract → Configuration → Run Commands → Fake reference |
+| Per-directory agent docs | **Yes**, PR 3 | — |
+| Mermaid diagram in each | **Yes**, with a semantic check modelled on `test_architecture_docs.py` | Pass 1's "fence closed, ≤12 nodes" was weaker than the check the 6 existing diagrams already get |
+| Sub-agents named per directory | **Yes**, `## Owners` table | — |
+| Named `AGENTS.md` | **`CLAUDE.md`** | Probes 3 + 9: any root `CLAUDE.md`, *including a one-line `@AGENTS.md` pointer*, disables nested `AGENTS.md` entirely |
+| In **every** directory (60) | **3 now**, expansion gated on measurement | The repo refuses unmeasured corpus growth in writing; and pass 1's bar admitted directories already covered one level up |
 
-Both are already in the `CORPUS_DOC_RELPATHS` stale-path ledger. So the
-request as literally worded — `agent.md` in every directory — **would fail CI on
-the first commit**, and should.
+The vendor-neutral `AGENTS.md` the request implied is still delivered — at the
+**root**, by PR 2, where it demonstrably works and where 30+ non-Claude agents
+actually read it.
 
-The case for proceeding anyway, which `ADR-0035` must make or the plan dies:
-
-- **The retirement reason was "nothing loads it", not "per-directory is wrong".**
-  The two files that *were* loaded survived and were promoted. The convention
-  was retired for being dead weight, not for being the wrong idea.
-- **`AGENTS.md` (plural) is not `agent.md` (singular).** It is a different
-  filename under an open standard stewarded by the Linux Foundation's Agentic
-  AI Foundation, and it **is** loaded — by Claude Code 2.1.277+, Codex, Cursor,
-  Copilot and 30+ other tools, discovered nearest-first from the file being
-  edited. The defect that killed `agent.md` is the precise defect the standard
-  fixes.
-- **The guard stays untouched.** `RETIRED_STRAY_AGENT_FILENAME` keeps forbidding
-  `agent.md` forever. This plan adds `AGENTS.md`; it does not weaken, rename or
-  except the existing test. If a reviewer's instinct is "didn't we delete
-  these?" — the answer is yes, and the singular ones stay deleted.
-- **Loaded is necessary, not sufficient.** The other half of "kept honest" is
-  mechanical verification, which the five dead files never had. PR A supplies
-  it before any content lands (§ D4), and the bar each proposed file must clear
-  is: *would an agent working in this directory be wrong without it?*
-
-If review rejects this reasoning, the correct outcome is to **extend the two
-nested `CLAUDE.md` files** to a handful more directories and stop — not to build
-60 files under a convention the repo has already judged once.
+**If you want the full 60 anyway**, the honest route is: land PR 1 + PR 2,
+land PR 3's three files, run the expansion gate (§ PR 3, M3.4), and expand on
+its evidence. Skipping the gate means shipping 60 documents that nothing
+measures and four guards actively mis-serve — which is the thing review
+rejected, not the file count.
 
 ---
 
-## Standards research (2026-09-19)
+## PR 1 — live defects and the guards that missed them
 
-Recorded because the request was explicitly to meet today's standard, and so it
-can be falsified later when the sources move.
+Depends on nothing. Parallel-safe with everything. **Land first**: it proves
+the guard argument on real specimens instead of asserting it.
 
-### What the standard is
+### M1.1 — the two live defects
 
-`AGENTS.md` is an open format for guiding coding agents — "a README for agents".
-Formalised August 2025 (OpenAI, with Google, Cursor and Factory), donated to the
-Linux Foundation's **Agentic AI Foundation** in December 2025, so the spec is no
-longer vendor-owned. Adoption is reported at 60k+ repositories and 30+ tools.
+- **Failing test first:** add `"src/mangomas/config.py"` to `_VANISHED_PATHS`
+  in `tests/tooling/test_live_path_ledger.py`. It goes **red immediately** —
+  `.github/copilot-instructions.md:27` names `` `config.py` ``, deleted in
+  `e2c177b` (*"decompose config.py into a domain package behind a permanent
+  facade"*), the same ADR-0019 wave that produced the two paths already in that
+  tuple. The file is already in `_LIVE_FILES` (`:24`); only the ledger entry
+  was missing.
+- **Depends on:** nothing.
+- Fix `.github/copilot-instructions.md:27` to name `config/`.
+- Fix `.github/copilot-instructions.md:14`: it states ruff's `select` as eleven
+  families; `pyproject.toml`'s `[tool.ruff.lint]` selects **twenty** (the
+  spec-0020 R4 ratchet added `LOG, G, ASYNC, ERA, DTZ, TID, C4, PTH, T20`).
+- Fix `CLAUDE.md`'s claim that `make gate` runs "in CI's order". It does not:
+  `gate` is `… typecheck lint-imports frontmatter protected-paths …`; CI's
+  `lint` job is `… format-check, frontmatter, typecheck, lint-imports`.
 
-- **Plain Markdown. No required fields, no YAML frontmatter, no special syntax.**
-  A real constraint here: `.claude/agents/*.md` and `.claude/skills/*/SKILL.md`
-  *do* require frontmatter and are linted for it by
-  `scripts/lint_agent_frontmatter.py`. The new corpus must never be fed to that
-  linter, and its own lint must **reject** frontmatter rather than require it.
-  Two corpora, opposite rules — stated once, loudly, in `.claude/AGENTS.md`.
-- **Nested files are the monorepo pattern.** Discovery runs from the touched
-  file's directory up to the root; closest wins, the `.gitignore` mental model.
-  The `openai/openai` monorepo is cited as carrying 88 of them.
-- **Explicit user prompts override every file.**
+### M1.2 — the reverse-direction defaults guard
 
-### What the practitioner literature says
+- **Failing test first:** `tests/deploy/test_env_example_contract.py::
+  test_every_settings_default_is_documented_somewhere` — the reverse of
+  `_documented_defaults()`, with an explicit `_DEFAULT_UNDOCUMENTED_OK`
+  frozenset mirroring `_CLAUDE_MD_UNDOCUMENTED_OK` (`:176`). Prove it red by
+  deleting one default cell from `CLAUDE.md`, then restore.
+- **Depends on:** nothing.
+- **Why this is the most valuable milestone in the plan.** Pass 1 asserted that
+  file binds CLAUDE.md's config table to `Settings` "in both directions,
+  including documented defaults". Review measured it: the **names** direction
+  regexes `\bMANGOMAS_[A-Z0-9_]+\b` over the *whole file*, not the tables
+  (`:91-94`), and the **defaults** check is one direction with a floor of one
+  row (`:323-351`) — there is no `model - documented` assertion anywhere.
+  A trim could delete 95 of ~96 default cells and stay green. That is this
+  repository's signature defect class, currently live in its best-guarded file.
+- Correct the assertion message at `:190`, which says "config tables" for a
+  whole-file check.
 
-- **Length.** Sections under ~50 lines, whole file under ~150. Agents reliably
-  act on the first 100–150 lines and probabilistically ignore the rest. The root
-  `CLAUDE.md` is **710 lines** — an argument for pushing detail *down* into
-  directory files rather than adding more at the root. Note both surviving
-  nested files (58 and 132 lines) already sit inside this budget, which is mild
-  evidence the convention was working.
-- **The documented anti-patterns**, all of which this plan designs against:
-  1. **Duplicate-README** — restating a human doc for a different audience in a
-     second place that then drifts.
-  2. **LLM-generated filler** — professional-looking files with wrong commands
-     and hallucinated paths. *This is precisely how the five `agent.md` files
-     died* ("a fictional `TurnRepository.save()`, an SSE format a client could
-     not parse"), and it is the failure mode a 60-file agent-written corpus is
-     most exposed to. D4's path-existence check is the mechanical answer.
-  3. **Prose paragraphs and ambiguous directives** ("be careful") — ignored.
-  4. **Silent drift** — prose fails no build. Third-party linters exist
-     (`agents-lint`, AgentLinter); § D4 explains why we extend our own instead.
-- **Mermaid is worth its tokens.** A diagram carries the load of several
-  paragraphs at roughly 3–6× better token efficiency and is more precise to
-  consume for agent and human alike. That settles the "with Mermaid" half of the
-  request in favour of doing it, under the size discipline in D3.
+### M1.3 — repair the two corpus-constant gaps
 
-### Claude Code specifics (the part that constrains us)
+- **Failing test first:** add `mango-harness-dev` to
+  `PROTECTED_PATH_OWNER_SLUGS` (`tests/constants/corpus.py:409-418`). It
+  declares ownership of four protected paths and is absent;
+  `test_protected_path_owners_point_at_the_governance_skill` passes once added,
+  because `.claude/agents/mango-harness-dev.md:12` already names the skill. One
+  line, no fallout — but it must precede any extension of that test.
+- **Depends on:** nothing.
+- Correct the stale governance claim at `tests/constants/corpus.py:645-647`
+  ("nothing here stops a `Bash` heredoc or `>` redirect"): redirections and
+  recognised Bash file commands **are** covered by the deny rule today. The
+  residual gap is an arbitrary subprocess (a Python one-liner), which is what
+  the comment should say.
 
-- Native `AGENTS.md` support shipped in **Claude Code 2.1.277, 2026-09-18**.
-- Precedence is `/config` → **Project instructions**, i.e.
-  `pluginConfigs["agents-md@builtin"].options.instructionFiles`, with four
-  values: `managed-only`, `claude-md`, `claude-md-or-agents-md` (**default** —
-  `AGENTS.md` read only when `CLAUDE.md` is absent), `claude-md-and-agents-md`.
-- Nested `CLAUDE.md` files load **on demand** when Claude reads a file in that
-  subtree, and are **concatenated, not overridden** — the root still applies.
-  This differs from the standard's closest-wins rule, which is why A0 probes
-  instead of assuming.
-- The support shipped in the standalone CLI and desktop app and did **not**
-  immediately extend to cloud-hosted deployments (Bedrock, Vertex AI, Foundry).
-  Claude Code on the web — how much of this repo's agent work actually happens —
-  is therefore not guaranteed to see `AGENTS.md` yet. **Another reason the
-  `CLAUDE.md` filename must survive at the root.**
+### M1.4 — extend the path guard to inline backticks
 
-**Sources:** [agents.md](https://agents.md/) ·
-[agentsmd/agents.md](https://github.com/agentsmd/agents.md) ·
-[anthropics/claude-code `mods/agents-md`](https://github.com/anthropics/claude-code/tree/main/mods/agents-md) ·
-[Claude Code: large codebases](https://code.claude.com/docs/en/large-codebases) ·
-[Using CLAUDE.md files](https://claude.com/blog/using-claude-md-files) ·
-[AGENTS.md Spec (2026) — morphllm](https://www.morphllm.com/agents-md-guide) ·
-[Steering AI agents in monorepos — Datadog](https://dev.to/datadog-frontend-dev/steering-ai-agents-in-monorepos-with-agentsmd-13g0) ·
-[AGENTS.md patterns — Crosley](https://blakecrosley.com/blog/agents-md-patterns) ·
-[agents-lint](https://github.com/giacomo/agents-lint) ·
-[Claude Code AGENTS.md fallback — runtimewire](https://runtimewire.com/article/claude-code-adds-agents-md-support) ·
-[Mermaid for agent docs — mindstudio](https://www.mindstudio.ai/blog/mermaid-diagrams-claude-code-skills-context-compression/)
-
-> Several of these domains are blocked by this environment's egress proxy
-> (`agents.md`, `dev.to`, `morphllm.com`, `arxiv.org`), so their content above
-> came from search-result summaries, not a full page read. **A0 re-verifies the
-> two claims that gate the design** — the `instructionFiles` values and the
-> nested-discovery behaviour — against the installed binary, not a blog.
+- **Failing test first:** extend `tests/tooling/test_doc_links.py` with a
+  backtick scanner. `_MD_LINK_RE` (`:50`) matches only `[text](target)`, so
+  inline `` `path` `` references are unchecked. Prove it red against a fixture
+  containing `` `src/mangomas/does_not_exist.py` ``.
+- **Depends on:** M1.1 (which fixes the one live violation, so the new check
+  lands green).
+- **Must resolve bare basenames, not just slash-bearing paths.** Probed: a
+  slash-requiring regex returns `[]` on `config.py` — it would have missed
+  M1.1's defect entirely. Resolve a bare `foo.py` by searching the tree for that
+  basename; where it is ambiguous, require the check to say so rather than
+  guess.
+- Written as an extension it inherits the non-vacuity guard at `:69-80` free.
 
 ---
 
-## Design decisions
+## PR 2 — root split (= plan of record PR F)
 
-### D1 — the root file becomes `AGENTS.md`; `CLAUDE.md` becomes a one-line import
+**This PR is not a new design.** `20260916T214636Z-reliability-evidence-plan.md`
+`:284-296` specifies it, names its failing test, and records
+`Depends on: nothing` and *"highest value-per-effort item in this plan: roughly
+an afternoon"*. Implement it as written. This plan's only additions are the
+validation below and one correction.
 
-`git mv CLAUDE.md AGENTS.md` (content unchanged in PR A — trimming is C0, a
-separate reviewable step), and `CLAUDE.md` becomes exactly:
+### M2.1 — implement PR F
 
-```markdown
-@AGENTS.md
-```
+- **Failing test first:** `tests/test_agents_md_contract.py::
+  test_claude_md_first_line_imports_agents_md`, as PR F already names it.
+- **Depends on:** nothing (PR 1 is parallel-safe).
+- Move build/test/lint/convention content to a root `AGENTS.md`; keep
+  Claude-specific surfaces (skills, hooks, agent corpus, `@imports`) in
+  `CLAUDE.md` with `@AGENTS.md` as its first line.
 
-| Option | Verdict |
-|---|---|
-| Symlink `CLAUDE.md` → `AGENTS.md` | **Rejected.** Windows needs elevation or developer mode; this repo's Essential Commands are PowerShell-first. A Windows clone gets a broken or literal-text file. |
-| Keep both as real files | **Rejected.** Two copies of 710 lines is the duplicate-README anti-pattern with a guaranteed drift date. |
-| Keep `CLAUDE.md` only | **Rejected.** Forfeits the vendor-neutral standard for Codex/Cursor/Copilot, which is the point. |
-| Rename + `@AGENTS.md` import | **Chosen.** One source of truth, both filenames present, no symlink, Windows-safe, and the `CLAUDE.md` filename survives for cloud deployments that do not yet read `AGENTS.md`. |
+### M2.2 — the validation PR F never had
 
-**The blast radius is large and was measured, not estimated — 50+ files
-reference `CLAUDE.md`.** The ones that are contracts rather than prose:
+- **Failing test first:** extend M2.1's test to assert the import **resolves**,
+  not merely that the line is present — read `AGENTS.md` and assert a sentinel
+  heading from it. A first line that points at a missing file is exactly the
+  silent failure this repo keeps finding.
+- **Depends on:** M2.1.
+- Record probe 10 in `ADR-0035`: `CLAUDE.md` carrying `@AGENTS.md` **plus**
+  Claude-specific content, a generic root `AGENTS.md`, and a nested
+  `solo/CLAUDE.md` — **all three load**. Measured on 2.1.278, Linux.
+- Record the negative results too, because they are what constrain PR 3: probes
+  3 and 9 show any root `CLAUDE.md` disables nested `AGENTS.md`; probes 5–8
+  show `claude-md-and-agents-md` is honoured **only from `~/.claude/settings.json`**
+  and is inert in project settings, so it can never be a committed mechanism.
+- State the expiry: `instructionFiles` semantics are eight days old. Re-run the
+  matrix before merge; record a measurement with a date, not a law.
 
-| Reference | Why it matters |
-|---|---|
-| `tests/deploy/test_env_example_contract.py` (10) | Parses `MANGOMAS_*` names **out of `CLAUDE.md`** and asserts both directions against `Settings`, plus documented defaults vs live field values. Hard-codes `_CLAUDE_MD`. **Also blocks C0 — see there.** |
-| `tests/constants/corpus.py` (7) | `CORPUS_DOC_RELPATHS` names `CLAUDE.md` and both nested files for stale-path checking. |
-| `tests/tooling/test_live_path_ledger.py` | `_LIVE_FILES` hard-codes `CLAUDE.md`. |
-| `pyproject.toml` (3) | Comments only — but a **protected path**: the edit needs a `BREAKING-CHANGE` trailer. |
-| `src/mangomas/harness/governance.py` (1) | Comment only — also **protected**, same trailer. |
-| `scripts/lint_agent_frontmatter.py` (3) | Comments/messages. |
-| ~45 prose files | `README.md`, `CONTRIBUTING.md`, `NEXT_STEPS.md`, `.claude/skills/*/SKILL.md`, specs, ADRs, plans. Dated records (CHANGELOG, plans, ADRs, specs) are **historical and must not be rewritten** — the repo's own ledger convention. Only live docs change. |
+### M2.3 — repoint the contracts
 
-Because two protected paths are touched for comment text alone, **PR A carries a
-`BREAKING-CHANGE: <path> — <rationale>` trailer per path**, using the
-path-scoped form so it approves only what it names.
-
-### D2 — nested visibility is probed, then mechanised
-
-If A0 shows nested `AGENTS.md` is not read while a root `CLAUDE.md` exists, PR A
-sets project-scoped `instructionFiles: "claude-md-and-agents-md"`.
-
-Two frictions, both real, both flagged so nobody is surprised at review:
-
-1. `.claude/settings.json` sits in its own `permissions.deny`
-   (`Edit(/.claude/settings.json)`), so **an agent cannot make this edit. It is
-   a human step**, and the plan says so rather than pretending otherwise.
-2. The `ConfigChange` hook (`scripts/harness_config_audit.py`) audits that file
-   under `MANGOMAS_HARNESS__CONFIG_AUDIT_MODE`. Expect it to fire — that is the
-   mechanism working.
-
-`make validate-config` and `test_corpus_contract.py`'s hook-survival assertions
-must stay green afterwards; every `.claude/settings.json` edit must be additive.
-
-### D3 — the content contract
-
-Derived from `src/mangomas/core/CLAUDE.md`, which already works, plus the
-Mermaid map the request asks for. **≤150 lines, ≤50 lines per section, no
-frontmatter**, fixed section order so the shape is greppable and lintable.
-
-````markdown
-# <dir path> — <one-line purpose>
-
-## Scope
-<2–4 sentences. What lives here, what does not. Link — never restate — the
- root AGENTS.md, spec or ADR that governs it.>
-
-## Map
-```mermaid
-flowchart LR
-  ...  %% ≤12 nodes: this directory plus one hop out
-```
-
-## Owners
-| Surface | Agent | Skill |
-|---|---|---|
-| <file or seam> | `mango-<slug>` | `mango-<skill>` |
-
-## Invariants
-<Imperative, checkable rules specific to THIS directory. Nothing already true
- repo-wide — that belongs in the root file.>
-
-## Boundaries
-<What an agent must not do here: protected paths, layering direction,
- default-off flags, back-compat obligations.>
-
-## Verify
-```bash
-<the narrowest command that proves a change here is sound>
-```
-````
-
-`Owners` and `Invariants` keep the exact heading names the surviving nested file
-uses, so `test_agent_headings_use_the_canonical_vocabulary` can be extended to
-this corpus instead of learning a second vocabulary.
-
-Two rules that keep this from becoming filler:
-
-- **Pointers, not copies.** A fact in the root `AGENTS.md`, a spec or an ADR is
-  linked, never restated. D4 makes that literal.
-- **Local diagrams only.** The `Map` shows what is *inside* this directory plus
-  immediate neighbours. It is **not** a re-draw of
-  `docs/architecture/c2-container.md` or `c3-component.md`, which stay
-  authoritative for system-level views and are linked instead of competed with.
-  `tests/tooling/test_architecture_docs.py` already guards those.
-
-### D4 — extend the existing corpus governance; do not build a parallel one
-
-**`tests/tooling/test_corpus_contract.py` already carries ~35 corpus-governance
-tests** — roster set-equality both directions, `test_every_skill_has_a_skill_md`,
-`test_agent_skill_owners_resolve_to_a_real_skill`,
-`test_every_source_surface_has_a_write_capable_owner`,
-`test_agent_headings_use_the_canonical_vocabulary`,
-`test_docs_do_not_reference_a_retired_corpus_path`. Plus
-`test_live_path_ledger.py` for stale paths. **Most of what a new AGENTS.md lint
-needs already exists and is already wired into `make test`.** Building a second
-system beside it would be the duplication this plan is supposed to prevent.
-
-So the split is:
-
-**In `tests/tooling/test_agents_md_corpus.py` (new, pytest — the bulk):**
-
-1. **Inventory, both directions** against `AGENTS_MD_DIRS` in
-   `tests/constants/corpus.py`, mirroring `EXPECTED_AGENT_SLUGS`' set-equality
-   style so editing the tuple *is* the review record.
-2. **Path existence** — every repo-relative path mentioned in a file exists.
-   The single highest-value check: the mechanical answer to the hallucinated
-   paths that killed the `agent.md` corpus.
-3. **Agents and skills resolve** — every `mango-*` name maps to a real
-   `.claude/agents/mango-*.md` or `.claude/skills/*/SKILL.md`. Reuses
-   `test_agent_skill_owners_resolve_to_a_real_skill`'s helpers.
-4. **Structure** — required sections in order, no YAML frontmatter, ≤150 lines,
-   ≤50 lines per section.
-5. **Mermaid** — every fence closed, known diagram type, ≤12 nodes.
-6. **Exemptions explicit** — a directory covered by a parent is listed in
-   `AGENTS_MD_EXEMPT` naming the covering parent, never silently absent.
-7. **Ledger extension** — add the corpus to `CORPUS_DOC_RELPATHS` and
-   `_LIVE_FILES` so existing retired-path and vanished-module checks cover it
-   for free. This is most of check 2 at near-zero cost.
-
-**In `scripts/lint_agents_md.py` + `make agents-md` (new, thin):** only the
-subset that must run **outside pytest** — the `PreToolUse`/CI path where
-`mangomas` may not be installed. Stdlib-only, like
-`scripts/lint_agent_frontmatter.py`'s hook modes, with that script's
-`EXIT_OK`/`EXIT_SCHEMA` exit-code convention. It re-implements nothing: it
-imports the inventory from `tests/constants/corpus.py` if importable and
-falls back to a glob otherwise.
-
-Inventory lives in **`tests/constants/corpus.py`**, beside the agent and skill
-rosters it mirrors — not in `pyproject.toml`, which is protected and would drag
-a trailer onto every corpus PR. `scripts/` has its own isolated coverage gate
-(`make scripts-coverage`, `SCRIPTS_FLOOR ?= 94`), so the new script needs real
-tests, not smoke coverage.
+- **Failing test first:** the four tests reading `_CLAUDE_MD`
+  (`tests/deploy/test_env_example_contract.py:30`) go red the moment content
+  moves; that is the signal, and M1.2's reverse guard is what makes the move
+  safe.
+- **Depends on:** M1.2 (**hard** — do not move a config row before the reverse
+  direction exists), M2.1.
+- `CORPUS_DOC_RELPATHS` (`tests/constants/corpus.py:207-220`) asserts each
+  listed file exists, so leaving `"CLAUDE.md"` in the tuple keeps the test green
+  while policing a stub. **Repoint means *add* `AGENTS.md`**, not keep
+  `CLAUDE.md` alone. Same for `_LIVE_FILES` in `test_live_path_ledger.py`.
+- `pyproject.toml:197,206,265` and `src/mangomas/harness/governance.py:40`
+  mention `CLAUDE.md` **in comments only**, and nothing scans them. Under PR F
+  `CLAUDE.md` still exists, so those comments are not even stale. **Leave them
+  alone in this PR.** Pass 1 presented editing them as forced and accepted two
+  protected-path trailers for it; that was a choice dressed as a constraint.
+- If a later PR does touch them, the trailer rule is exact: **bare, unbackticked
+  path as the first token after the colon, one trailer per path.**
+  `find_marker_scopes` (`scripts/_governance.py:162-176`) scopes a marker only
+  on an exact match; a backticked path, a typo, or a comma-joined list falls
+  through to `has_unscoped`, which approves **every** touched protected path
+  (`:126`). Every path in this document is backticked — do not copy that style
+  into a commit message.
 
 ---
 
-## Directory inventory
+## PR 3 — per-directory files, three of them
 
-83 directories: **60 get their own `AGENTS.md`**, 23 are covered by an explicit
-parent entry. `.claude/skills/<name>/` subdirectories are excluded outright —
-each already carries a `SKILL.md`, which *is* that directory's agent-facing
-contract; a second file beside it is the duplicate-README anti-pattern by
-construction.
+Delivers the original request under the measured constraints. Depends on PR 2
+for the root split, and on PR 1 for the guards it reuses.
 
-| Tier | Directories | Files | Covered by parent |
-|---|---|---|---|
-| Root | `.` | 1 | — |
-| 1 — source | `src/mangomas` + 30 subpackages | 31 | `src/` (namespace only) |
-| 2 — tests | `tests/` + 22 subdirs | 20 | `tests/eval/fixtures`, `tests/mango_contracts/fixtures`, `tests/snapshots` (data, not code) |
-| 3 — tooling | `scripts`, `specs`, `docs`, `deploy`, `examples`, `eval_harness_bridge`, `mango-integration-contracts/src/mango_contracts`, `.claude` | 8 | `docs/*` (9), `examples/workflows`, `eval_harness_bridge/{src,config,datasets}`, `mango-integration-contracts` + `/src`, `.claude/{agents,skills}`, `typings` + `/hypothesis` |
-| **Total** | **83** | **60** | **23** |
+### M3.0 — extract the corpus helpers
 
-Every file must clear the retirement bar: *would an agent working in this
-directory be wrong without it?* A file that only restates its own filenames
-fails that test and should become an `AGENTS_MD_EXEMPT` entry instead. **The
-60 is a ceiling, not a quota** — if B and C land 48 honest files and 12
-exemptions, that is a better outcome than 60, and the inventory records it
-either way.
+- **Failing test first:** none — pure refactor, green at every commit. The
+  proof is that `tests/tooling/test_corpus_contract.py` passes unchanged
+  afterwards.
+- **Depends on:** nothing.
+- Pass 1 claimed the new suite would "reuse
+  `test_agent_skill_owners_resolve_to_a_real_skill`'s helpers". That test has
+  none — it is a set difference over a constant. The real helpers are
+  module-private, and `_agent_paths()` shells out to `git ls-files` on **every**
+  call (`:190-196`).
+- Extract `_skill_dirs` / `_agent_paths` / `_agent_frontmatter` / `_agent_body`
+  into `tests/tooling/_corpus.py`, `@functools.cache` the `git ls-files` call,
+  repoint the existing suite.
 
-The four thinnest source leaves — `adapters/llm/vertex`, `core/orchestrator`,
-`workflow/predicate`, `utils` (1–2 modules each) — still earn a file, because
-each carries a genuinely local rule: lazy SDK import under the `vertex` extra;
-protected-path status; the never-raises closure contract.
+### M3.1 — the three files
 
----
+- **Failing test first:** `tests/tooling/test_directory_claude_md.py::
+  test_inventory_matches_the_tree` — set equality against a declared inventory,
+  mirroring `EXPECTED_AGENT_SLUGS`' style so editing the tuple *is* the review
+  record. Red until the files exist.
+- **Depends on:** M3.0, PR 2.
+- **Named `CLAUDE.md`, not `AGENTS.md`** (probes 3, 9). This extends the
+  existing convention; it founds nothing. Add each to `CORPUS_DOC_RELPATHS`, as
+  the two survivors already are (`:218-219`).
+- **The three, and the checkable claim each carries** — the entry bar is *one
+  mechanically-verifiable semantic claim per file*, not "a directory exists":
 
-## PR A — mechanism first (spec-0035, ADR-0035)
+  | Directory | Local rule worth stating | Its checkable claim |
+  |---|---|---|
+  | `src/mangomas/composition/` | single wiring point; all registration happens here | every name the file lists as registered resolves in the matching registry |
+  | `src/mangomas/api/` | middleware install order is load-bearing (backpressure inner of log/trace) | the documented order equals `create_app`'s actual install order, read by AST |
+  | `src/mangomas/adapters/` | protocol-first; heavy SDKs lazy-imported behind extras | every subdirectory listed has a `base.py` declaring a `@runtime_checkable` Protocol |
 
-No directory content lands here. The point is that the corpus cannot be added
-unguarded — the thing the five dead `agent.md` files never had.
+- **Not included, with reasons** (each already covered one level up — pass 1's
+  own bar, applied honestly): `utils/` is already exempted by
+  `test_architecture_docs.py:57` with the recorded reason *"shared utilities
+  without architectural boundary"*; `core/orchestrator/`'s protected status is
+  already stated in `src/mangomas/core/CLAUDE.md:12`; `workflow/predicate/`'s
+  never-raises contract is already in `_client.py`'s module docstring;
+  `tests/constants/`'s re-export rule is already in `tests/CLAUDE.md:60-64`;
+  `eval/{scorers,sinks,sources,targets}/` would be four near-identical Owners
+  tables under one agent and one skill; `examples/` is two JSON files covered
+  by `docs/workflow/graphs.md`.
 
-### Milestone A0 — the go/no-go probe
+### M3.2 — content contract, and the rules it must not break
 
-- **Failing test first:** none, and saying so is honest — this is an
-  investigation. Its **output is a recorded finding** in `ADR-0035`: the
-  installed `claude --version`, the four `instructionFiles` values as the binary
-  reports them, and an observed answer to *"with a root `CLAUDE.md` present, is
-  a nested `AGENTS.md` loaded when a file in that subtree is read?"*
-- **Depends on:** nothing. Blocking for everything else.
-- Probe in a scratch fixture tree, never the repo.
-- **Record the negative result too.** If nested `AGENTS.md` is invisible under
-  the default setting, D2's settings change moves from optional to required —
-  and if it is invisible under *every* setting, **the plan stops here** and the
-  correct answer is to extend the nested `CLAUDE.md` convention instead. A
-  corpus no tool loads is the precise thing this repo already deleted once.
+- **Failing test first:** `test_directory_claude_md_sections_are_canonical`,
+  against a **new** constant `DIRECTORY_DOC_SECTION_HEADINGS`.
+- **Depends on:** M3.1.
+- Sections: `## Scope`, `## Map` (Mermaid), `## Owners` (agent + skill table),
+  `## Invariants`, `## Boundaries`, `## Verify`. ≤150 lines, ≤50 per section,
+  no frontmatter.
+- **A second constant is mandatory, not a preference.**
+  `AGENT_SECTION_HEADINGS` (`tests/constants/corpus.py:587-599`) has exactly
+  nine members and **`## Owners` is not among them**; five of the six above are
+  absent. Pass 1 proposed extending that frozenset — which would let
+  `.claude/agents/mango-*.md` carry `## Map` or `## Verify` and still pass
+  `test_agent_headings_use_the_canonical_vocabulary`, defeating the guard whose
+  own comment pins it at *"Nine, not seven"* precisely because *"an ad-hoc name
+  is where a duplicated section hides"*.
+- **Link mechanised rules; never restate them.** Pass 1 instructed each
+  `Boundaries` section to state the protected-path obligation *verbatim* and to
+  repeat the import-linter independence contract in four files. Both are wrong:
+  `test_protected_path_governance_is_single_sourced` (`:585-593`) exists
+  because that prose *"was byte-identical across four agents"* and asserts
+  exactly one carrier — and its glob is `.claude/**/*.md`, so a corpus under
+  `src/` would reintroduce the duplication **where the guard cannot see it**.
+  The independence contract is mechanised at `pyproject.toml:388-390` and runs
+  in `make gate`; restating it in prose is spec-0022 R15 run backwards.
+- **Correct protected-path map** — pass 1's B0 said "`composition/`, `api/`,
+  `adapters/`, `core/orchestrator/` … four being protected paths". Against
+  `pyproject.toml:136-154`, **none** of the first three contains a protected
+  file. Directories that do: repo root, `scripts/`, `src/mangomas/`,
+  `src/mangomas/core/`, `src/mangomas/core/orchestrator/`,
+  `src/mangomas/harness/`. Two of PR 3's three files must therefore state
+  *no* protected-path obligation — and `src/mangomas/harness/` is a protected
+  path with **no** flag, so it is not a "default-off subsystem" either.
 
-### Milestone A1 — ADR-0035, the argument
+### M3.3 — the guards, with the claim taxonomy stated honestly
 
-- **Failing test first:** `tests/tooling/test_decision_record_numbering.py`
-  already enforces ADR numbering; the new record must satisfy it.
-- **Depends on:** A0.
-- `docs/adr/0035-agents-md-as-root-instruction-file.md`, drafted by
-  `mango-adr-author`, making the § The retirement precedent case explicitly and
-  citing A0's measured result.
-- **This milestone is the review gate.** If the ADR is rejected, PRs B–D do not
-  happen and `spec-0035` is never written.
+- **Failing test first:** one case per check in
+  `tests/tooling/test_directory_claude_md.py`, each fed a **fixture** violating
+  exactly that rule. Fixtures, not the live tree — pass 1's mutation proof ran
+  `replace("## Boundaries", "## Notes")` against a root file that contains
+  **zero** `## Boundaries` headings, so `str.replace` returned the string
+  unchanged, the file was rewritten byte-identically, and the gate exited 0. A
+  proof that cannot fail is the thing `mango-mutation-proof` exists to prevent.
+- **Depends on:** M3.2, M1.4 (reuses the basename resolver).
 
-### Milestone A2 — root file swap
+  | Class | Check | Verdict |
+  |---|---|---|
+  | Paths | resolve, incl. bare basenames (M1.4) | mechanical |
+  | Symbols | `` `Foo.bar` `` → find `class Foo` under `src/mangomas/**`, require `def bar`/`async def bar` | mechanical; `import ast` is an established idiom here (8 test modules already use it) |
+  | `## Verify` commands | `make X` → target exists (reuse `_make_target_body`, `test_ci_make_parity.py:75-82`); `pytest` → path args exist; `mangomas X` → in `EXPECTED_CLI_COMMANDS` | mechanical |
+  | Agents / skills | `mango-*` resolves to a real file | mechanical |
+  | Mermaid | every node/edge names a module that exists in that directory — modelled on `test_architecture_docs.py:11-18`, **not** "fence closed, ≤12 nodes" | mechanical |
+  | Sections, length, no frontmatter | structural | mechanical |
+  | Restating a mechanised rule | forbid the strings that mark it (e.g. `advisory only`, `text/event-stream`) | mechanical, as a **prohibition** — far cheaper than a parity check |
+  | **Rationale, "why", boundary prose** | — | **not checkable. Stated as the residue in ADR-0035, and the reason the tranche is three files and not sixty.** |
 
-- **Failing test first:** `tests/tooling/test_agents_md_root.py` — asserts
-  `AGENTS.md` exists at the root, `CLAUDE.md`'s non-whitespace content is
-  exactly `@AGENTS.md`, and no two files carry the § Essential Commands heading
-  (anti-duplication). Red now: `AGENTS.md` does not exist.
-- **Depends on:** A1.
-- `git mv CLAUDE.md AGENTS.md`; write the one-line `CLAUDE.md`.
-- Repoint the contracts in D1's table: `test_env_example_contract.py`'s
-  `_CLAUDE_MD`, `corpus.py`'s `CORPUS_DOC_RELPATHS`,
-  `test_live_path_ledger.py`'s `_LIVE_FILES`, and the two protected-path
-  comments (with the path-scoped `BREAKING-CHANGE` trailers).
-- Fix live prose references only. **Leave CHANGELOG, plans, ADRs and specs
-  alone** — they are dated records.
-- Add § Agent instruction files to the root file: D3's contract, closest-wins,
-  the pointer to `make agents-md`, and one sentence on why `agent.md` stays
-  retired.
+- The symbol check is what pass 1 lacked. `TurnRepository.save()` — the
+  fictional method that helped retire the `agent.md` corpus — lives on a **real
+  class in a real file** (`src/mangomas/adapters/storage/base.py:17`, methods
+  `save_turn`/`list_turns`/`close`). Path existence returns green on it. The
+  ten-line basename-plus-`def` version catches it on the day it is written.
 
-### Milestone A3 — the corpus lint
+### M3.4 — wire the gate, and the expansion gate
 
-- **Failing test first:** `tests/tooling/test_lint_agents_md.py` — one case per
-  D4 check, each fed a fixture violating exactly that rule, asserting non-zero
-  exit with the offending path named. Red now: no script.
-- **Depends on:** A2.
-- `tests/tooling/test_agents_md_corpus.py` + `AGENTS_MD_DIRS` /
-  `AGENTS_MD_EXEMPT` in `tests/constants/corpus.py`, seeded with the **root
-  file only**. Each corpus PR below appends its own directories — that is the
-  ratchet: green at every commit, and the corpus can only grow.
-- `scripts/lint_agents_md.py` for the out-of-pytest subset.
-
-### Milestone A4 — wire the gate, and prove it bites
-
-- **Failing test first:** the `mango-mutation-proof` loop, run for real and
-  recorded in the PR body (see § Verification). A gate nobody has watched fail
-  is not evidence.
-- **Depends on:** A3.
-- `Makefile`: add `agents-md`, insert into `gate` after `frontmatter`.
-  (`Makefile` is deliberately **not** protected — see the `GOVERNANCE_SURFACE`
-  docstring — so no trailer.)
-- `.github/workflows/ci.yml`: add the step to the `lint` job after
-  `Frontmatter lint`. `tests/deploy/test_ci_make_parity.py` asserts CI and the
-  `Makefile` agree, so both move together or it fails.
-- `make scripts-coverage` must still clear `SCRIPTS_FLOOR`.
-- `CHANGELOG.md` under `[Unreleased] / Added`.
-
----
-
-## PR B — `src/mangomas/` corpus (31 files)
-
-### Milestone B0 — migrate the survivor, then the load-bearing packages
-
-- **Failing test first:** extend the `AGENTS_MD_DIRS` inventory with these
-  directories before the files exist; the corpus test goes red on the gap.
-- **Depends on:** PR A.
-- **`src/mangomas/core/CLAUDE.md` → `AGENTS.md` first**, adding only the `Map`
-  diagram and the skill column. It already satisfies D3 in substance; migrating
-  it first proves the contract fits reality rather than the reverse. Update
-  `CORPUS_DOC_RELPATHS`.
-- Then `composition/`, `api/`, `adapters/`, `core/orchestrator/` — where
-  `Boundaries` matters most, four being protected paths.
-- Each `Boundaries` section names the protected-path obligation **verbatim** and
-  links `.claude/skills/mango-harness/SKILL.md`.
-  `test_protected_path_owners_point_at_the_governance_skill` already enforces
-  this for agents; extend it to the corpus.
-- Draft via the owning sub-agent (`mango-orchestrator-dev`,
-  `mango-api-impl-dev`, `mango-llm-adapter-dev`, …) so boundary text comes from
-  the agent that owns the surface, not a fresh reading. This is the defence
-  against anti-pattern 2.
-
-### Milestone B1 — opt-in subsystems
-
-- **Failing test first:** inventory ratchet.
-- **Depends on:** B0 (reuses its file shape).
-- `workflow/` (+`nodes/`, `predicate/`), `eval/` (+`scorers/`, `sinks/`,
-  `sources/`, `targets/`), `rag/`, `cognitive/`, `secrets/`, `harness/`,
-  `telemetry/`.
-- All default-off. Each `Boundaries` states the flag and the identity
-  obligation: dispatch stays byte-identical with the flag off. The import-linter
-  independence contract (`workflow` / `eval` / `rag` / `cognitive` may not
-  import each other) is restated in all four — the rule most often broken by
-  accident.
-
-### Milestone B2 — the remaining packages
-
-- **Failing test first:** inventory ratchet; closes `src/mangomas/**`, so a new
-  package added later without an `AGENTS.md` fails the gate.
-- **Depends on:** B1.
-- `agents/`, `adapters/{llm,llm/vertex,storage,embeddings,vector}/`,
-  `api/{routes,middleware}/`, `cli/` (+`commands/`), `config/`, `utils/`.
-
----
-
-## PR C — `tests/` corpus (20 files) + root trim
-
-### Milestone C0 — teach the env contract to read the corpus
-
-- **Failing test first:** move one `MANGOMAS_*` row out of the root file into
-  `src/mangomas/rag/AGENTS.md`. `test_env_example_contract.py` goes **red** —
-  it asserts every `Settings` field appears in the root file's config tables.
-- **Depends on:** PR B.
-- **This is why C1's trim cannot be a footnote.** The 710-line root file is not
-  bloat: ~150 lines of it are a *mechanically enforced* config contract, in
-  both directions, including documented defaults compared against live field
-  values. Moving those rows down requires the test to scan the corpus, keeping
-  both directions and the defaults check intact.
-- Land this before any trimming. A weakened contract is a worse outcome than a
-  long root file, and the repo has been bitten by exactly that
-  ("following CLAUDE.md got a weaker check than the gate").
-
-### Milestone C1 — trim the root toward the budget
-
-- **Failing test first:** extend the ≤150-line check to the **root** file
-  (A3 applies it to directory files only). Red at 710 lines.
-- **Depends on:** C0.
-- Move, do not delete: per-package config rows to their packages' files; agent
-  and skill rosters become pointers to `.claude/AGENTS.md`. **Essential
-  Commands and the Key Design Rules table stay at the root** — they are
-  directory-independent.
-- If the trim cannot reach 150 without losing something load-bearing, **raise
-  the root budget in the lint with a comment saying why**, rather than quietly
-  exempting the root. An honest 250 beats a silent 710.
-
-### Milestone C2 — the gated suites
-
-- **Failing test first:** inventory ratchet.
-- **Depends on:** PR A only — parallel-safe with B and C0/C1.
-- `integration/`, `lmstudio/`, `postgres/`, `vertex/`, `rag/`,
-  `eval_harness_bridge/`, `mango_contracts/`, `deploy/`, `regression/`.
-- Each names its gate env var (`RUN_INTEGRATION`, `RUN_LMSTUDIO`, `RUN_RAG`, …)
-  and its external prerequisite in `Verify`. Highest-value tier in the corpus:
-  it is where an agent most often runs the wrong command and concludes a suite
-  is broken when it simply never ran.
-
-### Milestone C3 — the unit suites
-
-- **Failing test first:** inventory ratchet; closes `tests/**`.
-- **Depends on:** C2.
-- **`tests/CLAUDE.md` → `AGENTS.md`** (the second survivor), plus `adapters/`
-  (+2), `agents/`, `cognitive/`, `composition/`, `constants/`, `eval/`,
-  `harness/`, `tooling/`.
-- At 132 lines `tests/CLAUDE.md` is near the budget, so the `Map` diagram
-  arrives with a trim of its Run Commands block, which duplicates `make help`.
-- `tests/constants/AGENTS.md` states the re-export contract (`X as X`, never
-  restate) explicitly — subtle, enforced, and easy to violate in good faith.
-
----
-
-## PR D — periphery (9 files) + adoption
-
-### Milestone D0 — tooling and governance directories
-
-- **Failing test first:** inventory ratchet; closes the table.
-- **Depends on:** PR A.
-- `scripts/`, `specs/`, `docs/`, `deploy/`, `examples/`, `eval_harness_bridge/`,
-  `mango-integration-contracts/src/mango_contracts/`, `.claude/`.
-- `docs/AGENTS.md` routes to its 9 subdirectories rather than spawning 9 stubs;
-  each is listed in `AGENTS_MD_EXEMPT` with `docs` as covering parent — the
-  exemption mechanism used as designed, in the open.
-- `.claude/AGENTS.md` is the interesting one. It must state that the files
-  *underneath it* are the one place in the repo where YAML frontmatter is
-  **required**, that `make frontmatter` — not `make agents-md` — is their gate,
-  and that `agent.md` remains retired. Two corpora, opposite rules, one
-  sentence each.
-
-### Milestone D1 — Mermaid validation
-
-- **Failing test first:** a fixture with a syntactically invalid Mermaid body;
-  `make agents-md` must exit non-zero. Red until the check exists.
-- **Depends on:** D0 — all diagrams present, so the check runs against the real
-  corpus on first green.
-- A3's check is structural (fence closed, known type, ≤12 nodes). This upgrades
-  it to a parse. Prefer a vendored/stdlib grammar check; if a real parse is not
-  cheap, **keep the structural check and record the limitation in the ADR**
-  rather than adding a Node toolchain to a Python repo for 60 diagrams.
-- The `Mermaid Chart` MCP validator is available in agent sessions and is useful
-  while drafting. It is **not** a CI gate and must not be described as one.
-
-### Milestone D2 — adoption and cross-references
-
-- **Failing test first:** extend `test_agents_md_root.py` to assert `README.md`
-  links the corpus, and that every `.claude/agents/mango-*.md` naming a `src/`
-  path points at that directory's `AGENTS.md` — the mirror of the existing
-  `test_mapped_agent_references_its_skill`.
-- **Depends on:** D1, PR B, PR C.
-- `README.md` § Documentation gets the corpus entry (`test_doc_links.py` guards
-  those links).
-- Each `mango-*` agent body gains a one-line pointer to the `AGENTS.md` of the
-  surface it owns — the bidirectional link that keeps ownership honest in both
-  directions.
-- `CHANGELOG.md` final entry; mark this plan **Done**.
+- **Failing test first:** `test_gate_includes_directory_docs` beside the
+  existing `test_gate_includes_lint_imports` (`test_ci_make_parity.py:385`).
+  Nothing else binds `gate`: `test_lint_job_delegates_every_step_to_make`
+  (`:88-97`) asserts a **hard-coded literal list** and reads `ci.yml` only —
+  it never opens the `Makefile`. **Three artefacts move together**
+  (`ci.yml`, that literal, `Makefile:146`) and pass 1 named two.
+- **Depends on:** M3.3.
+- Prefer keeping this in **pytest**, not a new `scripts/` entry point. Measured:
+  `scripts/` runs at **96.28 %** against a floor of 94 pinned by
+  `test_isolated_coverage_floors_are_pinned` (`:375`), leaving **≤18 uncovered
+  units** — less than any real linter. If a script is added anyway it must go
+  into `SCRIPTS_TESTS` (`Makefile:24-28`, a hand-enumerated list that does
+  **not** include `tests/tooling`) in the same commit, join `.PHONY`
+  (`:67-71`), and pass `mypy --strict` (`CODE_PATHS` includes `scripts`).
+  **Do not** import `tests/constants/corpus.py` from a script: measured, that
+  pulls **233 modules** and fails without `pydantic`, and a `try/except`
+  fallback means CI exercises the heavy path while the stdlib path is never
+  proven. If an inventory must be shared, put it in a standalone
+  `tomllib`-readable file and re-export it into `corpus.py`.
+- Forbid `AGENTS.md` under `.claude/agents/` or `.claude/skills/` as a lint
+  rule. `AGENTS_GLOB` is `.claude/agents/**/*.md` — **any** `.md` — so a file
+  there turns the frontmatter lint red (mutation-proved: *"missing frontmatter
+  (expected leading ---)"*, exit 1). Loud, but it should be a stated rule, not
+  an inventory row.
+- **Expansion gate.** Before any fourth file, record in `ADR-0035` whether the
+  three changed anything: pick two recurring task types per covered directory,
+  run them with and without the file, and report. If nothing is measurable, the
+  tranche stays at three and the corpus stays closed — which is the plan of
+  record's rule (*"adding to it before C4 measures it increases maintenance
+  without evidence"*) applied to documents instead of agents.
 
 ---
 
 ## Deferred / out of scope
 
-- **Generating `AGENTS.md` from docstrings.** Tempting — it would kill drift at
-  the root. Deferred because the valuable content (boundaries, ownership, "do
-  not do this") exists nowhere in the source to generate from. Revisit only with
-  a spec saying what the generator reads.
-- **Replacing `docs/architecture/c2`–`c4` with per-directory diagrams.** Those
-  are system-level C4 views with a different audience, guarded by
-  `test_architecture_docs.py`. Directory diagrams link to them. Re-opening needs
-  an ADR.
-- **Un-retiring `agent.md`.** Never. `RETIRED_STRAY_AGENT_FILENAME` and its
-  test are untouched by this plan, and `ADR-0035` must say so explicitly.
-- **Per-skill `AGENTS.md` under `.claude/skills/<name>/`.** Excluded by
-  construction: `SKILL.md` already is that file.
+- **The 60-file corpus.** Withdrawn, not merely postponed. Re-opening requires
+  M3.4's expansion evidence **and** a design that survives probe 9 — which, as
+  long as the repo keeps a root `CLAUDE.md`, means the files are named
+  `CLAUDE.md`.
+- **Deleting the root `CLAUDE.md` so nested `AGENTS.md` works** (probe 4 shows
+  it would). Rejected: it forfeits `@imports`, hooks and the Claude-specific
+  surfaces PR F deliberately keeps, to gain a filename.
+- **Committing `instructionFiles: claude-md-and-agents-md`.** Impossible, not
+  merely unwise — probes 5 and 6 show project settings ignore it. Contributor
+  convenience only, never a project mechanism.
+- **Editing `.claude/settings.json` at all.** Not needed by anything above.
+  Note for whoever eventually does: the `ConfigChange` hook's default mode is
+  `off` and returns `allow` immediately
+  (`src/mangomas/harness/config_audit.py:56-57`) — it runs but decides nothing,
+  so "expect it to fire" is wrong; and in `block` mode it would block the
+  human's own edit, since it fires on the file changing, not on who changed it.
+- **An ADR reversing the `agent.md` retirement.** Withdrawn. Nothing that
+  survives reverses it, and `RETIRED_STRAY_AGENT_FILENAME` stays untouched.
 - **Third-party linters** (`agents-lint`, AgentLinter). Evaluated, not adopted:
-  the checks worth having here are repo-specific — does this `mango-*` agent
-  exist, is this a protected path, does this env var appear in `Settings` — and
-  none are checks a generic linter can make. Re-proposing one means showing a
-  check it makes that D4's does not.
-- **`instructionFiles` as a committed project setting** *if* A0 shows nested
-  `AGENTS.md` already loads with a root `CLAUDE.md` present. Then D2's edit is
-  unnecessary and must not be made — an unneeded config write is a standing
-  liability against `permissions.deny` and the `ConfigChange` hook.
+  every check worth having here is repo-specific. Re-proposing one means naming
+  a check it makes that M3.3's taxonomy does not.
+- **Widening `test_protected_path_governance_is_single_sourced`'s
+  `.claude/**/*.md` glob to the whole repo.** A cheap, independent improvement
+  worth taking on its own, and a precondition if the corpus ever grows past
+  PR 3 — but not this plan's to carry.
 
 ## Verification
 
 ```bash
-make gate                 # full pre-PR chain in CI's order; now includes agents-md
-make agents-md            # the new gate alone
-make scripts-coverage     # the new script must clear SCRIPTS_FLOOR (94)
+make gate                 # full pre-PR chain (NB: not CI's order — M1.1 fixes that claim)
+python -m pytest tests/tooling tests/deploy -q   # corpus, doc-governance and env-contract suites
 make frontmatter          # unchanged — proves the two corpora stayed separate
-make validate-config      # only if D2's .claude/settings.json edit was needed
-python -m pytest tests/tooling tests/deploy -q   # corpus + env-contract suites
+make scripts-coverage     # only if M3.4 adds a script; headroom is ~18 units
 ```
 
-Per-PR mutation proof (`.claude/skills/mango-mutation-proof/SKILL.md`), run and
-recorded in each PR body:
+Baseline at `115017c`, for regression comparison: **3029 passed, 66 skipped**
+(48.38 s); `tests/tooling tests/deploy` = **597 passed, 1 skipped**.
+
+Per-PR mutation proof (`.claude/skills/mango-mutation-proof/SKILL.md`), run
+against a **fixture** and scripted in one block so the restore cannot be skipped:
 
 ```bash
-cp AGENTS.md /tmp/AGENTS.md.bak
 python - <<'PY'
-import pathlib
-p = pathlib.Path("AGENTS.md")
-p.write_text(p.read_text().replace("## Boundaries", "## Notes", 1))
+import pathlib, shutil, subprocess, sys, tempfile
+src = pathlib.Path("tests/tooling/fixtures/directory_doc_valid.md")
+with tempfile.TemporaryDirectory() as d:
+    bak = pathlib.Path(d) / "bak.md"; shutil.copy2(src, bak)
+    try:
+        src.write_text(src.read_text().replace("## Boundaries", "## Notes", 1))
+        assert "## Notes" in src.read_text(), "mutation did not apply — proof is vacuous"
+        red = subprocess.run([sys.executable, "-m", "pytest", "-q",
+                              "tests/tooling/test_directory_claude_md.py"]).returncode
+    finally:
+        shutil.copy2(bak, src)
+    green = subprocess.run([sys.executable, "-m", "pytest", "-q",
+                            "tests/tooling/test_directory_claude_md.py"]).returncode
+print(f"mutated={red} (MUST be non-zero)   restored={green} (MUST be 0)")
+raise SystemExit(0 if red != 0 and green == 0 else 1)
 PY
-make agents-md            # MUST exit non-zero
-cp /tmp/AGENTS.md.bak AGENTS.md
-make agents-md            # MUST exit 0
 ```
 
-And the check that matters most, because it is the one the retired corpus
-failed — prove the path-existence guard bites:
-
-```bash
-printf '\nSee `src/mangomas/does_not_exist.py`.\n' >> AGENTS.md
-make agents-md            # MUST exit non-zero, naming the path
-git checkout AGENTS.md
-```
+The `assert` after the mutation is the correction that matters: pass 1's proof
+used `str.replace` on a heading the target file did not contain, so it rewrote
+the file byte-identically and asserted a gate failure that could never happen.
