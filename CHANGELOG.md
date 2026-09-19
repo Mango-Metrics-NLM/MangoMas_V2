@@ -37,14 +37,23 @@ it — the spec-0022 R15 pattern. Source:
   must admit the locked version. Validated against the four open Dependabot
   `pre_commit` branches: three correctly require a paired pyproject change, one
   is genuinely safe.
-- **Structured-acceptance validation** (`src/mangomas/workflow/validation.py`).
-  A `loop` over a structured agent may no longer accept on a text predicate — the
-  spec-0032 false positive, where `contains: approved` terminates on a *rejecting*
-  review whose prose carries the word — and a `json_field` path must address a
-  field the agent's schema actually has, since a misspelled path compiled to a
-  closure that could never accept and made a typo indistinguishable from a
-  non-converging model. Reported together, as `ConfigError` at the existing loader
-  boundary (400 / exit 2, no error-table or DTO change).
+- **Structured-acceptance validation** (`src/mangomas/workflow/validation.py`,
+  **spec-0034**). A `loop` over a structured agent may no longer accept on a text
+  predicate — the spec-0032 false positive, where `contains: approved` terminates
+  on a *rejecting* review whose prose carries the word. Nor may a `json_field`
+  path fail to resolve: its first segment must be a declared field, and a **dotted**
+  path's first segment must be an *object*, because the predicate resolver walks
+  mappings only. Both shipped models are flat, so `steps.0.action` — which reads
+  plausible — is refused; it compiled to a closure that could never accept, making
+  a typo indistinguishable from a non-converging model. Every problem is reported
+  together, as `ConfigError` at the existing loader boundary (400 / exit 2, no
+  error-table or DTO change).
+- **Discovered structured agents are covered on the HTTP surface.**
+  `build_orchestrator` derives the schema map from the agents it actually built —
+  entry-point plugins included — and publishes it on `AgentContext.extras`; the
+  routes prefer it over the import-time built-ins constant. The CLI keeps its
+  fail-fast load-before-build ordering and so covers built-ins only, recorded in
+  `_load_workflow_or_exit`'s docstring.
 
 - `mangomas.workflow.graph.iter_nodes` — reusable depth-first static walk over a
   graph, needed because `fan_out` branches nest (ADR-0018) so a two-level loop
@@ -69,6 +78,10 @@ it — the spec-0022 R15 pattern. Source:
 - `mangomas.workflow.predicate` now exports `TEXT_MATCH_KINDS`,
   `KIND_JSON_FIELD` and `FIELD_PATH_SEPARATOR`, so a consumer cannot restate the
   predicate vocabulary and drift from the compiler.
+- `mangomas.agents._prompt.AGENT_LLM_OVERRIDES_EXTRAS_KEY` — the ADR-0028 extras
+  key was a bare literal in three modules, so a drift between the writer
+  (`composition/builder.py`) and the reader (`resolve_llm`) would have silently
+  degraded every per-agent model override to `ctx.llm` with no error anywhere.
 
 ### Documented — what `mean_cost_usd` measures
 
@@ -83,6 +96,16 @@ was that nothing said so, so a threshold could be published over a number that
 does not mean what its name says. Whether to measure cost for real is D15.
 
 ### Fixed
+
+- **Review follow-ups on the above** (Copilot, PR #76), all verified before fixing:
+  a dotted `json_field` path through a non-object field was accepted by a test
+  rather than refused; the model-override cost test set `AgentSettings` without
+  wiring `agent_llm_overrides`, so no swap occurred and its blindness assertion
+  held vacuously; the metadata-side-channel test wrote nothing to
+  `response.metadata`, so it could not discriminate; discovered plugins were
+  documented as unguarded rather than covered; `spec-0034` was owed before the
+  code and is now written; and five plan milestones cited test paths this work
+  does not use.
 
 - **RAG pipeline POSIX path mismatch on Windows** (`test_pipeline.py:168`).
 - **ADR-0031 numbering collision** (renumbered structured-acceptance-predicates to ADR-0034).

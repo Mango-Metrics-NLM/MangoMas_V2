@@ -57,6 +57,18 @@ from mangomas.composition.agents import (
 from mangomas.composition.agents import (
     STRUCTURED_AGENT_FIELDS as STRUCTURED_AGENT_FIELDS,
 )
+from mangomas.composition.agents import (
+    STRUCTURED_AGENT_FIELDS_EXTRAS_KEY as STRUCTURED_AGENT_FIELDS_EXTRAS_KEY,
+)
+from mangomas.composition.agents import (
+    describe_schema as describe_schema,
+)
+from mangomas.composition.agents import (
+    structured_agent_schemas as structured_agent_schemas,
+)
+from mangomas.composition.agents import (
+    structured_agent_schemas_for_instances as structured_agent_schemas_for_instances,
+)
 
 # Public API (main functions)
 from mangomas.composition.builder import build_orchestrator as build_orchestrator
@@ -132,6 +144,7 @@ from mangomas.secrets import secrets_registry as secrets_registry
 __all__ = [
     "DEFAULT_AGENTS",
     "STRUCTURED_AGENT_FIELDS",
+    "STRUCTURED_AGENT_FIELDS_EXTRAS_KEY",
     "AgentFactory",
     "VertexClient",
     "_AgentLLMOverrideCloseMixin",
@@ -155,9 +168,12 @@ __all__ = [
     "agent_registry",
     "build_agent_llm_overrides",
     "build_orchestrator",
+    "describe_schema",
     "embedding_registry",
     "ensure_agent_plugins",
     "ensure_secrets_provider",
     "llm_registry",
     "secrets_registry",
+    "structured_agent_schemas",
+    "structured_agent_schemas_for_instances",
 ]

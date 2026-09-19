@@ -17,7 +17,7 @@ flag) rather than silently unified.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from mangomas.core.agent import AgentRequest, Message
 
@@ -25,6 +25,14 @@ if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.llm.base import LLMClient
     from mangomas.config import AgentSettings
     from mangomas.core.agent import AgentContext
+
+
+#: ``AgentContext.extras`` key carrying per-agent ``LLMClient`` overrides
+#: (ADR-0028 / spec-0028). Named here, beside the resolver that reads it, so the
+#: writer in ``composition/builder.py`` and this reader cannot drift on the
+#: spelling — a silent drift would degrade every override to ``ctx.llm`` with no
+#: error anywhere.
+AGENT_LLM_OVERRIDES_EXTRAS_KEY: Final[str] = "agent_llm_overrides"
 
 
 def resolve_llm(ctx: AgentContext, agent_name: str) -> LLMClient:
@@ -41,7 +49,7 @@ def resolve_llm(ctx: AgentContext, agent_name: str) -> LLMClient:
     ``stream``) rather than construction time, since agents only receive
     ``ctx`` once a request arrives.
     """
-    overrides: dict[str, LLMClient] = ctx.extras.get("agent_llm_overrides", {})
+    overrides: dict[str, LLMClient] = ctx.extras.get(AGENT_LLM_OVERRIDES_EXTRAS_KEY, {})
     return overrides.get(agent_name, ctx.llm)
 
 

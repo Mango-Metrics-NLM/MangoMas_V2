@@ -19,7 +19,7 @@ from mangomas.workflow.graph import WorkflowGraph
 from mangomas.workflow.validation import validate_structured_acceptance
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Mapping
+    from mangomas.workflow.validation import StructuredAgentFields
 
 # Graph schema versions this build understands. Unlike the settings' forward-compat
 # *warn*, an unknown graph version is rejected: executing an unknown structure
@@ -75,7 +75,7 @@ def _parse_json(raw: str) -> object:
 def load_workflow(
     source: str,
     *,
-    structured_agents: Mapping[str, frozenset[str]] | None = None,
+    structured_agents: StructuredAgentFields | None = None,
 ) -> WorkflowGraph:
     """Parse *source* into a validated :class:`WorkflowGraph`.
 

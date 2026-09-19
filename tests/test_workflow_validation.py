@@ -23,6 +23,7 @@ from mangomas.workflow.graph import WorkflowGraph, iter_nodes
 from mangomas.workflow.loader import load_workflow
 from mangomas.workflow.predicate import PredicateSpec
 from mangomas.workflow.validation import (
+    StructuredAgentSchema,
     structured_acceptance_problems,
     validate_structured_acceptance,
 )
@@ -85,7 +86,7 @@ def test_every_previously_valid_graph_still_loads_without_the_keyword(
 
 
 @pytest.mark.parametrize("empty", [None, {}])
-def test_an_empty_map_disables_both_rules(empty: dict[str, frozenset[str]] | None) -> None:
+def test_an_empty_map_disables_both_rules(empty: dict[str, StructuredAgentSchema] | None) -> None:
     """``None`` and ``{}`` both mean "no structured agents known", not "check all"."""
     graph = load_workflow(_loop_graph(REVIEWER_AGENT_NAME, _TEXT_ACCEPT), structured_agents=empty)
     assert graph.root.kind == "loop"
@@ -177,25 +178,85 @@ def test_every_declared_schema_field_is_addressable() -> None:
     instead of ``properties``, say) the specific cases above could still pass
     while most real predicates were refused.
     """
-    for agent, fields in STRUCTURED_AGENT_FIELDS.items():
-        assert fields, f"{agent} has no addressable fields"
-        for field in sorted(fields):
+    for agent, summary in STRUCTURED_AGENT_FIELDS.items():
+        assert summary.fields, f"{agent} has no addressable fields"
+        for field in sorted(summary.fields):
             load_workflow(
                 _loop_graph(agent, {"kind": "json_field", "field": field, "equals": True}),
                 structured_agents=STRUCTURED_AGENT_FIELDS,
             )
 
 
-def test_a_nested_path_is_accepted_on_its_first_segment() -> None:
-    """Only the first segment is checked, by decision — ``steps`` is a list of models.
+def test_a_dotted_path_through_a_non_object_field_is_refused() -> None:
+    """``steps.0.action`` reads plausible and can never resolve, so it is refused.
 
-    Resolving deeper would mean walking JSON-Schema ``$ref``/``anyOf`` for no
-    gain. A wrong nested segment still degrades to "not accepted" at run time.
+    ``ExecutionPlan.steps`` is an **array** of ``PlanStep``, and
+    ``predicate._resolve`` walks ``Mapping`` values only — so this path returns
+    ``False`` for every response and the loop could only ever end in
+    ``MaxStepsExceeded``. That is the same never-accepts class the first-segment
+    check exists to catch, one level down.
+
+    An earlier revision of this module asserted the opposite: that the path
+    *loads*, on the reasoning that only the first segment is validated. Doing so
+    blessed exactly the defect this guard exists to prevent, which is why the map
+    now carries which fields are objects.
+    """
+    with pytest.raises(ConfigError, match="not an object"):
+        load_workflow(
+            _loop_graph(
+                PLANNER_AGENT_NAME,
+                {"kind": "json_field", "field": "steps.0.action", "at_least": 1},
+            ),
+            structured_agents=STRUCTURED_AGENT_FIELDS,
+        )
+
+
+def test_the_dotted_path_refusal_names_the_offending_segment() -> None:
+    """The error must say which segment is not an object, not merely that one is."""
+    with pytest.raises(ConfigError) as excinfo:
+        load_workflow(
+            _loop_graph(
+                PLANNER_AGENT_NAME,
+                {"kind": "json_field", "field": "goal.length", "equals": 1},
+            ),
+            structured_agents=STRUCTURED_AGENT_FIELDS,
+        )
+    assert "'goal'" in str(excinfo.value)
+
+
+def test_a_dotted_path_through_an_object_field_still_loads() -> None:
+    """Two-sided: the rule must permit a path that *can* resolve.
+
+    Neither shipped model has an object-valued field, so this uses a synthetic
+    schema summary. Without it the rule could refuse every dotted path
+    unconditionally and the refusal tests above would still pass.
+    """
+    graph = WorkflowGraph.model_validate(
+        json.loads(
+            _loop_graph(
+                REVIEWER_AGENT_NAME,
+                {"kind": "json_field", "field": "review.passed", "equals": True},
+            )
+        )
+    )
+    nested = {
+        REVIEWER_AGENT_NAME: StructuredAgentSchema(
+            fields=frozenset({"review"}), object_fields=frozenset({"review"})
+        )
+    }
+    assert structured_acceptance_problems(graph, nested) == []
+
+
+def test_a_single_segment_path_needs_no_object_field() -> None:
+    """A one-segment path addresses the value directly, so objectness is irrelevant.
+
+    ``steps`` alone is legal even though it is an array — the predicate tests that
+    value, it does not walk into it.
     """
     graph = load_workflow(
         _loop_graph(
             PLANNER_AGENT_NAME,
-            {"kind": "json_field", "field": "steps.0.action", "at_least": 1},
+            {"kind": "json_field", "field": "steps", "equals": ""},
         ),
         structured_agents=STRUCTURED_AGENT_FIELDS,
     )

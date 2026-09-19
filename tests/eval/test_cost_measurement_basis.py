@@ -58,21 +58,52 @@ from tests.fakes import FakeLLM, FakeRepository
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest
 
+#: A cost no character-rate estimate could coincidentally produce, so its absence
+#: from the report is proof the response metadata was not read.
+_SENTINEL_COST_USD = 12_345.6789
+
 #: Two replies of deliberately different length, and nothing else different.
 _SHORT_REPLY = "ok"
 _LONG_REPLY = "ok" * 200
 
-#: A model id that is not the default — used to show the cost is unmoved by it.
+#: A model id that is not the default — names the notionally pricier model whose
+#: dedicated client the override seam routes to.
 _OTHER_MODEL = "some-other-and-far-pricier-model"
 
+#: ``AgentContext.extras`` key ADR-0028 carries per-agent LLM clients under.
+#: Restated here rather than imported because ``agents._prompt.resolve_llm`` reads
+#: it as a literal; a test that imported a constant could pass while the resolver
+#: looked somewhere else.
+_AGENT_LLM_OVERRIDES_KEY = "agent_llm_overrides"
 
-def _orchestrator(reply: str, *, model_override: str | None = None) -> Orchestrator:
+
+def _orchestrator(reply: str) -> Orchestrator:
     """One chat agent over a ``FakeLLM`` scripted to return *reply*."""
     ctx = AgentContext(llm=FakeLLM(reply=reply), repo=FakeRepository())
     orch = Orchestrator(ctx)
-    settings = AgentSettings(model_override=model_override) if model_override else None
-    orch.register(ChatAgent(settings=settings))
+    orch.register(ChatAgent())
     return orch
+
+
+def _orchestrator_with_model_override(reply: str) -> tuple[Orchestrator, FakeLLM, FakeLLM]:
+    """Return an orchestrator whose agent genuinely resolves to an override client.
+
+    ``AgentSettings(model_override=...)`` alone changes **nothing** at runtime: per
+    ADR-0028 the model override is realised by a dedicated ``LLMClient`` that
+    ``composition/builder.py`` puts in ``ctx.extras[agent_llm_overrides]``, and
+    ``resolve_llm`` falls back to ``ctx.llm`` when that key lacks the agent. A
+    fixture that set only the settings would therefore exercise no swap at all, and
+    the blindness assertion below would hold vacuously.
+
+    Returns both fakes so the caller can assert *which* client answered.
+    """
+    default_llm = FakeLLM(reply=reply)
+    override_llm = FakeLLM(reply=reply)
+    ctx = AgentContext(llm=default_llm, repo=FakeRepository())
+    ctx.extras[_AGENT_LLM_OVERRIDES_KEY] = {DEFAULT_AGENT_NAME: override_llm}
+    orch = Orchestrator(ctx)
+    orch.register(ChatAgent(settings=AgentSettings(model_override=_OTHER_MODEL)))
+    return orch, default_llm, override_llm
 
 
 def _row(row_id: str, *, metadata: dict[str, object] | None = None) -> DatasetRow:
@@ -105,16 +136,21 @@ async def test_cost_tracks_reply_length_when_nothing_is_declared() -> None:
 
 
 async def test_cost_is_blind_to_the_model_the_run_used() -> None:
-    """The same reply costs the same under a different (notionally pricier) model.
+    """The same reply costs the same even when a *different client* answered.
 
-    ``MODEL_OVERRIDE`` changes which model answers; it cannot change
-    ``mean_cost_usd``, because no model identity or token count reaches the
-    scorer. A cost gate therefore cannot catch a model-swap regression.
+    The swap is made real and then asserted: the override client is the one that
+    received the call, and the default client was never touched. Only then does
+    equal cost mean anything — no model identity or token count reaches the
+    scorer, so a cost gate cannot catch a model-swap regression.
     """
     baseline = await _mean_cost(_orchestrator(_SHORT_REPLY), [_row("r1")])
-    overridden = await _mean_cost(
-        _orchestrator(_SHORT_REPLY, model_override=_OTHER_MODEL), [_row("r1")]
-    )
+
+    orch, default_llm, override_llm = _orchestrator_with_model_override(_SHORT_REPLY)
+    overridden = await _mean_cost(orch, [_row("r1")])
+
+    # The swap actually happened — without this the equality below is vacuous.
+    assert override_llm.calls, "the override client was never called"
+    assert not default_llm.calls, "the default client answered; no swap occurred"
     assert baseline == overridden
 
 
@@ -128,15 +164,18 @@ async def test_response_metadata_never_reaches_the_scorer() -> None:
     """
 
     class _MetadataAttachingTarget:
-        """A target that *tries* to report usage and structurally cannot."""
+        """A target that really does report usage, and is still not heard."""
 
         name = DEFAULT_AGENT_NAME
 
         async def run(self, request: AgentRequest, *, orch: Orchestrator) -> str:
             response = await orch.dispatch(DEFAULT_AGENT_NAME, request)
-            # A real adapter would put usage here. It goes nowhere: the return
-            # type is ``str``, so only ``content`` survives this boundary.
-            assert isinstance(response.metadata, dict)
+            # A real adapter would write usage here, so write it: an explicit
+            # cost_usd (the scorer's *highest*-precedence tier) plus token counts.
+            # If any of this reached the scorer the cost would be _SENTINEL_COST_USD.
+            response.metadata[EVAL_COST_USD_METADATA_KEY] = _SENTINEL_COST_USD
+            response.metadata[EVAL_COST_INPUT_TOKENS_METADATA_KEY] = 999_999
+            response.metadata[EVAL_COST_OUTPUT_TOKENS_METADATA_KEY] = 999_999
             return response.content
 
     target = _MetadataAttachingTarget()
@@ -145,7 +184,12 @@ async def test_response_metadata_never_reaches_the_scorer() -> None:
     orch = _orchestrator(_SHORT_REPLY)
     report = await EvalRunner(orch, CostBudgetScorer()).run([_row("r1")], target=target)
     assert report.mean_cost_usd is not None
-    # Identical to the plain agent target: the attempt changed nothing.
+
+    # The sentinel is nowhere: had the response metadata reached the scorer, its
+    # explicit-cost tier would have won outright.
+    assert report.mean_cost_usd != pytest.approx(_SENTINEL_COST_USD)
+    # And the figure is identical to a plain agent target's — the attempt to
+    # report usage changed nothing at all.
     assert report.mean_cost_usd == await _mean_cost(_orchestrator(_SHORT_REPLY), [_row("r1")])
 
 

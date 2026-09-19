@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from mangomas.adapters.llm import LMStudioClient
+from mangomas.agents._prompt import AGENT_LLM_OVERRIDES_EXTRAS_KEY
 from mangomas.config import AgentSettings, LLMSettings
 from mangomas.errors import ConfigError
 
@@ -132,7 +133,7 @@ class _AgentLLMOverrideCloseMixin:
     def _close_hooks(self) -> list[tuple[str, Callable[[], Awaitable[None]]]]:
         hooks: list[tuple[str, Callable[[], Awaitable[None]]]] = super()._close_hooks()  # type: ignore[misc]
         overrides: dict[str, LLMClient] = self.context.extras.get(  # type: ignore[attr-defined]
-            "agent_llm_overrides", {}
+            AGENT_LLM_OVERRIDES_EXTRAS_KEY, {}
         )
         for agent_name, client in overrides.items():
             if hasattr(client, "aclose"):

@@ -8,12 +8,17 @@
   PR D (cost honesty) is new.
 - **Target release:** rolling; PR E is a precondition for the v0.4.0 cut (D12)
 - **Status:** In progress — PRs A, B0, C and D0 delivered; B1, D1a/D1b and PR E blocked (see Status below)
-- **Specs:** none written yet, and deliberately **unnumbered**. Each PR block
-  names the spec it needs by slug; the spec lands before that block's code, per
-  `CLAUDE.md` § Spec-Driven Development, and takes the next free integer **at
-  the moment it is created**. `specs/0033` is the highest in use. A reserved
+- **Specs:** `spec-0034` (PR C, **written** — `specs/0034-structured-acceptance-enforcement.md`).
+  The others are still unwritten and deliberately **unnumbered**: each PR block
+  names the spec it needs by slug, and it takes the next free integer at the
+  moment it is created, per `CLAUDE.md` § Spec-Driven Development. A reserved
   number that drifts is worse than no number at all — the governance-hardening
   plan lost `spec-0032`/`spec-0033` to a concurrent branch exactly that way.
+  **Process note:** PR C's code was pushed before its spec, which
+  `CLAUDE.md` § Spec-Driven Development does not permit. Caught in review
+  (Copilot, PR #76) and corrected by writing `spec-0034` against the delivered
+  behaviour. The spec is therefore a record rather than a design document, which
+  is the weaker of the two — noted so the sequencing is not repeated.
 - **ADRs:** one owed. PR C changes the `load_workflow` signature and PR D may
   change the `Target` seam; both are additive, but the `Target` change in D1b is
   a protocol evolution and needs a record if taken. D13 / D15 are register
@@ -212,7 +217,7 @@ contract — no business importing `agents/`.
 
 ### Milestone C0 — make the structured-agent set derivable, not restated ✅
 
-- **Failing test first:** `tests/composition/test_agents.py::test_structured_agent_names_are_derived_from_the_registration_table`
+- **Failing test first:** `tests/composition/test_agents.py::test_a_new_structured_agent_is_covered_by_the_table_alone` (delivered; the plan's earlier draft named `test_structured_agent_names_are_derived_from_the_registration_table`)
   — a sixth agent added to the table that subclasses `StructuredOutputAgent`
   must appear in the exported set without editing a literal list.
 - **Depends on:** nothing — parallel-safe, and the enabler for C1/C2.
@@ -242,7 +247,7 @@ contract — no business importing `agents/`.
 
 ### Milestone C1 — refuse a text predicate over a structured agent ✅
 
-- **Failing test first:** `tests/test_workflow_loader.py::test_text_predicate_over_a_structured_agent_is_refused`
+- **Failing test first:** `tests/test_workflow_validation.py::test_text_predicate_over_a_structured_agent_is_refused` (delivered in the new `workflow/validation.py`'s own module, not the loader's)
   — a `loop` over `reviewer` with `{"kind":"contains","value":"approved"}` must
   raise `ConfigError`. It loads clean today; that is the proof.
 - **Depends on:** C0.
@@ -269,15 +274,20 @@ contract — no business importing `agents/`.
 
 ### Milestone C2 — refuse a `json_field` path that cannot resolve ✅
 
-- **Failing test first:** `tests/test_workflow_loader.py::test_json_field_path_absent_from_the_agent_schema_is_refused`
+- **Failing test first:** `tests/test_workflow_validation.py::test_json_field_path_absent_from_the_agent_schema_is_refused`, plus `::test_a_dotted_path_through_a_non_object_field_is_refused` (added after review — see Milestone C2)
   — `field: "pased"` over `reviewer` must raise `ConfigError`. Probed loading
   clean today and returning `False` for every response.
 - **Depends on:** C1 (same parameter, same walk).
-- Validate the path's **first segment** against the agent's
-  `model_json_schema()["properties"]`. First segment only: nested paths address
-  arbitrary sub-documents and `$ref`/`anyOf` resolution is a rabbit hole with no
-  payoff here — `ReviewResult` and `ExecutionPlan` are flat at the top level,
-  which is where every real predicate binds.
+- Validate the path's first segment against the agent's
+  `model_json_schema()["properties"]`.
+- **Amended after review.** The first draft validated *only* the first segment and
+  a test asserted that `steps.0.action` therefore loads. That blessed exactly the
+  never-accepts defect this milestone exists to prevent: `ExecutionPlan.steps` is
+  an array and `predicate._resolve` walks mappings only, so the path can never
+  resolve. The schema summary now also carries which fields are **objects**, and a
+  dotted path through a non-object is refused. Both shipped models are flat, so
+  every dotted path over them is refused — correctly. Segments beyond the second
+  remain unvalidated, which needs the nested model's schema.
 - This is the achievable form of plan-of-record B1: it makes the predicate and
   the schema agree, without the predicate importing an agent. Say so in the spec
   so B1 is closed by reference rather than left dangling.
@@ -288,7 +298,7 @@ contract — no business importing `agents/`.
 
 ### Milestone C3 — make the shipped example demonstrate the pattern ✅
 
-- **Failing test first:** `tests/test_run_workflow_e2e.py::test_shipped_example_graph_gates_on_a_parsed_field`
+- **Failing test first:** `tests/test_plan_review_until_passed.py::test_example_graph_gates_on_a_parsed_field` (delivered as its own module beside the parity example's)
   — assert the example carries a `json_field` acceptance. Red today:
   `examples/workflows/plan-execute-review.json` is a bare three-step `sequence`
   with no predicate anywhere.
@@ -316,7 +326,7 @@ and is what makes the choice informed.
 
 ### Milestone D0 — pin the current semantics before changing anything ✅
 
-- **Failing test first:** `tests/eval/test_cost_budget.py::test_cost_is_blind_to_model_and_token_price_changes`
+- **Failing test first:** `tests/eval/test_cost_measurement_basis.py::test_cost_is_blind_to_the_model_the_run_used` (delivered as its own module; the fixture builds a real `agent_llm_overrides` swap, per review)
   — a row with no declared token counts must produce the **same**
   `mean_cost_usd` under two different model configurations, and a different one
   when only the reply's length changes. That is the current contract, and

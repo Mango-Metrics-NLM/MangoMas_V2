@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, TypeAlias
 
 from mangomas.errors import ConfigError
@@ -66,11 +67,36 @@ logger = logging.getLogger(__name__)
 #: Structured-log event for a completed validation pass.
 _VALIDATED_EVENT: Final[str] = "workflow_structured_acceptance_validated"
 
-#: ``Mapping[agent name, top-level schema field names]`` — the shape every entry
-#: point here takes. Membership answers "is this agent structured?"; the value
-#: answers "may a ``json_field`` predicate address this path?". An empty mapping
-#: disables both rules, which is the default and preserves pre-spec behaviour.
-StructuredAgentFields: TypeAlias = Mapping[str, frozenset[str]]
+
+@dataclass(frozen=True, slots=True)
+class StructuredAgentSchema:
+    """What acceptance validation needs to know about one agent's output schema.
+
+    Deliberately *not* the Pydantic model. ``mangomas.workflow`` is pure-domain
+    and takes this as plain data (built by ``mangomas.composition.agents``), so it
+    carries no knowledge of ``mangomas.agents`` — see the module docstring.
+
+    ``fields``
+        Top-level property names. Membership answers "may a ``json_field``
+        predicate address this path?".
+    ``object_fields``
+        The subset whose value is a JSON **object**. This is what makes a dotted
+        path decidable: :func:`~mangomas.workflow.predicate.compile_predicate`'s
+        resolver walks ``Mapping`` values only, so a path that continues past an
+        array, a string or a number can never resolve — the predicate would return
+        ``False`` for every response and the loop could only end in
+        ``MaxStepsExceeded``. That is the same never-accepts class the
+        first-segment check exists to catch, one level down.
+    """
+
+    fields: frozenset[str]
+    object_fields: frozenset[str] = frozenset()
+
+
+#: ``Mapping[agent name, :class:`StructuredAgentSchema`]`` — the shape every entry
+#: point here takes. An empty mapping disables every rule, which is the default
+#: and preserves pre-spec behaviour.
+StructuredAgentFields: TypeAlias = Mapping[str, StructuredAgentSchema]
 
 
 def _text_predicate_problem(agent: str, spec: PredicateSpec) -> str | None:
@@ -88,28 +114,51 @@ def _text_predicate_problem(agent: str, spec: PredicateSpec) -> str | None:
     )
 
 
-def _json_field_problem(agent: str, spec: PredicateSpec, fields: frozenset[str]) -> str | None:
-    """Return a message when *spec*'s path cannot resolve against *fields*.
+def _json_field_problem(
+    agent: str, spec: PredicateSpec, schema: StructuredAgentSchema
+) -> str | None:
+    """Return a message when *spec*'s path cannot resolve against *schema*.
 
-    Only the **first** path segment is checked. Nested segments address arbitrary
-    sub-documents — ``ExecutionPlan.steps`` is a list of ``PlanStep``, reached
-    through ``$defs`` — and resolving those would mean walking JSON-Schema
-    ``$ref`` / ``anyOf`` for no gain: both shipped models are flat at the top
-    level, which is where every real predicate binds. A wrong *nested* segment
-    still degrades to "not accepted" at run time, as before.
+    Two rules, both about the same failure: a path that cannot resolve compiles to
+    a closure returning ``False`` for every response, so the loop exhausts
+    ``max_steps`` and a typo becomes indistinguishable from a model that never
+    converges.
+
+    1. The **first** segment must be a declared field.
+    2. When the path has more than one segment, that first segment must be an
+       **object**. The predicate resolver walks mappings only
+       (``predicate._resolve``), so continuing past an array, string, number or
+       boolean can never resolve. Neither shipped model has an object-valued
+       field, so every dotted path over ``ExecutionPlan`` / ``ReviewResult`` is
+       refused — including ``steps.0.action``, which reads plausible and is not.
+
+    Segments beyond the second are **not** validated: doing so needs the nested
+    model's own schema, which this carrier deliberately does not hold. Stated as a
+    limit rather than implied — a wrong deeper segment still degrades to "not
+    accepted" at run time, exactly as before.
     """
     if not spec.field:
         return None
-    first = spec.field.split(FIELD_PATH_SEPARATOR, 1)[0]
-    if first in fields:
-        return None
-    return (
-        f"loop over structured agent {agent!r} accepts on field {spec.field!r}, "
-        f"whose first segment {first!r} is not in the agent's schema. The "
-        f"predicate would never match, so the loop could only ever end in "
-        f"MaxStepsExceeded — indistinguishable from a model that does not "
-        f"converge. Available fields: {sorted(fields)}."
-    )
+    segments = spec.field.split(FIELD_PATH_SEPARATOR)
+    first = segments[0]
+    if first not in schema.fields:
+        return (
+            f"loop over structured agent {agent!r} accepts on field {spec.field!r}, "
+            f"whose first segment {first!r} is not in the agent's schema. The "
+            f"predicate would never match, so the loop could only ever end in "
+            f"MaxStepsExceeded — indistinguishable from a model that does not "
+            f"converge. Available fields: {sorted(schema.fields)}."
+        )
+    if len(segments) > 1 and first not in schema.object_fields:
+        return (
+            f"loop over structured agent {agent!r} accepts on dotted path "
+            f"{spec.field!r}, but {first!r} is not an object in the agent's "
+            f"schema. The predicate resolver walks mappings only, so this path "
+            f"can never resolve and the loop could only ever end in "
+            f"MaxStepsExceeded. Address {first!r} directly, or pick one of the "
+            f"object-valued fields: {sorted(schema.object_fields) or 'none'}."
+        )
+    return None
 
 
 def structured_acceptance_problems(
@@ -126,11 +175,11 @@ def structured_acceptance_problems(
     for node in iter_nodes(graph.root):
         if not isinstance(node, LoopNode):
             continue
-        fields = structured_agents.get(node.agent)
-        if fields is None:
+        schema = structured_agents.get(node.agent)
+        if schema is None:
             continue
         problem = _text_predicate_problem(node.agent, node.accept) or _json_field_problem(
-            node.agent, node.accept, fields
+            node.agent, node.accept, schema
         )
         if problem is not None:
             problems.append(problem)

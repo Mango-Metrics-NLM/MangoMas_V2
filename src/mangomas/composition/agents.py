@@ -18,12 +18,17 @@ import logging
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Final, TypeAlias, cast
 
+from pydantic import BaseModel
+
 from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, SummarizeAgent, ToolAgent
 from mangomas.agents._structured import SCHEMA_CLASS_ATTRIBUTE, StructuredOutputAgent
 from mangomas.composition._registries import AgentFactory, agent_registry
 from mangomas.errors import ConfigError
+from mangomas.workflow.validation import StructuredAgentFields, StructuredAgentSchema
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Iterable
+
     from mangomas.config import AgentSettings
     from mangomas.core.agent import Agent
 
@@ -71,53 +76,109 @@ def _agent_factory(agent_class: type[Agent]) -> AgentFactory:
     return _build
 
 
-def _structured_agent_fields() -> Mapping[str, frozenset[str]]:
-    """Return ``{agent name: top-level schema field names}`` for structured agents.
+#: JSON-Schema ``type`` marking a value the predicate resolver can walk into.
+#: ``predicate._resolve`` traverses ``Mapping`` values only, so this is the one
+#: type a dotted path may continue past.
+_OBJECT_SCHEMA_TYPE: Final[str] = "object"
 
-    Derived from :data:`DEFAULT_AGENTS` via ``issubclass`` plus the declared
-    :data:`~mangomas.agents._structured.SCHEMA_CLASS_ATTRIBUTE`, so a sixth
-    structured agent is covered by adding it to the table alone.
 
-    **Field names, not the model class.** ``mangomas.workflow`` is a pure-domain
-    package that compiles graphs to dispatch calls by agent *name* and never
-    resolves an agent; handing it a set of legal field names keeps it free of any
-    knowledge of ``mangomas.agents`` (the layering contracts do not forbid that
-    import, so the discipline has to be deliberate). The set is still derived
-    from the live schema, so adding a field to ``ReviewResult`` widens what a
-    predicate may address with no change here.
+def _schema_of(agent_class: type[Agent], *, name: str) -> type[BaseModel]:
+    """Return *agent_class*'s declared output model, or raise ``ConfigError``.
 
-    Raises :class:`~mangomas.errors.ConfigError` when a structured agent omits
-    its schema declaration. Failing at import is deliberate: skipping such an
-    agent would silently drop its acceptance guard, which is the exact defect
-    class this map exists to close.
+    Raises when a structured agent omits its schema declaration. Failing loudly is
+    deliberate: skipping such an agent would silently drop its acceptance guard,
+    which is the exact defect class this map exists to close.
     """
-    fields: dict[str, frozenset[str]] = {}
-    for name, agent_class in DEFAULT_AGENTS.items():
-        if not issubclass(agent_class, StructuredOutputAgent):
-            continue
-        schema = getattr(agent_class, SCHEMA_CLASS_ATTRIBUTE, None)
-        if schema is None:
-            raise ConfigError(
-                f"agent {name!r} ({agent_class.__name__}) subclasses "
-                f"StructuredOutputAgent but declares no "
-                f"{SCHEMA_CLASS_ATTRIBUTE!r} class attribute, so its workflow "
-                f"acceptance predicates cannot be validated. Add "
-                f"`{SCHEMA_CLASS_ATTRIBUTE}: ClassVar[type[BaseModel]] = <Model>`."
-            )
-        fields[name] = frozenset(schema.model_json_schema().get("properties", {}))
-    return fields
+    schema = getattr(agent_class, SCHEMA_CLASS_ATTRIBUTE, None)
+    if schema is None:
+        raise ConfigError(
+            f"agent {name!r} ({agent_class.__name__}) subclasses "
+            f"StructuredOutputAgent but declares no "
+            f"{SCHEMA_CLASS_ATTRIBUTE!r} class attribute, so its workflow "
+            f"acceptance predicates cannot be validated. Add "
+            f"`{SCHEMA_CLASS_ATTRIBUTE}: ClassVar[type[BaseModel]] = <Model>`."
+        )
+    return cast("type[BaseModel]", schema)
 
 
-#: Structured built-in agents mapped to their schema's **top-level** field names.
+def describe_schema(model: type[BaseModel]) -> StructuredAgentSchema:
+    """Summarise *model*'s JSON schema for workflow acceptance validation.
+
+    Carries the top-level property names, plus which of them are **objects** —
+    the only values a dotted predicate path may continue past, because
+    ``predicate._resolve`` walks mappings alone. Derived from the live schema, so
+    adding a field to ``ReviewResult`` widens what a predicate may address with no
+    change here.
+
+    A property reached through ``$ref`` (a nested model) reports no inline
+    ``type``, so it is treated as an object: refusing it would be the damaging
+    direction, and a wrong segment *inside* it still degrades to "not accepted" at
+    run time as before.
+    """
+    properties: Mapping[str, Mapping[str, object]] = model.model_json_schema().get("properties", {})
+    object_fields = {
+        name
+        for name, subschema in properties.items()
+        if subschema.get("type", _OBJECT_SCHEMA_TYPE) == _OBJECT_SCHEMA_TYPE
+    }
+    return StructuredAgentSchema(
+        fields=frozenset(properties),
+        object_fields=frozenset(object_fields),
+    )
+
+
+def structured_agent_schemas(agent_classes: Mapping[str, type[Agent]]) -> StructuredAgentFields:
+    """Return ``{agent name: schema summary}`` for the structured entries.
+
+    Takes the name-to-**class** mapping so it serves both callers: the built-in
+    table below, and :func:`structured_agent_schemas_for_instances`, which covers
+    entry-point plugins.
+    """
+    return {
+        name: describe_schema(_schema_of(agent_class, name=name))
+        for name, agent_class in agent_classes.items()
+        if isinstance(agent_class, type) and issubclass(agent_class, StructuredOutputAgent)
+    }
+
+
+def structured_agent_schemas_for_instances(
+    agents: Iterable[Agent],
+) -> StructuredAgentFields:
+    """Return the schema map for *agents*, keyed by each agent's own ``name``.
+
+    This is what closes the plugin gap. ``ensure_agent_plugins`` registers
+    entry-point **factories** after this module imports, so a discovered
+    ``StructuredOutputAgent`` is absent from :data:`DEFAULT_AGENTS` and would get
+    neither acceptance guard. ``build_orchestrator`` already constructs every
+    registered agent — plugins included — so deriving from those live instances
+    covers them with no change to the plugin protocol and no extra construction.
+
+    ``type(agent)`` rather than the instance: the schema is a ``ClassVar``, and
+    reading it off the class keeps this a lookup rather than a second build.
+    """
+    return structured_agent_schemas({agent.name: type(agent) for agent in agents})
+
+
+#: Structured **built-in** agents mapped to their output-schema summary.
 #:
 #: Consumed by ``mangomas.workflow.validation`` through ``load_workflow``'s
 #: ``structured_agents`` keyword. Membership answers "is this agent structured?";
-#: the value answers "may a ``json_field`` predicate address this path?".
+#: the value answers "may a ``json_field`` predicate address this path, and may it
+#: continue past this segment?".
 #:
-#: Known limit: entry-point discovered agents (``MANGOMAS_DISCOVERY_ENABLED``)
-#: register *after* this module imports and are not in :data:`DEFAULT_AGENTS`, so
-#: a discovered structured agent gets no guard. Stated rather than implied.
-STRUCTURED_AGENT_FIELDS: Final[Mapping[str, frozenset[str]]] = _structured_agent_fields()
+#: Covers the **built-ins** only, because it is computed at import time.
+#: Entry-point discovered agents register later, so ``build_orchestrator``
+#: recomputes the full map from the live agents via
+#: :func:`structured_agent_schemas_for_instances` and publishes it on
+#: ``AgentContext.extras``; the API and CLI prefer that map and fall back to this
+#: constant. See ``composition/builder.py``.
+STRUCTURED_AGENT_FIELDS: Final[StructuredAgentFields] = structured_agent_schemas(DEFAULT_AGENTS)
+
+#: ``AgentContext.extras`` key under which ``build_orchestrator`` publishes the
+#: **plugin-inclusive** schema map. Named once here, following the
+#: ``COGNITIVE_SINK_EXTRAS_KEY`` precedent, so the writer (``builder``) and the
+#: readers (the API route and the CLI command) cannot disagree about the spelling.
+STRUCTURED_AGENT_FIELDS_EXTRAS_KEY: Final[str] = "structured_agent_fields"
 
 
 def _register_default_agents() -> None:
@@ -140,5 +201,9 @@ _register_default_agents()
 __all__ = [
     "DEFAULT_AGENTS",
     "STRUCTURED_AGENT_FIELDS",
+    "STRUCTURED_AGENT_FIELDS_EXTRAS_KEY",
     "_register_default_agents",
+    "describe_schema",
+    "structured_agent_schemas",
+    "structured_agent_schemas_for_instances",
 ]

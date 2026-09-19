@@ -31,7 +31,9 @@ from mangomas.composition.agents import (
     DEFAULT_AGENTS,
     STRUCTURED_AGENT_FIELDS,
     _agent_factory,
-    _structured_agent_fields,
+    describe_schema,
+    structured_agent_schemas,
+    structured_agent_schemas_for_instances,
 )
 from mangomas.errors import ConfigError
 from tests.constants import (
@@ -97,23 +99,58 @@ def test_every_structured_agent_in_the_table_is_covered() -> None:
 
 
 def test_fields_come_from_the_live_schema() -> None:
-    """The values are the schema's top-level properties, read at import.
+    """``fields`` is the schema's top-level properties, read at import.
 
     Pinned against the model rather than a literal list, so adding a field to
     ``ReviewResult`` widens what a predicate may address with no test edit — and
     a map built from the wrong part of the JSON schema (``$defs`` rather than
     ``properties``) fails here.
     """
-    for name, fields in STRUCTURED_AGENT_FIELDS.items():
-        schema = getattr(DEFAULT_AGENTS[name], SCHEMA_CLASS_ATTRIBUTE)
-        assert fields == frozenset(schema.model_json_schema()["properties"])
-    assert REVIEW_PASSED_FIELD in STRUCTURED_AGENT_FIELDS[REVIEWER_AGENT_NAME]
+    for name, summary in STRUCTURED_AGENT_FIELDS.items():
+        model = getattr(DEFAULT_AGENTS[name], SCHEMA_CLASS_ATTRIBUTE)
+        assert summary.fields == frozenset(model.model_json_schema()["properties"])
+    assert REVIEW_PASSED_FIELD in STRUCTURED_AGENT_FIELDS[REVIEWER_AGENT_NAME].fields
+
+
+def test_no_shipped_structured_field_is_an_object() -> None:
+    """Both shipped models are flat, so no dotted predicate path can resolve.
+
+    This is what makes the dotted-path refusal correct rather than
+    over-restrictive today: ``ExecutionPlan`` is ``goal`` (string) + ``steps``
+    (array), ``ReviewResult`` four scalars/arrays. ``predicate._resolve`` walks
+    mappings only, so ``steps.0.action`` — which reads plausible — can never
+    resolve. If a nested model is ever added, this test goes red and the
+    dotted-path tests below must grow a positive case.
+    """
+    for name, summary in STRUCTURED_AGENT_FIELDS.items():
+        assert summary.object_fields == frozenset(), f"{name} grew an object field"
+
+
+def test_object_fields_are_detected_when_present() -> None:
+    """The other side: an object-valued field must be reported as one.
+
+    Without this, ``describe_schema`` could return an empty ``object_fields`` for
+    every model and the test above would still pass — the refusal would then be
+    unconditional rather than schema-derived.
+    """
+
+    class _Inner(BaseModel):
+        ok: bool
+
+    class _Outer(BaseModel):
+        nested: _Inner
+        flat: str
+
+    summary = describe_schema(_Outer)
+    assert summary.fields == frozenset({"nested", "flat"})
+    assert summary.object_fields == frozenset({"nested"})
 
 
 def test_the_map_is_immutable_per_entry() -> None:
     """``frozenset`` values: a consumer cannot widen the guard by mutating them."""
-    for fields in STRUCTURED_AGENT_FIELDS.values():
-        assert isinstance(fields, frozenset)
+    for summary in STRUCTURED_AGENT_FIELDS.values():
+        assert isinstance(summary.fields, frozenset)
+        assert isinstance(summary.object_fields, frozenset)
 
 
 def test_a_structured_agent_without_a_schema_is_rejected(
@@ -131,7 +168,7 @@ def test_a_structured_agent_without_a_schema_is_rejected(
 
     monkeypatch.setitem(DEFAULT_AGENTS, "schemaless", _SchemalessAgent)
     with pytest.raises(ConfigError, match=SCHEMA_CLASS_ATTRIBUTE):
-        _structured_agent_fields()
+        structured_agent_schemas(DEFAULT_AGENTS)
 
 
 def test_a_new_structured_agent_is_covered_by_the_table_alone(
@@ -151,5 +188,41 @@ def test_a_new_structured_agent_is_covered_by_the_table_alone(
         schema: ClassVar[type[BaseModel]] = _Verdict
 
     monkeypatch.setitem(DEFAULT_AGENTS, "sixth", _SixthAgent)
-    derived = _structured_agent_fields()
-    assert derived["sixth"] == frozenset({"accepted", "rationale"})
+    derived = structured_agent_schemas(DEFAULT_AGENTS)
+    assert derived["sixth"].fields == frozenset({"accepted", "rationale"})
+
+
+def test_discovered_plugin_agents_are_covered_by_the_instance_derivation() -> None:
+    """The plugin gap, closed. ``build_orchestrator`` derives from live agents.
+
+    An entry-point factory registers *after* this module imports, so a discovered
+    ``StructuredOutputAgent`` is absent from ``DEFAULT_AGENTS`` and
+    ``STRUCTURED_AGENT_FIELDS`` cannot see it. Deriving from the instances
+    ``build_orchestrator`` already builds does see it — with no change to the
+    plugin protocol.
+    """
+
+    class _PluginVerdict(BaseModel):
+        settled: bool
+
+    class _PluginAgent(StructuredOutputAgent):
+        schema: ClassVar[type[BaseModel]] = _PluginVerdict
+
+        def __init__(self) -> None:
+            super().__init__(type(self).schema, "discovered-plugin")
+
+    plugin = _PluginAgent()
+    assert plugin.name not in STRUCTURED_AGENT_FIELDS, "fixture must not be a built-in"
+
+    derived = structured_agent_schemas_for_instances([plugin])
+    assert derived[plugin.name].fields == frozenset({"settled"})
+
+
+def test_unstructured_instances_are_omitted_from_the_instance_derivation() -> None:
+    """Two-sided: a plain agent instance must not enter the map.
+
+    A derivation that included every instance would make text predicates over
+    ``chat`` a load error — the guard's most damaging false positive.
+    """
+    plain = DEFAULT_AGENTS[DEFAULT_AGENT_NAME](settings=None)  # type: ignore[call-arg]
+    assert structured_agent_schemas_for_instances([plain]) == {}

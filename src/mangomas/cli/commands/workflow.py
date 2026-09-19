@@ -47,7 +47,18 @@ def _resolve_workflow_source(definition: str | None) -> str:
 
 
 def _load_workflow_or_exit(source: str) -> WorkflowGraph:
-    """Parse *source* into a graph, mapping a config error to ``Exit(2)``."""
+    """Parse *source* into a graph, mapping a config error to ``Exit(2)``.
+
+    Validates acceptance predicates against the **built-in** structured agents
+    (:data:`~mangomas.composition.agents.STRUCTURED_AGENT_FIELDS`), not the
+    plugin-inclusive map ``build_orchestrator`` publishes. Both CLI commands load
+    the graph *before* building an orchestrator, deliberately: a malformed graph
+    then exits 2 without paying for storage and LLM wiring. Keeping that
+    fail-fast ordering costs coverage of an entry-point structured agent here,
+    which is the narrower surface — the HTTP routes, which accept a
+    caller-supplied graph, always have an orchestrator in ``app.state`` and use
+    its full map.
+    """
     try:
         return load_workflow(source, structured_agents=STRUCTURED_AGENT_FIELDS)
     except MangomasError as exc:

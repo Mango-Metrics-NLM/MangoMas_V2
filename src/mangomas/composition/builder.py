@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from mangomas.agents._prompt import AGENT_LLM_OVERRIDES_EXTRAS_KEY
 from mangomas.composition._registries import (
     _memory_registry,
     _storage_registry,
@@ -16,6 +17,10 @@ from mangomas.composition._registries import (
     agent_registry,
     embedding_registry,
     llm_registry,
+)
+from mangomas.composition.agents import (
+    STRUCTURED_AGENT_FIELDS_EXTRAS_KEY,
+    structured_agent_schemas_for_instances,
 )
 from mangomas.composition.embeddings import (
     _lmstudio_embedding_factory,
@@ -38,6 +43,7 @@ from mangomas.composition.storage import _postgres_factory, _sqlite_factory
 from mangomas.composition.vector import _chroma_vector_factory
 from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
+from mangomas.core.agent import Agent
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +173,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         embeddings=embeddings,
         vector_store=vector_store,
         tools=tools,
-        extras={"agent_llm_overrides": agent_llm_overrides},
+        extras={AGENT_LLM_OVERRIDES_EXTRAS_KEY: agent_llm_overrides},
     )
     _attach_cognitive_extras(ctx.extras, cfg.signal)
     logger.debug("AgentContext created with all components")
@@ -192,11 +198,23 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
 
     composition_module.ensure_agent_plugins(cfg, agent_registry)
 
-    # Register all agents with the orchestrator
+    # Register all agents with the orchestrator, keeping the built instances so the
+    # structured-acceptance map below can be derived from them.
+    built: list[Agent] = []
     for agent_name in agent_registry.available():
         factory = agent_registry.get(agent_name)
         agent_cfg = cfg.agents.get(agent_name)
-        orch.register(factory(agent_cfg))
+        agent = factory(agent_cfg)
+        orch.register(agent)
+        built.append(agent)
+
+    # Publish the structured-agent schema map for workflow acceptance validation.
+    # Derived from the **built instances**, not from `composition.agents`'
+    # import-time table, because `ensure_agent_plugins` above may have registered
+    # an entry-point agent that subclasses `StructuredOutputAgent`. Deriving here
+    # is what gives a discovered structured agent the same two acceptance guards a
+    # built-in gets; the import-time constant covers built-ins alone.
+    ctx.extras[STRUCTURED_AGENT_FIELDS_EXTRAS_KEY] = structured_agent_schemas_for_instances(built)
 
     logger.info("Orchestrator ready with agents: %s", orch.list_agents())
     return orch
