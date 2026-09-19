@@ -370,7 +370,7 @@ What ships in the harness:
 | Dependency updates | `.github/dependabot.yml` | Monthly `github-actions` + root `pip` + `/mango-integration-contracts` pip |
 | PR template | `.github/PULL_REQUEST_TEMPLATE.md` | Mandatory PR checklist |
 
-See `CLAUDE.md` for the full skill/agent map and protected-path
+See `CLAUDE.md` (which imports `AGENTS.md`) for the full skill/agent map and protected-path
 table; `docs/tooling/claude-code-ecosystem.md` for the full external
 tooling catalog (MCP servers, hooks, rejected/reference-only tools);
 `docs/architecture/c2-container.md` and `c3-component.md` for where the

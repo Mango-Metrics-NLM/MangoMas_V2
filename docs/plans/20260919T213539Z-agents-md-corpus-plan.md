@@ -38,7 +38,29 @@ below rather than quietly absorbed:
 Scope also grew by one defect (`docs/workflow/graphs.md`), found only because
 the live-doc denominator was widened from a hand-typed list to a derived one.
 
-**PR 2 and PR 3 not started.**
+**PR 2 delivered in full (M2.1–M2.3).** `3048 passed, 66 skipped`; all coverage
+floors met; lint, format, `mypy --strict` (456 files), frontmatter and
+validate-config green. `AGENTS.md` 503 lines, `CLAUDE.md` 243 (from one 720-line
+file), split by rule rather than by hand. `ADR-0035` written with the ten-probe
+matrix, status **Proposed** — it has no Architect sign-off and an agent cannot
+supply one.
+
+The split was performed by a script keyed on *"a section whose title names
+Claude Code itself stays"*, not on line numbers, so the rule that produced the
+files is the same rule `test_the_split_puts_each_section_on_the_right_side`
+enforces.
+
+**M1.2 paid for itself immediately.** Moving the config tables into `AGENTS.md`
+turned exactly two tests red, and the reverse-defaults guard added hours
+earlier was one of them. Without it the ~110-row configuration contract would
+have quietly narrowed to the handful of rows left in `CLAUDE.md` while both
+files still looked healthy — the failure the peer review predicted, caught in
+practice on the first move.
+
+Guards mutation-proved in eight directions (import line, dangling import,
+nested `AGENTS.md`, misplaced section — each red on mutation, green on restore).
+
+**PR 3 not started.**
 - **Relationship to the plan of record:**
   [`20260916T214636Z-reliability-evidence-plan.md`](20260916T214636Z-reliability-evidence-plan.md)
   is unchanged and remains the spine. **PR 2 below *is* its PR F** — pass 1

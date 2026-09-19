@@ -1,0 +1,503 @@
+# Mango-Mas V2 — Agent Context
+
+Local-first, modular agent platform built on **FastAPI + LM Studio**.
+Designed to run entirely on-device today; architected for GCP swap-in without
+rewriting core agent contracts.
+
+This file is the vendor-neutral half of this repository's agent instructions,
+in the [AGENTS.md](https://agents.md/) format the Agentic AI Foundation
+stewards. Every coding agent reads it. `CLAUDE.md` imports it with a first-line
+`@AGENTS.md` and adds only the surfaces that are Claude Code's own — the agent
+and skill corpora, hooks, and MCP servers.
+
+---
+
+## Essential Commands
+
+```powershell
+# Install (Windows)
+python -m venv .venv ; .venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+pip install -e ./mango-integration-contracts
+
+# Run API (factory pattern required)
+uvicorn mangomas.api.app:create_app --factory --reload
+
+# Run CLI
+mangomas chat "hello"
+
+# Tests (unit; addopts supply --cov + the global 95 % floor)
+python -m pytest --tb=short -q
+
+# Integration tests (requires LM Studio running)
+$env:RUN_INTEGRATION='1' ; python -m pytest tests/integration --no-cov -q
+
+# Lint (auto-fix)
+ruff check --fix src tests
+ruff format src tests
+
+# Type-check
+mypy
+
+# Pre-commit (runs ruff + mypy on staged files)
+pre-commit run --all-files
+```
+
+Every CI command is also wrapped as a `Makefile` target — `make gate` runs the
+whole pipeline (validate-config, lint, format-check, typecheck, lint-imports,
+frontmatter,
+protected-paths, test, per-package coverage, bridge coverage, contracts
+coverage, scripts coverage)
+in `gate`'s own order — which is **not** CI's: the `lint` job runs `frontmatter`
+before `typecheck`/`lint-imports`, `gate` runs it after. Note `protected-paths`
+runs locally too, not only in CI; `make help` lists the rest. Prefer it
+over retyping paths: CI's lint surface is
+`src tests scripts eval_harness_bridge/src mango-integration-contracts/src`, which is wider than the
+`src tests` shown above.
+
+---
+
+## Architecture
+
+```
+src/mangomas/
+├── core/           # Stable domain contracts (Agent, Orchestrator, tools, loop)
+│   ├── agent.py        Protocol: Agent, AgentContext, AgentRequest, AgentResponse
+│   ├── orchestrator/   Dispatch + iterative loop + pipeline/fan-out topologies
+│   ├── structured.py   Structured-output helpers: build_structured_prompt,
+│   │                   parse_or_recover, parse_llm_json_object (spec-0015 R4)
+│   ├── tools.py        ToolSpec, ToolCallParser, ToolRegistry, tool prompt
+│   │                   builder + permanent re-export facade over structured.py
+│   └── loop.py         AcceptanceFn type alias
+├── agents/         # Concrete agent implementations (all satisfy Agent protocol)
+│   ├── _prompt.py      resolve_system_prompt + build_messages (shared precedence + message insertion)
+│   ├── _structured.py  StructuredOutputAgent — shared base for planner/reviewer
+│   ├── chat.py         ChatAgent
+│   ├── summarize.py    SummarizeAgent
+│   ├── tool_agent.py   ToolAgent (inner tool-execution loop)
+│   ├── planner.py      PlannerAgent (ExecutionPlan structured output)
+│   └── reviewer.py     ReviewerAgent (ReviewResult structured output)
+├── adapters/
+│   ├── _http_errors.py  Shared httpx → typed-error translator (llm + embeddings)
+│   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
+│   ├── _openai_client.py OpenAICompatHTTPClient — shared httpx lifecycle base
+│   │                    (_request / _log_and_translate: POST/GET → raise → log → translate)
+│   ├── llm/            LLMClient protocol + LMStudioClient + VertexClient
+│   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
+│   │                   (_shared.py: embed / aclose mixins — backends write embed_batch only)
+│   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
+│   └── storage/        TurnRepository + MemoryRepository protocols + impls
+├── rag/            Pure-domain RAG layer (opt-in; imports only protocols + models)
+│   ├── models.py       Chunk, SearchResult (frozen dataclasses)
+│   ├── chunker.py      Word-window chunker (pure fn)
+│   ├── loader.py       file/dir → raw docs (asyncio.to_thread)
+│   ├── pipeline.py     IngestionPipeline: load→chunk→embed_batch→upsert
+│   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
+├── workflow/       Declarative workflow-graph layer (opt-in; spec 0005)
+│   ├── graph.py        Frozen node models + WorkflowNode union + WorkflowGraph
+│   ├── predicate.py    PredicateSpec + compile_predicate → sync AcceptanceFn
+│   ├── registry.py     node_registry + resolve_executor
+│   ├── nodes/_factory.py make_node_factory — shared typed factory + guard
+│   ├── executor.py     NodeExecutor protocol + execute_workflow driver
+│   ├── loader.py       path/inline JSON → WorkflowGraph (ConfigError boundary)
+│   └── nodes/          Self-registering agent/sequence/fan_out/loop/branch executors
+├── cognitive/      CognitiveSignal producer (opt-in; spec-0030 / ADR-0029)
+│   ├── constants.py    extras keys; no mango_contracts import (flag-off safe)
+│   ├── roles.py        Fail-closed observation-role map (tool raises)
+│   ├── pdp.py          INV-16 adapter: refuse cognitive fields in PDP input
+│   ├── sink.py         JSONL + optional HTTP; attached on extras["cognitive_sink"]
+│   └── producer.py     planner/reviewer emit (contained failures)
+├── api/
+│   ├── app.py          FastAPI app factory (lifespan, middleware installation)
+│   ├── errors.py       Error-status mapping, error-envelope builder
+│   ├── models.py       DTO models (WorkflowRunRequest, WorkflowValidateRequest/Response)
+│   ├── middleware/     MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
+│   │                   (ADR-0019 facade; install order unchanged)
+│   └── routes/         Endpoint routers by resource
+│       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
+│       ├── system.py   /healthz + /health, /readyz + /ready, GET /agents
+│       └── workflows.py /workflows/run, /workflows/validate endpoints
+├── cli/            Typer CLI, one module per dependency layer behind a
+│                   permanent facade (ADR-0019 / spec-0015 R1):
+│   ├── main.py         FACADE — re-exports + the `python -m` entry block
+│   ├── _app.py         Assembly root: builds `app`, the only registration site
+│   ├── _runtime.py     _build / _close_orchestrator seam + win32 stdout
+│   ├── exit_codes.py   EXIT_RUNTIME_ERROR / EXIT_CONFIG_ERROR / EVAL_GATE_EXIT_CODE
+│   └── commands/       chat (agents/chat/history), eval + _eval_config, rag, workflow
+├── harness/        Claude Code harness/hook governance (opt-in; ADR-0021)
+│   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
+│   └── config_audit.py ConfigChange hook decision table
+├── composition/    Composition root — wires settings → adapters → orchestrator
+├── config/         Pydantic-settings, one module per domain behind a
+│                   permanent re-export facade (ADR-0019 / spec-0015):
+│                   llm, storage, api, rag, observability, agents, secrets,
+│                   evaluation, harness, workflow, _root (Settings aggregate)
+├── errors.py       Typed error hierarchy (MangomasError subclasses)
+├── registry.py     Registry[T] — generic, protocol-checked provider store
+├── telemetry/      OpenTelemetry, one module per dependency layer behind a
+│                   permanent facade: _state, logs, exporters (console|gcp),
+│                   tracing, meters, scoped
+├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
+├── _entry_points.py Shared entry-point iteration for eval plugin discovery
+└── metrics.py      Instrumentation registry (singleton, double-checked lock)
+```
+
+---
+
+## Key Design Rules
+
+The **Enforced by** column names the mechanism that catches a violation
+(spec-0022 R15, a constraint written as a mechanism survives agent turnover);
+"code review (prose-only)" is an honest admission that nothing mechanical does.
+
+| Rule | Detail | Enforced by |
+|------|--------|-------------|
+| **Protocol-first** | Every adapter satisfies a `@runtime_checkable Protocol`. Never import concrete types across layers. | `mypy --strict` for signatures; layering is code review (prose-only — `mango-layering-auditor` on demand) |
+| **No hard-coded values** | All tunables live in `Settings` via env vars (`MANGOMAS_*` prefix). | `tests/deploy/test_env_example_contract.py` (names both directions: docs ⊆ Settings and Settings ⊆ docs; plus documented defaults compared against the live field values) |
+| **Backwards-compatible contracts** | `AgentRequest`, `AgentResponse` fields default-safe; adding fields must not break callers. | `tests/test_openapi_snapshot.py` (wire shape) + `tests/test_errors.py` status walk + the protected-path CI gate |
+| **`from __future__ import annotations`** | Required in every source file. | ruff isort `required-imports` (`make lint`) |
+| **TYPE_CHECKING guards** | Cross-layer imports (e.g. `LLMClient` in `AgentContext`) live inside `if TYPE_CHECKING:` blocks. | code review (prose-only — ruff's TC family is not selected) |
+| **Async I/O** | `asyncio.to_thread` for any synchronous I/O (file, DB) inside async handlers. | ruff `ASYNC` family (partial; `ASYNC240` excluded by recorded decision) + code review |
+| **Composition root** | All wiring happens in `composition.build_orchestrator`. No service locators elsewhere. | `tests/composition/` + code review (prose-only for "nowhere else") |
+
+---
+
+## Configuration
+
+All settings are env-driven with prefix `MANGOMAS_`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MANGOMAS_ENV` | `local` | Deployment environment label (`local`/`dev`/`prod`) |
+| `MANGOMAS_LOG_LEVEL` | `INFO` | Root log level |
+| `MANGOMAS_LOG__FORMAT` | `text` | Log line format (`json` \| `text`) — note `.claude/settings.json` exports `json` for Claude Code sessions; that is a session override, not the code default |
+| `MANGOMAS_LOG__BODY_TRUNCATE` | `512` | Max chars of request/response body in access logs |
+| `MANGOMAS_LLM__PROVIDER` | `lmstudio` | LLM registry entry; `vertex` enables Vertex AI |
+| `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
+| `MANGOMAS_LLM__MODEL` | `local-model` | Model id |
+| `MANGOMAS_LLM__ALLOWED_MODELS` | `[]` | Approved-model roster; empty = unconstrained. A non-empty list must include `MODEL` itself (ADR-0033) |
+| `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
+| `MANGOMAS_LLM__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
+| `MANGOMAS_LLM__TIMEOUT_SECONDS` | `60.0` | httpx timeout for LLM calls |
+| `MANGOMAS_LLM__SECRET_REF` | _(none)_ | `SecretsProvider` ref that overrides `API_KEY` when set |
+| `MANGOMAS_LLM__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=vertex`) |
+| `MANGOMAS_LLM__LOCATION` | `us-central1` | GCP region for Vertex |
+| `MANGOMAS_LLM__CREDENTIALS_PATH` | _(none)_ | Service-account JSON path for Vertex (ADC when unset) |
+| `MANGOMAS_DB__PROVIDER` | `sqlite` | Storage registry entry; `postgres` enables Cloud SQL |
+| `MANGOMAS_DB__URL` | `sqlite:///./data/mangomas.db` | Turn-storage database |
+| `MANGOMAS_DB__POOL_MIN` | `1` | asyncpg pool minimum |
+| `MANGOMAS_DB__POOL_MAX` | `10` | asyncpg pool maximum |
+| `MANGOMAS_DB__CONNECT_TIMEOUT_SECONDS` | `10.0` | Postgres connect timeout |
+| `MANGOMAS_DB__STATEMENT_TIMEOUT_SECONDS` | _(none)_ | Per-statement timeout (off when unset) |
+| `MANGOMAS_SECRETS__PROVIDER` | `env` | Secrets registry entry; `gcp` enables Secret Manager |
+| `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | GCP project id (required when `PROVIDER=gcp`) |
+| `MANGOMAS_SECRETS__STRICT` | `false` | Raise `SecretsResolutionError` on cloud secret failures instead of returning `None` |
+| `MANGOMAS_SECRETS__TIMEOUT_SECONDS` | `5.0` | Cloud secret-resolution timeout |
+| `MANGOMAS_SECRETS__DEFAULT_VERSION` | `latest` | Secret version used when a ref names none |
+| `MANGOMAS_API__HOST` | `0.0.0.0` | Bind address for `uvicorn` |
+| `MANGOMAS_API__PORT` | `8000` | Bind port |
+| `MANGOMAS_API__READY_TIMEOUT_SECONDS` | `2.0` | `/readyz` LLM-ping budget |
+| `MANGOMAS_API__CORS_ALLOW_ORIGINS` | `[]` | Opt-in CORS allow-list; empty → `CORSMiddleware` not installed |
+| `MANGOMAS_API__CORS_ALLOW_METHODS` | `["*"]` | CORS methods (used only when origins non-empty) |
+| `MANGOMAS_API__CORS_ALLOW_HEADERS` | `["*"]` | CORS headers (used only when origins non-empty) |
+| `MANGOMAS_API__CORS_ALLOW_CREDENTIALS` | `false` | CORS credentials flag |
+| `MANGOMAS_API__HISTORY_DEFAULT_LIMIT` | `10` | Default page size for `GET /history` |
+| `MANGOMAS_API__HISTORY_MAX_LIMIT` | `1000` | Hard cap on the history `limit` query param |
+| `MANGOMAS_API__MAX_BODY_BYTES` | `0` | Max request body bytes (`0` = off; 413 when exceeded; ADR-0015) |
+| `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; ADR-0015) |
+| `MANGOMAS_AUTH__ENABLED` | `false` | Enforce bearer / API-key auth on data + execution routes (ADR-0014) |
+| `MANGOMAS_AUTH__SECRET_REF` | _(none)_ | `SecretsProvider` ref resolving to the expected API token (required when enabled) |
+| `MANGOMAS_TENANCY__ENABLED` | `false` | Tenant-scoped conversation storage via a row filter (ADR-0017). **Storage partitioning, not access control** — the header is client-asserted and unbound to any credential (ADR-0033) |
+| `MANGOMAS_TENANCY__HEADER` | `X-Tenant-ID` | Inbound tenant header → per-request `ContextVar` |
+| `MANGOMAS_TENANCY__DEFAULT` | `default` | Implicit tenant when the header is absent/disabled |
+| `MANGOMAS_TELEMETRY__METRICS_ENABLED` | `false` | Install an OTel `MeterProvider` (agent invocation/error/duration; ADR-0013) |
+| `MANGOMAS_LOOP__MAX_STEPS` | `1` | Orchestrator loop cap, honored by `dispatch` (spec-0026; precedence: `max_steps` kwarg > non-default `request.max_steps` > this) |
+| `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` | `30.0` | Per-step timeout enforced on each `agent.handle` step via `asyncio.timeout` (composition-wired orchestrators; `StepTimeout` → 504) |
+| `MANGOMAS_MEMORY__ENABLED` | `false` | Enable file-memory |
+| `MANGOMAS_MEMORY__PROVIDER` | `file` | Memory backend provider |
+| `MANGOMAS_MEMORY__MEMORY_DIR` | `memory` | Memory root directory |
+| `MANGOMAS_MEMORY__INDEX_FILE` | `MEMORY.md` | Memory index filename inside `MEMORY_DIR` |
+| `MANGOMAS_EMBEDDINGS__ENABLED` | `false` | Construct + attach `ctx.embeddings` |
+| `MANGOMAS_EMBEDDINGS__PROVIDER` | `lmstudio` | `lmstudio` \| `sentence_transformers` \| `vertex` |
+| `MANGOMAS_EMBEDDINGS__MODEL` | `local-model` | Embedding model id (set per provider) |
+| `MANGOMAS_EMBEDDINGS__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
+| `MANGOMAS_EMBEDDINGS__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
+| `MANGOMAS_EMBEDDINGS__BATCH_SIZE` | `32` | Pipeline embed-batch size |
+| `MANGOMAS_EMBEDDINGS__TIMEOUT_SECONDS` | `60.0` | httpx timeout (LM Studio) |
+| `MANGOMAS_EMBEDDINGS__DEVICE` | _(none)_ | Torch device for `sentence_transformers` (`SentenceTransformer(device=...)`); unset = library auto-detect (CUDA → MPS → CPU) |
+| `MANGOMAS_EMBEDDINGS__PROJECT_ID` | _(none)_ | Vertex only (ADC auth) |
+| `MANGOMAS_EMBEDDINGS__LOCATION` | `us-central1` | Vertex only: GCP region |
+| `MANGOMAS_VECTOR__ENABLED` | `false` | Construct + attach `ctx.vector_store` |
+| `MANGOMAS_VECTOR__PROVIDER` | `chroma` | Vector backend |
+| `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent dir |
+| `MANGOMAS_VECTOR__COLLECTION` | `mangomas` | Collection name |
+| `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
+| `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
+| `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
+| `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
+| `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
+| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`/`cost_budget`) |
+| `MANGOMAS_EVAL__SCORER_OPTIONS` | `{}` | Per-scorer options keyed by scorer name |
+| `MANGOMAS_EVAL__TARGET` | `agent` | Eval target (`agent`/`pipeline`/`fan_out`/`echo`) resolved via `target_registry` |
+| `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name (e.g. `{"pipeline": {"agents": [...]}}`) |
+| `MANGOMAS_EVAL__DATASET_SOURCE` | `jsonl` | Dataset source (`jsonl`/`inline`/`langfuse`) resolved via `dataset_source_registry` |
+| `MANGOMAS_EVAL__DATASET_SOURCE_OPTIONS` | `{}` | Per-source options keyed by source name (e.g. `{"inline": {"rows": [...]}}`) |
+| `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the CI quality gate (exit 3 on fail) |
+| `MANGOMAS_EVAL__MIN_MEAN_SCORE` | _(none)_ | Gate threshold on `mean_score` `[0,1]` |
+| `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
+| `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
+| `MANGOMAS_EVAL__MAX_MEAN_COST_USD` | _(none)_ | Gate threshold on `mean_cost_usd` in USD (not `[0,1]`; off when unset) |
+| `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
+| `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
+| `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
+| `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
+| `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Directory for `json_file`/`sqlite_results` artefacts |
+| `MANGOMAS_EVAL__PARALLELISM` | `1` | Concurrent eval rows |
+| `MANGOMAS_EVAL__FAIL_FAST` | `false` | Stop the run on the first errored row |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
+| `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
+| `MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE` | `false` | Let a discovered eval plugin replace a built-in of the same name; default refuses the collision (ADR-0030) |
+| `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
+| `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
+| `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION` | `true` | Allow a caller-supplied graph on `POST /workflows/run` (which runs even when `ENABLED=false`); set `false` to require server-configured graphs only (ADR-0033) |
+| `MANGOMAS_SIGNAL__ENABLED` | `false` | Emit CognitiveSignal 1.1.0 envelopes (planner/reviewer); default-off, byte-identical dispatch |
+| `MANGOMAS_SIGNAL__DIR` | `./data/cognitive-signals` | JSONL directory for `signals.jsonl` when enabled |
+| `MANGOMAS_SIGNAL__SCHEMA_VERSION` | `1.1.0` | Envelope version; a 1.0.0 override is rejected at Settings parse |
+| `MANGOMAS_SIGNAL__GENAI_SPANS` | `false` | Additive OTel `gen_ai.invoke_agent` alias (Development semconv; default-off) |
+| `MANGOMAS_SIGNAL__TTL_SECONDS` | `86400` | Envelope lifetime; sinks refuse an expired signal (ADR-0032). Max 30 days |
+| `MANGOMAS_SIGNAL__POLICY_ID` | `mangomas.cognitive.default` | Identity/policy binding copied onto each envelope (not a grant) |
+| `MANGOMAS_SIGNAL__POLICY_VERSION` | `1` | Policy version string copied onto each envelope |
+| `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | Default `sha256:` digest of `policy_id:policy_version`; rebinds when only id/version change. **Provenance label, not attestation** — a checksum of two env vars, not of a policy document (ADR-0033) |
+| `MANGOMAS_SIGNAL__HTTP_URL` | _(none)_ | Optional harness ingest URL; JSONL is always written when enabled |
+| `MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS` | `5.0` | Timeout for the optional HTTP sink |
+| `MANGOMAS_AGENTS__<NAME>__SYSTEM_PROMPT` | _(none)_ | Per-agent system-prompt override (`AgentSettings.system_prompt`) |
+| `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
+| `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |
+| `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` | `5` (`DEFAULT_TOOL_MAX_STEPS`) | `ToolAgent`-only: cap on total LLM calls per request |
+| `MANGOMAS_AGENTS__<NAME>__HISTORY_LIMIT` | `10` (`DEFAULT_SUMMARIZE_HISTORY_LIMIT`) | `SummarizeAgent`-only: persisted turns loaded into the summary context |
+| `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT` | false (`DEFAULT_VALIDATE_OUTPUT`) | Structured-output agents (`planner`/`reviewer`) only: validate the JSON reply against the agent's schema after `handle`; `LLMBadResponse` on mismatch. Streaming is untouched |
+| `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Per-agent model, same provider as `MANGOMAS_LLM__PROVIDER`. Resolved via a dedicated `LLMClient` in `ctx.extras["agent_llm_overrides"]`, built by `composition/llm.py::build_agent_llm_overrides` (spec-0028 / ADR-0028) |
+
+---
+
+## Retrieval-Augmented Generation (opt-in)
+
+RAG is fully opt-in and off by default (`embeddings.enabled` / `vector.enabled`
+both `false`), so existing deployments see no behaviour change. Three seams:
+
+- **`EmbeddingClient`** (`adapters/embeddings/base.py`) — `embed` / `embed_batch`
+  / `aclose`. Backends: `LMStudioEmbeddingClient` (httpx POST `{base_url}/embeddings`),
+  `SentenceTransformersEmbeddingClient` (in-process, lazy SDK), `VertexEmbeddingClient`
+  (`text-embedding-004`, **ADC only**).
+- **`VectorStoreRepository`** (`adapters/vector/base.py`) — primitives only
+  (`ids`/`embeddings`/`documents`/`metadatas` + `VectorMatch`), so the vector
+  layer never imports `rag/`. `ChromaVectorStore` forces `hnsw:space=cosine` and
+  maps distance→similarity as `1 - d/2` (keeps scores in `[0, 1]`).
+- **`rag/`** — pure domain: `chunk_text` word-window chunker, `load_documents`,
+  `IngestionPipeline` (delete_by_source → chunk → embed_batch → upsert),
+  `Retriever` + `RetrievalTool` (satisfies the `Tool` protocol; auto-discovered
+  by `ToolAgent` via `ctx.tools` when both embeddings + vector store are present).
+
+CLI: `mangomas rag ingest <path>` and `mangomas rag query <text>`. When RAG is
+disabled both exit `2` with a clear "not enabled" message. The stubbed
+`EmbeddingScorer` now resolves a real provider via `ScorerContext.embeddings`.
+
+Extras: `pip install 'mangomas[embeddings-local]'` (sentence-transformers),
+`pip install 'mangomas[rag]'` (chromadb); Vertex embeddings reuse the `vertex`
+extra. Gated tests: `RUN_EMBEDDINGS_LOCAL=1`, `RUN_RAG=1`.
+
+---
+
+## Evaluation Harness (opt-in)
+
+`mangomas.eval` runs a JSONL dataset through any agent, scores each row with a
+pluggable `Scorer`, emits an `EvalReport` to one or more `Sink`s, and optionally
+gates the run for CI. Everything is additive and default-OFF. See
+`docs/eval/harness.md` and ADR-0003.
+
+- **Scorers** (`eval/scorers/`, registered in `scorer_registry`): `exact_match`,
+  `regex_match`, `contains`, `json_keys` (schema-conformance for `planner`/
+  `reviewer` JSON output), `llm_judge`, `embedding`, `cost_budget`.
+- **Targets** (`eval/target.py` + `eval/targets/`, registered in `target_registry`):
+  `agent` (default — dispatch one agent), `pipeline`, `fan_out`, and `echo`
+  (deterministic baseline). `EvalRunner.run` takes an optional `target=`; the
+  legacy `agent_name` positional is wrapped in the `agent` target. `EvalReport`
+  gains an additive `target_name`. See ADR-0004.
+- **Dataset sources** (`eval/dataset_source.py` + `eval/sources/`, registered in
+  `dataset_source_registry`): `jsonl` (default — wraps `load_jsonl`), `inline`
+  (rows via options), and the optional `langfuse` source (extra
+  `mangomas[langfuse]`). Selected via `--dataset-source`. See ADR-0004.
+- **Gate** (`eval/gate.py`): pure `evaluate_gate(report, ...) -> GateResult`.
+  CLI adds **exit code 3** on failure (distinct from 1=runtime, 2=config), raised
+  only after sinks emit. Off unless a threshold / `gate_enabled` / `fail_on_error`
+  is set.
+- **Regression gate** (`eval/baseline.py` + `eval/gate.py`): `load_baseline` reads
+  a prior `json_file` report; pure `diff_reports` → `ReportDiff`;
+  `evaluate_regression_gate(diff, ...)` fails (exit 3) on a `mean_score`/`pass_rate`
+  drop beyond tolerance or new row failures. `--baseline` + `--max-*-drop` /
+  `--no-allow-new-failures`; threshold + regression verdicts combine via
+  `merge_gate_results`. See ADR-0005.
+- **Sinks** (`eval/sink.py` + `eval/sinks/`, registered in `sink_registry`):
+  `console`, `json_file`, `sqlite_results` (append report + rows to SQLite),
+  `webhook` (httpx POST), and the optional `langfuse` sink (extra
+  `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC; `per_row` option
+  emits one trace/score per row). Multiple sinks compose under per-sink fault
+  isolation. `--output-json` injects `json_file`.
+- **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
+  `mangomas.eval.sinks` / `mangomas.eval.targets` / `mangomas.eval.dataset_sources`;
+  discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`; iterates entry points via
+  the shared `mangomas._entry_points`.
+- **Shared helpers**: `eval/_langfuse.py` (client bootstrap reused by the
+  Langfuse sink and dataset source); `eval/_options.py`
+  (`require_str`/`require_list`/`require_unit_float`/`require_non_negative_float` — factory-time option
+  validation shared across sinks/sources/targets).
+
+CLI: `mangomas eval -d <dataset> -s <scorer> [-t <target>] [--dataset-source <src>] [-o report.json]`.
+Gated tests: `RUN_LANGFUSE=1` (Langfuse sink).
+
+---
+
+## Error Types
+
+```python
+MangomasError           # base; has .code str, .message, .detail
+├── AgentNotFound       # code="agent_not_found"
+├── ConfigError         # code="config_error"; invalid config
+│   └── UnknownProvider # code="unknown_provider"
+├── LLMError            # code="llm_error" (base for LLM errors)
+│   ├── LLMBadResponse  # code="llm_bad_response"
+│   ├── LLMTimeout      # code="llm_timeout"
+│   └── LLMUnavailable  # code="llm_unavailable"
+├── MaxStepsExceeded    # code="max_steps_exceeded"; .steps int
+├── PersistenceError    # code="persistence_error"; file/DB I/O failures
+├── SecretsResolutionError  # code="secrets_resolution_error"; .ref, .provider (503; strict mode)
+├── ToolNotFound        # code="tool_not_found"; .name, .available
+└── ToolExecutionError  # code="tool_execution_error"; .tool_name
+```
+
+HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
+
+---
+
+## Testing Conventions
+
+- **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
+- **Coverage gate**: `scripts/check_coverage.py` is the single source of truth —
+  95 % global minimum plus per-package floors
+  (`errors`/`registry`/`core`/`secrets`/`correlation`/`tenancy`/`_headers`
+  = 100 %, `adapters` = 85 %, `cognitive`/`eval`/`rag`/`workflow` and the rest = 95 %). The pytest `--cov-fail-under=95` addopt in
+  `pyproject.toml` mirrors the global floor.
+- **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink`
+- **Constants**: `tests.constants` — no magic **domain** values in tests
+  (URLs, model ids, env-var names, limits, rosters). Universal literals with
+  a standardised meaning — HTTP status codes, `0`/`1` — stay inline, which is
+  why `PLR2004` is disabled for `tests/*` in `pyproject.toml`. Config-mirroring
+  defaults must be **re-exported** (`X as X`), never restated.
+- **No mocking of internal protocols** — use Fake* classes from `fakes.py`
+- **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
+  and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
+  since `hypothesis` is an optional dev dependency)
+- **Integration tests** in `tests/integration/`; gated by `RUN_INTEGRATION=1`
+
+---
+
+## Agent Extension Pattern
+
+To add a new agent:
+1. Create `src/mangomas/agents/<name>.py` satisfying the `Agent` protocol
+2. Register in `src/mangomas/agents/__init__.py`
+3. Register factory in `composition/` via `agent_registry.register("<name>", ...)`
+4. Write `tests/test_<name>.py`
+
+---
+
+## Spec-Driven Development
+
+Non-trivial features get a **spec before code** under `specs/`. Copy
+`specs/TEMPLATE.md` to `specs/NNNN-kebab-slug.md` (next free integer, mirroring
+the `docs/adr/` numbering), fill in Problem / Requirements / Config-env /
+Protocol-contract impact / Backwards-compat / Test plan / Acceptance criteria,
+and link an ADR when a boundary changes. Specs are thin and **not**
+CI-enforced — see `specs/README.md`. `docs/adr/` records decisions;
+`docs/plans/` records multi-milestone sequencing.
+
+---
+
+## Multi-Agent Topologies
+
+```python
+# Sequential pipeline — output of each agent feeds next
+response = await orchestrator.dispatch_pipeline(["planner", "tool", "reviewer"], request)
+
+# Parallel fan-out — all agents receive same request; returns list
+responses = await orchestrator.dispatch_fan_out(["reviewer", "summarize"], request)
+
+# Iterative loop with acceptance criterion
+from mangomas.core import AcceptanceFn
+
+accept: AcceptanceFn = lambda r: "DONE" in r.content
+response = await orchestrator.dispatch("chat", request, acceptance_fn=accept, max_steps=5)
+```
+
+For the **declarative** equivalent (compose these topologies from JSON), see
+"Declarative Workflow Graphs" below and the `mango-workflow` skill.
+
+---
+
+## Declarative Workflow Graphs (opt-in)
+
+Off by default (`MANGOMAS_WORKFLOW__ENABLED=false`), so existing deployments see
+no change. A `WorkflowGraph` (JSON) is a bounded tree compiled to the imperative
+dispatch primitives above — `sequence` of `agent` / `fan_out` / `loop` / `branch`
+(predicate-routed selection; spec 0012 / ADR-0016), where every leaf is one public
+dispatch call and the acceptance loop is never reimplemented. A `fan_out` branch
+may itself be a composite (spec 0013 / ADR-0018): the all-agent case delegates to
+`dispatch_fan_out` verbatim, while a composite branch runs via `resolve_executor`
+under `asyncio.gather`. See spec 0005 / ADR-0011 and
+`docs/workflow/graphs.md`.
+
+- **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;
+  metadata-transparent executors, so an all-agent `sequence` equals
+  `dispatch_pipeline`.
+- **Predicate** (`workflow/predicate.py`) — `PredicateSpec`
+  (`contains`/`regex`/`json_field`) compiles once to a pure sync `AcceptanceFn`.
+  `json_field` (spec-0032 / ADR-0034) binds acceptance to a **parsed** field —
+  dotted path, exactly one of `equals`/`at_least`/`at_most`, strict whole-text
+  JSON parsing so it agrees with `VALIDATE_OUTPUT`. Use it for `planner` /
+  `reviewer`: no substring spelling over their JSON is correct in both
+  directions. The compiled closure never raises.
+- **Registry** (`workflow/registry.py`) — `node_registry` (mirrors
+  `eval.target_registry`); seeded by `import mangomas.workflow`.
+- **Errors** reuse `ConfigError` (400) / `AgentNotFound` (404) /
+  `MaxStepsExceeded` (422) — `errors.py` unchanged.
+
+CLI: `mangomas workflow validate -f graph.json` and `mangomas workflow run "<msg>"
+-f graph.json`. Both exit `2` when disabled and no `--definition` is passed.
+
+```python
+from mangomas.workflow import execute_workflow, load_workflow
+
+graph = load_workflow("graph.json")  # or an inline JSON string
+response = await execute_workflow(graph, request, orch=orchestrator)
+```
+
+---
+
+## File Ownership
+
+| Path | Change with care |
+|------|-----------------|
+| `src/mangomas/core/agent.py` | Stable public contract — backward-compat required (protected path) |
+| `src/mangomas/core/orchestrator/` | Dispatch surface — backward-compat required (protected path) |
+| `src/mangomas/core/structured.py` | Structured-output prompt + JSON-recovery helpers — backward-compat required (protected path) |
+| `src/mangomas/core/tools.py` | Tool contracts + parser; re-export facade over `structured.py` — backward-compat required (protected path) |
+| `src/mangomas/errors.py` | Typed error hierarchy + HTTP mapping (protected path) |
+| `src/mangomas/registry.py` | Generic, no project-specific logic (protected path) |
+| `src/mangomas/composition/` | Single wiring point — all new adapters registered here |
+| `src/mangomas/cognitive/` | CognitiveSignal producer — default-OFF; must not import harness broker internals |
+| `tests/fakes.py` | Shared test doubles — keep minimal and protocol-accurate |
+
+Paths marked _(protected path)_ are gated by the `lint_agent_frontmatter.py`
+hook: a staged edit requires a `BREAKING-CHANGE` marker in the diff.

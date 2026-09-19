@@ -1,5 +1,13 @@
 # Mango-Mas V2 — Copilot Workspace Instructions
 
+> **Start with [`AGENTS.md`](../AGENTS.md)** at the repository root. It is the
+> vendor-neutral instruction file in the Agentic AI Foundation format, and
+> Copilot reads it directly — including nested ones. It carries the essential
+> commands, architecture, design rules, the `MANGOMAS_*` configuration tables,
+> error types and testing conventions, all bound to the code by contract tests.
+> This file is a Copilot-specific condensation and deliberately restates
+> nothing that is mechanically enforced elsewhere.
+
 ## Project Identity
 Mango-Mas V2 is a **local-first, modular agent platform** (FastAPI + LM Studio, Python 3.11+).
 Architecture is protocol-based with a composition root; all adapters satisfy `@runtime_checkable Protocol` types.

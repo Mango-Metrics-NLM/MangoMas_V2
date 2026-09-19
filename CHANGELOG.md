@@ -9,6 +9,40 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — root instruction pair: `AGENTS.md` + `CLAUDE.md` (ADR-0035)
+
+Implements **PR F** of `docs/plans/20260916T214636Z-reliability-evidence-plan.md`.
+The 720-line `CLAUDE.md` is split by a rule rather than by hand: a section whose
+title names Claude Code itself stays, everything else is vendor-neutral.
+
+- **`AGENTS.md` (503 lines)** — essential commands, architecture, key design
+  rules, the `MANGOMAS_*` configuration tables, RAG, the eval harness, error
+  types, testing conventions, the agent extension pattern, spec-driven
+  development, multi-agent topologies, declarative workflow graphs and file
+  ownership. In the format the Agentic AI Foundation stewards, so Codex, Cursor
+  and Copilot read it directly.
+- **`CLAUDE.md` (243 lines)** — Claude Code's own surfaces only (agent corpus,
+  harness, skills, MCP servers), with `@AGENTS.md` as its literal first line.
+- **The import is asserted to resolve** (`tests/test_agents_md_contract.py`),
+  which PR F's named test did not do. A first line that merely *mentions*
+  `AGENTS.md` while the file is missing or empty leaves every session reading a
+  third of its instructions, silently. Five guards: first line exact, import
+  resolves and is non-empty, each section on the correct side (by rule, not by
+  heading list), no heading duplicated across the pair, and no nested
+  `AGENTS.md` anywhere.
+- **The env contract now reads the union** of the pair
+  (`ROOT_INSTRUCTION_RELPATHS`), because `@AGENTS.md` means a session is told
+  both. Reading either half alone would let a configuration row move across the
+  split and vanish from a ~110-row contract while both files still looked
+  healthy — which is exactly what happened on the first run, caught by the
+  reverse-defaults guard added the commit before.
+- **Per-directory instruction files stay named `CLAUDE.md`.** Measured: while a
+  root `CLAUDE.md` exists — *including a one-line `@AGENTS.md` pointer* —
+  Claude Code ignores every nested `AGENTS.md`. ADR-0035 carries the ten-probe
+  matrix, its binary version and its expiry. `test_no_nested_agents_md_files`
+  keeps it from being re-learned the hard way. The `agent.md` retirement is
+  **not** reversed; `RETIRED_STRAY_AGENT_FILENAME` is untouched.
+
 ### Fixed — live doc defects and the guards that missed them (plan 2026-09-19)
 
 Three stale claims in docs that agents read as current truth, all green under

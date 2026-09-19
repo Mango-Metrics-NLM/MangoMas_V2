@@ -206,6 +206,10 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
 # records are excluded: CHANGELOG entries and dated plan documents describe the
 # state at the time they were written and are deliberately immutable.
 CORPUS_DOC_RELPATHS: tuple[str, ...] = (
+    # Both halves of the root instruction pair. CLAUDE.md alone stopped being
+    # sufficient the moment the generic content moved into AGENTS.md — a
+    # retired path would simply have crossed the split and left the check.
+    "AGENTS.md",
     "CLAUDE.md",
     "README.md",
     "NEXT_STEPS.md",
@@ -300,10 +304,21 @@ DATED_RECORD_FILES: frozenset[str] = frozenset({"CHANGELOG.md", "NEXT_STEPS.md"}
 # far more than prose.
 LIVE_DOC_ROOT_RELPATHS: tuple[str, ...] = (
     ".github/copilot-instructions.md",
+    "AGENTS.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",
     "README.md",
 )
+
+# The root instruction pair, as a Claude Code session actually sees it.
+# `CLAUDE.md`'s first line is `@AGENTS.md`, so the two are concatenated into one
+# context — which means a contract over "what the session is told" must read
+# their union. Reading either alone would let a fact move across the boundary
+# and disappear from the check while both files still look fine.
+ROOT_INSTRUCTION_RELPATHS: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md")
+# The import that makes the pair one document. Asserted verbatim, because a
+# split whose halves never rejoin is worse than no split at all.
+AGENTS_MD_IMPORT_LINE: str = "@AGENTS.md"
 # Globs whose every match is live prose. `docs/**/*.md` is filtered by
 # DATED_RECORD_DIRS above.
 LIVE_DOC_GLOBS: tuple[str, ...] = (

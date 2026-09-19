@@ -110,7 +110,7 @@ so the failure message makes sense when it arrives.
 
 The full design-rule table, with the mechanism that catches each violation
 (and an honest "code review (prose-only)" where none exists), is in
-[`CLAUDE.md`](CLAUDE.md).
+[`CLAUDE.md`](CLAUDE.md), which imports [`AGENTS.md`](AGENTS.md).
 
 ---
 
