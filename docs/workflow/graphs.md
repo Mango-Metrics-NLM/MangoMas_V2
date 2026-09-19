@@ -151,8 +151,8 @@ response = await execute_workflow(graph, request, orch=orchestrator)
 No new error types. Malformed / unknown-kind / unsupported-version → `ConfigError`
 (400, at the loader boundary and via `UnknownProvider`); unknown agent →
 `AgentNotFound` (404) at execution; loop exhaustion → `MaxStepsExceeded` (422).
-`errors.py`, `api/app.py::_ERROR_STATUS`, `core/*`, and `composition.py` are
-unchanged.
+`errors.py`, `api/errors.py::_ERROR_STATUS`, `core/*`, and the `composition/`
+package are unchanged.
 
 ## Extending
 

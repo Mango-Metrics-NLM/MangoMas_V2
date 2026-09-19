@@ -9,6 +9,50 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — live doc defects and the guards that missed them (plan 2026-09-19)
+
+Three stale claims in docs that agents read as current truth, all green under
+the full suite until now, plus the guard repairs that make the class
+mechanically catchable. Source:
+`docs/analysis/20260919-agents-md-corpus-peer-review.md`; plan:
+`docs/plans/20260919T213539Z-agents-md-corpus-plan.md`.
+
+- **Vanished-module citations, by basename** (`tests/tooling/_corpus.py`,
+  `tests/tooling/test_live_path_ledger.py`). The ledger substring-matched the
+  full path (`src/mangomas/composition.py`), but live docs write the bare
+  basename (`composition.py`), so both recorded ADR-0019 decompositions went
+  unpoliced. `.github/copilot-instructions.md` named `config.py` as the home of
+  `Settings` (it is `config/`, since `e2c177b`) and `docs/workflow/graphs.md`
+  listed `composition.py` among unchanged current files. Basename *existence*
+  is not the test — `tests/constants/config.py` exists, so that check passes on
+  the wrong citation; vanished-ness is the signal. Legitimate decomposition
+  narrative is carried as (doc, module)-scoped `narrative_exemptions`, and
+  `test_narrative_exemptions_are_still_earned` fails any entry that stops being
+  used, so the list cannot rot into a standing licence.
+- **Live-doc denominator derived, not hand-typed.** `LIVE_DOC_GLOBS` +
+  `DATED_RECORD_DIRS` replace a nine-entry list that omitted `docs/workflow/` —
+  precisely where the second defect survived. Dated records (CHANGELOG, ADRs,
+  plans, analyses, specs) stay excluded: they are correct as of their date.
+- **Every `Settings` default must have a CLAUDE.md table row**
+  (`tests/deploy/test_env_example_contract.py`). The existing defaults check
+  runs *documented → model* with a non-vacuity floor of one row, so a trim
+  could have deleted 95 of 96 default cells and stayed green. The reverse
+  direction asserts *model → documented* on **row presence**, which a
+  whole-file name regex cannot fake.
+- **`ruff` family list no longer restated** in
+  `.github/copilot-instructions.md`; it claimed 11 families against a real 20
+  and now points at `[tool.ruff.lint]`. A hand-copied mirror of a
+  machine-readable table drifts the moment the table moves.
+- **`mango-harness-dev` added to `PROTECTED_PATH_OWNER_SLUGS`** — it owns four
+  protected paths and was missing, so the roster the trailer test walks was a
+  strict subset of the agents that need one. `CLAUDE.md` now also records the
+  trailer spelling rule: path bare and unbackticked as the first token, one
+  trailer per path, because a backticked path degrades a scoped marker into a
+  blanket approval.
+- **`CLAUDE.md`'s `make gate` ordering claim corrected** — `gate` does not run
+  in CI's order; the `lint` job runs `frontmatter` before
+  `typecheck`/`lint-imports` and `gate` runs it after.
+
 ### Added — supply-chain and acceptance guards (analysis 2026-09-19)
 
 Four unguarded surfaces closed, all additive and default-identical. Each was a

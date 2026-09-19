@@ -42,7 +42,9 @@ whole pipeline (validate-config, lint, format-check, typecheck, lint-imports,
 frontmatter,
 protected-paths, test, per-package coverage, bridge coverage, contracts
 coverage, scripts coverage)
-in CI's order — note `protected-paths` runs locally too, not only in CI; `make help` lists the rest. Prefer it
+in `gate`'s own order — which is **not** CI's: the `lint` job runs `frontmatter`
+before `typecheck`/`lint-imports`, `gate` runs it after. Note `protected-paths`
+runs locally too, not only in CI; `make help` lists the rest. Prefer it
 over retyping paths: CI's lint surface is
 `src tests scripts eval_harness_bridge/src mango-integration-contracts/src`, which is wider than the
 `src tests` shown above.
@@ -466,10 +468,18 @@ when". Name them directly:
 its boundary, its invariants, and the shape of its output. An agent reaches for
 a skill for the how; a skill never delegates to an agent.
 
-Four agents own a **protected path** (`mango-error-taxonomy-dev`,
-`mango-orchestrator-dev`, `mango-schema-evolution`, `mango-hypothesis-fuzz`)
+Five agents own a **protected path** (`mango-error-taxonomy-dev`,
+`mango-orchestrator-dev`, `mango-schema-evolution`, `mango-hypothesis-fuzz`,
+`mango-harness-dev`)
 and say so in their bodies: those edits need a `BREAKING-CHANGE` commit
 trailer, and the `PreToolUse` hook that warns about it is advisory only.
+
+Write that trailer as `BREAKING-CHANGE: <path> — <rationale>` with the path
+**bare and unbackticked, as the first token**, one trailer per path.
+`find_marker_scopes` scopes a marker only on an exact match against the
+protected set; a backticked path, a typo, or a comma-joined list falls through
+to an *unscoped* marker, which approves every touched protected path rather
+than the one it names.
 
 To disable agent delegation project-wide, add `Agent` to `permissions.deny` in
 `.claude/settings.json`; for yourself only, use your gitignored

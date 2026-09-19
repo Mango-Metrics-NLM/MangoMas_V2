@@ -11,7 +11,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 - **Python 3.11+** — `from __future__ import annotations` in every `.py` file
 - **Pydantic v2** — use `model_validate_json`, `model_dump_json`, `model_json_schema()`; never `.dict()` or `.parse_obj()`
 - **FastAPI 0.115+** — lifespan context manager; dependency injection via `Annotated[]`
-- **ruff** strict: `select = ["E","F","I","B","UP","SIM","PL","RUF","S","SLF","ARG"]`, `ignore = ["PLR0913"]`
+- **ruff** strict — the selected families and their ignores are declared in `pyproject.toml`'s `[tool.ruff.lint]`; run `make lint`. (Not restated here: this line listed 11 families while the config selected 20, and a copy of a machine-readable table drifts the moment the table moves.)
 - **mypy strict=true** — no `type: ignore` without a justification comment
 - **pytest-asyncio `asyncio_mode="auto"`** — `async def` tests, no `@pytest.mark.asyncio` decorator
 
@@ -24,7 +24,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 - Cross-layer imports go inside `if TYPE_CHECKING:` blocks
 - New adapters must satisfy the relevant `Protocol` in `adapters/*/base.py`
 - New agents must satisfy `Agent` in `core/agent.py` and be registered in `composition/`
-- All tunables in `Settings` (`config.py`) — no hard-coded URLs, model names, or limits
+- All tunables in `Settings` (the `config/` package) — no hard-coded URLs, model names, or limits
 - `asyncio.to_thread` for any synchronous I/O inside async functions
 - OpenTelemetry spans via `get_tracer(__name__).start_as_current_span("...")`
 

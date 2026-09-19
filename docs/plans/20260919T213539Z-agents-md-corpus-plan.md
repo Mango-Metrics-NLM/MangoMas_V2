@@ -17,6 +17,28 @@
   **withdrawn**; nothing here reverses it.
 - **Source:** [`docs/analysis/20260919-agents-md-corpus-peer-review.md`](../analysis/20260919-agents-md-corpus-peer-review.md)
   (10 probes, 3 specialist reviews, suite executed: 3029 passed / 66 skipped)
+
+## Status — 2026-09-19
+
+**PR 1 delivered in full (M1.1–M1.4).** `3040 passed, 66 skipped` (was 3029 —
+11 new tests); `make coverage` all floors met; `make lint`, `ruff format
+--check`, `mypy --strict` (455 files), `make lint-imports` (2 contracts kept),
+`make frontmatter`, `make validate-config`, `make scripts-coverage` (96 %,
+unchanged), `make bridge-coverage` and `make contracts-coverage` (both 100 %)
+all green.
+
+Two deviations from this plan as written, both recorded in the milestones
+below rather than quietly absorbed:
+
+1. **M1.1's stated failing test was false.** The full-path ledger entry would
+   have gone straight to green. The real guard is a new bare-basename check.
+2. **M1.3's "no fallout" was wrong.** It reddened the corpus-count guard, which
+   is the coupling the peer review predicted.
+
+Scope also grew by one defect (`docs/workflow/graphs.md`), found only because
+the live-doc denominator was widened from a hand-typed list to a derived one.
+
+**PR 2 and PR 3 not started.**
 - **Relationship to the plan of record:**
   [`20260916T214636Z-reliability-evidence-plan.md`](20260916T214636Z-reliability-evidence-plan.md)
   is unchanged and remains the spine. **PR 2 below *is* its PR F** — pass 1
@@ -85,25 +107,41 @@ rejected, not the file count.
 Depends on nothing. Parallel-safe with everything. **Land first**: it proves
 the guard argument on real specimens instead of asserting it.
 
-### M1.1 — the two live defects
+### M1.1 — the live defects ✅
 
-- **Failing test first:** add `"src/mangomas/config.py"` to `_VANISHED_PATHS`
-  in `tests/tooling/test_live_path_ledger.py`. It goes **red immediately** —
-  `.github/copilot-instructions.md:27` names `` `config.py` ``, deleted in
-  `e2c177b` (*"decompose config.py into a domain package behind a permanent
-  facade"*), the same ADR-0019 wave that produced the two paths already in that
-  tuple. The file is already in `_LIVE_FILES` (`:24`); only the ledger entry
-  was missing.
+- **Correction to this plan, made during implementation.** The milestone
+  originally read: *"add `src/mangomas/config.py` to `_VANISHED_PATHS`; it goes
+  red immediately."* **That was false.**
+  `test_live_docs_do_not_cite_vanished_module_files` substring-matches the
+  **full path**, and no live doc cites it — verified by grep before writing any
+  code. The edit goes straight to green and proves nothing. That is the same
+  vacuous-proof failure this plan criticises in pass 1's mutation block, and it
+  is recorded here rather than silently replaced.
+- **Failing test first (actual):**
+  `test_live_docs_do_not_cite_a_vanished_basename` — a new guard on the
+  citation shape docs really use, the **bare basename**. Went red on two real
+  defects on first run, naming `doc:line` and the remedy.
 - **Depends on:** nothing.
-- Fix `.github/copilot-instructions.md:27` to name `config/`.
-- Fix `.github/copilot-instructions.md:14`: it states ruff's `select` as eleven
-  families; `pyproject.toml`'s `[tool.ruff.lint]` selects **twenty** (the
-  spec-0020 R4 ratchet added `LOG, G, ASYNC, ERA, DTZ, TID, C4, PTH, T20`).
-- Fix `CLAUDE.md`'s claim that `make gate` runs "in CI's order". It does not:
-  `gate` is `… typecheck lint-imports frontmatter protected-paths …`; CI's
-  `lint` job is `… format-check, frontmatter, typecheck, lint-imports`.
+- **Why basename existence is the wrong check:** `tests/constants/config.py`
+  exists, so "does a file with this name exist anywhere?" **passes** on the
+  very citation that is wrong. Vanished-ness is the signal, not resolvability.
+- Defects fixed: `.github/copilot-instructions.md:27` (`config.py` →
+  `config/`); `docs/workflow/graphs.md:154`, found only once the denominator
+  widened (bare `composition.py`, plus `api/app.py::_ERROR_STATUS` → the
+  canonical `api/errors.py::_ERROR_STATUS`); `CLAUDE.md`'s "in CI's order"
+  claim, which is wrong in both directions.
+- `.github/copilot-instructions.md:14` stated ruff's `select` as eleven
+  families against a real twenty. **Fixed by deleting the restatement, not by
+  re-syncing it** — a hand-copied mirror of a machine-readable table drifts the
+  moment the table moves, which is exactly how this defect was born. The line
+  now points at `[tool.ruff.lint]`.
+- **Scope grew, honestly:** four narrative citations
+  (`mango-layering-auditor.md`, `mango-decompose/SKILL.md` ×3) are legitimate —
+  they say "that file no longer exists" / "the former `composition.py`
+  module" — and are carried as (doc, module)-scoped `narrative_exemptions`,
+  each of which must stay *earned* (below).
 
-### M1.2 — the reverse-direction defaults guard
+### M1.2 — the reverse-direction defaults guard ✅
 
 - **Failing test first:** `tests/deploy/test_env_example_contract.py::
   test_every_settings_default_is_documented_somewhere` — the reverse of
@@ -122,22 +160,30 @@ the guard argument on real specimens instead of asserting it.
 - Correct the assertion message at `:190`, which says "config tables" for a
   whole-file check.
 
-### M1.3 — repair the two corpus-constant gaps
+### M1.3 — repair the two corpus-constant gaps ✅
 
 - **Failing test first:** add `mango-harness-dev` to
-  `PROTECTED_PATH_OWNER_SLUGS` (`tests/constants/corpus.py:409-418`). It
-  declares ownership of four protected paths and is absent;
-  `test_protected_path_owners_point_at_the_governance_skill` passes once added,
-  because `.claude/agents/mango-harness-dev.md:12` already names the skill. One
-  line, no fallout — but it must precede any extension of that test.
+  `PROTECTED_PATH_OWNER_SLUGS` (`tests/constants/corpus.py`). It declares
+  ownership of four protected paths and was absent, so the roster the trailer
+  test walks was a strict subset of the agents that need the trailer.
 - **Depends on:** nothing.
+- **Correction: "one line, no fallout" was wrong.** The edit turned
+  `test_prose_corpus_counts_match_the_live_corpus` red —
+  `CLAUDE.md` said *"Four agents own a protected path"* and the tree now has
+  five. The count guard did its job; the prose was updated with it. This is the
+  `LIVE_CORPUS_COUNT_DOCS` coupling the peer review flagged (F13/N5), hit in
+  practice on the first milestone that touched a roster.
+- While in that prose, added the **trailer spelling rule** to `CLAUDE.md`:
+  path bare and unbackticked as the first token, one trailer per path. G3
+  measured that a backticked path silently degrades a scoped marker into a
+  blanket approval, and every path in these documents is backticked.
 - Correct the stale governance claim at `tests/constants/corpus.py:645-647`
   ("nothing here stops a `Bash` heredoc or `>` redirect"): redirections and
   recognised Bash file commands **are** covered by the deny rule today. The
   residual gap is an arbitrary subprocess (a Python one-liner), which is what
   the comment should say.
 
-### M1.4 — extend the path guard to inline backticks
+### M1.4 — extend the path guard to inline backticks ✅
 
 - **Failing test first:** extend `tests/tooling/test_doc_links.py` with a
   backtick scanner. `_MD_LINK_RE` (`:50`) matches only `[text](target)`, so

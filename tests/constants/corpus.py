@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 # ── Harness frontmatter linter fixtures ───────────────────────────────────────
 VALID_AGENT_FRONTMATTER: str = """\
@@ -219,6 +220,98 @@ CORPUS_DOC_RELPATHS: tuple[str, ...] = (
     "src/mangomas/core/CLAUDE.md",
 )
 
+
+# ── Vanished module ledger (ADR-0019 decompositions) ──────────────────────────
+# A module that became a package leaves two citation shapes behind, and the
+# original ledger only caught one. `src/mangomas/composition.py` is the *full
+# path* form; `composition.py` is the *bare basename* form — and the bare form
+# is the one live docs actually use, so it went uncaught for both recorded
+# decompositions. Basename existence is not the test: `tests/constants/config.py`
+# exists, so "does a file with this name exist?" passes on the very citation
+# that is wrong. Vanished-ness is the signal, not resolvability.
+@dataclass(frozen=True)
+class VanishedModule:
+    """A module file that ADR-0019 replaced with a package of the same name."""
+
+    path: str
+    """Repo-relative path the module used to occupy."""
+
+    replacement: str
+    """Package that replaced it, quoted back in failure messages as the remedy."""
+
+    narrative_exemptions: frozenset[str] = frozenset()
+    """Docs allowed to name :attr:`basename`, because they narrate the
+    decomposition itself ("the former ``composition.py`` module"). Scoped to a
+    (doc, module) pair rather than a whole doc, so narrating one retirement
+    never licenses a stale citation of another."""
+
+    @property
+    def basename(self) -> str:
+        """Derived, never stored — one source of truth per fact."""
+        return self.path.rsplit("/", 1)[-1]
+
+
+VANISHED_MODULES: tuple[VanishedModule, ...] = (
+    VanishedModule(
+        path="src/mangomas/composition.py",
+        replacement="src/mangomas/composition/",
+        narrative_exemptions=frozenset(
+            {
+                # "…grep by filename `composition.py` — that file no longer exists"
+                ".claude/agents/mango-layering-auditor.md",
+                # "the former `composition.py` module → `composition/`"
+                ".claude/skills/mango-decompose/SKILL.md",
+            }
+        ),
+    ),
+    VanishedModule(
+        path="src/mangomas/api/middleware.py",
+        replacement="src/mangomas/api/middleware/",
+    ),
+    VanishedModule(
+        path="src/mangomas/config.py",
+        replacement="src/mangomas/config/",
+        narrative_exemptions=frozenset(
+            {
+                # "`cli/main.py` → `cli/`, `config.py` → `config/`"
+                ".claude/skills/mango-decompose/SKILL.md",
+            }
+        ),
+    ),
+)
+
+# Back-compatible projection of the ledger. The original tuple is still the
+# parametrize argument for the full-path test, and its ids are the path
+# strings, so deriving it keeps that test and its ids byte-identical while the
+# records gain fields — the additive-facade discipline ADR-0019 applies to
+# source, applied to a test constant.
+VANISHED_PATHS: tuple[str, ...] = tuple(module.path for module in VANISHED_MODULES)
+
+
+# ── Live-doc denominator ──────────────────────────────────────────────────────
+# What "a doc a contributor or agent reads as current truth" means, as a rule
+# rather than a hand-typed file list. The previous hand-typed list omitted
+# `docs/workflow/graphs.md`, which is exactly where a stale `composition.py`
+# citation survived. Dated records are excluded because they are correct as of
+# their date and rewriting them to satisfy a linter would falsify the record.
+DATED_RECORD_DIRS: frozenset[str] = frozenset({"docs/adr", "docs/analysis", "docs/plans", "specs"})
+DATED_RECORD_FILES: frozenset[str] = frozenset({"CHANGELOG.md", "NEXT_STEPS.md"})
+# Live docs outside `docs/`, named individually because their directories hold
+# far more than prose.
+LIVE_DOC_ROOT_RELPATHS: tuple[str, ...] = (
+    ".github/copilot-instructions.md",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "README.md",
+)
+# Globs whose every match is live prose. `docs/**/*.md` is filtered by
+# DATED_RECORD_DIRS above.
+LIVE_DOC_GLOBS: tuple[str, ...] = (
+    "docs/**/*.md",
+    ".claude/agents/mango-*.md",
+    ".claude/skills/*/SKILL.md",
+)
+
 # Hooks that predate the ecosystem-tooling integration, as
 # ``(event, matcher, command)``. Every `.claude/settings.json` edit must be
 # additive, so the contract test asserts each of these survives verbatim —
@@ -414,6 +507,11 @@ PROTECTED_PATH_OWNER_SLUGS: frozenset[str] = frozenset(
         "mango-orchestrator-dev",
         "mango-schema-evolution",
         "mango-hypothesis-fuzz",
+        # Owns four protected paths (pyproject.toml, scripts/_governance.py,
+        # scripts/check_protected_paths.py, src/mangomas/harness/governance.py)
+        # and was missing here, so the roster the trailer test walks was a
+        # strict subset of the agents that actually need the trailer.
+        "mango-harness-dev",
     }
 )
 # The description is the entire routing surface and loads at every session
@@ -643,8 +741,12 @@ EXPECTED_DENY_RULES: frozenset[str] = frozenset(
 # reads like a live one — the same defect class as the interior-`*` Bash rule).
 MCP_DENY_RULE_PREFIX: str = "mcp__"
 # Deny rules Claude Code consults for a *file write*. `Edit(...)` covers Edit,
-# Write and NotebookEdit; nothing here stops a `Bash` heredoc or `>` redirect,
-# so these rules are cheap and partial rather than airtight.
+# Write and NotebookEdit, and Claude Code also matches recognised Bash file
+# commands (`cat`, `head`, `tail`, `sed`, `tee`) and `>` redirection targets
+# against it. The residual gap is an *arbitrary subprocess* that opens the file
+# itself — a Python or Node one-liner — so these rules are strong on the paths
+# Claude Code can see and silent on the ones it cannot. Partial by construction,
+# which is why the authoritative control is the CI gate, not this table.
 PATH_SCOPED_DENY_RULE_PREFIX: str = "Edit("
 # A leading `/` anchors a rule at the settings file's directory (the project
 # root). Without it the rule is cwd-relative and silently stops matching when
