@@ -15,6 +15,7 @@ import typer
 
 from mangomas.cli import _runtime
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
+from mangomas.composition.agents import STRUCTURED_AGENT_FIELDS
 from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
 from mangomas.errors import MangomasError
@@ -48,7 +49,7 @@ def _resolve_workflow_source(definition: str | None) -> str:
 def _load_workflow_or_exit(source: str) -> WorkflowGraph:
     """Parse *source* into a graph, mapping a config error to ``Exit(2)``."""
     try:
-        return load_workflow(source)
+        return load_workflow(source, structured_agents=STRUCTURED_AGENT_FIELDS)
     except MangomasError as exc:
         typer.echo(f"Workflow configuration error: {exc}", err=True)
         raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc

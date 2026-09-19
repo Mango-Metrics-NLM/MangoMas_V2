@@ -48,6 +48,16 @@ from mangomas.composition._registries import (
     llm_registry as llm_registry,
 )
 
+# The built-in agent table and the structured-agent schema map derived from it.
+# Re-exported here per ADR-0019's facade contract; ``STRUCTURED_AGENT_FIELDS`` is
+# what callers pass to ``load_workflow(structured_agents=...)``.
+from mangomas.composition.agents import (
+    DEFAULT_AGENTS as DEFAULT_AGENTS,
+)
+from mangomas.composition.agents import (
+    STRUCTURED_AGENT_FIELDS as STRUCTURED_AGENT_FIELDS,
+)
+
 # Public API (main functions)
 from mangomas.composition.builder import build_orchestrator as build_orchestrator
 
@@ -120,6 +130,8 @@ from mangomas.composition.vector import (
 from mangomas.secrets import secrets_registry as secrets_registry
 
 __all__ = [
+    "DEFAULT_AGENTS",
+    "STRUCTURED_AGENT_FIELDS",
     "AgentFactory",
     "VertexClient",
     "_AgentLLMOverrideCloseMixin",

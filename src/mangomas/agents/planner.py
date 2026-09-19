@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -40,9 +40,14 @@ class PlannerAgent(StructuredOutputAgent):
     that validation itself and reject malformed output.
     """
 
+    #: Declared on the class so a workflow graph's acceptance predicate can be
+    #: validated against this schema at load time without constructing an agent
+    #: (see ``mangomas.workflow.validation``).
+    schema: ClassVar[type[BaseModel]] = ExecutionPlan
+
     def __init__(
         self,
         system_prompt: str | None = None,
         settings: AgentSettings | None = None,
     ) -> None:
-        super().__init__(ExecutionPlan, "planner", system_prompt, settings)
+        super().__init__(type(self).schema, "planner", system_prompt, settings)

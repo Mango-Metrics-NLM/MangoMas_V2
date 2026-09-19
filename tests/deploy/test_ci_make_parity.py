@@ -195,6 +195,43 @@ def test_pip_audit_installs_a_pinned_tool_version_and_stays_out_of_gate() -> Non
     assert "pip-audit" not in _make_target_body("gate")
 
 
+def test_pip_audit_covers_both_the_installed_env_and_the_runtime_lockfile() -> None:
+    """The audit must scan both surfaces; neither subsumes the other.
+
+    The installed environment covers the dev pins and extras. The lockfile is
+    what the production image actually installs — the Dockerfile passes it as a
+    constraints file (`-c`), pinned by
+    `test_docker_build_context.py::test_runtime_wheel_install_is_constrained_by_the_lockfile`.
+    Auditing only the environment leaves the one artefact that reaches
+    production unscanned, which is what this repository shipped until now.
+
+    Same two-pass shape as `test_secret_scan_runs_both_gitleaks_passes` below.
+    """
+    body = _make_target_body("pip-audit")
+    assert "--skip-editable" in body, "installed-environment audit pass is missing"
+    assert "-r $(RUNTIME_LOCKFILE)" in body, (
+        "runtime-lockfile audit pass is missing — the production image installs "
+        "the lock, so dropping this pass stops scanning what actually ships"
+    )
+
+
+def test_runtime_lockfile_variable_names_the_file_the_dockerfile_uses() -> None:
+    """`RUNTIME_LOCKFILE` and the Dockerfile's `-c` must name the same file.
+
+    Without this the audit could point at a file the image does not install, and
+    both halves would still look green.
+    """
+    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    match = re.search(r"^RUNTIME_LOCKFILE\s*\?=\s*(\S+)", makefile, re.MULTILINE)
+    assert match is not None, "RUNTIME_LOCKFILE is no longer declared in the Makefile"
+    lockfile = match.group(1)
+    dockerfile = (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert f"-c /tmp/{lockfile}" in dockerfile, (
+        f"Makefile audits {lockfile!r} but the Dockerfile constrains on a "
+        f"different file — the audit would scan something the image never installs"
+    )
+
+
 def test_secret_scan_runs_both_gitleaks_passes() -> None:
     """The scan must cover the working tree AND committed history (spec-0022 R1).
 

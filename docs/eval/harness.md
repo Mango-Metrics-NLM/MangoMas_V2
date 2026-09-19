@@ -166,6 +166,37 @@ not clamped to `[0, 1]`. Non-finite values (`NaN`, infinities) are rejected
 at Settings, CLI, and scorer construction so a `NaN` cap cannot silently
 pass. The quality gate stays default-off.
 
+#### What the cost threshold measures — and what it cannot
+
+`mean_cost_usd` is **declared, not measured**. `Target.run` returns a `str`
+(`eval/target.py`), so the `AgentResponse` and its `metadata` are discarded at
+that boundary, and `ScorerContext.row_metadata` carries the **dataset row's**
+metadata instead. `cost_budget` therefore resolves its precedence — explicit
+`cost_usd` → token counts → output-character rate — against what the JSONL file
+declared, never against what the run consumed. No LLM adapter emits token usage
+at all today.
+
+Two consequences, both pinned by
+`tests/eval/test_cost_measurement_basis.py`:
+
+- With **no** declared counts, cost is `len(prediction)` × a rate. A
+  `mean_cost_usd` gate then fires when the model becomes **wordier**, and is
+  blind to a costlier model via `MODEL_OVERRIDE`, a price change per token, or
+  extra tool steps.
+- With declared counts — as in `tests/eval/fixtures/cost_controlled_v1.jsonl` —
+  the figure is a **fixed budget cohort**, which is what makes it useful for
+  comparing targets (`echo` / `agent` / `pipeline`) at equal declared cost. It is
+  still a property of the dataset, not of the run.
+
+So gate `mean_cost_usd` only over a declared-cost dataset, and say so wherever
+the threshold is published. Making cost *measured* requires a channel for
+response metadata through the `Target` seam plus adapter token telemetry; that is
+an open decision (D15 in
+`docs/analysis/20260919-council-rejection-and-replan.md`), not a present
+capability. `estimate_cost_usd` already returns which tier it used (`explicit` /
+`tokens` / `output_chars`) in the scorer's row metadata — read it when a figure
+needs interpreting.
+
 ### Regression gating (baseline diff)
 
 Beyond absolute thresholds, the gate can compare a run against a **baseline** — a

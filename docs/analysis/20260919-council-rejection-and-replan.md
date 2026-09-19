@@ -240,16 +240,38 @@ So the eight entries under the mypy hook
 (`.pre-commit-config.yaml:29-36`: `fastapi>=0.115`, `pydantic>=2.7`,
 `pydantic-settings>=2.3`, `httpx>=0.27`, `opentelemetry-api>=1.25`,
 `opentelemetry-sdk>=1.25`, `typer>=0.12`, `starlette>=0.40`) are free to drift
-from `pyproject.toml`'s runtime ranges, and **four open Dependabot PRs each
-widen the gap**: merging `dependabot/pre_commit/starlette-1.6.0` makes local
-pre-commit typecheck `src/` against starlette 1.6 while the application resolves
-starlette transitively through `fastapi>=0.115` (which caps it well below 1.0).
-The hook's own comment claims the list "covers exactly the runtime deps" —
-that is the assertion with no mechanism behind it.
+from `pyproject.toml`'s runtime ranges. The hook's own comment claims the list
+"covers exactly the runtime deps" — that is the assertion with no mechanism
+behind it. The consequence is the one the parity test's docstring already
+describes, one level down: a contributor's pre-commit and CI disagree, and it
+surfaces as a type error nobody else can reproduce.
 
-The consequence is the one the parity test's docstring already describes, one
-level down: a contributor's pre-commit and CI disagree, and it surfaces as a
-type error nobody else can reproduce.
+**Correction to this finding's first pass.** [Certain] The first pass said the
+four open `dependabot/pre_commit/*` PRs "each widen the gap", and reasoned that
+`starlette>=1.6.0` in the hook would typecheck against a major the application
+does not run because `fastapi>=0.115` caps starlette below 1.0. Measured against
+the tree, that is wrong in both halves. `requirements.lock` — what the runtime
+image installs — already pins `fastapi==0.141.1`, `httpx==0.28.1`,
+`starlette==1.6.0` and `typer==0.27.1`. Every current hook floor *admits* its
+locked version, and seven of the eight entries match pyproject's specifier
+exactly. So the tree is consistent today, and those PRs would raise the floors
+*towards* what ships, not away from it.
+
+The finding survives because nothing enforces any of it. What changes is the
+failure direction, and it is worth stating precisely because it decides how the
+queue is drained: under the guard implemented in PR B, `starlette-1.6.0` is
+**mergeable** (transitive-only, and its floor admits the locked version), while
+`fastapi-0.141.1`, `httpx-0.28.1` and `typer-0.27.2` each **require a paired
+`pyproject.toml` range bump**, because a direct entry must match the declared
+range rather than merely admit the locked version. Verified by running the
+implemented guard against each branch's actual `.pre-commit-config.yaml`:
+
+```
+starlette-1.6.0    -> clean (mergeable)
+fastapi-0.141.1    -> CAUGHT: hook says '>=0.141.1', pyproject declares '>=0.115'
+httpx-0.28.1       -> CAUGHT: hook says '>=0.28.1',  pyproject declares '>=0.27'
+typer-0.27.2       -> CAUGHT: hook says '>=0.27.2',  pyproject declares '>=0.12'
+```
 
 ### N2 — `requirements.lock` is unmanaged and unaudited, and a passing test implies otherwise · High
 

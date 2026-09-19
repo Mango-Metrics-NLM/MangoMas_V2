@@ -7,7 +7,7 @@
   record's B1, which analysis §N4 shows is not implementable as written — and
   PR D (cost honesty) is new.
 - **Target release:** rolling; PR E is a precondition for the v0.4.0 cut (D12)
-- **Status:** Draft
+- **Status:** In progress — PRs A, B0, C and D0 delivered; B1, D1a/D1b and PR E blocked (see Status below)
 - **Specs:** none written yet, and deliberately **unnumbered**. Each PR block
   names the spec it needs by slug; the spec lands before that block's code, per
   `CLAUDE.md` § Spec-Driven Development, and takes the next free integer **at
@@ -25,6 +25,39 @@
   not cover, plus the two corrections analysis §5 records against it (B1 is not
   implementable as written; PR C must settle cost semantics before setting a
   threshold).
+
+## Status — 2026-09-19
+
+**Delivered:** PR A in full (A0–A2), PR B milestone B0, PR C in full (C0–C3),
+PR D milestone D0. `make gate` green at the end (exit 0): **3014 passed, 66
+skipped**, every coverage floor met, and the four new/changed source modules at
+**100 %** line and branch coverage.
+
+**Outstanding, and why:**
+
+- **B1 (drain the Dependabot queue)** — not started. It is PR-management work
+  against GitHub, and the `github` MCP server was unavailable for most of this
+  session. B0 landed first, which was the ordering constraint that mattered:
+  the guard is now in place before any of those PRs can merge.
+- **D1a / D1b (cost semantics)** — blocked on **D15**, as planned. D0 landed and
+  is what makes that decision informed.
+- **PR E (release reconciliation)** — blocked on **D10/D11/D12**, all sponsor
+  decisions requiring repository-admin actions no file in this repo can express.
+
+**Two deviations from the plan as written**, both taken deliberately and both
+recorded in the milestones below:
+
+1. **C1/C2 apply to `loop.accept` only, not to `branch.when`.** The plan said to
+   walk both. That is wrong: `BranchNodeExecutor` evaluates `when` against the
+   node's *input* content, so there is no agent whose schema it could be bound
+   to. Guessing the upstream producer would produce false refusals.
+2. **C3 adds a second example rather than changing the shipped one.** The plan
+   said to wrap `plan-execute-review.json`'s reviewer step in a loop. Its
+   all-`agent` shape is the `dispatch_pipeline` parity proof that four suites
+   depend on, two of them gated and unrunnable here, so changing it would
+   destroy a real demonstration to make a point better made additively.
+
+---
 
 ## Executive summary
 
@@ -53,7 +86,7 @@ referenced nowhere in CI or the `Makefile`. See analysis §N2.
 **Blocked on D13** for the rename half only. A0–A2 are correct under either
 disposition and need no decision.
 
-### Milestone A0 — the lock must match pyproject
+### Milestone A0 — the lock must match pyproject ✅
 
 - **Failing test first:** `tests/deploy/test_lockfile_freshness.py::test_every_runtime_distribution_is_pinned_in_the_lockfile`
   — parse `[project].dependencies` names, assert each appears as an `==` pin in
@@ -72,7 +105,7 @@ disposition and need no decision.
   `uvicorn[standard]` resolves to `uvicorn` plus its closure. Assert the base
   name and say so in the docstring.
 
-### Milestone A1 — audit what ships, not only what resolves
+### Milestone A1 — audit what ships, not only what resolves ✅
 
 - **Failing test first:** `tests/deploy/test_ci_make_parity.py::test_pip_audit_covers_the_runtime_lockfile`
   — the `pip-audit` target must name `requirements.lock`. Red today.
@@ -91,7 +124,7 @@ disposition and need no decision.
   failure of the milestone. Fix by regenerating the lock, never by narrowing the
   audit.
 
-### Milestone A2 — correct the claim the test makes
+### Milestone A2 — correct the claim the test makes ✅
 
 - **Failing test first:** none. This is a docstring and comment correction, and
   a test asserting a docstring's wording would be the same defect in a new
@@ -119,7 +152,7 @@ drift. See analysis §N1.
 **Hard ordering constraint: B0 lands before B1.** Reversed, the four
 `dependabot/pre_commit/*` PRs merge clean and the guard arrives red behind them.
 
-### Milestone B0 — the hook's dependency floors must not exceed runtime's
+### Milestone B0 — the hook's dependency floors must not exceed runtime's ✅
 
 - **Failing test first:** `tests/tooling/test_toolchain_pin_parity.py::test_mypy_hook_dependencies_agree_with_runtime_ranges`
   — for each `additional_dependencies` entry naming a distribution in
@@ -177,7 +210,7 @@ the predicate compiles from pure data at load time with no agent instance, no
 schema, and — under the `workflow`/`eval`/`rag`/`cognitive` independence
 contract — no business importing `agents/`.
 
-### Milestone C0 — make the structured-agent set derivable, not restated
+### Milestone C0 — make the structured-agent set derivable, not restated ✅
 
 - **Failing test first:** `tests/composition/test_agents.py::test_structured_agent_names_are_derived_from_the_registration_table`
   — a sixth agent added to the table that subclasses `StructuredOutputAgent`
@@ -207,7 +240,7 @@ contract — no business importing `agents/`.
   registered after composition and are not in the table, so a discovered
   structured agent gets no guard. Record it rather than implying coverage.
 
-### Milestone C1 — refuse a text predicate over a structured agent
+### Milestone C1 — refuse a text predicate over a structured agent ✅
 
 - **Failing test first:** `tests/test_workflow_loader.py::test_text_predicate_over_a_structured_agent_is_refused`
   — a `loop` over `reviewer` with `{"kind":"contains","value":"approved"}` must
@@ -234,7 +267,7 @@ contract — no business importing `agents/`.
   (`api/routes/workflows.py:40-51`). That is where an external caller can post a
   loop that accepts on a substring, so the route must pass the set.
 
-### Milestone C2 — refuse a `json_field` path that cannot resolve
+### Milestone C2 — refuse a `json_field` path that cannot resolve ✅
 
 - **Failing test first:** `tests/test_workflow_loader.py::test_json_field_path_absent_from_the_agent_schema_is_refused`
   — `field: "pased"` over `reviewer` must raise `ConfigError`. Probed loading
@@ -253,7 +286,7 @@ contract — no business importing `agents/`.
   non-convergence keeps surfacing as `MaxStepsExceeded`. The new refusal is
   load-time only.
 
-### Milestone C3 — make the shipped example demonstrate the pattern
+### Milestone C3 — make the shipped example demonstrate the pattern ✅
 
 - **Failing test first:** `tests/test_run_workflow_e2e.py::test_shipped_example_graph_gates_on_a_parsed_field`
   — assert the example carries a `json_field` acceptance. Red today:
@@ -281,7 +314,7 @@ analysis §N3.
 **Blocked on D15** for the choice between D1a and D1b. D0 is correct either way
 and is what makes the choice informed.
 
-### Milestone D0 — pin the current semantics before changing anything
+### Milestone D0 — pin the current semantics before changing anything ✅
 
 - **Failing test first:** `tests/eval/test_cost_budget.py::test_cost_is_blind_to_model_and_token_price_changes`
   — a row with no declared token counts must produce the **same**

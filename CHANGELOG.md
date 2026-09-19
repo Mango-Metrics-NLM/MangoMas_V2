@@ -9,6 +9,79 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — supply-chain and acceptance guards (analysis 2026-09-19)
+
+Four unguarded surfaces closed, all additive and default-identical. Each was a
+constraint the repository asserted in prose or a comment while nothing mechanised
+it — the spec-0022 R15 pattern. Source:
+`docs/analysis/20260919-council-rejection-and-replan.md`; plan:
+`docs/plans/20260919T000000Z-toolchain-and-acceptance-parity-plan.md`.
+
+- **Lockfile freshness gate** (`tests/deploy/test_lockfile_freshness.py`). Every
+  `[project].dependencies` distribution must appear as an `==` pin in
+  `requirements.lock` — the constraints file the runtime image installs through
+  (`Dockerfile`'s `-c`). Constraints pin without adding, so a runtime dependency
+  added without regenerating the lock used to float silently while everything
+  around it stayed reproducible. PEP 503 name normalisation, names not
+  specifiers, `--strip-extras` aware, with two-sided mutation proofs.
+- **`make pip-audit` now scans the lockfile too**, as a second pass beside the
+  installed-environment audit; `RUNTIME_LOCKFILE` names the file once. The prior
+  comment justified auditing only the environment as "what the runtime wheel
+  resolves against" — that premise was wrong (the Dockerfile constrains on the
+  lock), so the artefact that reaches production was the one surface nothing
+  scanned. Both passes are kept: the environment covers dev pins and extras.
+- **mypy hook dependency parity** (`tests/tooling/test_toolchain_pin_parity.py`).
+  The hook's eight `additional_dependencies` claimed to "cover exactly the
+  runtime deps" and neither existing parity test read them. Direct entries must
+  now match pyproject's specifier exactly; a transitive-only entry (`starlette`)
+  must admit the locked version. Validated against the four open Dependabot
+  `pre_commit` branches: three correctly require a paired pyproject change, one
+  is genuinely safe.
+- **Structured-acceptance validation** (`src/mangomas/workflow/validation.py`).
+  A `loop` over a structured agent may no longer accept on a text predicate — the
+  spec-0032 false positive, where `contains: approved` terminates on a *rejecting*
+  review whose prose carries the word — and a `json_field` path must address a
+  field the agent's schema actually has, since a misspelled path compiled to a
+  closure that could never accept and made a typo indistinguishable from a
+  non-converging model. Reported together, as `ConfigError` at the existing loader
+  boundary (400 / exit 2, no error-table or DTO change).
+
+- `mangomas.workflow.graph.iter_nodes` — reusable depth-first static walk over a
+  graph, needed because `fan_out` branches nest (ADR-0018) so a two-level loop
+  misses nodes.
+- `load_workflow(source, *, structured_agents=...)` — additive keyword-only
+  parameter carrying `{agent name: schema field names}`. Defaults to `None`, so
+  every existing caller and previously valid graph is unaffected; the three
+  in-repo call sites opt in.
+- `StructuredOutputAgent.schema` — `ClassVar` declared by `PlannerAgent` /
+  `ReviewerAgent`, so "which schema does this agent emit?" is answerable from the
+  class without constructing an agent.
+- `composition.agents.DEFAULT_AGENTS` / `STRUCTURED_AGENT_FIELDS` — the five
+  `register` calls became a table, and the structured-agent map is *derived* from
+  it, so a sixth structured agent is covered by adding one line. An agent that
+  subclasses `StructuredOutputAgent` without declaring `schema` now raises at
+  composition import rather than silently shipping without its guard.
+- `examples/workflows/plan-review-until-passed.json` — the acceptance-gated
+  sibling of `plan-execute-review.json`. The latter stays an all-`agent` sequence
+  because its equality with `dispatch_pipeline` is the parity proof four suites
+  depend on; the new graph is where the `json_field` pattern the docs recommend is
+  actually demonstrated.
+- `mangomas.workflow.predicate` now exports `TEXT_MATCH_KINDS`,
+  `KIND_JSON_FIELD` and `FIELD_PATH_SEPARATOR`, so a consumer cannot restate the
+  predicate vocabulary and drift from the compiler.
+
+### Documented — what `mean_cost_usd` measures
+
+`mean_cost_usd` is **declared, not measured**: `Target.run` returns a `str`, so
+`AgentResponse.metadata` is discarded and `ScorerContext.row_metadata` carries the
+*dataset's* metadata. A cost gate therefore fires on verbosity and is blind to a
+`MODEL_OVERRIDE` swap, a per-token price change, or extra tool steps; no adapter
+emits token usage. Pinned by `tests/eval/test_cost_measurement_basis.py` and
+written up in `docs/eval/harness.md` plus the `mango-eval` skill. The design is
+deliberate (`cost_controlled_v1.jsonl` declares a fixed budget cohort) — the gap
+was that nothing said so, so a threshold could be published over a number that
+does not mean what its name says. Whether to measure cost for real is D15.
+
 ### Fixed
 
 - **RAG pipeline POSIX path mismatch on Windows** (`test_pipeline.py:168`).

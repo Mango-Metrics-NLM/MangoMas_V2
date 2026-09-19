@@ -8,8 +8,18 @@ updates:
     schedule:
       interval: monthly
   # Python dependencies (supply-chain baseline, roadmap item 0.3): covers
-  # pyproject.toml's version ranges and the requirements.lock pins the
-  # Dockerfile consumes as a constraints file.
+  # pyproject.toml's version ranges.
+  #
+  # It does NOT cover requirements.lock, despite that file being what the
+  # runtime image installs (Dockerfile's `-c`). Dependabot's pip ecosystem reads
+  # the manifests it recognises — requirements.txt, requirements/*.txt,
+  # pyproject.toml, setup.py, Pipfile, poetry.lock — and `requirements.lock` is
+  # not one of them; its single-commit history under this configured ecosystem
+  # is the evidence. The lock is kept honest by mechanism instead:
+  # tests/deploy/test_lockfile_freshness.py fails when pyproject grows a runtime
+  # dependency the lock does not pin, and `make pip-audit`'s second pass scans
+  # the lock for CVEs. Renaming the file so Dependabot parses it is an open
+  # decision (D13 in docs/analysis/20260919-council-rejection-and-replan.md).
   - package-ecosystem: pip
     directory: /
     schedule:

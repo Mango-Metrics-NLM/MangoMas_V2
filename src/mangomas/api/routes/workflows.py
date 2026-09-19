@@ -18,6 +18,7 @@ from mangomas.api.models import (
     WorkflowValidateRequest,
     WorkflowValidateResponse,
 )
+from mangomas.composition.agents import STRUCTURED_AGENT_FIELDS
 from mangomas.config import get_settings
 from mangomas.core import AgentResponse
 from mangomas.workflow import execute_workflow, load_workflow, resolve_workflow_source
@@ -48,7 +49,7 @@ def build_workflow_router() -> APIRouter:
         """
         orch: Orchestrator = http_request.app.state.orchestrator
         source = resolve_workflow_source(body.definition, get_settings().workflow)
-        graph = load_workflow(source)
+        graph = load_workflow(source, structured_agents=STRUCTURED_AGENT_FIELDS)
         return await execute_workflow(graph, body.request, orch=orch)
 
     @router.post(
@@ -59,7 +60,7 @@ def build_workflow_router() -> APIRouter:
     async def workflow_validate(body: WorkflowValidateRequest) -> WorkflowValidateResponse:
         """Parse and validate a workflow graph without running it (no LLM I/O)."""
         source = resolve_workflow_source(body.definition, get_settings().workflow)
-        graph = load_workflow(source)
+        graph = load_workflow(source, structured_agents=STRUCTURED_AGENT_FIELDS)
         return WorkflowValidateResponse(name=graph.name, root_kind=graph.root.kind)
 
     return router
