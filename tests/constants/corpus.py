@@ -319,6 +319,54 @@ ROOT_INSTRUCTION_RELPATHS: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md")
 # The import that makes the pair one document. Asserted verbatim, because a
 # split whose halves never rejoin is worse than no split at all.
 AGENTS_MD_IMPORT_LINE: str = "@AGENTS.md"
+
+
+# ── Per-directory instruction documents ───────────────────────────────────────
+# Named CLAUDE.md, not AGENTS.md: measured in ADR-0035, a root CLAUDE.md (even a
+# one-line `@AGENTS.md` pointer) disables nested AGENTS.md discovery entirely,
+# so a nested file under that name would never load. Claude Code loads these on
+# demand when it reads a file in the directory, concatenated with the root pair.
+DIRECTORY_DOC_RELPATHS: tuple[str, ...] = (
+    "src/mangomas/adapters/CLAUDE.md",
+    "src/mangomas/api/CLAUDE.md",
+    "src/mangomas/composition/CLAUDE.md",
+    "src/mangomas/core/CLAUDE.md",
+    "tests/CLAUDE.md",
+)
+# The two that predate the section contract below. They are inventoried and
+# path-checked like the rest; their headings are not rewritten to match a
+# contract written after them, because both already work and a churn-for-
+# conformance edit buys nothing a reader can see.
+DIRECTORY_DOCS_PREDATING_THE_SECTION_CONTRACT: frozenset[str] = frozenset(
+    {"src/mangomas/core/CLAUDE.md", "tests/CLAUDE.md"}
+)
+# A SECOND vocabulary, deliberately. `AGENT_SECTION_HEADINGS` is pinned at nine
+# for `.claude/agents/mango-*.md`, with the recorded reason that "an ad-hoc name
+# is where a duplicated section hides". Widening that one shared frozenset to
+# admit `## Map` or `## Verify` would let an agent file carry them too and
+# defeat the guard. Two corpora, two vocabularies.
+DIRECTORY_DOC_SECTION_HEADINGS: tuple[str, ...] = (
+    "## Scope",
+    "## Map",
+    "## Owners",
+    "## Invariants",
+    "## Boundaries",
+    "## Verify",
+)
+# Budgets from the AGENTS.md practitioner guidance: agents act reliably on the
+# first ~150 lines. These are per-directory files, so the budget is generous.
+DIRECTORY_DOC_MAX_LINES: int = 150
+DIRECTORY_DOC_MAX_SECTION_LINES: int = 50
+# Phrases that mark a rule already mechanised somewhere else. Restating one in
+# a directory doc is how byte-identical prose spread across four agents before
+# `test_protected_path_governance_is_single_sourced` was written — and that
+# test globs `.claude/**/*.md`, so it cannot see a file under `src/`.
+# Prohibiting the phrase is far cheaper than a parity check, and it is the
+# mechanism this repo prefers over prose asking people to be careful.
+DIRECTORY_DOC_PROHIBITED_RESTATEMENTS: tuple[tuple[str, str], ...] = (
+    ("advisory only", "link .claude/skills/mango-harness/SKILL.md instead"),
+    ("text/event-stream", "the SSE wire format belongs to api/routes/agents.py"),
+)
 # Globs whose every match is live prose. `docs/**/*.md` is filtered by
 # DATED_RECORD_DIRS above.
 LIVE_DOC_GLOBS: tuple[str, ...] = (

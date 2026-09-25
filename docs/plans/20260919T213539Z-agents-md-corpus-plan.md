@@ -60,7 +60,35 @@ practice on the first move.
 Guards mutation-proved in eight directions (import line, dangling import,
 nested `AGENTS.md`, misplaced section — each red on mutation, green on restore).
 
-**PR 3 not started.**
+**PR 3 delivered in full (M3.0–M3.4).** `3091 passed, 66 skipped` (43 new
+tests); all coverage floors met; lint, format, `mypy --strict` (457 files),
+`make lint-imports` (2 contracts kept), `make frontmatter` and
+`make scripts-coverage` (96 %, unchanged — no script was added) green.
+
+Three files — `composition/`, `api/`, `adapters/` — each with a Mermaid map, an
+Owners table and one mechanically-checkable claim, all six claims
+mutation-proved in both directions. **M3.4's expansion gate has not been run**,
+so the tranche stays at three and the corpus stays closed.
+
+Four corrections found while implementing, each recorded rather than absorbed:
+
+1. **`ast.walk` is breadth-first.** The middleware check read walk order as
+   source order, which put conditional installs after top-level ones. It would
+   have pinned the documentation to a traversal artefact. Now sorted by line.
+2. **The Mermaid check was over-strict.** It required every node to exist *in*
+   the directory, which forbids drawing the neighbours a local map exists to
+   show. Relaxed to "this directory or one hop out", as § D3 always said.
+3. **A retired filename must not be required to resolve.**
+   `src/mangomas/core/CLAUDE.md` names `core/agent.md` to explain why an edit
+   there never needed a trailer. Requiring it to exist would demand the repo
+   restore the convention it deleted.
+4. **The three files were written by hand, not by their owning agents.** M3.1
+   planned to draft each via `mango-backend` / `mango-api-impl-dev` /
+   `mango-llm-adapter-dev` so the boundary text came from the agent that owns
+   the surface. All three terminated on a weekly API rate limit. The guards are
+   what make this recoverable — every factual claim in the three files is
+   machine-checked — but the *rationale* prose did not get its owner's review,
+   and that is exactly the residue § M3.3 records as unverifiable.
 - **Relationship to the plan of record:**
   [`20260916T214636Z-reliability-evidence-plan.md`](20260916T214636Z-reliability-evidence-plan.md)
   is unchanged and remains the spine. **PR 2 below *is* its PR F** — pass 1

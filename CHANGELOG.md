@@ -9,6 +9,44 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — per-directory instruction documents, each with a checkable claim
+
+Three new `CLAUDE.md` files (`composition/`, `api/`, `adapters/`), joining the
+two that already existed, each carrying a Mermaid map of its own directory, an
+Owners table naming the `mango-*` agent and skill that own the surface, and the
+boundaries an agent must not cross.
+
+The entry bar is **one mechanically-checkable semantic claim per file**, not
+"a directory exists". Five `agent.md` files were deleted from this tree once
+for the recorded reason that "a file nothing loads cannot be kept honest", and
+they died of claims that were *false rather than stale* — a fictional
+`TurnRepository.save()`, an SSE format a client could not parse. Neither is a
+path, so path checking would have caught neither.
+
+- `composition/CLAUDE.md` tabulates provider registrations; the test imports
+  `mangomas.composition` and asserts every documented name is really in that
+  registry's `available()`.
+- `api/CLAUDE.md` tabulates middleware **install order**; the test reads
+  `create_app`'s `add_middleware` calls by AST and compares. Starlette wraps in
+  reverse, so the order is load-bearing — backpressure installs first precisely
+  so a 413 or 503 is still logged.
+- `adapters/CLAUDE.md` tabulates each seam's Protocols; the test AST-parses
+  each base module and requires the `@runtime_checkable` decorator.
+
+`tests/tooling/test_directory_claude_md.py` adds the checks the predecessor
+needed: **symbol resolution** (`Class.method` must exist — the
+`TurnRepository.save()` case, where `save_turn` is the real name),
+`## Verify` command resolution (every `make` target and pytest path must
+exist), Mermaid nodes resolving to real modules, agent/skill slugs resolving,
+and a prohibition on restating rules that a gate already enforces. All six
+claims are mutation-proved in both directions.
+
+`DIRECTORY_DOC_SECTION_HEADINGS` is a **second** vocabulary, deliberately:
+widening the nine-member `AGENT_SECTION_HEADINGS` would have let an agent file
+carry `## Map` or `## Verify` and defeated the guard whose own comment pins it
+at "Nine, not seven". The two pre-existing files are inventoried and
+path-checked but not reformatted to a contract written after them.
+
 ### Changed — root instruction pair: `AGENTS.md` + `CLAUDE.md` (ADR-0035)
 
 Implements **PR F** of `docs/plans/20260916T214636Z-reliability-evidence-plan.md`.
