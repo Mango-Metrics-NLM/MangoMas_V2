@@ -1,5 +1,13 @@
 # Mango-Mas V2 — Copilot Workspace Instructions
 
+> **Start with [`AGENTS.md`](../AGENTS.md)** at the repository root. It is the
+> vendor-neutral instruction file in the Agentic AI Foundation format, and
+> Copilot reads it directly — including nested ones. It carries the essential
+> commands, architecture, design rules, the `MANGOMAS_*` configuration tables,
+> error types and testing conventions, all bound to the code by contract tests.
+> This file is a Copilot-specific condensation and deliberately restates
+> nothing that is mechanically enforced elsewhere.
+
 ## Project Identity
 Mango-Mas V2 is a **local-first, modular agent platform** (FastAPI + LM Studio, Python 3.11+).
 Architecture is protocol-based with a composition root; all adapters satisfy `@runtime_checkable Protocol` types.
@@ -11,7 +19,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 - **Python 3.11+** — `from __future__ import annotations` in every `.py` file
 - **Pydantic v2** — use `model_validate_json`, `model_dump_json`, `model_json_schema()`; never `.dict()` or `.parse_obj()`
 - **FastAPI 0.115+** — lifespan context manager; dependency injection via `Annotated[]`
-- **ruff** strict: `select = ["E","F","I","B","UP","SIM","PL","RUF","S","SLF","ARG"]`, `ignore = ["PLR0913"]`
+- **ruff** strict — the selected families and their ignores are declared in `pyproject.toml`'s `[tool.ruff.lint]`; run `make lint`. (Not restated here: this line listed 11 families while the config selected 20, and a copy of a machine-readable table drifts the moment the table moves.)
 - **mypy strict=true** — no `type: ignore` without a justification comment
 - **pytest-asyncio `asyncio_mode="auto"`** — `async def` tests, no `@pytest.mark.asyncio` decorator
 
@@ -24,7 +32,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 - Cross-layer imports go inside `if TYPE_CHECKING:` blocks
 - New adapters must satisfy the relevant `Protocol` in `adapters/*/base.py`
 - New agents must satisfy `Agent` in `core/agent.py` and be registered in `composition/`
-- All tunables in `Settings` (`config.py`) — no hard-coded URLs, model names, or limits
+- All tunables in `Settings` (the `config/` package) — no hard-coded URLs, model names, or limits
 - `asyncio.to_thread` for any synchronous I/O inside async functions
 - OpenTelemetry spans via `get_tracer(__name__).start_as_current_span("...")`
 

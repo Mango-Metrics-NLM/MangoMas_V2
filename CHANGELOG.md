@@ -9,6 +9,122 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — per-directory instruction documents, each with a checkable claim
+
+Three new `CLAUDE.md` files (`composition/`, `api/`, `adapters/`), joining the
+two that already existed, each carrying a Mermaid map of its own directory, an
+Owners table naming the `mango-*` agent and skill that own the surface, and the
+boundaries an agent must not cross.
+
+The entry bar is **one mechanically-checkable semantic claim per file**, not
+"a directory exists". Five `agent.md` files were deleted from this tree once
+for the recorded reason that "a file nothing loads cannot be kept honest", and
+they died of claims that were *false rather than stale* — a fictional
+`TurnRepository.save()`, an SSE format a client could not parse. Neither is a
+path, so path checking would have caught neither.
+
+- `composition/CLAUDE.md` tabulates provider registrations; the test imports
+  `mangomas.composition` and asserts every documented name is really in that
+  registry's `available()`.
+- `api/CLAUDE.md` tabulates middleware **install order**; the test reads
+  `create_app`'s `add_middleware` calls by AST and compares. Starlette wraps in
+  reverse, so the order is load-bearing — backpressure installs first precisely
+  so a 413 or 503 is still logged.
+- `adapters/CLAUDE.md` tabulates each seam's Protocols; the test AST-parses
+  each base module and requires the `@runtime_checkable` decorator.
+
+`tests/tooling/test_directory_claude_md.py` adds the checks the predecessor
+needed: **symbol resolution** (`Class.method` must exist — the
+`TurnRepository.save()` case, where `save_turn` is the real name),
+`## Verify` command resolution (every `make` target and pytest path must
+exist), Mermaid nodes resolving to real modules, agent/skill slugs resolving,
+and a prohibition on restating rules that a gate already enforces. All six
+claims are mutation-proved in both directions.
+
+`DIRECTORY_DOC_SECTION_HEADINGS` is a **second** vocabulary, deliberately:
+widening the nine-member `AGENT_SECTION_HEADINGS` would have let an agent file
+carry `## Map` or `## Verify` and defeated the guard whose own comment pins it
+at "Nine, not seven". The two pre-existing files are inventoried and
+path-checked but not reformatted to a contract written after them.
+
+### Changed — root instruction pair: `AGENTS.md` + `CLAUDE.md` (ADR-0035)
+
+Implements **PR F** of `docs/plans/20260916T214636Z-reliability-evidence-plan.md`.
+The 720-line `CLAUDE.md` is split by a rule rather than by hand: a section whose
+title names Claude Code itself stays, everything else is vendor-neutral.
+
+- **`AGENTS.md` (503 lines)** — essential commands, architecture, key design
+  rules, the `MANGOMAS_*` configuration tables, RAG, the eval harness, error
+  types, testing conventions, the agent extension pattern, spec-driven
+  development, multi-agent topologies, declarative workflow graphs and file
+  ownership. In the format the Agentic AI Foundation stewards, so Codex, Cursor
+  and Copilot read it directly.
+- **`CLAUDE.md` (243 lines)** — Claude Code's own surfaces only (agent corpus,
+  harness, skills, MCP servers), with `@AGENTS.md` as its literal first line.
+- **The import is asserted to resolve** (`tests/test_agents_md_contract.py`),
+  which PR F's named test did not do. A first line that merely *mentions*
+  `AGENTS.md` while the file is missing or empty leaves every session reading a
+  third of its instructions, silently. Five guards: first line exact, import
+  resolves and is non-empty, each section on the correct side (by rule, not by
+  heading list), no heading duplicated across the pair, and no nested
+  `AGENTS.md` anywhere.
+- **The env contract now reads the union** of the pair
+  (`ROOT_INSTRUCTION_RELPATHS`), because `@AGENTS.md` means a session is told
+  both. Reading either half alone would let a configuration row move across the
+  split and vanish from a ~110-row contract while both files still looked
+  healthy — which is exactly what happened on the first run, caught by the
+  reverse-defaults guard added the commit before.
+- **Per-directory instruction files stay named `CLAUDE.md`.** Measured: while a
+  root `CLAUDE.md` exists — *including a one-line `@AGENTS.md` pointer* —
+  Claude Code ignores every nested `AGENTS.md`. ADR-0035 carries the ten-probe
+  matrix, its binary version and its expiry. `test_no_nested_agents_md_files`
+  keeps it from being re-learned the hard way. The `agent.md` retirement is
+  **not** reversed; `RETIRED_STRAY_AGENT_FILENAME` is untouched.
+
+### Fixed — live doc defects and the guards that missed them (plan 2026-09-19)
+
+Three stale claims in docs that agents read as current truth, all green under
+the full suite until now, plus the guard repairs that make the class
+mechanically catchable. Source:
+`docs/analysis/20260919-agents-md-corpus-peer-review.md`; plan:
+`docs/plans/20260919T213539Z-agents-md-corpus-plan.md`.
+
+- **Vanished-module citations, by basename** (`tests/tooling/_corpus.py`,
+  `tests/tooling/test_live_path_ledger.py`). The ledger substring-matched the
+  full path (`src/mangomas/composition.py`), but live docs write the bare
+  basename (`composition.py`), so both recorded ADR-0019 decompositions went
+  unpoliced. `.github/copilot-instructions.md` named `config.py` as the home of
+  `Settings` (it is `config/`, since `e2c177b`) and `docs/workflow/graphs.md`
+  listed `composition.py` among unchanged current files. Basename *existence*
+  is not the test — `tests/constants/config.py` exists, so that check passes on
+  the wrong citation; vanished-ness is the signal. Legitimate decomposition
+  narrative is carried as (doc, module)-scoped `narrative_exemptions`, and
+  `test_narrative_exemptions_are_still_earned` fails any entry that stops being
+  used, so the list cannot rot into a standing licence.
+- **Live-doc denominator derived, not hand-typed.** `LIVE_DOC_GLOBS` +
+  `DATED_RECORD_DIRS` replace a nine-entry list that omitted `docs/workflow/` —
+  precisely where the second defect survived. Dated records (CHANGELOG, ADRs,
+  plans, analyses, specs) stay excluded: they are correct as of their date.
+- **Every `Settings` default must have a CLAUDE.md table row**
+  (`tests/deploy/test_env_example_contract.py`). The existing defaults check
+  runs *documented → model* with a non-vacuity floor of one row, so a trim
+  could have deleted 95 of 96 default cells and stayed green. The reverse
+  direction asserts *model → documented* on **row presence**, which a
+  whole-file name regex cannot fake.
+- **`ruff` family list no longer restated** in
+  `.github/copilot-instructions.md`; it claimed 11 families against a real 20
+  and now points at `[tool.ruff.lint]`. A hand-copied mirror of a
+  machine-readable table drifts the moment the table moves.
+- **`mango-harness-dev` added to `PROTECTED_PATH_OWNER_SLUGS`** — it owns four
+  protected paths and was missing, so the roster the trailer test walks was a
+  strict subset of the agents that need one. `CLAUDE.md` now also records the
+  trailer spelling rule: path bare and unbackticked as the first token, one
+  trailer per path, because a backticked path degrades a scoped marker into a
+  blanket approval.
+- **`CLAUDE.md`'s `make gate` ordering claim corrected** — `gate` does not run
+  in CI's order; the `lint` job runs `frontmatter` before
+  `typecheck`/`lint-imports` and `gate` runs it after.
+
 ### Added — supply-chain and acceptance guards (analysis 2026-09-19)
 
 Four unguarded surfaces closed, all additive and default-identical. Each was a

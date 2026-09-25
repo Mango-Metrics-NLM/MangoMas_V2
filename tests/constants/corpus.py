@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 # ── Harness frontmatter linter fixtures ───────────────────────────────────────
 VALID_AGENT_FRONTMATTER: str = """\
@@ -205,6 +206,10 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
 # records are excluded: CHANGELOG entries and dated plan documents describe the
 # state at the time they were written and are deliberately immutable.
 CORPUS_DOC_RELPATHS: tuple[str, ...] = (
+    # Both halves of the root instruction pair. CLAUDE.md alone stopped being
+    # sufficient the moment the generic content moved into AGENTS.md — a
+    # retired path would simply have crossed the split and left the check.
+    "AGENTS.md",
     "CLAUDE.md",
     "README.md",
     "NEXT_STEPS.md",
@@ -217,6 +222,157 @@ CORPUS_DOC_RELPATHS: tuple[str, ...] = (
     # starts — the same argument that puts the root CLAUDE.md on this list.
     "tests/CLAUDE.md",
     "src/mangomas/core/CLAUDE.md",
+)
+
+
+# ── Vanished module ledger (ADR-0019 decompositions) ──────────────────────────
+# A module that became a package leaves two citation shapes behind, and the
+# original ledger only caught one. `src/mangomas/composition.py` is the *full
+# path* form; `composition.py` is the *bare basename* form — and the bare form
+# is the one live docs actually use, so it went uncaught for both recorded
+# decompositions. Basename existence is not the test: `tests/constants/config.py`
+# exists, so "does a file with this name exist?" passes on the very citation
+# that is wrong. Vanished-ness is the signal, not resolvability.
+@dataclass(frozen=True)
+class VanishedModule:
+    """A module file that ADR-0019 replaced with a package of the same name."""
+
+    path: str
+    """Repo-relative path the module used to occupy."""
+
+    replacement: str
+    """Package that replaced it, quoted back in failure messages as the remedy."""
+
+    narrative_exemptions: frozenset[str] = frozenset()
+    """Docs allowed to name :attr:`basename`, because they narrate the
+    decomposition itself ("the former ``composition.py`` module"). Scoped to a
+    (doc, module) pair rather than a whole doc, so narrating one retirement
+    never licenses a stale citation of another."""
+
+    @property
+    def basename(self) -> str:
+        """Derived, never stored — one source of truth per fact."""
+        return self.path.rsplit("/", 1)[-1]
+
+
+VANISHED_MODULES: tuple[VanishedModule, ...] = (
+    VanishedModule(
+        path="src/mangomas/composition.py",
+        replacement="src/mangomas/composition/",
+        narrative_exemptions=frozenset(
+            {
+                # "…grep by filename `composition.py` — that file no longer exists"
+                ".claude/agents/mango-layering-auditor.md",
+                # "the former `composition.py` module → `composition/`"
+                ".claude/skills/mango-decompose/SKILL.md",
+            }
+        ),
+    ),
+    VanishedModule(
+        path="src/mangomas/api/middleware.py",
+        replacement="src/mangomas/api/middleware/",
+    ),
+    VanishedModule(
+        path="src/mangomas/config.py",
+        replacement="src/mangomas/config/",
+        narrative_exemptions=frozenset(
+            {
+                # "`cli/main.py` → `cli/`, `config.py` → `config/`"
+                ".claude/skills/mango-decompose/SKILL.md",
+            }
+        ),
+    ),
+)
+
+# Back-compatible projection of the ledger. The original tuple is still the
+# parametrize argument for the full-path test, and its ids are the path
+# strings, so deriving it keeps that test and its ids byte-identical while the
+# records gain fields — the additive-facade discipline ADR-0019 applies to
+# source, applied to a test constant.
+VANISHED_PATHS: tuple[str, ...] = tuple(module.path for module in VANISHED_MODULES)
+
+
+# ── Live-doc denominator ──────────────────────────────────────────────────────
+# What "a doc a contributor or agent reads as current truth" means, as a rule
+# rather than a hand-typed file list. The previous hand-typed list omitted
+# `docs/workflow/graphs.md`, which is exactly where a stale `composition.py`
+# citation survived. Dated records are excluded because they are correct as of
+# their date and rewriting them to satisfy a linter would falsify the record.
+DATED_RECORD_DIRS: frozenset[str] = frozenset({"docs/adr", "docs/analysis", "docs/plans", "specs"})
+DATED_RECORD_FILES: frozenset[str] = frozenset({"CHANGELOG.md", "NEXT_STEPS.md"})
+# Live docs outside `docs/`, named individually because their directories hold
+# far more than prose.
+LIVE_DOC_ROOT_RELPATHS: tuple[str, ...] = (
+    ".github/copilot-instructions.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "README.md",
+)
+
+# The root instruction pair, as a Claude Code session actually sees it.
+# `CLAUDE.md`'s first line is `@AGENTS.md`, so the two are concatenated into one
+# context — which means a contract over "what the session is told" must read
+# their union. Reading either alone would let a fact move across the boundary
+# and disappear from the check while both files still look fine.
+ROOT_INSTRUCTION_RELPATHS: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md")
+# The import that makes the pair one document. Asserted verbatim, because a
+# split whose halves never rejoin is worse than no split at all.
+AGENTS_MD_IMPORT_LINE: str = "@AGENTS.md"
+
+
+# ── Per-directory instruction documents ───────────────────────────────────────
+# Named CLAUDE.md, not AGENTS.md: measured in ADR-0035, a root CLAUDE.md (even a
+# one-line `@AGENTS.md` pointer) disables nested AGENTS.md discovery entirely,
+# so a nested file under that name would never load. Claude Code loads these on
+# demand when it reads a file in the directory, concatenated with the root pair.
+DIRECTORY_DOC_RELPATHS: tuple[str, ...] = (
+    "src/mangomas/adapters/CLAUDE.md",
+    "src/mangomas/api/CLAUDE.md",
+    "src/mangomas/composition/CLAUDE.md",
+    "src/mangomas/core/CLAUDE.md",
+    "tests/CLAUDE.md",
+)
+# The two that predate the section contract below. They are inventoried and
+# path-checked like the rest; their headings are not rewritten to match a
+# contract written after them, because both already work and a churn-for-
+# conformance edit buys nothing a reader can see.
+DIRECTORY_DOCS_PREDATING_THE_SECTION_CONTRACT: frozenset[str] = frozenset(
+    {"src/mangomas/core/CLAUDE.md", "tests/CLAUDE.md"}
+)
+# A SECOND vocabulary, deliberately. `AGENT_SECTION_HEADINGS` is pinned at nine
+# for `.claude/agents/mango-*.md`, with the recorded reason that "an ad-hoc name
+# is where a duplicated section hides". Widening that one shared frozenset to
+# admit `## Map` or `## Verify` would let an agent file carry them too and
+# defeat the guard. Two corpora, two vocabularies.
+DIRECTORY_DOC_SECTION_HEADINGS: tuple[str, ...] = (
+    "## Scope",
+    "## Map",
+    "## Owners",
+    "## Invariants",
+    "## Boundaries",
+    "## Verify",
+)
+# Budgets from the AGENTS.md practitioner guidance: agents act reliably on the
+# first ~150 lines. These are per-directory files, so the budget is generous.
+DIRECTORY_DOC_MAX_LINES: int = 150
+DIRECTORY_DOC_MAX_SECTION_LINES: int = 50
+# Phrases that mark a rule already mechanised somewhere else. Restating one in
+# a directory doc is how byte-identical prose spread across four agents before
+# `test_protected_path_governance_is_single_sourced` was written — and that
+# test globs `.claude/**/*.md`, so it cannot see a file under `src/`.
+# Prohibiting the phrase is far cheaper than a parity check, and it is the
+# mechanism this repo prefers over prose asking people to be careful.
+DIRECTORY_DOC_PROHIBITED_RESTATEMENTS: tuple[tuple[str, str], ...] = (
+    ("advisory only", "link .claude/skills/mango-harness/SKILL.md instead"),
+    ("text/event-stream", "the SSE wire format belongs to api/routes/agents.py"),
+)
+# Globs whose every match is live prose. `docs/**/*.md` is filtered by
+# DATED_RECORD_DIRS above.
+LIVE_DOC_GLOBS: tuple[str, ...] = (
+    "docs/**/*.md",
+    ".claude/agents/mango-*.md",
+    ".claude/skills/*/SKILL.md",
 )
 
 # Hooks that predate the ecosystem-tooling integration, as
@@ -414,6 +570,11 @@ PROTECTED_PATH_OWNER_SLUGS: frozenset[str] = frozenset(
         "mango-orchestrator-dev",
         "mango-schema-evolution",
         "mango-hypothesis-fuzz",
+        # Owns four protected paths (pyproject.toml, scripts/_governance.py,
+        # scripts/check_protected_paths.py, src/mangomas/harness/governance.py)
+        # and was missing here, so the roster the trailer test walks was a
+        # strict subset of the agents that actually need the trailer.
+        "mango-harness-dev",
     }
 )
 # The description is the entire routing surface and loads at every session
@@ -643,8 +804,12 @@ EXPECTED_DENY_RULES: frozenset[str] = frozenset(
 # reads like a live one — the same defect class as the interior-`*` Bash rule).
 MCP_DENY_RULE_PREFIX: str = "mcp__"
 # Deny rules Claude Code consults for a *file write*. `Edit(...)` covers Edit,
-# Write and NotebookEdit; nothing here stops a `Bash` heredoc or `>` redirect,
-# so these rules are cheap and partial rather than airtight.
+# Write and NotebookEdit, and Claude Code also matches recognised Bash file
+# commands (`cat`, `head`, `tail`, `sed`, `tee`) and `>` redirection targets
+# against it. The residual gap is an *arbitrary subprocess* that opens the file
+# itself — a Python or Node one-liner — so these rules are strong on the paths
+# Claude Code can see and silent on the ones it cannot. Partial by construction,
+# which is why the authoritative control is the CI gate, not this table.
 PATH_SCOPED_DENY_RULE_PREFIX: str = "Edit("
 # A leading `/` anchors a rule at the settings file's directory (the project
 # root). Without it the rule is cwd-relative and silently stops matching when

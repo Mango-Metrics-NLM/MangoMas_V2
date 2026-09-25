@@ -24,10 +24,15 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from mangomas.config import AgentSettings, Settings
+from tests.constants.corpus import ROOT_INSTRUCTION_RELPATHS
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ENV_EXAMPLE = _REPO_ROOT / ".env.example"
-_CLAUDE_MD = _REPO_ROOT / "CLAUDE.md"
+# The root instruction pair as one document: CLAUDE.md's first line is
+# `@AGENTS.md`, so a session is told the union. Reading either half alone
+# would let a row move across the split and vanish from this contract while
+# both files still look healthy.
+_INSTRUCTION_DOCS = tuple(_REPO_ROOT / rel for rel in ROOT_INSTRUCTION_RELPATHS)
 
 _PREFIX = "MANGOMAS_"
 _NESTED_DELIMITER = "__"
@@ -130,6 +135,33 @@ def _unresolved(path: Path) -> list[str]:
     return sorted(unresolved)
 
 
+def _instruction_text() -> str:
+    """The root instruction pair, concatenated and placeholder-normalised."""
+    return _PLACEHOLDER_RE.sub(
+        _PLACEHOLDER_SLUG,
+        "\n".join(doc.read_text(encoding="utf-8") for doc in _INSTRUCTION_DOCS),
+    )
+
+
+def _names_in_instructions() -> set[str]:
+    found = set(_ENV_NAME_RE.findall(_instruction_text()))
+    return found - _DOC_PLACEHOLDERS - _NON_SETTINGS_ENV
+
+
+def _unresolved_in_instructions() -> list[str]:
+    declared = _declared_names()
+    groups = _settings_groups()
+    unresolved: list[str] = []
+    for name in _names_in_instructions():
+        normalized = _normalize(name)
+        if _is_group_prefix(normalized):
+            if normalized not in groups:
+                unresolved.append(name)
+        elif normalized not in declared:
+            unresolved.append(name)
+    return sorted(unresolved)
+
+
 # ── Self-guards ───────────────────────────────────────────────────────────────
 # Every assertion below is over a parsed set. A parser that silently yields
 # nothing would make all of them vacuously true — the exact failure mode
@@ -142,9 +174,9 @@ def test_env_example_exists_and_parses() -> None:
     assert _names_in(_ENV_EXAMPLE), "parsed zero MANGOMAS_* names from .env.example"
 
 
-def test_claude_md_config_table_parses() -> None:
-    assert _CLAUDE_MD.is_file()
-    assert _names_in(_CLAUDE_MD), "parsed zero MANGOMAS_* names from CLAUDE.md"
+def test_instruction_docs_config_tables_parse() -> None:
+    assert all(doc.is_file() for doc in _INSTRUCTION_DOCS)
+    assert _names_in_instructions(), "parsed zero MANGOMAS_* names from CLAUDE.md"
 
 
 def test_settings_tree_is_non_empty() -> None:
@@ -163,20 +195,20 @@ def test_env_example_names_all_resolve() -> None:
     assert _unresolved(_ENV_EXAMPLE) == []
 
 
-def test_claude_md_names_all_resolve() -> None:
+def test_instruction_doc_names_all_resolve() -> None:
     """CLAUDE.md auto-loads into every session, so a wrong name there is read
     before any work starts."""
-    assert _unresolved(_CLAUDE_MD) == []
+    assert _unresolved_in_instructions() == []
 
 
 # Settings fields intentionally undocumented in CLAUDE.md's config tables.
 # `MANGOMAS_AGENTS` is the dict field behind the documented per-agent
 # `MANGOMAS_AGENTS__<NAME>__*` rows — the nested form IS its documentation.
 # Kept explicit so any further exemption is a reviewed edit, not a regex hole.
-_CLAUDE_MD_UNDOCUMENTED_OK: frozenset[str] = frozenset({f"{_PREFIX}{_AGENTS_FIELD}"})
+_INSTRUCTIONS_UNDOCUMENTED_OK: frozenset[str] = frozenset({f"{_PREFIX}{_AGENTS_FIELD}"})
 
 
-def test_claude_md_documents_every_settings_field() -> None:
+def test_instruction_docs_document_every_settings_field() -> None:
     """Reverse direction of the resolve test: every declared field is documented.
 
     The forward tests catch a documented name that resolves to nothing; until
@@ -185,8 +217,8 @@ def test_claude_md_documents_every_settings_field() -> None:
     auto-loads CLAUDE.md. A field CLAUDE.md omits effectively does not exist
     for agent work.
     """
-    documented = {_normalize(name) for name in _names_in(_CLAUDE_MD)}
-    missing = sorted(_declared_names() - documented - _CLAUDE_MD_UNDOCUMENTED_OK)
+    documented = {_normalize(name) for name in _names_in_instructions()}
+    missing = sorted(_declared_names() - documented - _INSTRUCTIONS_UNDOCUMENTED_OK)
     assert missing == [], f"Settings fields missing from CLAUDE.md's config tables: {missing}"
 
 
@@ -254,10 +286,21 @@ _EFFECTIVE_NOT_FIELD_DEFAULT: frozenset[str] = frozenset(
         f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}HISTORY_LIMIT",
     }
 )
+# Fields with a real default that legitimately have no table row of their own.
+# Explicit, because the reverse-direction check below is only as strong as the
+# list of things it agrees to ignore.
+_DEFAULT_UNDOCUMENTED_OK: frozenset[str] = frozenset(
+    {
+        # `Settings.agents` is a dict keyed by agent name, so the documented
+        # rows are the per-agent placeholders (`MANGOMAS_AGENTS__<NAME>__*`).
+        # A row for the bare container would document nothing a reader can set.
+        f"{_PREFIX}{_AGENTS_FIELD}",
+    }
+)
 
 
 def _documented_defaults() -> dict[str, str]:
-    text = _PLACEHOLDER_RE.sub(_PLACEHOLDER_SLUG, _CLAUDE_MD.read_text(encoding="utf-8"))
+    text = _instruction_text()
     found: dict[str, str] = {}
     for name, raw_cell in _ROW_RE.findall(text):
         cell = raw_cell.strip()
@@ -320,7 +363,7 @@ def _normalise_documented(value: str) -> str:
     return value.replace('"', "").replace(" ", "").lower()
 
 
-def test_claude_md_documented_defaults_match_the_model() -> None:
+def test_instruction_docs_documented_defaults_match_the_model() -> None:
     """Every documented default must equal the field's real default.
 
     Rows whose Default cell is `_(none)_` are skipped (an unset optional), as
@@ -348,4 +391,45 @@ def test_claude_md_documented_defaults_match_the_model() -> None:
     ]
     assert mismatches == [], (
         f"CLAUDE.md documents a default that differs from the Settings field: {mismatches}"
+    )
+
+
+def _documented_row_names() -> frozenset[str]:
+    """Every ``MANGOMAS_*`` name that appears as a **config-table row**.
+
+    Deliberately not ``_names_in``, which regexes the whole file: a bare
+    mention in a sentence or a code fence satisfies that, and a row does not
+    have to exist for it to pass.
+    """
+    text = _instruction_text()
+    return frozenset(_normalize(name) for name, _ in _ROW_RE.findall(text))
+
+
+def test_every_settings_default_is_documented_in_a_table_row() -> None:
+    """The reverse direction, which nothing asserted until now.
+
+    ``test_instruction_docs_documented_defaults_match_the_model`` walks
+    *documented → model*: it checks that what the docs claim is true. Nothing
+    walked *model → documented*, and its non-vacuity floor is a single row
+    (``assert documented``). A trim could therefore delete 95 of the 96 default
+    cells and stay green — and a trim is exactly what the AGENTS.md split
+    proposes. The field would keep its default, the doc would stop mentioning
+    it, and the next session would be told nothing.
+
+    Row presence, not value presence, is the assertion: a name documented as
+    ``_(none)_`` is documented (an unset optional is a real answer), but a name
+    with no row at all is not.
+    """
+    model = _model_defaults()
+    assert model, "model walk emitted zero defaults — the check would be vacuous"
+
+    rows = _documented_row_names()
+    undocumented = sorted(
+        name for name in model if name not in rows and name not in _DEFAULT_UNDOCUMENTED_OK
+    )
+    assert undocumented == [], (
+        "these Settings fields have a default but no row in the root instruction "
+        f"pair's config tables, so nothing tells a session they exist: {undocumented}. "
+        f"Add a row to whichever of {list(ROOT_INSTRUCTION_RELPATHS)} documents that "
+        "group, or record the omission in _DEFAULT_UNDOCUMENTED_OK with a reason."
     )
