@@ -25,6 +25,7 @@ from __future__ import annotations
 import pytest
 
 from tests.constants.corpus import (
+    LIVE_DOC_GLOBS,
     LIVE_DOC_ROOT_RELPATHS,
     VANISHED_MODULES,
     VANISHED_PATHS,
@@ -34,6 +35,7 @@ from tests.tooling._corpus import (
     REPO_ROOT,
     cites_basename,
     find_basename_citations,
+    is_dated_record,
     iter_backticked_tokens,
     live_doc_paths,
 )
@@ -51,6 +53,27 @@ def test_live_path_ledger_is_non_empty() -> None:
     assert len(live_doc_paths()) >= len(VANISHED_MODULES), (
         f"live-doc denominator collapsed to {len(live_doc_paths())} files; "
         "check LIVE_DOC_GLOBS / LIVE_DOC_ROOT_RELPATHS in tests.constants.corpus"
+    )
+
+
+@pytest.mark.parametrize("glob", LIVE_DOC_GLOBS, ids=LIVE_DOC_GLOBS)
+def test_every_live_doc_glob_matches_something(glob: str) -> None:
+    """Per-glob, because an aggregate count hides the failure it should catch.
+
+    The total above stays comfortably above its floor while any single glob
+    matches nothing — a typo, or a directory that moved. The whole reason the
+    denominator was widened is that ``docs/workflow/`` was silently outside it,
+    so a check that cannot see one glob drop out is the wrong check.
+    """
+    matched = [
+        path
+        for path in REPO_ROOT.glob(glob)
+        if path.is_file() and not is_dated_record(path.relative_to(REPO_ROOT).as_posix())
+    ]
+    assert matched, (
+        f"LIVE_DOC_GLOBS entry {glob!r} matches no live (non-dated) file. Either "
+        "the path moved or the pattern is wrong; a glob matching nothing "
+        "silently shrinks what the ledger polices."
     )
 
 

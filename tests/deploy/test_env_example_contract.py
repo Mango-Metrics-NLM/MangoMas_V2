@@ -428,7 +428,8 @@ def test_every_settings_default_is_documented_in_a_table_row() -> None:
         name for name in model if name not in rows and name not in _DEFAULT_UNDOCUMENTED_OK
     )
     assert undocumented == [], (
-        "these Settings fields have a default but no row in CLAUDE.md's config "
-        f"tables, so nothing tells a session they exist: {undocumented}. Add a "
-        "row, or record the omission in _DEFAULT_UNDOCUMENTED_OK with a reason."
+        "these Settings fields have a default but no row in the root instruction "
+        f"pair's config tables, so nothing tells a session they exist: {undocumented}. "
+        f"Add a row to whichever of {list(ROOT_INSTRUCTION_RELPATHS)} documents that "
+        "group, or record the omission in _DEFAULT_UNDOCUMENTED_OK with a reason."
     )

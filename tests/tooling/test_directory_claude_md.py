@@ -27,6 +27,7 @@ from __future__ import annotations
 import ast
 import importlib
 import re
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -43,6 +44,9 @@ from tests.constants.corpus import (
     RETIRED_STRAY_AGENT_FILENAME,
 )
 from tests.tooling._corpus import REPO_ROOT, iter_backticked_tokens
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 _SECTION_RE = re.compile(r"^(## .*)$", re.MULTILINE)
 _MERMAID_RE = re.compile(r"^```mermaid\n(.*?)^```", re.MULTILINE | re.DOTALL)
@@ -183,8 +187,14 @@ def test_every_cited_symbol_resolves(relpath: str) -> None:
     method that does not exist — ``save_turn`` does. Path existence returns
     green on that; an AST walk does not.
     """
+    offenders = _unresolved_symbols(_read(relpath))
+    assert offenders == [], f"{relpath} names member(s) that do not exist: {offenders}"
+
+
+def _unresolved_symbols(text: str) -> list[str]:
+    """Backticked ``Class.method`` tokens naming a member the class lacks."""
     offenders: list[str] = []
-    for _, token in iter_backticked_tokens(_read(relpath)):
+    for _, token in iter_backticked_tokens(text):
         match = re.fullmatch(r"([A-Z][A-Za-z0-9_]*)\.([a-z_][A-Za-z0-9_]*)\(?\)?", token.strip())
         if match is None:
             continue
@@ -192,7 +202,29 @@ def test_every_cited_symbol_resolves(relpath: str) -> None:
         members = _class_members(class_name)
         if members is not None and attr not in members:
             offenders.append(f"{token} (class {class_name} has: {sorted(members)})")
-    assert offenders == [], f"{relpath} names member(s) that do not exist: {offenders}"
+    return offenders
+
+
+def test_the_symbol_guard_catches_the_defect_that_retired_agent_md() -> None:
+    """The guard above runs over documents that (correctly) contain no offender.
+
+    That makes it vacuous in the committed tree: the loop finds no
+    ``Class.method`` token and passes without exercising anything. A guard
+    nobody has watched fail is not evidence, so this pins the behaviour against
+    a fixture instead of against whatever the corpus happens to say today.
+
+    ``TurnRepository.save()`` is the real specimen — a fictional method on a
+    real class in a real file, from the ``agent.md`` corpus that was deleted.
+    The method is ``save_turn``; ``save`` never existed.
+    """
+    assert _class_members("TurnRepository"), "TurnRepository not found — fixture is stale"
+
+    offenders = _unresolved_symbols("Callers persist a turn with `TurnRepository.save()`.")
+    assert offenders, "the symbol guard did not flag TurnRepository.save()"
+    assert "save_turn" in offenders[0], "the failure should name the real method"
+
+    # The other direction: the real name must pass, or the guard is just noisy.
+    assert _unresolved_symbols("Callers use `TurnRepository.save_turn()`.") == []
 
 
 def _class_members(class_name: str) -> set[str] | None:
@@ -324,12 +356,11 @@ def test_composition_doc_tabulates_real_provider_registrations() -> None:
     assert offenders == [], f"{relpath} documents registrations that do not exist: {offenders}"
 
 
-def _middleware_install(node: ast.AST) -> tuple[int, str] | None:
-    """``(line, class_name)`` for an ``app.add_middleware(Name, ...)`` call.
+def _direct_install(node: ast.AST) -> str | None:
+    """The class name of an ``app.add_middleware(Name, ...)`` call, else None.
 
-    Returns None for anything else, including a call whose first argument is
-    not a bare name — a subscripted or keyword-only install is not something
-    this check can attribute to a class.
+    A call whose first argument is not a bare name (subscripted, keyword-only)
+    is not something this check can attribute to a class.
     """
     if not (
         isinstance(node, ast.Call)
@@ -339,19 +370,51 @@ def _middleware_install(node: ast.AST) -> tuple[int, str] | None:
     ):
         return None
     first = node.args[0]
-    return (node.lineno, first.id) if isinstance(first, ast.Name) else None
+    return first.id if isinstance(first, ast.Name) else None
+
+
+def _middleware_install_order(tree: ast.Module) -> list[str]:
+    """Middleware classes in the order ``create_app`` actually installs them.
+
+    **Definition order is not execution order**, and reading it as such is how
+    this guard first certified a wrong table. ``_install_tenancy`` is *defined*
+    at the top of the module, above the direct ``add_middleware`` calls, but
+    ``create_app`` *calls* it last — so Tenancy installs outermost while a
+    line-sorted walk placed it third. The documented table was wrong and the
+    test agreed with it.
+
+    So: walk ``create_app``'s body in source order and step **into** a
+    module-level helper at its call site. ``seen`` guards against a recursive
+    helper rather than trusting the source not to have one.
+    """
+    helpers = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    entry = helpers.get("create_app")
+    assert entry is not None, "create_app not found in api/app.py"
+
+    def walk(node: ast.AST, seen: frozenset[str]) -> Iterator[str]:
+        for child in ast.iter_child_nodes(node):
+            direct = _direct_install(child)
+            if direct is not None:
+                yield direct
+                continue
+            if (
+                isinstance(child, ast.Call)
+                and isinstance(child.func, ast.Name)
+                and child.func.id in helpers
+                and child.func.id not in seen
+            ):
+                yield from walk(helpers[child.func.id], seen | {child.func.id})
+                continue
+            yield from walk(child, seen)
+
+    return list(walk(entry, frozenset()))
 
 
 def test_api_doc_documents_the_real_middleware_install_order() -> None:
     """Its `## Invariants` table must equal ``create_app``'s AST order."""
     relpath = "src/mangomas/api/CLAUDE.md"
     tree = ast.parse((REPO_ROOT / "src/mangomas/api/app.py").read_text(encoding="utf-8"))
-    # `ast.walk` is breadth-first, so it yields conditional installs (nested in
-    # `if` blocks) after top-level ones regardless of where they appear. Install
-    # order is source order, so sort by line — reading the walk order as source
-    # order would have pinned the documentation to a traversal artefact.
-    installs = sorted(filter(None, (_middleware_install(n) for n in ast.walk(tree))))
-    actual = [name for _, name in installs]
+    actual = _middleware_install_order(tree)
     assert actual, "no add_middleware(Name, ...) calls found — the check would be vacuous"
 
     rows = [r for r in _table_cells(_read(relpath), "## Invariants") if len(r) >= 2]
@@ -376,6 +439,11 @@ def test_adapters_doc_tabulates_real_runtime_checkable_protocols() -> None:
             offenders.append(f"{sub}: no base.py")
             continue
         tree = ast.parse(base.read_text(encoding="utf-8"))
+        # Both halves, not just the decorator. `@runtime_checkable` on a class
+        # that does not inherit `Protocol` is a TypeError at import, but this
+        # check never imports the module — so without the base test a class
+        # carrying only the decorator name would satisfy a claim that it is a
+        # runtime-checkable Protocol.
         declared = {
             node.name
             for node in ast.walk(tree)
@@ -383,6 +451,7 @@ def test_adapters_doc_tabulates_real_runtime_checkable_protocols() -> None:
             and any(
                 isinstance(d, ast.Name) and d.id == "runtime_checkable" for d in node.decorator_list
             )
+            and any(isinstance(b, ast.Name) and b.id == "Protocol" for b in node.bases)
         }
         for name in (n.strip("` ") for n in cells[2].split(",") if n.strip()):
             if name not in declared:

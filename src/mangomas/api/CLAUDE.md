@@ -46,11 +46,15 @@ load-bearing rather than cosmetic.
 |---|---|---|
 | 1 | `ConcurrencyLimitMiddleware` | Opt-in. Installed first, so it is innermost |
 | 2 | `MaxBodySizeMiddleware` | Opt-in. Also inner of log/trace |
-| 3 | `TenancyMiddleware` | Opt-in. Reads the tenant header into a `ContextVar` |
-| 4 | `AccessLogMiddleware` | Outer of backpressure, so a rejection is still logged |
-| 5 | `TraceMiddleware` | Opens the per-request span around everything inner |
-| 6 | `CORSMiddleware` | Outermost, and installed only when origins are non-empty |
+| 3 | `AccessLogMiddleware` | Outer of backpressure, so a rejection is still logged |
+| 4 | `TraceMiddleware` | Opens the per-request span around everything inner |
+| 5 | `CORSMiddleware` | Installed only when origins are non-empty |
+| 6 | `TenancyMiddleware` | Opt-in, and installed **last** via `_install_tenancy`, so it is outermost: the tenant `ContextVar` is set before logging, tracing or any route sees the request |
 
+- 1, 2 and 6 are installed inside helpers (`_install_backpressure`,
+  `_install_tenancy`), so their **definition** order in the file is not their
+  install order — `_install_tenancy` is defined near the top and called last.
+  The test resolves helper calls rather than sorting by line.
 - Backpressure inner of log/trace is the point: a 413 or 503 that nothing
   recorded is an outage you cannot see.
 - Health routes are never authenticated.
