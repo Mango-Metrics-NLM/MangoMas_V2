@@ -82,7 +82,25 @@ Four corrections found while implementing, each recorded rather than absorbed:
    `src/mangomas/core/CLAUDE.md` names `core/agent.md` to explain why an edit
    there never needed a trailer. Requiring it to exist would demand the repo
    restore the convention it deleted.
-4. **The three files were written by hand, not by their owning agents.** M3.1
+4. **Review caught the corpus telling its first lie, and the guard agreeing.**
+   Copilot found that `api/CLAUDE.md`'s middleware table was **wrong**:
+   `_install_tenancy` is defined near the top of `app.py` but `create_app`
+   calls it *last*, so Tenancy installs **outermost** (6th), not third. Sorting
+   `add_middleware` calls by definition line certified the wrong order —
+   correction 1 above fixed the traversal artefact but not the deeper error,
+   because definition order is not execution order at all when a call sits
+   inside a helper. `_middleware_install_order` now follows call sites.
+
+   This is the single most useful thing that happened to this plan. The whole
+   argument for the tranche is that a per-directory document is only safe if a
+   machine checks its claims; the first external review found a claim that was
+   false *and* a check that blessed it. Three further vacuity holes came with
+   it (decorator-without-`Protocol`, a symbol guard exercising nothing in the
+   committed tree, and a per-glob non-vacuity gap that reproduced the very
+   hole the widened denominator was added to close). All four are fixed and
+   mutation-proved; none was caught by my own twenty mutation proofs, because
+   each proof tested the guard I had written rather than the guard I needed.
+5. **The three files were written by hand, not by their owning agents.** M3.1
    planned to draft each via `mango-backend` / `mango-api-impl-dev` /
    `mango-llm-adapter-dev` so the boundary text came from the agent that owns
    the surface. All three terminated on a weekly API rate limit. The guards are
