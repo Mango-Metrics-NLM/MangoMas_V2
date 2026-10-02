@@ -78,12 +78,21 @@ install: ## Install mangomas[dev] and sibling mango-integration-contracts
 	$(PYTHON) -m pip install -e ".[dev]"
 	$(PYTHON) -m pip install -e ./mango-integration-contracts
 
+ifeq ($(OS),Windows_NT)
+    DEVNULL := NUL
+    ifneq ($(wildcard C:/Program\ Files/Git/usr/bin/sh.exe),)
+        SHELL := C:/Program Files/Git/usr/bin/sh.exe
+    endif
+else
+    DEVNULL := /dev/null
+endif
+
 # ── Quality gate (mirrors .github/workflows/ci.yml) ──────────────────────────
 
 validate-config: ## Validate .mcp.json / .claude/settings*.json JSON syntax
-	$(PYTHON) -m json.tool .mcp.json > /dev/null
-	$(PYTHON) -m json.tool .claude/settings.json > /dev/null
-	$(PYTHON) -m json.tool .claude/settings.local.json.example > /dev/null
+	$(PYTHON) -m json.tool .mcp.json > $(DEVNULL)
+	$(PYTHON) -m json.tool .claude/settings.json > $(DEVNULL)
+	$(PYTHON) -m json.tool .claude/settings.local.json.example > $(DEVNULL)
 
 lint: ## ruff check
 	$(PYTHON) -m ruff check $(CODE_PATHS)
@@ -97,9 +106,9 @@ format-check: ## ruff format --check
 typecheck: ## mypy --strict
 	$(PYTHON) -m mypy --strict $(CODE_PATHS)
 
+# Invoked through $(PYTHON) so `make PYTHON=python3 lint-imports` cannot
+# pick a different interpreter's copy of the exact-pinned extra.
 lint-imports: ## import-linter contracts (core ↛ outer; workflow/eval/rag/cognitive independence)
-	# Invoked through $(PYTHON) so `make PYTHON=python3 lint-imports` cannot
-	# pick a different interpreter's copy of the exact-pinned extra.
 	$(PYTHON) -c "from importlinter.cli import lint_imports; raise SystemExit(lint_imports(no_logo=True))"
 
 frontmatter: ## Validate .claude/agents + .claude/skills frontmatter
@@ -117,28 +126,28 @@ test-xml: ## Full unit suite + coverage.xml (for codecov)
 coverage: ## Per-package coverage floors — the authoritative gate
 	$(PYTHON) scripts/check_coverage.py
 
+# COVERAGE_FILE isolates this run to its own data file so it never
+# overwrites the default ``.coverage`` that ``make test``/``make coverage``
+# produced — running ``make gate`` (test → coverage → bridge-coverage) and
+# then a standalone ``make coverage`` afterward must still see the main
+# suite's data, not the bridge's.
 bridge-coverage: ## eval_harness_bridge isolated coverage gate
-	# COVERAGE_FILE isolates this run to its own data file so it never
-	# overwrites the default ``.coverage`` that ``make test``/``make coverage``
-	# produced — running ``make gate`` (test → coverage → bridge-coverage) and
-	# then a standalone ``make coverage`` afterward must still see the main
-	# suite's data, not the bridge's.
 	COVERAGE_FILE=.coverage.bridge $(PYTHON) -m coverage run --source=$(BRIDGE_SRC) -m pytest \
 	  $(BRIDGE_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.bridge $(PYTHON) -m coverage report --show-missing --fail-under=$(BRIDGE_FLOOR)
 
+# Same isolation idiom as bridge-coverage: its own COVERAGE_FILE so it never
+# clobbers the main suite's `.coverage`, and -o addopts="" sheds the
+# inherited --cov=mangomas so this run measures only mango_contracts.
 contracts-coverage: ## mango-integration-contracts isolated coverage gate
-	# Same isolation idiom as bridge-coverage: its own COVERAGE_FILE so it never
-	# clobbers the main suite's `.coverage`, and -o addopts="" sheds the
-	# inherited --cov=mangomas so this run measures only mango_contracts.
 	COVERAGE_FILE=.coverage.contracts $(PYTHON) -m coverage run --source=$(CONTRACTS_SRC) -m pytest \
 	  $(CONTRACTS_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.contracts $(PYTHON) -m coverage report --show-missing --fail-under=$(CONTRACTS_FLOOR)
 
+# Same isolation idiom as bridge-coverage: its own COVERAGE_FILE so it never
+# clobbers the main suite's `.coverage`, and -o addopts="" sheds the
+# inherited --cov=mangomas so this run measures only scripts/.
 scripts-coverage: ## scripts/ isolated coverage gate (measured floor — see SCRIPTS_FLOOR above)
-	# Same isolation idiom as bridge-coverage: its own COVERAGE_FILE so it never
-	# clobbers the main suite's `.coverage`, and -o addopts="" sheds the
-	# inherited --cov=mangomas so this run measures only scripts/.
 	COVERAGE_FILE=.coverage.scripts $(PYTHON) -m coverage run --source=$(SCRIPTS_SRC) -m pytest \
 	  $(SCRIPTS_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.scripts $(PYTHON) -m coverage report --show-missing --fail-under=$(SCRIPTS_FLOOR)

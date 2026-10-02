@@ -39,6 +39,9 @@ Helpers (importable)
     Async context manager that yields and then closes the LLM client and
     SQLite repo on the way out. Replaces the manual try/finally
     ``aclose() + close()`` pattern.
+``resolve_lmstudio_model()``
+    Resolve LM Studio model id with cascading fallback
+    (``LMSTUDIO_MODEL`` -> ``MANGOMAS_LLM__MODEL`` -> default).
 
 Hardware contract
 -----------------
@@ -193,10 +196,21 @@ def lmstudio_base_url() -> str:
     return os.environ.get(LMSTUDIO_BASE_URL_ENV, DEFAULT_LLM_BASE_URL)
 
 
+def resolve_lmstudio_model() -> str:
+    """Resolve LM Studio model id from environment with cascading fallback.
+
+    Resolution order:
+    1. ``LMSTUDIO_MODEL`` (legacy/direct override)
+    2. ``MANGOMAS_LLM__MODEL`` (canonical application setting)
+    3. ``DEFAULT_LLM_MODEL`` ("local-model")
+    """
+    return os.environ.get(LMSTUDIO_MODEL_ENV, os.environ.get(LLM_MODEL_ENV, DEFAULT_LLM_MODEL))
+
+
 @pytest.fixture
 def lmstudio_model() -> str:
     """LM Studio model id from ``LMSTUDIO_MODEL`` env var or default."""
-    return os.environ.get(LMSTUDIO_MODEL_ENV, os.environ.get(LLM_MODEL_ENV, DEFAULT_LLM_MODEL))
+    return resolve_lmstudio_model()
 
 
 @pytest.fixture
