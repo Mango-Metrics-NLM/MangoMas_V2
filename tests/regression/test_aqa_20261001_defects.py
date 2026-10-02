@@ -24,8 +24,14 @@ import pytest
 from mangomas.adapters.storage.sqlite import SQLiteRepository
 from mangomas.config import LoopSettings
 from mangomas.core.agent import AgentRequest, Message
-from tests.constants import DEFAULT_LOOP_STEP_TIMEOUT, LOOP_STEP_TIMEOUT_ENV
-from tests.lmstudio.conftest import make_lmstudio_settings
+from tests.constants import (
+    DEFAULT_LLM_MODEL,
+    DEFAULT_LOOP_STEP_TIMEOUT,
+    LLM_MODEL_ENV,
+    LMSTUDIO_MODEL_ENV,
+    LOOP_STEP_TIMEOUT_ENV,
+)
+from tests.lmstudio.conftest import lmstudio_model, make_lmstudio_settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _AGENTS_MD_CONTRACT_TEST = _REPO_ROOT / "tests" / "test_agents_md_contract.py"
@@ -290,3 +296,37 @@ def test_d5_malformed_step_timeout_env_raises_named_error(
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "not-a-number")
     with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
         make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+
+
+# ── D6: lmstudio_model fixture hardcoded default model fallback ────────────────
+#
+# RCA: The lmstudio_model fixture bypassed MANGOMAS_LLM__MODEL when LMSTUDIO_MODEL
+# was absent, instead falling back directly to DEFAULT_LLM_MODEL ("local-model").
+# The fix ensures it cascades: LMSTUDIO_MODEL -> MANGOMAS_LLM__MODEL -> default.
+
+
+def test_d6_lmstudio_model_cascades_to_mangomas_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D6: If LMSTUDIO_MODEL is unset, MANGOMAS_LLM__MODEL takes precedence."""
+    monkeypatch.delenv(LMSTUDIO_MODEL_ENV, raising=False)
+    monkeypatch.setenv(LLM_MODEL_ENV, "test-model-override")
+    assert lmstudio_model() == "test-model-override"
+
+
+def test_d6_lmstudio_model_honours_lmstudio_model_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D6: LMSTUDIO_MODEL takes highest precedence when set."""
+    monkeypatch.setenv(LMSTUDIO_MODEL_ENV, "lmstudio-test-model")
+    monkeypatch.setenv(LLM_MODEL_ENV, "test-model-override")
+    assert lmstudio_model() == "lmstudio-test-model"
+
+
+def test_d6_lmstudio_model_falls_back_to_default_when_both_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D6: The fixture falls back to the constant when both env vars are absent."""
+    monkeypatch.delenv(LMSTUDIO_MODEL_ENV, raising=False)
+    monkeypatch.delenv(LLM_MODEL_ENV, raising=False)
+    assert lmstudio_model() == DEFAULT_LLM_MODEL

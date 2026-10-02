@@ -79,6 +79,7 @@ from mangomas.core import Orchestrator
 from tests.constants import (
     DEFAULT_LOOP_STEP_TIMEOUT,
     IN_MEMORY_SQLITE_URL,
+    LLM_MODEL_ENV,
     LMSTUDIO_BASE_URL_ENV,
     LMSTUDIO_E2E_TIMEOUT_ENV,
     LMSTUDIO_MODEL_ENV,
@@ -195,7 +196,7 @@ def lmstudio_base_url() -> str:
 @pytest.fixture
 def lmstudio_model() -> str:
     """LM Studio model id from ``LMSTUDIO_MODEL`` env var or default."""
-    return os.environ.get(LMSTUDIO_MODEL_ENV, DEFAULT_LLM_MODEL)
+    return os.environ.get(LMSTUDIO_MODEL_ENV, os.environ.get(LLM_MODEL_ENV, DEFAULT_LLM_MODEL))
 
 
 @pytest.fixture

@@ -15,6 +15,7 @@ def apply_settings_override(
 
     Return a validated Settings model for environment-specific runtime overrides.
     """
+
     def _deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
         result = base.copy()
         for k, v in over.items():

@@ -28,7 +28,10 @@ environment changes, not code fixes:
 
 Both are **deployment gaps**, not code defects.  The D5 portability fix
 (`MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS`) allows the non-structured-output
-scenarios to pass on slow hardware once the timeout budget is raised.
+scenarios to pass on slow hardware once the timeout budget is raised, and
+the D6 fix (`lmstudio_model` cascaded fallback) ensures the correct model
+is passed to the LM Studio endpoint to avoid `400 Bad Request` mismatch
+errors.
 
 ---
 

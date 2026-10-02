@@ -36,6 +36,13 @@ audit cycle:
   `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` when `loop=None`; an explicit `loop=`
   takes precedence; a malformed value raises a named `ValueError` (mirrors
   `resolve_live_timeout`).
+- **D6** `tests/lmstudio/conftest.py`: The `lmstudio_model` fixture hardcoded
+  fallback to `DEFAULT_LLM_MODEL` if `LMSTUDIO_MODEL` was unset, bypassing
+  `MANGOMAS_LLM__MODEL`. This caused the CI/CD E2E suite to send requests
+  with `"model": "local-model"`, triggering a `400 Bad Request` (and
+  subsequent `502 Bad Gateway` test failure) from live LM Studio instances.
+  Fixed by cascading `LMSTUDIO_MODEL_ENV` -> `LLM_MODEL_ENV` ->
+  `DEFAULT_LLM_MODEL`.
 
 ### Added — AQA regression suite (2026-10-01)
 
