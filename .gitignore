@@ -82,6 +82,7 @@ node_modules/
 # Antigravity / Gemini agent workspace
 .gemini/
 docs/antigravity_reference.md
+product-sdlc-antigravity/
 
 # Dev scratch (one-off scripts, not shipped)
 scratch/

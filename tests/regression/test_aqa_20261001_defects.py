@@ -57,8 +57,13 @@ def test_d1_auth_module_importable_without_type_errors() -> None:
     """
     result = subprocess.run(
         [
-            sys.executable, "-m", "pytest",
-            "tests/test_auth.py", "--collect-only", "-q", "--no-cov",
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/test_auth.py",
+            "--collect-only",
+            "-q",
+            "--no-cov",
         ],
         cwd=_REPO_ROOT,
         capture_output=True,
@@ -66,10 +71,8 @@ def test_d1_auth_module_importable_without_type_errors() -> None:
         check=False,
     )
     assert result.returncode == 0, (
-        f"tests/test_auth.py failed to collect (import error):\n"
-        f"{result.stdout}\n{result.stderr}"
+        f"tests/test_auth.py failed to collect (import error):\n{result.stdout}\n{result.stderr}"
     )
-
 
 
 def test_d1_auth_non_ascii_tests_are_collected() -> None:
@@ -80,9 +83,15 @@ def test_d1_auth_non_ascii_tests_are_collected() -> None:
     """
     result = subprocess.run(
         [
-            sys.executable, "-m", "pytest",
-            "tests/test_auth.py", "-q", "--collect-only", "--no-cov",
-            "-k", "non_ascii",
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/test_auth.py",
+            "-q",
+            "--collect-only",
+            "--no-cov",
+            "-k",
+            "non_ascii",
         ],
         cwd=_REPO_ROOT,
         capture_output=True,
@@ -90,10 +99,7 @@ def test_d1_auth_non_ascii_tests_are_collected() -> None:
         check=False,
     )
     output = result.stdout + result.stderr
-    collected_lines = [
-        ln for ln in output.splitlines()
-        if "non_ascii" in ln and "::" in ln
-    ]
+    collected_lines = [ln for ln in output.splitlines() if "non_ascii" in ln and "::" in ln]
     assert len(collected_lines) >= 4, (
         f"Expected >=4 non_ascii tests collected; got {len(collected_lines)}:\n{output}"
     )
@@ -155,9 +161,12 @@ def test_d2_agents_md_contract_test_passes_live() -> None:
     """D2: The live governance test must pass against the actual repo."""
     result = subprocess.run(
         [
-            sys.executable, "-m", "pytest",
+            sys.executable,
+            "-m",
+            "pytest",
             "tests/test_agents_md_contract.py::test_no_nested_agents_md_files",
-            "-v", "--no-cov",
+            "-v",
+            "--no-cov",
         ],
         cwd=_REPO_ROOT,
         capture_output=True,
@@ -222,9 +231,7 @@ async def test_d4_save_failed_turn_appears_in_list_turns(tmp_path: Path) -> None
     assert turns[0].get("error_code") == error_code, (
         f"error_code not persisted correctly: {turns[0]}"
     )
-    assert not turns[0].get("content"), (
-        "A failed turn must not carry successful response content"
-    )
+    assert not turns[0].get("content"), "A failed turn must not carry successful response content"
     repo.close()
 
 

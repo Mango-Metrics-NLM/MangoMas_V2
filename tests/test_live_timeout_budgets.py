@@ -172,9 +172,7 @@ def test_make_lmstudio_settings_explicit_loop_beats_env(
     """An explicit loop= kwarg is not overridden by the env var."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
     explicit = LoopSettings(step_timeout_seconds=5.0)
-    settings = make_lmstudio_settings(
-        "http://localhost:1234/v1", "test-model", loop=explicit
-    )
+    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model", loop=explicit)
     assert settings.loop.step_timeout_seconds == 5.0
 
 
@@ -185,4 +183,3 @@ def test_make_lmstudio_settings_malformed_step_timeout_names_env_var(
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "not-a-number")
     with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
         make_lmstudio_settings("http://localhost:1234/v1", "test-model")
-

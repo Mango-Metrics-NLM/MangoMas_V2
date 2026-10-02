@@ -47,9 +47,7 @@ def _nested_git_roots() -> set[Path]:
     them keeps the governance gate focused on *this* repo's tree.
     """
     return {
-        git_path.parent
-        for git_path in _REPO_ROOT.rglob(".git")
-        if git_path.parent != _REPO_ROOT
+        git_path.parent for git_path in _REPO_ROOT.rglob(".git") if git_path.parent != _REPO_ROOT
     }
 
 

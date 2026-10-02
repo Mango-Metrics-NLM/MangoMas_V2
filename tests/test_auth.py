@@ -37,6 +37,7 @@ def _cast_response(r: object) -> httpx.Response:
     """
     return cast("httpx.Response", r)
 
+
 @pytest.fixture
 def auth_app(orchestrator: Orchestrator, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """An app with auth enabled and the expected token resolved from the env provider."""
