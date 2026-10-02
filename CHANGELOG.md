@@ -9,6 +9,43 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — SDLC defect triage AQA (2026-10-01)
+
+Five defects found and fixed during the `sdlc/defect-triage-aqa-20261001`
+audit cycle:
+
+- **D1** `tests/test_auth.py`: Six mypy `arg-type` errors from `httpx2`
+  (Pydantic's fork) co-installed on system Python.  Resolved by extracting
+  `_cast_response()` — a typed private helper that centralises the `cast()`
+  declaration and its documenting docstring — and `# type: ignore[arg-type]`
+  annotations for intentional ASGI wire-byte headers.
+- **D2** `tests/test_agents_md_contract.py`: The governance gate incorrectly
+  flagged `AGENTS.md` files inside nested git repos (e.g.
+  `product-sdlc-antigravity/`).  Fixed by the `_nested_git_roots()` helper,
+  which dynamically discovers sub-directories with their own `.git` and
+  excludes them from the scan.  Zero hardcoded paths.
+- **D3** `tests/regression/__init__.py`: Missing package marker added;
+  consistent with all other test sub-packages.
+- **D4** `tests/lmstudio/test_step_timeout.py`: Stale `list_turns == []`
+  assertion updated to the ADR-0031 contract: `_FailureRecordingMixin`
+  intentionally persists all dispatch failures — including `StepTimeout` — as
+  error-status rows; the zero-row assertion was a pre-ADR-0031 false negative.
+- **D5** `tests/lmstudio/conftest.py`: `make_lmstudio_settings` always built
+  `LoopSettings()` with the 30 s hardcoded default when `loop=None`, making
+  the E2E suite non-portable to slower models.  Fixed to honour
+  `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` when `loop=None`; an explicit `loop=`
+  takes precedence; a malformed value raises a named `ValueError` (mirrors
+  `resolve_live_timeout`).
+
+### Added — AQA regression suite (2026-10-01)
+
+- `tests/regression/test_aqa_20261001_defects.py`: 19 regression guards for
+  D1–D5, all mock-backed (no live LLM required), all in the standard CI run.
+- `tests/test_live_timeout_budgets.py`: Extended with four unit tests for the
+  `make_lmstudio_settings` step-timeout env-read path (D5); pinned all three
+  branches: env honoured, default fallback, explicit `loop=` takes precedence,
+  malformed value raises named error.
+
 ### Added — per-directory instruction documents, each with a checkable claim
 
 Three new `CLAUDE.md` files (`composition/`, `api/`, `adapters/`), joining the

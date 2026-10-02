@@ -8,6 +8,30 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: E2E model gap triage (2026-10-01)
+
+Two live LM Studio failures against `nvidia/nemotron-3-nano-omni` require
+environment changes, not code fixes:
+
+- **Embedding model** (`RUN_EMBEDDINGS_LOCAL=1` / `RUN_RAG=1` suites):
+  `nvidia/nemotron-3-nano-omni` is a chat/omni model with no
+  `/v1/embeddings` endpoint — LM Studio returns HTTP 400.  Load a dedicated
+  embedding model (e.g. `nomic-embed-text-v1.5`) and set
+  `LMSTUDIO_EMBEDDING_MODEL=<model-id>` to enable these suites.
+- **Structured tool-call JSON** (`test_plan_execute_review.py`):
+  `nvidia/nemotron-3-nano-omni` does not reliably emit the
+  `{"tool": ..., "args": ...}` JSON schema required by `ToolCallParser`.
+  The `ToolAgent` raises `LLMBadResponse` — the correct typed finding, as
+  documented in the test docstrings.  Switch to a model with native
+  function-calling (e.g. `qwen2.5-7b-instruct`, `mistral-nemo-instruct`) to
+  pass `test_shipped_graph_completes_with_validation_on`.
+
+Both are **deployment gaps**, not code defects.  The D5 portability fix
+(`MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS`) allows the non-structured-output
+scenarios to pass on slow hardware once the timeout budget is raised.
+
+---
+
 ## Overlay: reliability evidence (2026-09-16)
 
 A three-model council reviewed the next cycle. Its claims are adjudicated

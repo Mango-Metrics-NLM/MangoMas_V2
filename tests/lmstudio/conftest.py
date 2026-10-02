@@ -138,12 +138,17 @@ def make_lmstudio_settings(
     # Mirrors how LMSTUDIO_E2E_TIMEOUT_SECONDS governs the adapter budget.
     if loop is None:
         raw_step = os.environ.get(LOOP_STEP_TIMEOUT_ENV)
-        step_seconds = (
-            float(raw_step)
-            if raw_step is not None and raw_step.strip()
-            else DEFAULT_LOOP_STEP_TIMEOUT
-        )
+        if raw_step is not None and raw_step.strip():
+            try:
+                step_seconds: float = float(raw_step)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{LOOP_STEP_TIMEOUT_ENV} must be a number of seconds, got {raw_step!r}",
+                ) from exc
+        else:
+            step_seconds = DEFAULT_LOOP_STEP_TIMEOUT
         loop = LoopSettings(step_timeout_seconds=step_seconds)
+
     # Each group is passed explicitly (falling back to its own default) rather
     # than splatted in conditionally: a `**{...}` splat is untypeable against
     # `Settings`' heterogeneous keyword signature, and `mypy --strict` is part

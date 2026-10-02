@@ -26,6 +26,17 @@ _MSG = {"messages": [{"role": "user", "content": "hi"}]}
 _AGENT_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "chat"}})
 
 
+def _cast_response(r: object) -> httpx.Response:
+    """Cast TestClient response to ``httpx.Response``.
+
+    ``httpx2`` (Pydantic's fork, v2.12.0) is co-installed alongside ``httpx``
+    on the system Python. Mypy resolves ``TestClient`` return types as
+    ``httpx2._models.Response``, causing ``arg-type`` errors on helpers that
+    accept ``httpx.Response``. At runtime the object *is* ``httpx.Response``;
+    the cast is a type-checker declaration only.
+    """
+    return cast("httpx.Response", r)
+
 @pytest.fixture
 def auth_app(orchestrator: Orchestrator, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """An app with auth enabled and the expected token resolved from the env provider."""
@@ -314,7 +325,7 @@ def test_non_ascii_bearer_credential_is_rejected_not_crashed(
             json=_MSG,
             headers={"Authorization": b"Bearer " + _NON_ASCII_WIRE},  # type: ignore[arg-type]  # intentional: raw bytes simulate non-ASCII wire bytes that httpx refuses to str-encode
         )
-    _assert_error_envelope(cast(httpx.Response, r))  # httpx2 co-installed on this machine; runtime object is httpx.Response
+    _assert_error_envelope(_cast_response(r))
     assert not [rec for rec in caplog.records if rec.exc_info], (
         "an unauthenticated client drove a traceback into the logs"
     )
@@ -324,7 +335,7 @@ def test_non_ascii_api_key_credential_is_rejected_not_crashed(auth_app: FastAPI)
     """The X-API-Key path reaches the same comparison, so it needs the same guard."""
     with TestClient(auth_app) as client:
         r = client.post("/agents/chat/invoke", json=_MSG, headers={"X-API-Key": _NON_ASCII_WIRE})  # type: ignore[arg-type]  # intentional: raw bytes simulate non-ASCII wire bytes
-    _assert_error_envelope(cast(httpx.Response, r))  # httpx2 co-installed on this machine; runtime object is httpx.Response
+    _assert_error_envelope(_cast_response(r))
 
 
 @pytest.fixture
@@ -345,7 +356,7 @@ def test_non_ascii_configured_token_rejects_a_wrong_credential(
         r = client.post(
             "/agents/chat/invoke", json=_MSG, headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
         )
-    _assert_error_envelope(cast(httpx.Response, r))  # httpx2 co-installed on this machine; runtime object is httpx.Response
+    _assert_error_envelope(_cast_response(r))
 
 
 def test_non_ascii_configured_token_accepts_the_matching_credential(

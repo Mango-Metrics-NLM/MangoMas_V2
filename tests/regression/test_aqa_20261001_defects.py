@@ -10,6 +10,7 @@ Defect classes covered:
   D2 — test_agents_md_contract: nested-git-repo AGENTS.md incorrectly flagged
   D3 — tests/regression/: missing __init__.py package marker
   D4 — test_step_timeout: stale list_turns == [] assertion predating ADR-0031
+  D5 — lmstudio/conftest: make_lmstudio_settings ignored MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS
 """
 
 from __future__ import annotations
@@ -18,8 +19,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from mangomas.adapters.storage.sqlite import SQLiteRepository
+from mangomas.config import LoopSettings
 from mangomas.core.agent import AgentRequest, Message
+from tests.constants import DEFAULT_LOOP_STEP_TIMEOUT, LOOP_STEP_TIMEOUT_ENV
+from tests.lmstudio.conftest import make_lmstudio_settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _AGENTS_MD_CONTRACT_TEST = _REPO_ROOT / "tests" / "test_agents_md_contract.py"
@@ -42,18 +48,28 @@ def test_d1_auth_module_importable_without_type_errors() -> None:
     """D1: test_auth.py must import cleanly regardless of httpx2 presence.
 
     Defect: 6 mypy arg-type errors from httpx2 co-install and intentional
-    bytes headers.  Fix: cast(httpx.Response, r) + # type: ignore[arg-type].
+    bytes headers.  Fix: _cast_response() helper + # type: ignore[arg-type].
+
+    Uses ``pytest --collect-only`` rather than ``python -c "import ..."``:
+    collection fails immediately on import errors and properly respects the
+    editable install regardless of whether the caller uses system Python or a
+    venv.
     """
     result = subprocess.run(
-        [sys.executable, "-c", "import tests.test_auth"],
+        [
+            sys.executable, "-m", "pytest",
+            "tests/test_auth.py", "--collect-only", "-q", "--no-cov",
+        ],
         cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 0, (
-        f"tests/test_auth.py failed to import cleanly:\n{result.stderr}"
+        f"tests/test_auth.py failed to collect (import error):\n"
+        f"{result.stdout}\n{result.stderr}"
     )
+
 
 
 def test_d1_auth_non_ascii_tests_are_collected() -> None:
@@ -191,7 +207,7 @@ async def test_d4_save_failed_turn_appears_in_list_turns(tmp_path: Path) -> None
     Uses SQLiteRepository directly — no live LLM dependency.
     """
     db_path = tmp_path / "test_turns.db"
-    repo = SQLiteRepository(str(db_path))
+    repo = SQLiteRepository(f"sqlite:///{db_path.as_posix()}")
 
     request = AgentRequest(messages=[Message(role="user", content="hello")])
     error_code = "step_timeout"
@@ -210,3 +226,60 @@ async def test_d4_save_failed_turn_appears_in_list_turns(tmp_path: Path) -> None
         "A failed turn must not carry successful response content"
     )
     repo.close()
+
+
+# ── D5: make_lmstudio_settings ignored MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS ────
+#
+# RCA: make_lmstudio_settings always built LoopSettings() with the hardcoded
+# DEFAULT_LOOP_STEP_TIMEOUT (30s) when no explicit loop= was supplied.  Slow
+# models (e.g. nvidia/nemotron-3-nano-omni on a local GPU) take >30s per step,
+# causing StepTimeout on every E2E test that uses the standard fixture.
+#
+# Fix (commit d59aa95): when loop=None, read MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS
+# from the environment and pass it into LoopSettings(step_timeout_seconds=...).
+# Falls back to DEFAULT_LOOP_STEP_TIMEOUT unchanged.  An explicit loop= argument
+# takes precedence over the env var.  A malformed value raises a named ValueError
+# (mirrors resolve_live_timeout).
+
+
+def test_d5_make_lmstudio_settings_respects_step_timeout_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D5: env var MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS must reach LoopSettings."""
+    monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
+    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+    assert settings.loop.step_timeout_seconds == 90.0, (
+        f"Expected 90.0 from env; got {settings.loop.step_timeout_seconds}"
+    )
+
+
+def test_d5_make_lmstudio_settings_defaults_when_env_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D5: absence of the env var must fall back to DEFAULT_LOOP_STEP_TIMEOUT."""
+    monkeypatch.delenv(LOOP_STEP_TIMEOUT_ENV, raising=False)
+    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+    assert settings.loop.step_timeout_seconds == DEFAULT_LOOP_STEP_TIMEOUT, (
+        f"Expected {DEFAULT_LOOP_STEP_TIMEOUT} default; got {settings.loop.step_timeout_seconds}"
+    )
+
+
+def test_d5_explicit_loop_takes_precedence_over_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D5: an explicit loop= kwarg must not be overridden by the env var."""
+    monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
+    explicit = LoopSettings(step_timeout_seconds=5.0)
+    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model", loop=explicit)
+    assert settings.loop.step_timeout_seconds == 5.0, (
+        f"Explicit loop= must take precedence over env; got {settings.loop.step_timeout_seconds}"
+    )
+
+
+def test_d5_malformed_step_timeout_env_raises_named_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D5: a non-numeric env value must raise ValueError naming the variable."""
+    monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "not-a-number")
+    with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
+        make_lmstudio_settings("http://localhost:1234/v1", "test-model")
