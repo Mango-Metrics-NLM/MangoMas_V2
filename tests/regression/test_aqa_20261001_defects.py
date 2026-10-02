@@ -307,26 +307,29 @@ def test_d5_malformed_step_timeout_env_raises_named_error(
 
 def test_d6_lmstudio_model_cascades_to_mangomas_env(
     monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
 ) -> None:
     """D6: If LMSTUDIO_MODEL is unset, MANGOMAS_LLM__MODEL takes precedence."""
     monkeypatch.delenv(LMSTUDIO_MODEL_ENV, raising=False)
     monkeypatch.setenv(LLM_MODEL_ENV, "test-model-override")
-    assert lmstudio_model() == "test-model-override"
+    assert request.getfixturevalue("lmstudio_model") == "test-model-override"
 
 
 def test_d6_lmstudio_model_honours_lmstudio_model_env(
     monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
 ) -> None:
     """D6: LMSTUDIO_MODEL takes highest precedence when set."""
     monkeypatch.setenv(LMSTUDIO_MODEL_ENV, "lmstudio-test-model")
     monkeypatch.setenv(LLM_MODEL_ENV, "test-model-override")
-    assert lmstudio_model() == "lmstudio-test-model"
+    assert request.getfixturevalue("lmstudio_model") == "lmstudio-test-model"
 
 
 def test_d6_lmstudio_model_falls_back_to_default_when_both_unset(
     monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
 ) -> None:
     """D6: The fixture falls back to the constant when both env vars are absent."""
     monkeypatch.delenv(LMSTUDIO_MODEL_ENV, raising=False)
     monkeypatch.delenv(LLM_MODEL_ENV, raising=False)
-    assert lmstudio_model() == DEFAULT_LLM_MODEL
+    assert request.getfixturevalue("lmstudio_model") == DEFAULT_LLM_MODEL
