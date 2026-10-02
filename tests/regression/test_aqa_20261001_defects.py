@@ -1,9 +1,7 @@
 """Regression guards for defects found and fixed in the sdlc/defect-triage-aqa-20261001 audit.
 
-Each test is:
-  - Mock-backed (no live services required unless noted)
-  - Parametrized where multiple cases share the same defect class
-  - Documented with the defect class, RCA, and fix reference
+Coverage includes unit-level checks, pytest subprocess guards, and direct
+SQLite persistence tests; no live LLM is required.
 
 Defect classes covered:
   D1 — test_auth: mypy arg-type errors from httpx2 co-install + intentional bytes headers
@@ -11,6 +9,7 @@ Defect classes covered:
   D3 — tests/regression/: missing __init__.py package marker
   D4 — test_step_timeout: stale list_turns == [] assertion predating ADR-0031
   D5 — lmstudio/conftest: make_lmstudio_settings ignored MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS
+  D6 — lmstudio/conftest: lmstudio_model ignored MANGOMAS_LLM__MODEL
 """
 
 from __future__ import annotations
@@ -37,48 +36,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _AGENTS_MD_CONTRACT_TEST = _REPO_ROOT / "tests" / "test_agents_md_contract.py"
 
 
-# ── D1: httpx bytes-header type suppression ────────────────────────────────────
+# ── D1: httpx bytes-header typing ──────────────────────────────────────────────
 #
 # RCA: httpx2 (pydantic's fork, v2.12.0) is co-installed alongside httpx
 # (v0.28.1) on the system Python.  Mypy resolves TestClient responses as
 # httpx2._models.Response, causing arg-type errors when passing to helpers typed
 # httpx.Response.  The intentional bytes-header pattern (ASGI wire simulation)
-# also requires suppression because TestClient's overloads only accept str
-# header values.
+# also deliberately uses raw-byte headers to simulate wire values.
 #
-# Fix: cast(httpx.Response, r) for the response mismatch; # type: ignore[arg-type]
-# with a documenting comment for the bytes header values.
-
-
-def test_d1_auth_module_importable_without_type_errors() -> None:
-    """D1: test_auth.py must import cleanly regardless of httpx2 presence.
-
-    Defect: 6 mypy arg-type errors from httpx2 co-install and intentional
-    bytes headers.  Fix: _cast_response() helper + # type: ignore[arg-type].
-
-    Uses ``pytest --collect-only`` rather than ``python -c "import ..."``:
-    collection fails immediately on import errors and properly respects the
-    editable install regardless of whether the caller uses system Python or a
-    venv.
-    """
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "tests/test_auth.py",
-            "--collect-only",
-            "-q",
-            "--no-cov",
-        ],
-        cwd=_REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, (
-        f"tests/test_auth.py failed to collect (import error):\n{result.stdout}\n{result.stderr}"
-    )
+# Fix: cast(httpx.Response, r) for the response mismatch; retain the documented
+# raw-byte header values that simulate ASGI wire bytes.
 
 
 def test_d1_auth_non_ascii_tests_are_collected() -> None:
@@ -237,7 +204,7 @@ async def test_d4_save_failed_turn_appears_in_list_turns(tmp_path: Path) -> None
     assert turns[0].get("error_code") == error_code, (
         f"error_code not persisted correctly: {turns[0]}"
     )
-    assert not turns[0].get("content"), "A failed turn must not carry successful response content"
+    assert turns[0]["response"] == {}
     repo.close()
 
 

@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -147,8 +148,14 @@ def make_lmstudio_settings(
                 step_seconds: float = float(raw_step)
             except ValueError as exc:
                 raise ValueError(
-                    f"{LOOP_STEP_TIMEOUT_ENV} must be a number of seconds, got {raw_step!r}",
+                    f"{LOOP_STEP_TIMEOUT_ENV} must be a finite positive number of seconds, "
+                    f"got {raw_step!r}",
                 ) from exc
+            if not math.isfinite(step_seconds) or step_seconds <= 0:
+                raise ValueError(
+                    f"{LOOP_STEP_TIMEOUT_ENV} must be a finite positive number of seconds, "
+                    f"got {raw_step!r}",
+                )
         else:
             step_seconds = DEFAULT_LOOP_STEP_TIMEOUT
         loop = LoopSettings(step_timeout_seconds=step_seconds)
@@ -209,7 +216,7 @@ def resolve_lmstudio_model() -> str:
 
 @pytest.fixture
 def lmstudio_model() -> str:
-    """LM Studio model id from ``LMSTUDIO_MODEL`` env var or default."""
+    """Model id from ``LMSTUDIO_MODEL``, then ``MANGOMAS_LLM__MODEL``, or default."""
     return resolve_lmstudio_model()
 
 

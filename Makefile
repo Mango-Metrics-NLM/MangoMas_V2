@@ -82,6 +82,7 @@ ifeq ($(OS),Windows_NT)
     DEVNULL := NUL
     ifneq ($(wildcard C:/Program\ Files/Git/usr/bin/sh.exe),)
         SHELL := C:/Program Files/Git/usr/bin/sh.exe
+        DEVNULL := /dev/null
     endif
 else
     DEVNULL := /dev/null

@@ -256,7 +256,7 @@ exclude = ["*.md"]
 "src/mangomas/core/tools.py" = ["PLC0414"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 mypy_path = "src:eval_harness_bridge/src:mango-integration-contracts/src:scripts"
 # `files` mirrors the Makefile's CODE_PATHS so a bare `mypy` checks exactly what

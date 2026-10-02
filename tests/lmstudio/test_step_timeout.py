@@ -76,7 +76,7 @@ async def test_sub_round_trip_budget_returns_the_504_envelope(
         # Post-ADR-0031 invariant:
         #   • exactly one row (the error record from _FailureRecordingMixin)
         #   • its error_code matches the typed StepTimeout code
-        #   • no successful response content was stored (step was cancelled mid-flight)
+        #   • no successful response was stored (step was cancelled mid-flight)
         repo = orch.context.repo
         assert repo is not None
         turns = await repo.list_turns(limit=5)
@@ -87,9 +87,7 @@ async def test_sub_round_trip_budget_returns_the_504_envelope(
         assert error_turn.get("error_code") == StepTimeout(LIVE_STEP_TIMEOUT_SECONDS).code, (
             f"Persisted turn has wrong error_code: {error_turn}"
         )
-        assert not error_turn.get("content"), (
-            "A timed-out step must not persist a partial completion as content"
-        )
+        assert error_turn["response"] == {}
 
 
 @pytest.mark.lmstudio

@@ -183,3 +183,22 @@ def test_make_lmstudio_settings_malformed_step_timeout_names_env_var(
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "not-a-number")
     with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
         make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param("0", id="zero"),
+        pytest.param("-1", id="negative"),
+        pytest.param("nan", id="nan"),
+        pytest.param("inf", id="infinity"),
+    ],
+)
+def test_make_lmstudio_settings_rejects_non_positive_or_non_finite_step_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    raw: str,
+) -> None:
+    """A set step timeout must be finite and positive."""
+    monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, raw)
+    with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
+        make_lmstudio_settings("http://localhost:1234/v1", "test-model")
