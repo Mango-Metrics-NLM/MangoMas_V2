@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from mangomas.eval.protocol import ScoreResult, Scorer, ScorerContext
-from mangomas.eval.registry import ScorerFactory, scorer_registry
+from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,7 @@ class SemanticSimilarityScorer:
             similarity = 0.0
         else:
             similarity = min(len(expected), len(prediction)) / max(len(expected), len(prediction))
-            
+
         passed = similarity >= self.threshold
 
         return ScoreResult(

@@ -39,6 +39,18 @@ def _sections(path: Path) -> list[str]:
     return [line.strip() for line in _SECTION_RE.findall(path.read_text(encoding="utf-8"))]
 
 
+def _nested_git_roots() -> set[Path]:
+    """Return absolute paths of directories inside the repo that have their own .git.
+
+    These are standalone nested repositories with independent governance — an
+    AGENTS.md inside one is valid for *that* repo's agents, not ours.  Excluding
+    them keeps the governance gate focused on *this* repo's tree.
+    """
+    return {
+        git_path.parent for git_path in _REPO_ROOT.rglob(".git") if git_path.parent != _REPO_ROOT
+    }
+
+
 def test_both_instruction_docs_exist() -> None:
     """Non-vacuity: every check below reads these two files."""
     missing = [rel for rel in ROOT_INSTRUCTION_RELPATHS if not (_REPO_ROOT / rel).is_file()]
@@ -109,11 +121,21 @@ def test_no_nested_agents_md_files() -> None:
     that name is never loaded. That is precisely the defect that retired this
     repository's ``agent.md`` corpus ("a file nothing loads cannot be kept
     honest"), and it would be invisible rather than noisy.
+
+    Nested git repos (e.g. ``product-sdlc-antigravity/``) have their own
+    independent governance and are excluded from the scan: an AGENTS.md inside
+    such a repo is valid for *that* repo's agents, not ours (ADR-0035).
     """
+    excluded_roots = _nested_git_roots()
     nested = sorted(
         path.relative_to(_REPO_ROOT).as_posix()
         for path in _REPO_ROOT.rglob("AGENTS.md")
-        if ".git/" not in path.as_posix() and ".venv/" not in path.as_posix() and path != _AGENTS_MD
+        if (
+            ".git/" not in path.as_posix()
+            and ".venv/" not in path.as_posix()
+            and path != _AGENTS_MD
+            and not any(path.is_relative_to(root) for root in excluded_roots)
+        )
     )
     assert nested == [], (
         f"nested AGENTS.md file(s) found: {nested}. Claude Code does not read "
