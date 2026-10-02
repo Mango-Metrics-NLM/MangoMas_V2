@@ -77,10 +77,12 @@ from mangomas.config import (
 )
 from mangomas.core import Orchestrator
 from tests.constants import (
+    DEFAULT_LOOP_STEP_TIMEOUT,
     IN_MEMORY_SQLITE_URL,
     LMSTUDIO_BASE_URL_ENV,
     LMSTUDIO_E2E_TIMEOUT_ENV,
     LMSTUDIO_MODEL_ENV,
+    LOOP_STEP_TIMEOUT_ENV,
     client_timeout_for,
     resolve_live_timeout,
 )
@@ -130,6 +132,18 @@ def make_lmstudio_settings(
         if timeout_seconds is None
         else timeout_seconds
     )
+    # When no explicit loop= is given, honour MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS
+    # so a slow model (e.g. a large omni model on a local GPU) can be
+    # accommodated by setting that env var rather than by editing test code.
+    # Mirrors how LMSTUDIO_E2E_TIMEOUT_SECONDS governs the adapter budget.
+    if loop is None:
+        raw_step = os.environ.get(LOOP_STEP_TIMEOUT_ENV)
+        step_seconds = (
+            float(raw_step)
+            if raw_step is not None and raw_step.strip()
+            else DEFAULT_LOOP_STEP_TIMEOUT
+        )
+        loop = LoopSettings(step_timeout_seconds=step_seconds)
     # Each group is passed explicitly (falling back to its own default) rather
     # than splatted in conditionally: a `**{...}` splat is untypeable against
     # `Settings`' heterogeneous keyword signature, and `mypy --strict` is part
@@ -144,7 +158,7 @@ def make_lmstudio_settings(
             temperature=DEFAULT_LLM_TEMPERATURE,
         ),
         db=DBSettings(provider="sqlite", url=_E2E_DB_URL),
-        loop=loop if loop is not None else LoopSettings(),
+        loop=loop,
         agents=agents if agents is not None else {},
     )
 
