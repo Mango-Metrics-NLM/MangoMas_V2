@@ -1,282 +1,486 @@
-# Docling document ingestion — delivery plan
+# Docling document ingestion — delivery plan (rev 2, peer-reviewed)
 
-- **Branch:** `feat/initial-release` (cut a dedicated `feat/docling-ingestion` branch before M1)
+- **Branch:** `docs/docling-ingestion-plan` (implementation PRs cut from `feat/initial-release`, one branch per PR below)
 - **Date:** 2026-10-06
 - **Target release:** rolling (additive, default-OFF)
-- **Status:** Draft
-- **Specs:** spec-0035 (to be drafted in M0 from `specs/TEMPLATE.md`)
-- **ADRs:** ADR-0036 (to be drafted in M0: parser seam, out-of-process default, error type, tenancy honesty)
+- **Status:** Draft — rev 2 supersedes rev 1 after a six-role review
+- **Specs:** spec-0035 (drafted in PR A1)
+- **ADRs:** ADR-0036 (drafted in PR A1; must be **Accepted** before PR B1 merges)
 
 ## Executive summary
 
-Ship PDF / Office / HTML ingestion for `mangomas rag ingest` behind a new
-`DocumentParser` protocol, **parsing first and chunking later**. The first
-provider is `docling_serve` (httpx to a separately deployed docling-serve): it
-needs no new pip dependency, so CI never installs torch, the tests are pure
-`respx`, and `pyproject.toml` (a governance-surface path) stays untouched until
-a later milestone. Structure-aware chunking is deliberately sequenced *after*
-parsing and *behind a measurement*, because it touches the pipeline, the chunk
-metadata schema and the retrieval output, and its benefit is unproven on this
-corpus. The constraint that shaped the order: every step must leave
-`MANGOMAS_PARSER__ENABLED=false` byte-identical to today's `.txt`/`.md` path.
+Add PDF/Office ingestion to `mangomas rag ingest` behind a `DocumentParser`
+protocol, with an out-of-process `docling-serve` provider first. **Parsing ships
+before any structure-aware chunking, and only parsing is unconditional**; the
+chunking work (PR C) is gated on a properly powered measurement (PR A2), because
+the rev-1 gate ("improves beyond noise") was not a procedure. Rev 2 differs from
+rev 1 in five load-bearing ways: (1) the word chunker would have flattened every
+parsed table, so line-preserving windowing moves into PR B; (2) auth, resource
+limits, symlink containment and prompt-injection framing are specified instead
+of deferred; (3) the gated bake-off is wired into the repo's gate-registration
+contract and redesigned to be statistically meaningful; (4) PRs are split so each
+is independently green and the protected-path commits are minimal; (5) every
+hand-waved decision became either a concrete requirement or an explicit open
+question. The constraint that still shapes everything: with
+`MANGOMAS_PARSER__ENABLED=false`, ingest of `.txt`/`.md` is byte-identical to
+today.
 
-## Findings that shaped this plan
+## The review board and what each found
 
-Web-verified (Oct 2026): docling 2.134.0, MIT; docling-serve exposes
-`/v1/convert/file` (+ `/async`), `X-Api-Key` auth, `document_timeout`, and
-returns `status: success|partial_success|skipped|failure` with
-`md_content`/`json_content`; the CPU image is ~4.4 GB and sizing guidance is
-4 vCPU / 8–16 GB for production. Four 2026 CVEs hit Docling's non-PDF backends
-(XXE in METS-GBS, path traversal in LaTeX, HTML Playwright rendering, HTML
-URI/path handling), fixed in 2.91.0 / 2.94.0. `ocr_engine` is deprecated in
-serve in favour of `ocr_preset` (and issue #567 reports it being ignored).
+Six independent reviews of rev 1; each verified claims against the repo. Findings
+were adjudicated by me; where reviewers disagreed, the disposition says so.
 
-Repo-verified (this checkout):
+| Role | Verdict | Top findings adopted |
+|---|---|---|
+| Principal architect | Approve with changes; 0 blockers | Parser→pipeline wiring unspecified; empty-OCR text silently purges; `DocumentParseError` is a protected edit for marginal gain; B3 too large |
+| RAG engineer | 1 blocker | `chunk_text` does `split()`/`" ".join` (`rag/chunker.py:30,40`) — parsed tables lose all newlines; words≠tokens vs embedder limit; reserved-key merge order; mixed-strategy audit trail; embedding-model change purges before failing |
+| Test/QA engineer | 2 blockers | Bake-off has no pass criterion and no gate wiring; B3's test conflates four assertions and lacks the opposite-direction control; ~12 missing cheap tests; 4 more mutation proofs |
+| AppSec engineer | 2 blockers | Service auth undecided (open serve = unauthenticated parser + SSRF); no page/decompressed/response caps; symlink + absolute-path `source` leakage; image digest + model provenance; stored prompt injection unmitigated; HTML in default allow-list |
+| Retrieval-eval scientist | 2 blockers | Decision rule not operational; 10–20 docs cannot detect a 3–8 pt gain; labels coupled to the chunker under test; hit@k alone; baseline grid incomplete; no reproducibility pins |
+| Release/CI owner | 1 blocker | `RUN_DOCLING` fails `tests/deploy/test_gated_suite_homes.py` unless registered in `ENV_GATE_SUITES`/`HOSTED_RUNNER_INFEASIBLE`; serve cannot reuse `deploy/service.yaml` + `sed` + `/healthz` smoke path; B1 not independently green (`deploy/README.md` settings-group test); squash-merge can drop the trailer |
 
-- `RawDoc` is `(source, text)`; the pipeline writes only `{source, index}`
-  metadata and embeds the same string it stores (`rag/pipeline.py:146,220`).
-- `load_documents` returns a full list and is used by tests
-  (`tests/rag/test_loader.py`, `tests/regression/test_sdlc_gate_defects.py`) —
-  its signature is permanent; add an iterator beside it, never change it.
-- A document that yields no chunks **purges** its prior vectors
-  (`_replace_source` with empty batches). A *parse failure* must never reach
-  that path or one corrupt PDF silently deletes a good index entry.
-- `VectorStoreRepository` has no `get`/fingerprint primitive; adding a method
-  breaks implementers (`adapters/CLAUDE.md`), so content-hash skipping needs a
-  *new capability protocol*, not a method.
-- Import-linter: `workflow`, `eval`, `rag`, `cognitive` are mutually
-  independent (indirect imports count). `rag/` may see the parser protocol only
-  under `TYPE_CHECKING`, as it does for embeddings/vector.
-- `pyproject.toml` and `errors.py` both require a `BREAKING-CHANGE: <path> —
-  <rationale>` trailer (bare path, first token, one per path).
-- The vector collection is global (`MANGOMAS_VECTOR__COLLECTION`); tenancy
-  partitions conversation turns only, so RAG is **not** tenant-isolated. Any
-  upload-style API is blocked on that (ADR-0033 boundary honesty).
-- Install docs target Windows/PowerShell; docker-for-serve is friction for the
-  local-first user, which is why an in-process provider (M5) stays on the plan.
+### Disposition of contested points
 
-## PR A — Decision records and the measurement harness (spec-0035)
+- **`RawDoc.metadata` timing.** Architect: defer to C (smallest surface). RAG
+  engineer: need audit metadata now. **Resolved:** add the field in B3b but
+  populate only minimal audit keys (`parser`, `parse_status`, `chunker`,
+  `chunk_words`) and **only on the parsed path**, so text-path chunks stay
+  byte-identical. Page/heading metadata waits for C.
+- **`DocumentParseError`.** Architect: marginal, protected. Counter-argument
+  that wins: `ConfigError` (400) and `PersistenceError` mislabel an upstream
+  parser failure, and operators need to tell "parser down" from "bad config".
+  **Resolved:** keep it, isolated in a single trailer-bearing commit; mapped to
+  502 because the `tests/test_errors.py` status walk requires every error be
+  mapped even though v1 is CLI-only. ADR records the reasoning.
+- **HTML in default `allowed_suffixes`.** Security: remove (CVE history in
+  Docling's HTML backend). **Accepted:** default is `.pdf .docx .pptx .xlsx`.
+- **In-process provider (D1).** Security: forfeits isolation. UX: Windows
+  local-first users lack Docker. **Resolved:** keep D1, but explicit opt-in,
+  CLI-only, and a subprocess with resource limits for untrusted input.
+- **Sample size.** Eval scientist wants 60–100 questions / ≥15 docs; labelling
+  cost is real. **Resolved:** PR A2 is budgeted for it, and the decision rule
+  has a first-class "inconclusive" outcome so an under-powered result is never
+  recorded as a negative.
+- **Does the API service need parser env at all?** Ingest is a CLI/operator
+  action, so `deploy/service.yaml` likely needs **no** `MANGOMAS_PARSER__*`
+  entries (CI reviewer assumed it does). To be confirmed in A1; the README
+  settings-group test still requires the group be *documented*.
 
-### Milestone A0 — Spec, ADR, golden set ✅-when-merged
+### Errors in rev 1 that this revision corrects
 
-- **Failing test first:** none — docs-only. Instead, the *gate for B/C*: a
-  gated test `tests/rag/test_parser_bakeoff.py` (`RUN_DOCLING=1`) that ingests
-  a small golden corpus (10–20 real documents: ≥3 table-heavy PDFs, 1 scanned
-  PDF, 1 DOCX, 1 PPTX) and asserts hit@k on hand-written
-  (question → expected source [+ heading]) pairs using the **real**
-  `Retriever`. It runs word-chunking today to set the baseline number.
+References to a nonexistent "M5"; a "✅-when-merged" marker on a Draft plan;
+treating the bake-off as a unit test; tag-pinning an image meant to be
+digest-pinned; assuming `docling-serve` auth, URL-fetch and container-user
+behaviour without verification.
+
+## Verified vs unverified
+
+**Verified in this repo** (read or grepped): the chunker flattening; pipeline
+embed-before-delete and empty-doc purge (`pipeline.py:146-176,246`); `rglob`
+following symlinks (`loader.py:59`); single-file `source` is `root.as_posix()`
+as typed (`loader.py:71`); the CLI builds `IngestionPipeline` directly
+(`cli/commands/rag.py:59`); `ENV_GATE_SUITES`/`HOSTED_RUNNER_INFEASIBLE` in
+`tests/constants/live.py`; marker-based gating in `tests/conftest.py`;
+`deploy/` contains only `service.yaml` + README; `pyproject.toml` and
+`errors.py` are trailer-protected; next free numbers are spec-0035 / ADR-0036.
+
+**Web-sourced, treat as claims until A1 pins them:** docling 2.134.0, MIT;
+docling-serve endpoints, response `status` values, `X-Api-Key` auth,
+`document_timeout`; the ~4.4 GB CPU image and 4 vCPU / 8–16 GB sizing; four 2026
+Docling CVEs fixed by 2.91/2.94 (**reviewers cited different CVE IDs; the IDs
+are unreconciled — pin the version floor from the advisory itself, not from this
+document**).
+
+**Unverified, A1 must settle before B2:** serve's default auth (assume open);
+whether `/v1/convert/source` can be disabled; container user; whether `md_content`
+excludes headers/footers; HybridChunker tokenizer/metadata/`contextualize()`
+behaviour (docs site blocked by the egress proxy); `docling-core[chunking]`
+install weight and offline tokenizer story; converter thread-safety; model-weight
+download/egress needs.
+
+## PR A1 — Decisions and verification spike (docs + recorded fixtures only)
+
+### Milestone A1.1 — Verify the unverified
+
+- **Failing test first:** none (research). Deliverable is a recorded fixture:
+  real `docling-serve` request/response pairs (success, `partial_success`,
+  `failure`, `skipped`, 401, oversize) committed under `tests/fixtures/` so B2
+  tests are pinned to the actual contract, not memory.
 - **Depends on:** nothing — parallel-safe.
-- Draft `specs/0035-docling-document-ingestion.md` and
-  `docs/adr/0036-document-parser-seam.md` (use `mango-adr-author`). The ADR
-  must record: out-of-process default; format allow-list; `on_error` policy;
-  new `DocumentParseError`; "RAG is not tenant-isolated, so no upload API";
-  retrieved/parsed text is untrusted data (prompt-injection surface, incl.
-  hidden/white-on-white PDF text).
-- Optional comparison column in the bake-off: `pypdfium` backend, and one
-  lighter parser (e.g. pymupdf4llm) on the text-native PDFs — the claim that
-  Docling is worth its weight is currently unmeasured.
+- Answer every item in "Unverified" above; record the pinned image **digest**,
+  docling version, layout/table model revisions and OCR preset.
 
-## PR B — Parsing seam, behind a flag (spec-0035)
+### Milestone A1.2 — Spec-0035 and ADR-0036 (use `mango-adr-author`)
 
-### Milestone B1 — Protocol, fake, settings, error
+- **Failing test first:** none — but ADR must be **Accepted** before PR B1 merges
+  (merge-order rule, enforced in review).
+- ADR must record decisions, not aspirations:
+  1. **Service auth:** IAM ID-token (`roles/run.invoker`, `--no-allow-unauthenticated`,
+     internal ingress, dedicated SA) primary; `X-Api-Key` defence-in-depth only;
+     only `/v1/convert/file` reachable (front with proxy or config flag, per A1.1).
+  2. **Operator privilege:** "ingest is an operator action; the corpus is global
+     and not tenant-isolated; no upload endpoint until a tenancy ADR supersedes
+     this" (ADR-0033 honesty). Consider reserving a per-source `tenant` metadata
+     key now so a later fix needs no re-ingest.
+  3. **Empty parsed text:** a non-empty file whose parse returns empty text is a
+     **parse failure** (skip/fail per `on_error`), never a purge. A genuinely
+     empty `.md`/`.txt` keeps today's purge behaviour.
+  4. **`on_error`** semantics: `skip` (default; logged, counted, never purges)
+     vs `fail`; with the per-document iterator, `fail` on file N leaves files
+     1..N-1 already replaced (stated, not hidden).
+  5. **Data residency:** documents leave the host to serve — same region, body
+     logging disabled, retained in memory only (verify), PII note.
+  6. **Untrusted content:** parsed text is data; hidden text (white-on-white,
+     tiny/off-page) reaches the index; control is output framing + a poisoned-PDF
+     test (below), not a promise.
+  7. **`DocumentParseError`** and its 502 mapping (see dispositions).
+  8. **Inherited debt:** the CLI builds `IngestionPipeline` directly; the parser
+     is constructed in `composition/parser.py` and read off the context like
+     embeddings. A `build_ingestion_pipeline` composition factory is a separate
+     follow-up.
+  9. **Rollback:** set `MANGOMAS_PARSER__ENABLED=false`. Already-ingested
+     vectors remain (no migration); turning the parser off does **not** purge
+     PDF-derived vectors — documented, with a manual `delete_by_source` recipe.
+- Spec requirements to state explicitly: every default/limit value; `documents`
+  in `IngestReport` and spans means "successfully yielded", skipped counted
+  separately; the nonexistent-path `ConfigError` stays raised inside the
+  `rag.ingest` span before the first yield.
 
-- **Failing test first:** `tests/adapters/parsers/test_base.py` —
-  `isinstance(FakeDocumentParser(), DocumentParser)`; `tests/test_config.py` —
-  defaults (`enabled=False`) and validators; `tests/test_errors.py` status walk
-  fails until `DocumentParseError` is mapped.
-- **Depends on:** A0 (ADR accepted).
-- `src/mangomas/adapters/parsers/base.py`: `@runtime_checkable DocumentParser`
-  (`async parse(self, *, filename: str, content: bytes) -> ParsedDocument`,
-  `aclose`) and frozen `ParsedDocument(text, pages: int | None, metadata)` —
-  primitives only, so the adapter never imports `rag/` (mirror `VectorMatch`).
-- `src/mangomas/config/parser.py`: `ParserSettings` — `enabled`, `provider`
-  (`docling_serve`), `base_url`, `api_key`, `secret_ref` (mirror
-  `MANGOMAS_LLM__SECRET_REF` precedence), `timeout_seconds`,
-  `document_timeout_seconds`, `allowed_suffixes`, `max_file_bytes`,
-  `on_error` (`skip|fail`), `ocr` (bool/preset). Re-export through
-  `config/__init__.py`; add to `_root.py::Settings`; extend
-  `tests/test_import_compat.py` facade-identity contract.
-- `errors.py`: `DocumentParseError(MangomasError)` code
-  `document_parse_error`; map in `api/errors.py::_ERROR_STATUS`; extend
-  `tests/test_errors.py` (skill `mango-error`, agent
-  `mango-error-taxonomy-dev`). **Commit trailer:**
+## PR A2 — Gated measurement harness (gate wiring + corpus + metrics)
+
+Redesigned from rev 1. It decides PR C, so it is built as an instrument, not a
+smoke test.
+
+### Milestone A2.1 — Gate wiring (do first; otherwise `make gate` fails)
+
+- **Failing test first:** `tests/deploy/test_gated_suite_homes.py` goes red when
+  `RUN_DOCLING` is introduced unregistered; plus a test that the bake-off
+  **skips** when the flag is unset (default suite stays green).
+- Register `RUN_DOCLING` in `tests/constants/live.py` — in
+  `HOSTED_RUNNER_INFEASIBLE` (needs a live serve + real embedder) with a reason,
+  and make sure no workflow invokes it; add a `docling` pytest marker and its
+  `RUN_DOCLING` branch in `tests/conftest.py` (marker-based, like `rag`); add a
+  `Makefile` target (in `.PHONY`) and update `tests/deploy/test_ci_make_parity.py`
+  expectations if it enumerates targets.
+
+### Milestone A2.2 — Corpus and labels
+
+- **Corpus:** ≥15 documents, redistributable only (CC-BY/public-domain/synthetic);
+  hosted outside the repo and fetched by pinned hash, or generated. Stratified:
+  table-heavy PDF, prose PDF, scanned PDF, DOCX/PPTX/XLSX; declare English-only
+  scope or add a small non-English slice. Include one **poisoned PDF** (hidden
+  instruction text).
+- **Labels:** 60–100 questions, **chunker-agnostic gold evidence spans**
+  (verbatim passage), not "source + heading" (heading labels reward the heading
+  chunker by construction). Cap questions per document; ≥30% target tables;
+  two-person labelling on a 20-question subsample with agreement reported.
+  Dev/test split: tune on dev, score a frozen test slice **once**.
+- **Frozen parse artifacts:** commit/hash the parsed markdown so chunker
+  comparisons are decoupled from parser nondeterminism.
+
+### Milestone A2.3 — Metrics, arms, decision rule
+
+- **Primary:** recall@5 on evidence spans (text-overlap match against retrieved
+  chunks). **Secondary:** MRR@10, nDCG@10, context precision; per-stratum
+  numbers; **parse-recall** (is the gold span present in parsed text at all —
+  separates OCR/parse misses from retrieval misses); chunk-count and token-length
+  distribution; fraction of chunks over the embedder's context limit; parse
+  latency p95 per page, peak memory, cost per 100 pages. Small downstream check:
+  answer faithfulness via the existing `llm_judge` with a fixed answerer/judge.
+- **Arms:** parsers {pypdfium backend, Docling default, optionally pymupdf4llm}
+  × chunkers {word-window, line-preserving window, markdown-heading,
+  HybridChunker when C3 exists}; **equal token budget across arms**; sweep ≥3
+  chunk sizes for baseline and winner (size sensitivity often exceeds structure
+  effect in published comparisons — verify citations in the spec).
+- **Statistics:** paired **cluster bootstrap resampled by document**; report
+  deltas with 95% CI. At ~80 questions expect to resolve only large effects
+  (roughly ≥10–15 points pooled); the table stratum is where a large effect is
+  hypothesised, so powering is aimed there.
+- **Decision rule (pre-registered in the spec):** adopt a chunker/parser only if
+  (a) the CI lower bound of Δrecall@5 > 0 (or ≥ +3 pts on the pre-registered
+  primary metric), (b) no stratum regresses > 5 pts, (c) latency/cost ceilings
+  hold. If the CI spans zero and is wide → **"inconclusive; needs more data"**,
+  not "negative". The gate in CI is regression-only on the frozen test slice.
+- **Reproducibility pins** stored in report metadata: serve image digest, docling
+  version, model revisions, OCR preset, embedding model id + revision, chunker
+  parameters.
+
+## PR B1 — Protocol, settings, fake (smallest possible; no behaviour)
+
+### Milestone B1.1 — Seam, settings, docs
+
+- **Failing test first:** `tests/adapters/parsers/test_base.py`
+  (`isinstance(FakeDocumentParser(), DocumentParser)`); facade-identity tests in
+  `tests/test_import_compat.py` for `config.ParserSettings` and
+  `adapters.parsers`; `tests/test_config.py` defaults + validators in **both
+  directions**; `test_env_example_contract` red until `.env.example` + `AGENTS.md`
+  table document every var **including the list/enum defaults** (`allowed_suffixes`,
+  `on_error` — the contract only compares scalar defaults, so add explicit checks);
+  `test_readme_documents_every_settings_group` red until `deploy/README.md`
+  documents the `PARSER` group; `tests/tooling/test_directory_claude_md.py` red
+  until `adapters/CLAUDE.md` and `composition/CLAUDE.md` tables list the new seam.
+- **Depends on:** PR A1 merged and ADR-0036 Accepted.
+- `adapters/parsers/base.py`: `@runtime_checkable DocumentParser`
+  (`async parse(*, filename, content: bytes) -> ParsedDocument`, `aclose`);
+  `ParsedDocument(text, pages: int | None = None, partial: bool = False)` —
+  primitives only (mirror `VectorMatch`); no free-form `metadata` yet.
+- `config/parser.py` `ParserSettings` (all `DEFAULT_*` constants, re-exported via
+  `config/__init__.py`, added to `_root.py`): `enabled=False`, `provider`,
+  `base_url`, `api_key`, `secret_ref` (same precedence as
+  `MANGOMAS_LLM__SECRET_REF`), `timeout_seconds`, `document_timeout_seconds`
+  (validator: outer timeout **>** document timeout, tested both ways),
+  `allowed_suffixes` (default `.pdf .docx .pptx .xlsx`), `max_file_bytes`,
+  `max_pages`, `max_response_bytes`, `max_zip_entries`, `max_zip_ratio`,
+  `on_error`, `ocr_preset`, `parsed_chunk_words`, `embed_max_tokens` (optional).
+- `tests/fakes.py` `FakeDocumentParser`: records calls, scriptable text/raise,
+  latency via `asyncio.Event` (no wall-clock sleeps). URLs, fixture payloads, the
+  sentinel key and filenames go in `tests/constants` (re-export mirrored
+  defaults `X as X`, never restate).
+- Expected coverage floors stated up front: `adapters/parsers` → adapters 85 %;
+  `rag` 95 %; `config`/`composition` count toward global 95 % only.
+- CHANGELOG `[Unreleased]` entry (every PR updates it).
+
+### Milestone B1.2 — `DocumentParseError` (isolated commit; protected path)
+
+- **Failing test first:** `tests/test_errors.py` status walk fails until mapped;
+  assert `.code == "document_parse_error"`, HTTP 502, base class, and `detail`
+  truncation limit.
+- **Depends on:** B1.1. Keep this to **one commit** touching `errors.py` and
+  `api/errors.py::_ERROR_STATUS` so the trailer-bearing commit is the only
+  protected-path change. Trailer:
   `BREAKING-CHANGE: src/mangomas/errors.py — add DocumentParseError`.
-- `tests/fakes.py`: `FakeDocumentParser` (scriptable text/raise/latency).
-- `.env.example` + the `AGENTS.md` config table: every new var, both
-  directions (`tests/deploy/test_env_example_contract.py`).
+- **Merge rule:** the PR must **not** be squash-merged unless the squash message
+  carries the trailer (trailers are read from commit messages;
+  `make protected-paths` needs `BASE_REF` set and the trailers present).
 
-### Milestone B2 — docling-serve adapter
+## PR B2 — `docling_serve` adapter
 
-- **Failing test first:** `tests/adapters/parsers/test_docling_serve.py` with
-  `respx`: success → text; `partial_success` → text + warning log; `failure`
-  and `skipped` → `DocumentParseError`; HTTP 5xx / timeout / connect error →
-  typed error (never a raw `httpx` exception — reuse `_http_errors.py`
-  translation where it fits, else add a parser variant); `X-Api-Key` header
-  sent only when a key is set; malformed JSON → typed error with truncated
-  `detail`; oversize file refused **before** any network call.
-- **Depends on:** B1.
-- `adapters/parsers/docling_serve.py`: `OpenAICompatHTTPClient` is LLM-shaped,
-  so extract only the lifecycle idea (injected `httpx.AsyncClient`,
-  `rstrip("/")` base URL, `_request`/translate) rather than subclassing blindly
-  — decide in review whether a small shared base is warranted (mango-decompose
-  guidance applies if it grows).
-- Request: multipart upload to `/v1/convert/file` with `to_formats=md`,
-  `document_timeout`, `ocr_preset`/`do_ocr` (**not** `ocr_engine`).
-- Registry: `composition/parser.py` + `parsers` entry in `_registries.py`
-  (provider names table in `composition/CLAUDE.md` must be updated or
-  `tests/tooling/test_directory_claude_md.py` fails). Constructs nothing unless
-  `enabled`. Update `adapters/CLAUDE.md` Protocol table too.
-- Secrets: API key resolved via `SecretsProvider`, never logged; the `detail`
-  field carries status/length only, never document bytes.
+### Milestone B2.1 — Client, limits, auth, tests
 
-### Milestone B3 — Loader + pipeline integration (default-OFF)
+- **Failing test first** (`respx`, using A1.1's recorded fixtures):
+  success → text; `partial_success` → `ParsedDocument.partial=True` + warning +
+  report accounting (never silently indexed as clean); `failure`, `skipped`,
+  **unknown status value** → `DocumentParseError`; empty `md_content` →
+  empty text (policy applied upstream); 401/403 → config-class error (not
+  transient); 5xx/timeouts/connect errors → typed (no raw `httpx`); malformed
+  JSON → typed with truncated `detail`; response larger than
+  `max_response_bytes` refused; oversize file (`max_file_bytes`, `+1`, and
+  `0` = off per repo convention) refused **before any network call**
+  (`respx` route call count 0; size via `stat`, not read-then-check).
+- **Request hygiene (asserted on the request body):** `from_formats` pinned to
+  the file's allowed format; **no** `ocr_engine` (use `ocr_preset`); sanitised or
+  generated multipart filename (Unicode-safe), never the original path; only
+  `/v1/convert/file` is ever called; `max_num_pages`/`document_timeout` sent.
+- **Secrets:** sentinel-key test with `caplog` + `str()`/`repr()` of exceptions
+  and spans; `X-Api-Key` header present only when a key is set (two-sided);
+  `secret_ref` over `api_key` precedence. Log fields are an allow-list: a
+  canary string in a document or serve error body must **not** appear in logs or
+  span attributes.
+- **Depends on:** B1.1 (parallel-safe with B1.2 until the error is needed).
+- `composition/parser.py` + `parsers` registry entry; constructs nothing unless
+  `enabled`; flag-off test asserts no parser built and no `httpx` client opened.
+- Lazy-import pragma only where an SDK import exists (none here); fixtures live
+  in `tests/`, helper reuse from `_http_errors.py` where it fits — avoid
+  subclassing the LLM-shaped `OpenAICompatHTTPClient` blindly.
 
-- **Failing test first:** (1) `test_loader_iter`: `iter_documents` yields the
-  same `RawDoc`s as `load_documents` for text trees (parity, so the old API is
-  provably unchanged); (2) with a `FakeDocumentParser` a directory containing
-  `a.pdf`, `b.md` yields both, sorted deterministically; (3) **parse failure
-  of `a.pdf` does not delete `a.pdf`'s existing vectors** (pre-seed a
-  `FakeVectorStore`, run, assert still present); (4) parser off → ingest of a
-  `.pdf` is skipped exactly as today (suffix filter unchanged).
-- **Depends on:** B2 (or B1 + the fake — parallel-safe with B2).
-- `rag/loader.py`: add `iter_documents(path, *, parser=None, ...)` async
-  generator; `load_documents` stays and delegates for text-only (permanent
-  facade, ADR-0019 style). Parsing happens **per document, not up front**, so
-  memory is bounded by one document and a failure on file N cannot lose files
-  1..N-1 (they are already embedded and swapped).
-- Files are read with `asyncio.to_thread`; `source` stays the POSIX relative
-  path (re-ingestion contract unchanged). `RawDoc` gains an optional
-  `metadata: Mapping[str, Any]` with a default (additive; frozen dataclass).
-- `rag/pipeline.py`: consume the iterator; `IngestReport` gains
-  `skipped_documents: int = 0` (default-safe); a parse failure under
-  `on_error=skip` logs `rag_document_parse_failed` (event + source + error
-  code, no content), increments `skipped_documents`, and **never** calls
-  `_replace_source`; under `on_error=fail` it raises. Span `rag.parse` per
-  document with `rag.parse.pages`, `rag.parse.bytes`.
-- Empty-path warning logic (`rag_ingest_empty`) must key off "yielded zero",
-  since the count is no longer known up front.
-- `cli/commands/rag.py`: help text, build the parser through composition, close
-  it in the `finally`; print `skipped=` only when non-zero (keep the existing
-  one-line output stable otherwise — check for CLI output snapshot tests).
-- Format allow-list is enforced **twice**: our `allowed_suffixes` before the
-  upload (default `.pdf .docx .pptx .xlsx .html`; **no** LaTeX/METS/XBRL/
-  audio/video/email) and, in M5, Docling's own `allowed_formats`.
+## PR B3a — Loader (`iter_documents`) with containment
 
-### Milestone B4 — Operations and docs
+### Milestone B3a.1 — Iterator, symlink and source canonicalisation
 
-- **Failing test first:** `tests/deploy/` contract for any new deploy env
-  entries; docs build/lint (frontmatter + markdown) if applicable.
-- **Depends on:** B3.
-- `deploy/`: docling-serve as a separate Cloud Run service (min 4 vCPU /
-  8–16 GB, concurrency tuned low, request timeout ≥ longest `document_timeout`;
-  service-to-service auth — IAM ID token vs `X-Api-Key` decided in the ADR).
-  Pin `docling-serve` image to a version **≥ 2.94-equivalent** (CVE floor) and
-  record the pin in `deploy/`.
-- `docs/rag/` page + `mango-rag` skill update + CHANGELOG `[Unreleased]`.
-- Local-dev recipe: `docker run` docling-serve-cpu; note the ~4.4 GB pull and
-  Windows/Docker requirement.
+- **Failing test first:** (1) **parity**: `iter_documents` yields exactly what
+  `load_documents` returns for text trees — Hypothesis over file trees (empty
+  file, unicode, nested dirs, single-file path), plus order independent of
+  directory creation order; (2) **symlink escape**: a symlink inside the root
+  pointing at a file outside it is skipped (and logged), proven red first;
+  (3) case-insensitive suffix (`A.PDF`); (4) Windows-style paths yield POSIX
+  `source` keys so re-ingest replaces rather than duplicates; (5) single-file
+  `source` canonicalised for the **parsed path** (`./a.pdf` ≡ `a.pdf`;
+  never an absolute path leaked into retrievable metadata) while the text path
+  keeps `root.as_posix()` unchanged (byte-identical).
+- **Depends on:** B1.1.
+- **Do not change `_load_documents_sync`** (pinned by `tests/rag/test_loader.py`
+  and `tests/regression/test_sdlc_gate_defects.py:57-74`); `iter_documents` is a
+  new async generator reusing its helpers. `load_documents` signature is
+  permanent.
+- Pre-upload checks: `stat` size; for `.docx/.pptx/.xlsx` zip entry-count and
+  compression-ratio ceilings (zip-bomb guard); symlink containment via
+  `resolve()` + `is_relative_to(root.resolve())`.
 
-## PR C — Structure-aware chunking, **gated on the A0 baseline**
+## PR B3b — Pipeline + CLI integration (default-OFF)
 
-### Milestone C1 — Heading/page metadata plumbing (no new chunker yet)
+### Milestone B3b.1 — Never-purge, line-preserving chunking, accounting
 
-- **Failing test first:** pipeline test — a `RawDoc` carrying
-  `metadata={"title": ...}` produces chunk metadata with only Chroma-legal
-  scalars (str/int/float/bool; lists flattened to a delimited string or
-  dropped, never passed raw — Chroma rejects nested values); retrieval test —
-  `RetrievalTool` output includes `heading`/`page` **when present** and is
-  byte-identical when absent.
-- **Depends on:** B3.
-- Add a `rag/chunker.py` `ChunkSpec(text, metadata)` and a `Chunker` callable
-  seam; `chunk_text` itself is untouched. Pipeline merges doc-level metadata
-  into each chunk's metadata after the reserved keys (`source`, `index` can
-  never be overridden — test it).
-- Extend `_match_to_result`/`RetrievalTool` formatting additively.
+- **Failing test first** (each one tests a distinct behaviour; do not bundle):
+  1. parse failure of `a.pdf` with `on_error=skip` leaves `a.pdf`'s existing
+     vectors **and count** untouched (`FakeVectorStore` pre-seeded);
+  2. **opposite direction:** an empty `.md` still purges (today's behaviour);
+  3. parser returns empty text for a non-empty file → treated as a parse
+     failure, no purge (ADR-0036 §3);
+  4. `on_error=fail` raises, and files 1..N-1 are persisted;
+  5. `partial_success` document is indexed with `parse_status=partial` and
+     counted;
+  6. a parsed markdown **table keeps its newlines and separator row** in the
+     stored chunk (this is the blocker-1 regression test);
+  7. all documents failing to parse → `skipped`, **not** `rag_ingest_empty`;
+  8. flag-off golden: a `.txt/.md/.pdf` tree with `enabled=false` yields the
+     same `IngestReport`, chunk ids, metadata and CLI string as today, and no
+     parser is constructed;
+  9. `aclose` called once in the CLI `finally`, including when ingest raises;
+  10. `RetrievalTool` output byte-identical when no chunk is parser-derived;
+      parser-derived chunks are returned inside an explicit untrusted-data
+      delimiter, and the poisoned-PDF case does not make the agent follow the
+      injected instruction.
+- **Depends on:** B2.1, B3a.1.
+- `IngestionPipeline.__init__(..., parser: DocumentParser | None = None)` —
+  additive keyword; existing constructors in `tests/rag/test_pipeline.py` stay
+  valid. `IngestReport.skipped_documents: int = 0` (default-safe; pinned
+  equality tests keep passing).
+- **Chunking for parsed docs only:** a whitespace/line-preserving fallback window
+  in `rag/chunker.py` (new function; `chunk_text` untouched so text-path output
+  is byte-identical), sized by `parsed_chunk_words` (provisional default chosen
+  conservatively for 512-token embedders; A2 replaces it with a measured value)
+  and a `rag_chunk_over_budget` warning when estimated tokens exceed
+  `embed_max_tokens`.
+- **Metadata (parsed path only):** `RawDoc.metadata` (immutable/`default_factory`,
+  tested against shared-mutable-default); minimal audit keys `parser`,
+  `parse_status`, `chunker`, `chunk_words`, `embedding_model`; keys namespaced,
+  `source`/`index` **always win** (build `{**doc_meta, "source": …, "index": …}`),
+  `None`/list/dict values dropped or flattened (Chroma rejects `None`; Hypothesis
+  property over nested/non-string-key inputs); heterogeneous-key batches accepted
+  by the (fake) store; re-ingesting a source previously `.txt` and now parsed
+  replaces cleanly.
+- `rag/pipeline.py`: consume the iterator; `rag.documents` / "started" log use a
+  running "yielded" count; span `rag.parse` per document with pages/bytes only;
+  event `rag_document_parse_failed` (source + error code, no content).
+- `cli/commands/rag.py`: help text kept byte-compatible (pinned by
+  `tests/test_cli_rag.py` and `tests/constants/cli.py:26,64`, or constants
+  updated deliberately); `skipped=` printed only when non-zero.
+- Known hazard recorded in docs, not fixed here: changing the embedding model
+  makes the store raise a dimension mismatch **after** the source is deleted.
+  A fail-before-delete guard needs a store-side capability protocol
+  (`VectorStoreRepository` cannot grow a method) — separate spec; PDFs make it
+  costlier, so it is on the follow-up list with priority.
 
-### Milestone C2 — Markdown-heading chunker (dependency-free) + measure
+## PR B4 — Operations (separate service; not required for local use)
 
-- **Failing test first:** golden-markdown test: nested headings →
-  `heading_path` metadata, a table is never split mid-row below a size cap,
-  oversize sections fall back to word windows with the **same** overlap rules.
-- **Depends on:** C1.
-- Pure-Python splitter over the markdown the parser already returns; page
-  numbers are *not* available here (markdown lacks provenance) — acceptable
-  for v1 and stated in the spec.
-- Run the A0 bake-off with this chunker. **Decision gate:** adopt only if
-  hit@k improves on the golden set beyond noise; otherwise stop here and
-  record the negative result in the ADR.
+### Milestone B4.1 — Deploy docling-serve safely
 
-### Milestone C3 — Docling HybridChunker spike (only if C2 leaves a gap)
+- **Failing test first:** new `tests/deploy/` contract(s): serve manifest exists
+  and is **digest-pinned** (and minimum-version regex encodes the CVE floor);
+  unauthenticated invocation not allowed; ingress internal; no literal
+  secrets/URLs (`secretKeyRef` for any `*_API_KEY` / `*__URL`); non-root and
+  resource limits asserted; Dependabot entry for the image.
+- **Depends on:** A1.1 (verified auth/user facts), B2.1.
+- **Do not reuse** `deploy/service.yaml` / the `deploy.yml` `sed` image rewrite /
+  `/healthz` smoke path (they assume exactly one image and a first-party
+  health contract). Add `deploy/docling-serve.yaml`, its own deploy job (written
+  contract-tests-first, `test_workflow_hardening` applies), a health probe that
+  fits serve, an instance cap, low concurrency, and a memory limit sized per the
+  4 vCPU / 8–16 GB guidance (verify).
+- Hardening: IAM ID-token invoker auth; egress deny-all except what is needed;
+  **models baked into the image** (no runtime Hugging Face download) with a pinned
+  revision; image vulnerability scan in CI (the `pip-audit` equivalent for this
+  path); same region as the data; body logging off.
+- `deploy/service.yaml` is **not** edited unless A1.2 shows the API service
+  itself ingests; `deploy/README.md` documents the `PARSER` group regardless.
+- Observability/SLO: metrics `parse_failures`, `skipped_documents`, p95 parse
+  latency; alert on skipped-document ratio; per-document cost and cold-start
+  budget (4.4 GB image, `minScale: 0`) recorded in the ADR. Docs page,
+  `mango-rag` skill update (run `make frontmatter`), local-dev recipe
+  (`docker run` the CPU image; Windows/Docker caveat).
 
-- **Failing test first:** gated `RUN_DOCLING=1` test on a table-heavy PDF
-  asserting page-number metadata and header-repeated table chunks.
-- **Depends on:** C2 decision gate.
-- Needs `json_content` from serve + `docling-core[chunking]` (much lighter
-  than full `docling`, but **verify install weight and the tokenizer
-  download/offline story first** — unverified). Tokenizer must match the
-  *embedding* model; LM Studio's model has no guaranteed HF tokenizer, so
-  either document an approximate `max_tokens`, or pack Hierarchical-chunker
-  blocks by **words** to keep the existing unit. Lives behind an additive
-  capability protocol in `adapters/parsers/` (not in `rag/`, which must stay
-  pure). Touches `pyproject.toml` → trailer
-  `BREAKING-CHANGE: pyproject.toml — add docling-core chunking extra`.
-- Embedding text vs stored text: embed `contextualize()` output, store/return
-  raw chunk text — a pipeline change (it currently embeds and stores the same
-  string); only adopt if the bake-off shows the gain.
+## PR C — Structure-aware chunking (**only if PR A2's rule is satisfied**)
 
-## PR D — In-process provider (local-first / Windows users)
+### Milestone C1 — Line-preserving markdown splitter with header repeat
+
+- **Failing test first:** Hypothesis property over generated markdown tables:
+  no row is ever split; every split chunk of a table repeats the header row;
+  oversize non-table sections fall back to the window with the same overlap
+  rules; heading path emitted as namespaced `doc_heading_path`.
+- **Depends on:** A2 decision gate, B3b.1. Dependency-free, so `rag/` stays pure
+  and the import contracts hold. Page numbers unavailable from markdown (stated).
+  Merged cells / multi-row headers flatten unpredictably in Docling markdown
+  (stated in the spec). Run the A2 harness with this arm before adopting.
+
+### Milestone C2 — Contextualised embedding (embed ≠ store)
+
+- **Failing test first:** `_PreparedBatch` carries separate embed text; stored
+  text is raw, embedded text is heading-prefixed; ids/metadata unchanged.
+- **Depends on:** C1 and a measured gain. Zero-code alternative (prepend heading
+  path to stored text) is evaluated first. Note asymmetric-prefix embedders need
+  query/document prefixes.
+
+### Milestone C3 — Docling HybridChunker spike (only if C1 leaves a measured gap)
+
+- **Failing test first:** gated test on a table-heavy PDF asserting page-number
+  metadata and header-repeated table chunks.
+- **Depends on:** C1 result; verified docling-core weight and tokenizer/offline
+  story (A1.1). Lives behind an additive capability protocol in
+  `adapters/parsers/` (not in `rag/`). Tokenizer must match the **embedding**
+  model; LM Studio has no guaranteed HF tokenizer, so either document an
+  approximate `max_tokens` or pack blocks by words. `pyproject.toml` edit needs
+  `BREAKING-CHANGE: pyproject.toml — add docling-core chunking extra` in its own
+  commit; keep it out of `dev` extras (lockfile freshness, `make pip-audit`).
+
+## PR D — In-process provider (opt-in; CLI-only)
 
 ### Milestone D1 — `docling_local`
 
-- **Failing test first:** protocol-conformance + lazy-import test (module
-  imports with the extra absent; error message names
-  `pip install 'mangomas[docling]'`).
-- **Depends on:** B3. Parallel-safe with C.
-- `DocumentConverter` built **once** (model load is the cost), calls wrapped in
-  `asyncio.to_thread` behind an `asyncio.Semaphore` (thread-safety of a shared
-  converter is **unverified** — serialise until a test or upstream doc proves
-  otherwise); `allowed_formats` restricted; `pypdfium` backend as a
-  low-memory option; OCR off by default (EasyOCR ≈30 s/page on CPU).
-- New extra `docling = ["docling>=2.94"]` in `pyproject.toml` (trailer
-  `BREAKING-CHANGE: pyproject.toml — add docling extra`). Check for resolver
-  conflicts with `chromadb` / `sentence-transformers` in a clean venv before
-  merging; if they conflict, document "use `docling_serve`" and stop.
-- Coverage: the lazy import helper uses the repo's `# pragma: no cover -
-  requires <extra>` pattern (as in `adapters/vector/chroma.py`); the rest is
-  exercised through an injected converter, so the 85 % adapters floor holds
-  (`mango-coverage-audit` to confirm the denominator).
+- **Failing test first:** missing-extra error path via
+  `monkeypatch.setitem(sys.modules, "docling", None)` (no mock of internal
+  protocols); semaphore and `to_thread` paths exercised through an injected
+  converter; lazy-import helper alone carries `# pragma: no cover - requires
+  docling`.
+- **Depends on:** B3b.1. Parallel-safe with C.
+- One converter built once; calls serialised behind a semaphore (thread-safety
+  unverified); `allowed_formats` restricted and `from_formats` mirrored; `pypdfium`
+  backend option; OCR off by default (EasyOCR ≈30 s/page CPU). **Isolation:**
+  runs inside the invoking process with its secrets and filesystem, so it is
+  explicit opt-in, CLI-only, and run in a resource-limited subprocess for
+  untrusted input. Extra `docling = ["docling==<exact pin>"]` (`pyproject.toml`
+  trailer in its own commit), kept out of `dev`, covered by the `pip-audit` gate;
+  clean-venv resolver check against `chromadb`/`sentence-transformers` — on
+  conflict, document "use `docling_serve`" and stop.
 
 ## Deferred / out of scope
 
-- **Parse-document agent tool / `POST /documents` upload endpoint.** Blocked
-  on (a) RAG not being tenant-isolated, (b) SSRF/arbitrary-read risk (Docling
-  accepts URLs and paths), (c) prompt-injection from parsed content. Reopen
-  only via a new ADR that supersedes the tenancy statement in ADR-0036.
-- **Content-hash skip on re-ingest.** Needs a new capability protocol
-  (e.g. a fingerprint-aware vector store) because `VectorStoreRepository`
-  cannot grow a method; or a sidecar manifest. Worth doing once PDFs make
-  re-ingest expensive — separate spec.
-- **Retrieval-quality eval target.** The eval harness scores agent output, not
-  retrieval; `eval` may not import `rag` (independence contract), so a
-  `retrieve` target would have to go through `ToolRegistry`. The A0 gated test
-  is the interim measure.
-- **docling-serve async endpoints** (`/convert/file/async` + poll) — adopt if
-  sync timeouts bite on large PDFs.
-- **Audio/video/email/LaTeX/XBRL/METS formats**, **VLM (Granite-Docling)
-  pipeline**, **MCP server in `.mcp.json`** (governance-surface edit for little
-  benefit).
+- **Parse-document agent tool / `POST /documents`:** blocked on tenancy (ADR-0036
+  §2), SSRF/arbitrary-read, and prompt injection. Reopen only by an ADR
+  superseding §2.
+- **Content-hash skip on re-ingest** and the **fail-before-delete embedding-model
+  guard:** both need a store capability protocol; separate spec, prioritised
+  because PDFs make re-ingest expensive.
+- **Retrieval dedupe/MMR** (repeated boilerplate filling top-k) and
+  **page-furniture/OCR-noise filtering:** measured in A2 first; act on evidence.
+- **Retrieval-quality eval target** (`eval` may not import `rag`; would go via
+  `ToolRegistry`): follow-up; A2 is the interim instrument.
+- **docling-serve async endpoints**, **audio/video/email/LaTeX/XBRL/METS/HTML
+  formats**, **VLM (Granite-Docling) pipeline**, **MCP server in `.mcp.json`**
+  (governance-surface edit for little benefit).
 
 ## Verification
 
 ```bash
-make gate                                   # full pre-PR chain, CI order
-python -m pytest tests/adapters/parsers tests/rag -q
-make lint-imports                           # rag/eval/workflow/cognitive stay independent
-make protected-paths                        # trailers present for errors.py / pyproject.toml
-RUN_DOCLING=1 python -m pytest tests/rag/test_parser_bakeoff.py --no-cov -q
+make gate                                    # full pre-PR chain, CI order
+python -m pytest tests/adapters/parsers tests/rag tests/deploy -q
+make lint-imports                            # rag/eval/workflow/cognitive independence
+BASE_REF=origin/feat/initial-release make protected-paths   # trailers on the right commits
+make frontmatter                             # after mango-rag skill edits
+RUN_DOCLING=1 make docling-bakeoff           # operator-run; hosted-runner infeasible by design
 ```
 
-Mutation proofs (`mango-mutation-proof`) required before merge: (1) delete the
-"don't purge on parse failure" branch → test B3-(3) must go red; (2) remove the
-`allowed_suffixes` check → the format allow-list test must go red; (3) let a
-reserved metadata key be overridden → the C1 test must go red.
+**Mutation proofs** (`mango-mutation-proof`; record the command and diff for
+each; two-sided where a guard has two directions):
+
+1. Remove the no-purge-on-parse-failure branch → B3b test 1 red; *and* make
+   "never purge empty" universal → B3b test 2 (empty `.md` purges) red.
+2. Remove the `allowed_suffixes` check → red; allowed suffix still passes.
+3. Let doc metadata override `source` **and** `index` → red (mutate both).
+4. Remove the `max_file_bytes` pre-check → "no network call" test red.
+5. Always/never send `X-Api-Key` → the two-sided header test red.
+6. Invert `on_error` skip/fail; drop `partial_success` handling → red.
+7. Construct the parser even when disabled → flag-off test red.
+8. Remove symlink containment → escape test red.
+9. Treat empty parsed text as success → B3b test 3 red.
+10. Swap the line-preserving window back to `chunk_text` for parsed docs →
+    table-newline test red.
