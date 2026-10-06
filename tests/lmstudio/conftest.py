@@ -39,6 +39,9 @@ Helpers (importable)
     Async context manager that yields and then closes the LLM client and
     SQLite repo on the way out. Replaces the manual try/finally
     ``aclose() + close()`` pattern.
+``resolve_lmstudio_model()``
+    Resolve LM Studio model id with cascading fallback
+    (``LMSTUDIO_MODEL`` -> ``MANGOMAS_LLM__MODEL`` -> default).
 
 Hardware contract
 -----------------
@@ -53,6 +56,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -77,10 +81,13 @@ from mangomas.config import (
 )
 from mangomas.core import Orchestrator
 from tests.constants import (
+    DEFAULT_LOOP_STEP_TIMEOUT,
     IN_MEMORY_SQLITE_URL,
+    LLM_MODEL_ENV,
     LMSTUDIO_BASE_URL_ENV,
     LMSTUDIO_E2E_TIMEOUT_ENV,
     LMSTUDIO_MODEL_ENV,
+    LOOP_STEP_TIMEOUT_ENV,
     client_timeout_for,
     resolve_live_timeout,
 )
@@ -130,6 +137,29 @@ def make_lmstudio_settings(
         if timeout_seconds is None
         else timeout_seconds
     )
+    # When no explicit loop= is given, honour MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS
+    # so a slow model (e.g. a large omni model on a local GPU) can be
+    # accommodated by setting that env var rather than by editing test code.
+    # Mirrors how LMSTUDIO_E2E_TIMEOUT_SECONDS governs the adapter budget.
+    if loop is None:
+        raw_step = os.environ.get(LOOP_STEP_TIMEOUT_ENV)
+        if raw_step is not None and raw_step.strip():
+            try:
+                step_seconds: float = float(raw_step)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{LOOP_STEP_TIMEOUT_ENV} must be a finite positive number of seconds, "
+                    f"got {raw_step!r}",
+                ) from exc
+            if not math.isfinite(step_seconds) or step_seconds <= 0:
+                raise ValueError(
+                    f"{LOOP_STEP_TIMEOUT_ENV} must be a finite positive number of seconds, "
+                    f"got {raw_step!r}",
+                )
+        else:
+            step_seconds = DEFAULT_LOOP_STEP_TIMEOUT
+        loop = LoopSettings(step_timeout_seconds=step_seconds)
+
     # Each group is passed explicitly (falling back to its own default) rather
     # than splatted in conditionally: a `**{...}` splat is untypeable against
     # `Settings`' heterogeneous keyword signature, and `mypy --strict` is part
@@ -144,7 +174,7 @@ def make_lmstudio_settings(
             temperature=DEFAULT_LLM_TEMPERATURE,
         ),
         db=DBSettings(provider="sqlite", url=_E2E_DB_URL),
-        loop=loop if loop is not None else LoopSettings(),
+        loop=loop,
         agents=agents if agents is not None else {},
     )
 
@@ -173,10 +203,21 @@ def lmstudio_base_url() -> str:
     return os.environ.get(LMSTUDIO_BASE_URL_ENV, DEFAULT_LLM_BASE_URL)
 
 
+def resolve_lmstudio_model() -> str:
+    """Resolve LM Studio model id from environment with cascading fallback.
+
+    Resolution order:
+    1. ``LMSTUDIO_MODEL`` (legacy/direct override)
+    2. ``MANGOMAS_LLM__MODEL`` (canonical application setting)
+    3. ``DEFAULT_LLM_MODEL`` ("local-model")
+    """
+    return os.environ.get(LMSTUDIO_MODEL_ENV, os.environ.get(LLM_MODEL_ENV, DEFAULT_LLM_MODEL))
+
+
 @pytest.fixture
 def lmstudio_model() -> str:
-    """LM Studio model id from ``LMSTUDIO_MODEL`` env var or default."""
-    return os.environ.get(LMSTUDIO_MODEL_ENV, DEFAULT_LLM_MODEL)
+    """Model id from ``LMSTUDIO_MODEL``, then ``MANGOMAS_LLM__MODEL``, or default."""
+    return resolve_lmstudio_model()
 
 
 @pytest.fixture

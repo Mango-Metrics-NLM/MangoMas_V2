@@ -68,10 +68,26 @@ async def test_sub_round_trip_budget_returns_the_504_envelope(
         assert response.json()["error"] == StepTimeout(LIVE_STEP_TIMEOUT_SECONDS).code
         logger.info("Live step timeout produced the expected envelope")
 
-        # The step was cancelled before completing, so no half turn was stored.
+        # ADR-0031 (_FailureRecordingMixin): every dispatch failure — including
+        # StepTimeout — is intentionally persisted as an error-status row via
+        # save_failed_turn().  list_turns() returns all rows (no status filter),
+        # so the pre-ADR-0031 assertion `== []` is no longer correct.
+        #
+        # Post-ADR-0031 invariant:
+        #   • exactly one row (the error record from _FailureRecordingMixin)
+        #   • its error_code matches the typed StepTimeout code
+        #   • no successful response was stored (step was cancelled mid-flight)
         repo = orch.context.repo
         assert repo is not None
-        assert await repo.list_turns(limit=5) == []
+        turns = await repo.list_turns(limit=5)
+        assert len(turns) == 1, (
+            f"Expected exactly one error-status turn from StepTimeout; got {turns}"
+        )
+        error_turn = turns[0]
+        assert error_turn.get("error_code") == StepTimeout(LIVE_STEP_TIMEOUT_SECONDS).code, (
+            f"Persisted turn has wrong error_code: {error_turn}"
+        )
+        assert error_turn["response"] == {}
 
 
 @pytest.mark.lmstudio

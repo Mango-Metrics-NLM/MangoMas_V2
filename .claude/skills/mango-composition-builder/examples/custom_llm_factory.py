@@ -8,7 +8,6 @@ any code changes to the core.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from mangomas.config import LLMSettings
 from mangomas.core.agent import Message
