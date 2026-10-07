@@ -173,16 +173,16 @@ async def iter_documents(
         candidates = await asyncio.to_thread(_directory_candidates, root, parsed_suffixes)
     else:
         candidates = [(root, root.as_posix())]
-    single_file = len(candidates) == 1 and candidates[0][0] == root
     for file_path, source in candidates:
         if file_path.suffix not in _TEXT_SUFFIXES and file_path.suffix.lower() in parsed_suffixes:
             # ``parsed_suffixes`` is non-empty only when both are present.
             assert parser is not None and settings is not None  # noqa: S101
             yield await _parse_document(file_path, source, parser, settings, parser_name)
-        elif file_path.suffix in _TEXT_SUFFIXES or single_file:
-            # A single named file is read as text whatever its suffix, exactly
-            # as ``load_documents`` does (``rag ingest notes.rst`` keeps working
-            # when a parser is enabled).
+        else:
+            # Directory candidates are pre-filtered to text or parsed suffixes,
+            # so this is a text file — or a single named file, which is read as
+            # text whatever its suffix, exactly as ``load_documents`` does
+            # (``rag ingest notes.rst`` keeps working when a parser is enabled).
             doc = await asyncio.to_thread(_read_text_document, file_path, source)
             if doc is not None:
                 yield doc

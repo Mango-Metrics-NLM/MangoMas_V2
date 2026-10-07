@@ -38,6 +38,7 @@ from tests.constants.docling import (
     SPEC_LOADER_STATUS_PARTIAL,
     SPEC_LOADER_STATUS_SUCCESS,
     TEST_DOCLING_MAX_FILE_BYTES,
+    TEST_DOCLING_PAGES,
     TEST_DOCLING_PDF_BYTES,
     TEST_DOCLING_PDF_NAME,
     TEST_DOCLING_UPPER_PDF_NAME,
@@ -374,6 +375,17 @@ async def test_each_parse_emits_one_span_with_its_status(tmp_path: Path) -> None
         for s in spans
     }
     assert statuses == {"a.pdf": SPEC_LOADER_STATUS_SUCCESS, "b.pdf": SPEC_LOADER_STATUS_FAILED}
+
+
+async def test_the_page_count_is_recorded_on_the_span(tmp_path: Path) -> None:
+    (tmp_path / "a.pdf").write_bytes(TEST_DOCLING_PDF_BYTES)
+    parser = FakeDocumentParser(
+        default=ParsedDocument(text=TEST_LOADER_TABLE_MARKDOWN, pages=TEST_DOCLING_PAGES)
+    )
+    exporter = _exporter()
+    await _collect(tmp_path, **_parsed_kwargs(parser))
+    (span,) = [s for s in exporter.get_finished_spans() if s.name == SPEC_LOADER_SPAN_NAME]
+    assert (span.attributes or {})["rag.parse.pages"] == TEST_DOCLING_PAGES
 
 
 async def test_document_text_never_reaches_logs_or_spans(

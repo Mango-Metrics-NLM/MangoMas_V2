@@ -40,7 +40,7 @@ from opentelemetry import trace
 from mangomas.rag.chunker import chunk_lines, chunk_text
 from mangomas.rag.loader import ParseFailure, iter_documents, load_documents
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.parsers.base import DocumentParser
     from mangomas.adapters.vector.base import VectorStoreRepository
