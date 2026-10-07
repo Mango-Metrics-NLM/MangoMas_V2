@@ -9,6 +9,29 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — document parsing for RAG ingestion (spec-0035)
+
+Opt-in and default-off: with `MANGOMAS_PARSER__ENABLED=false` nothing is
+constructed and `.txt`/`.md` ingest is unchanged. See ADR-0036.
+
+- **`DocumentParser` seam** (`adapters/parsers/`): a `@runtime_checkable`
+  Protocol (`parse(*, filename, content) -> ParsedDocument`, `aclose()`), the
+  frozen primitives-only `ParsedDocument(text, pages=None, partial=False)`, and
+  `PARSER_EXTRAS_KEY = "document_parser"` for the `AgentContext.extras` slot.
+  The package never imports `rag/`.
+- **`ParserSettings`** (`MANGOMAS_PARSER__*`, `config/parser.py`), every
+  default a `DEFAULT_PARSER_*` constant. Fails fast at settings load: every
+  limit and timeout must be strictly positive (no `0 = off` value), the client
+  timeout must exceed the document timeout, `allowed_suffixes` is normalised to
+  lower-case with a leading dot, de-duplicated, and must not be empty,
+  `auth_mode=api_key` requires `api_key` or `secret_ref`, and `api_key` is kept
+  out of `repr`.
+- **`FakeDocumentParser`** in `tests/fakes.py`: outcomes scripted by filename
+  or suffix (text, `ParsedDocument` or an exception), a recorded `calls` list,
+  close counting, and an optional `asyncio.Event` gate in place of sleeps.
+- The env-contract test now renders tuple defaults as JSON lists, so the
+  `ALLOWED_SUFFIXES` row is compared against the model like any list default.
+
 ### Fixed — SDLC defect triage AQA (2026-10-01)
 
 Six defects found and fixed during the `sdlc/defect-triage-aqa-20261001`

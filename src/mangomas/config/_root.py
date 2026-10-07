@@ -17,6 +17,7 @@ from mangomas.config.evaluation import EvalSettings
 from mangomas.config.harness import HarnessSettings
 from mangomas.config.llm import LLMSettings
 from mangomas.config.observability import LogSettings, TelemetrySettings
+from mangomas.config.parser import ParserSettings
 from mangomas.config.rag import EmbeddingSettings, RagSettings, VectorSettings
 from mangomas.config.secrets import SecretsSettings
 from mangomas.config.signal import SignalSettings
@@ -54,6 +55,8 @@ class Settings(BaseSettings):
     embeddings: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     vector: VectorSettings = Field(default_factory=VectorSettings)
     rag: RagSettings = Field(default_factory=RagSettings)
+    # Document parsing for `rag ingest` (spec-0035); opt-in, operator path only.
+    parser: ParserSettings = Field(default_factory=ParserSettings)
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)

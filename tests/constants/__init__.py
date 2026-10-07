@@ -36,6 +36,21 @@ from tests.constants.config import DEFAULT_LLM_BASE_URL as DEFAULT_LLM_BASE_URL
 from tests.constants.config import DEFAULT_LLM_MODEL as DEFAULT_LLM_MODEL
 from tests.constants.config import DEFAULT_LOOP_MAX_STEPS as DEFAULT_LOOP_MAX_STEPS
 from tests.constants.config import DEFAULT_LOOP_STEP_TIMEOUT as DEFAULT_LOOP_STEP_TIMEOUT
+from tests.constants.config import (
+    DEFAULT_PARSER_ALLOWED_SUFFIXES as DEFAULT_PARSER_ALLOWED_SUFFIXES,
+)
+from tests.constants.config import DEFAULT_PARSER_AUTH_MODE as DEFAULT_PARSER_AUTH_MODE
+from tests.constants.config import (
+    DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS as DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS,
+)
+from tests.constants.config import DEFAULT_PARSER_ENABLED as DEFAULT_PARSER_ENABLED
+from tests.constants.config import DEFAULT_PARSER_MAX_FILE_BYTES as DEFAULT_PARSER_MAX_FILE_BYTES
+from tests.constants.config import DEFAULT_PARSER_ON_ERROR as DEFAULT_PARSER_ON_ERROR
+from tests.constants.config import (
+    DEFAULT_PARSER_PARSED_CHUNK_WORDS as DEFAULT_PARSER_PARSED_CHUNK_WORDS,
+)
+from tests.constants.config import DEFAULT_PARSER_PROVIDER as DEFAULT_PARSER_PROVIDER
+from tests.constants.config import DEFAULT_PARSER_TIMEOUT_SECONDS as DEFAULT_PARSER_TIMEOUT_SECONDS
 from tests.constants.config import DEFAULT_RAG_CHUNK_OVERLAP as DEFAULT_RAG_CHUNK_OVERLAP
 from tests.constants.config import DEFAULT_RAG_CHUNK_WORDS as DEFAULT_RAG_CHUNK_WORDS
 from tests.constants.config import DEFAULT_SIGNAL_DIR as DEFAULT_SIGNAL_DIR
@@ -221,6 +236,16 @@ from tests.constants.fixtures import GCP_SECRETS_SECRET_NAME_ENV as GCP_SECRETS_
 from tests.constants.fixtures import JSONL_FILENAME as JSONL_FILENAME
 from tests.constants.fixtures import LARGE_UPSTREAM_BODY_CHARS as LARGE_UPSTREAM_BODY_CHARS
 from tests.constants.fixtures import LMSTUDIO_EMBEDDING_MODEL_ENV as LMSTUDIO_EMBEDDING_MODEL_ENV
+from tests.constants.fixtures import PARSER_ALLOWED_SUFFIXES_ENV as PARSER_ALLOWED_SUFFIXES_ENV
+from tests.constants.fixtures import PARSER_API_KEY_ENV as PARSER_API_KEY_ENV
+from tests.constants.fixtures import PARSER_AUTH_MODE_ENV as PARSER_AUTH_MODE_ENV
+from tests.constants.fixtures import (
+    PARSER_DOCUMENT_TIMEOUT_SECONDS_ENV as PARSER_DOCUMENT_TIMEOUT_SECONDS_ENV,
+)
+from tests.constants.fixtures import PARSER_ENABLED_ENV as PARSER_ENABLED_ENV
+from tests.constants.fixtures import PARSER_MAX_FILE_BYTES_ENV as PARSER_MAX_FILE_BYTES_ENV
+from tests.constants.fixtures import PARSER_ON_ERROR_ENV as PARSER_ON_ERROR_ENV
+from tests.constants.fixtures import PARSER_TIMEOUT_SECONDS_ENV as PARSER_TIMEOUT_SECONDS_ENV
 from tests.constants.fixtures import PASSED_NEEDLE_COMPACT as PASSED_NEEDLE_COMPACT
 from tests.constants.fixtures import PASSED_NEEDLE_QUOTELESS as PASSED_NEEDLE_QUOTELESS
 from tests.constants.fixtures import PASSED_NEEDLE_SPACED as PASSED_NEEDLE_SPACED
@@ -266,6 +291,10 @@ from tests.constants.fixtures import REVIEW_SUGGESTIONS_FIELD as REVIEW_SUGGESTI
 from tests.constants.fixtures import REVIEW_WRAPPER_FIELD as REVIEW_WRAPPER_FIELD
 from tests.constants.fixtures import REVIEWER_AGENT_NAME as REVIEWER_AGENT_NAME
 from tests.constants.fixtures import SLOW_AGENT_DELAY_SECONDS as SLOW_AGENT_DELAY_SECONDS
+from tests.constants.fixtures import SPEC_PARSER_ALLOWED_SUFFIXES as SPEC_PARSER_ALLOWED_SUFFIXES
+from tests.constants.fixtures import SPEC_PARSER_AUTH_MODE as SPEC_PARSER_AUTH_MODE
+from tests.constants.fixtures import SPEC_PARSER_EXTRAS_KEY as SPEC_PARSER_EXTRAS_KEY
+from tests.constants.fixtures import SPEC_PARSER_ON_ERROR as SPEC_PARSER_ON_ERROR
 from tests.constants.fixtures import STUB_REPLY as STUB_REPLY
 from tests.constants.fixtures import SUMMARIZE_HISTORY_LIMIT_ENV as SUMMARIZE_HISTORY_LIMIT_ENV
 from tests.constants.fixtures import TENANT_A as TENANT_A
@@ -278,6 +307,19 @@ from tests.constants.fixtures import TEST_HISTORY_SEEDED_TURNS as TEST_HISTORY_S
 from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_BASE_URL as TEST_LMSTUDIO_MOCK_BASE_URL
 from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_MODEL as TEST_LMSTUDIO_MOCK_MODEL
 from tests.constants.fixtures import TEST_MAX_TOKENS_OVERRIDE as TEST_MAX_TOKENS_OVERRIDE
+from tests.constants.fixtures import TEST_PARSER_API_KEY as TEST_PARSER_API_KEY
+from tests.constants.fixtures import TEST_PARSER_CONTENT as TEST_PARSER_CONTENT
+from tests.constants.fixtures import TEST_PARSER_FILENAME as TEST_PARSER_FILENAME
+from tests.constants.fixtures import (
+    TEST_PARSER_NORMALISED_SUFFIXES as TEST_PARSER_NORMALISED_SUFFIXES,
+)
+from tests.constants.fixtures import TEST_PARSER_OTHER_FILENAME as TEST_PARSER_OTHER_FILENAME
+from tests.constants.fixtures import TEST_PARSER_PAGES as TEST_PARSER_PAGES
+from tests.constants.fixtures import TEST_PARSER_RAW_SUFFIXES as TEST_PARSER_RAW_SUFFIXES
+from tests.constants.fixtures import TEST_PARSER_SECRET_REF as TEST_PARSER_SECRET_REF
+from tests.constants.fixtures import TEST_PARSER_SUFFIXES_ENV_JSON as TEST_PARSER_SUFFIXES_ENV_JSON
+from tests.constants.fixtures import TEST_PARSER_SUFFIXES_FROM_ENV as TEST_PARSER_SUFFIXES_FROM_ENV
+from tests.constants.fixtures import TEST_PARSER_TEXT as TEST_PARSER_TEXT
 from tests.constants.fixtures import TEST_PROMPT_EXPLICIT as TEST_PROMPT_EXPLICIT
 from tests.constants.fixtures import TEST_PROMPT_SETTINGS as TEST_PROMPT_SETTINGS
 from tests.constants.fixtures import TEST_PROMPT_SUFFIX as TEST_PROMPT_SUFFIX
@@ -445,6 +487,15 @@ __all__ = [
     "DEFAULT_LOCAL_EMBEDDING_MODEL",
     "DEFAULT_LOOP_MAX_STEPS",
     "DEFAULT_LOOP_STEP_TIMEOUT",
+    "DEFAULT_PARSER_ALLOWED_SUFFIXES",
+    "DEFAULT_PARSER_AUTH_MODE",
+    "DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS",
+    "DEFAULT_PARSER_ENABLED",
+    "DEFAULT_PARSER_MAX_FILE_BYTES",
+    "DEFAULT_PARSER_ON_ERROR",
+    "DEFAULT_PARSER_PARSED_CHUNK_WORDS",
+    "DEFAULT_PARSER_PROVIDER",
+    "DEFAULT_PARSER_TIMEOUT_SECONDS",
     "DEFAULT_RAG_CHUNK_OVERLAP",
     "DEFAULT_RAG_CHUNK_WORDS",
     "DEFAULT_SIGNAL_DIR",
@@ -574,6 +625,14 @@ __all__ = [
     "MIN_HARDWARE_CONTRACT_FILES",
     "MISSING_TOOLS_AGENT_SLUG",
     "OVERRIDE_MODEL_ID",
+    "PARSER_ALLOWED_SUFFIXES_ENV",
+    "PARSER_API_KEY_ENV",
+    "PARSER_AUTH_MODE_ENV",
+    "PARSER_DOCUMENT_TIMEOUT_SECONDS_ENV",
+    "PARSER_ENABLED_ENV",
+    "PARSER_MAX_FILE_BYTES_ENV",
+    "PARSER_ON_ERROR_ENV",
+    "PARSER_TIMEOUT_SECONDS_ENV",
     "PASSED_NEEDLE_COMPACT",
     "PASSED_NEEDLE_QUOTELESS",
     "PASSED_NEEDLE_SPACED",
@@ -656,6 +715,10 @@ __all__ = [
     "SITECUSTOMIZE_INJECTED_ADDOPTS",
     "SKILL_UNMAPPED_AGENT_SLUGS",
     "SLOW_AGENT_DELAY_SECONDS",
+    "SPEC_PARSER_ALLOWED_SUFFIXES",
+    "SPEC_PARSER_AUTH_MODE",
+    "SPEC_PARSER_EXTRAS_KEY",
+    "SPEC_PARSER_ON_ERROR",
     "SPELLED_NUMBERS",
     "STUB_REPLY",
     "STUB_VERTEX_REPLY",
@@ -672,6 +735,17 @@ __all__ = [
     "TEST_LMSTUDIO_MOCK_BASE_URL",
     "TEST_LMSTUDIO_MOCK_MODEL",
     "TEST_MAX_TOKENS_OVERRIDE",
+    "TEST_PARSER_API_KEY",
+    "TEST_PARSER_CONTENT",
+    "TEST_PARSER_FILENAME",
+    "TEST_PARSER_NORMALISED_SUFFIXES",
+    "TEST_PARSER_OTHER_FILENAME",
+    "TEST_PARSER_PAGES",
+    "TEST_PARSER_RAW_SUFFIXES",
+    "TEST_PARSER_SECRET_REF",
+    "TEST_PARSER_SUFFIXES_ENV_JSON",
+    "TEST_PARSER_SUFFIXES_FROM_ENV",
+    "TEST_PARSER_TEXT",
     "TEST_PROMPT_EXPLICIT",
     "TEST_PROMPT_SETTINGS",
     "TEST_PROMPT_SUFFIX",

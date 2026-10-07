@@ -8,6 +8,34 @@ import pytest
 from pydantic import ValidationError
 
 from mangomas import config as config_module
+from tests.constants import (
+    DEFAULT_PARSER_ALLOWED_SUFFIXES,
+    DEFAULT_PARSER_AUTH_MODE,
+    DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS,
+    DEFAULT_PARSER_ENABLED,
+    DEFAULT_PARSER_MAX_FILE_BYTES,
+    DEFAULT_PARSER_ON_ERROR,
+    DEFAULT_PARSER_PARSED_CHUNK_WORDS,
+    DEFAULT_PARSER_PROVIDER,
+    DEFAULT_PARSER_TIMEOUT_SECONDS,
+    PARSER_ALLOWED_SUFFIXES_ENV,
+    PARSER_API_KEY_ENV,
+    PARSER_AUTH_MODE_ENV,
+    PARSER_DOCUMENT_TIMEOUT_SECONDS_ENV,
+    PARSER_ENABLED_ENV,
+    PARSER_MAX_FILE_BYTES_ENV,
+    PARSER_ON_ERROR_ENV,
+    PARSER_TIMEOUT_SECONDS_ENV,
+    SPEC_PARSER_ALLOWED_SUFFIXES,
+    SPEC_PARSER_AUTH_MODE,
+    SPEC_PARSER_ON_ERROR,
+    TEST_PARSER_API_KEY,
+    TEST_PARSER_NORMALISED_SUFFIXES,
+    TEST_PARSER_RAW_SUFFIXES,
+    TEST_PARSER_SECRET_REF,
+    TEST_PARSER_SUFFIXES_ENV_JSON,
+    TEST_PARSER_SUFFIXES_FROM_ENV,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +59,7 @@ _CONFIG_SUBMODULES: tuple[str, ...] = (
     "harness",
     "workflow",
     "signal",
+    "parser",
     "_root",
 )
 
@@ -291,3 +320,158 @@ def test_secrets_gcp_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.secrets.project_id == "my-gcp-project"
     assert s.secrets.timeout_seconds == 10.0
     assert s.secrets.default_version == "3"
+
+
+# ── ParserSettings (spec-0035 R2) ─────────────────────────────────────────────
+
+# Every strictly-positive limit/timeout. No field has a 0 = off mode.
+_PARSER_POSITIVE_FIELDS: tuple[str, ...] = (
+    "id_token_refresh_margin_seconds",
+    "max_file_bytes",
+    "max_pages",
+    "max_response_bytes",
+    "max_zip_entries",
+    "max_zip_ratio",
+    "parsed_chunk_words",
+)
+
+
+def test_parser_settings_defaults() -> None:
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert isinstance(s.parser, config_module.ParserSettings)
+    assert s.parser.enabled is DEFAULT_PARSER_ENABLED
+    assert s.parser.enabled is False
+    assert s.parser.provider == DEFAULT_PARSER_PROVIDER
+    assert s.parser.on_error == DEFAULT_PARSER_ON_ERROR
+    assert s.parser.auth_mode == DEFAULT_PARSER_AUTH_MODE
+    assert s.parser.api_key is None
+    assert s.parser.secret_ref is None
+    assert s.parser.id_token_audience is None
+    assert s.parser.embed_max_tokens is None
+    assert s.parser.max_file_bytes == DEFAULT_PARSER_MAX_FILE_BYTES
+    assert s.parser.timeout_seconds == DEFAULT_PARSER_TIMEOUT_SECONDS
+    assert s.parser.document_timeout_seconds == DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS
+    assert s.parser.parsed_chunk_words == DEFAULT_PARSER_PARSED_CHUNK_WORDS
+
+
+def test_parser_settings_pins_collection_and_enum_defaults_to_the_spec() -> None:
+    """The env contract compares rendered strings; this names the drift.
+
+    Pinned against literals from the spec-0035 table rather than the
+    re-exported constants, which would compare a value with itself.
+    """
+    s = config_module.ParserSettings()
+    assert s.allowed_suffixes == SPEC_PARSER_ALLOWED_SUFFIXES
+    assert DEFAULT_PARSER_ALLOWED_SUFFIXES == SPEC_PARSER_ALLOWED_SUFFIXES
+    assert s.on_error == SPEC_PARSER_ON_ERROR
+    assert s.auth_mode == SPEC_PARSER_AUTH_MODE
+
+
+@pytest.mark.parametrize("field", _PARSER_POSITIVE_FIELDS)
+def test_parser_settings_rejects_zero_limit(field: str) -> None:
+    with pytest.raises(ValidationError, match=field):
+        config_module.ParserSettings.model_validate({field: 0})
+
+
+@pytest.mark.parametrize("field", _PARSER_POSITIVE_FIELDS)
+def test_parser_settings_rejects_negative_limit(field: str) -> None:
+    with pytest.raises(ValidationError, match=field):
+        config_module.ParserSettings.model_validate({field: -1})
+
+
+@pytest.mark.parametrize("field", _PARSER_POSITIVE_FIELDS)
+def test_parser_settings_accepts_smallest_positive_limit(field: str) -> None:
+    s = config_module.ParserSettings.model_validate({field: 1})
+    assert getattr(s, field) == 1
+
+
+def test_parser_settings_max_file_bytes_has_no_off_value() -> None:
+    with pytest.raises(ValidationError, match="max_file_bytes"):
+        config_module.ParserSettings(max_file_bytes=0)
+    assert config_module.ParserSettings(max_file_bytes=1).max_file_bytes == 1
+
+
+@pytest.mark.parametrize("field", ["timeout_seconds", "document_timeout_seconds"])
+def test_parser_settings_rejects_non_positive_timeouts(field: str) -> None:
+    # Keep the ordering invariant satisfiable so only positivity can fail.
+    kwargs = {"timeout_seconds": 2.0, "document_timeout_seconds": 1.0, field: 0.0}
+    with pytest.raises(ValidationError, match=field):
+        config_module.ParserSettings.model_validate(kwargs)
+
+
+def test_parser_settings_timeout_must_exceed_document_timeout() -> None:
+    with pytest.raises(ValidationError, match="timeout_seconds"):
+        config_module.ParserSettings(timeout_seconds=1.0, document_timeout_seconds=1.0)
+    with pytest.raises(ValidationError, match="timeout_seconds"):
+        config_module.ParserSettings(timeout_seconds=1.0, document_timeout_seconds=2.0)
+    s = config_module.ParserSettings(timeout_seconds=2.0, document_timeout_seconds=1.0)
+    assert s.timeout_seconds > s.document_timeout_seconds
+
+
+def test_parser_settings_normalises_suffixes() -> None:
+    s = config_module.ParserSettings(allowed_suffixes=TEST_PARSER_RAW_SUFFIXES)
+    assert s.allowed_suffixes == TEST_PARSER_NORMALISED_SUFFIXES
+
+
+@pytest.mark.parametrize("suffixes", [(), ("",), (".",), (" ",)])
+def test_parser_settings_rejects_empty_suffixes(suffixes: tuple[str, ...]) -> None:
+    with pytest.raises(ValidationError, match="allowed_suffixes"):
+        config_module.ParserSettings(allowed_suffixes=suffixes)
+
+
+def test_parser_settings_embed_max_tokens_positive_when_set() -> None:
+    with pytest.raises(ValidationError, match="embed_max_tokens"):
+        config_module.ParserSettings(embed_max_tokens=0)
+    assert config_module.ParserSettings(embed_max_tokens=1).embed_max_tokens == 1
+    assert config_module.ParserSettings(embed_max_tokens=None).embed_max_tokens is None
+
+
+def test_parser_settings_api_key_mode_requires_a_credential() -> None:
+    with pytest.raises(ValidationError, match="api_key"):
+        config_module.ParserSettings(auth_mode="api_key")
+    with pytest.raises(ValidationError, match="api_key"):
+        config_module.ParserSettings(auth_mode="api_key", api_key="")
+    by_key = config_module.ParserSettings(auth_mode="api_key", api_key=TEST_PARSER_API_KEY)
+    assert by_key.api_key == TEST_PARSER_API_KEY
+    by_ref = config_module.ParserSettings(auth_mode="api_key", secret_ref=TEST_PARSER_SECRET_REF)
+    assert by_ref.secret_ref == TEST_PARSER_SECRET_REF
+
+
+def test_parser_settings_other_auth_modes_need_no_api_key() -> None:
+    assert config_module.ParserSettings(auth_mode="none").api_key is None
+    assert config_module.ParserSettings(auth_mode="google_id_token").api_key is None
+
+
+def test_parser_settings_api_key_kept_out_of_repr() -> None:
+    s = config_module.ParserSettings(auth_mode="api_key", api_key=TEST_PARSER_API_KEY)
+    assert TEST_PARSER_API_KEY not in repr(s)
+
+
+def test_parser_settings_rejects_unknown_enum_values() -> None:
+    with pytest.raises(ValidationError, match="on_error"):
+        config_module.ParserSettings(on_error="ignore")  # type: ignore[arg-type]
+    with pytest.raises(ValidationError, match="auth_mode"):
+        config_module.ParserSettings(auth_mode="basic")  # type: ignore[arg-type]
+
+
+def test_parser_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(PARSER_ENABLED_ENV, "true")
+    monkeypatch.setenv(PARSER_ON_ERROR_ENV, "fail")
+    monkeypatch.setenv(PARSER_AUTH_MODE_ENV, "api_key")
+    monkeypatch.setenv(PARSER_API_KEY_ENV, TEST_PARSER_API_KEY)
+    monkeypatch.setenv(PARSER_ALLOWED_SUFFIXES_ENV, TEST_PARSER_SUFFIXES_ENV_JSON)
+    monkeypatch.setenv(PARSER_MAX_FILE_BYTES_ENV, "1")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.parser.enabled is True
+    assert s.parser.on_error == "fail"
+    assert s.parser.auth_mode == "api_key"
+    assert s.parser.api_key == TEST_PARSER_API_KEY
+    assert s.parser.allowed_suffixes == TEST_PARSER_SUFFIXES_FROM_ENV
+    assert s.parser.max_file_bytes == 1
+
+
+def test_parser_settings_invalid_env_fails_at_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(PARSER_TIMEOUT_SECONDS_ENV, "10")
+    monkeypatch.setenv(PARSER_DOCUMENT_TIMEOUT_SECONDS_ENV, "10")
+    with pytest.raises(ValidationError, match="timeout_seconds"):
+        config_module.Settings(_env_file=None)  # type: ignore[call-arg]

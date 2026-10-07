@@ -40,6 +40,37 @@ LARGE_UPSTREAM_BODY_CHARS: int = 5000
 TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
 TEST_VECTOR_COLLECTION: str = "test-col"
 
+# ── Document parser (spec-0035) ───────────────────────────────────────────────
+# Env-var names for the `MANGOMAS_PARSER__*` group, so tests never spell them.
+PARSER_ENABLED_ENV: str = "MANGOMAS_PARSER__ENABLED"
+PARSER_AUTH_MODE_ENV: str = "MANGOMAS_PARSER__AUTH_MODE"
+PARSER_API_KEY_ENV: str = "MANGOMAS_PARSER__API_KEY"
+PARSER_ALLOWED_SUFFIXES_ENV: str = "MANGOMAS_PARSER__ALLOWED_SUFFIXES"
+PARSER_MAX_FILE_BYTES_ENV: str = "MANGOMAS_PARSER__MAX_FILE_BYTES"
+PARSER_TIMEOUT_SECONDS_ENV: str = "MANGOMAS_PARSER__TIMEOUT_SECONDS"
+PARSER_DOCUMENT_TIMEOUT_SECONDS_ENV: str = "MANGOMAS_PARSER__DOCUMENT_TIMEOUT_SECONDS"
+PARSER_ON_ERROR_ENV: str = "MANGOMAS_PARSER__ON_ERROR"
+# Literal pins of the spec-0035 table, deliberately *not* re-exported from
+# `mangomas.config`: a pin compared against the constant it pins is a
+# tautology. The env contract renders these too, but these name the drift.
+SPEC_PARSER_EXTRAS_KEY: str = "document_parser"
+SPEC_PARSER_ALLOWED_SUFFIXES: tuple[str, ...] = (".pdf", ".docx", ".pptx", ".xlsx")
+SPEC_PARSER_ON_ERROR: str = "skip"
+SPEC_PARSER_AUTH_MODE: str = "none"
+# Fixture values for parser tests (never a real credential or endpoint).
+TEST_PARSER_API_KEY: str = "test-parser-key"
+TEST_PARSER_SECRET_REF: str = "parser-api-key"  # noqa: S105  a SecretsProvider ref name
+TEST_PARSER_FILENAME: str = "report.pdf"
+TEST_PARSER_OTHER_FILENAME: str = "slides.pptx"
+TEST_PARSER_TEXT: str = "# Parsed\n\n| a | b |\n|---|---|\n| 1 | 2 |"
+TEST_PARSER_PAGES: int = 3
+TEST_PARSER_CONTENT: bytes = b"%PDF-1.7 fake body"
+# Mixed-case, undotted and duplicated input → its normalised form.
+TEST_PARSER_RAW_SUFFIXES: tuple[str, ...] = ("PDF", ".Docx", "pdf", " .XLSX ")
+TEST_PARSER_NORMALISED_SUFFIXES: tuple[str, ...] = (".pdf", ".docx", ".xlsx")
+TEST_PARSER_SUFFIXES_ENV_JSON: str = '["PDF", ".docx"]'
+TEST_PARSER_SUFFIXES_FROM_ENV: tuple[str, ...] = (".pdf", ".docx")
+
 # ── Agent / reply stubs ───────────────────────────────────────────────────────
 DEFAULT_AGENT_NAME: str = "chat"
 STUB_REPLY: str = "stub-reply"
@@ -273,6 +304,14 @@ __all__ = [
     "JSONL_FILENAME",
     "LARGE_UPSTREAM_BODY_CHARS",
     "LMSTUDIO_EMBEDDING_MODEL_ENV",
+    "PARSER_ALLOWED_SUFFIXES_ENV",
+    "PARSER_API_KEY_ENV",
+    "PARSER_AUTH_MODE_ENV",
+    "PARSER_DOCUMENT_TIMEOUT_SECONDS_ENV",
+    "PARSER_ENABLED_ENV",
+    "PARSER_MAX_FILE_BYTES_ENV",
+    "PARSER_ON_ERROR_ENV",
+    "PARSER_TIMEOUT_SECONDS_ENV",
     "PASSED_NEEDLE_COMPACT",
     "PASSED_NEEDLE_QUOTELESS",
     "PASSED_NEEDLE_SPACED",
@@ -308,6 +347,10 @@ __all__ = [
     "REVIEW_SUGGESTIONS_FIELD",
     "REVIEW_WRAPPER_FIELD",
     "SLOW_AGENT_DELAY_SECONDS",
+    "SPEC_PARSER_ALLOWED_SUFFIXES",
+    "SPEC_PARSER_AUTH_MODE",
+    "SPEC_PARSER_EXTRAS_KEY",
+    "SPEC_PARSER_ON_ERROR",
     "STUB_REPLY",
     "SUMMARIZE_HISTORY_LIMIT_ENV",
     "TENANT_A",
@@ -320,6 +363,17 @@ __all__ = [
     "TEST_LMSTUDIO_MOCK_BASE_URL",
     "TEST_LMSTUDIO_MOCK_MODEL",
     "TEST_MAX_TOKENS_OVERRIDE",
+    "TEST_PARSER_API_KEY",
+    "TEST_PARSER_CONTENT",
+    "TEST_PARSER_FILENAME",
+    "TEST_PARSER_NORMALISED_SUFFIXES",
+    "TEST_PARSER_OTHER_FILENAME",
+    "TEST_PARSER_PAGES",
+    "TEST_PARSER_RAW_SUFFIXES",
+    "TEST_PARSER_SECRET_REF",
+    "TEST_PARSER_SUFFIXES_ENV_JSON",
+    "TEST_PARSER_SUFFIXES_FROM_ENV",
+    "TEST_PARSER_TEXT",
     "TEST_PROMPT_EXPLICIT",
     "TEST_PROMPT_SETTINGS",
     "TEST_PROMPT_SUFFIX",

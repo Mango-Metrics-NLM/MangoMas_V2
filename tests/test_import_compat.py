@@ -70,6 +70,7 @@ _FACADES: dict[str, tuple[str, ...]] = {
         "harness",
         "llm",
         "observability",
+        "parser",
         "rag",
         "secrets",
         "signal",

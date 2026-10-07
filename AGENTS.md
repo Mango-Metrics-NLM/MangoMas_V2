@@ -234,6 +234,26 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
+| `MANGOMAS_PARSER__ENABLED` | `false` | Parse non-text documents during `rag ingest` (spec-0035) |
+| `MANGOMAS_PARSER__PROVIDER` | `docling_serve` | Parser registry entry |
+| `MANGOMAS_PARSER__BASE_URL` | `http://localhost:5001` | docling-serve base URL |
+| `MANGOMAS_PARSER__AUTH_MODE` | `none` | `none` \| `api_key` (`X-Api-Key`) \| `google_id_token` (Bearer identity token) |
+| `MANGOMAS_PARSER__API_KEY` | _(none)_ | `X-Api-Key` value when `AUTH_MODE=api_key` |
+| `MANGOMAS_PARSER__SECRET_REF` | _(none)_ | `SecretsProvider` ref that overrides `API_KEY` |
+| `MANGOMAS_PARSER__ID_TOKEN_AUDIENCE` | _(none → `BASE_URL`)_ | Audience for `google_id_token` |
+| `MANGOMAS_PARSER__ID_TOKEN_REFRESH_MARGIN_SECONDS` | `300.0` | Re-mint the identity token this long before expiry |
+| `MANGOMAS_PARSER__TIMEOUT_SECONDS` | `300.0` | HTTP client timeout (must exceed the document timeout) |
+| `MANGOMAS_PARSER__DOCUMENT_TIMEOUT_SECONDS` | `240.0` | Server-side per-document conversion budget |
+| `MANGOMAS_PARSER__ALLOWED_SUFFIXES` | `[".pdf",".docx",".pptx",".xlsx"]` | Formats sent to the parser (normalised to lower-case with a leading dot) |
+| `MANGOMAS_PARSER__MAX_FILE_BYTES` | `52428800` | Refuse larger files before upload (strictly positive; no "off" value) |
+| `MANGOMAS_PARSER__MAX_PAGES` | `500` | Page cap sent to the parser |
+| `MANGOMAS_PARSER__MAX_RESPONSE_BYTES` | `20971520` | Refuse larger parser responses |
+| `MANGOMAS_PARSER__MAX_ZIP_ENTRIES` | `10000` | OOXML archive entry ceiling |
+| `MANGOMAS_PARSER__MAX_ZIP_RATIO` | `100.0` | OOXML uncompressed/compressed ceiling |
+| `MANGOMAS_PARSER__ON_ERROR` | `skip` | `skip` (log, count, never purge) or `fail` |
+| `MANGOMAS_PARSER__DO_OCR` | `false` | Ask the parser to OCR scanned pages |
+| `MANGOMAS_PARSER__PARSED_CHUNK_WORDS` | `300` | Window size for parsed documents |
+| `MANGOMAS_PARSER__EMBED_MAX_TOKENS` | _(none)_ | Warn when a chunk likely exceeds the embedder limit |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
 | `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`/`cost_budget`) |

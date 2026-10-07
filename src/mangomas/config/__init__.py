@@ -248,6 +248,75 @@ from mangomas.config.observability import (
 from mangomas.config.observability import (
     TelemetrySettings as TelemetrySettings,
 )
+from mangomas.config.parser import (
+    DEFAULT_PARSER_ALLOWED_SUFFIXES as DEFAULT_PARSER_ALLOWED_SUFFIXES,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_API_KEY as DEFAULT_PARSER_API_KEY,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_AUTH_MODE as DEFAULT_PARSER_AUTH_MODE,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_BASE_URL as DEFAULT_PARSER_BASE_URL,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_DO_OCR as DEFAULT_PARSER_DO_OCR,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS as DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_EMBED_MAX_TOKENS as DEFAULT_PARSER_EMBED_MAX_TOKENS,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_ENABLED as DEFAULT_PARSER_ENABLED,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_ID_TOKEN_AUDIENCE as DEFAULT_PARSER_ID_TOKEN_AUDIENCE,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_ID_TOKEN_REFRESH_MARGIN as DEFAULT_PARSER_ID_TOKEN_REFRESH_MARGIN,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_MAX_FILE_BYTES as DEFAULT_PARSER_MAX_FILE_BYTES,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_MAX_PAGES as DEFAULT_PARSER_MAX_PAGES,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_MAX_RESPONSE_BYTES as DEFAULT_PARSER_MAX_RESPONSE_BYTES,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_MAX_ZIP_ENTRIES as DEFAULT_PARSER_MAX_ZIP_ENTRIES,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_MAX_ZIP_RATIO as DEFAULT_PARSER_MAX_ZIP_RATIO,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_ON_ERROR as DEFAULT_PARSER_ON_ERROR,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_PARSED_CHUNK_WORDS as DEFAULT_PARSER_PARSED_CHUNK_WORDS,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_PROVIDER as DEFAULT_PARSER_PROVIDER,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_SECRET_REF as DEFAULT_PARSER_SECRET_REF,
+)
+from mangomas.config.parser import (
+    DEFAULT_PARSER_TIMEOUT_SECONDS as DEFAULT_PARSER_TIMEOUT_SECONDS,
+)
+from mangomas.config.parser import (
+    ParserAuthMode as ParserAuthMode,
+)
+from mangomas.config.parser import (
+    ParserOnError as ParserOnError,
+)
+from mangomas.config.parser import (
+    ParserSettings as ParserSettings,
+)
 from mangomas.config.rag import (
     DEFAULT_EMBEDDINGS_API_KEY as DEFAULT_EMBEDDINGS_API_KEY,
 )
@@ -488,6 +557,26 @@ __all__ = [
     "DEFAULT_MEMORY_ENABLED",
     "DEFAULT_MEMORY_INDEX",
     "DEFAULT_MEMORY_PROVIDER",
+    "DEFAULT_PARSER_ALLOWED_SUFFIXES",
+    "DEFAULT_PARSER_API_KEY",
+    "DEFAULT_PARSER_AUTH_MODE",
+    "DEFAULT_PARSER_BASE_URL",
+    "DEFAULT_PARSER_DOCUMENT_TIMEOUT_SECONDS",
+    "DEFAULT_PARSER_DO_OCR",
+    "DEFAULT_PARSER_EMBED_MAX_TOKENS",
+    "DEFAULT_PARSER_ENABLED",
+    "DEFAULT_PARSER_ID_TOKEN_AUDIENCE",
+    "DEFAULT_PARSER_ID_TOKEN_REFRESH_MARGIN",
+    "DEFAULT_PARSER_MAX_FILE_BYTES",
+    "DEFAULT_PARSER_MAX_PAGES",
+    "DEFAULT_PARSER_MAX_RESPONSE_BYTES",
+    "DEFAULT_PARSER_MAX_ZIP_ENTRIES",
+    "DEFAULT_PARSER_MAX_ZIP_RATIO",
+    "DEFAULT_PARSER_ON_ERROR",
+    "DEFAULT_PARSER_PARSED_CHUNK_WORDS",
+    "DEFAULT_PARSER_PROVIDER",
+    "DEFAULT_PARSER_SECRET_REF",
+    "DEFAULT_PARSER_TIMEOUT_SECONDS",
     "DEFAULT_RAG_CHUNK_OVERLAP",
     "DEFAULT_RAG_CHUNK_WORDS",
     "DEFAULT_SECRETS_PROVIDER",
@@ -536,6 +625,9 @@ __all__ = [
     "LogSettings",
     "LoopSettings",
     "MemorySettings",
+    "ParserAuthMode",
+    "ParserOnError",
+    "ParserSettings",
     "RagSettings",
     "SecretsSettings",
     "Settings",

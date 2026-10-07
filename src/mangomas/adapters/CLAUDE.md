@@ -3,10 +3,11 @@
 ## Scope
 
 Every outbound integration: LLM providers, turn and memory storage, embedding
-backends and the vector store. Each seam declares its `@runtime_checkable`
-Protocols in its own base module (`llm/base.py`, `storage/base.py`,
-`embeddings/base.py`, `vector/base.py`); the concrete classes beside them are
-selected and built by `composition/`, never imported across a layer boundary.
+backends, the vector store and document parsers. Each seam declares its
+`@runtime_checkable` Protocols in its own base module (`llm/base.py`,
+`storage/base.py`, `embeddings/base.py`, `vector/base.py`, `parsers/base.py`);
+the concrete classes beside them are selected and built by `composition/`,
+never imported across a layer boundary.
 
 No file here is a protected path.
 
@@ -32,7 +33,7 @@ flowchart LR
 |---|---|---|
 | `llm/` and typed-error translation | `mango-llm-adapter-dev` | `mango-adapter` |
 | `storage/` | `mango-storage-adapter-dev` | `mango-adapter` |
-| `embeddings/`, `vector/` | `mango-rag-dev` | `mango-rag` |
+| `embeddings/`, `vector/`, `parsers/` | `mango-rag-dev` | `mango-rag` |
 | Protocol back-compat audits (read-only) | `mango-protocol-auditor` | — |
 | Work spanning several seams | `mango-backend` | `mango-adapter` |
 
@@ -49,6 +50,7 @@ the build.
 | Persistence | `storage` | `TurnRepository`, `MemoryRepository`, `AsyncCloseableRepository`, `FailureRecordingRepository` |
 | Embeddings | `embeddings` | `EmbeddingClient` |
 | Vector search | `vector` | `VectorStoreRepository` |
+| Document parsing | `parsers` | `DocumentParser` |
 
 - **Lazy SDK imports.** `google-cloud-*`, `chromadb` and `sentence-transformers`
   are imported inside the method that needs them, so importing any module here
