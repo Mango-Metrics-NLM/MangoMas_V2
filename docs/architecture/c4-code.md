@@ -57,6 +57,20 @@ classDiagram
         +query(embedding: list[float], top_k: int) list[VectorMatch]
     }
     
+    class DocumentParser {
+        <<Protocol>>
+        +parse(doc: RawDoc) ParsedDocument
+        +aclose() None
+    }
+    
+    class ParsedDocument {
+        <<Frozen DataClass>>
+        +source: str
+        +text: str
+        +pages: int | None
+        +metadata: dict[str, Any]
+    }
+    
     class Orchestrator {
         -registry: Registry[Agent]
         -ctx: AgentContext
@@ -92,6 +106,8 @@ classDiagram
     EmbeddingClient <|.. LMStudioEmbeddingClient : implements
     TurnRepository <|.. SQLiteRepository : implements
     TurnRepository <|.. PostgresTurnRepository : implements
+    DocumentParser <|.. DoclingServeParser : implements
+    DoclingServeParser --> ParsedDocument : returns
 ```
 
 ---
@@ -141,6 +157,16 @@ classDiagram
 - **`PostgresTurnRepository`**: Enterprise multi-tenant relational persistence backed by `asyncpg`. Automatically isolates turn records by `tenant_id`.
 - **`ChromaVectorStore`**: Embedded vector database adapter implementing `VectorStoreRepository` for dense document chunk retrieval.
 
+### 3.4 Document Parser Adapters (`adapters/parsers/`)
+
+- **`DocumentParser`**: `@runtime_checkable Protocol` requiring `async def parse(doc: RawDoc) -> ParsedDocument` and `async def aclose() -> None`.
+- **`ParsedDocument`**: Frozen dataclass carrying `source: str`, `text: str`, `pages: int | None`, and `metadata: dict[str, Any]`.
+- **`DoclingServeParser`**: Remote document converter wrapping the Docling Serve HTTP service.
+  - Implements bounded streaming: reads HTTP chunks and enforces `max_response_bytes` before JSON deserialization to safeguard against memory exhaustion.
+  - `_archive.py` (`check_ooxml_archive`): Validates OOXML archives (`.docx`, `.pptx`, `.xlsx`) against entry ceilings (`max_zip_entries`) and uncompressed-to-compressed ratio thresholds (`max_zip_ratio`) to mitigate zip bomb attacks.
+  - `_auth.py` (`DoclingServeAuth`): Pluggable auth provider supporting `none`, `api_key` (`X-Api-Key`), and `google_id_token` (GCP service-to-service IAM bearer tokens with cached refresh margins).
+  - Error translation: Maps HTTP status 401/403 to `ConfigError`, timeouts to `DocumentParseError(status_code=504)`, and HTTP 5xx/conversion failures to `DocumentParseError(status_code=502)`.
+
 ---
 
 ## 4. Pure-Domain RAG Subsystem (`src/mangomas/rag/`)
@@ -149,7 +175,12 @@ classDiagram
 flowchart LR
     DocDir[File / Directory] --> Loader[loader.py: load_documents]
     Loader --> RawDocs[RawDoc list with POSIX source strings]
-    RawDocs --> Chunker[chunker.py: chunk_document]
+    RawDocs --> ParserDecision{Parser enabled & suffix allowed?}
+    ParserDecision -- Yes --> DoclingParser[DoclingServeParser: parse]
+    DoclingParser --> ParsedDocs[Parsed document text]
+    ParserDecision -- No --> RawDocsText[Raw text]
+    ParsedDocs --> Chunker[chunker.py: chunk_document]
+    RawDocsText --> Chunker
     Chunker --> Chunks[Chunk list]
     Chunks --> Pipeline[pipeline.py: IngestionPipeline]
     Pipeline --> Embedder[EmbeddingClient: embed_batch]
@@ -163,7 +194,7 @@ flowchart LR
 
 - **Document Source IDs**: `rag/loader.py` stores each `RawDoc.source` as a canonical POSIX string (`Path.as_posix()` for a single file, or a POSIX relative path within a loaded directory).
 - **Chunker**: Pure word-window chunking algorithm splitting text by token boundaries with configurable overlap.
-- **`IngestionPipeline`**: End-to-end ingestion service that orchestrates loading, chunking, batch embedding generation, and vector store upsertion.
+- **`IngestionPipeline`**: End-to-end ingestion service that orchestrates loading, optional non-text parsing via `DocumentParser`, chunking, batch embedding generation, and vector store upsertion.
 - **`Retriever` & `RetrievalTool`**: Encapsulates semantic vector search into an invocable `ToolSpec`, allowing `ToolAgent` to query ingested corporate knowledge within standard agent control loops.
 
 ---
@@ -231,6 +262,7 @@ classDiagram
     class StepTimeout
     class ToolNotFound
     class ToolExecutionError
+    class DocumentParseError
 
     Exception <|-- MangomasError
     MangomasError <|-- ConfigError
@@ -246,8 +278,8 @@ classDiagram
     MangomasError <|-- StepTimeout
     MangomasError <|-- ToolNotFound
     MangomasError <|-- ToolExecutionError
+    MangomasError <|-- DocumentParseError
 ```
 
-- **HTTP Status Mapping**: The FastAPI exception handler walks the exception MRO to yield canonical HTTP status codes (`UnknownProvider` / `ConfigError` $\to$ 400, `AgentNotFound` $\to$ 404, `MaxStepsExceeded` $\to$ 422, `LLMUnavailable` $\to$ 503, `LLMTimeout` $\to$ 504). `AuthenticationError` is defined in `api/auth.py` (not `errors.py`) and maps to 401 via the same `_ERROR_STATUS` table.
+- **HTTP Status Mapping**: The FastAPI exception handler walks the exception MRO to yield canonical HTTP status codes (`UnknownProvider` / `ConfigError` $\to$ 400, `AgentNotFound` $\to$ 404, `MaxStepsExceeded` $\to$ 422, `DocumentParseError` $\to$ 502, `LLMUnavailable` $\to$ 503, `LLMTimeout` $\to$ 504). `AuthenticationError` is defined in `api/auth.py` (not `errors.py`) and maps to 401 via the same `_ERROR_STATUS` table.
 - **Correlation Propagation**: Every error envelope carries `error`, `message`, `correlation_id`, and ISO-8601 `timestamp`.
-

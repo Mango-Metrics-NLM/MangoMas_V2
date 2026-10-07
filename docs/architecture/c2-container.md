@@ -17,6 +17,7 @@ C4Container
     Container(workflow, "Workflow Graph Layer (opt-in)", "Python package (src/mangomas/workflow/)", "Declarative multi-agent topologies: a frozen WorkflowGraph (agent / sequence / fan_out / loop / branch) compiled to the Orchestrator's public dispatch primitives — every leaf is one dispatch call, so an all-agent sequence equals dispatch_pipeline. Surfaced via POST /workflows/run|validate and `mangomas workflow validate|run`. Dormant unless MANGOMAS_WORKFLOW__ENABLED or an explicit --definition.")
     Container(cognitive, "Cognitive producer (opt-in)", "Python package (src/mangomas/cognitive/)", "Emits CognitiveSignal 1.1.0 JSONL (planner planning.proposal, reviewer review.finding) when MANGOMAS_SIGNAL__ENABLED=true. Attaches CognitiveSignalSink on ctx.extras. Failures are contained. Never grants tools or talks to ExecutionBroker.")
     Container(composition, "Composition Root", "Python package", "composition/ — wires LLM, storage, secrets, embeddings, vector, agent, and harness registries at startup, and attaches extras['cognitive_sink'] when signal.enabled. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
+    Container(parser_adapter, "Document Parser (opt-in)", "Python package (src/mangomas/adapters/parsers/)", "DocumentParser protocol, DoclingServeParser adapter, _archive OOXML zip validation, _auth identity management. Activated when MANGOMAS_PARSER__ENABLED=true (spec-0035 / ADR-0036).")
     Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .claude/agents and .claude/skills), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
     Container(integration_contracts, "Integration contracts", "Python package (mango-integration-contracts 1.1.0)", "Strict CognitiveSignal / ProposedAction envelope (extra=forbid, frozen). Imported at runtime only by mangomas.cognitive when MANGOMAS_SIGNAL__ENABLED. INV-16: never an authorization input.")
   }
@@ -31,11 +32,12 @@ C4Container
   System_Ext(cognitive_signals, "Cognitive signal log (opt-in)", "data/cognitive-signals — JSONL envelopes when MANGOMAS_SIGNAL__ENABLED=true")
   System_Ext(embed_backend, "Embedding backend (opt-in)", "LM Studio /v1/embeddings (default), in-process sentence-transformers, or Vertex text-embedding-004. Selected by MANGOMAS_EMBEDDINGS__PROVIDER.")
   System_Ext(chroma_store, "Chroma vector store (opt-in)", "data/chroma — persistent ChromaDB collection (hnsw:space=cosine). Activated by MANGOMAS_VECTOR__ENABLED.")
+  System_Ext(docling_serve_proc, "docling-serve microservice (opt-in)", ":5001 — Out-of-process OCR & layout engine converting PDF/Word/PPTX/Excel to Markdown (spec-0035)")
   System_Ext(otel_out, "OTel / stdout", "Traces and structured logs")
   System_Ext(code_agent_harness, "Mango Code Agent Harness", "Sibling execution/authority plane (classify, authorize, broker). Distinct from the in-repo Claude Code harness container. Companion 1.1.0 bump required before ingest.")
 
   Rel(developer, api, "POST /agents/{name}/invoke, stream; GET /healthz, /readyz, /agents", "HTTP")
-  Rel(developer, cli, "mangomas chat / history / eval", "shell")
+  Rel(developer, cli, "mangomas chat / history / eval / rag ingest", "shell")
   Rel(api, composition, "calls build_orchestrator() at lifespan startup")
   Rel(cli, composition, "calls build_orchestrator() at CLI startup")
   Rel(eval_harness, composition, "constructs EvalRunner around the orchestrator")
@@ -50,7 +52,10 @@ C4Container
   Rel(cli, workflow, "mangomas workflow validate|run -f graph.json")
   Rel(workflow, composition, "executes against the orchestrator's public dispatch surface")
   Rel(composition, rag, "constructs IngestionPipeline + Retriever + RetrievalTool (when embeddings + vector enabled)")
+  Rel(composition, parser_adapter, "constructs DoclingServeParser and attaches ctx.extras['document_parser'] (when parser enabled)")
   Rel(cli, rag, "mangomas rag ingest|query — load/chunk/embed/upsert, then embed-query/search")
+  Rel(rag, parser_adapter, "IngestionPipeline delegates non-text files (.pdf, .docx, .pptx, .xlsx) before chunking")
+  Rel(parser_adapter, docling_serve_proc, "DoclingServeParser.parse() → /v1/convert/file with generated stem", "HTTP multipart")
   Rel(rag, embed_backend, "EmbeddingClient.embed_batch (when provider=lmstudio → HTTP; sentence_transformers → in-process; vertex → SDK)")
   Rel(rag, chroma_store, "VectorStoreRepository.upsert/query/delete_by_source", "chromadb / filesystem")
   Rel(eval_harness, embed_backend, "EmbeddingScorer cosine scoring via ctx.embeddings (when embeddings enabled)")
@@ -120,3 +125,10 @@ C4Container
   (`.claude/cache/`, `.claude/state/`, `.claude/logs/`,
   `.claude/settings.local.json`) are excluded from git and Docker
   (see `.gitignore` / `.dockerignore`).
+- The **Document Parser** (`src/mangomas/adapters/parsers/`) is opt-in and
+  default-off (`MANGOMAS_PARSER__ENABLED=false`). When enabled, `composition/parser.py`
+  instantiates `DoclingServeParser` and attaches it to `ctx.extras["document_parser"]`.
+  `IngestionPipeline` inspects document extensions, routing text files directly to
+  chunking while delegating binary documents (`.pdf`, `.docx`, `.pptx`, `.xlsx`) to
+  `DoclingServeParser`, which executes in-memory OOXML zip-bomb safety checks before
+  performing a multipart POST to `docling-serve`.

@@ -67,6 +67,7 @@ C4Component
     Component(postgres_repo, "PostgresRepository", "TurnRepository + AsyncCloseableRepository", "Persists conversation turns to Postgres via asyncpg with a connection pool. Activated by MANGOMAS_DB__PROVIDER=postgres; requires the `mangomas[postgres]` optional extra.")
     Component(embedding_client, "EmbeddingClient (resolved by embedding_registry)", "Protocol — LMStudioEmbeddingClient | SentenceTransformersEmbeddingClient | VertexEmbeddingClient", "Attached to ctx.embeddings when MANGOMAS_EMBEDDINGS__ENABLED=true. embed()/embed_batch()/aclose(). lmstudio uses httpx POST /v1/embeddings; sentence_transformers runs encode() in asyncio.to_thread (mangomas[embeddings-local]); vertex uses text-embedding-004 via ADC (mangomas[vertex]). Heavy SDKs lazy-imported.")
     Component(vector_store, "ChromaVectorStore (resolved by vector_registry)", "VectorStoreRepository", "Attached to ctx.vector_store when MANGOMAS_VECTOR__ENABLED=true. upsert/query/delete_by_source/aclose over a persistent Chroma collection created with hnsw:space=cosine; VectorMatch.score = 1 - distance/2. chromadb lazy-imported (mangomas[rag]).")
+    Component(document_parser, "DocumentParser (resolved by parser_registry)", "Protocol — DoclingServeParser", "Optional document parser attached when MANGOMAS_PARSER__ENABLED=true. parse() converts non-text documents (.pdf, .docx, .pptx, .xlsx) via Docling Serve HTTP service, with streaming size enforcement and OOXML zip-bomb safety checks (_archive.py).")
   }
 
   Container_Boundary(workflow_boundary, "Workflow (src/mangomas/workflow/) — opt-in") {
@@ -79,7 +80,7 @@ C4Component
   Container_Boundary(rag_boundary, "RAG (src/mangomas/rag/) — opt-in") {
     Component(retrieval_tool, "RetrievalTool", "Tool", "name='retrieve'. Registered into a ToolRegistry and set on ctx.tools only when BOTH ctx.embeddings and ctx.vector_store are present, so ToolAgent auto-discovers it. execute() returns formatted top-k context.")
     Component(retriever, "Retriever", "Domain service", "search(query): embed query → vector_store.query → map VectorMatch → SearchResult. top_k from MANGOMAS_VECTOR__TOP_K.")
-    Component(ingestion, "IngestionPipeline", "Domain service", "ingest(path): load → delete_by_source (idempotent re-ingest) → chunk_text → embed_batch in batch_size slices → upsert with stable {source}#{index} ids. CLI-only (mangomas rag ingest).")
+    Component(ingestion, "IngestionPipeline", "Domain service", "ingest(path): load → optional parse via DocumentParser for non-text docs → delete_by_source (idempotent re-ingest) → chunk_text → embed_batch in batch_size slices → upsert with stable {source}#{index} ids. CLI-only (mangomas rag ingest).")
   }
 
   Container_Boundary(cognitive_boundary, "Cognitive producer (src/mangomas/cognitive/) — opt-in") {
@@ -139,6 +140,7 @@ C4Component
   Rel(reviewer_agent, cognitive, "review.finding after handle (contained)")
   Rel(ingestion, embedding_client, "embed_batch(chunks)")
   Rel(ingestion, vector_store, "delete_by_source() then upsert()")
+  Rel(ingestion, document_parser, "parse(doc) when parser enabled and file suffix in allowed_suffixes")
 ```
 
 ## Notes
@@ -195,6 +197,13 @@ C4Component
   only from the CLI (`mangomas rag ingest`) and is not part of the request
   path. `Orchestrator.aclose()` closes `ctx.embeddings` and
   `ctx.vector_store` (fault-tolerant, idempotent) so neither leaks per run.
+- The **Document Parser seam** (`src/mangomas/adapters/parsers/`) implements the
+  `DocumentParser` protocol resolved by `parser_registry`. `DoclingServeParser`
+  communicates with external Docling Serve over HTTP multipart conversion. It
+  incorporates `_archive.py` checks for OOXML zip bomb and ratio limits, and
+  `_auth.py` supporting `none`, `api_key`, or `google_id_token` authentication.
+  When `MANGOMAS_PARSER__ENABLED=true`, `IngestionPipeline` dispatches non-text
+  documents through the parser before chunking and embedding.
 - The **cognitive producer** (`src/mangomas/cognitive/`) is opt-in via
   `MANGOMAS_SIGNAL__ENABLED`. It imports `mango_contracts` in-process and
   writes JSONL (optional HTTP). The sibling Code Agent Harness is the C1

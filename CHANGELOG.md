@@ -9,6 +9,69 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — live LM Studio E2E findings (2026-10-07)
+
+- **`ToolAgent` no longer 502s on JSON content when no tool registry is
+  configured (L-D1).** With RAG off (the shipped default, `ctx.tools is None`) no
+  tool-call prompt is sent, yet a fenced JSON block without a `"tool"` key
+  raised `LLMBadResponse`. The shipped `planner -> tool -> reviewer` graph
+  failed whenever the tool hop echoed the planner's JSON plan in a fence. That
+  reproduced on `liquid/lfm2-24b-a2b` (3 runs) and `nvidia/nemotron-3-nano-omni`
+  (it was previously mis-triaged as a liquid-only model limitation). Such replies
+  are now returned as the final response, with a WARNING carrying the parser's
+  reason. Unchanged: with a registry configured a rejected block still raises,
+  and a block that parses to a tool call with no registry still raises
+  `ToolNotFound` (MAST FM-1.2). The only change is in `agents/tool_agent.py`; the
+  parser contract in the protected `core/tools.py` is untouched. Guards:
+  `tests/regression/test_aqa_20261007_live.py` (5 tests, 3 red without the fix).
+- **Step-budget diagnostic.** `build_orchestrator` now logs a WARNING
+  (`event=step_budget_below_llm_timeout`) when `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS`
+  is below `MANGOMAS_LLM__TIMEOUT_SECONDS`. That is true of the shipped defaults
+  (30 s < 60 s): a slow completion is cancelled as `step_timeout` (504) before the
+  adapter's `llm_timeout` can fire. This explained every live 504 on
+  slower local models. Defaults are unchanged; it is diagnostic only.
+- **`scripts/run_workflow_e2e.py` loop could never accept (L-T1).** A
+  `sequence` hands each step only the previous step's output, so the loop agent
+  never saw the prompt's "end with DONE" instruction. Live runs on two models
+  always ended in `MaxStepsExceeded`. The instruction now reaches the loop agent
+  as its system prompt, and an operator-set
+  `MANGOMAS_AGENTS__CHAT__SYSTEM_PROMPT` still wins. Guards: 5 new tests in
+  `tests/test_run_workflow_e2e.py`.
+- **C1 guard.** `test_c1_decode_error_is_not_chained_onto_typed_error` pins the
+  `from None` in `OpenAICompatHTTPClient._json`. It is red against `from exc`.
+
+### Changed — SDLC origin-sync, architecture & modular decomposition (2026-10-06)
+
+- **Archive safety extraction (`adapters/parsers/_archive.py`)**: Extracted
+  `check_ooxml_archive`, `OOXML_SUFFIXES`, and `_ZIP_ERRORS` into a dedicated
+  module. `docling_serve.py` preserves backwards compatibility via explicit
+  re-export in `__all__`.
+- **Test suite decomposition (`tests/adapters/parsers/`)**: Decomposed
+  monolithic 1,144-line `test_docling_serve.py` into focused test suites:
+  `conftest.py`, `test_docling_serve_convert.py`, `test_docling_serve_archive.py`,
+  `test_docling_serve_auth.py`, and `test_docling_serve_errors.py`, retaining
+  `test_docling_serve.py` as an aggregate smoke test facade.
+- **Upstream error sanitization (`adapters/_openai_client.py`)**: Chained
+  `from None` on `json.loads` failures within `_json()` to prevent raw upstream
+  HTTP error bodies from leaking into unhandled tracebacks.
+- **AQA regression suite (`tests/regression/test_aqa_20261006_defects.py`)**:
+  17 deterministic guards for D1–D5 as recorded in the defect ledger:
+  - D1: nested-JSON `RecursionError` leaking from the docling parser and JWT expiry.
+  - D2: a non-JSON or nested 200 body from the LM Studio LLM and embedding
+    adapters giving a bare 500 instead of a typed 502.
+  - D3: `test_auth.py` header typing failing `mypy --strict` when `httpx2` is installed.
+  - D4: untyped google-auth calls.
+  - D5: Windows cp1252 stdout crash in `scripts/run_workflow_e2e.py`.
+
+  Plus 4 persistence-isolation tests in `tests/test_run_workflow_e2e.py`.
+- **Architecture C1–C4 documentation sync**: Updated C1 Context, C2 Container,
+  C3 Component, and C4 Code diagrams to document the Docling Serve parser
+  microservice, `DocumentParser` protocol, OOXML archive limits, and HTTP 502
+  mapping.
+- **Tooling and container configuration**: Added opt-in `parser` service profile
+  to `docker-compose.yml` (`quay.io/ds4sd/docling-serve:latest` on port 5001) and
+  added `*.db` / `*.sqlite` to `.dockerignore`.
+
 ### Added — document parsing for RAG ingestion (spec-0035)
 
 Opt-in and default-off: with `MANGOMAS_PARSER__ENABLED=false` nothing is

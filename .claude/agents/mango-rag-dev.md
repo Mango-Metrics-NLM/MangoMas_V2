@@ -1,6 +1,6 @@
 ---
 name: mango-rag-dev
-description: "Owns src/mangomas/rag/ plus the adapters/embeddings/ and adapters/vector/ seams: chunking, ingestion, retrieval, embedding backends and the Chroma store. Both seams stay opt-in and default-off. Invoked by name, not by topic match."
+description: "Owns src/mangomas/rag/ plus the adapters/embeddings/, adapters/vector/, and adapters/parsers/ seams: chunking, ingestion, document parsing, retrieval, embedding backends and the Chroma store. All seams stay opt-in and default-off. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -21,11 +21,14 @@ gated-test commands.
   `_shared.py` `SingleTextEmbedMixin` / `NoTransportAcloseMixin` pair
 - `src/mangomas/adapters/vector/` — `base.py::VectorStoreRepository` +
   `VectorMatch`, and `chroma.py`
-- Wiring in `composition/`: `embedding_registry`, `_vector_registry`, and
-  `_build_rag_tools` — the only place `ctx.tools` gains a `RetrievalTool`
-- `EmbeddingSettings`, `VectorSettings`, `RagSettings` in `mangomas.config`
+- `src/mangomas/adapters/parsers/` — `base.py::DocumentParser`, `docling_serve.py`,
+  `_archive.py`, and `_auth.py`
+- Wiring in `composition/`: `embedding_registry`, `_vector_registry`, `parser_registry`,
+  and `_build_rag_tools` — the only place `ctx.tools` gains a `RetrievalTool`
+- `EmbeddingSettings`, `VectorSettings`, `RagSettings`, `ParserSettings` in `mangomas.config`
 - The `rag ingest` / `rag query` CLI commands and their `_require_rag` guard
-- Tests: `tests/rag/`, `tests/adapters/embeddings/`, `tests/adapters/vector/`
+- Tests: `tests/rag/`, `tests/adapters/embeddings/`, `tests/adapters/vector/`,
+  `tests/adapters/parsers/`
 
 ## Invariants
 

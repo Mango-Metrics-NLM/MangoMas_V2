@@ -25,13 +25,16 @@ C4Context
 
   System_Ext(cloud_run, "Cloud Run", "Container compute target. deploy/service.yaml + .github/workflows/deploy.yml build and deploy the image; the runtime is the same FastAPI app with MANGOMAS_ENV=prod and JSON logs (spec-0004).")
 
+  System_Ext(docling_serve, "docling-serve (opt-in)", "Document conversion microservice running out-of-process on :5001. Converts PDF, DOCX, PPTX, XLSX into structured Markdown for RAG ingestion. Activated by MANGOMAS_PARSER__ENABLED=true (spec-0035 / ADR-0036).")
+
   System_Ext(code_agent_harness, "Mango Code Agent Harness", "Sibling execution/authority plane (classify, authorize, broker). Distinct from the in-repo Claude Code harness. Consumes CognitiveSignal 1.1.0 when MANGOMAS_SIGNAL__ENABLED=true. Companion 1.1.0 bump required before ingest.")
 
   System_Ext(cognitive_signals, "Cognitive signal log (opt-in)", "./data/cognitive-signals — JSONL envelopes written when MANGOMAS_SIGNAL__ENABLED=true. Covered by the data/ gitignore entry.")
 
-  Rel(developer, mangomas, "Invokes agents / queries health / runs eval", "HTTP REST or CLI")
+  Rel(developer, mangomas, "Invokes agents / queries health / runs eval / ingests documents", "HTTP REST or CLI")
   Rel(mangomas, lmstudio, "Sends chat completion requests", "HTTP (OpenAI-compat /v1/chat/completions)")
   Rel(mangomas, vertex, "Sends generate_content requests (when provider=vertex)", "Vertex SDK / HTTPS")
+  Rel(mangomas, docling_serve, "POSTs binary documents for layout & Markdown conversion (when parser.enabled)", "HTTP /v1/convert/file")
   Rel(mangomas, sqlite, "Reads and writes conversation turns (default)", "SQLite driver")
   Rel(mangomas, postgres, "Reads and writes conversation turns (when provider=postgres)", "asyncpg / TLS")
   Rel(mangomas, secret_mgr, "Resolves secret references (when provider=gcp)", "Secret Manager API / IAM")
@@ -70,3 +73,8 @@ C4Context
   not this repo's Claude Code harness (`MANGOMAS_HARNESS__*`). Emission is
   opt-in via `MANGOMAS_SIGNAL__*` (default-OFF). A `CognitiveSignal` is
   advisory JSON; it never grants tools, models, or timeouts.
+- The **docling-serve** document parser is an out-of-process conversion
+  microservice (spec-0035 / ADR-0036). It is opt-in (`MANGOMAS_PARSER__ENABLED=true`),
+  default-off. It accepts `.pdf`, `.docx`, `.pptx`, `.xlsx`, enforcing in-memory
+  OOXML decompression checks and format allow-lists before transmission to
+  prevent zip bombs and memory exhaustion.
