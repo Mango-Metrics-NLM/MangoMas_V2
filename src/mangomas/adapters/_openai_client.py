@@ -141,7 +141,7 @@ class OpenAICompatHTTPClient:
                 detail=(f"{type(exc).__name__} content_type={content_type!r} bytes={size}")[
                     :DEFAULT_ERROR_DETAIL_TRUNCATE
                 ],
-            ) from exc
+            ) from None
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client (if owned)."""
