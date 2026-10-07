@@ -1,6 +1,6 @@
 ---
 name: mango-rag-dev
-description: "Owns src/mangomas/rag/ plus the adapters/embeddings/, adapters/vector/, and adapters/parsers/ seams: chunking, ingestion, document parsing, retrieval, embedding backends and the Chroma store. All seams stay opt-in and default-off. Invoked by name, not by topic match."
+description: "Owns src/mangomas/rag/ plus the adapters/embeddings/, adapters/vector/ and adapters/parsers/ seams: chunking, ingestion, retrieval, embedding backends, the Chroma store and document parsing. Every seam stays opt-in and default-off. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -21,14 +21,17 @@ gated-test commands.
   `_shared.py` `SingleTextEmbedMixin` / `NoTransportAcloseMixin` pair
 - `src/mangomas/adapters/vector/` — `base.py::VectorStoreRepository` +
   `VectorMatch`, and `chroma.py`
-- `src/mangomas/adapters/parsers/` — `base.py::DocumentParser`, `docling_serve.py`,
-  `_archive.py`, and `_auth.py`
-- Wiring in `composition/`: `embedding_registry`, `_vector_registry`, `parser_registry`,
-  and `_build_rag_tools` — the only place `ctx.tools` gains a `RetrievalTool`
-- `EmbeddingSettings`, `VectorSettings`, `RagSettings`, `ParserSettings` in `mangomas.config`
+- `src/mangomas/adapters/parsers/` — `base.py::DocumentParser` +
+  `ParsedDocument`, `docling_serve.py`, the `_archive.py` OOXML archive guard,
+  and the `_auth.py` identity-token seam (spec-0035 / ADR-0036)
+- Wiring in `composition/`: `embedding_registry`, `_vector_registry`,
+  `_parser_registry` + `parser.py` (`build_parser`, `_ParserCloseMixin`), and
+  `_build_rag_tools` — the only place `ctx.tools` gains a `RetrievalTool`
+- `EmbeddingSettings`, `VectorSettings`, `RagSettings`, `ParserSettings` in
+  `mangomas.config`
 - The `rag ingest` / `rag query` CLI commands and their `_require_rag` guard
-- Tests: `tests/rag/`, `tests/adapters/embeddings/`, `tests/adapters/vector/`,
-  `tests/adapters/parsers/`
+- Tests: `tests/rag/` (incl. `bakeoff/`), `tests/adapters/embeddings/`,
+  `tests/adapters/vector/`, `tests/adapters/parsers/`, `tests/composition/test_parser.py`
 
 ## Invariants
 
@@ -40,6 +43,8 @@ gated-test commands.
 | Backends write `embed_batch` and nothing else | `embed` and the transport-less `aclose` come from `embeddings/_shared.py`; `lmstudio` instead inherits `aclose` from `OpenAICompatHTTPClient`, which owns the httpx client |
 | Half-wired retrieval is not a state | `_build_rag_tools` returns `None` unless **both** `ctx.embeddings` and `ctx.vector_store` are present, so `ToolAgent` never discovers a retriever that can embed but not search |
 | Teardown is a registered hook | The orchestrator closes the embedding client and vector store through `_close_hooks` under per-hook fault isolation. A new client owning a socket needs `aclose`, never `__del__` |
+| A parse failure never purges | `pipeline.py::_ingest_with_parser` turns a `ParseFailure` into a skip (or a raise under `on_error="fail"`) and never calls `_replace_source` for it, so a corrupt or unreachable file keeps its indexed vectors. Empty text from a non-empty file is a failure; a genuinely empty file is still a purge |
+| Parsed passages are untrusted | `retrieval.py` frames any chunk carrying `parse_status` in an escaped `<untrusted-document>`; text-file passages render byte-identically. Key the check on `parse_status`, which is always written — never on an optional argument |
 | Dependency direction | `rag/` imports the two protocol modules under `TYPE_CHECKING` only, and neither adapter package imports `rag/`. `retrieval.py::_match_to_result` is the single mapping seam |
 
 ## Constraints

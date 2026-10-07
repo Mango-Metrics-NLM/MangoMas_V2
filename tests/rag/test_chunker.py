@@ -92,3 +92,71 @@ def test_fuzz_reassembly_covers_input(words: list[str], size: int, overlap: int)
         return
     covered = {w for c in chunks for w in c.split()}
     assert set(words) <= covered
+
+
+# ── chunk_lines (spec-0035 R7: line-preserving windows for parsed documents) ──
+
+from mangomas.rag.chunker import chunk_lines  # noqa: E402
+
+_TABLE = "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n"
+
+
+def test_chunk_lines_keeps_leading_whitespace_and_indentation() -> None:
+    """Regression (PR #82 review): a `\\S+\\s*` tokenizer dropped leading space."""
+    text = "    indented code\n  more code\n"
+    assert chunk_lines(text, size=50, overlap=0) == [text]
+
+
+def test_chunk_lines_keeps_a_table_intact_when_it_fits() -> None:
+    assert chunk_lines(_TABLE, size=50, overlap=0) == [_TABLE]
+
+
+def test_chunk_lines_never_splits_a_row_that_fits_the_window() -> None:
+    for chunk in chunk_lines(_TABLE, size=6, overlap=0):
+        for line in chunk.splitlines():
+            assert line in _TABLE.splitlines()
+
+
+def test_chunk_lines_splits_an_over_long_line_at_word_boundaries() -> None:
+    assert chunk_lines("a b c d e", size=2, overlap=0) == ["a b", " c d", " e"]
+
+
+def test_chunk_lines_of_wordless_text_is_empty() -> None:
+    assert chunk_lines("  \n\n\t", size=3, overlap=0) == []
+
+
+def test_chunk_lines_overlap_repeats_trailing_lines() -> None:
+    chunks = chunk_lines("one two\nthree four\nfive six\n", size=4, overlap=2)
+    assert chunks == ["one two\nthree four\n", "three four\nfive six\n"]
+
+
+@pytest.mark.parametrize(("size", "overlap"), [(0, 0), (3, 3), (3, -1)])
+def test_chunk_lines_validates_its_window(size: int, overlap: int) -> None:
+    with pytest.raises(ValueError):
+        chunk_lines("a b c", size=size, overlap=overlap)
+
+
+_LINE = st.text(alphabet=" abc|-\t", max_size=20)
+
+
+@given(
+    lines=st.lists(_LINE, max_size=12),
+    size=st.integers(min_value=1, max_value=8),
+    data=st.data(),
+)
+def test_chunk_lines_properties(lines: list[str], size: int, data: st.DataObject) -> None:
+    text = "\n".join(lines)
+    overlap = data.draw(st.integers(min_value=0, max_value=size - 1))
+    chunks = chunk_lines(text, size=size, overlap=overlap)
+    # Every chunk is a verbatim slice of the input and within the word budget.
+    for chunk in chunks:
+        assert chunk in text
+        assert 1 <= len(chunk.split()) <= size
+    # Every word survives: the chunks, overlaps removed, cover every word.
+    assert set(text.split()) <= {w for chunk in chunks for w in chunk.split()}
+    assert sum(len(c.split()) for c in chunks) >= len(text.split())
+
+
+def test_chunk_lines_preserves_crlf_and_lone_cr() -> None:
+    text = "| a |\r\n|---|\r\n| 1 |\rend\n"
+    assert chunk_lines(text, size=50, overlap=0) == [text]

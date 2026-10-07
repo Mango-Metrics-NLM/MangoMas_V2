@@ -4,12 +4,12 @@ description: >
   Retrieval-augmented generation in Mango-Mas V2. Use when: adding or
   changing an embedding provider (LM Studio, sentence-transformers, Vertex
   text-embedding), working on the Chroma vector store, building or running
-  the ingestion pipeline (mangomas rag ingest), parsing documents (Docling
-  Serve), wiring retrieval into agents via RetrievalTool, or debugging
-  cosine-similarity scoring. Covers the EmbeddingClient / VectorStoreRepository /
-  DocumentParser protocol seams, the opt-in enabled-gating, lazy SDK imports,
-  and the composition/ wiring that attaches ctx.embeddings / ctx.vector_store /
-  ctx.extras["document_parser"].
+  the ingestion pipeline (mangomas rag ingest), wiring retrieval into agents
+  via RetrievalTool, or debugging cosine-similarity scoring. Covers the
+  EmbeddingClient / VectorStoreRepository protocol seams, the opt-in
+  enabled-gating, lazy SDK imports for the embeddings-local / rag extras,
+  the composition/ wiring that attaches ctx.embeddings / ctx.vector_store,
+  and PDF/Office ingestion through the DocumentParser seam (docling-serve).
 argument-hint: "Describe the RAG change (e.g. 'add Cohere embedding provider', 'tune chunk size') or paste a failing retrieval test"
 ---
 
@@ -102,10 +102,28 @@ at construction.
 
 ---
 
+## Document parsing (spec-0035 / ADR-0036)
+
+`MANGOMAS_PARSER__ENABLED=true` makes `rag ingest` send `.pdf/.docx/.pptx/.xlsx`
+to docling-serve through `DocumentParser`. Rules: limits are enforced before
+upload; a `ParseFailure` is skipped (counted) or raised, **never** purged;
+parsed text is chunked by `chunk_lines` (whole lines); parsed chunks carry
+`parser`/`parse_status`/`chunker`/`chunk_words`/`embedding_model` and are
+framed as `<untrusted-document>` on retrieval.
+
+**Add a parser provider:** implement `DocumentParser` in
+`adapters/parsers/<name>.py` (primitives only, no `rag/` import, typed errors —
+`DocumentParseError` for document problems, `ConfigError` for credentials);
+register it in `composition/parser.py`; add a `Fake`-driven conformance test,
+respx/fixture tests for every status, a canary test proving no document text
+or secret reaches logs/spans, and a row in `adapters/CLAUDE.md`.
+
+---
+
 ## CLI
 
 ```powershell
-mangomas rag ingest <path>     # load *.md/*.txt → chunk → embed → upsert; prints counts
+mangomas rag ingest <path>     # load *.md/*.txt (+ PDF/Office when the parser is on) → chunk → embed → upsert; prints counts (+ skipped=N)
 mangomas rag query "<text>"    # embed query → vector search → ranked context
 ```
 
@@ -125,6 +143,9 @@ python scripts/check_coverage.py     # adapters >= 85%, rag >= 95%
 # Gated end-to-end (local backend, no server needed)
 pip install -e ".[dev,embeddings-local,rag]"
 $env:RUN_EMBEDDINGS_LOCAL='1' ; $env:RUN_RAG='1' ; python -m pytest tests -q
+
+# Gated parser bake-off (needs docling-serve + a real embedder)
+$env:RUN_DOCLING='1' ; make docling-bakeoff
 ```
 
 ---
@@ -135,3 +156,4 @@ $env:RUN_EMBEDDINGS_LOCAL='1' ; $env:RUN_RAG='1' ; python -m pytest tests -q
 - DO NOT import `rag/` from `adapters/vector/` or `adapters/embeddings/`.
 - DO NOT ship `1 - distance` scoring or skip the `delete_by_source` re-ingest step.
 - DO NOT add the heavy extras to the default install — they stay optional + lazy.
+- DO NOT let a parse failure reach `_replace_source`, or send a file to the parser before the size/archive limits pass.

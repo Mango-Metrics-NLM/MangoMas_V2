@@ -31,23 +31,72 @@ remaining window needs an id-targeted delete on the protocol.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from opentelemetry import trace
 
-from mangomas.rag.chunker import chunk_text
-from mangomas.rag.loader import load_documents
+from mangomas.rag.chunker import chunk_lines, chunk_text
+from mangomas.rag.loader import ParseFailure, iter_documents, load_documents
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient
+    from mangomas.adapters.parsers.base import DocumentParser
     from mangomas.adapters.vector.base import VectorStoreRepository
-    from mangomas.config import RagSettings
+    from mangomas.config import ParserSettings, RagSettings
     from mangomas.rag.loader import RawDoc
 
-__all__ = ["IngestReport", "IngestionPipeline"]
+__all__ = [
+    "CHUNKER_LINES",
+    "META_CHUNKER",
+    "META_CHUNK_WORDS",
+    "META_EMBEDDING_MODEL",
+    "IngestReport",
+    "IngestionPipeline",
+]
 
 logger = logging.getLogger(__name__)
+
+# Reserved chunk-metadata keys. Written last, so document metadata can never
+# override them — re-ingestion deletes by ``source`` and ids are built from
+# ``index``, so a forged value would orphan or overwrite another document.
+META_SOURCE: Final[str] = "source"
+META_INDEX: Final[str] = "index"
+_RESERVED_KEYS: Final[frozenset[str]] = frozenset({META_SOURCE, META_INDEX})
+
+# Audit keys written on parser-derived chunks only (spec-0035 R8), so a mixed
+# index can be told apart; text-file chunks keep exactly ``{source, index}``.
+META_CHUNKER: Final[str] = "chunker"
+META_CHUNK_WORDS: Final[str] = "chunk_words"
+META_EMBEDDING_MODEL: Final[str] = "embedding_model"
+CHUNKER_LINES: Final[str] = "lines"
+
+# Rough characters-per-token ratio for the over-budget warning. A heuristic,
+# not a tokenizer: it only decides whether to warn, never what to embed.
+_CHARS_PER_TOKEN_ESTIMATE: Final[int] = 4
+
+_SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float, bool)
+_LIST_JOINER: Final[str] = "|"
+
+
+def _flatten_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    """Coerce document metadata to the scalar values a vector store accepts.
+
+    ``None`` and mappings are dropped, sequences of scalars are joined with
+    ``|``, non-string keys and reserved keys are dropped. Chroma rejects
+    ``None`` and nested values outright, so passing them through would fail
+    the upsert after the source's old vectors were already deleted.
+    """
+    flat: dict[str, Any] = {}
+    for key, value in metadata.items():
+        if not isinstance(key, str) or key in _RESERVED_KEYS or value is None:
+            continue
+        if isinstance(value, _SCALAR_TYPES):
+            flat[key] = value
+        elif isinstance(value, (list, tuple)) and all(isinstance(v, _SCALAR_TYPES) for v in value):
+            flat[key] = _LIST_JOINER.join(str(v) for v in value)
+    return flat
 
 
 @dataclass(frozen=True)
@@ -62,6 +111,9 @@ class IngestReport:
     chunks: int
     batches: int
     deleted_sources: int
+    # Parse failures skipped under ``on_error="skip"`` (spec-0035). Defaulted so
+    # existing constructors and equality comparisons are unchanged.
+    skipped_documents: int = 0
 
 
 @dataclass(frozen=True)
@@ -89,11 +141,29 @@ class IngestionPipeline:
         vector_store: VectorStoreRepository,
         settings: RagSettings,
         batch_size: int,
+        parser: DocumentParser | None = None,
+        parser_settings: ParserSettings | None = None,
+        parser_name: str | None = None,
+        embedding_model: str | None = None,
     ) -> None:
+        """All parser arguments are optional and additive (spec-0035 R7).
+
+        With ``parser=None`` ingestion takes exactly the pre-existing path.
+        ``parser_settings`` is required when ``parser`` is given. The
+        embedding client exposes no model id, so the caller passes
+        ``embedding_model`` (the CLI uses ``MANGOMAS_EMBEDDINGS__MODEL``) for
+        the audit metadata on parser-derived chunks.
+        """
+        if parser is not None and parser_settings is None:
+            raise ValueError("parser_settings is required when a parser is given")
         self._embeddings = embeddings
         self._vector_store = vector_store
         self._settings = settings
         self._batch_size = max(1, batch_size)
+        self._parser = parser
+        self._parser_settings = parser_settings
+        self._parser_name = parser_name
+        self._embedding_model = embedding_model
 
     async def ingest(self, path: str) -> IngestReport:
         """Ingest the file or directory at ``path`` and return run counts.
@@ -103,6 +173,8 @@ class IngestionPipeline:
         calls), and it is normally driven from the CLI, where a silent run and
         a broken run look identical.
         """
+        if self._parser is not None:
+            return await self._ingest_with_parser(path)
         with trace.get_tracer(__name__).start_as_current_span("rag.ingest") as span:
             span.set_attribute("rag.path", path)
             docs = await load_documents(path)
@@ -182,7 +254,9 @@ class IngestionPipeline:
             deleted_sources=deleted,
         )
 
-    async def _embed_document(self, source: str, texts: list[str]) -> list[_PreparedBatch]:
+    async def _embed_document(
+        self, source: str, texts: list[str], extra: Mapping[str, Any] | None = None
+    ) -> list[_PreparedBatch]:
         """Embed ``texts`` in ``batch_size`` slices, touching no store state.
 
         This is the whole crash-safety mechanism: the vector store is not called
@@ -218,7 +292,9 @@ class IngestionPipeline:
                     embeddings=embeddings,
                     documents=batch,
                     metadatas=[
-                        {"source": source, "index": start + offset} for offset in range(len(batch))
+                        # Reserved keys last: they always win over ``extra``.
+                        {**(extra or {}), META_SOURCE: source, META_INDEX: start + offset}
+                        for offset in range(len(batch))
                     ],
                 )
             )
@@ -275,3 +351,127 @@ class IngestionPipeline:
             },
         )
         return removed
+
+    async def _ingest_with_parser(self, path: str) -> IngestReport:
+        """Stream documents, parsing non-text files; never purge on a parse failure.
+
+        Each document is loaded, chunked, embedded and swapped before the next
+        is read, so memory is bounded by one document. A :class:`ParseFailure`
+        never reaches :meth:`_replace_source`: under ``on_error="skip"`` it is
+        counted and logged, so a corrupt or unreachable file leaves its
+        previously indexed vectors intact; under ``on_error="fail"`` the run
+        raises, with every earlier document already replaced.
+        """
+        assert self._parser_settings is not None  # noqa: S101 - checked in __init__
+        settings = self._parser_settings
+        documents = chunks = batches = deleted = skipped = 0
+        with trace.get_tracer(__name__).start_as_current_span("rag.ingest") as span:
+            span.set_attribute("rag.path", path)
+            logger.info(
+                "Ingestion started",
+                extra={
+                    "event": "rag_ingest_started",
+                    "path": path,
+                    "parser": self._parser_name,
+                    "on_error": settings.on_error,
+                },
+            )
+            async for item in iter_documents(
+                path, parser=self._parser, settings=settings, parser_name=self._parser_name
+            ):
+                if isinstance(item, ParseFailure):
+                    if settings.on_error == "fail":
+                        raise item.error
+                    skipped += 1
+                    logger.warning(
+                        "Document skipped after a parse failure; existing vectors kept",
+                        extra={
+                            "event": "rag_document_skipped_parse_failure",
+                            "source": item.source,
+                            "error_code": item.error.code,
+                        },
+                    )
+                    continue
+                documents += 1
+                texts, extra = self._chunk(item)
+                prepared = await self._embed_document(item.source, texts, extra) if texts else []
+                removed = await self._replace_source(item.source, prepared)
+                if removed > 0:
+                    deleted += 1
+                if not texts:
+                    # Same "my file did not get indexed" signal as the text path.
+                    logger.warning(
+                        "Document yielded no chunks (empty or whitespace-only content); skipped",
+                        extra={
+                            "event": "rag_document_skipped",
+                            "source": item.source,
+                            "removed": removed,
+                        },
+                    )
+                chunks += len(texts)
+                batches += len(prepared)
+            if documents == 0 and skipped == 0:
+                logger.warning(
+                    "No documents found to ingest",
+                    extra={"event": "rag_ingest_empty", "path": path},
+                )
+            report = IngestReport(
+                documents=documents,
+                chunks=chunks,
+                batches=batches,
+                deleted_sources=deleted,
+                skipped_documents=skipped,
+            )
+            span.set_attribute("rag.documents", documents)
+            span.set_attribute("rag.chunks", chunks)
+            span.set_attribute("rag.batches", batches)
+            span.set_attribute("rag.deleted_sources", deleted)
+            span.set_attribute("rag.skipped_documents", skipped)
+            logger.info(
+                "Ingestion finished",
+                extra={
+                    "event": "rag_ingest_finished",
+                    "path": path,
+                    "documents": documents,
+                    "chunks": chunks,
+                    "batches": batches,
+                    "deleted_sources": deleted,
+                    "skipped_documents": skipped,
+                },
+            )
+            return report
+
+    def _chunk(self, doc: RawDoc) -> tuple[list[str], dict[str, Any]]:
+        """Chunk one document; parser-derived documents keep their line structure."""
+        if not doc.metadata:
+            texts = chunk_text(
+                doc.text, size=self._settings.chunk_words, overlap=self._settings.chunk_overlap
+            )
+            return texts, {}
+        assert self._parser_settings is not None  # noqa: S101 - parsed docs need settings
+        words = self._parser_settings.parsed_chunk_words
+        overlap = min(self._settings.chunk_overlap, words - 1)
+        texts = chunk_lines(doc.text, size=words, overlap=overlap)
+        extra = _flatten_metadata(doc.metadata)
+        extra[META_CHUNKER] = CHUNKER_LINES
+        extra[META_CHUNK_WORDS] = words
+        if self._embedding_model:
+            extra[META_EMBEDDING_MODEL] = self._embedding_model
+        self._warn_over_budget(doc.source, texts)
+        return texts, extra
+
+    def _warn_over_budget(self, source: str, texts: list[str]) -> None:
+        budget = self._parser_settings.embed_max_tokens if self._parser_settings else None
+        if budget is None:
+            return
+        over = sum(1 for text in texts if len(text) / _CHARS_PER_TOKEN_ESTIMATE > budget)
+        if over:
+            logger.warning(
+                "Chunks likely exceed the embedding model's input limit and may be truncated",
+                extra={
+                    "event": "rag_chunk_over_budget",
+                    "source": source,
+                    "chunks_over_budget": over,
+                    "embed_max_tokens": budget,
+                },
+            )

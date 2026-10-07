@@ -95,6 +95,33 @@ constructed and `.txt`/`.md` ingest is unchanged. See ADR-0036.
   (`mangomas[gcp]`; missing SDK → `ConfigError` with the install hint). Logs and
   spans carry an allow-list of fields only — never document text, filenames,
   response bodies or credentials. Field names are pending live verification.
+- **Streaming loader** (`rag.iter_documents`, `rag.ParseFailure`): yields one
+  document at a time, parsing allow-listed non-text files through the parser
+  inside a `rag.parse` span. Oversize files are refused before reading, parse
+  errors and empty text from non-empty files are yielded as `ParseFailure`
+  (never raised), a `ConfigError` fails the run, and files resolving outside
+  the ingest root are skipped (`rag_symlink_escape`). Without a parser it yields
+  exactly what `load_documents` returns (Hypothesis parity test);
+  `load_documents` itself is unchanged. `RawDoc.metadata` (immutable, empty by
+  default) carries the parser name and parse status.
+- **Parser-aware ingestion** (`IngestionPipeline(parser=…, parser_settings=…,
+  parser_name=…, embedding_model=…)`, all optional): with no parser the
+  pre-existing path runs unchanged. With one, documents stream through
+  `iter_documents`; a `ParseFailure` **never reaches the vector-replace step**,
+  so a corrupt or unreachable file keeps its indexed vectors
+  (`on_error="skip"`, counted in the new `IngestReport.skipped_documents`) or
+  fails the run (`on_error="fail"`). Parsed documents are chunked by the new
+  line-preserving `chunk_lines`, so Markdown tables keep their rows and line
+  breaks (the word chunker flattened them), and their chunks carry audit
+  metadata (`parser`, `parse_status`, `chunker`, `chunk_words`,
+  `embedding_model`); reserved `source`/`index` keys always win and values are
+  coerced to store-legal scalars. `rag_chunk_over_budget` warns when chunks
+  likely exceed `EMBED_MAX_TOKENS`.
+- **Untrusted framing**: `RetrievalTool` wraps parser-derived passages in an
+  `<untrusted-document source="…">` element with an escaped attribute and
+  neutralised wrapper tags; text-file passages render byte-identically.
+- **CLI**: `mangomas rag ingest` passes the composed parser through and appends
+  ` skipped=N` only when non-zero; options and help are unchanged.
 - **Composition**: `parser` registry (`docling_serve`), `build_parser`
   (constructs nothing when disabled; `secret_ref` overrides `api_key`), the
   parser attached on `ctx.extras["document_parser"]`, and `_ParserCloseMixin`

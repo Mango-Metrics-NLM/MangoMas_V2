@@ -173,14 +173,11 @@ classDiagram
 
 ```mermaid
 flowchart LR
-    DocDir[File / Directory] --> Loader[loader.py: load_documents]
-    Loader --> RawDocs[RawDoc list with POSIX source strings]
-    RawDocs --> ParserDecision{Parser enabled & suffix allowed?}
-    ParserDecision -- Yes --> DoclingParser[DoclingServeParser: parse]
-    DoclingParser --> ParsedDocs[Parsed document text]
-    ParserDecision -- No --> RawDocsText[Raw text]
-    ParsedDocs --> Chunker[chunker.py: chunk_document]
-    RawDocsText --> Chunker
+    DocDir[File / Directory] --> Loader[loader.py: load_documents / iter_documents]
+    Loader -. PDF/Office when MANGOMAS_PARSER__ENABLED .-> Parser[DocumentParser: docling_serve]
+    Parser -. ParsedDocument or ParseFailure .-> Loader
+    Loader --> RawDocs[RawDoc stream with POSIX source strings]
+    RawDocs --> Chunker[chunker.py: chunk_text / chunk_lines]
     Chunker --> Chunks[Chunk list]
     Chunks --> Pipeline[pipeline.py: IngestionPipeline]
     Pipeline --> Embedder[EmbeddingClient: embed_batch]
@@ -193,8 +190,9 @@ flowchart LR
 ```
 
 - **Document Source IDs**: `rag/loader.py` stores each `RawDoc.source` as a canonical POSIX string (`Path.as_posix()` for a single file, or a POSIX relative path within a loaded directory).
-- **Chunker**: Pure word-window chunking algorithm splitting text by token boundaries with configurable overlap.
-- **`IngestionPipeline`**: End-to-end ingestion service that orchestrates loading, optional non-text parsing via `DocumentParser`, chunking, batch embedding generation, and vector store upsertion.
+- **Chunker**: `chunk_text` is the word-window chunker for text files; `chunk_lines` packs whole lines of parsed Markdown (tables and indentation survive) and is used only for parser-derived documents.
+- **Document parsing (spec-0035, opt-in)**: `iter_documents` streams one document at a time and, given a `DocumentParser`, sends allow-listed PDF/Office files to docling-serve inside a `rag.parse` span. Failures are yielded as `ParseFailure`; `IngestionPipeline` skips (counts) or raises them and never calls `_replace_source` for one, so a failed parse cannot delete indexed vectors. Parser-derived chunks carry audit metadata and are framed as `<untrusted-document>` by `RetrievalTool`.
+- **`IngestionPipeline`**: End-to-end ingestion service that orchestrates loading, chunking, batch embedding generation, and vector store upsertion.
 - **`Retriever` & `RetrievalTool`**: Encapsulates semantic vector search into an invocable `ToolSpec`, allowing `ToolAgent` to query ingested corporate knowledge within standard agent control loops.
 
 ---
