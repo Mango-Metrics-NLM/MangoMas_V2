@@ -9,13 +9,25 @@ from __future__ import annotations
 
 import httpx
 
-from mangomas.adapters._http_errors import translate_httpx_error
+from mangomas.adapters._http_errors import (
+    translate_httpx_error,
+    translate_httpx_parse_error,
+    translate_parser_status,
+)
 from mangomas.adapters._vertex_errors import translate_vertex_error
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
-from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
+from mangomas.errors import (
+    ConfigError,
+    DocumentParseError,
+    LLMBadResponse,
+    LLMTimeout,
+    LLMUnavailable,
+)
 
 _BASE_URL = "http://localhost:1234/v1"
 _LABEL = "Test upstream"
+# A string that must never be echoed from an httpx exception into a parser error.
+_PARSER_CANARY = "parser-canary-31c9"
 
 
 class _CustomBadResponse(LLMBadResponse):
@@ -95,3 +107,45 @@ def test_vertex_detail_is_truncated() -> None:
     exc = _make_vertex_exception("google.api_core.exceptions.InvalidArgument", message=long_msg)
     out = translate_vertex_error(exc, project="p")
     assert len(getattr(out, "detail", "")) <= DEFAULT_ERROR_DETAIL_TRUNCATE
+
+
+# ── parser translators (spec-0035) ────────────────────────────────────────────
+
+
+def _status_error(status_code: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", f"{_BASE_URL}/{_PARSER_CANARY}")
+    response = httpx.Response(status_code, request=request, text=_PARSER_CANARY)
+    return httpx.HTTPStatusError(_PARSER_CANARY, request=request, response=response)
+
+
+def test_parser_status_credentials_map_to_config_error() -> None:
+    for status_code in (401, 403):
+        err = translate_parser_status(status_code, label=_LABEL)
+        assert type(err) is ConfigError
+        assert str(err) == f"{_LABEL} rejected credentials"
+        assert err.detail == f"status_code={status_code}"
+
+
+def test_parser_status_other_codes_map_to_document_parse_error() -> None:
+    err = translate_parser_status(502, label=_LABEL)
+    assert isinstance(err, DocumentParseError)
+    assert err.detail == "status_code=502"
+
+
+def test_parse_error_status_exception_never_echoes_its_text() -> None:
+    for status_code, expected in ((403, ConfigError), (500, DocumentParseError)):
+        err = translate_httpx_parse_error(_status_error(status_code), label=_LABEL)
+        assert type(err) is expected
+        assert _PARSER_CANARY not in str(err)
+        assert _PARSER_CANARY not in err.detail
+
+
+def test_parse_error_timeout_and_transport_carry_class_name_only() -> None:
+    timeout = translate_httpx_parse_error(httpx.ReadTimeout(_PARSER_CANARY), label=_LABEL)
+    transport = translate_httpx_parse_error(httpx.ConnectError(_PARSER_CANARY), label=_LABEL)
+    assert isinstance(timeout, DocumentParseError)
+    assert isinstance(transport, DocumentParseError)
+    assert "timed out" in str(timeout)
+    assert timeout.detail == "ReadTimeout"
+    assert transport.detail == "ConnectError"
+    assert _PARSER_CANARY not in str(timeout) + str(transport)

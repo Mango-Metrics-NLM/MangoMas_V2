@@ -67,7 +67,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
 .PHONY: help install validate-config lint format format-check typecheck lint-imports frontmatter \
         protected-paths test test-xml \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
-        integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
+        integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse docling-bakeoff \
         gated-suites embeddings-local secret-scan pip-audit sbom-scan
 
 help: ## Show this help
@@ -195,6 +195,9 @@ langfuse: ## Langfuse sink/source suite (needs the langfuse extra installed)
 
 gitleaks-selftest: ## Prove `secret-scan` can still fail (needs the binary `secret-scan` downloads)
 	RUN_GITLEAKS=1 $(PYTHON) -m pytest tests/deploy/test_gitleaks_config.py --no-cov $(PYTEST_FLAGS)
+
+docling-bakeoff: ## Docling bake-off (needs docling-serve + a real embedder; RUN_DOCLING=1)
+	RUN_DOCLING=1 $(PYTHON) -m pytest tests/rag/bakeoff --no-cov $(PYTEST_FLAGS)
 
 # ── Opt-in tooling (off by default; needs the network) ───────────────────────
 #

@@ -1,0 +1,14 @@
+{
+  "document": {
+    "filename": "document.pdf",
+    "md_content": "# Parsed\n\n| a | b |\n|---|---|\n| 1 | 2 |",
+    "json_content": null,
+    "html_content": null,
+    "text_content": null,
+    "doctags_content": null
+  },
+  "status": "success",
+  "errors": [],
+  "processing_time": 1.25,
+  "timings": {}
+}

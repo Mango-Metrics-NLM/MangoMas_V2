@@ -97,6 +97,49 @@ def test_integration_dir_runs_with_the_env_gate(tmp_path: Path) -> None:
     assert "1 passed" in result.stdout
 
 
+_DOCLING_MARKED_TEST = (
+    "import pytest\n\n@pytest.mark.docling\ndef test_probe() -> None:\n    assert True\n"
+)
+
+
+def test_docling_marker_is_skipped_without_the_env_gate(tmp_path: Path) -> None:
+    """spec-0035 R12: a ``docling``-marked test skips with the sanctioned reason.
+
+    Exit 0 is the zero-skip guard's half of the proof — the reason is derived
+    from ``ENV_GATE_SUITES["RUN_DOCLING"]``, so the guard sanctions it.
+    """
+    _write(tmp_path, "test_bakeoff_probe.py", _DOCLING_MARKED_TEST)
+    result = _run_pytest(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 skipped" in result.stdout
+    assert ENV_GATE_SKIP_REASONS["RUN_DOCLING"] in result.stdout
+
+
+def test_docling_marker_runs_with_the_env_gate(tmp_path: Path) -> None:
+    _write(tmp_path, "test_bakeoff_probe.py", _DOCLING_MARKED_TEST)
+    result = _run_pytest(tmp_path, {"RUN_DOCLING": "1"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+
+
+def test_docling_gate_ignores_a_bare_docling_keyword(tmp_path: Path) -> None:
+    """The docling gate keys on the marker, not on ``item.keywords``.
+
+    spec-0035 adds a ``docling`` parser provider, so default-suite unit tests
+    will be parametrised over provider names. A ``[docling]`` id lands in
+    ``keywords``; a keyword-matching gate would silently skip those tests.
+    """
+    _write(
+        tmp_path,
+        "test_provider_probe.py",
+        'import pytest\n\n@pytest.mark.parametrize("provider", ["docling"])\n'
+        "def test_probe(provider: str) -> None:\n    assert provider\n",
+    )
+    result = _run_pytest(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+
+
 def test_unmarked_directory_is_not_skipped(tmp_path: Path) -> None:
     """Pins the over-matching hazard: only gated names may gate.
 

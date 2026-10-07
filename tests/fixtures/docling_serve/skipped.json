@@ -1,0 +1,14 @@
+{
+  "document": {
+    "filename": "document.pdf",
+    "md_content": null,
+    "json_content": null,
+    "html_content": null,
+    "text_content": null,
+    "doctags_content": null
+  },
+  "status": "skipped",
+  "errors": [],
+  "processing_time": 0.0,
+  "timings": {}
+}

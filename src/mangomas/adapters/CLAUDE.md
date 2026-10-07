@@ -3,10 +3,11 @@
 ## Scope
 
 Every outbound integration: LLM providers, turn and memory storage, embedding
-backends and the vector store. Each seam declares its `@runtime_checkable`
-Protocols in its own base module (`llm/base.py`, `storage/base.py`,
-`embeddings/base.py`, `vector/base.py`); the concrete classes beside them are
-selected and built by `composition/`, never imported across a layer boundary.
+backends, the vector store and document parsers. Each seam declares its
+`@runtime_checkable` Protocols in its own base module (`llm/base.py`,
+`storage/base.py`, `embeddings/base.py`, `vector/base.py`, `parsers/base.py`);
+the concrete classes beside them are selected and built by `composition/`,
+never imported across a layer boundary.
 
 No file here is a protected path.
 
@@ -24,6 +25,8 @@ flowchart LR
   storage["storage/"] --> comp
   emb --> comp
   vector["vector/"] --> comp
+  http --> parsers["parsers/"]
+  parsers --> comp
 ```
 
 ## Owners
@@ -32,7 +35,7 @@ flowchart LR
 |---|---|---|
 | `llm/` and typed-error translation | `mango-llm-adapter-dev` | `mango-adapter` |
 | `storage/` | `mango-storage-adapter-dev` | `mango-adapter` |
-| `embeddings/`, `vector/` | `mango-rag-dev` | `mango-rag` |
+| `embeddings/`, `vector/`, `parsers/` | `mango-rag-dev` | `mango-rag` |
 | Protocol back-compat audits (read-only) | `mango-protocol-auditor` | — |
 | Work spanning several seams | `mango-backend` | `mango-adapter` |
 
@@ -49,14 +52,16 @@ the build.
 | Persistence | `storage` | `TurnRepository`, `MemoryRepository`, `AsyncCloseableRepository`, `FailureRecordingRepository` |
 | Embeddings | `embeddings` | `EmbeddingClient` |
 | Vector search | `vector` | `VectorStoreRepository` |
+| Document parsing | `parsers` | `DocumentParser` |
 
 - **Lazy SDK imports.** `google-cloud-*`, `chromadb` and `sentence-transformers`
   are imported inside the method that needs them, so importing any module here
   is safe without the optional extra installed. This is a contract, not a
   style: composition imports every factory module unconditionally.
 - **Typed errors at the boundary.** httpx failures are translated through the
-  shared `_http_errors.py` into the `LLMError` family; Vertex failures go
-  through `_vertex_errors.py`. A raw `httpx` exception must never escape.
+  shared `_http_errors.py` into the `LLMError` family (parsers: `ConfigError` /
+  `DocumentParseError`); Vertex failures go through `_vertex_errors.py`. A raw
+  `httpx` exception must never escape.
 - Capability protocols are *additive*: a client may satisfy `LLMClient` alone.
   Callers narrow with `isinstance`, which is why the decorator matters.
 - `_openai_client.py` holds the shared httpx lifecycle so the LM Studio LLM and

@@ -33,6 +33,9 @@ from mangomas.composition._registries import (
     _memory_registry as _memory_registry,
 )
 from mangomas.composition._registries import (
+    _parser_registry as _parser_registry,
+)
+from mangomas.composition._registries import (
     _storage_registry as _storage_registry,
 )
 from mangomas.composition._registries import (
@@ -108,6 +111,23 @@ from mangomas.composition.memory import (
     _file_memory_factory as _file_memory_factory,
 )
 
+# Document parser (spec-0035; used by builder and tests)
+from mangomas.composition.parser import (
+    _docling_serve_parser_factory as _docling_serve_parser_factory,
+)
+from mangomas.composition.parser import (
+    _parser_secrets_provider as _parser_secrets_provider,
+)
+from mangomas.composition.parser import (
+    _ParserCloseMixin as _ParserCloseMixin,
+)
+from mangomas.composition.parser import (
+    _resolve_parser_api_key as _resolve_parser_api_key,
+)
+from mangomas.composition.parser import (
+    build_parser as build_parser,
+)
+
 # RAG factory (used by builder and tests)
 from mangomas.composition.rag import (
     _build_rag_tools as _build_rag_tools,
@@ -149,16 +169,21 @@ __all__ = [
     "VertexClient",
     "_AgentLLMOverrideCloseMixin",
     "_HarnessOrchestrator",
+    "_ParserCloseMixin",
     "_attach_cognitive_extras",
     "_build_gcp_secrets_provider",
     "_build_rag_tools",
     "_chroma_vector_factory",
+    "_docling_serve_parser_factory",
     "_file_memory_factory",
     "_lmstudio_embedding_factory",
     "_lmstudio_factory",
     "_memory_registry",
+    "_parser_registry",
+    "_parser_secrets_provider",
     "_postgres_factory",
     "_resolve_llm_secrets",
+    "_resolve_parser_api_key",
     "_sentence_transformers_embedding_factory",
     "_sqlite_factory",
     "_storage_registry",
@@ -168,6 +193,7 @@ __all__ = [
     "agent_registry",
     "build_agent_llm_overrides",
     "build_orchestrator",
+    "build_parser",
     "describe_schema",
     "embedding_registry",
     "ensure_agent_plugins",

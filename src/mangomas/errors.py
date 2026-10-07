@@ -9,6 +9,7 @@ from __future__ import annotations
 __all__ = [
     "AgentNotFound",
     "ConfigError",
+    "DocumentParseError",
     "LLMBadResponse",
     "LLMError",
     "LLMTimeout",
@@ -149,6 +150,28 @@ class PersistenceError(MangomasError):
     """Raised for storage adapter failures."""
 
     code = "persistence_error"
+
+
+# ── Document parsing ──────────────────────────────────────────────────────────
+
+
+class DocumentParseError(MangomasError):
+    """Raised when a document parser cannot turn a file into text (spec-0035).
+
+    Covers an upstream parser failure (a ``failure``/``skipped``/unknown status,
+    a transport error, a timeout) and a file refused before upload (too large,
+    a suspicious archive). ``source`` names the ingest source id when known.
+
+    ``detail`` carries status codes, sizes and limits only — never document
+    content, parser response bodies or credentials, because it reaches logs
+    and, if this ever surfaces over HTTP, the client (ADR-0036).
+    """
+
+    code = "document_parse_error"
+
+    def __init__(self, message: str, *, source: str | None = None, detail: str = "") -> None:
+        super().__init__(message, detail=detail)
+        self.source = source
 
 
 # ── Control loop ──────────────────────────────────────────────────────────────

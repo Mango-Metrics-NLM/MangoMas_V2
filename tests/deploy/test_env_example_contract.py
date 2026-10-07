@@ -353,7 +353,9 @@ def _render(value: object) -> str:
     """Render a live default the way the docs write it."""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, list | dict):
+    # A tuple default (`ParserSettings.allowed_suffixes`) is written as a JSON
+    # list in the docs, exactly as pydantic-settings parses it from the env.
+    if isinstance(value, list | tuple | dict):
         return json.dumps(value, separators=(",", ":"))
     return str(value)
 

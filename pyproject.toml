@@ -335,6 +335,7 @@ markers = [
     "rag: tests that require the chromadb extra installed",
     "langfuse: tests that require the langfuse extra installed (RUN_LANGFUSE=1)",
     "gitleaks: tests that shell out to the real gitleaks binary (RUN_GITLEAKS=1)",
+    "docling: tests that require a running docling-serve and a real embedding backend",
 ]
 
 [tool.coverage.run]

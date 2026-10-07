@@ -86,6 +86,13 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(skip["RUN_LANGFUSE"])
         if "gitleaks" in item.keywords and not enabled["RUN_GITLEAKS"]:
             item.add_marker(skip["RUN_GITLEAKS"])
+        # Explicit ``@pytest.mark.docling`` marker only, like ``rag`` above:
+        # spec-0035 adds a ``docling`` parser *provider*, so default-suite unit
+        # tests parametrised over provider names (id ``[docling]``) or living in
+        # a ``docling`` package would otherwise put "docling" into ``keywords``
+        # and be silently skipped as though they were the live bake-off.
+        if item.get_closest_marker("docling") is not None and not enabled["RUN_DOCLING"]:
+            item.add_marker(skip["RUN_DOCLING"])
 
 
 # ── Zero-skip session guard (spec-0022 R8) ────────────────────────────────────

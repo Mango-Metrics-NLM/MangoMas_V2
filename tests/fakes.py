@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass, field
+from pathlib import PurePath
 from typing import TYPE_CHECKING, Any
 
+from mangomas.adapters.parsers.base import ParsedDocument
 from mangomas.adapters.storage._schema import TURN_SCHEMA_VERSION, TurnStatus
 from mangomas.adapters.vector.base import VectorMatch
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
@@ -328,6 +330,81 @@ class FakeEmbeddingClient:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+# What a scripted parse yields: text (wrapped in a default ParsedDocument), a
+# full ParsedDocument, or an exception to raise.
+FakeParseOutcome = str | ParsedDocument | BaseException
+
+
+@dataclass
+class FakeDocumentParser:
+    """In-memory stub satisfying
+    :class:`~mangomas.adapters.parsers.base.DocumentParser`.
+
+    ``outcomes`` is keyed by exact filename first, then by suffix (matched
+    case-insensitively); anything unmatched gets ``default``. A scripted
+    exception is raised. Every attempt is recorded in ``calls`` as
+    ``(filename, len(content))`` *before* the outcome applies, because the
+    parser really was called. ``gate``, when set, is awaited before returning so
+    a test can hold a parse in flight without a wall-clock sleep.
+    """
+
+    outcomes: dict[str, FakeParseOutcome] = field(default_factory=dict)
+    default: FakeParseOutcome = STUB_REPLY
+    gate: asyncio.Event | None = None
+    calls: list[tuple[str, int]] = field(default_factory=list)
+    closed: bool = False
+    close_count: int = 0
+
+    async def parse(self, *, filename: str, content: bytes) -> ParsedDocument:
+        self.calls.append((filename, len(content)))
+        if self.gate is not None:
+            await self.gate.wait()
+        outcome = self._outcome_for(filename)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        if isinstance(outcome, str):
+            return ParsedDocument(text=outcome)
+        return outcome
+
+    def _outcome_for(self, filename: str) -> FakeParseOutcome:
+        if filename in self.outcomes:
+            return self.outcomes[filename]
+        suffix = PurePath(filename).suffix.lower()
+        for key, outcome in self.outcomes.items():
+            if key.lower() == suffix:
+                return outcome
+        return self.default
+
+    async def aclose(self) -> None:
+        self.closed = True
+        self.close_count += 1
+
+
+@dataclass
+class FakeIdTokenProvider:
+    """In-memory stub satisfying
+    :class:`~mangomas.adapters.parsers._auth.IdTokenProvider`.
+
+    Hands out ``tokens`` in order, one per ``fetch``, each expiring
+    ``lifetime`` seconds after ``clock()`` at mint time. Every requested
+    audience is recorded in ``audiences``. ``error``, when set, is raised
+    instead (after recording the audience).
+    """
+
+    tokens: list[str]
+    clock: Callable[[], float]
+    lifetime: float
+    audiences: list[str] = field(default_factory=list)
+    error: BaseException | None = None
+
+    async def fetch(self, audience: str) -> tuple[str, float]:
+        self.audiences.append(audience)
+        if self.error is not None:
+            raise self.error
+        token = self.tokens[len(self.audiences) - 1]
+        return token, self.clock() + self.lifetime
 
 
 def _fake_cosine(a: list[float], b: list[float]) -> float:
