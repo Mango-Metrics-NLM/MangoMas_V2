@@ -41,6 +41,7 @@ _OPT_IN_TARGETS = (
     "gcp-secrets",
     "gcp-trace",
     "langfuse",
+    "docling-bakeoff",
 )
 
 
