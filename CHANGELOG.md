@@ -9,6 +9,33 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — trunk defects from live LM Studio E2E (2026-10-06/07)
+
+- **Typed 502 for non-JSON LM Studio bodies (D2).** A 2xx HTML / undecodable /
+  pathologically nested body from the LLM or embeddings adapter leaked
+  `JSONDecodeError` / `RecursionError` (bare 500). `OpenAICompatHTTPClient._json`
+  now raises the typed `LLMBadResponse` with a body-free detail, `from None` so
+  the upstream body never reaches a traceback. Also fixes `tests/test_auth.py`
+  header typing under `mypy --strict` with httpx2 installed (D3).
+- **`scripts/run_workflow_e2e.py` on Windows consoles (D5).** UTF-8 stdio, so a
+  redirected cp1252 stdout no longer crashes before any work runs.
+- **`ToolAgent` with no tool registry (L-D1).** Fenced JSON lacking `"tool"` is
+  now the final reply (WARNING logged) instead of a 502 when `ctx.tools is None`.
+  The shipped `planner -> tool -> reviewer` graph failed on two local models.
+  Registry-configured behaviour and `ToolNotFound` (MAST FM-1.2) are unchanged.
+- **Step-budget diagnostic.** `build_orchestrator` warns
+  (`event=step_budget_below_llm_timeout`) when
+  `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` < `MANGOMAS_LLM__TIMEOUT_SECONDS`, true
+  of the shipped defaults (30 s < 60 s). Defaults are unchanged.
+- **Workflow demo loop (L-T1).** The loop agent now receives the sentinel
+  instruction via its system prompt; a `sequence` drops the user prompt, so it
+  previously always ended in `MaxStepsExceeded`.
+
+Guards: `tests/regression/test_aqa_20261006_defects.py`,
+`tests/regression/test_aqa_20261007_live.py`,
+`tests/composition/test_step_budget_diagnostic.py`,
+`tests/test_run_workflow_e2e.py`. Each fix is mutation-proven.
+
 ### Fixed — SDLC defect triage AQA (2026-10-01)
 
 Six defects found and fixed during the `sdlc/defect-triage-aqa-20261001`
