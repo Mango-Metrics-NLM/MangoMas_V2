@@ -196,11 +196,15 @@ smoke test.
   deltas with 95% CI. At ~80 questions expect to resolve only large effects
   (roughly ≥10–15 points pooled); the table stratum is where a large effect is
   hypothesised, so powering is aimed there.
-- **Decision rule (pre-registered in the spec):** adopt a chunker/parser only if
-  (a) the CI lower bound of Δrecall@5 > 0 (or ≥ +3 pts on the pre-registered
-  primary metric), (b) no stratum regresses > 5 pts, (c) latency/cost ceilings
-  hold. If the CI spans zero and is wide → **"inconclusive; needs more data"**,
-  not "negative". The gate in CI is regression-only on the frozen test slice.
+- **Decision rule (pre-registered in spec-0035 — one statistic, fixed
+  thresholds):** adopt a chunker/parser variant only if **all** hold on the
+  frozen test slice: (a) the lower bound of the 95 % document-cluster bootstrap
+  CI of Δrecall@5 (variant − baseline) is **> 0**; (b) no stratum's point-estimate
+  Δrecall@5 is below **−5 points**; (c) parse latency p95 is **≤ 10 s per page**
+  and total ingest wall time is **≤ 3×** the baseline arm on the same corpus and
+  hardware. If the CI contains zero → **"inconclusive; needs more data"**, never
+  "negative"; if its upper bound is < 0 → reject. There is no alternative
+  criterion. The gate in CI is regression-only on the frozen test slice.
 - **Reproducibility pins** stored in report metadata: serve image digest, docling
   version, model revisions, OCR preset, embedding model id + revision, chunker
   parameters.
@@ -264,8 +268,9 @@ smoke test.
   empty text (policy applied upstream); 401/403 → config-class error (not
   transient); 5xx/timeouts/connect errors → typed (no raw `httpx`); malformed
   JSON → typed with truncated `detail`; response larger than
-  `max_response_bytes` refused; oversize file (`max_file_bytes`, `+1`, and
-  `0` = off per repo convention) refused **before any network call**
+  `max_response_bytes` refused; oversize file (boundary `n` sent, `n+1`
+  refused; `max_file_bytes` is strictly positive — no "0 = off" mode, `0` is
+  rejected by the settings validator) refused **before any network call**
   (`respx` route call count 0; size via `stat`, not read-then-check).
 - **Request hygiene (asserted on the request body):** `from_formats` pinned to
   the file's allowed format; **no** `ocr_engine` (use `ocr_preset`); sanitised or
