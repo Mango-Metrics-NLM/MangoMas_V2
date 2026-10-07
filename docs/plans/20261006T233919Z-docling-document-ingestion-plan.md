@@ -3,7 +3,7 @@
 - **Branch:** `docs/docling-ingestion-plan` (implementation PRs cut from `feat/initial-release`, one branch per PR below)
 - **Date:** 2026-10-06
 - **Target release:** rolling (additive, default-OFF)
-- **Status:** Draft — rev 2 supersedes rev 1 after a six-role review
+- **Status:** Approved 2026-10-07 (rev 2; supersedes rev 1 after a six-role review). Execution runbook: [`20261007T004835Z-docling-implementation-plan.md`](20261007T004835Z-docling-implementation-plan.md)
 - **Specs:** spec-0035 (drafted in PR A1)
 - **ADRs:** ADR-0036 (drafted in PR A1; must be **Accepted** before PR B1 merges)
 
