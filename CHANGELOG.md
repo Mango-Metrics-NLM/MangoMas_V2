@@ -9,6 +9,73 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — document parsing for RAG ingestion (spec-0035)
+
+Opt-in and default-off: with `MANGOMAS_PARSER__ENABLED=false` nothing is
+constructed and `.txt`/`.md` ingest is unchanged. See ADR-0036.
+
+- **`DocumentParser` seam** (`adapters/parsers/`): a `@runtime_checkable`
+  Protocol (`parse(*, filename, content) -> ParsedDocument`, `aclose()`), the
+  frozen primitives-only `ParsedDocument(text, pages=None, partial=False)`, and
+  `PARSER_EXTRAS_KEY = "document_parser"` for the `AgentContext.extras` slot.
+  The package never imports `rag/`.
+- **`DocumentParseError`** (`errors.py`, code `document_parse_error`, HTTP 502
+  via `_ERROR_STATUS`): an upstream parser failure or a file refused before
+  upload. Optional `.source`; `detail` carries statuses and sizes only.
+- **`docling_serve` provider** (`adapters/parsers/docling_serve.py`): posts one
+  file to `/v1/convert/file` with a generated filename and pinned
+  `from_formats`; refuses oversize files, OOXML zip bombs and unmapped or
+  disallowed suffixes before any network call; caps the response size; maps
+  `success`/`partial_success`/`failure`/`skipped` and transport errors to
+  `ParsedDocument` / `DocumentParseError` (401/403 → `ConfigError`). Auth via
+  `auth_mode`: `X-Api-Key`, or a cached, refreshed Google identity token
+  (`mangomas[gcp]`; missing SDK → `ConfigError` with the install hint). Logs and
+  spans carry an allow-list of fields only — never document text, filenames,
+  response bodies or credentials. Field names are pending live verification.
+- **Streaming loader** (`rag.iter_documents`, `rag.ParseFailure`): yields one
+  document at a time, parsing allow-listed non-text files through the parser
+  inside a `rag.parse` span. Oversize files are refused before reading, parse
+  errors and empty text from non-empty files are yielded as `ParseFailure`
+  (never raised), a `ConfigError` fails the run, and files resolving outside
+  the ingest root are skipped (`rag_symlink_escape`). Without a parser it yields
+  exactly what `load_documents` returns (Hypothesis parity test);
+  `load_documents` itself is unchanged. `RawDoc.metadata` (immutable, empty by
+  default) carries the parser name and parse status.
+- **Parser-aware ingestion** (`IngestionPipeline(parser=…, parser_settings=…,
+  parser_name=…, embedding_model=…)`, all optional): with no parser the
+  pre-existing path runs unchanged. With one, documents stream through
+  `iter_documents`; a `ParseFailure` **never reaches the vector-replace step**,
+  so a corrupt or unreachable file keeps its indexed vectors
+  (`on_error="skip"`, counted in the new `IngestReport.skipped_documents`) or
+  fails the run (`on_error="fail"`). Parsed documents are chunked by the new
+  line-preserving `chunk_lines`, so Markdown tables keep their rows and line
+  breaks (the word chunker flattened them), and their chunks carry audit
+  metadata (`parser`, `parse_status`, `chunker`, `chunk_words`,
+  `embedding_model`); reserved `source`/`index` keys always win and values are
+  coerced to store-legal scalars. `rag_chunk_over_budget` warns when chunks
+  likely exceed `EMBED_MAX_TOKENS`.
+- **Untrusted framing**: `RetrievalTool` wraps parser-derived passages in an
+  `<untrusted-document source="…">` element with an escaped attribute and
+  neutralised wrapper tags; text-file passages render byte-identically.
+- **CLI**: `mangomas rag ingest` passes the composed parser through and appends
+  ` skipped=N` only when non-zero; options and help are unchanged.
+- **Composition**: `parser` registry (`docling_serve`), `build_parser`
+  (constructs nothing when disabled; `secret_ref` overrides `api_key`), the
+  parser attached on `ctx.extras["document_parser"]`, and `_ParserCloseMixin`
+  so `orch.aclose()` closes it on both the plain and harness orchestrators.
+- **`ParserSettings`** (`MANGOMAS_PARSER__*`, `config/parser.py`), every
+  default a `DEFAULT_PARSER_*` constant. Fails fast at settings load: every
+  limit and timeout must be strictly positive (no `0 = off` value), the client
+  timeout must exceed the document timeout, `allowed_suffixes` is normalised to
+  lower-case with a leading dot, de-duplicated, and must not be empty,
+  `auth_mode=api_key` requires `api_key` or `secret_ref`, and `api_key` is kept
+  out of `repr`.
+- **`FakeDocumentParser`** in `tests/fakes.py`: outcomes scripted by filename
+  or suffix (text, `ParsedDocument` or an exception), a recorded `calls` list,
+  close counting, and an optional `asyncio.Event` gate in place of sleeps.
+- The env-contract test now renders tuple defaults as JSON lists, so the
+  `ALLOWED_SUFFIXES` row is compared against the model like any list default.
+
 ### Fixed — SDLC defect triage AQA (2026-10-01)
 
 Six defects found and fixed during the `sdlc/defect-triage-aqa-20261001`

@@ -125,6 +125,7 @@ ENV_GATE_SUITES: dict[str, str] = {
     "RUN_RAG": "chromadb-backed RAG tests",
     "RUN_LANGFUSE": "Langfuse sink tests",
     "RUN_GITLEAKS": "gitleaks config behaviour tests",
+    "RUN_DOCLING": "docling-serve bake-off tests",
 }
 
 
@@ -217,7 +218,17 @@ HOSTED_RUNNER_INFEASIBLE: dict[str, str] = {
     "RUN_GCP_SECRETS": ("needs GCP Secret Manager access (ADC + project) — roadmap decision D2"),
     "RUN_GCP_TRACE": ("needs the gcp extra plus a Cloud Trace destination — roadmap decision D2"),
     "RUN_LANGFUSE": ("needs the langfuse extra plus Langfuse credentials — roadmap decision D2"),
+    "RUN_DOCLING": (
+        "needs a running docling-serve container plus a real embedding backend; "
+        "hosted runners provision neither (spec-0035 R12)"
+    ),
 }
+
+# ── Docling bake-off harness (spec-0035 R12) ──────────────────────────────────
+# Path to the corpus manifest the RUN_DOCLING-gated bake-off reads. Deliberately
+# not a Settings field: it configures a test harness, not the application, so
+# it never appears in `.env.example` and nothing under `src/` reads it.
+BAKEOFF_MANIFEST_ENV: str = "MANGOMAS_BAKEOFF_MANIFEST"
 
 # ── Tier-1 integration-flow values (spec-0029 R3) ─────────────────────────────
 # Env-var names the composed-app flows set. Named here (not inline) for the
@@ -253,6 +264,7 @@ FLOW_LOOP_MAX_STEPS: int = 3
 FLOW_REQUEST_MAX_STEPS: int = 2
 
 __all__ = [
+    "BAKEOFF_MANIFEST_ENV",
     "CHAT_MODEL_OVERRIDE_ENV",
     "DB_URL_ENV",
     "DEFAULT_LIVE_E2E_TIMEOUT_SECONDS",

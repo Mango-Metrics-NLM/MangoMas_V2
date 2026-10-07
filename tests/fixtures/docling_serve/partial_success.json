@@ -1,0 +1,20 @@
+{
+  "document": {
+    "filename": "document.pdf",
+    "md_content": "# Parsed\n\nOnly the first pages converted.",
+    "json_content": null,
+    "html_content": null,
+    "text_content": null,
+    "doctags_content": null
+  },
+  "status": "partial_success",
+  "errors": [
+    {
+      "component_type": "document_backend",
+      "module_name": "pipeline",
+      "error_message": "page 4 could not be converted"
+    }
+  ],
+  "processing_time": 2.5,
+  "timings": {}
+}

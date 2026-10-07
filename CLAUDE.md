@@ -53,7 +53,7 @@ when". Name them directly:
 | `mango-workflow-graph-dev` | `workflow/` — graph model, registry, predicates, executor |
 | `mango-schema-evolution` / `mango-sse-streamer` | HTTP DTO evolution / API-layer SSE framing |
 | `mango-fake-builder` / `mango-hypothesis-fuzz` / `mango-integration-runner` | `tests/fakes.py` / property tests / `tests/integration/` |
-| `mango-rag-dev` | `rag/` + the `adapters/embeddings/` and `adapters/vector/` seams |
+| `mango-rag-dev` | `rag/` + the `adapters/embeddings/`, `adapters/vector/` and `adapters/parsers/` seams |
 | `mango-eval-dev` | The `eval/` spine — runner, gates, registries, payload, discovery |
 | `mango-secrets-dev` | `secrets/` — protocol, env/GCP backends, strict-mode semantics |
 | `mango-agent-impl-dev` | The built-in agents under `agents/` + `_prompt` / `_structured` / discovery + `src/mangomas/cognitive/` producer |
@@ -191,7 +191,7 @@ tree serves both.
 | `mango-config` | Adding a new tunable to `Settings` |
 | `mango-topology` | Composing pipelines, fan-outs, acceptance loops (imperative) |
 | `mango-workflow` | Declarative workflow graphs: schema, nodes, predicates, `workflow` CLI |
-| `mango-rag` | Embeddings/vector/RAG: ingestion, retrieval, RetrievalTool wiring |
+| `mango-rag` | Embeddings/vector/RAG: ingestion, document parsing, retrieval, RetrievalTool wiring |
 | `mango-eval` | Evaluation harness: scorers, sinks, targets, sources, gate/baseline |
 | `mango-cognitive` | CognitiveSignal 1.1.0 producer: `MANGOMAS_SIGNAL__*`, extras sink, INV-16 |
 | `mango-harness` | Protected-path governance, the `BREAKING-CHANGE` trailer, hooks |

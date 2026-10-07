@@ -15,6 +15,7 @@ from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from mangomas.composition.llm import _AgentLLMOverrideCloseMixin
+from mangomas.composition.parser import _ParserCloseMixin
 from mangomas.composition.recording import _FailureRecordingMixin
 from mangomas.config import HarnessSettings, LoopSettings
 from mangomas.core import AgentContext, Orchestrator
@@ -30,7 +31,9 @@ _HARNESS_TOPOLOGY_DISPATCH = "dispatch"
 _HARNESS_TOPOLOGY_STREAM = "stream"
 
 
-class _HarnessOrchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator):
+class _HarnessOrchestrator(
+    _FailureRecordingMixin, _ParserCloseMixin, _AgentLLMOverrideCloseMixin, Orchestrator
+):
     """Orchestrator subclass that wraps dispatch paths in a harness-level span.
 
     Engaged only when ``Settings.harness.enabled`` is ``True``. The parent
@@ -43,7 +46,9 @@ class _HarnessOrchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, 
 
     Also picks up :class:`~mangomas.composition.llm._AgentLLMOverrideCloseMixin`
     so per-agent ``MODEL_OVERRIDE`` clients (spec-0028 / ADR-0028) are closed
-    on :meth:`aclose` the same as the harness-disabled orchestrator.
+    on :meth:`aclose` the same as the harness-disabled orchestrator, and
+    :class:`~mangomas.composition.parser._ParserCloseMixin` so an attached
+    document parser (spec-0035 R10) is closed there too.
     """
 
     def __init__(

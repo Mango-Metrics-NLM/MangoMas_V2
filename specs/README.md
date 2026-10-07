@@ -72,6 +72,10 @@ thinking tool, not a gate.
 | [0029](0029-hardware-agnostic-e2e-suites.md) | Hardware-agnostic end-to-end suites for the Phase-1 deliveries |
 | [0030](0030-cognitive-authority-plugin.md) | Cognitive/execution boundary plugin (`mango-integration-contracts` 1.1.0) |
 | [0031](0031-code-quality-and-enterprise-readiness.md) | Code quality, tech-debt reduction and enterprise readiness |
+| [0032](0032-structured-acceptance-predicates.md) | Structured acceptance predicates (`json_field`) |
+| [0033](0033-gate-falsifiability-probe.md) | Gate falsifiability probe (`make guard-probe`) |
+| [0034](0034-structured-acceptance-enforcement.md) | Structured-acceptance enforcement |
+| [0035](0035-docling-document-ingestion.md) | Document parsing for RAG ingestion (Docling via `docling-serve`) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -82,4 +86,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0031**; next free ADR: **0030**.
+than reused. Next free spec on this branch: **0036**; next free ADR: **0037**.

@@ -86,12 +86,16 @@ src/mangomas/
 │   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
 │   │                   (_shared.py: embed / aclose mixins — backends write embed_batch only)
 │   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
+│   ├── parsers/        DocumentParser protocol + ParsedDocument + DoclingServeParser
+│   │                   (_auth.py: IdTokenProvider seam; opt-in, spec-0035)
 │   └── storage/        TurnRepository + MemoryRepository protocols + impls
 ├── rag/            Pure-domain RAG layer (opt-in; imports only protocols + models)
 │   ├── models.py       Chunk, SearchResult (frozen dataclasses)
-│   ├── chunker.py      Word-window chunker (pure fn)
-│   ├── loader.py       file/dir → raw docs (asyncio.to_thread)
+│   ├── chunker.py      Word-window chunker + line-preserving chunk_lines (pure fns)
+│   ├── loader.py       file/dir → raw docs (asyncio.to_thread); iter_documents
+│   │                   streams + parses non-text files (yields ParseFailure)
 │   ├── pipeline.py     IngestionPipeline: load→chunk→embed_batch→upsert
+│   │                   (optional parser; a parse failure never purges)
 │   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
 ├── workflow/       Declarative workflow-graph layer (opt-in; spec 0005)
 │   ├── graph.py        Frozen node models + WorkflowNode union + WorkflowGraph
@@ -234,6 +238,26 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
+| `MANGOMAS_PARSER__ENABLED` | `false` | Parse non-text documents during `rag ingest` (spec-0035) |
+| `MANGOMAS_PARSER__PROVIDER` | `docling_serve` | Parser registry entry |
+| `MANGOMAS_PARSER__BASE_URL` | `http://localhost:5001` | docling-serve base URL |
+| `MANGOMAS_PARSER__AUTH_MODE` | `none` | `none` \| `api_key` (`X-Api-Key`) \| `google_id_token` (Bearer identity token) |
+| `MANGOMAS_PARSER__API_KEY` | _(none)_ | `X-Api-Key` value when `AUTH_MODE=api_key` |
+| `MANGOMAS_PARSER__SECRET_REF` | _(none)_ | `SecretsProvider` ref that overrides `API_KEY` |
+| `MANGOMAS_PARSER__ID_TOKEN_AUDIENCE` | _(none → `BASE_URL`)_ | Audience for `google_id_token` |
+| `MANGOMAS_PARSER__ID_TOKEN_REFRESH_MARGIN_SECONDS` | `300.0` | Re-mint the identity token this long before expiry |
+| `MANGOMAS_PARSER__TIMEOUT_SECONDS` | `300.0` | HTTP client timeout (must exceed the document timeout) |
+| `MANGOMAS_PARSER__DOCUMENT_TIMEOUT_SECONDS` | `240.0` | Server-side per-document conversion budget |
+| `MANGOMAS_PARSER__ALLOWED_SUFFIXES` | `[".pdf",".docx",".pptx",".xlsx"]` | Formats sent to the parser (normalised to lower-case with a leading dot) |
+| `MANGOMAS_PARSER__MAX_FILE_BYTES` | `52428800` | Refuse larger files before upload (strictly positive; no "off" value) |
+| `MANGOMAS_PARSER__MAX_PAGES` | `500` | Page cap sent to the parser |
+| `MANGOMAS_PARSER__MAX_RESPONSE_BYTES` | `20971520` | Refuse larger parser responses |
+| `MANGOMAS_PARSER__MAX_ZIP_ENTRIES` | `10000` | OOXML archive entry ceiling |
+| `MANGOMAS_PARSER__MAX_ZIP_RATIO` | `100.0` | OOXML uncompressed/compressed ceiling |
+| `MANGOMAS_PARSER__ON_ERROR` | `skip` | `skip` (log, count, never purge) or `fail` |
+| `MANGOMAS_PARSER__DO_OCR` | `false` | Ask the parser to OCR scanned pages |
+| `MANGOMAS_PARSER__PARSED_CHUNK_WORDS` | `300` | Window size for parsed documents |
+| `MANGOMAS_PARSER__EMBED_MAX_TOKENS` | _(none)_ | Warn when a chunk likely exceeds the embedder limit |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
 | `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`/`cost_budget`) |
@@ -295,6 +319,16 @@ both `false`), so existing deployments see no behaviour change. Three seams:
   (`ids`/`embeddings`/`documents`/`metadatas` + `VectorMatch`), so the vector
   layer never imports `rag/`. `ChromaVectorStore` forces `hnsw:space=cosine` and
   maps distance→similarity as `1 - d/2` (keeps scores in `[0, 1]`).
+- **`DocumentParser`** (`adapters/parsers/base.py`, opt-in via
+  `MANGOMAS_PARSER__ENABLED`; spec-0035 / ADR-0036) — `parse(*, filename,
+  content) -> ParsedDocument` / `aclose`. Provider `docling_serve` posts each
+  file to a separately run docling-serve (`/v1/convert/file` only), enforcing
+  size / page / archive / response limits before and after upload; auth is
+  `none` / `api_key` / `google_id_token`. Built by `composition/parser.py`,
+  attached on `ctx.extras["document_parser"]`, closed by the orchestrator's
+  close hooks. A failed parse is skipped and counted (`on_error=skip`) and
+  never deletes a source's existing vectors; parsed chunks are framed as
+  `<untrusted-document>` by `RetrievalTool`.
 - **`rag/`** — pure domain: `chunk_text` word-window chunker, `load_documents`,
   `IngestionPipeline` (delete_by_source → chunk → embed_batch → upsert),
   `Retriever` + `RetrievalTool` (satisfies the `Tool` protocol; auto-discovered
@@ -303,6 +337,9 @@ both `false`), so existing deployments see no behaviour change. Three seams:
 CLI: `mangomas rag ingest <path>` and `mangomas rag query <text>`. When RAG is
 disabled both exit `2` with a clear "not enabled" message. The stubbed
 `EmbeddingScorer` now resolves a real provider via `ScorerContext.embeddings`.
+
+Gated suite: `RUN_DOCLING=1 make docling-bakeoff` (needs a running docling-serve and a
+real embedder; hosted-runner infeasible by design).
 
 Extras: `pip install 'mangomas[embeddings-local]'` (sentence-transformers),
 `pip install 'mangomas[rag]'` (chromadb); Vertex embeddings reuse the `vertex`
@@ -366,6 +403,7 @@ MangomasError           # base; has .code str, .message, .detail
 ├── AgentNotFound       # code="agent_not_found"
 ├── ConfigError         # code="config_error"; invalid config
 │   └── UnknownProvider # code="unknown_provider"
+├── DocumentParseError  # code="document_parse_error"; .source (502; spec-0035)
 ├── LLMError            # code="llm_error" (base for LLM errors)
 │   ├── LLMBadResponse  # code="llm_bad_response"
 │   ├── LLMTimeout      # code="llm_timeout"
@@ -396,9 +434,11 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
   why `PLR2004` is disabled for `tests/*` in `pyproject.toml`. Config-mirroring
   defaults must be **re-exported** (`X as X`), never restated.
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
-- **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
-  and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
-  since `hypothesis` is an optional dev dependency)
+- **Hypothesis fuzz** tests live in `test_tools.py`, `rag/test_chunker.py`,
+  `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (import-guarded), plus
+  the spec-0035 suites `rag/test_loader_iter.py`, `rag/test_pipeline_parsed.py` and
+  `rag/bakeoff/test_metrics.py` (`hypothesis` is a dev dependency; a missing install
+  fails the zero-skip guard rather than skipping)
 - **Integration tests** in `tests/integration/`; gated by `RUN_INTEGRATION=1`
 
 ---

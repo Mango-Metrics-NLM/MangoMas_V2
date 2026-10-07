@@ -219,7 +219,7 @@ MANGOMAS_VECTOR__ENABLED=true
 ```
 
 ```bash
-mangomas rag ingest ./docs                       # *.md/*.txt → chunk → embed → upsert
+mangomas rag ingest ./docs                       # *.md/*.txt (+ PDF/Office when the parser is on) → chunk → embed → upsert
 mangomas rag query "how does the harness work?"  # prints top-k ranked context
 mangomas eval --scorer embedding -d data.jsonl   # real cosine scores
 ```
@@ -249,6 +249,42 @@ similarity is reported as `1 - distance / 2`, so `VectorMatch.score` stays in
 `[0, 1]`. Re-ingesting a document first deletes its prior chunks by source, so a
 shortened document never leaves orphaned chunks behind. SDKs are lazy-imported,
 so `mangomas.adapters.embeddings` / `.vector` stay importable without the extras.
+
+### Document parsing — PDF / Office (opt-in, spec-0035)
+
+`mangomas rag ingest` can also ingest `.pdf`, `.docx`, `.pptx` and `.xlsx` by
+sending each file to a separately run [docling-serve](https://github.com/docling-project/docling-serve)
+instance. Off by default (`MANGOMAS_PARSER__ENABLED=false`), in which case
+ingest is byte-identical to the text-only behaviour above. No new Python
+dependency: the adapter is plain `httpx`.
+
+```bash
+# Image per the docling-serve docs; pin a digest for anything beyond local use.
+docker run -p 5001:5001 quay.io/docling-project/docling-serve-cpu   # ~4.4 GB image
+```
+
+```env
+MANGOMAS_PARSER__ENABLED=true
+MANGOMAS_PARSER__BASE_URL=http://localhost:5001
+# MANGOMAS_PARSER__AUTH_MODE=api_key | google_id_token (private Cloud Run; needs mangomas[gcp])
+```
+
+- Files are sent one at a time under a generated name; size, page, archive
+  (zip-bomb) and response-size limits are enforced **before** upload.
+- A file that fails to parse is skipped and counted (`skipped=N` in the CLI
+  output) — its previously indexed vectors are **never** deleted. Set
+  `MANGOMAS_PARSER__ON_ERROR=fail` to stop the run instead.
+- Parsed Markdown is chunked by whole lines (`MANGOMAS_PARSER__PARSED_CHUNK_WORDS`),
+  so tables keep their rows.
+- Retrieved parsed passages are wrapped in `<untrusted-document>` so agents
+  treat them as data, not instructions.
+- Set `MANGOMAS_PARSER__ENABLED` only where you run `rag ingest`; the API
+  service does not need it. The corpus is global, not tenant-isolated.
+
+All `MANGOMAS_PARSER__*` settings are in [AGENTS.md](AGENTS.md#configuration);
+the design and its open verification items are in
+[spec-0035](specs/0035-docling-document-ingestion.md) and
+[ADR-0036](docs/adr/0036-document-parser-seam.md).
 
 ---
 

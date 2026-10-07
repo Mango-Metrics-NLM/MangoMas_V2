@@ -79,7 +79,8 @@ C4Component
   Container_Boundary(rag_boundary, "RAG (src/mangomas/rag/) — opt-in") {
     Component(retrieval_tool, "RetrievalTool", "Tool", "name='retrieve'. Registered into a ToolRegistry and set on ctx.tools only when BOTH ctx.embeddings and ctx.vector_store are present, so ToolAgent auto-discovers it. execute() returns formatted top-k context.")
     Component(retriever, "Retriever", "Domain service", "search(query): embed query → vector_store.query → map VectorMatch → SearchResult. top_k from MANGOMAS_VECTOR__TOP_K.")
-    Component(ingestion, "IngestionPipeline", "Domain service", "ingest(path): load → delete_by_source (idempotent re-ingest) → chunk_text → embed_batch in batch_size slices → upsert with stable {source}#{index} ids. CLI-only (mangomas rag ingest).")
+    Component(ingestion, "IngestionPipeline", "Domain service", "ingest(path): load → delete_by_source (idempotent re-ingest) → chunk_text → embed_batch in batch_size slices → upsert with stable {source}#{index} ids. CLI-only (mangomas rag ingest). With an optional DocumentParser (spec-0035) it streams iter_documents, chunks parsed Markdown with chunk_lines, and skips or raises a ParseFailure without ever purging that source.")
+    Component(doc_parser, "DoclingServeParser (resolved by parser registry)", "DocumentParser", "Attached to ctx.extras['document_parser'] when MANGOMAS_PARSER__ENABLED=true; closed by the orchestrator close hooks. POSTs one file to docling-serve /v1/convert/file with size/archive/page/response limits and none/api_key/google_id_token auth. Plain httpx — no new dependency.")
   }
 
   Container_Boundary(cognitive_boundary, "Cognitive producer (src/mangomas/cognitive/) — opt-in") {
@@ -139,6 +140,7 @@ C4Component
   Rel(reviewer_agent, cognitive, "review.finding after handle (contained)")
   Rel(ingestion, embedding_client, "embed_batch(chunks)")
   Rel(ingestion, vector_store, "delete_by_source() then upsert()")
+  Rel(ingestion, doc_parser, "parse(filename, content) per allow-listed file (opt-in)")
 ```
 
 ## Notes

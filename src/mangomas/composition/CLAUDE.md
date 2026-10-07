@@ -21,6 +21,7 @@ flowchart LR
   reg --> memory["memory.py"]
   reg --> embeddings["embeddings.py"]
   reg --> vector["vector.py"]
+  reg --> parser["parser.py"]
   builder --> agents["agents.py"]
   builder --> harness["harness.py"]
   builder --> orch["Orchestrator"]
@@ -33,7 +34,7 @@ flowchart LR
 | Wiring across several seams at once | `mango-backend` | `mango-composition-builder` |
 | `llm.py` and the LLM factories | `mango-llm-adapter-dev` | `mango-adapter` |
 | `storage.py`, `memory.py` | `mango-storage-adapter-dev` | `mango-adapter` |
-| `embeddings.py`, `vector.py`, `rag.py` | `mango-rag-dev` | `mango-rag` |
+| `embeddings.py`, `vector.py`, `rag.py`, `parser.py` | `mango-rag-dev` | `mango-rag` |
 | `secrets.py` | `mango-secrets-dev` | `mango-adapter` |
 | `harness.py` span routing | `mango-telemetry-exporter-dev` | `mango-observability` |
 
@@ -50,6 +51,7 @@ registered fails the build.
 | File memory | `memory` | `file` |
 | Embeddings | `embeddings` | `lmstudio`, `sentence_transformers`, `vertex` |
 | Vector store | `vector` | `chroma` |
+| Document parser | `parser` | `docling_serve` |
 
 - `agent` is deliberately absent from that table: its names come from discovered
   agent classes in `agents.py`, not a fixed list.
@@ -58,8 +60,8 @@ registered fails the build.
 - Heavy SDKs (`google-cloud-*`, `chromadb`, `sentence-transformers`) are
   imported **inside** their factory, never at module scope, so importing this
   package is safe without the optional extras installed.
-- Opt-in seams stay off: `embeddings.py`, `vector.py`, `rag.py` and `signal.py`
-  construct nothing unless their `enabled` flag is set.
+- Opt-in seams stay off: `embeddings.py`, `vector.py`, `rag.py`, `signal.py` and
+  `parser.py` construct nothing unless their `enabled` flag is set.
 
 ## Boundaries
 

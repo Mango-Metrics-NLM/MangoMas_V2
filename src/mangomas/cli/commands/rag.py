@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
+from mangomas.adapters.parsers.base import PARSER_EXTRAS_KEY
 from mangomas.cli import _runtime
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.config import get_settings
@@ -56,21 +57,33 @@ def rag_ingest(
     async def _run() -> IngestReport:
         try:
             embeddings, vector_store = _require_rag(orch)
+            # The parser is built by composition only when MANGOMAS_PARSER__ENABLED
+            # is set, and closed by ``_close_orchestrator`` via the orchestrator's
+            # close hooks; with it absent this is exactly the pre-spec-0035 call.
+            parser = orch.context.extras.get(PARSER_EXTRAS_KEY)
             pipeline = IngestionPipeline(
                 embeddings=embeddings,
                 vector_store=vector_store,
                 settings=cfg.rag,
                 batch_size=cfg.embeddings.batch_size,
+                parser=parser,
+                parser_settings=cfg.parser if parser is not None else None,
+                parser_name=cfg.parser.provider if parser is not None else None,
+                embedding_model=cfg.embeddings.model,
             )
             return await pipeline.ingest(path)
         finally:
             await _runtime._close_orchestrator(orch)
 
     report = asyncio.run(_run())
-    typer.echo(
+    summary = (
         f"ingested docs={report.documents} chunks={report.chunks} "
         f"batches={report.batches} deleted_sources={report.deleted_sources}"
     )
+    # Appended only when non-zero so the text-only output line is unchanged.
+    if report.skipped_documents:
+        summary += f" skipped={report.skipped_documents}"
+    typer.echo(summary)
 
 
 @rag_app.command(name="query")

@@ -58,6 +58,7 @@ configuration table; this is the deploy-time contract by settings group.
 | `MANGOMAS_EMBEDDINGS__` | Embedding provider (RAG, opt-in) |
 | `MANGOMAS_VECTOR__` | Vector store (RAG, opt-in) |
 | `MANGOMAS_RAG__` | Chunking parameters (RAG, opt-in) |
+| `MANGOMAS_PARSER__` | Document parsing for the operator `rag ingest` path (opt-in; not read by the API service, so the service manifest needs none) |
 | `MANGOMAS_WORKFLOW__` | Declarative workflow-graph dispatch (opt-in) |
 
 Recommended production baseline: `MANGOMAS_ENV=prod`,

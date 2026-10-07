@@ -25,6 +25,7 @@ from mangomas.api.auth import AuthenticationError
 from mangomas.errors import (
     AgentNotFound,
     ConfigError,
+    DocumentParseError,
     LLMBadResponse,
     LLMError,
     LLMTimeout,
@@ -56,6 +57,10 @@ _ERROR_STATUS: dict[type[MangomasError], int] = {
     LLMBadResponse: HTTPStatus.BAD_GATEWAY,
     LLMError: HTTPStatus.BAD_GATEWAY,
     ToolExecutionError: HTTPStatus.BAD_GATEWAY,
+    # An upstream document parser failed or a file was refused before upload
+    # (spec-0035 / ADR-0036). Mirrors ToolExecutionError: the fault is in a
+    # dependency the request relied on, not in the request itself.
+    DocumentParseError: HTTPStatus.BAD_GATEWAY,
     MaxStepsExceeded: HTTPStatus.UNPROCESSABLE_ENTITY,
     SecretsResolutionError: HTTPStatus.SERVICE_UNAVAILABLE,
     PersistenceError: HTTPStatus.INTERNAL_SERVER_ERROR,

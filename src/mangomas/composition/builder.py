@@ -8,10 +8,13 @@ hardcoded adapter names in the function body.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
+from mangomas.adapters.parsers import PARSER_EXTRAS_KEY
 from mangomas.agents._prompt import AGENT_LLM_OVERRIDES_EXTRAS_KEY
 from mangomas.composition._registries import (
     _memory_registry,
+    _parser_registry,
     _storage_registry,
     _vector_registry,
     agent_registry,
@@ -35,6 +38,12 @@ from mangomas.composition.llm import (
     build_agent_llm_overrides,
 )
 from mangomas.composition.memory import _file_memory_factory
+from mangomas.composition.parser import (
+    _docling_serve_parser_factory,
+    _parser_secrets_provider,
+    _ParserCloseMixin,
+    build_parser,
+)
 from mangomas.composition.rag import _build_rag_tools
 from mangomas.composition.recording import _FailureRecordingMixin
 from mangomas.composition.secrets import _resolve_llm_secrets, ensure_secrets_provider
@@ -48,13 +57,16 @@ from mangomas.core.agent import Agent
 logger = logging.getLogger(__name__)
 
 
-class _Orchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator):
+class _Orchestrator(
+    _FailureRecordingMixin, _ParserCloseMixin, _AgentLLMOverrideCloseMixin, Orchestrator
+):
     """``Orchestrator`` extended to also close per-agent LLM override clients.
 
     Used for the harness-disabled branch of :func:`build_orchestrator`; the
-    harness-enabled branch gets the same mixin via ``_HarnessOrchestrator``.
+    harness-enabled branch gets the same mixins via ``_HarnessOrchestrator``.
     See :class:`mangomas.composition.llm._AgentLLMOverrideCloseMixin`
-    (spec-0028 / ADR-0028).
+    (spec-0028 / ADR-0028) and :class:`mangomas.composition.parser._ParserCloseMixin`,
+    which closes an attached document parser (spec-0035 R10).
     """
 
 
@@ -82,6 +94,9 @@ def _seed_registries() -> None:
 
     # Seed vector registry
     _vector_registry.register("chroma", _chroma_vector_factory)
+
+    # Seed document-parser registry (spec-0035)
+    _parser_registry.register("docling_serve", _docling_serve_parser_factory)
 
     logger.debug("All provider registries seeded")
 
@@ -176,6 +191,22 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         extras={AGENT_LLM_OVERRIDES_EXTRAS_KEY: agent_llm_overrides},
     )
     _attach_cognitive_extras(ctx.extras, cfg.signal)
+
+    # Optional document parser (spec-0035; consumed by `rag ingest`). Disabled →
+    # build_parser returns None having constructed nothing, and extras stay as
+    # they were. Closed by `_ParserCloseMixin` through `orch.aclose()`.
+    parser = build_parser(cfg.parser, _parser_secrets_provider(cfg.parser, cfg.secrets.provider))
+    if parser is not None:
+        ctx.extras[PARSER_EXTRAS_KEY] = parser
+        logger.info(
+            "Document parser enabled",
+            extra={
+                "event": "parser_enabled",
+                "provider": cfg.parser.provider,
+                "base_url_host": urlsplit(cfg.parser.base_url).hostname,
+                "auth_mode": cfg.parser.auth_mode,
+            },
+        )
     logger.debug("AgentContext created with all components")
 
     # Create orchestrator (harness-wrapped if enabled)

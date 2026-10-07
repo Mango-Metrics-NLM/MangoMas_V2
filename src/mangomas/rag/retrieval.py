@@ -13,23 +13,79 @@ can pull retrieved context into a conversation via a structured tool call.
 
 from __future__ import annotations
 
+import html
 import logging
-from typing import TYPE_CHECKING, Any
+import re
+from typing import TYPE_CHECKING, Any, Final
 
 from opentelemetry import trace
 
 from mangomas.core.tools import ToolEffects, ToolSpec
+from mangomas.rag.loader import META_PARSE_STATUS
 from mangomas.rag.models import Chunk, SearchResult
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.vector.base import VectorMatch, VectorStoreRepository
 
-__all__ = ["RetrievalTool", "Retriever"]
+__all__ = ["UNTRUSTED_DOCUMENT_TAG", "RetrievalTool", "Retriever", "frame_untrusted"]
 
 logger = logging.getLogger(__name__)
 
 _TOOL_NAME = "retrieve"
+
+# Parser-derived passages are wrapped in this element so the model is told the
+# text is untrusted data, not instructions (spec-0035 R9 / ADR-0036).
+UNTRUSTED_DOCUMENT_TAG: Final[str] = "untrusted-document"
+# Any spelling of the wrapper's own opening or closing tag inside a passage —
+# including whitespace before the name and any case — so content can neither
+# close the wrapper early nor forge a new one.
+_WRAPPER_TOKEN: Final[re.Pattern[str]] = re.compile(
+    rf"<(\s*/?\s*){re.escape(UNTRUSTED_DOCUMENT_TAG)}", re.IGNORECASE
+)
+
+
+def frame_untrusted(text: str, source: str) -> str:
+    """Wrap a parser-derived passage so it cannot escape its delimiter.
+
+    The ``source`` attribute is HTML-escaped (quotes included); inside the body
+    only the ``<`` that opens a wrapper tag is escaped, so ordinary content —
+    Markdown tables, comparison operators, other tags — is passed unchanged.
+    """
+    body = _WRAPPER_TOKEN.sub(lambda m: f"&lt;{m.group(1)}{UNTRUSTED_DOCUMENT_TAG}", text)
+    return (
+        f'<{UNTRUSTED_DOCUMENT_TAG} source="{_escape_attribute(source)}">'
+        f"{body}</{UNTRUSTED_DOCUMENT_TAG}>"
+    )
+
+
+def _escape_attribute(value: str) -> str:
+    """HTML-escape *value* and encode line breaks so it stays on one line."""
+    return html.escape(value, quote=True).replace("\r", "&#13;").replace("\n", "&#10;")
+
+
+def _render_passage(chunk: Chunk) -> str:
+    """Text-file passages render exactly as before; parsed ones are framed."""
+    if _is_parsed(chunk):
+        return frame_untrusted(chunk.text, chunk.source)
+    return chunk.text
+
+
+def _is_parsed(chunk: Chunk) -> bool:
+    # ``parse_status`` is written on every parser-derived chunk, whatever the
+    # caller passed as ``parser_name`` — framing must not hinge on an
+    # optional argument.
+    return META_PARSE_STATUS in chunk.metadata
+
+
+def _header_source(chunk: Chunk) -> str:
+    """Source shown in the result header; escaped for parser-derived chunks.
+
+    The header sits outside the untrusted frame, so a crafted file name with
+    a line break or a closing tag must not be able to forge a result line.
+    Text-file sources render exactly as before.
+    """
+    return _escape_attribute(chunk.source) if _is_parsed(chunk) else chunk.source
 
 
 def _match_to_result(match: VectorMatch) -> SearchResult:
@@ -161,6 +217,7 @@ class RetrievalTool:
         if not results:
             return "No relevant context found."
         return "\n\n".join(
-            f"[{i + 1}] (score={r.score:.3f}, source={r.chunk.source}) {r.chunk.text}"
+            f"[{i + 1}] (score={r.score:.3f}, source={_header_source(r.chunk)}) "
+            f"{_render_passage(r.chunk)}"
             for i, r in enumerate(results)
         )
