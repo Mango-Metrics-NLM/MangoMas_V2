@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import time
+from collections.abc import Iterable
 
 from mangomas.composition import build_orchestrator
 from mangomas.core.agent import AgentRequest, Message
@@ -29,6 +31,14 @@ _HR_WIDTH: int = 78
 _PREVIEW_CHARS: int = 400
 _LOOP_SENTINEL: str = "DONE"
 _LOOP_MAX_STEPS: int = 4
+
+# Mirrors the CLI's process-level policy (``mangomas.cli._runtime``): Windows
+# falls back to the cp1252 codec whenever stdout is redirected (a pipe, a log
+# file, CI), and cp1252 cannot encode the arrows in the banner below or the
+# em-dashes / smart quotes LLM replies routinely contain.
+_WINDOWS_PLATFORM: str = "win32"
+_STDIO_ENCODING: str = "utf-8"
+_STDIO_ERRORS: str = "replace"
 
 _GRAPH: dict[str, object] = {
     "schema_version": 1,
@@ -64,6 +74,24 @@ _PROMPT: str = (
 # ── Pretty output helpers ────────────────────────────────────────────────────
 
 
+def _ensure_utf8_stdio(
+    streams: Iterable[object] | None = None, *, platform: str | None = None
+) -> None:
+    """Reconfigure *streams* (default: stdout + stderr) to UTF-8 on Windows.
+
+    Without this the first ``print`` of a non-cp1252 character raised
+    ``UnicodeEncodeError`` before the workflow ran. Streams lacking
+    ``reconfigure`` (already-wrapped or captured ones) are left untouched;
+    other platforms already default to UTF-8 and are not modified.
+    """
+    if (platform if platform is not None else sys.platform) != _WINDOWS_PLATFORM:
+        return
+    for stream in streams if streams is not None else (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding=_STDIO_ENCODING, errors=_STDIO_ERRORS)
+
+
 def _hr(title: str) -> None:
     print()
     print("=" * _HR_WIDTH)
@@ -78,6 +106,7 @@ def _preview(text: str, limit: int = _PREVIEW_CHARS) -> str:
 
 
 async def _main() -> int:
+    _ensure_utf8_stdio()
     _hr("Declarative workflow — sequence(agent → fan_out ∥ → loop)")
     graph = load_workflow(json.dumps(_GRAPH))
     print(f"graph: {graph.name}  root={graph.root.kind}")
