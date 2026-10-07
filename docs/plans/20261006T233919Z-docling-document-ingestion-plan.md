@@ -230,7 +230,7 @@ smoke test.
   primitives only (mirror `VectorMatch`); no free-form `metadata` yet.
 - `config/parser.py` `ParserSettings` (all `DEFAULT_*` constants, re-exported via
   `config/__init__.py`, added to `_root.py`): `enabled=False`, `provider`,
-  `base_url`, `api_key`, `secret_ref` (same precedence as
+  `base_url`, `auth_mode` (`none` \| `api_key` \| `google_id_token`, default `none`), `id_token_audience` (default: `base_url`), `id_token_refresh_margin_seconds`, `api_key`, `secret_ref` (same precedence as
   `MANGOMAS_LLM__SECRET_REF`), `timeout_seconds`, `document_timeout_seconds`
   (validator: outer timeout **>** document timeout, tested both ways),
   `allowed_suffixes` (default `.pdf .docx .pptx .xlsx`), `max_file_bytes`,
@@ -437,12 +437,14 @@ smoke test.
   converter; lazy-import helper alone carries `# pragma: no cover - requires
   docling`.
 - **Depends on:** B3b.1. Parallel-safe with C.
-- One converter built once; calls serialised behind a semaphore (thread-safety
-  unverified); `allowed_formats` restricted and `from_formats` mirrored; `pypdfium`
-  backend option; OCR off by default (EasyOCR ≈30 s/page CPU). **Isolation:**
-  runs inside the invoking process with its secrets and filesystem, so it is
-  explicit opt-in, CLI-only, and run in a resource-limited subprocess for
-  untrusted input. Extra `docling = ["docling==<exact pin>"]` (`pyproject.toml`
+- The converter lives **inside a persistent `spawn` child worker**, never in the
+  Mango process: pipe IPC carries `(suffix, bytes)` in and markdown or a typed
+  error out; `resource.setrlimit` (address space, CPU) is applied **in the
+  child** before the converter is built; a wall-clock timeout kills and respawns
+  the worker; the parent never imports `docling`. `allowed_formats` restricted
+  and `from_formats` mirrored; `pypdfium` backend option; OCR off by default
+  (EasyOCR ≈30 s/page CPU). Explicit opt-in (`ALLOW_IN_PROCESS`) and CLI-only
+  (see the implementation runbook PR 9 for the caller-aware build path). Extra `docling = ["docling==<exact pin>"]` (`pyproject.toml`
   trailer in its own commit), kept out of `dev`, covered by the `pip-audit` gate;
   clean-venv resolver check against `chromadb`/`sentence-transformers` — on
   conflict, document "use `docling_serve`" and stop.

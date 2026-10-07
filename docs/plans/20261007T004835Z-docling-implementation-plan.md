@@ -211,14 +211,16 @@ Owner: `mango-rag-dev` + `mango-config` skill; review `mango-architect`,
   ```
 - `src/mangomas/config/parser.py`: `DEFAULT_PARSER_*` constants +
   `ParserSettings(BaseModel)` with fields `enabled=False`,
-  `provider="docling_serve"`, `base_url`, `api_key`, `secret_ref=None`,
+  `provider="docling_serve"`, `base_url`, `auth_mode` (`none` | `api_key` | `google_id_token`, default `none`), `id_token_audience` (default: `base_url`), `id_token_refresh_margin_seconds`, `api_key`, `secret_ref=None`,
   `timeout_seconds`, `document_timeout_seconds`, `allowed_suffixes=(".pdf",
   ".docx", ".pptx", ".xlsx")`, `max_file_bytes`, `max_pages`,
   `max_response_bytes`, `max_zip_entries`, `max_zip_ratio`,
   `on_error: Literal["skip","fail"]="skip"`, `ocr_preset=None`,
   `parsed_chunk_words`, `embed_max_tokens=None`; `model_validator`:
   `timeout_seconds > document_timeout_seconds`, positive limits, suffixes
-  lower-cased and dot-prefixed. Numeric defaults come from PR 1's findings.
+  lower-cased and dot-prefixed; `auth_mode="api_key"` requires `api_key` or
+  `secret_ref`. Every field gets its `.env.example` / `AGENTS.md` row and a
+  config test. Numeric defaults come from PR 1's findings.
 - `config/__init__.py` (re-export each name `X as X`), `config/_root.py`
   (`parser: ParserSettings = Field(default_factory=ParserSettings)`).
 - `tests/fakes.py`: `FakeDocumentParser` (scripted `{filename: text | Exception}`,
@@ -290,7 +292,11 @@ security review via `/security-review`. Depends on PR 4 (and PR 1 fixtures).
      `base_url`), minted by an injectable token-provider seam (default: lazy
      `google-auth` import, cached and refreshed before expiry by a configured
      margin) — the same identity-token mechanism `.github/workflows/deploy.yml`
-     uses for its smoke probe;
+     uses for its smoke probe. `google-auth` ships only in the existing
+     `vertex` / `gcp` extras: operators using `google_id_token` install
+     `mangomas[gcp]` (documented in `.env.example` and `deploy/README.md`), and a
+     missing SDK raises `ConfigError` naming that install command — tested by
+     removing the module from `sys.modules`. No new extra is added;
   4. stream the body with a `max_response_bytes` cap;
   5. map `status`: `success` → `ParsedDocument(text, pages)`; `partial_success` →
      `partial=True` + `warning` log `parser_partial_success`; `failure`/`skipped`/
@@ -311,9 +317,12 @@ security review via `/security-review`. Depends on PR 4 (and PR 1 fixtures).
   `Orchestrator._close_hooks` (the `_AgentLLMOverrideCloseMixin` pattern in
   `composition/llm.py`) so the parser is closed by `orch.aclose()` on the same
   fault-isolated, idempotent path as the other adapters — covering the FastAPI
-  lifespan and every composed entry point, not only `rag ingest`. Tests:
-  closed exactly once via `orch.aclose()`, a raising `aclose` does not stop the
-  other hooks, a second `aclose()` is a no-op.
+  lifespan and every composed entry point, not only `rag ingest`. The mixin is
+  composed into **both** orchestrator classes the builder can return — the
+  plain composition orchestrator and `_HarnessOrchestrator` (the
+  `MANGOMAS_HARNESS__ENABLED=true` branch). Tests, run through both settings
+  branches: closed exactly once via `orch.aclose()`, a raising `aclose` does not
+  stop the other hooks, a second `aclose()` is a no-op.
 - Docs: `composition/CLAUDE.md` registry table row; `_FACADES["mangomas.composition"]` add `"parser"`.
 
 **Tests** (`tests/adapters/parsers/test_docling_serve.py`, `respx`, fixtures from PR 1)
@@ -507,11 +516,17 @@ Owner: `mango-rag-dev`. Depends on PR 7; parallel with PR 8/10.
   cover - requires docling extra`). Windows: limits other than the timeout are
   unavailable — documented. Tests: worker crash, timeout kill-and-respawn,
   oversized output, limit enforcement (gated where it needs the extra).
-- **CLI-only, enforced:** `docling_local` is *not* registered in the shared
-  `_parser_registry` that `build_orchestrator` (and so the FastAPI lifespan)
-  consumes. The RAG CLI constructs it through a dedicated caller-scoped factory,
-  and `build_orchestrator` raises `ConfigError` if settings name it — tested
-  through both `build_orchestrator` and `create_app`.
+- **CLI-only, enforced, with a caller-aware build path:** `docling_local` is
+  *not* registered in the shared `_parser_registry` that `build_orchestrator`
+  (and so the FastAPI lifespan) consumes, and `build_orchestrator` raises
+  `ConfigError` if settings name it. Because `rag ingest` calls
+  `_runtime._build()` (→ `build_orchestrator`) first, the CLI passes a
+  **parser-disabled settings copy** (`settings.model_copy(update={"parser":
+  settings.parser.model_copy(update={"enabled": False})})`) to the shared build
+  when the provider is `docling_local`, then constructs the parser through the
+  dedicated caller-scoped factory and owns its `aclose`. Tests: API rejection
+  through `build_orchestrator` and `create_app`; an end-to-end CLI success test
+  for `provider=docling_local` with an injected fake worker.
 - Opt-in: refused unless `MANGOMAS_PARSER__ALLOW_IN_PROCESS=true` (new field,
   documented).
 - Tests: missing-extra path via `monkeypatch.setitem(sys.modules, "docling", None)`;
