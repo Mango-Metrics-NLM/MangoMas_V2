@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass, field
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any
@@ -380,6 +380,31 @@ class FakeDocumentParser:
     async def aclose(self) -> None:
         self.closed = True
         self.close_count += 1
+
+
+@dataclass
+class FakeIdTokenProvider:
+    """In-memory stub satisfying
+    :class:`~mangomas.adapters.parsers._auth.IdTokenProvider`.
+
+    Hands out ``tokens`` in order, one per ``fetch``, each expiring
+    ``lifetime`` seconds after ``clock()`` at mint time. Every requested
+    audience is recorded in ``audiences``. ``error``, when set, is raised
+    instead (after recording the audience).
+    """
+
+    tokens: list[str]
+    clock: Callable[[], float]
+    lifetime: float
+    audiences: list[str] = field(default_factory=list)
+    error: BaseException | None = None
+
+    async def fetch(self, audience: str) -> tuple[str, float]:
+        self.audiences.append(audience)
+        if self.error is not None:
+            raise self.error
+        token = self.tokens[len(self.audiences) - 1]
+        return token, self.clock() + self.lifetime
 
 
 def _fake_cosine(a: list[float], b: list[float]) -> float:

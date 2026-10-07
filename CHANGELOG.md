@@ -22,6 +22,20 @@ constructed and `.txt`/`.md` ingest is unchanged. See ADR-0036.
 - **`DocumentParseError`** (`errors.py`, code `document_parse_error`, HTTP 502
   via `_ERROR_STATUS`): an upstream parser failure or a file refused before
   upload. Optional `.source`; `detail` carries statuses and sizes only.
+- **`docling_serve` provider** (`adapters/parsers/docling_serve.py`): posts one
+  file to `/v1/convert/file` with a generated filename and pinned
+  `from_formats`; refuses oversize files, OOXML zip bombs and unmapped or
+  disallowed suffixes before any network call; caps the response size; maps
+  `success`/`partial_success`/`failure`/`skipped` and transport errors to
+  `ParsedDocument` / `DocumentParseError` (401/403 → `ConfigError`). Auth via
+  `auth_mode`: `X-Api-Key`, or a cached, refreshed Google identity token
+  (`mangomas[gcp]`; missing SDK → `ConfigError` with the install hint). Logs and
+  spans carry an allow-list of fields only — never document text, filenames,
+  response bodies or credentials. Field names are pending live verification.
+- **Composition**: `parser` registry (`docling_serve`), `build_parser`
+  (constructs nothing when disabled; `secret_ref` overrides `api_key`), the
+  parser attached on `ctx.extras["document_parser"]`, and `_ParserCloseMixin`
+  so `orch.aclose()` closes it on both the plain and harness orchestrators.
 - **`ParserSettings`** (`MANGOMAS_PARSER__*`, `config/parser.py`), every
   default a `DEFAULT_PARSER_*` constant. Fails fast at settings load: every
   limit and timeout must be strictly positive (no `0 = off` value), the client

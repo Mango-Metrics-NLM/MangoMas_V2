@@ -25,6 +25,8 @@ flowchart LR
   storage["storage/"] --> comp
   emb --> comp
   vector["vector/"] --> comp
+  http --> parsers["parsers/"]
+  parsers --> comp
 ```
 
 ## Owners
@@ -57,8 +59,9 @@ the build.
   is safe without the optional extra installed. This is a contract, not a
   style: composition imports every factory module unconditionally.
 - **Typed errors at the boundary.** httpx failures are translated through the
-  shared `_http_errors.py` into the `LLMError` family; Vertex failures go
-  through `_vertex_errors.py`. A raw `httpx` exception must never escape.
+  shared `_http_errors.py` into the `LLMError` family (parsers: `ConfigError` /
+  `DocumentParseError`); Vertex failures go through `_vertex_errors.py`. A raw
+  `httpx` exception must never escape.
 - Capability protocols are *additive*: a client may satisfy `LLMClient` alone.
   Callers narrow with `isinstance`, which is why the decorator matters.
 - `_openai_client.py` holds the shared httpx lifecycle so the LM Studio LLM and
