@@ -255,7 +255,8 @@ Owner: `mango-error-taxonomy-dev` + `mango-error` skill. Depends on PR 3.
 
 - `src/mangomas/errors.py`: `class DocumentParseError(MangomasError)` with
   `code = "document_parse_error"`, optional `.source: str | None`; docstring
-  states "detail carries status/length only — never document content".
+  states "detail carries status/length only — never document content"; added
+  to the module's `__all__` (every public error is listed there).
 - `src/mangomas/api/errors.py::_ERROR_STATUS[DocumentParseError] = 502`.
 - `tests/test_errors.py`: add to `test_error_codes` parametrisation and to the
   intended-status table; `test_document_parse_error_stores_source`.
@@ -274,13 +275,22 @@ security review via `/security-review`. Depends on PR 4 (and PR 1 fixtures).
 **Files**
 - `src/mangomas/adapters/parsers/docling_serve.py`: `DoclingServeParser`
   (injectable `httpx.AsyncClient`; `rstrip("/")` base URL). `parse()`:
-  1. refuse `len(content) > max_file_bytes` → `DocumentParseError` before I/O;
+  1. refuse `len(content) > max_file_bytes` → `DocumentParseError` before I/O
+     (`max_file_bytes` is strictly positive — there is no "0 = off" mode; the
+     validator rejects `0`, so the comparison never needs a guard);
   2. zip-bomb pre-check for OOXML suffixes (`zipfile` entry count + total
      uncompressed / compressed ratio) — pure function `_check_ooxml(content, …)`;
   3. POST multipart to `/v1/convert/file` with a **generated** filename
      (`document{suffix}`), `from_formats=[<mapped format>]`, `to_formats=["md"]`,
      `document_timeout`, `max_num_pages`, `do_ocr`/`ocr_preset` (never
-     `ocr_engine`); header `X-Api-Key` only when a key is set;
+     `ocr_engine`); authentication through an `auth_mode` strategy
+     (`none` | `api_key` | `google_id_token`): `api_key` sends `X-Api-Key`;
+     `google_id_token` sends `Authorization: Bearer <identity token>` for a
+     private Cloud Run service (audience = `id_token_audience`, defaulting to
+     `base_url`), minted by an injectable token-provider seam (default: lazy
+     `google-auth` import, cached and refreshed before expiry by a configured
+     margin) — the same identity-token mechanism `.github/workflows/deploy.yml`
+     uses for its smoke probe;
   4. stream the body with a `max_response_bytes` cap;
   5. map `status`: `success` → `ParsedDocument(text, pages)`; `partial_success` →
      `partial=True` + `warning` log `parser_partial_success`; `failure`/`skipped`/
@@ -297,6 +307,13 @@ security review via `/security-review`. Depends on PR 4 (and PR 1 fixtures).
   registered `"docling_serve"`; `composition/builder.py`: attach to
   `ctx.extras[PARSER_EXTRAS_KEY]` when enabled (constant in
   `adapters/parsers/__init__.py`, mirroring the cognitive-sink pattern).
+- **Teardown:** a composition-layer `_ParserCloseMixin` extends
+  `Orchestrator._close_hooks` (the `_AgentLLMOverrideCloseMixin` pattern in
+  `composition/llm.py`) so the parser is closed by `orch.aclose()` on the same
+  fault-isolated, idempotent path as the other adapters — covering the FastAPI
+  lifespan and every composed entry point, not only `rag ingest`. Tests:
+  closed exactly once via `orch.aclose()`, a raising `aclose` does not stop the
+  other hooks, a second `aclose()` is a no-op.
 - Docs: `composition/CLAUDE.md` registry table row; `_FACADES["mangomas.composition"]` add `"parser"`.
 
 **Tests** (`tests/adapters/parsers/test_docling_serve.py`, `respx`, fixtures from PR 1)
@@ -311,7 +328,9 @@ security review via `/security-review`. Depends on PR 4 (and PR 1 fixtures).
   `test_zip_bomb_refused_without_network`.
 - Request hygiene (assert on captured request): `test_generated_filename_not_path`,
   `test_from_formats_pinned_to_suffix`, `test_no_ocr_engine_field`,
-  `test_only_convert_file_endpoint_called`, `test_api_key_header_two_sided`.
+  `test_only_convert_file_endpoint_called`, `test_api_key_header_two_sided`,
+  `test_id_token_bearer_header_and_refresh` (injected token provider: cached
+  until the refresh margin, re-minted after; no `X-Api-Key` in this mode).
 - Secrets/logging: `test_secret_never_in_logs_errors_or_spans` (sentinel key +
   canary document text + canary serve error body; `caplog`, `str/repr` of
   exceptions, in-memory span exporter).
@@ -372,14 +391,20 @@ Owner: `mango-rag-dev` + `mango-cli-dev`; review `mango-architect`,
 
 **Files**
 - `src/mangomas/rag/chunker.py`: new `chunk_lines(text, *, size, overlap) -> list[str]`
-  — windows over words but **re-joins with original whitespace** (tokenise with
-  `re.finditer(r"\S+\s*")`), never splits inside a markdown table row when the
-  row fits the window. `chunk_text` unchanged.
+  — windows over word *spans* and returns **slices of the original string**
+  (start of the window's first token, including any leading whitespace for
+  the first window, to the end of its last token), so indentation, line breaks
+  and table rows survive; never splits inside a markdown table row when the row
+  fits the window. Regression cases: leading whitespace, indented code,
+  tables. `chunk_text` unchanged.
 - `src/mangomas/rag/loader.py`: `RawDoc.metadata: Mapping[str, Any] =
   field(default_factory=dict)` (frozen; `MappingProxyType` on construction).
 - `src/mangomas/rag/pipeline.py`:
   - `IngestionPipeline.__init__(…, parser: DocumentParser | None = None,
-    parser_settings: ParserSettings | None = None)`;
+    parser_settings: ParserSettings | None = None, embedding_model: str | None = None)`
+    — `embedding_model` is passed explicitly from `cfg.embeddings.model` (the
+    `EmbeddingClient` protocol exposes no model id), and the metadata key is
+    omitted when it is `None`;
   - `ingest()` consumes `iter_documents`; running `yielded` count for the span
     attribute and logs; `rag_ingest_empty` only when zero yielded **and** zero
     skipped;
@@ -395,11 +420,17 @@ Owner: `mango-rag-dev` + `mango-cli-dev`; review `mango-architect`,
     `_flatten` drops `None`, joins lists of scalars with `"|"`, drops dicts;
   - `rag_chunk_over_budget` warning when `len(chunk)/4 > embed_max_tokens`
     (heuristic, documented as such);
-  - span `rag.parse` per parsed document (pages, bytes, status).
+  - the `rag.parse` span is opened **inside `iter_documents`, around the
+    `await parser.parse(...)`**, so its duration is the parse and failed parses
+    are recorded on it (status + error code); the pipeline only counts.
 - `IngestReport.skipped_documents: int = 0`.
 - `src/mangomas/rag/retrieval.py`: parser-derived chunks (metadata has `parser`)
-  rendered inside `<untrusted-document source="…">…</untrusted-document>`; others
-  rendered byte-identically to today.
+  rendered inside `<untrusted-document source="…">…</untrusted-document>` with the
+  `source` attribute HTML-escaped (`quote=True`) and every case-insensitive
+  occurrence of the wrapper's opening or closing tag inside the body neutralised
+  (`<` → `&lt;` for those tokens only, so ordinary content is unchanged); others
+  rendered byte-identically to today. Adversarial tests: body containing
+  `</untrusted-document>` (any case), source containing `"`, `>` and newlines.
 - `src/mangomas/cli/commands/rag.py`: read parser from
   `orch.context.extras.get(PARSER_EXTRAS_KEY)`; pass to the pipeline; close it in
   `finally`; append ` skipped=N` only when `N > 0`. Help text and options
@@ -466,14 +497,23 @@ Owner: `mango-rag-dev`. Depends on PR 7; parallel with PR 8/10.
 - `pyproject.toml` extra `docling = ["docling==<exact pin>"]` — own commit,
   `BREAKING-CHANGE: pyproject.toml — add the docling optional extra`; not in `dev`;
   regenerate locks per `tests/deploy/test_lockfile_freshness.py`.
-- `adapters/parsers/docling_local.py`: converter built once (lazy import helper
-  with `# pragma: no cover - requires docling extra`); `allowed_formats`
-  restricted; calls serialised behind an `asyncio.Semaphore(1)` through
-  `asyncio.to_thread`; untrusted input runs in a resource-limited subprocess
-  (`max_pages`, wall-clock, memory via `resource.setrlimit` on POSIX; documented
-  limitation on Windows).
-- Registered as `"docling_local"`; `ParserSettings` validator refuses it unless
-  `MANGOMAS_PARSER__ALLOW_IN_PROCESS=true` (new field, documented).
+- `adapters/parsers/docling_local.py`: the converter lives **inside a persistent
+  child worker process** (`multiprocessing` `spawn` context), never in the
+  Mango process: the parent sends `(suffix, bytes)` over a pipe and receives
+  markdown or a typed error; resource limits (`resource.setrlimit` for address
+  space and CPU on POSIX) are applied **in the child** before the converter is
+  built; a wall-clock timeout kills and respawns the worker; the parent never
+  imports `docling` (lazy import lives in the worker entry point, `# pragma: no
+  cover - requires docling extra`). Windows: limits other than the timeout are
+  unavailable — documented. Tests: worker crash, timeout kill-and-respawn,
+  oversized output, limit enforcement (gated where it needs the extra).
+- **CLI-only, enforced:** `docling_local` is *not* registered in the shared
+  `_parser_registry` that `build_orchestrator` (and so the FastAPI lifespan)
+  consumes. The RAG CLI constructs it through a dedicated caller-scoped factory,
+  and `build_orchestrator` raises `ConfigError` if settings name it — tested
+  through both `build_orchestrator` and `create_app`.
+- Opt-in: refused unless `MANGOMAS_PARSER__ALLOW_IN_PROCESS=true` (new field,
+  documented).
 - Tests: missing-extra path via `monkeypatch.setitem(sys.modules, "docling", None)`;
   injected fake converter for semaphore/to_thread/format paths; gated
   `@pytest.mark.docling` smoke on one PDF.
