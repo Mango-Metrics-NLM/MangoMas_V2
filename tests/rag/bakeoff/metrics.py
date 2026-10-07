@@ -131,13 +131,16 @@ def _discount(rank: int) -> float:
 
 
 def ndcg_at_k(ranked_chunks: Sequence[str], evidence_spans: Sequence[str], k: int) -> float:
-    """nDCG@k with binary relevance, credited once per evidence span.
+    """nDCG@k with span-level gains, each evidence span credited once.
 
-    A chunk has gain 1 when it contains at least one span not already found at
-    a higher rank, else 0. Crediting only *new* spans keeps the score in
-    ``[0, 1]`` even when overlapping chunk windows repeat a span (plain
-    per-chunk relevance would let the DCG exceed the ideal). The ideal ranking
-    puts one new span at each of the first ``min(k, len(evidence_spans))`` ranks.
+    A chunk's gain is the number of evidence spans it contains that no
+    higher-ranked chunk already contained. Gains and the ideal use the same
+    unit (spans): the ideal DCG places every span at rank 1, the best any
+    ranking can do, so the score stays in ``[0, 1]`` and moving evidence to a
+    higher rank never lowers it. (A per-chunk binary gain normalised against
+    one span per rank did the opposite: a single chunk holding all the
+    evidence at rank 1 scored *below* the same chunks in reverse order, biasing
+    the bake-off against chunkers that keep evidence together.)
     """
     _require_k(k)
     _require_spans(evidence_spans)
@@ -146,9 +149,9 @@ def ndcg_at_k(ranked_chunks: Sequence[str], evidence_spans: Sequence[str], k: in
     for rank, chunk in enumerate(ranked_chunks[:k], start=1):
         hits = [span for span in unseen if span_hit(chunk, span)]
         if hits:
-            dcg += _discount(rank)
+            dcg += len(hits) * _discount(rank)
             unseen = [span for span in unseen if span not in hits]
-    ideal = sum(_discount(rank) for rank in range(1, min(k, len(evidence_spans)) + 1))
+    ideal = len(evidence_spans) * _discount(1)
     return dcg / ideal
 
 
@@ -274,6 +277,10 @@ def decide(
     """
     if not stratum_deltas:
         raise ValueError("stratum_deltas must name at least one stratum")
+    # Every comparison below is False for NaN, and +inf disables the veto, so a
+    # malformed threshold or result would otherwise turn into "adopt".
+    if not (math.isfinite(min_ci_low) and math.isfinite(max_stratum_regression)):
+        raise ValueError("decision thresholds must be finite")
     if max_stratum_regression < 0:
         raise ValueError(f"max_stratum_regression must be >= 0, got {max_stratum_regression!r}")
     if not all(math.isfinite(delta) for delta in stratum_deltas.values()):

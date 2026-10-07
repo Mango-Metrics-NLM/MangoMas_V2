@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 
 import pytest
 from pydantic import ValidationError
@@ -397,6 +398,23 @@ def test_parser_settings_rejects_non_positive_timeouts(field: str) -> None:
     kwargs = {"timeout_seconds": 2.0, "document_timeout_seconds": 1.0, field: 0.0}
     with pytest.raises(ValidationError, match=field):
         config_module.ParserSettings.model_validate(kwargs)
+
+
+_PARSER_FLOAT_FIELDS = (
+    "max_zip_ratio",
+    "id_token_refresh_margin_seconds",
+    "timeout_seconds",
+    "document_timeout_seconds",
+)
+
+
+@pytest.mark.parametrize("field", _PARSER_FLOAT_FIELDS)
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_parser_settings_rejects_non_finite_floats(field: str, bad: float) -> None:
+    """Regression (PR #83 review): NaN and +inf passed the ``<= 0`` check, and
+    a NaN timeout also slipped past the timeout-ordering check."""
+    with pytest.raises(ValidationError, match=field):
+        config_module.ParserSettings.model_validate({field: bad})
 
 
 def test_parser_settings_timeout_must_exceed_document_timeout() -> None:

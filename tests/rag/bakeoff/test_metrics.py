@@ -81,14 +81,29 @@ def test_mrr_is_one_when_the_top_chunk_is_relevant() -> None:
 
 
 def test_ndcg_at_k_hand_computed() -> None:
-    # Gains at ranks 2 and 4; ideal puts the two spans at ranks 1 and 2.
+    # One new span at each of ranks 2 and 4; the ideal puts both spans at rank 1.
     dcg = 1 / math.log2(3) + 1 / math.log2(5)
-    idcg = 1 / math.log2(2) + 1 / math.log2(3)
+    idcg = len(SPANS) / math.log2(2)
     assert ndcg_at_k(RANKED, SPANS, 4) == pytest.approx(dcg / idcg)
 
 
-def test_ndcg_is_one_for_an_ideal_ranking() -> None:
-    assert ndcg_at_k(["zeta eta", "delta", "noise"], SPANS, 3) == pytest.approx(1.0)
+def test_ndcg_is_one_when_all_evidence_is_at_rank_one() -> None:
+    assert ndcg_at_k(["delta zeta eta", "noise"], SPANS, 2) == pytest.approx(1.0)
+
+
+def test_ndcg_spreading_evidence_over_ranks_scores_below_one() -> None:
+    expected = (1 / math.log2(2) + 1 / math.log2(3)) / (len(SPANS) / math.log2(2))
+    assert ndcg_at_k(["zeta eta", "delta", "noise"], SPANS, 3) == pytest.approx(expected)
+
+
+def test_ndcg_never_drops_when_evidence_moves_up() -> None:
+    """Regression (PR #83 review): one chunk holding all the evidence at rank 1
+    used to score ~0.61 while the same two chunks reversed scored 1.0, biasing
+    the bake-off against chunkers that keep evidence together."""
+    together_first = ndcg_at_k(["delta zeta eta", "delta"], SPANS, 2)
+    together_last = ndcg_at_k(["delta", "delta zeta eta"], SPANS, 2)
+    assert together_first == pytest.approx(1.0)
+    assert together_first > together_last
 
 
 def test_ndcg_credits_a_repeated_span_once() -> None:
@@ -281,6 +296,16 @@ def test_decide_rejects_a_negative_tolerance() -> None:
     result = BootstrapResult(delta=0.1, ci_low=0.02, ci_high=0.2)
     with pytest.raises(ValueError, match="max_stratum_regression"):
         decide(result, stratum_deltas=_NO_REGRESSION, max_stratum_regression=-0.01)
+
+
+@pytest.mark.parametrize("threshold", ["min_ci_low", "max_stratum_regression"])
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_decide_rejects_non_finite_thresholds(threshold: str, bad: float) -> None:
+    """Regression (PR #83 review): NaN made every veto comparison False and
+    +inf disabled the veto, so a severe stratum regression came back "adopt"."""
+    result = BootstrapResult(delta=0.1, ci_low=0.02, ci_high=0.2)
+    with pytest.raises(ValueError, match="finite"):
+        decide(result, stratum_deltas={"table": -0.9}, **{threshold: bad})
 
 
 def test_decide_rejects_non_finite_stratum_deltas() -> None:

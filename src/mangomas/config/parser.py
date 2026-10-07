@@ -17,6 +17,7 @@ bake-off; they live here as ``DEFAULT_*`` constants so nothing restates them.
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -162,8 +163,12 @@ class ParserSettings(BaseModel):
     def _check_limits(self) -> ParserSettings:
         for name in _POSITIVE_FIELDS:
             value = getattr(self, name)
-            if value <= 0:
-                raise ValueError(f"{name} must be > 0 (got {value})")
+            # ``math.isfinite`` first: NaN compares False against everything, so
+            # ``value <= 0`` alone would let NaN (and +inf) through as a "limit"
+            # that never limits anything, and NaN would also slip past the
+            # timeout-ordering check below.
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be a finite number > 0 (got {value})")
         if self.timeout_seconds <= self.document_timeout_seconds:
             raise ValueError(
                 f"timeout_seconds ({self.timeout_seconds}) must be greater than "
