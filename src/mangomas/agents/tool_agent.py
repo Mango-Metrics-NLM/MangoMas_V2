@@ -14,8 +14,8 @@ from mangomas.agents._prompt import (
 )
 from mangomas.config import DEFAULT_TOOL_MAX_STEPS
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
-from mangomas.core.tools import ToolCallParser, build_tool_system_prompt
-from mangomas.errors import ToolExecutionError, ToolNotFound, UnknownProvider
+from mangomas.core.tools import ToolCall, ToolCallParser, build_tool_system_prompt
+from mangomas.errors import LLMBadResponse, ToolExecutionError, ToolNotFound, UnknownProvider
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import AgentSettings
@@ -95,7 +95,7 @@ class ToolAgent:
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
             )
-            tool_call = self._parser.parse(content)
+            tool_call = self._parse_tool_call(content, tools_configured=ctx.tools is not None)
 
             if tool_call is None:
                 logger.debug("ToolAgent: no tool call detected, returning response")
@@ -165,3 +165,31 @@ class ToolAgent:
             agent=self.name,
             metadata={"tool_steps": steps},
         )
+
+    def _parse_tool_call(self, content: str, *, tools_configured: bool) -> ToolCall | None:
+        """Parse *content* for a tool call, tolerating rejections when no tools exist.
+
+        With a tool registry configured the model was sent the tool-call
+        contract (``build_tool_system_prompt``), so a JSON block the parser
+        rejects is a botched tool call and the typed ``LLMBadResponse``
+        propagates exactly as before.
+
+        Without a registry no tool prompt is sent, so the model cannot be
+        attempting a tool call: a fenced JSON block it emits is ordinary
+        content (an echoed plan, a code sample). Raising there turned the
+        shipped ``planner -> tool -> reviewer`` graph into a 502 whenever the
+        planner's JSON was echoed back in a fence (live defect L-D1,
+        2026-10-07). A block that *does* parse to a tool call still returns
+        it, so the no-registry ``ToolNotFound`` guard is unchanged.
+        """
+        try:
+            return self._parser.parse(content)
+        except LLMBadResponse as exc:
+            if tools_configured:
+                raise
+            logger.warning(
+                "ToolAgent: no tool registry configured; treating rejected JSON as a "
+                "plain response",
+                extra={"parse_error": str(exc), "agent": self.name},
+            )
+            return None
