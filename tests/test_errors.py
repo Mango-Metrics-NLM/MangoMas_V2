@@ -12,6 +12,7 @@ from mangomas.api.errors import _ERROR_STATUS
 from mangomas.errors import (
     AgentNotFound,
     ConfigError,
+    DocumentParseError,
     LLMBadResponse,
     LLMError,
     LLMTimeout,
@@ -27,6 +28,8 @@ from mangomas.errors import (
 )
 from mangomas.eval.dataset import DatasetError
 from tests.constants import DEFAULT_AGENT_NAME
+
+DOC_SOURCE = "reports/q3.pdf"
 
 # ── MangomasError ─────────────────────────────────────────────────────────────
 
@@ -175,6 +178,7 @@ def test_lmstudio_error_is_llm_bad_response() -> None:
         (ToolNotFound, "tool_not_found"),
         (ToolExecutionError, "tool_execution_error"),
         (SecretsResolutionError, "secrets_resolution_error"),
+        (DocumentParseError, "document_parse_error"),
     ],
 )
 def test_error_codes(cls: type[MangomasError], expected_code: str) -> None:
@@ -232,6 +236,25 @@ def test_tool_execution_error_stores_tool_name() -> None:
     assert "Tool exploded" in str(exc)
 
 
+# ── DocumentParseError ──────────────────────────────────────────────────────────
+
+
+def test_document_parse_error_stores_source_and_detail() -> None:
+    exc = DocumentParseError(
+        "Parser rejected the document", source=DOC_SOURCE, detail="status=failure"
+    )
+    assert exc.source == DOC_SOURCE
+    assert exc.detail == "status=failure"
+    assert str(exc) == "Parser rejected the document"
+    assert isinstance(exc, MangomasError)
+
+
+def test_document_parse_error_source_defaults_to_none() -> None:
+    exc = DocumentParseError("Parser unavailable")
+    assert exc.source is None
+    assert exc.detail == ""
+
+
 # ── Exhaustive subclass → intended-HTTP-status walk (spec-0022 R14) ───────────
 #
 # api/errors.py's module docstring promises "every MangomasError must be
@@ -279,6 +302,8 @@ _INTENDED_STATUS: dict[type[MangomasError], int] = {
     LLMBadResponse: 502,
     LLMError: 502,
     ToolExecutionError: 502,
+    # Upstream parser failure / pre-upload refusal (spec-0035 / ADR-0036).
+    DocumentParseError: 502,
     MaxStepsExceeded: 422,
     SecretsResolutionError: 503,
     PersistenceError: 500,

@@ -19,6 +19,9 @@ constructed and `.txt`/`.md` ingest is unchanged. See ADR-0036.
   frozen primitives-only `ParsedDocument(text, pages=None, partial=False)`, and
   `PARSER_EXTRAS_KEY = "document_parser"` for the `AgentContext.extras` slot.
   The package never imports `rag/`.
+- **`DocumentParseError`** (`errors.py`, code `document_parse_error`, HTTP 502
+  via `_ERROR_STATUS`): an upstream parser failure or a file refused before
+  upload. Optional `.source`; `detail` carries statuses and sizes only.
 - **`ParserSettings`** (`MANGOMAS_PARSER__*`, `config/parser.py`), every
   default a `DEFAULT_PARSER_*` constant. Fails fast at settings load: every
   limit and timeout must be strictly positive (no `0 = off` value), the client

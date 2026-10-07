@@ -386,6 +386,7 @@ MangomasError           # base; has .code str, .message, .detail
 ├── AgentNotFound       # code="agent_not_found"
 ├── ConfigError         # code="config_error"; invalid config
 │   └── UnknownProvider # code="unknown_provider"
+├── DocumentParseError  # code="document_parse_error"; .source (502; spec-0035)
 ├── LLMError            # code="llm_error" (base for LLM errors)
 │   ├── LLMBadResponse  # code="llm_bad_response"
 │   ├── LLMTimeout      # code="llm_timeout"
