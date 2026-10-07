@@ -32,6 +32,15 @@ constructed and `.txt`/`.md` ingest is unchanged. See ADR-0036.
   (`mangomas[gcp]`; missing SDK → `ConfigError` with the install hint). Logs and
   spans carry an allow-list of fields only — never document text, filenames,
   response bodies or credentials. Field names are pending live verification.
+- **Streaming loader** (`rag.iter_documents`, `rag.ParseFailure`): yields one
+  document at a time, parsing allow-listed non-text files through the parser
+  inside a `rag.parse` span. Oversize files are refused before reading, parse
+  errors and empty text from non-empty files are yielded as `ParseFailure`
+  (never raised), a `ConfigError` fails the run, and files resolving outside
+  the ingest root are skipped (`rag_symlink_escape`). Without a parser it yields
+  exactly what `load_documents` returns (Hypothesis parity test);
+  `load_documents` itself is unchanged. `RawDoc.metadata` (immutable, empty by
+  default) carries the parser name and parse status.
 - **Composition**: `parser` registry (`docling_serve`), `build_parser`
   (constructs nothing when disabled; `secret_ref` overrides `api_key`), the
   parser attached on `ctx.extras["document_parser"]`, and `_ParserCloseMixin`

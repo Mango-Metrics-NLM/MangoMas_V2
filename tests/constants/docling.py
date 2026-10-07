@@ -104,3 +104,19 @@ def load_docling_fixture(name: str) -> dict[str, Any]:
     data = json.loads((DOCLING_FIXTURE_DIR / f"{name}.json").read_text(encoding="utf-8"))
     assert isinstance(data, dict), f"fixture {name!r} is not a JSON object"
     return data
+
+
+# ── Streaming loader (spec-0035 M5) ───────────────────────────────────────────
+# Spec pins are literals on purpose (a pin compared with the constant it pins
+# proves nothing).
+SPEC_LOADER_SPAN_NAME: Final[str] = "rag.parse"
+SPEC_LOADER_EVENT_SYMLINK_ESCAPE: Final[str] = "rag_symlink_escape"
+SPEC_LOADER_EVENT_PARSE_FAILED: Final[str] = "rag_document_parse_failed"
+SPEC_LOADER_META_PARSER: Final[str] = "parser"
+SPEC_LOADER_META_PARSE_STATUS: Final[str] = "parse_status"
+SPEC_LOADER_STATUS_SUCCESS: Final[str] = "success"
+SPEC_LOADER_STATUS_PARTIAL: Final[str] = "partial"
+SPEC_LOADER_STATUS_FAILED: Final[str] = "failed"
+TEST_LOADER_TABLE_MARKDOWN: Final[str] = "| col a | col b |\n|---|---|\n| 1 | 2 |\n"
+TEST_LOADER_CANARY_TEXT: Final[str] = "CANARY-document-body-must-not-be-logged"
+TEST_LOADER_TEXT_BODY: Final[str] = "plain text body"
