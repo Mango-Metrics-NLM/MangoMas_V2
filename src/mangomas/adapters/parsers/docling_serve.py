@@ -22,12 +22,10 @@ response body.
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
 import re
 import time
-import zipfile
 from collections.abc import Callable, Mapping
 from pathlib import PurePath
 from types import MappingProxyType
@@ -43,10 +41,17 @@ from mangomas.adapters._http_errors import (
     translate_httpx_parse_error,
     translate_parser_status,
 )
+from mangomas.adapters.parsers._archive import OOXML_SUFFIXES, check_ooxml_archive
 from mangomas.adapters.parsers._auth import GoogleIdTokenProvider, IdTokenProvider
 from mangomas.adapters.parsers.base import ParsedDocument
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, ParserSettings
 from mangomas.errors import ConfigError, DocumentParseError, MangomasError
+
+__all__ = [
+    "OOXML_SUFFIXES",
+    "DoclingServeParser",
+    "check_ooxml_archive",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +86,7 @@ SUFFIX_TO_FORMAT: Final[Mapping[str, str]] = MappingProxyType(
         ".html": "html",
     }
 )
-# Zip-container formats that get the archive pre-check.
-OOXML_SUFFIXES: Final[frozenset[str]] = frozenset({".docx", ".pptx", ".xlsx"})
+
 STATUS_SUCCESS: Final[str] = "success"
 STATUS_PARTIAL_SUCCESS: Final[str] = "partial_success"
 STATUS_FAILURE: Final[str] = "failure"
@@ -106,47 +110,6 @@ _MS_PER_SECOND: Final[float] = 1000.0
 # An upstream ``status`` is echoed into ``detail`` only when it looks like a
 # protocol token; anything else could be content and is reported by type.
 _STATUS_TOKEN_RE: Final[re.Pattern[str]] = re.compile(r"[a-z_]{1,32}")
-# Archive errors ``zipfile`` raises for a corrupt or non-zip body.
-_ZIP_ERRORS: Final[tuple[type[Exception], ...]] = (
-    zipfile.BadZipFile,
-    zipfile.LargeZipFile,
-    ValueError,
-    OSError,
-    EOFError,
-    NotImplementedError,
-)
-
-
-def check_ooxml_archive(content: bytes, *, max_entries: int, max_ratio: float) -> None:
-    """Refuse an OOXML body that is not a zip or that would expand suspiciously.
-
-    Pure (in-memory ``BytesIO``; no I/O). Rejects a body that is not a readable
-    zip, one with more than ``max_entries`` members, and one whose total
-    declared uncompressed size exceeds ``max_ratio`` times its total compressed
-    size — the zip-bomb shape. Uses the sizes the central directory declares,
-    which is what a downstream reader trusts too; it does not decompress.
-    """
-    try:
-        with zipfile.ZipFile(io.BytesIO(content)) as archive:
-            entries = archive.infolist()
-    except _ZIP_ERRORS as exc:
-        raise DocumentParseError(
-            "document is not a readable OOXML archive", detail=type(exc).__name__
-        ) from None
-    if len(entries) > max_entries:
-        raise DocumentParseError(
-            "OOXML archive has too many entries",
-            detail=f"entries={len(entries)} max_entries={max_entries}",
-        )
-    uncompressed = sum(info.file_size for info in entries)
-    compressed = sum(info.compress_size for info in entries)
-    # Multiplication, not division: zero compressed bytes that expand to
-    # anything is an unbounded ratio and must be refused, not a ZeroDivisionError.
-    if uncompressed > max_ratio * compressed:
-        raise DocumentParseError(
-            "OOXML archive compression ratio exceeds the limit",
-            detail=(f"uncompressed={uncompressed} compressed={compressed} max_ratio={max_ratio}"),
-        )
 
 
 def _shape(value: object) -> str:
