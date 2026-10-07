@@ -31,9 +31,13 @@ and without letting a parse failure damage an existing index.
 - **R3 — Provider.** `docling_serve` posts one file to `{base_url}/v1/convert/file`
   and never calls any other conversion endpoint. It sends a generated filename
   (`document<suffix>`), `from_formats` pinned to the file's format, `to_formats=md`,
-  the document timeout and page cap, and `X-Api-Key` **only** when a key is
-  configured (`secret_ref` resolved through `SecretsProvider` overrides
-  `api_key`).
+  the document timeout and page cap. Authentication is an `auth_mode`
+  strategy: `none`; `api_key` (sends `X-Api-Key`; `secret_ref` resolved through
+  `SecretsProvider` overrides `api_key`); or `google_id_token` (sends
+  `Authorization: Bearer <identity token>` for a private Cloud Run service,
+  audience `id_token_audience` defaulting to `base_url`, minted by an injectable
+  token provider, cached and refreshed `id_token_refresh_margin_seconds` before
+  expiry).
 - **R4 — Limits before I/O.** Files over `max_file_bytes` and OOXML archives
   exceeding the entry-count or compression-ratio ceilings are refused before any
   network call; responses over `max_response_bytes` are refused.
@@ -47,8 +51,9 @@ and without letting a parse failure damage an existing index.
   `load_documents` and `_load_documents_sync` are unchanged. Files whose
   resolved path escapes the ingest root (symlinks) are skipped with a warning.
   Parsed-path single-file sources are the file name, never an absolute path.
-- **R7 — Pipeline.** `IngestionPipeline` gains optional `parser` and
-  `parser_settings` keywords. A `ParseFailure` under `on_error=skip` is logged,
+- **R7 — Pipeline.** `IngestionPipeline` gains optional `parser`,
+  `parser_settings` and `embedding_model` keywords (the CLI passes
+  `cfg.embeddings.model`; the `EmbeddingClient` protocol exposes no model id). A `ParseFailure` under `on_error=skip` is logged,
   counted in `IngestReport.skipped_documents`, and **never** reaches
   `_replace_source`; under `on_error=fail` it raises. A non-empty file whose parse
   yields empty text is a `ParseFailure`. Parsed documents are chunked by a
@@ -56,18 +61,22 @@ and without letting a parse failure damage an existing index.
   text documents use `chunk_text` exactly as today.
 - **R8 — Metadata.** Text-document chunk metadata stays `{source, index}`.
   Parsed-document chunks add `parser`, `parse_status`, `chunker`, `chunk_words`
-  and `embedding_model`; reserved keys `source` and `index` are written last and
+  and `embedding_model` (omitted when unknown); reserved keys `source` and `index` are written last and
   always win; values are Chroma-legal scalars (`None` dropped, scalar lists joined,
   mappings dropped).
 - **R9 — Retrieval framing.** `RetrievalTool` renders parser-derived chunks inside
-  an untrusted-document delimiter; text-file chunks render byte-identically to
-  today.
+  an untrusted-document delimiter whose `source` attribute is HTML-escaped and
+  whose body has every occurrence of the delimiter's own tags neutralised, so
+  content cannot close or forge the wrapper; text-file chunks render
+  byte-identically to today.
 - **R10 — Composition & CLI.** `composition/parser.py` builds the parser only
-  when enabled and attaches it to `AgentContext.extras`; `mangomas rag ingest`
-  passes it to the pipeline, closes it in `finally`, and appends ` skipped=N`
+  when enabled and attaches it to `AgentContext.extras`; a composition-layer
+  `_close_hooks` mixin closes it through `Orchestrator.aclose()` for every
+  composed entry point (fault-isolated, idempotent); `mangomas rag ingest`
+  passes it to the pipeline, and appends ` skipped=N`
   only when `N > 0`. CLI options and help pins are unchanged.
-- **R11 — Observability.** Spans `rag.parse` (pages, bytes, status) per parsed
-  document; structured events `parser_partial_success`,
+- **R11 — Observability.** Span `rag.parse` opened inside `iter_documents`
+  around the parse call (pages, bytes, status, error code on failure); structured events `parser_partial_success`,
   `rag_document_parse_failed`, `rag_symlink_escape`, `rag_chunk_over_budget`;
   logs carry an allow-list of fields only — never document text, original
   paths beyond the source id, serve error bodies, or credentials.
@@ -114,12 +123,15 @@ the bake-off (PR 2); they live as `DEFAULT_*` constants in `config/parser.py`.
 | `MANGOMAS_PARSER__ENABLED` | `false` | Parse non-text documents during `rag ingest` |
 | `MANGOMAS_PARSER__PROVIDER` | `docling_serve` | Parser registry entry |
 | `MANGOMAS_PARSER__BASE_URL` | `http://localhost:5001` | docling-serve base URL |
-| `MANGOMAS_PARSER__API_KEY` | _(none)_ | Optional `X-Api-Key` (defence in depth) |
+| `MANGOMAS_PARSER__AUTH_MODE` | `none` | `none` \| `api_key` (`X-Api-Key`) \| `google_id_token` (Bearer identity token) |
+| `MANGOMAS_PARSER__API_KEY` | _(none)_ | `X-Api-Key` value when `AUTH_MODE=api_key` |
 | `MANGOMAS_PARSER__SECRET_REF` | _(none)_ | `SecretsProvider` ref that overrides `API_KEY` |
+| `MANGOMAS_PARSER__ID_TOKEN_AUDIENCE` | _(none → `BASE_URL`)_ | Audience for `google_id_token` |
+| `MANGOMAS_PARSER__ID_TOKEN_REFRESH_MARGIN_SECONDS` | `300.0` | Re-mint the identity token this long before expiry |
 | `MANGOMAS_PARSER__TIMEOUT_SECONDS` | `300.0` | HTTP client timeout (must exceed the document timeout) |
 | `MANGOMAS_PARSER__DOCUMENT_TIMEOUT_SECONDS` | `240.0` | Server-side per-document conversion budget |
 | `MANGOMAS_PARSER__ALLOWED_SUFFIXES` | `[".pdf",".docx",".pptx",".xlsx"]` | Formats sent to the parser |
-| `MANGOMAS_PARSER__MAX_FILE_BYTES` | `52428800` | Refuse larger files before upload |
+| `MANGOMAS_PARSER__MAX_FILE_BYTES` | `52428800` | Refuse larger files before upload (strictly positive; no "off" value) |
 | `MANGOMAS_PARSER__MAX_PAGES` | `500` | Page cap sent to the parser |
 | `MANGOMAS_PARSER__MAX_RESPONSE_BYTES` | `20971520` | Refuse larger parser responses |
 | `MANGOMAS_PARSER__MAX_ZIP_ENTRIES` | `10000` | OOXML archive entry ceiling |
@@ -156,11 +168,14 @@ the bake-off (PR 2); they live as `DEFAULT_*` constants in `config/parser.py`.
 
 ## Pre-registered decision rule (structure-aware chunking)
 
-Fixed before any measurement. Adopt a chunker or parser variant only if, on the
-frozen test slice: (a) the 95 % document-cluster-bootstrap CI lower bound of
-Δrecall@5 is > 0, (b) no stratum regresses by more than 5 points, and (c) parse
-p95 latency and cost stay within the ceilings recorded in the bake-off report. A
-CI that spans zero is reported as **inconclusive**, never as a negative result.
+Fixed before any measurement; one statistic, no alternative criterion. Adopt a
+chunker or parser variant only if **all** hold on the frozen test slice:
+(a) the lower bound of the 95 % document-cluster bootstrap CI of Δrecall@5
+(variant − baseline) is **> 0**; (b) no stratum's point-estimate Δrecall@5 is
+below **−5 points**; (c) parse latency p95 is **≤ 10 s per page** and total ingest
+wall time is **≤ 3×** the baseline arm on the same corpus and hardware. A CI that
+contains zero is **inconclusive** (never a negative result); an upper bound
+below zero is a rejection.
 
 ## Test plan
 
