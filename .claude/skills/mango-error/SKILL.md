@@ -76,6 +76,7 @@ MangomasError                          → 500
 │   ├── LLMUnavailable                 → 503
 │   └── LLMBadResponse                 → 502
 ├── ToolExecutionError                 → 502
+├── DocumentParseError                 → 502   (spec-0035; parser failure / refused upload)
 ├── ToolNotFound                       → 400
 ├── MaxStepsExceeded                   → 422
 ├── SecretsResolutionError             → 503   (strict mode only; ADR-0010)

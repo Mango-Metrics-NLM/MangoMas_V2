@@ -163,6 +163,40 @@ no GCP resources are provisioned here. See ADR-0001, spec 0004.
 (HTTP 503) instead of returning `None` on auth/permission/timeout failures;
 default preserves ADR-002. See ADR-0010, spec 0003.
 
+## Done on the docling-ingestion branch (Unreleased; spec-0035 / ADR-0036)
+
+Opt-in PDF/Office ingestion for `mangomas rag ingest` through an out-of-process
+docling-serve, default-off and byte-identical when off:
+
+1. **`DocumentParser` seam** (`adapters/parsers/`), `ParserSettings`
+   (`MANGOMAS_PARSER__*`) and `DocumentParseError` (502).
+2. **`docling_serve` provider**: pre-upload limits, pinned formats, capped
+   responses, `api_key` / `google_id_token` auth, allow-listed logs and spans.
+3. **Streaming loader** `iter_documents` (parity-tested against
+   `load_documents`) and a pipeline in which a parse failure never purges
+   indexed vectors; line-preserving `chunk_lines` for parsed Markdown.
+4. **Untrusted framing** of parsed passages in `RetrievalTool`.
+5. **Measurement harness** (`tests/rag/bakeoff/`, `RUN_DOCLING`) with the
+   pre-registered adoption rule.
+6. **Regression suite** `tests/regression/test_docling_ingestion_defects.py`
+   (7 defects caught by review and property tests on the branch).
+
+### Still open (blocking ADR-0036 → Accepted)
+
+- [ ] **Verification spike** (needs a Docker host): confirm docling-serve's
+      multipart field names, the page-count field (`num_pages` is a guess),
+      default auth, whether `/v1/convert/source` can be disabled, container
+      user, version floor for the 2026 CVEs, and an image digest; replace the
+      hand-written fixtures in `tests/fixtures/docling_serve/` with captures.
+- [ ] **Bake-off corpus and labels** (60–100 questions, redistributable docs)
+      and the baseline report — gates any structure-aware chunking (PR 10).
+- [ ] **Deploy docling-serve** as its own Cloud Run service (runbook PR 8).
+- [ ] **In-process provider** `docling_local` behind a spawned worker
+      (runbook PR 9).
+- [ ] Follow-ups: a composition-built `IngestionPipeline`; a fail-before-delete
+      guard when the embedding model changes (needs a store capability
+      protocol); content-hash skip on re-ingest.
+
 ## Done on the defect-resolution and AQA branch (Unreleased)
 
 Enterprise gap analysis, defect triage, and Level 4 C4 code architecture:

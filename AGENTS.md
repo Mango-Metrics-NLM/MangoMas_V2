@@ -86,12 +86,16 @@ src/mangomas/
 │   ├── embeddings/     EmbeddingClient protocol + lmstudio / sentence_transformers / vertex
 │   │                   (_shared.py: embed / aclose mixins — backends write embed_batch only)
 │   ├── vector/         VectorStoreRepository protocol + VectorMatch + ChromaVectorStore
+│   ├── parsers/        DocumentParser protocol + ParsedDocument + DoclingServeParser
+│   │                   (_auth.py: IdTokenProvider seam; opt-in, spec-0035)
 │   └── storage/        TurnRepository + MemoryRepository protocols + impls
 ├── rag/            Pure-domain RAG layer (opt-in; imports only protocols + models)
 │   ├── models.py       Chunk, SearchResult (frozen dataclasses)
-│   ├── chunker.py      Word-window chunker (pure fn)
-│   ├── loader.py       file/dir → raw docs (asyncio.to_thread)
+│   ├── chunker.py      Word-window chunker + line-preserving chunk_lines (pure fns)
+│   ├── loader.py       file/dir → raw docs (asyncio.to_thread); iter_documents
+│   │                   streams + parses non-text files (yields ParseFailure)
 │   ├── pipeline.py     IngestionPipeline: load→chunk→embed_batch→upsert
+│   │                   (optional parser; a parse failure never purges)
 │   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
 ├── workflow/       Declarative workflow-graph layer (opt-in; spec 0005)
 │   ├── graph.py        Frozen node models + WorkflowNode union + WorkflowGraph
@@ -315,6 +319,16 @@ both `false`), so existing deployments see no behaviour change. Three seams:
   (`ids`/`embeddings`/`documents`/`metadatas` + `VectorMatch`), so the vector
   layer never imports `rag/`. `ChromaVectorStore` forces `hnsw:space=cosine` and
   maps distance→similarity as `1 - d/2` (keeps scores in `[0, 1]`).
+- **`DocumentParser`** (`adapters/parsers/base.py`, opt-in via
+  `MANGOMAS_PARSER__ENABLED`; spec-0035 / ADR-0036) — `parse(*, filename,
+  content) -> ParsedDocument` / `aclose`. Provider `docling_serve` posts each
+  file to a separately run docling-serve (`/v1/convert/file` only), enforcing
+  size / page / archive / response limits before and after upload; auth is
+  `none` / `api_key` / `google_id_token`. Built by `composition/parser.py`,
+  attached on `ctx.extras["document_parser"]`, closed by the orchestrator's
+  close hooks. A failed parse is skipped and counted (`on_error=skip`) and
+  never deletes a source's existing vectors; parsed chunks are framed as
+  `<untrusted-document>` by `RetrievalTool`.
 - **`rag/`** — pure domain: `chunk_text` word-window chunker, `load_documents`,
   `IngestionPipeline` (delete_by_source → chunk → embed_batch → upsert),
   `Retriever` + `RetrievalTool` (satisfies the `Tool` protocol; auto-discovered
@@ -323,6 +337,9 @@ both `false`), so existing deployments see no behaviour change. Three seams:
 CLI: `mangomas rag ingest <path>` and `mangomas rag query <text>`. When RAG is
 disabled both exit `2` with a clear "not enabled" message. The stubbed
 `EmbeddingScorer` now resolves a real provider via `ScorerContext.embeddings`.
+
+Gated suite: `RUN_DOCLING=1 make docling-bakeoff` (needs a running docling-serve and a
+real embedder; hosted-runner infeasible by design).
 
 Extras: `pip install 'mangomas[embeddings-local]'` (sentence-transformers),
 `pip install 'mangomas[rag]'` (chromadb); Vertex embeddings reuse the `vertex`
@@ -417,9 +434,11 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
   why `PLR2004` is disabled for `tests/*` in `pyproject.toml`. Config-mirroring
   defaults must be **re-exported** (`X as X`), never restated.
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
-- **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
-  and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
-  since `hypothesis` is an optional dev dependency)
+- **Hypothesis fuzz** tests live in `test_tools.py`, `rag/test_chunker.py`,
+  `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (import-guarded), plus
+  the spec-0035 suites `rag/test_loader_iter.py`, `rag/test_pipeline_parsed.py` and
+  `rag/bakeoff/test_metrics.py` (`hypothesis` is a dev dependency; a missing install
+  fails the zero-skip guard rather than skipping)
 - **Integration tests** in `tests/integration/`; gated by `RUN_INTEGRATION=1`
 
 ---

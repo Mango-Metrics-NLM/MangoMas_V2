@@ -39,9 +39,6 @@ def _docling_serve_parser_factory(
     return DoclingServeParser(settings, api_key=api_key)
 
 
-_parser_registry.register("docling_serve", _docling_serve_parser_factory)
-
-
 def _resolve_parser_api_key(
     settings: ParserSettings, secrets: SecretsProvider | None
 ) -> str | None:

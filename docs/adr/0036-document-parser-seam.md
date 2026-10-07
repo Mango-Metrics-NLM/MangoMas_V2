@@ -78,6 +78,13 @@ operator-fed (ADR-0033). The owner approved the decisions below on 2026-10-07.
   fail-before-delete guard needs a new store capability protocol, because
   `VectorStoreRepository` cannot grow a method. This goes to a follow-up spec.
 
+- Composition builds the parser for every entry point when enabled, the API
+  lifespan included, although only `rag ingest` uses it. Enable
+  `MANGOMAS_PARSER__ENABLED` only in the ingest environment; an unresolvable
+  `api_key` would otherwise fail API startup.
+- Single-file sources follow the text rule (the path as given), so passing an
+  absolute path stores it in chunk metadata, exactly as for `.txt`/`.md`.
+
 ### Neutral
 
 - Production `service.yaml` likely needs no `MANGOMAS_PARSER__*` entries.

@@ -1,9 +1,10 @@
 """Document-parser settings for RAG ingestion (``MANGOMAS_PARSER__*``; spec-0035).
 
 Opt-in and default-off: with ``enabled=False`` no parser is constructed and a
-``.txt``/``.md`` ingest is byte-identical to before this group existed. The
-parser is consumed by the operator ``rag ingest`` path only, never by the API
-service (ADR-0036 §4).
+``.txt``/``.md`` ingest is byte-identical to before this group existed. Only the
+operator ``rag ingest`` path uses the parser (ADR-0036 §4), but composition
+builds it for every entry point when enabled — the API lifespan included — so
+set ``MANGOMAS_PARSER__ENABLED`` only in the environment that runs ingestion.
 
 Every limit is strictly positive — there is deliberately no ``0 = off`` value,
 because each one bounds untrusted input (file size, archive expansion, response
