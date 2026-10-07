@@ -72,6 +72,9 @@ from mangomas.composition.agents import (
 
 # Public API (main functions)
 from mangomas.composition.builder import build_orchestrator as build_orchestrator
+from mangomas.composition.builder import (
+    warn_if_step_budget_below_llm_timeout as warn_if_step_budget_below_llm_timeout,
+)
 
 # Embedding factories (used by tests for direct testing)
 from mangomas.composition.embeddings import (
@@ -176,4 +179,5 @@ __all__ = [
     "secrets_registry",
     "structured_agent_schemas",
     "structured_agent_schemas_for_instances",
+    "warn_if_step_budget_below_llm_timeout",
 ]

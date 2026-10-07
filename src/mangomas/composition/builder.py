@@ -41,7 +41,7 @@ from mangomas.composition.secrets import _resolve_llm_secrets, ensure_secrets_pr
 from mangomas.composition.signal import _attach_cognitive_extras
 from mangomas.composition.storage import _postgres_factory, _sqlite_factory
 from mangomas.composition.vector import _chroma_vector_factory
-from mangomas.config import Settings, get_settings
+from mangomas.config import LLMSettings, LoopSettings, Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import Agent
 
@@ -90,6 +90,37 @@ def _seed_registries() -> None:
 _seed_registries()
 
 
+def warn_if_step_budget_below_llm_timeout(loop: LoopSettings, llm: LLMSettings) -> bool:
+    """Log a WARNING when the per-step budget is shorter than the LLM timeout.
+
+    ``asyncio.timeout(step_timeout_seconds)`` wraps every ``agent.handle``
+    step, and a step makes at least one LLM call. When the step budget is the
+    smaller of the two, a completion that the LLM client is still legitimately
+    waiting on is cancelled as ``StepTimeout`` (504) and the adapter's own
+    typed ``LLMTimeout`` can never fire. That is the inversion spec-0029 R2.1
+    removed from the live suites. Here it is surfaced rather than changed,
+    because both budgets are documented, operator-owned defaults.
+
+    Returns ``True`` when the warning was emitted, so callers and tests can
+    assert on the decision without parsing log text.
+    """
+    step_seconds = loop.step_timeout_seconds
+    llm_seconds = llm.timeout_seconds
+    if step_seconds >= llm_seconds:
+        return False
+    logger.warning(
+        "Per-step timeout is below the LLM client timeout; slow completions will "
+        "surface as step_timeout (504) before the LLM timeout can fire",
+        extra={
+            "event": "step_budget_below_llm_timeout",
+            "step_timeout_seconds": step_seconds,
+            "llm_timeout_seconds": llm_seconds,
+            "llm_provider": llm.provider,
+        },
+    )
+    return True
+
+
 def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
     """Wire adapters → context → orchestrator → agents.
 
@@ -128,6 +159,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
     llm_cfg = _resolve_llm_secrets(cfg.llm, cfg.secrets.provider)
     llm = llm_registry.get(llm_cfg.provider)(llm_cfg)
     logger.debug("LLM client built", extra={"provider": llm_cfg.provider})
+    warn_if_step_budget_below_llm_timeout(cfg.loop, llm_cfg)
 
     # Per-agent MODEL_OVERRIDE clients (spec-0028 / ADR-0028). Empty when no
     # agent opts in — same-provider-only, resolved at call time via
@@ -222,4 +254,5 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
 
 __all__ = [
     "build_orchestrator",
+    "warn_if_step_budget_below_llm_timeout",
 ]

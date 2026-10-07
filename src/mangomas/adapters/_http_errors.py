@@ -9,6 +9,11 @@ mapping so the two adapters cannot drift apart.
 The caller supplies a human-readable ``label`` (woven into the message) and the
 concrete ``bad_response`` class to raise for HTTP status errors, so each adapter
 keeps its own distinguishable error type without duplicating the dispatch logic.
+
+:data:`JSON_DECODE_ERRORS` is the companion for the step *after* transport: the
+one definition of what decoding an upstream body can raise, so no adapter
+hand-rolls a partial ``except`` clause around ``json.loads`` / ``Response.json``
+and lets a raw decoder exception escape its typed-error contract.
 """
 
 from __future__ import annotations
@@ -21,6 +26,14 @@ from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 
 logger = logging.getLogger(__name__)
+
+# Everything ``json.loads`` / ``httpx.Response.json`` can raise on a garbled or
+# hostile body. ``JSONDecodeError`` and ``UnicodeDecodeError`` are both
+# ``ValueError`` subclasses; pathologically nested input (``[[[[...]]]]``, a few
+# hundred KB) exhausts the interpreter recursion limit and raises
+# ``RecursionError``, which is *not* a ``ValueError`` and so slipped past every
+# hand-rolled clause that caught only the decode error.
+JSON_DECODE_ERRORS: tuple[type[Exception], ...] = (ValueError, RecursionError)
 
 
 def translate_httpx_error(
