@@ -55,7 +55,7 @@ class LMStudioEmbeddingClient(SingleTextEmbedMixin, OpenAICompatHTTPClient):
         resp = await self._request(
             "POST", "/embeddings", json=payload, log_event="LM Studio embeddings request failed"
         )
-        data = resp.json()
+        data = self._json(resp, log_event="Malformed LM Studio embeddings response")
         try:
             rows = data["data"]
             return [[float(x) for x in row["embedding"]] for row in rows]

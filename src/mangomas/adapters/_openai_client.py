@@ -29,7 +29,8 @@ from typing import TYPE_CHECKING, Any, ClassVar, NoReturn
 
 import httpx
 
-from mangomas.adapters._http_errors import translate_httpx_error
+from mangomas.adapters._http_errors import JSON_DECODE_ERRORS, translate_httpx_error
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.errors import LLMBadResponse
@@ -109,6 +110,38 @@ class OpenAICompatHTTPClient:
         except httpx.HTTPError as exc:
             self._log_and_translate(exc, log_event)
         return resp
+
+    def _json(self, resp: httpx.Response, *, log_event: str) -> Any:
+        """Decode *resp* as JSON, raising ``_BAD_RESPONSE`` if it is not decodable.
+
+        A 2xx with a non-JSON body (a proxy or captive-portal HTML page, a
+        ``base_url`` pointing at the wrong server) or a pathologically nested
+        one used to leak a raw ``JSONDecodeError`` / ``RecursionError`` from
+        every call site — an unmapped exception, so the API answered a bare 500
+        with no error envelope instead of the adapter's typed 502. ``detail``
+        names the decoder failure, content type and size only; the body itself
+        is never echoed, since by construction it is not the payload we expected.
+        """
+        try:
+            return resp.json()
+        except JSON_DECODE_ERRORS as exc:
+            content_type = resp.headers.get("content-type", "")
+            size = len(resp.content)
+            logger.error(
+                log_event,
+                extra={
+                    "error": type(exc).__name__,
+                    "base_url": self._base_url,
+                    "content_type": content_type,
+                    "bytes": size,
+                },
+            )
+            raise self._BAD_RESPONSE(
+                f"{self._LABEL} returned a non-JSON response",
+                detail=(f"{type(exc).__name__} content_type={content_type!r} bytes={size}")[
+                    :DEFAULT_ERROR_DETAIL_TRUNCATE
+                ],
+            ) from exc
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client (if owned)."""

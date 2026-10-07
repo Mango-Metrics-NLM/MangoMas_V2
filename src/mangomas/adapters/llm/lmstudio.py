@@ -9,6 +9,7 @@ from typing import Any, Final
 
 import httpx
 
+from mangomas.adapters._http_errors import JSON_DECODE_ERRORS
 from mangomas.adapters._openai_client import OpenAICompatHTTPClient
 from mangomas.config import (
     DEFAULT_ERROR_DETAIL_TRUNCATE,
@@ -24,6 +25,15 @@ logger = logging.getLogger(__name__)
 # defined by the OpenAI-compatible streaming spec — promoted to a module-level
 # constant so it is named at every reference site.
 _SSE_DONE_SENTINEL: Final[str] = "[DONE]"
+# A streamed chunk that cannot be decoded or lacks the delta shape is skipped,
+# not raised — including a pathologically nested one (``RecursionError``, via
+# the shared decode vocabulary).
+_SSE_SKIP_ERRORS: Final[tuple[type[Exception], ...]] = (
+    KeyError,
+    IndexError,
+    TypeError,
+    *JSON_DECODE_ERRORS,
+)
 
 
 class LMStudioError(LLMBadResponse):
@@ -72,7 +82,7 @@ class LMStudioClient(OpenAICompatHTTPClient):
         resp = await self._request(
             "POST", "/chat/completions", json=payload, log_event="LM Studio request failed"
         )
-        data = resp.json()
+        data = self._json(resp, log_event="Malformed LM Studio response")
         try:
             return str(data["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
@@ -150,6 +160,6 @@ class LMStudioClient(OpenAICompatHTTPClient):
             data = json.loads(chunk_data)
             content = str(data["choices"][0]["delta"].get("content") or "")
             return content or None
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        except _SSE_SKIP_ERRORS as exc:
             logger.debug("Skipping unparseable SSE chunk: %s", exc)
             return None
