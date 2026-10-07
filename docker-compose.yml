@@ -35,6 +35,21 @@ services:
     volumes:
       - mangomas-pg-data:/var/lib/postgresql/data
 
+  # Local-only Docling Serve for the DocumentParser adapter. Opt-in:
+  #   docker compose --profile parser up -d parser
+  parser:
+    image: quay.io/ds4sd/docling-serve:latest
+    profiles: ["parser"]
+    ports:
+      - "5001:5001"
+    environment:
+      DOCLING_SERVE_PORT: 5001
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   mangomas-data:
   mangomas-pg-data:

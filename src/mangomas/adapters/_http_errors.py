@@ -10,6 +10,11 @@ The caller supplies a human-readable ``label`` (woven into the message) and the
 concrete ``bad_response`` class to raise for HTTP status errors, so each adapter
 keeps its own distinguishable error type without duplicating the dispatch logic.
 
+:data:`JSON_DECODE_ERRORS` is the companion for the step *after* transport: the
+one definition of what decoding an upstream body can raise, so no adapter
+hand-rolls a partial ``except`` clause around ``json.loads`` / ``Response.json``
+and lets a raw decoder exception escape its typed-error contract.
+
 Document parsers (spec-0035) fail differently and must say less, so they get
 their own pair of translators here rather than a flag on the LLM one: a 401/403
 is a :class:`~mangomas.errors.ConfigError` (bad credentials are configuration),
@@ -35,6 +40,14 @@ from mangomas.errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Everything ``json.loads`` / ``httpx.Response.json`` can raise on a garbled or
+# hostile body. ``JSONDecodeError`` and ``UnicodeDecodeError`` are both
+# ``ValueError`` subclasses; pathologically nested input (``[[[[...]]]]``, a few
+# hundred KB) exhausts the interpreter recursion limit and raises
+# ``RecursionError``, which is *not* a ``ValueError`` and so slipped past every
+# hand-rolled clause that caught only the decode error.
+JSON_DECODE_ERRORS: tuple[type[Exception], ...] = (ValueError, RecursionError)
 
 # HTTP statuses a parser upstream uses to reject the caller's credentials.
 PARSER_CREDENTIAL_STATUSES: frozenset[int] = frozenset({401, 403})

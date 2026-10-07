@@ -20,6 +20,7 @@ import json
 from collections.abc import Callable
 from typing import Final, Protocol, runtime_checkable
 
+from mangomas.adapters._http_errors import JSON_DECODE_ERRORS
 from mangomas.errors import ConfigError, MangomasError
 
 _JWT_SEGMENTS: Final[int] = 3
@@ -57,7 +58,7 @@ def id_token_expiry(token: str) -> float:
     padded = segment + "=" * (-len(segment) % _B64_BLOCK)
     try:
         claims = json.loads(base64.urlsafe_b64decode(padded))
-    except ValueError as exc:  # binascii.Error, UnicodeDecodeError, JSONDecodeError
+    except JSON_DECODE_ERRORS as exc:  # binascii.Error, UnicodeDecodeError, JSONDecodeError, ...
         raise ConfigError(
             "identity token payload is not decodable", detail=type(exc).__name__
         ) from None
@@ -76,16 +77,19 @@ def _fetch_google_id_token(audience: str) -> str:
     """
     try:
         from google.auth.transport import requests as google_requests  # noqa: PLC0415
-
-        # Reached only once the line above imported, i.e. with the extra installed.
-        from google.oauth2 import (  # noqa: PLC0415  # pragma: no cover - requires the extra
-            id_token as google_id_token,
-        )
+        from google.oauth2 import id_token as google_id_token  # noqa: PLC0415
     except ImportError as exc:
         raise ConfigError(GOOGLE_AUTH_INSTALL_HINT) from exc
-    return str(  # pragma: no cover - requires the gcp/vertex extra
-        google_id_token.fetch_id_token(google_requests.Request(), audience)
-    )
+    # google-auth's helpers are untyped: with the extra installed, calling them
+    # directly is `no-untyped-call` under `mypy --strict`; without it (CI's
+    # `.[dev]` install) mypy sees `Any` and stays silent. Binding them to typed
+    # callables first checks cleanly in both environments — a
+    # `# type: ignore[no-untyped-call]` would instead be an unused ignore
+    # (`warn_unused_ignores`) wherever the extra is absent. Exercised without the
+    # extra by tests/regression/test_aqa_20261006_defects.py (fake modules).
+    request_factory: Callable[[], object] = google_requests.Request
+    fetch_id_token: Callable[[object, str], object] = google_id_token.fetch_id_token
+    return str(fetch_id_token(request_factory(), audience))
 
 
 class GoogleIdTokenProvider:

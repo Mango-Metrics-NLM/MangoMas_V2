@@ -8,6 +8,66 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: live LM Studio E2E triage (2026-10-07)
+
+A full live run against LM Studio (`nvidia/nemotron-3-nano-omni`,
+`liquid/lfm2-24b-a2b`, `meta/muse-glimmer`) found two things worth fixing:
+
+1. **L-D1 (fixed)**: `ToolAgent` raised `LLMBadResponse` (502) on fenced JSON
+   with no `"tool"` key, even when no tool registry was configured. This broke
+   the shipped `planner -> tool -> reviewer` graph on two models.
+2. **Step-budget diagnostic (added)**: every live 504 came from the per-step
+   budget (30 s) being shorter than the LLM timeout (60 s). The composition root
+   now warns when that is the case.
+
+### Follow-ups (decisions needed)
+
+- **Realign timeout defaults**: `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` (30 s) is
+  below `MANGOMAS_LLM__TIMEOUT_SECONDS` (60 s). Raising the step default, or
+  lowering the LLM one, changes a documented default. That needs an AGENTS.md
+  table update and `test_env_example_contract` agreement.
+- **Empty tool registry**: an *empty* `ToolRegistry` still counts as "tools
+  configured", so the strict parse path applies. Decide whether an empty
+  registry should behave like `None`.
+- **LM Studio null content**: `adapters/llm/lmstudio.py` uses
+  `str(...["content"])`, which yields the literal `"None"` for a null content
+  field. Ruled out as today's root cause; still a latent edge case. It should
+  raise a typed `LLMBadResponse`.
+- **Reviewer envelope recovery (S3)**: `liquid/lfm2-24b-a2b` wraps its review
+  as `{"description": ..., "reviewResult": {...}}`. Strict validation rejects it
+  by design (ADR-0034). An opt-in single-key-unwrap recovery is possible but
+  needs an ADR.
+
+---
+
+## Overlay: SDLC origin-sync & modular decomposition (2026-10-06)
+
+The branch synchronisation against `origin/feat/initial-release` (PR #83) and
+subsequent SDLC audit delivered:
+
+1. **Parser & OOXML Archive Decomposition**: Extracted `_archive.py` from
+   `docling_serve.py` isolating archive safety controls (`check_ooxml_archive`,
+   ratio & entry ceilings) with 100% backward-compatible re-exports.
+2. **Parser Test Suite Decomposition**: Modularized the monolithic
+   `test_docling_serve.py` (1,144 lines) into 5 focused modules (`conftest.py`,
+   `test_docling_serve_convert.py`, `test_docling_serve_archive.py`,
+   `test_docling_serve_auth.py`, `test_docling_serve_errors.py`), keeping
+   `test_docling_serve.py` as an aggregate smoke facade.
+3. **Critic Remediations & AQA Regression**: Chained `from None` in `_json()`
+   to prevent upstream error body leakage, and added 17 regression assertions
+   in `tests/regression/test_aqa_20261006_defects.py` for defects D1–D5.
+4. **Tooling & Architecture Fortification**: Updated C1–C4 architecture diagrams
+   and added the opt-in `parser` container profile to `docker-compose.yml`.
+
+### Near-term Follow-ups
+
+- **Live Docling Serve Service Validation**: Execute integration tests against a
+  live `quay.io/ds4sd/docling-serve` container once local Docker daemon is engaged.
+- **Hardware Acceleration for Local Embeddings**: Expand `SentenceTransformersEmbeddingClient`
+  to auto-detect CUDA/MPS/DirectML when `device` is unset.
+
+---
+
 ## Overlay: E2E model gap triage (2026-10-01)
 
 Two live LM Studio failures against `nvidia/nemotron-3-nano-omni` require

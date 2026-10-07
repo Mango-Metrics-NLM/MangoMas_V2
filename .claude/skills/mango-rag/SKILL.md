@@ -19,20 +19,22 @@ argument-hint: "Describe the RAG change (e.g. 'add Cohere embedding provider', '
 
 - Add a new `EmbeddingClient` under `src/mangomas/adapters/embeddings/`
 - Add a new `VectorStoreRepository` under `src/mangomas/adapters/vector/`
+- Add or configure a `DocumentParser` under `src/mangomas/adapters/parsers/`
 - Change chunking (`rag/chunker.py`), ingestion (`rag/pipeline.py`), or
   retrieval (`rag/retrieval.py`)
 - Wire a new provider into `composition/` (`embedding_registry`,
-  `_vector_registry`)
+  `_vector_registry`, `parser_registry`)
 - Debug cosine scores, stale-chunk re-ingest, or the `EmbeddingScorer`
 
 ---
 
-## Architecture (two protocol seams + one domain package)
+## Architecture (three protocol seams + one domain package)
 
 ```
 adapters/embeddings/   EmbeddingClient protocol; lmstudio / sentence_transformers / vertex
 adapters/embeddings/_shared.py  SingleTextEmbedMixin + NoTransportAcloseMixin
 adapters/vector/       VectorStoreRepository protocol + VectorMatch; chroma
+adapters/parsers/      DocumentParser protocol; docling_serve, _archive.py, _auth.py
 rag/                   models, chunker, loader, pipeline, retrieval (imports protocols only)
 ```
 
@@ -46,6 +48,9 @@ rag/                   models, chunker, loader, pipeline, retrieval (imports pro
 - **`VectorStoreRepository`** (`adapters/vector/base.py`): primitives only
   (`upsert`/`query`/`delete_by_source`/`aclose` + `VectorMatch`). Keeps the
   vector layer free of any `rag/` import (no cycle).
+- **`DocumentParser`** (`adapters/parsers/base.py`): `parse(doc: RawDoc) -> ParsedDocument` /
+  `aclose()`. Non-text document parsing (.pdf, .docx, .pptx, .xlsx) via Docling Serve.
+  Protected by `_archive.py` against OOXML zip bombs.
 - **`rag/`** imports only the protocol surfaces + its own `models` + `core`.
   `rag/retrieval` maps `VectorMatch` → `SearchResult`.
 
@@ -55,7 +60,7 @@ rag/                   models, chunker, loader, pipeline, retrieval (imports pro
 
 | Rule | Detail |
 |------|--------|
-| Opt-in | `embeddings.enabled` / `vector.enabled` default `False`. Disabled = no `ctx.embeddings` / `ctx.vector_store`, no behaviour change. |
+| Opt-in | `embeddings.enabled` / `vector.enabled` / `parser.enabled` default `False`. Disabled = no `ctx.embeddings` / `ctx.vector_store`, no behaviour change. |
 | Cosine score | Chroma collection MUST set `metadata={"hnsw:space": "cosine"}`; similarity is `1 - distance / 2` (`_MAX_COSINE_DISTANCE`). Never `1 - distance` (negative in L2). |
 | Re-ingest | `IngestionPipeline` calls `vector_store.delete_by_source(source)` BEFORE upsert so a shrunk doc leaves no orphan `{source}#{index}` chunks. |
 | Lazy SDK | `chromadb` / `sentence_transformers` / `vertexai` imported inside factory helpers with `# noqa: PLC0415` + `# pragma: no cover - requires extra`. Module stays importable without the extra. |

@@ -22,8 +22,8 @@ gated-test commands.
 - `src/mangomas/adapters/vector/` — `base.py::VectorStoreRepository` +
   `VectorMatch`, and `chroma.py`
 - `src/mangomas/adapters/parsers/` — `base.py::DocumentParser` +
-  `ParsedDocument`, `docling_serve.py`, and the `_auth.py` identity-token seam
-  (spec-0035 / ADR-0036)
+  `ParsedDocument`, `docling_serve.py`, the `_archive.py` OOXML archive guard,
+  and the `_auth.py` identity-token seam (spec-0035 / ADR-0036)
 - Wiring in `composition/`: `embedding_registry`, `_vector_registry`,
   `_parser_registry` + `parser.py` (`build_parser`, `_ParserCloseMixin`), and
   `_build_rag_tools` — the only place `ctx.tools` gains a `RetrievalTool`

@@ -518,11 +518,12 @@ python -m pytest tests/vertex --no-cov
 ```
 src/mangomas/
   core/         Domain: agent protocol, orchestrator, tool models
-  adapters/     llm/ (lmstudio, vertex), embeddings/, vector/, storage/ — swappable for GCP (see ADR-001)
+  adapters/     llm/ (lmstudio, vertex), embeddings/, vector/, storage/, parsers/ (docling_serve) — swappable for GCP (see ADR-001)
                 Shared, underscore-prefixed helpers sit at the package root:
                 _http_errors.py / _vertex_errors.py (error translation),
                 _openai_client.py (OpenAI-compatible httpx lifecycle),
-                embeddings/_shared.py (embed / aclose mixins)
+                embeddings/_shared.py (embed / aclose mixins),
+                parsers/_archive.py (OOXML zip bomb & ratio validation)
   agents/       Concrete agents: chat, summarize, tool_agent, planner, reviewer
   rag/          Opt-in RAG layer — chunker, loader, ingestion pipeline, retriever + RetrievalTool
   workflow/     Opt-in declarative workflow graphs — frozen node models, predicate

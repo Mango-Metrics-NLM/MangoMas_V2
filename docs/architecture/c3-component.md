@@ -80,7 +80,7 @@ C4Component
     Component(retrieval_tool, "RetrievalTool", "Tool", "name='retrieve'. Registered into a ToolRegistry and set on ctx.tools only when BOTH ctx.embeddings and ctx.vector_store are present, so ToolAgent auto-discovers it. execute() returns formatted top-k context.")
     Component(retriever, "Retriever", "Domain service", "search(query): embed query → vector_store.query → map VectorMatch → SearchResult. top_k from MANGOMAS_VECTOR__TOP_K.")
     Component(ingestion, "IngestionPipeline", "Domain service", "ingest(path): load → delete_by_source (idempotent re-ingest) → chunk_text → embed_batch in batch_size slices → upsert with stable {source}#{index} ids. CLI-only (mangomas rag ingest). With an optional DocumentParser (spec-0035) it streams iter_documents, chunks parsed Markdown with chunk_lines, and skips or raises a ParseFailure without ever purging that source.")
-    Component(doc_parser, "DoclingServeParser (resolved by parser registry)", "DocumentParser", "Attached to ctx.extras['document_parser'] when MANGOMAS_PARSER__ENABLED=true; closed by the orchestrator close hooks. POSTs one file to docling-serve /v1/convert/file with size/archive/page/response limits and none/api_key/google_id_token auth. Plain httpx — no new dependency.")
+    Component(doc_parser, "DoclingServeParser (resolved by parser registry)", "DocumentParser", "Attached to ctx.extras['document_parser'] when MANGOMAS_PARSER__ENABLED=true; closed by the orchestrator close hooks. POSTs one file to docling-serve /v1/convert/file with size/archive/page/response limits and none/api_key/google_id_token auth. OOXML zip-bomb ceilings live in _archive.py (check_ooxml_archive). Plain httpx — no new dependency.")
   }
 
   Container_Boundary(cognitive_boundary, "Cognitive producer (src/mangomas/cognitive/) — opt-in") {
@@ -197,6 +197,13 @@ C4Component
   only from the CLI (`mangomas rag ingest`) and is not part of the request
   path. `Orchestrator.aclose()` closes `ctx.embeddings` and
   `ctx.vector_store` (fault-tolerant, idempotent) so neither leaks per run.
+- The **Document Parser seam** (`src/mangomas/adapters/parsers/`) implements the
+  `DocumentParser` protocol resolved by `parser_registry`. `DoclingServeParser`
+  communicates with external Docling Serve over HTTP multipart conversion. It
+  incorporates `_archive.py` checks for OOXML zip bomb and ratio limits, and
+  `_auth.py` supporting `none`, `api_key`, or `google_id_token` authentication.
+  When `MANGOMAS_PARSER__ENABLED=true`, `IngestionPipeline` dispatches non-text
+  documents through the parser before chunking and embedding.
 - The **cognitive producer** (`src/mangomas/cognitive/`) is opt-in via
   `MANGOMAS_SIGNAL__ENABLED`. It imports `mango_contracts` in-process and
   writes JSONL (optional HTTP). The sibling Code Agent Harness is the C1
