@@ -190,7 +190,7 @@ def _parsed_suffixes(
 def _directory_candidates(
     root: Path, parsed_suffixes: frozenset[str]
 ) -> list[tuple[Path, str, str]]:
-    """Return ``(path, source, source)`` for every ingestable file, sorted by source."""
+    """Return ``(path, source, source)`` for every ingestable file, in ``Path`` order."""
     resolved_root = root.resolve()
     found: list[tuple[Path, str, str]] = []
     for p in root.rglob("*"):
@@ -206,7 +206,10 @@ def _directory_candidates(
             )
             continue
         found.append((p, source, source))
-    found.sort(key=lambda item: item[1])
+    # Sort by ``Path`` exactly as :func:`load_documents` does: paths compare part
+    # by part, which differs from sorting the POSIX strings ("_/_.txt" sorts
+    # before "_.txt" here, after it as a string). Parity depends on it.
+    found.sort(key=lambda item: item[0])
     return found
 
 

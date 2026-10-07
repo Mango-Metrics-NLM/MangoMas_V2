@@ -12,7 +12,7 @@ import asyncio
 import logging
 import os
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from hypothesis import given, settings
@@ -128,7 +128,8 @@ def test_order_is_independent_of_creation_order(order: list[str]) -> None:
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(rel, encoding="utf-8")
         sources = [d.source for d in asyncio.run(_collect(root)) if isinstance(d, RawDoc)]
-    assert sources == sorted(order)
+    # Path order (part by part), the contract load_documents has always had.
+    assert sources == sorted(order, key=PurePosixPath)
 
 
 async def test_missing_path_raises_before_the_first_yield(tmp_path: Path) -> None:
