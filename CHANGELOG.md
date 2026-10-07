@@ -39,6 +39,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `tests/test_run_workflow_e2e.py`.
 - **C1 guard.** `test_c1_decode_error_is_not_chained_onto_typed_error` pins the
   `from None` in `OpenAICompatHTTPClient._json`. It is red against `from exc`.
+- **Loader containment tests now run on Windows (DEFECT-#83, test).** Three
+  tests in `tests/rag/test_loader_iter.py` carried an ad-hoc
+  `skipif(reason="needs POSIX symlinks")`, which the zero-skip guard in
+  `tests/conftest.py` (spec-0022 R8) rejects, so `make test` exited 1 on
+  Windows. A `_link` helper now makes a file symlink where the platform allows
+  one, and otherwise a directory junction (no privilege needed). `rglob` walks
+  the junction and `resolve()` follows it, so the `rag_symlink_escape` check
+  runs everywhere. No sanctioned skip category was added. Disabling the check in
+  `rag/loader.py` turns both escape tests red.
 
 ### Changed — SDLC origin-sync, architecture & modular decomposition (2026-10-06)
 

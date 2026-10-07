@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
+import sys
 import tempfile
 from pathlib import Path, PurePosixPath
 
@@ -47,6 +47,9 @@ from tests.constants.docling import (
     TEST_LOADER_TEXT_BODY,
 )
 from tests.fakes import FakeDocumentParser
+
+if sys.platform == "win32":
+    import _winapi
 
 _DOCX = "slides.docx"
 
@@ -317,12 +320,40 @@ async def test_an_empty_file_parsing_to_empty_text_is_a_document(tmp_path: Path)
 
 # ── Containment ───────────────────────────────────────────────────────────────
 
-_needs_symlinks = pytest.mark.skipif(
-    not hasattr(os, "symlink") or os.name == "nt", reason="needs POSIX symlinks"
-)
+
+def _link(link: Path, target: Path) -> Path:
+    """Make ``target`` (a file) reachable at ``link``; return the path the loader walks.
+
+    A file symlink where the platform allows one. Windows without the
+    symlink privilege (WinError 1314) gets a directory junction to the
+    target's parent instead: it needs no privilege, ``rglob`` descends into it
+    and ``resolve()`` follows it, so the loader's containment check runs on
+    every platform rather than being skipped (spec-0022 R8 zero-skip guard).
+    The target's parent must therefore hold nothing but ``target``.
+    """
+    try:
+        link.symlink_to(target)
+    except OSError:
+        if sys.platform == "win32":
+            junction = link.with_suffix("")
+            _winapi.CreateJunction(str(target.parent), str(junction))
+            return junction / target.name
+        raise
+    return link
 
 
-@_needs_symlinks
+def test_link_reaches_the_target_through_the_link(tmp_path: Path) -> None:
+    """Guards the helper itself: whichever mechanism, the walked path is a link."""
+    (tmp_path / "real").mkdir()
+    target = tmp_path / "real" / "real.md"
+    target.write_text(TEST_LOADER_TEXT_BODY, encoding="utf-8")
+    walked = _link(tmp_path / "alias.md", target)
+    assert walked.parent == tmp_path or walked.parent.name == "alias"
+    assert walked != target
+    assert walked.resolve() == target.resolve()
+    assert walked.read_text(encoding="utf-8") == TEST_LOADER_TEXT_BODY
+
+
 async def test_a_symlink_escaping_the_root_is_skipped(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -332,19 +363,25 @@ async def test_a_symlink_escaping_the_root_is_skipped(
     secret.write_text(TEST_LOADER_CANARY_TEXT, encoding="utf-8")
     root = tmp_path / "root"
     root.mkdir()
-    (root / "link.md").symlink_to(secret)
+    walked = _link(root / "link.md", secret)
     caplog.set_level(logging.WARNING, logger=loader_module.__name__)
     assert await _collect(root) == []
-    events = [getattr(r, "event", None) for r in caplog.records]
-    assert SPEC_LOADER_EVENT_SYMLINK_ESCAPE in events
+    escapes = [
+        getattr(r, "source", None)
+        for r in caplog.records
+        if getattr(r, "event", None) == SPEC_LOADER_EVENT_SYMLINK_ESCAPE
+    ]
+    assert escapes == [walked.relative_to(root).as_posix()]
 
 
-@_needs_symlinks
 async def test_a_symlink_inside_the_root_is_followed(tmp_path: Path) -> None:
-    (tmp_path / "real.md").write_text(TEST_LOADER_TEXT_BODY, encoding="utf-8")
-    (tmp_path / "alias.md").symlink_to(tmp_path / "real.md")
-    sources = [d.source for d in await _collect(tmp_path)]
-    assert sources == ["alias.md", "real.md"]
+    (tmp_path / "real").mkdir()
+    real = tmp_path / "real" / "real.md"
+    real.write_text(TEST_LOADER_TEXT_BODY, encoding="utf-8")
+    walked = _link(tmp_path / "alias.md", real)
+    docs = await _collect(tmp_path)
+    assert [d.source for d in docs] == [walked.relative_to(tmp_path).as_posix(), "real/real.md"]
+    assert all(isinstance(d, RawDoc) and d.text == TEST_LOADER_TEXT_BODY for d in docs)
 
 
 # ── Observability ─────────────────────────────────────────────────────────────
@@ -419,7 +456,6 @@ def test_rawdoc_default_metadata_is_empty_immutable_and_unshared() -> None:
     assert dict(b.metadata) == {}
 
 
-@_needs_symlinks
 async def test_a_symlinked_pdf_escaping_the_root_is_never_uploaded(tmp_path: Path) -> None:
     """The escape risk that matters: an outside file sent to the parser service."""
     outside = tmp_path / "outside"
@@ -427,7 +463,7 @@ async def test_a_symlinked_pdf_escaping_the_root_is_never_uploaded(tmp_path: Pat
     (outside / TEST_DOCLING_PDF_NAME).write_bytes(TEST_DOCLING_PDF_BYTES)
     root = tmp_path / "root"
     root.mkdir()
-    (root / TEST_DOCLING_PDF_NAME).symlink_to(outside / TEST_DOCLING_PDF_NAME)
+    _link(root / TEST_DOCLING_PDF_NAME, outside / TEST_DOCLING_PDF_NAME)
     parser = FakeDocumentParser(default=TEST_LOADER_TABLE_MARKDOWN)
     assert await _collect(root, **_parsed_kwargs(parser)) == []
     assert parser.calls == []
