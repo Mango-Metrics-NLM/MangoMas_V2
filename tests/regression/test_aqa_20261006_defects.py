@@ -4,7 +4,13 @@ Branch ``sdlc/origin-sync-pr83-aqa-20261006``. Every guard here was verified to
 fail against the pre-fix code (mutation proof) and to pass after the fix. No
 live LLM is required; upstreams are ``respx``/``MockTransport`` fakes.
 
-Defect classes covered (``[trunk]`` = present on ``origin/feat/initial-release``):
+Defect classes covered (``[trunk]`` = present on ``origin/feat/initial-release``;
+``[#83]`` = introduced by PR #83 ``feat/docling-ingestion``):
+
+  D1 [#83]   — ``DoclingServeParser._convert`` and ``id_token_expiry`` caught only
+               ``ValueError`` around ``json.loads``, so a pathologically nested body
+               (or JWT payload) leaked a raw ``RecursionError`` instead of the typed
+               ``DocumentParseError`` / ``ConfigError``.
 
   D2 [trunk] — LM Studio LLM + embedding adapters leaked a raw ``JSONDecodeError``
                (and ``RecursionError``) on a 2xx non-JSON / pathologically nested
@@ -15,13 +21,21 @@ Defect classes covered (``[trunk]`` = present on ``origin/feat/initial-release``
                TestClient does ``try: import httpx2 as httpx`` and, without httpx2,
                mypy degrades the parameter to ``Any``; with httpx2 installed
                ``mypy --strict`` fails the gate.
+  D4 [#83]   — ``_fetch_google_id_token`` called google-auth's untyped helpers
+               directly: ``no-untyped-call`` under ``mypy --strict`` whenever the
+               gcp/vertex extra is installed (CI installs only ``.[dev]``, so mypy
+               saw ``Any``). The fix is type-level — its red/green proof is
+               ``mypy --strict`` with the extra; the guard here pins the formerly
+               ``pragma: no cover`` call path behaviourally, without the extra.
 """
 
 from __future__ import annotations
 
 import ast
+import base64
 import logging
 import sys
+import types
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -37,16 +51,25 @@ from mangomas.adapters.embeddings.lmstudio import (
     LMStudioEmbeddingError,
 )
 from mangomas.adapters.llm.lmstudio import LMStudioClient, LMStudioError
+from mangomas.adapters.parsers import DoclingServeParser
+from mangomas.adapters.parsers._auth import _fetch_google_id_token, id_token_expiry
 from mangomas.adapters.storage.sqlite import SQLiteRepository
 from mangomas.agents.chat import ChatAgent
 from mangomas.api.app import create_app
-from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, get_settings
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, ParserSettings, get_settings
 from mangomas.core import AgentContext, Message, Orchestrator
-from mangomas.errors import LLMBadResponse
+from mangomas.errors import ConfigError, DocumentParseError, LLMBadResponse
 from tests.constants import (
     TEST_EMBEDDINGS_MOCK_MODEL,
     TEST_LMSTUDIO_MOCK_BASE_URL,
     TEST_LMSTUDIO_MOCK_MODEL,
+)
+from tests.constants.docling import (
+    SPEC_DOCLING_CONVERT_PATH,
+    TEST_DOCLING_AUDIENCE,
+    TEST_DOCLING_BASE_URL,
+    TEST_DOCLING_PDF_BYTES,
+    TEST_DOCLING_PDF_NAME,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -266,3 +289,93 @@ def test_d3_no_test_passes_mixed_str_bytes_header_dicts() -> None:
 def test_d3_detector_is_mutation_sensitive(source: str, expected: int) -> None:
     """The guard above must flag the pre-fix shape and pass the fixed one."""
     assert len(list(_mixed_str_bytes_header_dicts(ast.parse(source)))) == expected
+
+
+# ── D1 [#83]: docling-serve + JWT payload decode ───────────────────────────────
+
+_DOCLING_CONVERT_URL = f"{TEST_DOCLING_BASE_URL}{SPEC_DOCLING_CONVERT_PATH}"
+
+
+@respx.mock
+async def test_d1_docling_nested_json_body_raises_typed_parse_error() -> None:
+    """Before the fix ``except ValueError`` let the ``RecursionError`` escape."""
+    body = _nested_json()
+    respx.post(_DOCLING_CONVERT_URL).mock(
+        return_value=httpx.Response(200, content=body, headers={"content-type": "application/json"})
+    )
+    # Cap derived from the body so the size guard never pre-empts the decoder.
+    parser = DoclingServeParser(
+        ParserSettings(
+            enabled=True, base_url=TEST_DOCLING_BASE_URL, max_response_bytes=len(body) * 2
+        )
+    )
+    with pytest.raises(DocumentParseError) as info:
+        await parser.parse(filename=TEST_DOCLING_PDF_NAME, content=TEST_DOCLING_PDF_BYTES)
+    assert "not JSON" in str(info.value)
+    assert f"bytes={len(body)}" in info.value.detail
+    assert len(info.value.detail) <= DEFAULT_ERROR_DETAIL_TRUNCATE
+
+
+def _jwt(payload: bytes) -> str:
+    segment = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
+    return f"header.{segment}.signature"
+
+
+def test_d1_id_token_nested_payload_raises_config_error() -> None:
+    """The same decoder hazard in the token-expiry reader maps to ``ConfigError``."""
+    token = _jwt(_nested_json())
+    with pytest.raises(ConfigError) as info:
+        id_token_expiry(token)
+    assert info.value.detail == RecursionError.__name__
+    assert token not in str(info.value)  # a bearer credential is never echoed
+
+
+# ── D4 [#83]: google-auth mint path (no extra required) ────────────────────────
+
+
+class _FakeGoogleRequest:
+    """Stand-in for ``google.auth.transport.requests.Request``."""
+
+
+def _install_fake_google_auth(
+    monkeypatch: pytest.MonkeyPatch, calls: list[tuple[object, str]], token: str
+) -> None:
+    """Shadow the google-auth modules the mint path imports, restored on teardown."""
+
+    def fetch_id_token(request: object, audience: str) -> str:
+        calls.append((request, audience))
+        return token
+
+    mods = {
+        name: types.ModuleType(name)
+        for name in (
+            "google",
+            "google.auth",
+            "google.auth.transport",
+            "google.auth.transport.requests",
+            "google.oauth2",
+            "google.oauth2.id_token",
+        )
+    }
+    mods["google.auth.transport.requests"].Request = _FakeGoogleRequest  # type: ignore[attr-defined]
+    mods["google.oauth2.id_token"].fetch_id_token = fetch_id_token  # type: ignore[attr-defined]
+    for name, module in mods.items():
+        parent, _, child = name.rpartition(".")
+        if parent:
+            setattr(mods[parent], child, module)
+        monkeypatch.setitem(sys.modules, name, module)
+
+
+def test_d4_google_id_token_mint_calls_fetch_with_request_and_audience(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The typed-callable binding must still call ``fetch_id_token(Request(), aud)``."""
+    calls: list[tuple[object, str]] = []
+    token = _jwt(b'{"exp": 1}')
+    _install_fake_google_auth(monkeypatch, calls, token)
+
+    assert _fetch_google_id_token(TEST_DOCLING_AUDIENCE) == token
+    assert len(calls) == 1
+    request, audience = calls[0]
+    assert isinstance(request, _FakeGoogleRequest)
+    assert audience == TEST_DOCLING_AUDIENCE

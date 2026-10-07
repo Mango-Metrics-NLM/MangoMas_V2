@@ -38,7 +38,11 @@ import httpx
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
-from mangomas.adapters._http_errors import translate_httpx_parse_error, translate_parser_status
+from mangomas.adapters._http_errors import (
+    JSON_DECODE_ERRORS,
+    translate_httpx_parse_error,
+    translate_parser_status,
+)
 from mangomas.adapters.parsers._auth import GoogleIdTokenProvider, IdTokenProvider
 from mangomas.adapters.parsers.base import ParsedDocument
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, ParserSettings
@@ -318,7 +322,7 @@ class DoclingServeParser:
             raise translate_httpx_parse_error(exc, label=_LABEL) from None
         try:
             return json.loads(body)
-        except ValueError:  # JSONDecodeError and UnicodeDecodeError
+        except JSON_DECODE_ERRORS:  # JSONDecodeError, UnicodeDecodeError, RecursionError
             raise _malformed("body is not JSON", f"bytes={len(body)}") from None
 
     async def _read_capped(self, response: httpx.Response) -> bytes:
