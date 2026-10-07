@@ -155,3 +155,8 @@ def test_chunk_lines_properties(lines: list[str], size: int, data: st.DataObject
     # Every word survives: the chunks, overlaps removed, cover every word.
     assert set(text.split()) <= {w for chunk in chunks for w in chunk.split()}
     assert sum(len(c.split()) for c in chunks) >= len(text.split())
+
+
+def test_chunk_lines_preserves_crlf_and_lone_cr() -> None:
+    text = "| a |\r\n|---|\r\n| 1 |\rend\n"
+    assert chunk_lines(text, size=50, overlap=0) == [text]

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -73,7 +73,9 @@ class RawDoc:
 
     source: str
     text: str
-    metadata: Mapping[str, Any] = field(default_factory=_empty_metadata)
+    # ``hash=False``: a mapping is unhashable, and RawDoc was hashable before
+    # this field existed — equality still compares it.
+    metadata: Mapping[str, Any] = field(default_factory=_empty_metadata, hash=False)
 
 
 @dataclass(frozen=True)
@@ -133,7 +135,7 @@ async def iter_documents(
     parser: DocumentParser | None = None,
     settings: ParserSettings | None = None,
     parser_name: str | None = None,
-) -> AsyncIterator[RawDoc | ParseFailure]:
+) -> AsyncGenerator[RawDoc | ParseFailure, None]:
     """Yield documents one at a time, parsing non-text files when a parser is given.
 
     Text files (``*.txt`` / ``*.md``) follow :func:`load_documents`' rules
@@ -148,8 +150,11 @@ async def iter_documents(
     * In directory mode a file whose resolved path leaves the ingest root (a
       symlink pointing outside it) is skipped with a ``rag_symlink_escape``
       warning, because parsed files may be uploaded to another service.
-    * A parsed file's single-file ``source`` is its bare name, never an
-      absolute path, since sources are stored in retrievable chunk metadata.
+    Source ids follow :func:`load_documents` for every file: the POSIX path
+    relative to a directory, or the path exactly as given for a single file
+    (a bare name would make two same-named files overwrite each other's
+    vectors). Pass a relative path to keep absolute paths out of chunk
+    metadata.
 
     Parse problems are yielded as :class:`ParseFailure` — an oversize file (not
     read, parser not called), a :class:`~mangomas.errors.DocumentParseError`,
@@ -167,16 +172,20 @@ async def iter_documents(
     if await asyncio.to_thread(root.is_dir):
         candidates = await asyncio.to_thread(_directory_candidates, root, parsed_suffixes)
     else:
-        candidates = [(root, root.as_posix(), root.name)]
-    for file_path, text_source, parsed_source in candidates:
-        if file_path.suffix in _TEXT_SUFFIXES:
-            doc = await asyncio.to_thread(_read_text_document, file_path, text_source)
-            if doc is not None:
-                yield doc
-        elif file_path.suffix.lower() in parsed_suffixes:
+        candidates = [(root, root.as_posix())]
+    single_file = len(candidates) == 1 and candidates[0][0] == root
+    for file_path, source in candidates:
+        if file_path.suffix not in _TEXT_SUFFIXES and file_path.suffix.lower() in parsed_suffixes:
             # ``parsed_suffixes`` is non-empty only when both are present.
             assert parser is not None and settings is not None  # noqa: S101
-            yield await _parse_document(file_path, parsed_source, parser, settings, parser_name)
+            yield await _parse_document(file_path, source, parser, settings, parser_name)
+        elif file_path.suffix in _TEXT_SUFFIXES or single_file:
+            # A single named file is read as text whatever its suffix, exactly
+            # as ``load_documents`` does (``rag ingest notes.rst`` keeps working
+            # when a parser is enabled).
+            doc = await asyncio.to_thread(_read_text_document, file_path, source)
+            if doc is not None:
+                yield doc
 
 
 def _parsed_suffixes(
@@ -187,12 +196,10 @@ def _parsed_suffixes(
     return frozenset(settings.allowed_suffixes)
 
 
-def _directory_candidates(
-    root: Path, parsed_suffixes: frozenset[str]
-) -> list[tuple[Path, str, str]]:
-    """Return ``(path, source, source)`` for every ingestable file, in ``Path`` order."""
+def _directory_candidates(root: Path, parsed_suffixes: frozenset[str]) -> list[tuple[Path, str]]:
+    """Return ``(path, source)`` for every ingestable file, in ``Path`` order."""
     resolved_root = root.resolve()
-    found: list[tuple[Path, str, str]] = []
+    found: list[tuple[Path, str]] = []
     for p in root.rglob("*"):
         if not p.is_file():
             continue
@@ -205,7 +212,7 @@ def _directory_candidates(
                 extra={"event": "rag_symlink_escape", "source": source},
             )
             continue
-        found.append((p, source, source))
+        found.append((p, source))
     # Sort by ``Path`` exactly as :func:`load_documents` does: paths compare part
     # by part, which differs from sorting the POSIX strings ("_/_.txt" sorts
     # before "_.txt" here, after it as a string). Parity depends on it.

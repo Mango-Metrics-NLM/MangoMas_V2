@@ -13,8 +13,9 @@ from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
-from mangomas.errors import DocumentParseError
+from mangomas.errors import ConfigError, DocumentParseError
 from tests._seam_guards import forbid_real_orchestrator
+from tests.constants import PARSER_ON_ERROR_ENV
 from tests.constants.docling import TEST_DOCLING_PDF_BYTES
 from tests.fakes import FakeDocumentParser, FakeEmbeddingClient, FakeLLM, FakeVectorStore
 
@@ -203,3 +204,30 @@ def test_rag_ingest_reports_skipped_parse_failures(
     assert "ingested docs=1" in result.stdout
     assert result.stdout.rstrip().endswith("skipped=1")
     assert parser.calls == [("a.pdf", len(TEST_DOCLING_PDF_BYTES))]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [DocumentParseError("parser down"), ConfigError("docling-serve rejected credentials")],
+    ids=["on-error-fail", "config-error"],
+)
+def test_rag_ingest_closes_the_orchestrator_when_parsing_fails(
+    monkeypatch: pytest.MonkeyPatch, runner: CliRunner, tmp_path: Path, failure: Exception
+) -> None:
+    """The parser is closed by the orchestrator's close hooks, so the CLI must
+    reach ``_close_orchestrator`` on the error path too."""
+    closed: list[Orchestrator] = []
+
+    async def _close(orch: Orchestrator) -> None:
+        closed.append(orch)
+
+    monkeypatch.setattr(cli_runtime, "_close_orchestrator", _close)
+    monkeypatch.setenv(PARSER_ON_ERROR_ENV, "fail")
+    orch = _parser_orch(FakeDocumentParser(default=failure))
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orch)
+    (tmp_path / "a.pdf").write_bytes(TEST_DOCLING_PDF_BYTES)
+
+    result = runner.invoke(cli_main.app, ["rag", "ingest", str(tmp_path)])
+
+    assert result.exit_code != 0
+    assert closed == [orch]

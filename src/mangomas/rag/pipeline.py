@@ -367,6 +367,15 @@ class IngestionPipeline:
         documents = chunks = batches = deleted = skipped = 0
         with trace.get_tracer(__name__).start_as_current_span("rag.ingest") as span:
             span.set_attribute("rag.path", path)
+            logger.info(
+                "Ingestion started",
+                extra={
+                    "event": "rag_ingest_started",
+                    "path": path,
+                    "parser": self._parser_name,
+                    "on_error": settings.on_error,
+                },
+            )
             async for item in iter_documents(
                 path, parser=self._parser, settings=settings, parser_name=self._parser_name
             ):
@@ -386,8 +395,19 @@ class IngestionPipeline:
                 documents += 1
                 texts, extra = self._chunk(item)
                 prepared = await self._embed_document(item.source, texts, extra) if texts else []
-                if await self._replace_source(item.source, prepared) > 0:
+                removed = await self._replace_source(item.source, prepared)
+                if removed > 0:
                     deleted += 1
+                if not texts:
+                    # Same "my file did not get indexed" signal as the text path.
+                    logger.warning(
+                        "Document yielded no chunks (empty or whitespace-only content); skipped",
+                        extra={
+                            "event": "rag_document_skipped",
+                            "source": item.source,
+                            "removed": removed,
+                        },
+                    )
                 chunks += len(texts)
                 batches += len(prepared)
             if documents == 0 and skipped == 0:
@@ -407,19 +427,19 @@ class IngestionPipeline:
             span.set_attribute("rag.batches", batches)
             span.set_attribute("rag.deleted_sources", deleted)
             span.set_attribute("rag.skipped_documents", skipped)
-        logger.info(
-            "Ingestion finished",
-            extra={
-                "event": "rag_ingest_finished",
-                "path": path,
-                "documents": documents,
-                "chunks": chunks,
-                "batches": batches,
-                "deleted_sources": deleted,
-                "skipped_documents": skipped,
-            },
-        )
-        return report
+            logger.info(
+                "Ingestion finished",
+                extra={
+                    "event": "rag_ingest_finished",
+                    "path": path,
+                    "documents": documents,
+                    "chunks": chunks,
+                    "batches": batches,
+                    "deleted_sources": deleted,
+                    "skipped_documents": skipped,
+                },
+            )
+            return report
 
     def _chunk(self, doc: RawDoc) -> tuple[list[str], dict[str, Any]]:
         """Chunk one document; parser-derived documents keep their line structure."""

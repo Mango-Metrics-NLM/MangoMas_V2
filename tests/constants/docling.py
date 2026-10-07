@@ -120,3 +120,10 @@ SPEC_LOADER_STATUS_FAILED: Final[str] = "failed"
 TEST_LOADER_TABLE_MARKDOWN: Final[str] = "| col a | col b |\n|---|---|\n| 1 | 2 |\n"
 TEST_LOADER_CANARY_TEXT: Final[str] = "CANARY-document-body-must-not-be-logged"
 TEST_LOADER_TEXT_BODY: Final[str] = "plain text body"
+
+# Pipeline event names (spec-0035 R11) — pinned as literals.
+SPEC_PIPELINE_EVENT_EMPTY: Final[str] = "rag_ingest_empty"
+SPEC_PIPELINE_EVENT_SKIPPED_PARSE: Final[str] = "rag_document_skipped_parse_failure"
+SPEC_PIPELINE_EVENT_OVER_BUDGET: Final[str] = "rag_chunk_over_budget"
+SPEC_PIPELINE_EVENT_STARTED: Final[str] = "rag_ingest_started"
+TEST_EMBEDDING_MODEL: Final[str] = "embed-model-under-test"

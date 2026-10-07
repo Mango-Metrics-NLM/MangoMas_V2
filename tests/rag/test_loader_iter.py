@@ -196,13 +196,44 @@ async def test_a_partial_parse_is_marked_partial(tmp_path: Path) -> None:
     assert doc.metadata[SPEC_LOADER_META_PARSE_STATUS] == SPEC_LOADER_STATUS_PARTIAL
 
 
-async def test_a_single_parsed_file_source_is_the_bare_name(tmp_path: Path) -> None:
+async def test_a_single_parsed_file_source_is_the_path_as_given(tmp_path: Path) -> None:
+    """Same rule as text files: a bare name would let two same-named files collide."""
     f = tmp_path / TEST_DOCLING_PDF_NAME
     f.write_bytes(TEST_DOCLING_PDF_BYTES)
     parser = FakeDocumentParser(default=TEST_LOADER_TABLE_MARKDOWN)
     (doc,) = await _collect(f, **_parsed_kwargs(parser))
-    assert doc.source == TEST_DOCLING_PDF_NAME
-    assert not Path(doc.source).is_absolute()
+    assert doc.source == f.as_posix()
+
+
+async def test_same_named_single_files_get_distinct_sources(tmp_path: Path) -> None:
+    """Regression (PR #83 review): bare-name sources made b/report.pdf purge a/report.pdf."""
+    sources = []
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        f = tmp_path / folder / TEST_DOCLING_PDF_NAME
+        f.write_bytes(TEST_DOCLING_PDF_BYTES)
+        parser = FakeDocumentParser(default=TEST_LOADER_TABLE_MARKDOWN)
+        (doc,) = await _collect(f, **_parsed_kwargs(parser))
+        sources.append(doc.source)
+    assert sources[0] != sources[1]
+
+
+@pytest.mark.parametrize("name", ["notes.rst", "README.MD", "data.csv"])
+async def test_a_single_unlisted_file_is_read_as_text_with_a_parser(
+    tmp_path: Path, name: str
+) -> None:
+    """Regression (PR #83 review): enabling the parser stopped `rag ingest notes.rst`."""
+    f = tmp_path / name
+    f.write_text(TEST_LOADER_TEXT_BODY, encoding="utf-8")
+    parser = FakeDocumentParser()
+    with_parser = await _collect(f, **_parsed_kwargs(parser))
+    assert with_parser == await load_documents(str(f))
+    assert parser.calls == []
+
+
+def test_rawdoc_stays_hashable() -> None:
+    """Regression (PR #83 review): the mapping field made hash(RawDoc) raise."""
+    assert hash(RawDoc(source="a", text="x")) == hash(RawDoc(source="a", text="x"))
 
 
 async def test_nested_parsed_sources_are_relative_posix_paths(tmp_path: Path) -> None:
@@ -374,3 +405,30 @@ def test_rawdoc_default_metadata_is_empty_immutable_and_unshared() -> None:
         a.metadata["k"] = "v"  # type: ignore[index]
     assert a == RawDoc(source="a", text="x")
     assert dict(b.metadata) == {}
+
+
+@_needs_symlinks
+async def test_a_symlinked_pdf_escaping_the_root_is_never_uploaded(tmp_path: Path) -> None:
+    """The escape risk that matters: an outside file sent to the parser service."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / TEST_DOCLING_PDF_NAME).write_bytes(TEST_DOCLING_PDF_BYTES)
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / TEST_DOCLING_PDF_NAME).symlink_to(outside / TEST_DOCLING_PDF_NAME)
+    parser = FakeDocumentParser(default=TEST_LOADER_TABLE_MARKDOWN)
+    assert await _collect(root, **_parsed_kwargs(parser)) == []
+    assert parser.calls == []
+
+
+async def test_only_one_parse_is_in_flight(tmp_path: Path) -> None:
+    """Backs the one-document-in-memory claim: the next file is not read until
+    the consumer asks for it."""
+    for name in ("a.pdf", "b.pdf"):
+        (tmp_path / name).write_bytes(TEST_DOCLING_PDF_BYTES)
+    parser = FakeDocumentParser(default=TEST_LOADER_TABLE_MARKDOWN)
+    agen = iter_documents(str(tmp_path), **_parsed_kwargs(parser))  # type: ignore[arg-type]
+    first = await agen.__anext__()
+    assert first.source == "a.pdf"
+    assert [name for name, _ in parser.calls] == ["a.pdf"]
+    await agen.aclose()

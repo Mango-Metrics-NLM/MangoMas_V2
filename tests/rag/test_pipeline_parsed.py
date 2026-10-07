@@ -33,8 +33,13 @@ from tests.constants.docling import (
     SPEC_LOADER_META_PARSE_STATUS,
     SPEC_LOADER_META_PARSER,
     SPEC_LOADER_STATUS_PARTIAL,
+    SPEC_PIPELINE_EVENT_EMPTY,
+    SPEC_PIPELINE_EVENT_OVER_BUDGET,
+    SPEC_PIPELINE_EVENT_SKIPPED_PARSE,
+    SPEC_PIPELINE_EVENT_STARTED,
     TEST_DOCLING_MAX_FILE_BYTES,
     TEST_DOCLING_PDF_BYTES,
+    TEST_EMBEDDING_MODEL,
     TEST_LOADER_TABLE_MARKDOWN,
     TEST_LOADER_TEXT_BODY,
 )
@@ -42,7 +47,6 @@ from tests.fakes import FakeDocumentParser, FakeEmbeddingClient, FakeVectorStore
 
 _RAG = RagSettings(chunk_words=3, chunk_overlap=0)
 _PARSED_WORDS = 50
-_EMBED_MODEL = "embed-model-under-test"
 _PRESEEDED = ["old passage one", "old passage two"]
 
 
@@ -60,7 +64,7 @@ def _pipeline(
     store: FakeVectorStore,
     parser: FakeDocumentParser,
     *,
-    embedding_model: str | None = _EMBED_MODEL,
+    embedding_model: str | None = TEST_EMBEDDING_MODEL,
     **settings_overrides: object,
 ) -> IngestionPipeline:
     return IngestionPipeline(
@@ -127,17 +131,45 @@ async def test_an_empty_markdown_file_still_purges_like_before(tmp_path: Path) -
     assert _records_for(store, "a.md") == []
 
 
-async def test_on_error_fail_raises_after_persisting_earlier_documents(tmp_path: Path) -> None:
-    (tmp_path / "a.pdf").write_bytes(TEST_DOCLING_PDF_BYTES)
-    (tmp_path / "b.pdf").write_bytes(TEST_DOCLING_PDF_BYTES)
+async def test_on_error_fail_keeps_the_failing_source_and_stops(tmp_path: Path) -> None:
+    """Earlier documents are replaced, the failing one keeps its vectors, later ones
+    are never touched."""
+    for name in ("a.pdf", "b.pdf", "c.pdf"):
+        (tmp_path / name).write_bytes(TEST_DOCLING_PDF_BYTES)
     store = FakeVectorStore()
+    await _preseed(store, "b.pdf")
+    await _preseed(store, "c.pdf")
     parser = FakeDocumentParser(
         outcomes={"b.pdf": DocumentParseError("bad file")}, default=TEST_LOADER_TABLE_MARKDOWN
     )
     with pytest.raises(DocumentParseError):
         await _pipeline(store, parser, on_error="fail").ingest(str(tmp_path))
-    assert _records_for(store, "a.pdf")
-    assert _records_for(store, "b.pdf") == []
+    assert _records_for(store, "a.pdf") == [TEST_LOADER_TABLE_MARKDOWN]
+    assert _records_for(store, "b.pdf") == sorted(_PRESEEDED)
+    assert _records_for(store, "c.pdf") == sorted(_PRESEEDED)
+    assert [name for name, _ in parser.calls] == ["a.pdf", "b.pdf"]
+
+
+async def test_a_zero_byte_pdf_that_parses_to_nothing_purges(tmp_path: Path) -> None:
+    """Pinned deliberately: an empty file is a genuinely empty document, like an
+    empty .md, so its old vectors go."""
+    (tmp_path / "a.pdf").write_bytes(b"")
+    store = FakeVectorStore()
+    await _preseed(store, "a.pdf")
+    report = await _pipeline(store, FakeDocumentParser(default="")).ingest(str(tmp_path))
+    assert report.deleted_sources == 1
+    assert _records_for(store, "a.pdf") == []
+
+
+async def test_the_parser_path_logs_start_and_finish_inside_the_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "a.pdf").write_bytes(TEST_DOCLING_PDF_BYTES)
+    caplog.set_level(logging.INFO, logger=pipeline_module.__name__)
+    await _pipeline(FakeVectorStore(), FakeDocumentParser(default="x")).ingest(str(tmp_path))
+    events = [getattr(r, "event", None) for r in caplog.records]
+    assert events[0] == SPEC_PIPELINE_EVENT_STARTED
+    assert "rag_ingest_finished" in events
 
 
 async def test_a_config_error_fails_the_run(tmp_path: Path) -> None:
@@ -156,8 +188,8 @@ async def test_all_failures_report_skipped_not_empty(
     report = await _pipeline(FakeVectorStore(), parser).ingest(str(tmp_path))
     assert report.skipped_documents == 1
     events = [getattr(r, "event", None) for r in caplog.records]
-    assert "rag_ingest_empty" not in events
-    assert "rag_document_skipped_parse_failure" in events
+    assert SPEC_PIPELINE_EVENT_EMPTY not in events
+    assert SPEC_PIPELINE_EVENT_SKIPPED_PARSE in events
 
 
 async def test_a_truly_empty_directory_still_warns_empty(
@@ -165,7 +197,7 @@ async def test_a_truly_empty_directory_still_warns_empty(
 ) -> None:
     caplog.set_level(logging.WARNING, logger=pipeline_module.__name__)
     await _pipeline(FakeVectorStore(), FakeDocumentParser()).ingest(str(tmp_path))
-    assert "rag_ingest_empty" in [getattr(r, "event", None) for r in caplog.records]
+    assert SPEC_PIPELINE_EVENT_EMPTY in [getattr(r, "event", None) for r in caplog.records]
 
 
 # ── Chunking and metadata ─────────────────────────────────────────────────────
@@ -196,7 +228,7 @@ async def test_parsed_chunks_carry_audit_metadata(tmp_path: Path) -> None:
         SPEC_LOADER_META_PARSE_STATUS: SPEC_LOADER_STATUS_PARTIAL,
         META_CHUNKER: CHUNKER_LINES,
         META_CHUNK_WORDS: _PARSED_WORDS,
-        META_EMBEDDING_MODEL: _EMBED_MODEL,
+        META_EMBEDDING_MODEL: TEST_EMBEDDING_MODEL,
         "source": "t.pdf",
         "index": 0,
     }
@@ -268,7 +300,7 @@ async def test_over_budget_chunks_are_reported(
     parser = FakeDocumentParser(default=TEST_LOADER_TABLE_MARKDOWN)
     await _pipeline(FakeVectorStore(), parser, embed_max_tokens=budget).ingest(str(tmp_path))
     events = [getattr(r, "event", None) for r in caplog.records]
-    assert ("rag_chunk_over_budget" in events) is warns
+    assert (SPEC_PIPELINE_EVENT_OVER_BUDGET in events) is warns
 
 
 # ── Construction ──────────────────────────────────────────────────────────────
