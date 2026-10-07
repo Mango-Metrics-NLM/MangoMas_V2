@@ -147,6 +147,9 @@ def test_d2_json_decode_errors_cover_every_decoder_failure() -> None:
 async def test_d2_llm_complete_non_json_body_raises_typed_error(
     body: bytes, expected_error: str, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """D2 (Trunk Regression): LM Studio LLM complete() raises typed LMStudioError (502)
+    on non-JSON/nested bodies.
+    """
     respx.post(_CHAT_COMPLETIONS_URL).mock(
         return_value=httpx.Response(200, content=body, headers={"content-type": _HTML_CONTENT_TYPE})
     )
@@ -175,6 +178,24 @@ async def test_d2_llm_valid_json_path_is_unchanged() -> None:
     assert await _llm().complete(_MSGS) == "ok"
 
 
+@respx.mock
+async def test_c1_decode_error_is_not_chained_onto_typed_error() -> None:
+    """C1 (critic remediation): ``_json`` raises ``from None``.
+
+    ``JSONDecodeError.doc`` holds the full upstream body, so chaining it as
+    ``__cause__`` would print the body in any unhandled traceback.
+    """
+    respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(
+            200, content=_HTML_BODY, headers={"content-type": _HTML_CONTENT_TYPE}
+        )
+    )
+    with pytest.raises(LMStudioError) as info:
+        await _llm().complete(_MSGS)
+    assert info.value.__cause__ is None
+    assert info.value.__suppress_context__ is True
+
+
 def test_d2_sse_chunk_with_pathological_nesting_is_skipped_not_raised() -> None:
     """A garbled SSE chunk keeps the existing skip-unparseable policy."""
     line = "data: " + _nested_json().decode()
@@ -187,6 +208,9 @@ def test_d2_sse_chunk_with_pathological_nesting_is_skipped_not_raised() -> None:
 @pytest.mark.parametrize("body", [_HTML_BODY, _nested_json()], ids=["html", "nested"])
 @respx.mock
 async def test_d2_embeddings_non_json_body_raises_typed_error(body: bytes) -> None:
+    """D2 (Trunk Regression): LM Studio embedding adapter raises typed
+    LMStudioEmbeddingError (502) on non-JSON/nested bodies.
+    """
     respx.post(_EMBEDDINGS_URL).mock(
         return_value=httpx.Response(200, content=body, headers={"content-type": _HTML_CONTENT_TYPE})
     )
