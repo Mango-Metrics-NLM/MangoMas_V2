@@ -8,57 +8,70 @@ Proposed
 
 The repository has one trunk, `feat/initial-release`, pinned by name in
 `ci.yml`, the `Makefile` and `tests/deploy/test_ci_make_parity.py`. `main`
-exists but diverged (11 commits it alone carries, all superseded or ported per
-ADR-0021 / ADR-0023). Deploys are single-track: one Cloud Run service, released
-on `release: published`. We want a production branch plus integration and QA
-stages, each mapped to an environment.
+exists but diverged: its 11 own commits are superseded (workflow runner →
+ADR-0023, hook hardening → ADR-0021) or deliberately not ported
+(`harness/coverage.py`, `harness_stop_gate.py` — NEXT_STEPS.md, the
+reconciliation entry). Deploys are single-track: one Cloud Run service on
+`release: published`, and a `workflow_dispatch` that can deploy any branch to
+production. We want a production branch plus integration and QA stages.
 
 ## Decision
 
 Three long-lived branches, promoted by pull request:
 
-| Branch | Role | Takes PRs from | Environment |
+| Branch | Role | Takes PRs from | Deploys to |
 |---|---|---|---|
-| `dev` (default) | Integration trunk | feature / dependabot branches | `mangomas-dev` |
+| `dev` (default) | Integration trunk | feature / dependabot | `mangomas-dev` |
 | `qa` | Release candidate | `dev` | `mangomas-qa` |
-| `main` | Production record | `qa`, `hotfix/*` | `mangomas` (tag `v*` on `main`) |
+| `main` | Production record | `qa`, `hotfix/*` | `mangomas`, on tag `v*` reachable from `main` |
 
-- Promotion PRs (`dev`→`qa`, `qa`→`main`) use **merge commits**, never squash,
-  so every `BREAKING-CHANGE` trailer stays inside the `base..head` range that
-  `scripts/check_protected_paths.py` walks.
-- Hotfixes branch from `main`, merge into `main`, then back-merge
-  `main`→`qa`→`dev`; the same back-merge follows every release.
-- CI's protected-path gate judges a PR against the branch it targets
-  (`github.base_ref`), and a push against the default branch, so neither a
-  promotion nor the trunk rename needs a hard-coded name.
-- `feat/initial-release` is renamed to `dev`; the legacy `main` is preserved as
-  tag `archive/main-legacy` and `main` restarts from `dev`.
+1. **Merge commits for promotion.** `dev`→`qa` and `qa`→`main` never squash:
+   the protected-path gate walks `git log base..head` for `BREAKING-CHANGE`
+   trailers, and a squash keeps only the PR body. Squash into `dev` is allowed
+   when the trailer is in the squash message.
+2. **Back-merge after every release or hotfix** (`main`→`qa`→`dev`). Requiring
+   "up to date before merging" on `main` makes a skipped back-merge block the
+   next promotion instead of drifting silently.
+3. **Gate base follows the PR.** CI resolves the protected-path base as
+   `github.base_ref`, else the default branch (push events). The PR run is the
+   authoritative one; a push run on a `hotfix/*` branch compares to `dev` and
+   is advisory.
+4. **Rename, then reset.** `feat/initial-release` is renamed to `dev` after the
+   rename-proof CI lands; legacy `main` is kept as tag `archive/main-legacy`
+   and `main` restarts from `dev`.
+5. **Production deploy is gated by a GitHub Environment** (`prod`: tag rule
+   `v*`, required reviewer) with its own deploy identity, closing the
+   any-branch `workflow_dispatch` path. `dev`/`qa` get their own Environments
+   and service accounts scoped to their own service.
 
 ## Consequences
 
 ### Positive
 
-- Every stage gets CI on PR; production changes are reviewed twice.
-- The gate's base follows the PR, so a `qa`→`main` promotion is judged by
-  `main`'s policy (ADR-0030's base-ref rule, unchanged).
+- Every stage gets CI on PR; production changes pass two reviewed promotions.
+- A `qa`→`main` promotion is judged by `main`'s governance policy (ADR-0030's
+  base-ref rule, unchanged).
 
 ### Negative / Trade-offs
 
-- Merge-commit promotion leaves `main` ahead of `qa`/`dev` by merge commits
-  until the back-merge runs.
-- Per-environment deploys need GCP provisioning (deploy SA per environment,
-  scoped IAM, separate secrets and databases) before `deploy.yml` changes.
+- Each release costs two back-merge PRs.
+- Scheduled workflows run on the default branch only, so `nightly.yml` scans
+  `dev`, not the code in production, until it checks out `main` as well.
+- Per-environment deploys need GCP provisioning before `deploy.yml` changes.
 
 ### Neutral
 
-- Squash merges into `dev` stay allowed if the trailer is in the squash body.
+- Rulesets must allow merge commits on `qa` and `main` and must not require
+  linear history.
 
 ## Alternatives Considered
 
 - **Fast-forward promotion** — rejected: no PR review at the promotion step.
-- **Keep `feat/initial-release` as trunk** — rejected: the name carries no role.
+- **Tag-only environments from one trunk** — rejected: the team asked for
+  inspectable `qa` and `main` branch state.
 
 ## References
 
-- Code: `.github/workflows/ci.yml` (`protected-paths` job), `Makefile` `BASE_REF`
+- Code: `.github/workflows/ci.yml` (`protected-paths` job), `Makefile` `BASE_REF`,
+  `.github/workflows/deploy.yml`
 - Related ADRs: ADR-0021, ADR-0023, ADR-0030

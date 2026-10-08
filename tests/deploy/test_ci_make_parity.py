@@ -128,8 +128,8 @@ def test_protected_paths_job_delegates_to_make() -> None:
     job = _ci_jobs()["protected-paths"]
     run_steps = [step["run"] for step in job["steps"] if "run" in step]
     assert run_steps == [
-        "git fetch origin ${{ env.BASE_BRANCH }}",
-        "make protected-paths BASE_REF=origin/${{ env.BASE_BRANCH }}",
+        'git fetch origin "$BASE_BRANCH"',
+        'make protected-paths BASE_REF="origin/$BASE_BRANCH"',
     ]
     assert not any(step.get("run", "").startswith("pip install") for step in job["steps"])
     # BASE_BRANCH is a job-level env var, not repeated per-step — the two

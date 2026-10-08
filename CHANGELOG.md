@@ -16,7 +16,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   job's `BASE_BRANCH` resolves to the PR's target branch, else the default
   branch, instead of a hard-coded trunk name, so the gate survives the
   `feat/initial-release` → `dev` rename and judges promotions against their
-  own base. `tests/deploy/test_ci_make_parity.py` pins both.
+  own base. Its steps read the value as a quoted shell variable rather than a
+  `${{ }}` expression, so no branch name is spliced into script text.
+  `tests/deploy/test_ci_make_parity.py` pins all three.
 
 ### Fixed — SDLC defect triage AQA (2026-10-01)
 
