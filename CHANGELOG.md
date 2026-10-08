@@ -9,6 +9,32 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — per-environment Cloud Run deploy (ADR-0036)
+
+- `deploy/environments.yaml`: the environment registry — `dev` (push to `dev`
+  → `mangomas-dev`), `qa` (push to `qa` → `mangomas-qa`) and `prod` (release
+  tag `v*` reachable from `main` → `mangomas`), each an overlay on the
+  unchanged `deploy/service.yaml`.
+- `scripts/deploy_environment.py` (`plan` / `render`) and the
+  `install-deploy-tools` / `deploy-plan` / `deploy-render` Make targets. The
+  closed overlay schema refuses unknown keys and plain values aimed at secrets.
+  A manual dispatch cannot widen what a ref may deploy. Logs every step at
+  `DEBUG` (or under `RUNNER_DEBUG=1`) and annotates failures on the run.
+- `deploy.yml`: a `plan` job, a per-environment GitHub `environment:` and
+  `concurrency` group, and content-addressed (git tree hash) image tags so a
+  promotion reuses QA's image. Branch-push deploys stay off until the
+  `MULTI_ENV_DEPLOY_ENABLED` repository variable is set.
+- `MANGOMAS_ENV` accepts `qa`.
+- `tests/deploy/test_deploy_environments.py` covers registry↔workflow drift,
+  the overlay allow-list, secret isolation and the production render.
+  `tests/test_deploy_environment.py` covers the script at 100 %.
+  `tests/deploy/_makefile.py` shares the Makefile reader.
+
+**Backwards compatibility:** a published release still deploys `mangomas` from
+`deploy/service.yaml`. The rendered production manifest differs from it only
+in the image, and a test pins that. The image tag changes from the release
+name to the tree hash, and the release name is added as an alias tag.
+
 ### Changed — environment branching, step 1 (ADR-0036)
 
 - `ci.yml`'s `pull_request` trigger now covers `dev`, `qa` and `main` as well

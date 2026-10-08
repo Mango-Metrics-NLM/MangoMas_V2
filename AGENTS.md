@@ -168,7 +168,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MANGOMAS_ENV` | `local` | Deployment environment label (`local`/`dev`/`prod`) |
+| `MANGOMAS_ENV` | `local` | Deployment environment label (`local`/`dev`/`qa`/`prod`); set per Cloud Run environment by `deploy/environments.yaml` (ADR-0036) |
 | `MANGOMAS_LOG_LEVEL` | `INFO` | Root log level |
 | `MANGOMAS_LOG__FORMAT` | `text` | Log line format (`json` \| `text`) — note `.claude/settings.json` exports `json` for Claude Code sessions; that is a session override, not the code default |
 | `MANGOMAS_LOG__BODY_TRUNCATE` | `512` | Max chars of request/response body in access logs |

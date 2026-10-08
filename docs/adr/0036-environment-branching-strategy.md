@@ -43,6 +43,10 @@ Three long-lived branches, promoted by pull request:
    `v*`, required reviewer) with its own deploy identity, closing the
    any-branch `workflow_dispatch` path. `dev`/`qa` get their own Environments
    and service accounts scoped to their own service.
+6. **One manifest, overlays in a registry.** `deploy/environments.yaml` maps
+   refs to environments and holds each environment's overlay on the unchanged
+   `deploy/service.yaml`; `scripts/deploy_environment.py` is its only reader.
+   Images are tagged by git tree hash, so promotion reuses the tested image.
 
 ## Consequences
 

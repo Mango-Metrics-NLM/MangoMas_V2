@@ -19,7 +19,7 @@ import yaml
 from pydantic import BaseModel
 
 from mangomas.config import Settings
-from tests.deploy import _workflows
+from tests.deploy import _makefile, _workflows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEPLOY = _REPO_ROOT / "deploy"
@@ -31,9 +31,14 @@ _HEALTHZ_PATH = "/healthz"
 _READYZ_PATH = "/readyz"
 
 # ── spec-0024: the workflow must consume the manifest, not just ship it ───────
-# The repo-relative path the workflow's run: bodies must reference; asserted
-# equal to the real file below so a rename on either side breaks the tie.
+# Since ADR-0036 the workflow renders the manifest through `make deploy-render`,
+# which reads the base manifest path from the environment registry. The tie is
+# therefore a chain: a run: body invokes the render target, the Makefile points
+# that target at the registry, and the registry's base_manifest is the very
+# file this suite validates. Breaking any link fails below.
 _MANIFEST_WORKFLOW_REF = "deploy/service.yaml"
+_RENDER_TARGET_COMMAND = "make deploy-render"
+_REGISTRY = _DEPLOY / "environments.yaml"
 # The full-manifest application command; its image-only predecessor is banned.
 _MANIFEST_APPLY_COMMAND = "gcloud run services replace"
 _IMAGE_ONLY_DEPLOY_COMMAND = "gcloud run deploy"
@@ -104,21 +109,24 @@ def test_deploy_workflow_is_valid_yaml() -> None:
 def test_deploy_workflow_applies_the_service_manifest() -> None:
     """spec-0024: the manifest must be applied, not merely documented.
 
-    Both directions of the tie: some ``run:`` body names the manifest path and
-    applies it with the full-manifest command, AND the referenced path is the
-    very file the rest of this suite validates — so renaming either the file
-    or the workflow reference fails here rather than at deploy time.
+    Every link of the chain from the workflow to ``deploy/service.yaml`` is
+    asserted, so renaming the file, the registry, the Make variable or the
+    target fails here rather than at deploy time.
     """
     bodies = _deploy_run_bodies()
     assert bodies, "deploy.yml has no run: steps — has the workflow been emptied?"
-    referencing = [b for b in bodies if _MANIFEST_WORKFLOW_REF in b]
-    assert referencing, f"no deploy.yml run: body references {_MANIFEST_WORKFLOW_REF!r}"
+    assert any(_RENDER_TARGET_COMMAND in b for b in bodies), (
+        f"no deploy.yml run: body calls {_RENDER_TARGET_COMMAND!r}"
+    )
     assert any(_MANIFEST_APPLY_COMMAND in b for b in bodies), (
         f"deploy.yml never runs {_MANIFEST_APPLY_COMMAND!r}; the manifest's env vars, "
         "secretKeyRefs, probes, limits and autoscaling bounds would not reach Cloud Run"
     )
-    # The tie's other direction: the path the workflow consumes is the real
-    # manifest, not a lookalike.
+    registry_ref = _REGISTRY.relative_to(_REPO_ROOT).as_posix()
+    assert _makefile.variable("DEPLOY_REGISTRY") == registry_ref
+    assert "$(DEPLOY_REGISTRY)" in _makefile.target_body("deploy-render")
+    registry = yaml.safe_load(_REGISTRY.read_text(encoding="utf-8"))
+    assert registry["defaults"]["base_manifest"] == _MANIFEST_WORKFLOW_REF
     assert _SERVICE_YAML.relative_to(_REPO_ROOT).as_posix() == _MANIFEST_WORKFLOW_REF
     assert _SERVICE_YAML.is_file()
 
@@ -159,7 +167,9 @@ def test_deploy_job_is_gated_by_the_verify_job() -> None:
     Makefile.
     """
     jobs = _workflows.jobs(_DEPLOY_WORKFLOW.name)
-    assert jobs["deploy"]["needs"] == "verify"
+    # `plan` joined in ADR-0036 (the deploy job reads its outputs); `verify`
+    # must still gate every deploy.
+    assert set(jobs["deploy"]["needs"]) == {"plan", "verify"}
     verify_commands = [
         step["run"]
         for step in jobs["verify"]["steps"]

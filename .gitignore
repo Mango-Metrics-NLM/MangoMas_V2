@@ -87,3 +87,6 @@ product-sdlc-antigravity/
 # Dev scratch (one-off scripts, not shipped)
 scratch/
 TESTING_WORKFLOW.md
+
+# Local output of `make deploy-render` (deploy/README.md)
+rendered-service.yaml

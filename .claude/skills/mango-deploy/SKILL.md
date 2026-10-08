@@ -47,6 +47,8 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
 | No hard-coded values | Any tunable this seam grows is a `DEFAULT_*` constant surfaced via `TelemetrySettings` / `HarnessSettings`. That surface is deliberately small today: `TelemetrySettings` carries only `exporter` and `metrics_enabled`, since Cloud Trace takes project and credentials from ADC. |
 | Gated tests | Real Cloud Trace export is unit-tested with the SDK mocked and gated by `RUN_GCP_TRACE=1`, mirroring `RUN_VERTEX` / `RUN_GCP_SECRETS`. End-to-end cloud deploy is **not** claimed in this repo. |
 | No cloud provisioning | This repo creates no GCP resources (ADR-0001); `deploy/` provides artifacts + contract only. |
+| One base manifest, per-environment overlays | `deploy/service.yaml` is the base (= production). Environment differences live only in `deploy/environments.yaml` overlays (closed schema: `env`, `secrets`, `annotations`, `service_account`), rendered by `make deploy-render`. Never fork the manifest per environment (ADR-0036). |
+| Registry is the routing source | Which ref deploys where is `deploy/environments.yaml`'s `trigger`; `deploy.yml`'s push branches and dispatch options must equal it (`tests/deploy/test_deploy_environments.py`). Adding an environment = registry entry + those two lists + a GitHub Environment. |
 
 ---
 
@@ -76,6 +78,10 @@ $env:RUN_GCP_TRACE='1' ; python -m pytest -q -k telemetry
 
 # Workflow / YAML lint
 python -m pytest -q -k deploy      # env-contract doc-sync + workflow shape
+
+# Environment registry: resolve a ref / render an overlay with full tracing
+make deploy-plan DEPLOY_LOG_LEVEL=DEBUG GITHUB_REF=refs/heads/qa
+make deploy-render ENVIRONMENT=qa IMAGE=example:tag DEPLOY_LOG_LEVEL=DEBUG
 ```
 
 See ADR-0001 (cloud targets), the telemetry/harness specs under `specs/`, and

@@ -1,0 +1,69 @@
+# Deployment environment registry (ADR-0036).
+#
+# The single source of per-environment deploy data. `deploy/service.yaml` stays
+# the one base manifest; each environment below is an *overlay* applied to it
+# by `scripts/deploy_environment.py render`, and `... plan` resolves which
+# environment a workflow event deploys to. Nothing environment-specific is
+# hard-coded in `.github/workflows/deploy.yml` — tests/deploy/
+# test_deploy_environments.py fails if the workflow's triggers drift from the
+# triggers declared here.
+#
+# Overlay keys (anything else is rejected):
+#   env           MANGOMAS_* plain values to set (override or add)
+#   secrets       env var -> Secret Manager secret name (var must already be a
+#                 secretKeyRef in the base manifest)
+#   annotations   revision-template annotations (autoscaling bounds, ...)
+#   service_account  runtime service account e-mail (optional; omit to keep
+#                    the Cloud Run default)
+#
+# Trigger keys: `branch` (push to that branch) or `tag_pattern` (fnmatch on a
+# release tag) plus `ancestor_branch` (the tagged commit must be reachable
+# from origin/<ancestor_branch>, so a tag cut from a side branch is refused).
+schema_version: 1
+
+defaults:
+  region: us-central1
+  repository: mangomas
+  # One image for every environment: built once per git tree, then promoted.
+  image: mangomas
+  base_manifest: deploy/service.yaml
+
+environments:
+  dev:
+    trigger:
+      branch: dev
+    service: mangomas-dev
+    overrides:
+      env:
+        MANGOMAS_ENV: dev
+        MANGOMAS_LOG_LEVEL: DEBUG
+      secrets:
+        MANGOMAS_LLM__API_KEY: mangomas-llm-api-key-dev
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+
+  qa:
+    trigger:
+      branch: qa
+    service: mangomas-qa
+    overrides:
+      env:
+        MANGOMAS_ENV: qa
+      secrets:
+        MANGOMAS_LLM__API_KEY: mangomas-llm-api-key-qa
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+
+  prod:
+    trigger:
+      tag_pattern: "v*"
+      ancestor_branch: main
+    # Production is the base manifest as-is: the overlay restates the values
+    # the base already carries, so rendering prod is byte-for-byte the
+    # pre-ADR-0036 deploy apart from the image (pinned by a test).
+    service: mangomas
+    overrides:
+      env:
+        MANGOMAS_ENV: prod

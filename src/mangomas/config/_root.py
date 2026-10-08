@@ -35,7 +35,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    env: Literal["local", "dev", "prod"] = "local"
+    env: Literal["local", "dev", "qa", "prod"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     llm: LLMSettings = Field(default_factory=LLMSettings)

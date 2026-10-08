@@ -74,7 +74,7 @@ def test_module_reimport_safe() -> None:
     for submodule in _CONFIG_SUBMODULES:
         importlib.reload(importlib.import_module(f"mangomas.config.{submodule}"))
     importlib.reload(config_module)
-    assert config_module.get_settings().env in {"local", "dev", "prod"}
+    assert config_module.get_settings().env in {"local", "dev", "qa", "prod"}
 
 
 def test_facade_reload_alone_does_not_reexecute_submodules() -> None:

@@ -25,7 +25,7 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
                  tests/test_run_workflow_e2e.py tests/deploy/test_ci_make_parity.py \
                  tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
                  tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
-                 tests/harness
+                 tests/test_deploy_environment.py tests/harness
 # Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
 # was the gate's own blind spot — 24%, imported only for its FLOORS/
 # GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect
@@ -58,6 +58,15 @@ PIP_AUDIT_VERSION ?= 2.10.1
 # which file is authoritative; tests/deploy/test_lockfile_freshness.py and
 # tests/deploy/test_ci_make_parity.py both read this contract.
 RUNTIME_LOCKFILE ?= requirements.lock
+# Per-environment deploy (ADR-0036). deploy/environments.yaml is the single
+# source of environment data; scripts/deploy_environment.py is the only reader.
+# deploy.yml drives both targets below, passing ENVIRONMENT/IMAGE on the
+# command line; DEPLOY_LOG_LEVEL=DEBUG (or a debug re-run, which sets
+# RUNNER_DEBUG=1) logs every resolution step and overlay field.
+DEPLOY_REGISTRY   ?= deploy/environments.yaml
+DEPLOY_SCRIPT     ?= scripts/deploy_environment.py
+DEPLOY_LOG_LEVEL  ?= INFO
+RENDERED_MANIFEST ?= rendered-service.yaml
 # SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
 TRIVY_VERSION ?= 0.74.0
@@ -68,7 +77,8 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         protected-paths test test-xml \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        gated-suites embeddings-local secret-scan pip-audit sbom-scan
+        gated-suites embeddings-local secret-scan pip-audit sbom-scan \
+        install-deploy-tools deploy-plan deploy-render
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -77,6 +87,16 @@ help: ## Show this help
 install: ## Install mangomas[dev] and sibling mango-integration-contracts
 	$(PYTHON) -m pip install -e ".[dev]"
 	$(PYTHON) -m pip install -e ./mango-integration-contracts
+
+install-deploy-tools: ## Install only what deploy-plan/deploy-render need (PyYAML, lockfile-pinned)
+	$(PYTHON) -m pip install -c $(RUNTIME_LOCKFILE) pyyaml
+
+deploy-plan: ## Resolve the environment this workflow event deploys to (reads GITHUB_REF)
+	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) plan
+
+deploy-render: ## Render ENVIRONMENT's manifest for IMAGE into RENDERED_MANIFEST
+	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) \
+	  render --environment "$(ENVIRONMENT)" --image "$(IMAGE)" --output "$(RENDERED_MANIFEST)"
 
 ifeq ($(OS),Windows_NT)
     DEVNULL := NUL
