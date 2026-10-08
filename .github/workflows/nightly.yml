@@ -79,7 +79,7 @@ jobs:
       # Keyed on the model id so a model change invalidates the cache rather
       # than silently testing against the previous one.
       - name: Cache the sentence-transformers model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/huggingface
           key: hf-all-MiniLM-L6-v2
