@@ -4,7 +4,11 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: ["feat/initial-release"]
+    # The environment branches (ADR-0036): `dev` is the integration trunk,
+    # `qa` the release candidate, `main` production. `feat/initial-release`
+    # is the pre-rename name of `dev`, kept only until the rename lands so no
+    # PR loses CI in between.
+    branches: ["feat/initial-release", "dev", "qa", "main"]
 
 # Least-privilege token: CI only needs to read the repo. codecov upload uses its
 # own token, not GITHUB_TOKEN.
@@ -97,8 +101,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Single source of truth for this job — referenced by both steps below
-      # so the two can't independently drift to different trunks.
-      BASE_BRANCH: feat/initial-release
+      # so the two can't independently drift to different trunks. A PR is
+      # judged against the branch it targets (dev, qa or main); a push has no
+      # base_ref and falls back to the repository's default branch, so a
+      # branch rename never leaves this pointing at a ref that is gone. Bound
+      # here, never inlined into run: (test_workflow_hardening.py).
+      BASE_BRANCH: ${{ github.base_ref || github.event.repository.default_branch }}
     steps:
       - uses: actions/checkout@v7
         with:

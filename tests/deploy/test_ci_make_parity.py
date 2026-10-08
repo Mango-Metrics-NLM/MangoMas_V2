@@ -29,6 +29,11 @@ _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
 _MAKEFILE = _REPO_ROOT / "Makefile"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 
+# The branching model (ADR-0036). `feat/initial-release` is `dev`'s pre-rename
+# name and leaves this tuple once the rename has landed.
+_PR_TRIGGER_BRANCHES = ("feat/initial-release", "dev", "qa", "main")
+_PROTECTED_PATHS_BASE_EXPR = "${{ github.base_ref || github.event.repository.default_branch }}"
+
 # Opt-in suite targets that must never trip the global coverage gate when run
 # standalone — the concrete regression this milestone locks in (D5: `make
 # rag` previously omitted `--no-cov` and always failed).
@@ -128,19 +133,25 @@ def test_protected_paths_job_delegates_to_make() -> None:
     ]
     assert not any(step.get("run", "").startswith("pip install") for step in job["steps"])
     # BASE_BRANCH is a job-level env var, not repeated per-step — the two
-    # steps above template it rather than each hardcoding the trunk name.
-    assert job["env"]["BASE_BRANCH"] == "feat/initial-release"
+    # steps above template it rather than each hardcoding the trunk name. It
+    # resolves to the PR's own target branch, else the default branch, so the
+    # gate judges a dev → qa promotion against qa and survives a trunk rename
+    # (ADR-0036). A hardcoded name here is the regression this pins.
+    assert job["env"]["BASE_BRANCH"] == _PROTECTED_PATHS_BASE_EXPR
 
 
-def test_pull_request_trigger_targets_the_real_trunk() -> None:
-    """CI's PR trigger must name this repo's actual trunk.
+def test_pull_request_trigger_targets_the_environment_branches() -> None:
+    """CI's PR trigger must name exactly this repo's environment branches.
 
-    `feat/initial-release` is trunk here — the Makefile's `BASE_REF` default
-    and the `protected-paths` job's `BASE_BRANCH` above both say so — not
-    `main` (a real but permanently-diverged branch; see NEXT_STEPS.md) and not
-    `develop` (which does not exist in this repository at all, checked against
-    both local and remote branches). A PR opened against the actual trunk got
-    no `pull_request`-triggered CI before this.
+    The branching model (ADR-0036) is `dev` (integration trunk) → `qa`
+    (release candidate) → `main` (production), and every one of them takes
+    PRs: feature work into `dev`, promotions into `qa` and `main`, hotfixes
+    into `main`. A PR opened against any of them must get
+    `pull_request`-triggered CI, or it merges ungated. `feat/initial-release`
+    is the pre-rename name of `dev`, listed only for the rename window.
+
+    Pinned as an exact list so a stray `develop` (which never existed here)
+    or a dropped environment branch fails visibly, as spec-0021 intended.
 
     PyYAML's default (YAML 1.1) resolver reads the unquoted ``on:`` key as the
     boolean ``True`` rather than the string ``"on"`` — the same reason
@@ -149,7 +160,7 @@ def test_pull_request_trigger_targets_the_real_trunk() -> None:
     resolving the bare word to a boolean (YAML 1.2 keeps it a string).
     """
     triggers = _workflows.triggers(_CI_WORKFLOW.name)
-    assert triggers["pull_request"]["branches"] == ["feat/initial-release"]
+    assert triggers["pull_request"]["branches"] == list(_PR_TRIGGER_BRANCHES)
 
 
 def test_scripts_coverage_job_delegates_to_make() -> None:
