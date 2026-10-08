@@ -22,16 +22,30 @@ from typing import Any, cast
 import pytest
 
 from tests._script_loader import load_script_module
-from tests.deploy import _workflows
+from tests.deploy import _makefile, _workflows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
 _MAKEFILE = _REPO_ROOT / "Makefile"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 
-# The branching model (ADR-0036). `feat/initial-release` is `dev`'s pre-rename
-# name and leaves this tuple once the rename has landed.
-_PR_TRIGGER_BRANCHES = ("feat/initial-release", "dev", "qa", "main")
+# The branching model (ADR-0036), derived from the environment registry rather
+# than restated: every branch an environment deploys from, then every branch a
+# release tag must be reachable from (production's `main`). `feat/initial-release`
+# is `dev`'s pre-rename name and leaves the list once the rename has landed.
+_LEGACY_TRUNK = "feat/initial-release"
+_DEPLOY_REGISTRY = load_script_module("deploy_environment.py").load_registry(
+    _REPO_ROOT / _makefile.variable("DEPLOY_REGISTRY")
+)
+_PR_TRIGGER_BRANCHES = (
+    _LEGACY_TRUNK,
+    *_DEPLOY_REGISTRY.branch_triggers(),
+    *(
+        env.trigger.ancestor_branch
+        for env in _DEPLOY_REGISTRY.environments.values()
+        if env.trigger.ancestor_branch
+    ),
+)
 _PROTECTED_PATHS_BASE_EXPR = "${{ github.base_ref || github.event.repository.default_branch }}"
 
 # Opt-in suite targets that must never trip the global coverage gate when run
@@ -77,14 +91,8 @@ def _step_run_commands(job: dict[str, Any]) -> list[str]:
     ]
 
 
-def _make_target_body(target: str) -> str:
-    """Return the recipe lines for *target* (everything up to the next
-    unindented/blank-separated target or EOF)."""
-    text = _MAKEFILE.read_text(encoding="utf-8")
-    pattern = re.compile(rf"^{re.escape(target)}:.*?(?=\n\S|\Z)", re.MULTILINE | re.DOTALL)
-    match = pattern.search(text)
-    assert match is not None, f"Makefile target {target!r} not found"
-    return match.group(0)
+# Shared with test_deploy_environments.py — see tests/deploy/_makefile.py.
+_make_target_body = _makefile.target_body
 
 
 def test_lint_job_delegates_every_step_to_make() -> None:
@@ -232,10 +240,7 @@ def test_runtime_lockfile_variable_names_the_file_the_dockerfile_uses() -> None:
     Without this the audit could point at a file the image does not install, and
     both halves would still look green.
     """
-    makefile = _MAKEFILE.read_text(encoding="utf-8")
-    match = re.search(r"^RUNTIME_LOCKFILE\s*\?=\s*(\S+)", makefile, re.MULTILINE)
-    assert match is not None, "RUNTIME_LOCKFILE is no longer declared in the Makefile"
-    lockfile = match.group(1)
+    lockfile = _makefile.variable("RUNTIME_LOCKFILE")
     dockerfile = (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert f"-c /tmp/{lockfile}" in dockerfile, (
         f"Makefile audits {lockfile!r} but the Dockerfile constrains on a "
@@ -322,17 +327,7 @@ def test_contracts_coverage_uses_an_isolated_coverage_file_and_addopts() -> None
     assert "--source=$(CONTRACTS_SRC)" in body or "--source=mango-integration-contracts/src" in body
 
 
-def _makefile_variable(name: str) -> str:
-    """Return a `NAME ?= value` (or `NAME = value`) assignment from the Makefile.
-
-    Companion to `_make_target_body`: the parity assertions below compare a
-    Makefile *variable* rather than a target body.
-    """
-    match = re.search(
-        rf"^{re.escape(name)}\s*\??=\s*(.+)$", _MAKEFILE.read_text(encoding="utf-8"), re.M
-    )
-    assert match is not None, f"Makefile does not define {name}"
-    return match.group(1).strip()
+_makefile_variable = _makefile.variable
 
 
 def _mypy_config() -> dict[str, Any]:

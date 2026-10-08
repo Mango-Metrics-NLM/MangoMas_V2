@@ -172,6 +172,14 @@ The codebase does not accept service-account JSON keys via env, config,
 or file paths. This is enforced by code review, not by a runtime check —
 adding such a path would require a new ADR justifying it.
 
+**Per environment (ADR-0036).** The deploy pipeline runs one GitHub
+Environment per stage (`dev`, `qa`, `prod`), each with its own WIF-federated
+*deploy* service account scoped to its own Cloud Run service and Artifact
+Registry repository, and each non-production service runs as its own *runtime*
+service account (`deploy/environments.yaml`, `${PROJECT_ID}` filled at render
+time). The WIF principal must be bound on repository id **and** environment;
+see `deploy/README.md` ("Trust model").
+
 ---
 
 ## Adding a fourth provider

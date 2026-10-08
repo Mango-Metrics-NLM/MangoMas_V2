@@ -144,11 +144,14 @@ python scripts/lint_agent_frontmatter.py
 1. Stage changes; run the full pre-merge checklist (commands above).
 2. Add a `## [Unreleased]` entry to `CHANGELOG.md` under the appropriate section.
 3. Commit with a conventional-commit message (one-line subject, multi-line body if needed).
-4. Push to the feature branch.
-5. Open a draft PR using the template; fill every section.
+4. Push to the feature branch (cut from `dev`, the default branch — ADR-0036).
+5. Open a draft PR into `dev` using the template; fill every section.
 6. If architectural: open an ADR under `docs/adr/<NNN>-<slug>.md` using `_template.md`.
 7. Request reviews from the agents whose domain the PR touches.
 8. Mark the PR ready when all checks are green.
+9. Shipping to `qa` / production (promotion PRs, the `v*` release tag, hotfix
+   and back-merge) is `mango-promote`'s procedure — this skill ends at merge
+   into `dev`.
 
 ---
 
@@ -170,4 +173,4 @@ python scripts/lint_agent_frontmatter.py
 2. `ruff format --check` fails in CI but not locally → you probably omitted a path; run `python -m ruff format src tests scripts eval_harness_bridge/src mango-integration-contracts/src` and commit the diff. If the *findings* differ rather than the paths, your local ruff drifted from the `ruff==` pin — reinstall the dev extra so it matches the `.pre-commit-config.yaml` rev.
 3. CHANGELOG conflict on merge → take both sides, re-group entries under the correct sections.
 4. ADR number collision → run `ls docs/adr/` and pick the next free number.
-5. PR template not auto-applied → confirm `.github/PULL_REQUEST_TEMPLATE.md` exists on the default branch; GitHub picks it up from `main` only.
+5. PR template not auto-applied → confirm `.github/PULL_REQUEST_TEMPLATE.md` exists on the default branch; GitHub picks it up from the default branch only (`dev` under ADR-0036).

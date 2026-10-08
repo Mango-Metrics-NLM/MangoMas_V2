@@ -9,6 +9,77 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — ADR-0036 hygiene and wiring pass
+
+- **Deploy script hardening** (`scripts/deploy_environment.py`):
+  - The overlay schema is fully closed. Env and secret keys must be valid
+    variable names, Cloud Run's reserved names (`PORT`, `K_*`) are refused,
+    and only `autoscaling.knative.dev/*` annotations may be overridden.
+  - A release name that cannot be an image tag is refused at plan time instead
+    of after the push.
+  - The ambiguity check now runs before a requested environment is honoured.
+  - The ancestry check uses the fully qualified `refs/remotes/<remote>/<branch>`.
+  - Malformed manifests (null or duplicate env entries, null annotations) and
+    unwritable outputs exit `2` instead of tracebacking.
+  - YAML-coerced values get a "quote it" hint.
+- **New `validate` subcommand.** `make deploy-validate` renders every
+  environment offline and now runs inside `make validate-config` (CI lint job
+  and `make gate`).
+- **Deploy workflow:** prereleases never deploy; production matches
+  `v<digit>…` tags only.
+- **Ownership:** `mango-ci-dev` owns `scripts/deploy_environment.py` and the
+  registry. New corpus guards check that every `scripts/` entry point has an
+  owner (or a recorded reason) and that every `make` target and
+  `scripts/`/`tests/` path a skill or agent cites exists.
+- **New `mango-promote` skill:** dev → qa → main promotion, release tags,
+  hotfix, back-merge, and a `/loop` recipe. `mango-deploy` gains an "add an
+  environment" procedure; `mango-release` and `mango-harness` are updated for
+  the branch model.
+- **Tests:**
+  - Shared `tests/deploy/_manifest.py`.
+  - CI's PR branch list is derived from the registry.
+  - New regression module `tests/regression/test_adr0036_deploy_defects.py` (D1–D9).
+  - Spec-0035 added.
+- **Docs and config:** C1 context and cloud-providers updated for
+  per-environment deploy; CONTRIBUTING (branch rulesets and promotion),
+  README, NEXT_STEPS (admin follow-ups), `tests/CLAUDE.md`; `.dockerignore`
+  excludes the deploy tooling and `rendered-service.yaml`.
+
+### Added — per-environment Cloud Run deploy (ADR-0036)
+
+- `deploy/environments.yaml`: the environment registry — `dev` (push to `dev`
+  → `mangomas-dev`), `qa` (push to `qa` → `mangomas-qa`) and `prod` (release
+  tag `v*` reachable from `main` → `mangomas`), each an overlay on the
+  unchanged `deploy/service.yaml`.
+- `scripts/deploy_environment.py` (`plan` / `render`) and the
+  `install-deploy-tools` / `deploy-plan` / `deploy-render` / `deploy-apply`
+  Make targets. The closed overlay schema refuses unknown keys and plain values
+  aimed at secrets; `plan` refuses a dispatch whose environment does not own
+  the ref, and a release tag not on `main`. These catch mistakes — the GitHub
+  Environment rules and WIF conditions are the security boundary
+  (deploy/README.md, "Trust model"). Logs every step at `DEBUG` (or under
+  `RUNNER_DEBUG=1`) and annotates failures on the run.
+- `deploy.yml`: a `plan` job, a per-environment GitHub `environment:` and
+  `concurrency` group, per-environment image repositories, content-addressed
+  (git tree hash) tags reused only within an environment, and a manifest
+  pinned to the image **digest**. Branch-push deploys stay off until the
+  `MULTI_ENV_DEPLOY_ENABLED` repository variable is set.
+- Non-production environments get their own runtime service account
+  (`${PROJECT_ID}` placeholders filled at render time — no project is
+  hard-coded) and their own secrets; `make deploy-apply` owns the apply step.
+- `MANGOMAS_ENV` accepts `qa`.
+- `tests/deploy/test_deploy_environments.py` covers registry↔workflow drift,
+  the overlay allow-list, secret isolation and the production render.
+  `tests/test_deploy_environment.py` covers the script at 100 %.
+  `tests/deploy/_makefile.py` shares the Makefile reader.
+
+**Backwards compatibility:** a published release still deploys `mangomas` from
+`deploy/service.yaml` into the `mangomas` image repository with the default
+runtime identity; the rendered production manifest differs from the base only
+in the image (test-pinned). The manifest now references the image by digest
+rather than by the release-name tag; the release name is still added as an
+alias tag.
+
 ### Changed — environment branching, step 1 (ADR-0036)
 
 - `ci.yml`'s `pull_request` trigger now covers `dev`, `qa` and `main` as well

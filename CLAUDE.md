@@ -59,7 +59,7 @@ when". Name them directly:
 | `mango-agent-impl-dev` | The built-in agents under `agents/` + `_prompt` / `_structured` / discovery + `src/mangomas/cognitive/` producer |
 | `mango-cli-dev` | `cli/` — the `main.py` facade, `_app` assembly order, the `_runtime` seam |
 | `mango-harness-dev` | `harness/` + the four `scripts/` harness entry points |
-| `mango-ci-dev` | `Makefile`, `.github/workflows/`, `dependabot.yml`, `deploy/`, `tests/deploy/` |
+| `mango-ci-dev` | `Makefile`, `.github/workflows/`, `dependabot.yml`, `deploy/` (incl. the `environments.yaml` registry), `scripts/deploy_environment.py`, `tests/deploy/` |
 | `mango-api-impl-dev` | The FastAPI assembly layer — `create_app` + middleware order, `api/middleware/`, `auth.py`, `health.py`, `tracing.py`, the system/workflow routers, `tenancy.py` |
 
 **Agents vs skills.** They are different things and the tie-break matters:
@@ -197,6 +197,7 @@ tree serves both.
 | `mango-harness` | Protected-path governance, the `BREAKING-CHANGE` trailer, hooks |
 | `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
+| `mango-promote` | dev → qa → main promotion, release tags, hotfix + back-merge (ADR-0036) |
 | `mango-mutation-proof` | Proving a guard fails when the thing it guards breaks |
 | `mango-coverage-audit` | Checking a coverage number is measured over the right denominator |
 | `mango-decompose` | Splitting a god file into a package: extract, facade, wire into `test_import_compat.py`, verify per-submodule coverage |

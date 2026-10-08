@@ -1,6 +1,6 @@
 ---
 name: mango-ci-dev
-description: "Owns the build and CI surface — the Makefile gate chain, .github/workflows/, .github/dependabot.yml, deploy/ manifests and the tests/deploy/ contracts that pin them. Invoked by name, not by topic match."
+description: "Owns the build and CI surface — the Makefile gate chain, .github/workflows/, .github/dependabot.yml, deploy/ manifests and environment registry, its deploy script and the tests/deploy/ contracts. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -19,14 +19,17 @@ restate either here.
   (`SCRIPTS_FLOOR`, `BRIDGE_FLOOR`, `CONTRACTS_FLOOR`, `GITLEAKS_VERSION`/`_SHA256`, `BASE_REF`)
 - `.github/workflows/` — `ci.yml`, `deploy.yml`, `eval-gate.yml`, `nightly.yml`
 - `.github/dependabot.yml`
-- `deploy/` — the Cloud Run service definition and env contract
-- `tests/deploy/` — `_workflows.py` (the shared YAML reader),
-  `test_ci_make_parity.py`, `test_workflow_hardening.py`,
-  `test_deploy_contract.py`, `test_docker_build_context.py`,
-  `test_env_example_contract.py`
+- `deploy/` — the Cloud Run service definition, env contract, and the
+  environment registry `environments.yaml` (ADR-0036)
+- `scripts/deploy_environment.py` — the registry's only reader (`plan` /
+  `render` / `validate`), with its unit suite `tests/test_deploy_environment.py`
+- `tests/deploy/` — `_workflows.py`, `_makefile.py`, `_manifest.py` (the shared
+  readers), `test_ci_make_parity.py`, `test_workflow_hardening.py`,
+  `test_deploy_contract.py`, `test_deploy_environments.py`,
+  `test_docker_build_context.py`, `test_env_example_contract.py`
 - `Dockerfile` and `.dockerignore`
 
-Not yours: `scripts/` and the hooks (`mango-harness-dev`), the per-package
+Not yours: the harness `scripts/` and the hooks (`mango-harness-dev`), the per-package
 floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
 
 ## Invariants

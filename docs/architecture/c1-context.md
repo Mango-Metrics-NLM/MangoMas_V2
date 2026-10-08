@@ -23,7 +23,7 @@ C4Context
 
   System_Ext(otel, "OpenTelemetry Collector / stdout", "Receives traces, metrics and structured log output. Span exporter selected by MANGOMAS_TELEMETRY__EXPORTER (console | gcp Cloud Trace, ADR-0009); an opt-in MeterProvider emits agent invocation/error/duration metrics when MANGOMAS_TELEMETRY__METRICS_ENABLED=true (ADR-0013).")
 
-  System_Ext(cloud_run, "Cloud Run", "Container compute target. deploy/service.yaml + .github/workflows/deploy.yml build and deploy the image; the runtime is the same FastAPI app with MANGOMAS_ENV=prod and JSON logs (spec-0004).")
+  System_Ext(cloud_run, "Cloud Run", "Container compute target, one service per environment (ADR-0036): mangomas-dev, mangomas-qa and mangomas (prod). .github/workflows/deploy.yml renders each from the base deploy/service.yaml plus its overlay in deploy/environments.yaml (scripts/deploy_environment.py) and pins the image by digest; the runtime is the same FastAPI app with MANGOMAS_ENV=dev|qa|prod and JSON logs (spec-0004).")
 
   System_Ext(code_agent_harness, "Mango Code Agent Harness", "Sibling execution/authority plane (classify, authorize, broker). Distinct from the in-repo Claude Code harness. Consumes CognitiveSignal 1.1.0 when MANGOMAS_SIGNAL__ENABLED=true. Companion 1.1.0 bump required before ingest.")
 
@@ -36,7 +36,7 @@ C4Context
   Rel(mangomas, postgres, "Reads and writes conversation turns (when provider=postgres)", "asyncpg / TLS")
   Rel(mangomas, secret_mgr, "Resolves secret references (when provider=gcp)", "Secret Manager API / IAM")
   Rel(mangomas, otel, "Emits traces, metrics and structured logs", "OTLP / stdout")
-  Rel(mangomas, cloud_run, "Deployed as a container image (make deploy / deploy.yml)", "Cloud Run / HTTPS")
+  Rel(mangomas, cloud_run, "Deployed per environment as a digest-pinned image (deploy.yml → make deploy-render / deploy-apply)", "Cloud Run / HTTPS")
   Rel(mangomas, code_agent_harness, "Optional HTTP ingest of CognitiveSignal 1.1.0 (advisory; never grants capability)", "HTTP")
   Rel(mangomas, cognitive_signals, "Appends planner/reviewer JSONL envelopes (when signal.enabled)", "filesystem")
 ```
@@ -52,7 +52,8 @@ C4Context
   through an existing registry seam rather than a rewrite: Vertex AI (ADR-001,
   v0.3.0), PostgreSQL via asyncpg and GCP Secret Manager (v0.3.1, both E2E
   verified), the Cloud Trace span exporter (ADR-0009 / spec-0001) and Cloud Run
-  (spec-0004). What remains open is tracked in
+  (spec-0004), now deployed per environment from the `dev` → `qa` → `main`
+  branches (ADR-0036). What remains open is tracked in
   [NEXT_STEPS.md](../../NEXT_STEPS.md) — no external system on this diagram is
   aspirational.
 - Multi-tenancy (ADR-0017) adds no external system. `TenancyMiddleware` reads

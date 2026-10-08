@@ -47,6 +47,13 @@ pyrightconfig.json
 scripts/harness_session_start.py
 scripts/lint_agent_frontmatter.py
 
+# Deploy tooling (ADR-0036) — runs in the deploy workflow, never in the image.
+# rendered-service.yaml is local `make deploy-render` output carrying a real
+# project id; keep it out of the build context entirely.
+deploy/
+scripts/deploy_environment.py
+rendered-service.yaml
+
 # Local scanner binaries / caches (make secret-scan, make sbom-scan, import-linter)
 .import_linter_cache/
 gitleaks

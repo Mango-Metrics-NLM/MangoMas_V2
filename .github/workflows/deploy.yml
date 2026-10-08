@@ -1,16 +1,42 @@
 name: Deploy to Cloud Run
 
-# Author-only pipeline (ADR-0001): verifies the offline test gate, builds the
-# image, pushes it to Artifact Registry, applies deploy/service.yaml to Cloud
-# Run and smoke-probes the deployed revision on a published release
-# (spec-0024). Authentication is via Workload Identity Federation — NO
-# service-account JSON keys. The workflow references GitHub Actions secrets by
-# name only (their values live in repo settings, never in the repo).
+# Author-only pipeline (ADR-0001), per environment since ADR-0036: `plan`
+# resolves which environment this event deploys to, `verify` runs the offline
+# test gate, and `deploy` builds (or reuses) the image, renders that
+# environment's manifest from deploy/service.yaml + deploy/environments.yaml,
+# applies it to Cloud Run and smoke-probes the revision (spec-0024).
+#
+# Trust model: each environment builds into its own Artifact Registry
+# repository, writable only by that environment's deploy identity, and the
+# manifest pins the image by digest — so no other environment's deployer can
+# substitute the bytes production runs. The in-repo checks (plan, render)
+# catch mistakes; the security boundary is the GitHub Environment rules plus
+# the WIF conditions (deploy/README.md).
+#
+# Which ref deploys where lives in deploy/environments.yaml, not here:
+#   push to dev            -> dev  (mangomas-dev)
+#   push to qa             -> qa   (mangomas-qa)
+#   release tag v<digit>* on main -> prod (mangomas); prereleases never deploy
+# The push branches and dispatch options below must equal that registry —
+# tests/deploy/test_deploy_environments.py fails on drift.
+#
+# Authentication is via Workload Identity Federation — NO service-account JSON
+# keys. GCP_WIF_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT are GitHub *Environment*
+# secrets (one deploy identity per environment, each scoped to its own
+# service), so a dev push cannot authenticate as the production deployer.
 
 on:
   release:
     types: [published]
-  workflow_dispatch: {}
+  push:
+    branches: [dev, qa]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy; must own the selected ref (deploy/environments.yaml)
+        required: true
+        type: choice
+        options: [dev, qa, prod]
 
 # Least-privilege default for every job; the WIF `id-token: write` grant is
 # scoped to the deploy job below, not the whole workflow.
@@ -18,13 +44,57 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    name: Plan deploy environment
+    # Branch pushes deploy only once the per-environment GCP resources exist.
+    # Until an admin sets the MULTI_ENV_DEPLOY_ENABLED repository variable, a
+    # push to dev/qa skips cleanly instead of failing red on every merge.
+    # A *prerelease* never deploys: `published` also fires for prereleases,
+    # and an rc tag on main must not reach production.
+    if: >-
+      ${{ (github.event_name != 'push' || vars.MULTI_ENV_DEPLOY_ENABLED == 'true')
+      && !(github.event_name == 'release' && github.event.release.prerelease) }}
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.plan.outputs.environment }}
+      service: ${{ steps.plan.outputs.service }}
+      region: ${{ steps.plan.outputs.region }}
+      repository: ${{ steps.plan.outputs.repository }}
+      image: ${{ steps.plan.outputs.image }}
+      image_tag: ${{ steps.plan.outputs.image_tag }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The ancestry check (a release tag must be on main) walks history
+          # across branches; a shallow checkout cannot answer it.
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install deploy tooling
+        run: make install-deploy-tools
+
+      - name: Resolve deploy environment
+        id: plan
+        # The dispatch input reaches the script through env, never a run:
+        # expression (test_workflow_hardening.py); the script refuses an
+        # environment that does not own GITHUB_REF.
+        env:
+          DEPLOY_REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+        run: make deploy-plan
+
   verify:
     # Absorbs the deferred "`verify` job gating `deploy.yml`" item
-    # (NEXT_STEPS.md, spec-0024): a release publish must not deploy code that
-    # fails the offline test gate. Steps delegate to `make` like every CI job
+    # (NEXT_STEPS.md, spec-0024): nothing deploys code that fails the offline
+    # test gate. Steps delegate to `make` like every CI job
     # (tests/deploy/test_ci_make_parity.py's one-place rule).
     name: Verify before deploy
     runs-on: ubuntu-latest
+    needs: plan
     steps:
       - uses: actions/checkout@v7
 
@@ -49,19 +119,31 @@ jobs:
   deploy:
     name: Build, push & deploy
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [plan, verify]
+    # The GitHub Environment carries this environment's deploy identity and
+    # protection rules (prod: tag v* only + required reviewer).
+    environment: ${{ needs.plan.outputs.environment }}
+    # One deploy per environment at a time; never cancel a half-applied one.
+    concurrency:
+      group: deploy-${{ needs.plan.outputs.environment }}
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write # required for Workload Identity Federation
     env:
-      REGION: us-central1
-      SERVICE: mangomas
-      REPOSITORY: mangomas
-      # Bound to env vars (never inlined into a run: body) to avoid ${{ }}
-      # expression injection into a credentialed shell — the same idiom as
-      # eval-gate.yml's AGENTS_REF. A release tag name is event payload.
+      # Every value is bound here, never inlined into a run: body, to avoid
+      # ${{ }} expression injection into a credentialed shell.
+      DEPLOY_ENVIRONMENT: ${{ needs.plan.outputs.environment }}
+      SERVICE: ${{ needs.plan.outputs.service }}
+      REGION: ${{ needs.plan.outputs.region }}
+      REPOSITORY: ${{ needs.plan.outputs.repository }}
+      IMAGE_REPO_NAME: ${{ needs.plan.outputs.image }}
+      # Content-addressed (git tree hash): a re-deploy of an unchanged tree
+      # reuses this environment's own image; promotion rebuilds the same tree
+      # into the next environment's repository.
+      IMAGE_TAG: ${{ needs.plan.outputs.image_tag }}
+      RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
       PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      IMAGE_TAG: ${{ github.event.release.tag_name || github.sha }}
       # Smoke-probe tunables (workflow env, not hard-coded in the script):
       # /readyz exercises the live LLM/DB reachability probe, so allow the
       # revision a short settling window before declaring the deploy failed.
@@ -69,6 +151,14 @@ jobs:
       SMOKE_RETRY_SECONDS: "6"
     steps:
       - uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install deploy tooling
+        run: make install-deploy-tools
 
       - name: Authenticate to Google Cloud (Workload Identity Federation)
         id: auth
@@ -85,38 +175,47 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
-      - name: Build and push image
+      - name: Build and push image, resolve its digest
+        # Reuse is only ever within this environment's own repository. The
+        # manifest gets the immutable digest, not the tag, so a tag moved
+        # between this step and the apply cannot change what runs.
         run: |
           set -euo pipefail
-          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVICE}:${IMAGE_TAG}"
-          docker build -t "$IMAGE" .
-          docker push "$IMAGE"
+          IMAGE_NAME="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_REPO_NAME}"
+          TAGGED="${IMAGE_NAME}:${IMAGE_TAG}"
+          if gcloud artifacts docker images describe "$TAGGED" > /dev/null 2>&1; then
+            echo "Reusing $TAGGED (already built from this tree in this environment)"
+          else
+            docker build -t "$TAGGED" .
+            docker push "$TAGGED"
+          fi
+          if [ -n "$RELEASE_TAG" ]; then
+            gcloud artifacts docker tags add "$TAGGED" "${IMAGE_NAME}:${RELEASE_TAG}" --quiet
+          fi
+          IMAGE="$(gcloud artifacts docker images describe "$TAGGED" \
+            --format 'value(image_summary.fully_qualified_digest)')"
+          if [ -z "$IMAGE" ]; then
+            echo "could not resolve a digest for $TAGGED" >&2
+            exit 1
+          fi
+          echo "Deploying $IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
       - name: Render service manifest
-        # deploy/service.yaml is the single source of production configuration
-        # (env vars, secretKeyRefs, probes, resource limits, autoscaling
-        # bounds — spec-0024). Only the image reference is rendered at deploy
-        # time; every other field reaches Cloud Run verbatim via the
-        # `services replace` step below. The grep proves the substitution
-        # actually landed, so a manifest reshape cannot silently deploy the
-        # placeholder image.
-        run: |
-          set -euo pipefail
-          sed -E "s|^([[:space:]]*)- image: .*$|\1- image: ${IMAGE}|" \
-            deploy/service.yaml > rendered-service.yaml
-          grep -qF "image: ${IMAGE}" rendered-service.yaml
+        # deploy/service.yaml (the base, via the registry's base_manifest) plus
+        # this environment's overlay from deploy/environments.yaml; PROJECT_ID
+        # (job env) fills the overlay's ${PROJECT_ID} placeholders. The script
+        # re-reads its output and fails unless the image landed, so a manifest
+        # reshape cannot silently deploy the placeholder image.
+        run: make deploy-render ENVIRONMENT="$DEPLOY_ENVIRONMENT"
 
       - name: Apply service manifest to Cloud Run
-        # `gcloud run services replace` applies the full Knative manifest —
-        # unlike the previous image-only `gcloud run deploy`, which dropped
-        # every env var, secretKeyRef, probe, limit and autoscaling bound.
-        # `replace` never touches IAM: it creates no allUsers invoker binding,
-        # so the service stays private (the former --no-allow-unauthenticated
-        # posture) by default.
-        run: |
-          set -euo pipefail
-          gcloud run services replace rendered-service.yaml --region "$REGION"
+        # `make deploy-apply` runs `gcloud run services replace` on the rendered
+        # manifest — the full Knative manifest, unlike the previous image-only
+        # `gcloud run deploy`, which dropped every env var, secretKeyRef, probe,
+        # limit and autoscaling bound. `replace` never touches IAM: it creates
+        # no allUsers invoker binding, so the service stays private.
+        run: make deploy-apply
 
       - name: Smoke-test deployed service (/healthz + /readyz)
         # The service is private (no allUsers run.invoker binding — see the

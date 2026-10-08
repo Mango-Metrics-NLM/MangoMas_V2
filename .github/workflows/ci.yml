@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: make install
 
-      - name: Validate Claude Code config JSON
+      - name: Validate config (Claude Code JSON + deploy registry)
         run: make validate-config
 
       - name: Ruff check

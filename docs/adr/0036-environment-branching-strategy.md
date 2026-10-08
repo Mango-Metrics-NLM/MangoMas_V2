@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed
+Accepted (2026-10-08) — implemented by the rename-proof CI change and the
+per-environment deploy (`deploy/environments.yaml`).
 
 ## Context
 
@@ -43,6 +44,16 @@ Three long-lived branches, promoted by pull request:
    `v*`, required reviewer) with its own deploy identity, closing the
    any-branch `workflow_dispatch` path. `dev`/`qa` get their own Environments
    and service accounts scoped to their own service.
+6. **One manifest, overlays in a registry.** `deploy/environments.yaml` maps
+   refs to environments and holds each environment's overlay on the unchanged
+   `deploy/service.yaml`; `scripts/deploy_environment.py` is its only reader.
+   Production renders to `service.yaml` plus the image (test-pinned), so the
+   release deploy is backwards compatible.
+7. **No cross-environment trust in artefacts.** Each environment has its own
+   image repository, deploy identity and runtime identity (non-prod), and the
+   manifest pins the image digest. Promotion rebuilds the same git tree rather
+   than reusing QA's bytes: reuse across a shared repository would let a dev
+   deployer pre-push an image production later trusts.
 
 ## Consequences
 
@@ -57,7 +68,14 @@ Three long-lived branches, promoted by pull request:
 - Each release costs two back-merge PRs.
 - Scheduled workflows run on the default branch only, so `nightly.yml` scans
   `dev`, not the code in production, until it checks out `main` as well.
-- Per-environment deploys need GCP provisioning before `deploy.yml` changes.
+- Per-environment deploys need GCP provisioning (deploy/README.md). Branch-push
+  deploys stay off behind the `MULTI_ENV_DEPLOY_ENABLED` repository variable
+  until it exists; releases deploy production as before, still gated by the
+  `verify` job.
+- The in-repo `plan`/`render` checks run from the ref being deployed, so they
+  catch mistakes, not attacks; the GitHub Environment rules, the `v*` tag
+  ruleset and the WIF repository + environment conditions are the boundary.
+- Production is byte-identical to QA in *source*, not in *image*.
 
 ### Neutral
 

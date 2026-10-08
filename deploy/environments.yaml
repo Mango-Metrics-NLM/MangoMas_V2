@@ -1,0 +1,88 @@
+# Deployment environment registry (ADR-0036).
+#
+# The single source of per-environment deploy data. `deploy/service.yaml` stays
+# the one base manifest; each environment below is an *overlay* applied to it
+# by `scripts/deploy_environment.py render`, and `... plan` resolves which
+# environment a workflow event deploys to. Nothing environment-specific is
+# hard-coded in `.github/workflows/deploy.yml` — tests/deploy/
+# test_deploy_environments.py fails if the workflow's triggers drift from the
+# triggers declared here.
+#
+# Environment keys: trigger, service, overrides, and optional `repository`
+# (Artifact Registry repository; defaults.repository when omitted). Each
+# environment's images live in its own repository, writable only by that
+# environment's deploy identity, so a dev deployer can never write an image
+# production runs (deploy/README.md, "Trust model").
+#
+# Overlay keys (anything else is rejected):
+#   env           MANGOMAS_* plain values to set (override or add)
+#   secrets       env var -> Secret Manager secret name (var must already be a
+#                 secretKeyRef in the base manifest)
+#   annotations   revision-template annotations (autoscaling bounds, ...)
+#   service_account  runtime service account e-mail. Required for every
+#                    non-production environment (a test enforces it) so dev
+#                    and qa never share production's runtime identity.
+#
+# Overlay strings may use ${NAME} placeholders, filled at render time only from
+# the environment variables listed in the Makefile's DEPLOY_RENDER_ENV_VARS
+# (today: PROJECT_ID) — never hard-code a project here. `$$` is a literal `$`.
+#
+# Trigger keys: `branch` (push to that branch) or `tag_pattern` (fnmatch on a
+# release tag) plus `ancestor_branch` (the tagged commit must be reachable
+# from origin/<ancestor_branch>, so a tag cut from a side branch is refused).
+schema_version: 1
+
+defaults:
+  region: us-central1
+  repository: mangomas
+  # Image name within each environment's repository; tagged by git tree hash.
+  image: mangomas
+  base_manifest: deploy/service.yaml
+
+environments:
+  dev:
+    trigger:
+      branch: dev
+    service: mangomas-dev
+    repository: mangomas-dev
+    overrides:
+      service_account: mangomas-dev-runtime@${PROJECT_ID}.iam.gserviceaccount.com
+      env:
+        MANGOMAS_ENV: dev
+        MANGOMAS_LOG_LEVEL: DEBUG
+      secrets:
+        MANGOMAS_LLM__API_KEY: mangomas-llm-api-key-dev
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+
+  qa:
+    trigger:
+      branch: qa
+    service: mangomas-qa
+    repository: mangomas-qa
+    overrides:
+      service_account: mangomas-qa-runtime@${PROJECT_ID}.iam.gserviceaccount.com
+      env:
+        MANGOMAS_ENV: qa
+      secrets:
+        MANGOMAS_LLM__API_KEY: mangomas-llm-api-key-qa
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+
+  prod:
+    trigger:
+      # v<digit>...: `v*` would also match `vandal` or `v1/../x`; the tag must
+      # also be a valid image tag (plan refuses one that is not).
+      tag_pattern: "v[0-9]*"
+      ancestor_branch: main
+    # Production is the base manifest as-is: the overlay restates the values
+    # the base already carries, so rendering prod is the pre-ADR-0036 deploy
+    # apart from the image (pinned by a test). It keeps defaults.repository
+    # and the Cloud Run default runtime identity for the same reason; giving
+    # it a dedicated runtime account is a deliberate, reviewed follow-up.
+    service: mangomas
+    overrides:
+      env:
+        MANGOMAS_ENV: prod

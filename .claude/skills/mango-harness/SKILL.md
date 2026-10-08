@@ -28,8 +28,9 @@ this skill — use `mango-cognitive`. Do not add a Claude Code hook for it.
 ## Quick Commands
 
 ```powershell
-# Run the authoritative gate exactly as CI does
-make protected-paths BASE_REF=origin/feat/initial-release
+# Run the authoritative gate exactly as CI does — CI uses the PR's base branch
+# (dev, qa or main under ADR-0036), else the repository's default branch
+make protected-paths BASE_REF=origin/<pr-base-branch>
 
 # Ask the advisory hook what it would say about one file
 echo '{"tool_name":"Edit","tool_input":{"file_path":"src/mangomas/errors.py"}}' | python scripts/lint_agent_frontmatter.py --hook pre-tool-use
@@ -193,8 +194,10 @@ unless a contributor opts in.
    marker. Amend a commit message or add one; the gate reads `git log`, not the
    diff.
 2. The gate passes locally but fails in CI → `BASE_REF` differs. CI compares
-   against the PR base; reproduce with
-   `make protected-paths BASE_REF=origin/feat/initial-release`.
+   against the PR base (`github.base_ref`; the default branch on a push);
+   reproduce with `make protected-paths BASE_REF=origin/<that branch>`. A
+   promotion PR (`dev` → `qa` → `main`) carries trailers only if it was merged
+   with a merge commit — see `mango-promote`.
 3. The hook never fires → it matches `Edit|Write|NotebookEdit` only. A `Bash`
    write bypasses it by design; that is what the CI gate is for.
 4. `Could not read [tool.mangomas.governance]` warning → the loader is

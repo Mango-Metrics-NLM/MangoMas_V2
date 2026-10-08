@@ -166,6 +166,7 @@ from tests.constants.corpus import (
 from tests.constants.corpus import SKILL_UNMAPPED_AGENT_SLUGS as SKILL_UNMAPPED_AGENT_SLUGS
 from tests.constants.corpus import SPELLED_NUMBERS as SPELLED_NUMBERS
 from tests.constants.corpus import SUBSET_COUNT_CLAIMS as SUBSET_COUNT_CLAIMS
+from tests.constants.corpus import UNOWNED_SCRIPT_ENTRY_POINTS as UNOWNED_SCRIPT_ENTRY_POINTS
 from tests.constants.corpus import UNOWNED_SOURCE_SURFACES as UNOWNED_SOURCE_SURFACES
 from tests.constants.corpus import VALID_AGENT_FRONTMATTER as VALID_AGENT_FRONTMATTER
 from tests.constants.corpus import VALID_AGENT_TOOL_TOKENS as VALID_AGENT_TOOL_TOKENS
@@ -686,6 +687,7 @@ __all__ = [
     "TOOL_MAX_STEPS_ENV",
     "TORCH_DEVICE_NAMES",
     "UNAUTHORIZED_TOOL_NAME",
+    "UNOWNED_SCRIPT_ENTRY_POINTS",
     "UNOWNED_SOURCE_SURFACES",
     "UNPARSED_GOAL",
     "UNPARSED_PLANNER_STEP",

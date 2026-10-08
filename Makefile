@@ -15,17 +15,18 @@ CONTRACTS_SRC ?= mango-integration-contracts/src
 CONTRACTS_TESTS ?= tests/mango_contracts
 CONTRACTS_FLOOR ?= 100
 PYTEST_FLAGS ?= -q
-# Base ref for the protected-path governance gate (ADR-0021). This repo's
-# working trunk is `feat/initial-release`, not `main` — see CLAUDE.md.
-# Override for a one-off check against a different base: `make protected-paths
-# BASE_REF=origin/main`.
+# Base ref for the protected-path governance gate (ADR-0021). Local default:
+# the integration trunk (`feat/initial-release` until ADR-0036 renames it to
+# `dev`). CI never uses this default — it passes the PR's own base branch.
+# Override for a one-off check against another base, e.g. a promotion PR:
+# `make protected-paths BASE_REF=origin/qa`.
 BASE_REF    ?= origin/feat/initial-release
 SCRIPTS_SRC  ?= scripts
 SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session_start.py \
                  tests/test_run_workflow_e2e.py tests/deploy/test_ci_make_parity.py \
                  tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
                  tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
-                 tests/harness
+                 tests/test_deploy_environment.py tests/harness
 # Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
 # was the gate's own blind spot — 24%, imported only for its FLOORS/
 # GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect
@@ -58,6 +59,18 @@ PIP_AUDIT_VERSION ?= 2.10.1
 # which file is authoritative; tests/deploy/test_lockfile_freshness.py and
 # tests/deploy/test_ci_make_parity.py both read this contract.
 RUNTIME_LOCKFILE ?= requirements.lock
+# Per-environment deploy (ADR-0036). deploy/environments.yaml is the single
+# source of environment data; scripts/deploy_environment.py is the only reader.
+# deploy.yml drives both targets below, passing ENVIRONMENT/IMAGE on the
+# command line; DEPLOY_LOG_LEVEL=DEBUG (or a debug re-run, which sets
+# RUNNER_DEBUG=1) logs every resolution step and overlay field.
+DEPLOY_REGISTRY   ?= deploy/environments.yaml
+DEPLOY_SCRIPT     ?= scripts/deploy_environment.py
+DEPLOY_LOG_LEVEL  ?= INFO
+RENDERED_MANIFEST ?= rendered-service.yaml
+# Environment variables whose values fill ${NAME} placeholders in overlays.
+# Values are read from the environment by the script, never put on argv.
+DEPLOY_RENDER_ENV_VARS ?= PROJECT_ID
 # SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
 TRIVY_VERSION ?= 0.74.0
@@ -68,7 +81,8 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         protected-paths test test-xml \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        gated-suites embeddings-local secret-scan pip-audit sbom-scan
+        gated-suites embeddings-local secret-scan pip-audit sbom-scan \
+        install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -77,6 +91,27 @@ help: ## Show this help
 install: ## Install mangomas[dev] and sibling mango-integration-contracts
 	$(PYTHON) -m pip install -e ".[dev]"
 	$(PYTHON) -m pip install -e ./mango-integration-contracts
+
+install-deploy-tools: ## Install only what deploy-plan/deploy-render need (PyYAML, lockfile-pinned)
+	$(PYTHON) -m pip install -c $(RUNTIME_LOCKFILE) pyyaml
+
+deploy-plan: ## Resolve the environment this workflow event deploys to (reads GITHUB_REF)
+	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) plan
+
+# ENVIRONMENT / IMAGE / REGION are read as shell variables ("$$X"), not make
+# expansions, so a value is never spliced into recipe text. Make exports
+# command-line variables to the recipe, so `make deploy-render ENVIRONMENT=qa`
+# works as written.
+deploy-render: ## Render ENVIRONMENT's manifest for IMAGE into RENDERED_MANIFEST
+	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) \
+	  render --environment "$$ENVIRONMENT" --image "$$IMAGE" --output "$(RENDERED_MANIFEST)" \
+	  $(addprefix --substitute-from-env ,$(DEPLOY_RENDER_ENV_VARS))
+
+deploy-validate: ## Offline registry check: render every environment (no credentials)
+	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) validate
+
+deploy-apply: ## Apply RENDERED_MANIFEST to Cloud Run in REGION (the full manifest, never image-only)
+	gcloud run services replace "$(RENDERED_MANIFEST)" --region "$$REGION"
 
 ifeq ($(OS),Windows_NT)
     DEVNULL := NUL
@@ -90,7 +125,7 @@ endif
 
 # ── Quality gate (mirrors .github/workflows/ci.yml) ──────────────────────────
 
-validate-config: ## Validate .mcp.json / .claude/settings*.json JSON syntax
+validate-config: deploy-validate ## Validate .mcp.json / .claude/settings*.json JSON + the deploy registry
 	$(PYTHON) -m json.tool .mcp.json > $(DEVNULL)
 	$(PYTHON) -m json.tool .claude/settings.json > $(DEVNULL)
 	$(PYTHON) -m json.tool .claude/settings.local.json.example > $(DEVNULL)
