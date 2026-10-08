@@ -67,6 +67,9 @@ DEPLOY_REGISTRY   ?= deploy/environments.yaml
 DEPLOY_SCRIPT     ?= scripts/deploy_environment.py
 DEPLOY_LOG_LEVEL  ?= INFO
 RENDERED_MANIFEST ?= rendered-service.yaml
+# Environment variables whose values fill ${NAME} placeholders in overlays.
+# Values are read from the environment by the script, never put on argv.
+DEPLOY_RENDER_ENV_VARS ?= PROJECT_ID
 # SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
 TRIVY_VERSION ?= 0.74.0
@@ -78,7 +81,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local secret-scan pip-audit sbom-scan \
-        install-deploy-tools deploy-plan deploy-render
+        install-deploy-tools deploy-plan deploy-render deploy-apply
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -94,9 +97,17 @@ install-deploy-tools: ## Install only what deploy-plan/deploy-render need (PyYAM
 deploy-plan: ## Resolve the environment this workflow event deploys to (reads GITHUB_REF)
 	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) plan
 
+# ENVIRONMENT / IMAGE / REGION are read as shell variables ("$$X"), not make
+# expansions, so a value is never spliced into recipe text. Make exports
+# command-line variables to the recipe, so `make deploy-render ENVIRONMENT=qa`
+# works as written.
 deploy-render: ## Render ENVIRONMENT's manifest for IMAGE into RENDERED_MANIFEST
 	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) \
-	  render --environment "$(ENVIRONMENT)" --image "$(IMAGE)" --output "$(RENDERED_MANIFEST)"
+	  render --environment "$$ENVIRONMENT" --image "$$IMAGE" --output "$(RENDERED_MANIFEST)" \
+	  $(addprefix --substitute-from-env ,$(DEPLOY_RENDER_ENV_VARS))
+
+deploy-apply: ## Apply RENDERED_MANIFEST to Cloud Run in REGION (the full manifest, never image-only)
+	gcloud run services replace "$(RENDERED_MANIFEST)" --region "$$REGION"
 
 ifeq ($(OS),Windows_NT)
     DEVNULL := NUL

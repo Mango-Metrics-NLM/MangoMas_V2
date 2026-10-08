@@ -15,10 +15,20 @@ script is the only code that reads it. Two subcommands, both driven by
     ``$GITHUB_OUTPUT``.
 
 ``render``
-    Apply one environment's overlay to the base manifest and set the image.
-    The overlay schema is closed: an unknown key, a plain value aimed at a
-    secret, or a secret name aimed at a plain variable fails loudly instead of
-    deploying something nobody wrote.
+    Apply one environment's overlay to the base manifest and set the image,
+    then re-read the written file to prove the image landed. The overlay schema
+    is closed: an unknown key, a plain value aimed at a secret, or a secret
+    name aimed at a plain variable fails loudly instead of deploying something
+    nobody wrote. Overlay strings may carry ``${NAME}`` placeholders (e.g. the
+    project id inside a service-account e-mail), filled only from environment
+    variables named with ``--substitute-from-env`` — so the registry never
+    hard-codes a project, and a missing value is an error, not a blank.
+
+These checks catch mistakes; they are not the security boundary. On a release
+or dispatch the workflow, this script and the registry are read from the ref
+being deployed, so the authoritative controls are the GitHub Environment
+protection rules and the Workload Identity Federation conditions
+(deploy/README.md).
 
 Exit codes: ``0`` success, ``2`` configuration error (malformed registry or
 manifest, git failure), ``3`` refused (the ref maps to no environment, the
@@ -39,6 +49,7 @@ import fnmatch
 import logging
 import os
 import re
+import string
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -76,7 +87,9 @@ _OVERLAY_KEYS: Final[frozenset[str]] = frozenset(
     {"env", "secrets", "annotations", "service_account"}
 )
 _TRIGGER_KEYS: Final[frozenset[str]] = frozenset({"branch", "tag_pattern", "ancestor_branch"})
-_ENVIRONMENT_KEYS: Final[frozenset[str]] = frozenset({"trigger", "service", "overrides"})
+_ENVIRONMENT_KEYS: Final[frozenset[str]] = frozenset(
+    {"trigger", "service", "repository", "overrides"}
+)
 _DEFAULTS_KEYS: Final[frozenset[str]] = frozenset(
     {"region", "repository", "image", "base_manifest"}
 )
@@ -136,6 +149,10 @@ class Environment:
     service: str
     trigger: Trigger
     overrides: Overrides
+    # Artifact Registry repository this environment's images live in; None
+    # inherits defaults.repository. Separate repositories keep one
+    # environment's deployer from writing an image another environment runs.
+    repository: str | None = None
 
 
 @dataclass(frozen=True)
@@ -145,6 +162,10 @@ class Registry:
     image: str
     base_manifest: Path
     environments: Mapping[str, Environment]
+
+    def repository_for(self, environment: Environment) -> str:
+        """The image repository *environment* deploys from."""
+        return environment.repository or self.repository
 
     def branch_triggers(self) -> list[str]:
         """Every branch some environment deploys from, in registry order."""
@@ -217,11 +238,13 @@ def _parse_environment(name: Any, value: Any) -> Environment:
     service = _require_str(raw.get("service"), f"{where}.service")
     if not _SERVICE_NAME_RE.match(service):
         raise DeployConfigError(f"{where}.service: {service!r} is not a valid Cloud Run name")
+    repository = raw.get("repository")
     return Environment(
         name=name,
         service=service,
         trigger=_parse_trigger(raw.get("trigger"), f"{where}.trigger"),
         overrides=_parse_overrides(raw.get("overrides"), f"{where}.overrides"),
+        repository=None if repository is None else _require_str(repository, f"{where}.repo"),
     )
 
 
@@ -355,7 +378,9 @@ def content_image_tag(run_git: GitRunner = _run_git) -> str:
     """The git *tree* hash of HEAD.
 
     A promotion merge commit has a new SHA but the same tree as the branch it
-    promotes, so prod reuses the exact image QA tested instead of rebuilding.
+    promotes, so every environment tags the build of identical source with the
+    same name, and a re-deploy of an unchanged tree reuses that environment's
+    own image instead of rebuilding.
     """
     return _git_stdout(run_git, ["rev-parse", "HEAD^{tree}"])
 
@@ -376,7 +401,7 @@ def build_plan(
         "environment": environment.name,
         "service": environment.service,
         "region": registry.region,
-        "repository": registry.repository,
+        "repository": registry.repository_for(environment),
         "image": registry.image,
         "image_tag": content_image_tag(run_git),
         "release_tag": release_tag,
@@ -439,7 +464,8 @@ def _apply_env(container: dict[str, Any], values: Mapping[str, str], env_name: s
 def _apply_secrets(container: dict[str, Any], secrets: Mapping[str, str], env_name: str) -> None:
     for name, secret in secrets.items():
         entry = _env_entry(container, name)
-        ref = None if entry is None else entry.get("valueFrom", {}).get("secretKeyRef")
+        value_from = None if entry is None else entry.get("valueFrom")
+        ref = value_from.get("secretKeyRef") if isinstance(value_from, dict) else None
         if not isinstance(ref, dict):
             raise DeployConfigError(
                 f"[{env_name}] secret override {name}: the base manifest has no secretKeyRef "
@@ -449,11 +475,46 @@ def _apply_secrets(container: dict[str, Any], secrets: Mapping[str, str], env_na
         ref["name"] = secret
 
 
-def render_manifest(base: Any, environment: Environment, image: str) -> dict[str, Any]:
+def _substitute(value: str, variables: Mapping[str, str], where: str) -> str:
+    """Fill ``${NAME}`` placeholders in *value*; ``$$`` is a literal ``$``."""
+    try:
+        return string.Template(value).substitute(variables)
+    except KeyError as exc:
+        raise DeployConfigError(
+            f"{where}: placeholder ${{{exc.args[0]}}} has no value; pass it with "
+            "--substitute-from-env"
+        ) from exc
+    except ValueError as exc:
+        raise DeployConfigError(f"{where}: malformed placeholder in {value!r}") from exc
+
+
+def _substitute_overrides(
+    overrides: Overrides, variables: Mapping[str, str], env_name: str
+) -> Overrides:
+    def fill(values: Mapping[str, str], kind: str) -> dict[str, str]:
+        return {k: _substitute(v, variables, f"[{env_name}] {kind} {k}") for k, v in values.items()}
+
+    account = overrides.service_account
+    return Overrides(
+        env=fill(overrides.env, "env"),
+        secrets=fill(overrides.secrets, "secret"),
+        annotations=fill(overrides.annotations, "annotation"),
+        service_account=None
+        if account is None
+        else _substitute(account, variables, f"[{env_name}] service_account"),
+    )
+
+
+def render_manifest(
+    base: Any,
+    environment: Environment,
+    image: str,
+    variables: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     """Return a new manifest: *base* with *environment*'s overlay and *image*."""
     manifest = copy.deepcopy(_require_mapping(base, "manifest"))
     container = _single_container(manifest)
-    overrides = environment.overrides
+    overrides = _substitute_overrides(environment.overrides, variables or {}, environment.name)
 
     metadata = manifest.setdefault("metadata", {})
     metadata["name"] = environment.service
@@ -513,11 +574,41 @@ def _cmd_render(args: argparse.Namespace) -> int:
         )
     base_path = args.base_manifest or registry.base_manifest
     rendered = render_manifest(
-        _load_yaml(base_path), registry.environments[args.environment], args.image
+        _load_yaml(base_path),
+        registry.environments[args.environment],
+        args.image,
+        _variables_from_env(args.substitute_from_env),
     )
     args.output.write_text(yaml.safe_dump(rendered, sort_keys=False), encoding="utf-8")
+    verify_rendered(args.output, args.image)
     logger.info("Wrote rendered manifest to %s", args.output)
     return EXIT_OK
+
+
+def _variables_from_env(names: Sequence[str]) -> dict[str, str]:
+    """Read each named placeholder value from the process environment.
+
+    Values are read here rather than passed as argv so a value never appears
+    in a process listing or a make recipe; only the names are logged.
+    """
+    missing = [name for name in names if not os.environ.get(name)]
+    if missing:
+        raise DeployConfigError(f"--substitute-from-env: unset environment variable(s) {missing}")
+    logger.debug("Substituting placeholders from environment: %s", list(names))
+    return {name: os.environ[name] for name in names}
+
+
+def verify_rendered(path: Path, image: str) -> None:
+    """Re-read *path* and prove its single container runs *image*.
+
+    Guards the write itself: a future change to rendering that dropped or
+    rewrote the image must fail here, before ``services replace`` applies it.
+    """
+    container = _single_container(_require_mapping(_load_yaml(path), f"rendered {path}"))
+    if container.get("image") != image:
+        raise DeployConfigError(
+            f"rendered {path} runs {container.get('image')!r}, expected {image!r}"
+        )
 
 
 def _optional_path(value: str) -> Path | None:
@@ -547,6 +638,13 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--environment", required=True)
     render.add_argument("--image", required=True)
     render.add_argument("--output", type=Path, required=True)
+    render.add_argument(
+        "--substitute-from-env",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Fill ${NAME} overlay placeholders from this environment variable (repeatable).",
+    )
     render.add_argument(
         "--base-manifest",
         type=_optional_path,

@@ -226,10 +226,7 @@ def test_runtime_lockfile_variable_names_the_file_the_dockerfile_uses() -> None:
     Without this the audit could point at a file the image does not install, and
     both halves would still look green.
     """
-    makefile = _MAKEFILE.read_text(encoding="utf-8")
-    match = re.search(r"^RUNTIME_LOCKFILE\s*\?=\s*(\S+)", makefile, re.MULTILINE)
-    assert match is not None, "RUNTIME_LOCKFILE is no longer declared in the Makefile"
-    lockfile = match.group(1)
+    lockfile = _makefile.variable("RUNTIME_LOCKFILE")
     dockerfile = (_REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert f"-c /tmp/{lockfile}" in dockerfile, (
         f"Makefile audits {lockfile!r} but the Dockerfile constrains on a "

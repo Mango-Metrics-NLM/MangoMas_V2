@@ -12,8 +12,9 @@ into producing on demand.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ import pytest
 import yaml
 
 from tests._script_loader import load_script_module
+from tests.constants.deploy import ENV_LABEL_VAR, LLM_API_KEY_VAR, TEST_PROJECT_ID
 
 deploy_env = load_script_module("deploy_environment.py")
 
@@ -33,11 +35,39 @@ _TEST_REMOTE = "origin"
 _TEST_BRANCH = "integration"
 _TEST_TAG_BRANCH = "release-line"
 _TEST_SERVICE_ACCOUNT = "runtime@test-project.iam.gserviceaccount.com"
-_SECRET_VAR = "MANGOMAS_LLM__API_KEY"  # noqa: S105 — env var name, not a secret
-_PLAIN_VAR = "MANGOMAS_ENV"
+_SECRET_VAR = LLM_API_KEY_VAR
+_PLAIN_VAR = ENV_LABEL_VAR
+_PLACEHOLDER_VAR = "TEST_DEPLOY_PLACEHOLDER"
+_PLACEHOLDER = "${" + _PLACEHOLDER_VAR + "}"
+
+# Process state main() reads or mutates; cleared/restored around every test so
+# no test inherits another's GitHub context or root-logger configuration.
+_SCRIPT_ENV_VARS = (
+    deploy_env.GITHUB_REF_ENV,
+    deploy_env.GITHUB_EVENT_NAME_ENV,
+    deploy_env.GITHUB_OUTPUT_ENV,
+    deploy_env.GITHUB_ACTIONS_ENV,
+    deploy_env.RUNNER_DEBUG_ENV,
+    deploy_env.REQUESTED_ENVIRONMENT_ENV,
+    _PLACEHOLDER_VAR,
+)
+# Variables that would point git at a repository other than the temp one, or
+# pull in the developer's own config (hooks, templates, signing).
+_GIT_REDIRECT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES")
 
 
 # ── fixtures / builders ────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _isolated_process_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    for name in _SCRIPT_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    root = logging.getLogger()
+    saved = (root.level, list(root.handlers))
+    yield
+    root.handlers[:] = saved[1]
+    root.setLevel(saved[0])
 
 
 def _registry_doc(**environments: dict[str, Any]) -> dict[str, Any]:
@@ -102,6 +132,10 @@ def git_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     The remote-tracking ref is written with ``update-ref`` so no network or
     second repository is needed; ``merge-base --is-ancestor`` only reads refs.
     """
+    for name in _GIT_REDIRECT_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -395,16 +429,6 @@ def test_write_outputs_refuses_injection(outputs: dict[str, str], tmp_path: Path
 # ── render ─────────────────────────────────────────────────────────────────
 
 
-def test_render_production_is_the_base_manifest_plus_image() -> None:
-    """Backwards compatibility: prod renders to exactly the pre-ADR-0036 deploy."""
-    registry = deploy_env.load_registry(_REAL_REGISTRY)
-    base = _base_manifest()
-    rendered = deploy_env.render_manifest(base, registry.environments["prod"], _TEST_IMAGE)
-    expected = _base_manifest()
-    expected["spec"]["template"]["spec"]["containers"][0]["image"] = _TEST_IMAGE
-    assert rendered == expected
-
-
 def test_render_does_not_mutate_the_base() -> None:
     base = _base_manifest()
     deploy_env.render_manifest(base, _environment({"env": {_PLAIN_VAR: "dev"}}), _TEST_IMAGE)
@@ -564,10 +588,22 @@ def test_main_render_uses_registry_base_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(_REPO_ROOT)
+    monkeypatch.setenv("PROJECT_ID", TEST_PROJECT_ID)
     out = tmp_path / "rendered.yaml"
-    args = ["render", "--environment", "dev", "--image", _TEST_IMAGE, "--output", str(out)]
+    args = [
+        "render",
+        "--environment",
+        "dev",
+        "--image",
+        _TEST_IMAGE,
+        "--output",
+        str(out),
+        "--substitute-from-env",
+        "PROJECT_ID",
+    ]
     assert deploy_env.main(["--registry", str(_REAL_REGISTRY), *args]) == deploy_env.EXIT_OK
-    assert yaml.safe_load(out.read_text(encoding="utf-8"))["metadata"]["name"] == "mangomas-dev"
+    expected = deploy_env.load_registry(_REAL_REGISTRY).environments["dev"].service
+    assert yaml.safe_load(out.read_text(encoding="utf-8"))["metadata"]["name"] == expected
 
 
 def test_main_render_unknown_environment(tmp_path: Path) -> None:
@@ -611,3 +647,148 @@ def test_failure_without_actions_emits_no_annotation(
     monkeypatch.delenv(deploy_env.GITHUB_ACTIONS_ENV, raising=False)
     deploy_env.main(["--registry", str(_write_registry(tmp_path)), "plan", "--ref", "refs/x"])
     assert "::error" not in capsys.readouterr().out
+
+
+# ── review follow-ups: repositories, placeholders, self-check, hardening ───
+
+
+def test_environment_repository_overrides_the_default() -> None:
+    registry = _registry(
+        dev={"trigger": {"branch": _TEST_BRANCH}, "service": "svc-dev", "repository": "repo-dev"},
+        prod={"trigger": {"tag_pattern": "v*"}, "service": "svc"},
+    )
+    assert registry.repository_for(registry.environments["dev"]) == "repo-dev"
+    assert registry.repository_for(registry.environments["prod"]) == "test-repo"
+
+
+def test_plan_reports_the_environment_repository() -> None:
+    registry = _registry(
+        dev={"trigger": {"branch": _TEST_BRANCH}, "service": "svc-dev", "repository": "repo-dev"},
+    )
+    plan = deploy_env.build_plan(
+        registry,
+        ref=f"refs/heads/{_TEST_BRANCH}",
+        requested=None,
+        remote=_TEST_REMOTE,
+        run_git=_fake_git(0, stdout="tree\n"),
+    )
+    assert plan["repository"] == "repo-dev"
+
+
+def test_empty_repository_override_is_rejected() -> None:
+    with pytest.raises(deploy_env.DeployConfigError, match="non-empty string"):
+        _registry(x={"trigger": {"branch": "b"}, "service": "svc-x", "repository": ""})
+
+
+def test_placeholders_fill_every_overlay_field() -> None:
+    env = _environment(
+        {
+            "env": {_PLAIN_VAR: f"{_PLACEHOLDER}-env"},
+            "secrets": {_SECRET_VAR: f"secret-{_PLACEHOLDER}"},
+            "annotations": {"k": f"{_PLACEHOLDER}"},
+            "service_account": f"sa@{_PLACEHOLDER}.iam.gserviceaccount.com",
+        }
+    )
+    rendered = deploy_env.render_manifest(
+        _base_manifest(), env, _TEST_IMAGE, {_PLACEHOLDER_VAR: "p1"}
+    )
+    template = rendered["spec"]["template"]
+    env_vars = {e["name"]: e for e in template["spec"]["containers"][0]["env"]}
+    assert env_vars[_PLAIN_VAR]["value"] == "p1-env"
+    assert env_vars[_SECRET_VAR]["valueFrom"]["secretKeyRef"]["name"] == "secret-p1"
+    assert template["metadata"]["annotations"]["k"] == "p1"
+    assert template["spec"]["serviceAccountName"] == "sa@p1.iam.gserviceaccount.com"
+
+
+def test_double_dollar_is_a_literal_dollar() -> None:
+    env = _environment({"env": {_PLAIN_VAR: "cost$$5"}})
+    rendered = deploy_env.render_manifest(_base_manifest(), env, _TEST_IMAGE)
+    env_vars = {e["name"]: e for e in rendered["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert env_vars[_PLAIN_VAR]["value"] == "cost$5"
+
+
+def test_unfilled_placeholder_is_an_error() -> None:
+    env = _environment({"service_account": f"sa@{_PLACEHOLDER}"})
+    with pytest.raises(deploy_env.DeployConfigError, match="has no value"):
+        deploy_env.render_manifest(_base_manifest(), env, _TEST_IMAGE)
+
+
+def test_malformed_placeholder_is_an_error() -> None:
+    env = _environment({"env": {_PLAIN_VAR: "${unclosed"}})
+    with pytest.raises(deploy_env.DeployConfigError, match="malformed placeholder"):
+        deploy_env.render_manifest(_base_manifest(), env, _TEST_IMAGE)
+
+
+def test_substitution_values_come_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(_PLACEHOLDER_VAR, "from-env")
+    registry_path = tmp_path / "environments.yaml"
+    doc = _registry_doc(
+        dev={
+            "trigger": {"branch": _TEST_BRANCH},
+            "service": "svc-dev",
+            "overrides": {"service_account": f"sa@{_PLACEHOLDER}"},
+        }
+    )
+    registry_path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    out = tmp_path / "rendered.yaml"
+    code = deploy_env.main(
+        [
+            "--registry",
+            str(registry_path),
+            "render",
+            "--environment",
+            "dev",
+            "--image",
+            _TEST_IMAGE,
+            "--output",
+            str(out),
+            "--base-manifest",
+            str(_REAL_BASE_MANIFEST),
+            "--substitute-from-env",
+            _PLACEHOLDER_VAR,
+        ]
+    )
+    assert code == deploy_env.EXIT_OK
+    rendered = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert rendered["spec"]["template"]["spec"]["serviceAccountName"] == "sa@from-env"
+
+
+def test_unset_substitution_variable_is_an_error() -> None:
+    with pytest.raises(deploy_env.DeployConfigError, match="unset environment variable"):
+        deploy_env._variables_from_env([_PLACEHOLDER_VAR])
+
+
+def test_verify_rendered_accepts_the_written_image(tmp_path: Path) -> None:
+    path = tmp_path / "m.yaml"
+    manifest = deploy_env.render_manifest(_base_manifest(), _environment(), _TEST_IMAGE)
+    path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    deploy_env.verify_rendered(path, _TEST_IMAGE)
+
+
+def test_verify_rendered_refuses_a_different_image(tmp_path: Path) -> None:
+    path = tmp_path / "m.yaml"
+    path.write_text(yaml.safe_dump(_base_manifest()), encoding="utf-8")
+    with pytest.raises(deploy_env.DeployConfigError, match="expected"):
+        deploy_env.verify_rendered(path, _TEST_IMAGE)
+
+
+def test_secret_override_on_non_mapping_value_from_is_a_config_error() -> None:
+    base = _base_manifest()
+    container = base["spec"]["template"]["spec"]["containers"][0]
+    container["env"].append({"name": "MANGOMAS_ODD", "valueFrom": "not-a-mapping"})
+    with pytest.raises(deploy_env.DeployConfigError, match="no secretKeyRef"):
+        deploy_env.render_manifest(
+            base, _environment({"secrets": {"MANGOMAS_ODD": "s"}}), _TEST_IMAGE
+        )
+
+
+def test_annotation_escapes_newlines_so_no_command_is_forged(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A message carrying ``\n::warning::`` must stay one annotation line."""
+    monkeypatch.setenv(deploy_env.GITHUB_ACTIONS_ENV, "true")
+    deploy_env._report(deploy_env.DeployRefused("bad\n::warning::forged 100%"), "Deploy refused")
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == ["::error title=Deploy refused::bad%0A::warning::forged 100%25"]

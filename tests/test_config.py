@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import typing
 
 import pytest
 from pydantic import ValidationError
@@ -74,7 +75,9 @@ def test_module_reimport_safe() -> None:
     for submodule in _CONFIG_SUBMODULES:
         importlib.reload(importlib.import_module(f"mangomas.config.{submodule}"))
     importlib.reload(config_module)
-    assert config_module.get_settings().env in {"local", "dev", "qa", "prod"}
+    assert config_module.get_settings().env in typing.get_args(
+        config_module.Settings.model_fields["env"].annotation
+    )
 
 
 def test_facade_reload_alone_does_not_reexecute_submodules() -> None:

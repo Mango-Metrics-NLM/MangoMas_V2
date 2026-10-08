@@ -38,6 +38,7 @@ _READYZ_PATH = "/readyz"
 # file this suite validates. Breaking any link fails below.
 _MANIFEST_WORKFLOW_REF = "deploy/service.yaml"
 _RENDER_TARGET_COMMAND = "make deploy-render"
+_APPLY_TARGET_COMMAND = "make deploy-apply"
 _REGISTRY = _DEPLOY / "environments.yaml"
 # The full-manifest application command; its image-only predecessor is banned.
 _MANIFEST_APPLY_COMMAND = "gcloud run services replace"
@@ -110,25 +111,47 @@ def test_deploy_workflow_applies_the_service_manifest() -> None:
     """spec-0024: the manifest must be applied, not merely documented.
 
     Every link of the chain from the workflow to ``deploy/service.yaml`` is
-    asserted, so renaming the file, the registry, the Make variable or the
-    target fails here rather than at deploy time.
+    asserted, so renaming the file, the registry, a Make variable or a target
+    fails here rather than at deploy time — including the file ``deploy-render``
+    writes being the very file ``deploy-apply`` applies (one variable owns it).
     """
     bodies = _deploy_run_bodies()
     assert bodies, "deploy.yml has no run: steps — has the workflow been emptied?"
-    assert any(_RENDER_TARGET_COMMAND in b for b in bodies), (
-        f"no deploy.yml run: body calls {_RENDER_TARGET_COMMAND!r}"
-    )
-    assert any(_MANIFEST_APPLY_COMMAND in b for b in bodies), (
-        f"deploy.yml never runs {_MANIFEST_APPLY_COMMAND!r}; the manifest's env vars, "
+    for command in (_RENDER_TARGET_COMMAND, _APPLY_TARGET_COMMAND):
+        assert any(command in b for b in bodies), f"no deploy.yml run: body calls {command!r}"
+    render, apply = _makefile.target_body("deploy-render"), _makefile.target_body("deploy-apply")
+    assert _MANIFEST_APPLY_COMMAND in apply, (
+        f"deploy-apply never runs {_MANIFEST_APPLY_COMMAND!r}; the manifest's env vars, "
         "secretKeyRefs, probes, limits and autoscaling bounds would not reach Cloud Run"
+    )
+    assert '--output "$(RENDERED_MANIFEST)"' in render
+    assert '"$(RENDERED_MANIFEST)"' in apply
+    assert all("RENDERED_MANIFEST=" not in b for b in bodies), (
+        "deploy.yml overrides RENDERED_MANIFEST; the Makefile is its one owner"
     )
     registry_ref = _REGISTRY.relative_to(_REPO_ROOT).as_posix()
     assert _makefile.variable("DEPLOY_REGISTRY") == registry_ref
-    assert "$(DEPLOY_REGISTRY)" in _makefile.target_body("deploy-render")
+    assert "$(DEPLOY_REGISTRY)" in render
     registry = yaml.safe_load(_REGISTRY.read_text(encoding="utf-8"))
     assert registry["defaults"]["base_manifest"] == _MANIFEST_WORKFLOW_REF
     assert _SERVICE_YAML.relative_to(_REPO_ROOT).as_posix() == _MANIFEST_WORKFLOW_REF
     assert _SERVICE_YAML.is_file()
+
+
+def test_deploy_recipes_read_values_from_the_environment() -> None:
+    """Security review finding: a make expansion splices a value into recipe text."""
+    for target in ("deploy-render", "deploy-apply"):
+        body = _makefile.target_body(target)
+        for name in ("ENVIRONMENT", "IMAGE", "REGION"):
+            assert f"$({name})" not in body, f"{target} expands $({name}) into the recipe"
+
+
+def test_deploy_pins_the_image_by_digest() -> None:
+    """The manifest must carry the immutable digest, not a movable tag."""
+    build = [b for b in _deploy_run_bodies() if "docker build" in b]
+    assert len(build) == 1
+    assert "fully_qualified_digest" in build[0]
+    assert 'echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"' in build[0]
 
 
 def test_deploy_workflow_dropped_the_image_only_deploy() -> None:
@@ -140,6 +163,11 @@ def test_deploy_workflow_dropped_the_image_only_deploy() -> None:
     *alongside* the manifest application still fails.
     """
     offenders = [b for b in _deploy_run_bodies() if _IMAGE_ONLY_DEPLOY_COMMAND in b]
+    offenders += [
+        target
+        for target in ("deploy-render", "deploy-apply")
+        if _IMAGE_ONLY_DEPLOY_COMMAND in _makefile.target_body(target)
+    ]
     assert offenders == []
 
 

@@ -31,4 +31,8 @@ def variable(name: str) -> str:
     """Return the value of a ``NAME ?= value`` (or ``NAME = value``) assignment."""
     match = re.search(rf"^{re.escape(name)}\s*\??=\s*(.+)$", text(), re.M)
     assert match is not None, f"Makefile does not define {name}"
-    return match.group(1).strip()
+    value = match.group(1).strip()
+    # Only single-line values are supported; a `\`-continued one would be
+    # silently truncated to its first line.
+    assert not value.endswith("\\"), f"{name} is a multi-line value; read it another way"
+    return value

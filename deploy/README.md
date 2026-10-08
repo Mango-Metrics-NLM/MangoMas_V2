@@ -92,25 +92,50 @@ field outside the allow-list, if a non-production environment reuses a
 production secret, or if production renders to anything but `service.yaml`
 plus the image.
 
-**Image promotion.** The image tag is the git *tree* hash, so a `qa` → `main`
-promotion (same tree, new merge commit) reuses the exact image QA tested; the
-build step is skipped when the tag already exists, and a release also tags the
-image with its release name.
+**Images.** Each environment builds into its **own** Artifact Registry
+repository (`repository` in `environments.yaml`; `prod` keeps `mangomas`). The
+tag is the git *tree* hash: a re-deploy of an unchanged tree reuses that
+environment's image, and a `qa` → `main` promotion rebuilds the identical tree
+into production's repository. The manifest pins the **digest**, not the tag,
+and a release also tags the image with its release name.
+
+**Trust model.** `plan`/`render` catch mistakes, but they are not the security
+boundary: on a release or dispatch the workflow, the script and the registry
+are all read from the ref being deployed, so anyone who can create that ref
+can change them. The controls that hold are the GitHub Environment rules, the
+`v*` tag ruleset, per-environment deploy identities, per-environment image
+repositories, and the WIF conditions below. Cross-environment image reuse is
+deliberately not done: a shared repository would let a dev deployer pre-push
+an image under a tree hash production later trusts.
 
 **One-time setup (admin; this repo provisions nothing):**
 
-1. Per environment, create a runtime service account, a deploy service account
-   with `roles/run.developer` and `roles/run.invoker` on *that service only*
-   plus `roles/iam.serviceAccountUser` on *that runtime account only*, and the
-   Secret Manager secrets its overlay names (e.g. `mangomas-llm-api-key-dev`).
-   Give dev and qa their own databases.
-2. Restrict each WIF provider binding to its GitHub Environment
-   (`attribute.environment`), so only `environment: prod` jobs can mint the
-   production deployer's token.
-3. Create GitHub Environments `dev`, `qa`, `prod` with the rules above, each
-   holding `GCP_WIF_PROVIDER` + `GCP_DEPLOY_SERVICE_ACCOUNT`; delete any
-   repository-level copies of those two secrets.
-4. Set the repository variable `MULTI_ENV_DEPLOY_ENABLED=true`. Until then a
+1. **Per environment**, create:
+   - the runtime service account its overlay names
+     (`mangomas-<env>-runtime@PROJECT.iam.gserviceaccount.com`; `prod` keeps
+     the Cloud Run default until it gets its own, reviewed, account);
+   - the Artifact Registry repository it names (`mangomas-dev`, `mangomas-qa`,
+     `mangomas`) with **immutable tags** enabled;
+   - a deploy service account holding `roles/run.developer` and
+     `roles/run.invoker` on *that service only*, `roles/iam.serviceAccountUser`
+     on *that runtime account only*, and `roles/artifactregistry.writer` on
+     *that repository only*;
+   - the Secret Manager secrets its overlay names (e.g.
+     `mangomas-llm-api-key-dev`), readable only by its runtime account, and
+     its own database.
+2. **Bind each WIF principal to this repository and environment**, by numeric
+   id so a renamed or squatted repository cannot match:
+   `assertion.repository_id == '<id>' && assertion.repository_owner_id == '<id>'
+   && assertion.environment == '<env>'`. The `environment` claim alone is a
+   name any repository can set.
+3. **GitHub Environments** `dev`, `qa`, `prod` with the deployment rules in the
+   table; `prod` also gets required reviewers with *prevent self-review*. Each
+   holds `GCP_WIF_PROVIDER` + `GCP_DEPLOY_SERVICE_ACCOUNT`; delete any
+   repository-level copies of those two secrets so a job outside an
+   environment gets no credentials.
+4. **Tag ruleset**: only admins may create or move `v*` tags — the prod
+   environment rule trusts the tag, so the tag must be trustworthy.
+5. Set the repository variable `MULTI_ENV_DEPLOY_ENABLED=true`. Until then a
    push to `dev`/`qa` skips the deploy (releases still deploy production).
 
 **Debugging.** `plan` logs which environment a ref resolved to and why; a
@@ -121,14 +146,15 @@ locally:
 
 ```bash
 make deploy-plan DEPLOY_LOG_LEVEL=DEBUG GITHUB_REF=refs/heads/qa
-make deploy-render ENVIRONMENT=qa IMAGE=example:tag DEPLOY_LOG_LEVEL=DEBUG
+PROJECT_ID=my-project make deploy-render ENVIRONMENT=qa IMAGE=example:tag DEPLOY_LOG_LEVEL=DEBUG
 ```
 
 ## Deploy
 
 Triggered by a push to `dev`/`qa`, a published GitHub release (`prod`), or
-manually via `workflow_dispatch` — whose `environment` input must own the
-selected ref, so a manual run cannot push a feature branch to production. The
+manually via `workflow_dispatch`, whose `environment` input must own the
+selected ref (`plan` refuses a mismatch; the GitHub Environment rule is what
+enforces it against a modified workflow). The
 workflow applies the rendered manifest in full (spec-0024) — an image-only
 `gcloud run deploy` would drop every env var, `secretKeyRef`, probe, resource
 limit and autoscaling bound above — and then smoke-probes `/healthz` +
@@ -137,12 +163,13 @@ private: `services replace` never creates an `allUsers` invoker binding). To
 deploy locally instead, mirror the workflow:
 
 ```bash
-ENVIRONMENT=qa   # dev | qa | prod — see deploy/environments.yaml
-IMAGE="us-central1-docker.pkg.dev/PROJECT_ID/mangomas/mangomas:$(git rev-parse 'HEAD^{tree}')"
+export PROJECT_ID=my-project REGION=us-central1
+ENVIRONMENT=qa   # dev | qa | prod — repository and service come from deploy/environments.yaml
+IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/mangomas-qa/mangomas:$(git rev-parse 'HEAD^{tree}')"
 docker build -t "$IMAGE" .
 docker push "$IMAGE"
 make deploy-render ENVIRONMENT="$ENVIRONMENT" IMAGE="$IMAGE"   # -> rendered-service.yaml
-gcloud run services replace rendered-service.yaml --region us-central1
+make deploy-apply                                               # gcloud run services replace
 
 URL="$(gcloud run services describe mangomas-qa --region us-central1 --format 'value(status.url)')"
 TOKEN="$(gcloud auth print-identity-token)"   # caller needs roles/run.invoker

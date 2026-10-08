@@ -16,14 +16,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
   tag `v*` reachable from `main` → `mangomas`), each an overlay on the
   unchanged `deploy/service.yaml`.
 - `scripts/deploy_environment.py` (`plan` / `render`) and the
-  `install-deploy-tools` / `deploy-plan` / `deploy-render` Make targets. The
-  closed overlay schema refuses unknown keys and plain values aimed at secrets.
-  A manual dispatch cannot widen what a ref may deploy. Logs every step at
-  `DEBUG` (or under `RUNNER_DEBUG=1`) and annotates failures on the run.
+  `install-deploy-tools` / `deploy-plan` / `deploy-render` / `deploy-apply`
+  Make targets. The closed overlay schema refuses unknown keys and plain values
+  aimed at secrets; `plan` refuses a dispatch whose environment does not own
+  the ref, and a release tag not on `main`. These catch mistakes — the GitHub
+  Environment rules and WIF conditions are the security boundary
+  (deploy/README.md, "Trust model"). Logs every step at `DEBUG` (or under
+  `RUNNER_DEBUG=1`) and annotates failures on the run.
 - `deploy.yml`: a `plan` job, a per-environment GitHub `environment:` and
-  `concurrency` group, and content-addressed (git tree hash) image tags so a
-  promotion reuses QA's image. Branch-push deploys stay off until the
+  `concurrency` group, per-environment image repositories, content-addressed
+  (git tree hash) tags reused only within an environment, and a manifest
+  pinned to the image **digest**. Branch-push deploys stay off until the
   `MULTI_ENV_DEPLOY_ENABLED` repository variable is set.
+- Non-production environments get their own runtime service account
+  (`${PROJECT_ID}` placeholders filled at render time — no project is
+  hard-coded) and their own secrets; `make deploy-apply` owns the apply step.
 - `MANGOMAS_ENV` accepts `qa`.
 - `tests/deploy/test_deploy_environments.py` covers registry↔workflow drift,
   the overlay allow-list, secret isolation and the production render.
@@ -31,9 +38,11 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `tests/deploy/_makefile.py` shares the Makefile reader.
 
 **Backwards compatibility:** a published release still deploys `mangomas` from
-`deploy/service.yaml`. The rendered production manifest differs from it only
-in the image, and a test pins that. The image tag changes from the release
-name to the tree hash, and the release name is added as an alias tag.
+`deploy/service.yaml` into the `mangomas` image repository with the default
+runtime identity; the rendered production manifest differs from the base only
+in the image (test-pinned). The manifest now references the image by digest
+rather than by the release-name tag; the release name is still added as an
+alias tag.
 
 ### Changed — environment branching, step 1 (ADR-0036)
 
