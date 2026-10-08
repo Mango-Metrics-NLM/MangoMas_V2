@@ -34,7 +34,7 @@ tests/
 ├── eval/                  # Evaluation harness (incl. test_serialize.py)
 ├── rag/                   # RAG domain (chunker + Hypothesis fuzz, pipeline, retrieval)
 ├── cognitive/             # CognitiveSignal producer (roles, PDP adapter, sinks, emit)
-├── deploy/                # Deploy-manifest + Docker build-context contracts
+├── deploy/                # Deploy-manifest, environment-registry + Docker build-context contracts
 ├── harness/               # Harness governance + config-audit units
 ├── tooling/               # Corpus + Claude Code config contract tests
 ├── eval_harness_bridge/   # Bridge black-box tests (own 100% floor, own constants.py)

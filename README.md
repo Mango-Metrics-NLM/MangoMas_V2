@@ -358,7 +358,7 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 20 skills — live in Claude Code and VS Code Copilot |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 21 skills — live in Claude Code and VS Code Copilot |
 | Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
@@ -545,7 +545,8 @@ docs/
   tooling/       Claude Code ecosystem catalog (MCP servers, hooks, rejections)
 
 specs/           One thin spec per non-trivial feature, written before the code
-scripts/         Coverage gate, frontmatter lint, and the harness hook entry points
+scripts/         Coverage gate, frontmatter lint, harness hook entry points, deploy-environment planner
+deploy/          Cloud Run base manifest + per-environment registry (dev / qa / prod, ADR-0036)
 .claude/         Agents, skills and settings — the live Claude Code corpus
 .github/         CI, deploy, eval-gate and nightly workflows + dependabot
 ```

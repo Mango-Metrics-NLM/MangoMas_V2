@@ -193,6 +193,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-harness",
         "mango-mutation-proof",
         "mango-observability",
+        "mango-promote",
         "mango-rag",
         "mango-release",
         "mango-testing",
@@ -659,6 +660,18 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
 # derives ownership from the agent bodies themselves rather than a second
 # hand-maintained table, so the corpus cannot desync from its own claims.
 UNOWNED_SOURCE_SURFACES: frozenset[str] = frozenset({"registry.py", "utils"})
+
+# `scripts/` entry points (non-underscore files) that no write-capable agent
+# claims, each for a recorded reason. `check_coverage.py` holds the per-package
+# floor table owned by `mango-test-engineer`, a read-only router, so edits go
+# through whichever specialist the router routes to. `run_workflow_e2e.py` is a
+# manual live-LM-Studio driver for the workflow layer with no CI caller.
+# Every other entry point must be named under an agent's `## Surface You Own`;
+# `deploy_environment.py` went unowned for a whole review cycle before this
+# list existed. Private `_helper.py` modules ride with their importers.
+UNOWNED_SCRIPT_ENTRY_POINTS: frozenset[str] = frozenset(
+    {"check_coverage.py", "run_workflow_e2e.py"}
+)
 
 # ── Corpus-count claims in prose ─────────────────────────────────────────────
 #

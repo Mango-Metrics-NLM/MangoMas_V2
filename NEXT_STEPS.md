@@ -157,6 +157,27 @@ reuses the application exporter. See ADR-0009, spec 0002.
 `.github/workflows/deploy.yml`, and the `MANGOMAS_*` env contract. Author-only;
 no GCP resources are provisioned here. See ADR-0001, spec 0004.
 
+**Per-environment deploy — done in code (ADR-0036, spec 0035).** `dev` / `qa` /
+production services from one base manifest plus the `deploy/environments.yaml`
+registry, digest-pinned images in per-environment repositories, and an offline
+registry check in `make validate-config`. Open, all admin or follow-up:
+
+- [ ] Provision GCP per `deploy/README.md` (per-environment deploy + runtime
+      service accounts, repositories with immutable tags, secrets, databases,
+      WIF bound on repository id + environment), then set
+      `MULTI_ENV_DEPLOY_ENABLED=true`.
+- [ ] Create GitHub Environments `dev` / `qa` / `prod` (tag rule `v*`, required
+      reviewers with prevent self-review) and a `v*` tag ruleset.
+- [ ] Rename `feat/initial-release` → `dev`, tag legacy `main` as
+      `archive/main-legacy`, reset `main` from `dev`, then drop the legacy
+      trunk name from `ci.yml` / `Makefile` `BASE_REF`.
+- [ ] Give production its own runtime service account (changes prod; review).
+- [ ] `nightly.yml` scans only the default branch; add a `ref` matrix so `main`
+      (production) is scanned too, once `main` is reset.
+- [ ] Optional hook (needs a human: `.claude/settings.json` is edit-denied to
+      agents): a `PostToolUse` entry that runs `make deploy-validate` when
+      `deploy/environments.yaml` is edited.
+
 ### ✅ SecretsSettings.strict mode — done (Milestone D)
 
 `MANGOMAS_SECRETS__STRICT` makes cloud backends raise `SecretsResolutionError`
@@ -601,7 +622,9 @@ defects and a further round of duplication clusters via a full-repo audit:
   `MANGOMAS_LLM__MAX_OUTPUT_TOKENS`, carries no duplicated Vertex block, and
   `tests/deploy/test_env_example_contract.py` passes unchanged. The earlier
   "read-protected, needs a manual edit" record was stale.
-- **`main` / `feat/initial-release` reconciliation — partially done.** The two
+- **`main` / `feat/initial-release` reconciliation — superseded by ADR-0036**
+  (rename the trunk to `dev`, archive legacy `main`, reset `main` from `dev`;
+  pending admin action — see the per-environment deploy entry above). History: The two
   branches genuinely diverged: `main` carried a harness-hardening layer
   (`src/mangomas/harness/`, `scripts/harness_stop_gate.py`,
   `scripts/harness_config_audit.py`) that this line lacked, and each branch
@@ -639,8 +662,9 @@ defects and a further round of duplication clusters via a full-repo audit:
   intends the `protected-paths` job to be a merge-blocking required status
   check, but GitHub branch-protection settings are a repo-admin action under
   Settings → Branches, not something any file in this repo can express or a
-  session can configure. Until an admin adds `protected-paths` (and the other
-  gate jobs) to the required-checks list, a PR that edits a protected core
+  session can configure. Under ADR-0036 the list applies to the `dev`, `qa`
+  and `main` rulesets (CONTRIBUTING.md). Until an admin adds `protected-paths`
+  (and the other gate jobs) to the required-checks list, a PR that edits a protected core
   contract without a `BREAKING-CHANGE` trailer will show the check red but is
   not actually blocked from merging.
 

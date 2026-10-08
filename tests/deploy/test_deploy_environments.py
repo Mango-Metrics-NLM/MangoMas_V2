@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import subprocess
 import typing
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +27,7 @@ from tests.constants.deploy import (
     TEST_IMAGE_REF,
     TEST_PROJECT_ID,
 )
-from tests.deploy import _makefile, _workflows
+from tests.deploy import _makefile, _manifest, _workflows
 
 deploy_env = load_script_module("deploy_environment.py")
 
@@ -57,8 +56,7 @@ _ALLOWED_DIFF_PREFIXES: tuple[tuple[Any, ...], ...] = (
 
 
 def _base_manifest() -> dict[str, Any]:
-    path = _REPO_ROOT / _REGISTRY.base_manifest
-    return yaml.safe_load(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    return _manifest.base_manifest(_REPO_ROOT / _REGISTRY.base_manifest)
 
 
 def _rendered(name: str) -> dict[str, Any]:
@@ -68,21 +66,8 @@ def _rendered(name: str) -> dict[str, Any]:
     return result
 
 
-def _diff_paths(a: Any, b: Any, path: tuple[Any, ...] = ()) -> Iterator[tuple[Any, ...]]:
-    """Yield every leaf path where *a* and *b* differ."""
-    if isinstance(a, dict) and isinstance(b, dict):
-        for key in a.keys() | b.keys():
-            yield from _diff_paths(a.get(key), b.get(key), (*path, key))
-    elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
-        for index, (x, y) in enumerate(zip(a, b, strict=True)):
-            yield from _diff_paths(x, y, (*path, index))
-    elif a != b:
-        yield path
-
-
-def _env_vars(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    container = manifest["spec"]["template"]["spec"]["containers"][0]
-    return {entry["name"]: entry for entry in container["env"]}
+_diff_paths = _manifest.diff_paths
+_env_vars = _manifest.env_vars
 
 
 # ── registry <-> workflow ──────────────────────────────────────────────────
@@ -283,3 +268,33 @@ def test_allow_list_detects_a_disallowed_change() -> None:
         if not any(path[: len(prefix)] == prefix for prefix in _ALLOWED_DIFF_PREFIXES)
     ]
     assert offenders == [("spec", "template", "spec", "timeoutSeconds")]
+
+
+# ── release hygiene (code-hygiene review follow-ups) ───────────────────────
+
+
+def test_prereleases_and_unprovisioned_pushes_never_plan() -> None:
+    """``published`` fires for prereleases too; an rc tag on main must not reach prod."""
+    condition = _workflows.jobs(_DEPLOY_WORKFLOW)["plan"]["if"]
+    assert "github.event.release.prerelease" in condition
+    assert "!(github.event_name == 'release' && github.event.release.prerelease)" in condition
+    assert "vars.MULTI_ENV_DEPLOY_ENABLED == 'true'" in condition
+
+
+@pytest.mark.parametrize(
+    ("tag", "deploys"),
+    [
+        ("v1.2.3", True),
+        ("v10.0.0-rc.1", True),
+        ("vandal", False),
+        ("version-bump", False),
+        ("1.2.3", False),
+    ],
+)
+def test_production_tag_pattern_requires_a_version(tag: str, deploys: bool) -> None:
+    assert _production().trigger.matches(f"{deploy_env.TAG_REF_PREFIX}{tag}") is deploys
+
+
+def test_existing_release_tags_still_match_production() -> None:
+    """Backwards compatibility: the repo's published tag shape (``v0.1.0``) still deploys."""
+    assert _production().trigger.matches(f"{deploy_env.TAG_REF_PREFIX}v0.1.0")

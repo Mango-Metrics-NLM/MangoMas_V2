@@ -15,10 +15,11 @@ CONTRACTS_SRC ?= mango-integration-contracts/src
 CONTRACTS_TESTS ?= tests/mango_contracts
 CONTRACTS_FLOOR ?= 100
 PYTEST_FLAGS ?= -q
-# Base ref for the protected-path governance gate (ADR-0021). This repo's
-# working trunk is `feat/initial-release`, not `main` — see CLAUDE.md.
-# Override for a one-off check against a different base: `make protected-paths
-# BASE_REF=origin/main`.
+# Base ref for the protected-path governance gate (ADR-0021). Local default:
+# the integration trunk (`feat/initial-release` until ADR-0036 renames it to
+# `dev`). CI never uses this default — it passes the PR's own base branch.
+# Override for a one-off check against another base, e.g. a promotion PR:
+# `make protected-paths BASE_REF=origin/qa`.
 BASE_REF    ?= origin/feat/initial-release
 SCRIPTS_SRC  ?= scripts
 SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session_start.py \
@@ -81,7 +82,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local secret-scan pip-audit sbom-scan \
-        install-deploy-tools deploy-plan deploy-render deploy-apply
+        install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -106,6 +107,9 @@ deploy-render: ## Render ENVIRONMENT's manifest for IMAGE into RENDERED_MANIFEST
 	  render --environment "$$ENVIRONMENT" --image "$$IMAGE" --output "$(RENDERED_MANIFEST)" \
 	  $(addprefix --substitute-from-env ,$(DEPLOY_RENDER_ENV_VARS))
 
+deploy-validate: ## Offline registry check: render every environment (no credentials)
+	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) validate
+
 deploy-apply: ## Apply RENDERED_MANIFEST to Cloud Run in REGION (the full manifest, never image-only)
 	gcloud run services replace "$(RENDERED_MANIFEST)" --region "$$REGION"
 
@@ -121,7 +125,7 @@ endif
 
 # ── Quality gate (mirrors .github/workflows/ci.yml) ──────────────────────────
 
-validate-config: ## Validate .mcp.json / .claude/settings*.json JSON syntax
+validate-config: deploy-validate ## Validate .mcp.json / .claude/settings*.json JSON + the deploy registry
 	$(PYTHON) -m json.tool .mcp.json > $(DEVNULL)
 	$(PYTHON) -m json.tool .claude/settings.json > $(DEVNULL)
 	$(PYTHON) -m json.tool .claude/settings.local.json.example > $(DEVNULL)

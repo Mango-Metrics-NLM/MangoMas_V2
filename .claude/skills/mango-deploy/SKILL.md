@@ -52,6 +52,30 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
 
 ---
 
+## Adding a deployment environment
+
+1. Add the entry to `deploy/environments.yaml`: `trigger`, `service`, its own
+   `repository`, and an `overrides.service_account` using `${PROJECT_ID}` (a
+   non-production environment without its own runtime identity fails
+   `test_non_production_environments_have_their_own_runtime_identity`).
+2. Mirror the trigger in `.github/workflows/deploy.yml` — the branch into
+   `on.push.branches`, the name into the `workflow_dispatch` `options` — and,
+   for a new branch, into `ci.yml`'s `pull_request.branches`.
+3. If it sets a new `MANGOMAS_ENV` label, extend the `Settings.env` Literal.
+4. Validate offline, then trace one resolution end to end:
+
+   ```bash
+   make deploy-validate
+   make deploy-plan GITHUB_REF=refs/heads/<branch> DEPLOY_LOG_LEVEL=DEBUG
+   python -m pytest tests/deploy tests/test_deploy_environment.py -q --no-cov
+   ```
+
+5. Hand the admin half to a human (`deploy/README.md` setup steps 1–4): GitHub
+   Environment, deploy + runtime service accounts, the WIF condition, the
+   Artifact Registry repository and the secrets the overlay names.
+
+Promotion between environments is `mango-promote`'s procedure, not this one.
+
 ## Configuration
 
 `MANGOMAS_TELEMETRY__EXPORTER` (`console` | `gcp`) — those are the only two

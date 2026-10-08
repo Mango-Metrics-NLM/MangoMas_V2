@@ -29,9 +29,23 @@ _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
 _MAKEFILE = _REPO_ROOT / "Makefile"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 
-# The branching model (ADR-0036). `feat/initial-release` is `dev`'s pre-rename
-# name and leaves this tuple once the rename has landed.
-_PR_TRIGGER_BRANCHES = ("feat/initial-release", "dev", "qa", "main")
+# The branching model (ADR-0036), derived from the environment registry rather
+# than restated: every branch an environment deploys from, then every branch a
+# release tag must be reachable from (production's `main`). `feat/initial-release`
+# is `dev`'s pre-rename name and leaves the list once the rename has landed.
+_LEGACY_TRUNK = "feat/initial-release"
+_DEPLOY_REGISTRY = load_script_module("deploy_environment.py").load_registry(
+    _REPO_ROOT / _makefile.variable("DEPLOY_REGISTRY")
+)
+_PR_TRIGGER_BRANCHES = (
+    _LEGACY_TRUNK,
+    *_DEPLOY_REGISTRY.branch_triggers(),
+    *(
+        env.trigger.ancestor_branch
+        for env in _DEPLOY_REGISTRY.environments.values()
+        if env.trigger.ancestor_branch
+    ),
+)
 _PROTECTED_PATHS_BASE_EXPR = "${{ github.base_ref || github.event.repository.default_branch }}"
 
 # Opt-in suite targets that must never trip the global coverage gate when run

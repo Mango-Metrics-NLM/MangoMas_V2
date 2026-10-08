@@ -73,7 +73,9 @@ environments:
 
   prod:
     trigger:
-      tag_pattern: "v*"
+      # v<digit>...: `v*` would also match `vandal` or `v1/../x`; the tag must
+      # also be a valid image tag (plan refuses one that is not).
+      tag_pattern: "v[0-9]*"
       ancestor_branch: main
     # Production is the base manifest as-is: the overlay restates the values
     # the base already carries, so rendering prod is the pre-ADR-0036 deploy

@@ -53,9 +53,11 @@ table, and read from there by both `src/mangomas/harness/governance.py` and
 
 ## Required GitHub checks (admin)
 
-These jobs must be required status checks on `feat/initial-release`. That is
-what would have blocked #58 (format + secrets floor) from merging red. This
-file cannot flip the GitHub setting — a repo admin has to mark them required:
+These jobs must be required status checks on every environment branch —
+`dev`, `qa` and `main` (ADR-0036; `feat/initial-release` until it is renamed to
+`dev`). That is what would have blocked #58 (format + secrets floor) from
+merging red. This file cannot flip the GitHub setting — a repo admin has to
+mark them required:
 
 | Job name in `ci.yml` | Make target |
 |---|---|
@@ -68,6 +70,25 @@ file cannot flip the GitHub setting — a repo admin has to mark them required:
 | Contracts coverage gate | `contracts-coverage` |
 | Dependency vulnerability audit | `pip-audit` |
 | Secret scan | `secret-scan` |
+
+## Branches and promotion (ADR-0036)
+
+| Branch | Takes PRs from | Ruleset |
+|---|---|---|
+| `dev` (default) | feature and dependabot branches | required checks above |
+| `qa` | `dev` | required checks; merge commits only |
+| `main` | `qa`, `hotfix/*` | required checks; merge commits only; branches must be up to date; no force-push |
+
+- Feature PRs target `dev`. A squash merge is fine there only if any
+  `BREAKING-CHANGE` trailer is in the squash message.
+- Promotions (`dev` → `qa`, `qa` → `main`) and back-merges are **merge
+  commits** — never squash or rebase — so trailers stay inside the range the
+  protected-path gate walks.
+- A production release is a `vX.Y.Z` tag on a `main` merge commit; hotfixes
+  branch from `main`, and every release or hotfix is back-merged
+  `main` → `qa` → `dev`.
+
+The step-by-step procedure is the `mango-promote` skill.
 
 Do not generate `CODEOWNERS` from the Claude Code skill roster
 (`AGENT_SKILL_OWNERS`). Ownership for source surfaces is the corpus contract,

@@ -16,7 +16,7 @@ name: Deploy to Cloud Run
 # Which ref deploys where lives in deploy/environments.yaml, not here:
 #   push to dev            -> dev  (mangomas-dev)
 #   push to qa             -> qa   (mangomas-qa)
-#   release tag v* on main -> prod (mangomas)
+#   release tag v<digit>* on main -> prod (mangomas); prereleases never deploy
 # The push branches and dispatch options below must equal that registry —
 # tests/deploy/test_deploy_environments.py fails on drift.
 #
@@ -48,9 +48,12 @@ jobs:
     name: Plan deploy environment
     # Branch pushes deploy only once the per-environment GCP resources exist.
     # Until an admin sets the MULTI_ENV_DEPLOY_ENABLED repository variable, a
-    # push to dev/qa skips cleanly instead of failing red on every merge;
-    # releases and manual runs always plan.
-    if: ${{ github.event_name != 'push' || vars.MULTI_ENV_DEPLOY_ENABLED == 'true' }}
+    # push to dev/qa skips cleanly instead of failing red on every merge.
+    # A *prerelease* never deploys: `published` also fires for prereleases,
+    # and an rc tag on main must not reach production.
+    if: >-
+      ${{ (github.event_name != 'push' || vars.MULTI_ENV_DEPLOY_ENABLED == 'true')
+      && !(github.event_name == 'release' && github.event.release.prerelease) }}
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.plan.outputs.environment }}

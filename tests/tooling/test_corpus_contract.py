@@ -47,6 +47,7 @@ from tests.constants import (
     SKILL_UNMAPPED_AGENT_SLUGS,
     SPELLED_NUMBERS,
     SUBSET_COUNT_CLAIMS,
+    UNOWNED_SCRIPT_ENTRY_POINTS,
     UNOWNED_SOURCE_SURFACES,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
@@ -442,6 +443,85 @@ def test_every_source_surface_has_a_write_capable_owner() -> None:
         f"recorded as unowned but an agent claims it: {conflicting} — drop it from "
         "UNOWNED_SOURCE_SURFACES"
     )
+
+
+_SCRIPTS_DIR = _REPO_ROOT / "scripts"
+_SCRIPT_CLAIM_RE = re.compile(r"scripts/([A-Za-z0-9_]+\.py)")
+_NOT_YOURS_RE = re.compile(r"^Not yours\b", re.I | re.M)
+
+
+def _script_entry_points() -> list[str]:
+    return sorted(p.name for p in _SCRIPTS_DIR.glob("*.py") if not p.name.startswith("_"))
+
+
+def test_every_script_entry_point_has_a_write_capable_owner() -> None:
+    """The `src/` ownership check, extended to `scripts/` (gap found in review).
+
+    `scripts/deploy_environment.py` shipped with no owner: `mango-ci-dev` said
+    "Not yours: `scripts/`" and `mango-harness-dev` listed exactly its four.
+    Ownership is read from each write-capable agent's `## Surface You Own`, the
+    same derivation as the source-surface test above.
+    """
+    entry_points = _script_entry_points()
+    assert len(entry_points) >= len(UNOWNED_SCRIPT_ENTRY_POINTS) + 1, "scripts/ layout moved?"
+    claimed: dict[str, set[str]] = {}
+    for slug in sorted(WRITE_CAPABLE_AGENT_SLUGS):
+        section = _SURFACE_SECTION_RE.search(_agent_body(slug))
+        # A "Not yours: …" paragraph names paths precisely to disclaim them.
+        claims = _NOT_YOURS_RE.split(section.group(1) if section else "")[0]
+        for name in _SCRIPT_CLAIM_RE.findall(claims):
+            claimed.setdefault(name, set()).add(slug)
+    unowned = [e for e in entry_points if e not in claimed and e not in UNOWNED_SCRIPT_ENTRY_POINTS]
+    assert unowned == [], (
+        f"no write-capable agent claims scripts {unowned}. Name `scripts/<file>` under an "
+        "agent's `## Surface You Own`, or record it in UNOWNED_SCRIPT_ENTRY_POINTS with a reason"
+    )
+    stale = sorted(UNOWNED_SCRIPT_ENTRY_POINTS - set(entry_points))
+    assert stale == [], f"UNOWNED_SCRIPT_ENTRY_POINTS names missing scripts: {stale}"
+    conflicting = sorted(UNOWNED_SCRIPT_ENTRY_POINTS & set(claimed))
+    assert conflicting == [], f"recorded as unowned but claimed: {conflicting}"
+    multiply_owned = {name: owners for name, owners in claimed.items() if len(owners) > 1}
+    assert multiply_owned == {}, f"scripts with more than one owner: {multiply_owned}"
+
+
+_MAKEFILE_TARGET_RE = re.compile(r"^([A-Za-z0-9_-]+):", re.M)
+_CODE_SPAN_RE = re.compile(r"```.*?```|`[^`\n]+`", re.S)
+_MAKE_CALL_RE = re.compile(r"(?<![\w-])make\s+([a-z][a-z0-9-]*)")
+_CITED_FILE_RE = re.compile(r"(?<![\w/.-])((?:scripts|tests)/[A-Za-z0-9_./-]+\.py)")
+
+
+def _corpus_files() -> list[Path]:
+    return [p / _SKILL_FILENAME for p in _skill_dirs()] + sorted(
+        (_REPO_ROOT / ".claude" / "agents").glob(f"{AGENT_SLUG_PREFIX}*.md")
+    )
+
+
+def test_corpus_make_commands_name_real_targets() -> None:
+    """A skill or agent that says `make X` must be naming a target that exists.
+
+    Skills own procedure; a procedure whose command was renamed out from under
+    it fails at the moment someone follows it. Only code spans are read, so
+    prose like "make sure" is never mistaken for a command.
+    """
+    targets = set(_MAKEFILE_TARGET_RE.findall((_REPO_ROOT / "Makefile").read_text("utf-8")))
+    assert "gate" in targets, "Makefile target parse found no `gate` — format moved?"
+    dangling: dict[str, set[str]] = {}
+    for path in _corpus_files():
+        for span in _CODE_SPAN_RE.findall(path.read_text(encoding="utf-8")):
+            for target in _MAKE_CALL_RE.findall(span):
+                if target not in targets:
+                    dangling.setdefault(path.relative_to(_REPO_ROOT).as_posix(), set()).add(target)
+    assert dangling == {}, f"corpus cites make targets that do not exist: {dangling}"
+
+
+def test_corpus_cited_script_and_test_files_exist() -> None:
+    """`scripts/…py` / `tests/…py` paths named in a skill or agent must exist."""
+    missing: dict[str, set[str]] = {}
+    for path in _corpus_files():
+        for cited in _CITED_FILE_RE.findall(path.read_text(encoding="utf-8")):
+            if not (_REPO_ROOT / cited).exists():
+                missing.setdefault(path.relative_to(_REPO_ROOT).as_posix(), set()).add(cited)
+    assert missing == {}, f"corpus cites files that do not exist: {missing}"
 
 
 # `**23**` / `23` / `twenty-three`, followed by a corpus noun. Bold markers are

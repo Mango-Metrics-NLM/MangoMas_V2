@@ -14,6 +14,12 @@ script is the only code that reads it. Two subcommands, both driven by
     (environment, service, region, repository, content-addressed image tag) to
     ``$GITHUB_OUTPUT``.
 
+``validate``
+    Offline, credential-free check of the whole registry: parse it, then
+    render *every* environment against the base manifest with a sentinel for
+    each ``${NAME}`` placeholder. Wired into ``make validate-config`` so a
+    registry edit that would only fail at deploy time fails in CI instead.
+
 ``render``
     Apply one environment's overlay to the base manifest and set the image,
     then re-read the written file to prove the image landed. The overlay schema
@@ -31,8 +37,10 @@ protection rules and the Workload Identity Federation conditions
 (deploy/README.md).
 
 Exit codes: ``0`` success, ``2`` configuration error (malformed registry or
-manifest, git failure), ``3`` refused (the ref maps to no environment, the
-requested environment does not own the ref, or the ancestry check failed).
+manifest, git or file-write failure — and, from argparse itself, a usage
+error), ``3`` refused (the ref maps to no environment, the requested
+environment does not own the ref, the ancestry check failed, or a release
+name is not a valid image tag).
 
 Debugging: ``--log-level DEBUG`` logs every resolution step and every overlay
 field applied; ``RUNNER_DEBUG=1`` (set by GitHub when a run is re-run with
@@ -103,6 +111,20 @@ _SERVICE_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z](?:[-a-z0-9]{0,61}
 _OUTPUT_KEY_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9_]*$")
 
 _GIT_NOT_ANCESTOR_RETURNCODE: Final[int] = 1
+
+# Overlay env/secret keys must be valid environment-variable names.
+_ENV_VAR_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Cloud Run sets these itself and rejects a manifest that sets them.
+_RESERVED_ENV_VARS: Final[frozenset[str]] = frozenset(
+    {"PORT", "K_SERVICE", "K_REVISION", "K_CONFIGURATION"}
+)
+# Annotation keys an overlay may set. Anything else (VPC egress, ingress,
+# execution environment, ...) changes the service's security posture and
+# belongs in the reviewed base manifest, not in a per-environment overlay.
+_ANNOTATION_KEY_PREFIXES: Final[tuple[str, ...]] = ("autoscaling.knative.dev/",)
+# Docker tag grammar (OCI distribution spec): a release name becomes an alias
+# tag, so one that cannot be a tag is refused at plan time, not mid-deploy.
+_DOCKER_TAG_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 
 
 class DeployConfigError(Exception):
@@ -183,7 +205,9 @@ def _require_mapping(value: Any, where: str) -> dict[str, Any]:
 
 def _require_str(value: Any, where: str) -> str:
     if not isinstance(value, str) or not value:
-        raise DeployConfigError(f"{where}: expected a non-empty string, got {value!r}")
+        # YAML 1.1 turns unquoted true/no/0/on into bool/int; say how to fix it.
+        hint = " (quote it in YAML)" if isinstance(value, bool | int | float) else ""
+        raise DeployConfigError(f"{where}: expected a non-empty string, got {value!r}{hint}")
     return value
 
 
@@ -194,7 +218,9 @@ def _reject_unknown_keys(mapping: Mapping[str, Any], allowed: frozenset[str], wh
 
 
 def _str_mapping(value: Any, where: str) -> dict[str, str]:
-    raw = _require_mapping(value, where)
+    # An empty section (`env:` with nothing under it) parses as None; treat it
+    # like an omitted one, the same way `overrides:` itself is treated.
+    raw = _require_mapping(value if value is not None else {}, where)
     return {
         _require_str(k, f"{where} key"): _require_str(v, f"{where}.{k}") for k, v in raw.items()
     }
@@ -217,14 +243,37 @@ def _parse_trigger(value: Any, where: str) -> Trigger:
     )
 
 
+def _check_env_names(names: Mapping[str, str], where: str) -> None:
+    for name in names:
+        if not _ENV_VAR_NAME_RE.match(name):
+            raise DeployConfigError(f"{where}: {name!r} is not a valid environment variable name")
+        if name in _RESERVED_ENV_VARS:
+            raise DeployConfigError(f"{where}: {name} is reserved by Cloud Run")
+
+
+def _check_annotation_keys(keys: Mapping[str, str], where: str) -> None:
+    for key in keys:
+        if not key.startswith(_ANNOTATION_KEY_PREFIXES):
+            raise DeployConfigError(
+                f"{where}: annotation {key!r} is not overridable per environment; allowed "
+                f"prefixes: {list(_ANNOTATION_KEY_PREFIXES)} (change the base manifest instead)"
+            )
+
+
 def _parse_overrides(value: Any, where: str) -> Overrides:
     raw = _require_mapping(value if value is not None else {}, where)
     _reject_unknown_keys(raw, _OVERLAY_KEYS, where)
     account = raw.get("service_account")
+    env = _str_mapping(raw.get("env"), f"{where}.env")
+    secrets = _str_mapping(raw.get("secrets"), f"{where}.secrets")
+    annotations = _str_mapping(raw.get("annotations"), f"{where}.annotations")
+    _check_env_names(env, f"{where}.env")
+    _check_env_names(secrets, f"{where}.secrets")
+    _check_annotation_keys(annotations, f"{where}.annotations")
     return Overrides(
-        env=_str_mapping(raw.get("env", {}), f"{where}.env"),
-        secrets=_str_mapping(raw.get("secrets", {}), f"{where}.secrets"),
-        annotations=_str_mapping(raw.get("annotations", {}), f"{where}.annotations"),
+        env=env,
+        secrets=secrets,
+        annotations=annotations,
         service_account=None if account is None else _require_str(account, f"{where}.sa"),
     )
 
@@ -319,6 +368,10 @@ def resolve_environment(registry: Registry, ref: str, requested: str | None) -> 
     """
     matches = [env for env in registry.environments.values() if env.trigger.matches(ref)]
     logger.debug("Ref %s matches environment(s) %s", ref, [e.name for e in matches])
+    # Ambiguity is a registry defect whatever was requested; check it first so
+    # a manual run cannot silently pick one of two overlapping environments.
+    if len(matches) > 1:
+        raise DeployConfigError(f"{ref} matches several environments: {[e.name for e in matches]}")
     if requested:
         if requested not in registry.environments:
             raise DeployRefused(
@@ -332,8 +385,6 @@ def resolve_environment(registry: Registry, ref: str, requested: str | None) -> 
         return registry.environments[requested]
     if not matches:
         raise DeployRefused(f"no environment deploys from {ref}")
-    if len(matches) > 1:
-        raise DeployConfigError(f"{ref} matches several environments: {[e.name for e in matches]}")
     return matches[0]
 
 
@@ -364,7 +415,8 @@ def verify_ancestry(
     if ancestor is None:
         logger.debug("Environment %s has no ancestor_branch; skipping check", environment.name)
         return
-    target = f"{remote}/{ancestor}"
+    # Fully qualified so a same-named tag or local branch cannot shadow it.
+    target = f"refs/remotes/{remote}/{ancestor}"
     result = run_git(["merge-base", "--is-ancestor", commit, target])
     if result.returncode == _GIT_NOT_ANCESTOR_RETURNCODE:
         raise DeployRefused(f"{commit} is not reachable from {target}; refusing to deploy")
@@ -397,6 +449,11 @@ def build_plan(
     environment = resolve_environment(registry, ref, requested)
     verify_ancestry(environment, remote=remote, run_git=run_git)
     release_tag = ref.removeprefix(TAG_REF_PREFIX) if ref.startswith(TAG_REF_PREFIX) else ""
+    if release_tag and not _DOCKER_TAG_RE.match(release_tag):
+        raise DeployRefused(
+            f"release name {release_tag!r} is not a valid image tag "
+            f"({_DOCKER_TAG_RE.pattern}); it would fail after the image was pushed"
+        )
     plan = {
         "environment": environment.name,
         "service": environment.service,
@@ -420,8 +477,11 @@ def write_outputs(outputs: Mapping[str, str], destination: Path | None) -> None:
     if destination is None:
         sys.stdout.write("".join(lines))
         return
-    with destination.open("a", encoding="utf-8") as handle:
-        handle.writelines(lines)
+    try:
+        with destination.open("a", encoding="utf-8") as handle:
+            handle.writelines(lines)
+    except OSError as exc:
+        raise DeployConfigError(f"cannot write outputs to {destination}: {exc}") from exc
     logger.debug("Wrote %d output(s) to %s", len(lines), destination)
 
 
@@ -435,13 +495,25 @@ def _single_container(manifest: dict[str, Any]) -> dict[str, Any]:
         raise DeployConfigError("manifest has no spec.template.spec.containers") from exc
     if not isinstance(containers, list) or len(containers) != 1:
         raise DeployConfigError("manifest must declare exactly one container")
-    return _require_mapping(containers[0], "container")
+    container = _require_mapping(containers[0], "container")
+    env = container.get("env")
+    if env is None:
+        container["env"] = env = []
+    if not isinstance(env, list):
+        raise DeployConfigError(f"container env must be a list, got {type(env).__name__}")
+    names = [_require_mapping(entry, "container env entry").get("name") for entry in env]
+    duplicates = sorted({str(n) for n in names if names.count(n) > 1})
+    if duplicates:
+        # An override would only change the first copy and leave the other live.
+        raise DeployConfigError(f"container env declares {duplicates} more than once")
+    return container
 
 
 def _env_entry(container: dict[str, Any], name: str) -> dict[str, Any] | None:
-    for entry in container.setdefault("env", []):
+    # _single_container has already proved env is a list of unique mappings.
+    for entry in container["env"]:
         if entry.get("name") == name:
-            return _require_mapping(entry, f"env {name}")
+            return entry  # type: ignore[no-any-return]
     return None
 
 
@@ -505,6 +577,13 @@ def _substitute_overrides(
     )
 
 
+def _child_mapping(parent: dict[str, Any], key: str) -> dict[str, Any]:
+    """Return ``parent[key]`` as a mapping, creating it when absent or null."""
+    if parent.get(key) is None:
+        parent[key] = {}
+    return _require_mapping(parent[key], key)
+
+
 def render_manifest(
     base: Any,
     environment: Environment,
@@ -516,12 +595,12 @@ def render_manifest(
     container = _single_container(manifest)
     overrides = _substitute_overrides(environment.overrides, variables or {}, environment.name)
 
-    metadata = manifest.setdefault("metadata", {})
+    metadata = _child_mapping(manifest, "metadata")
     metadata["name"] = environment.service
-    metadata.setdefault("labels", {})["app"] = environment.service
+    _child_mapping(metadata, "labels")["app"] = environment.service
 
     template = manifest["spec"]["template"]
-    annotations = template.setdefault("metadata", {}).setdefault("annotations", {})
+    annotations = _child_mapping(_child_mapping(template, "metadata"), "annotations")
     for key, value in overrides.annotations.items():
         logger.debug(
             "[%s] annotation %s: %r -> %r", environment.name, key, annotations.get(key), value
@@ -579,7 +658,10 @@ def _cmd_render(args: argparse.Namespace) -> int:
         args.image,
         _variables_from_env(args.substitute_from_env),
     )
-    args.output.write_text(yaml.safe_dump(rendered, sort_keys=False), encoding="utf-8")
+    try:
+        args.output.write_text(yaml.safe_dump(rendered, sort_keys=False), encoding="utf-8")
+    except OSError as exc:
+        raise DeployConfigError(f"cannot write {args.output}: {exc}") from exc
     verify_rendered(args.output, args.image)
     logger.info("Wrote rendered manifest to %s", args.output)
     return EXIT_OK
@@ -609,6 +691,54 @@ def verify_rendered(path: Path, image: str) -> None:
         raise DeployConfigError(
             f"rendered {path} runs {container.get('image')!r}, expected {image!r}"
         )
+
+
+# Stand-in for every placeholder during `validate`: rendering must succeed for
+# any value, and a recognisable sentinel makes a leaked one obvious.
+VALIDATE_PLACEHOLDER_SENTINEL: Final[str] = "validate-placeholder"
+VALIDATE_IMAGE_SENTINEL: Final[str] = "validate.invalid/image@sha256:" + "0" * 64
+
+
+def placeholder_names(registry: Registry) -> set[str]:
+    """Every ``${NAME}`` identifier used anywhere in the registry's overlays."""
+    names: set[str] = set()
+    for env in registry.environments.values():
+        overrides = env.overrides
+        values = [
+            *overrides.env.values(),
+            *overrides.secrets.values(),
+            *overrides.annotations.values(),
+            *([overrides.service_account] if overrides.service_account else []),
+        ]
+        for value in values:
+            names.update(string.Template(value).get_identifiers())
+    return names
+
+
+def validate_registry(registry: Registry, base: Any) -> list[str]:
+    """Render every environment offline; return the environment names checked."""
+    variables = dict.fromkeys(placeholder_names(registry), VALIDATE_PLACEHOLDER_SENTINEL)
+    logger.debug("Validating with placeholder sentinels for %s", sorted(variables))
+    checked = []
+    for name, environment in registry.environments.items():
+        render_manifest(base, environment, VALIDATE_IMAGE_SENTINEL, variables)
+        logger.info(
+            "Environment %s OK: service=%s repository=%s trigger=%s",
+            name,
+            environment.service,
+            registry.repository_for(environment),
+            environment.trigger,
+        )
+        checked.append(name)
+    return checked
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    registry = load_registry(args.registry)
+    base_path = args.base_manifest or registry.base_manifest
+    checked = validate_registry(registry, _load_yaml(base_path))
+    logger.info("Registry %s valid: %d environment(s) %s", args.registry, len(checked), checked)
+    return EXIT_OK
 
 
 def _optional_path(value: str) -> Path | None:
@@ -652,6 +782,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the registry's defaults.base_manifest.",
     )
     render.set_defaults(handler=_cmd_render)
+
+    validate = sub.add_parser(
+        "validate", help="Offline check: parse the registry and render every environment."
+    )
+    validate.add_argument(
+        "--base-manifest",
+        type=_optional_path,
+        default=None,
+        help="Override the registry's defaults.base_manifest.",
+    )
+    validate.set_defaults(handler=_cmd_validate)
     return parser
 
 

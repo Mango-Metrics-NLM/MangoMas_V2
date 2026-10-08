@@ -22,16 +22,22 @@ import pytest
 import yaml
 
 from tests._script_loader import load_script_module
-from tests.constants.deploy import ENV_LABEL_VAR, LLM_API_KEY_VAR, TEST_PROJECT_ID
+from tests.constants.deploy import (
+    ENV_LABEL_VAR,
+    LLM_API_KEY_VAR,
+    TEST_IMAGE_REF,
+    TEST_PROJECT_ID,
+)
+from tests.deploy import _manifest
 
 deploy_env = load_script_module("deploy_environment.py")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _REAL_REGISTRY = _REPO_ROOT / "deploy" / "environments.yaml"
-_REAL_BASE_MANIFEST = _REPO_ROOT / "deploy" / "service.yaml"
+_REAL_BASE_MANIFEST = _manifest.SERVICE_YAML
 
-_TEST_IMAGE = "us-docker.pkg.dev/test-project/repo/svc:0123abcd"
-_TEST_REMOTE = "origin"
+_TEST_IMAGE = TEST_IMAGE_REF
+_TEST_REMOTE = deploy_env.DEFAULT_REMOTE
 _TEST_BRANCH = "integration"
 _TEST_TAG_BRANCH = "release-line"
 _TEST_SERVICE_ACCOUNT = "runtime@test-project.iam.gserviceaccount.com"
@@ -39,6 +45,8 @@ _SECRET_VAR = LLM_API_KEY_VAR
 _PLAIN_VAR = ENV_LABEL_VAR
 _PLACEHOLDER_VAR = "TEST_DEPLOY_PLACEHOLDER"
 _PLACEHOLDER = "${" + _PLACEHOLDER_VAR + "}"
+# An annotation key an overlay is allowed to set (the scaling prefix).
+_SCALE_KEY = deploy_env._ANNOTATION_KEY_PREFIXES[0] + "maxScale"
 
 # Process state main() reads or mutates; cleared/restored around every test so
 # no test inherits another's GitHub context or root-logger configuration.
@@ -96,7 +104,7 @@ def _registry(**environments: dict[str, Any]) -> Any:
 
 
 def _base_manifest() -> dict[str, Any]:
-    return yaml.safe_load(_REAL_BASE_MANIFEST.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    return _manifest.base_manifest(_REAL_BASE_MANIFEST)
 
 
 def _environment(overrides: dict[str, Any] | None = None, service: str = "svc-x") -> Any:
@@ -463,10 +471,10 @@ def test_render_creates_missing_metadata_and_annotations() -> None:
     base = _base_manifest()
     del base["metadata"]
     del base["spec"]["template"]["metadata"]
-    env = _environment({"annotations": {"k": "v"}})
+    env = _environment({"annotations": {_SCALE_KEY: "v"}})
     rendered = deploy_env.render_manifest(base, env, _TEST_IMAGE)
     assert rendered["metadata"] == {"name": "svc-x", "labels": {"app": "svc-x"}}
-    assert rendered["spec"]["template"]["metadata"]["annotations"] == {"k": "v"}
+    assert rendered["spec"]["template"]["metadata"]["annotations"] == {_SCALE_KEY: "v"}
 
 
 def test_render_refuses_plain_value_over_a_secret() -> None:
@@ -685,7 +693,7 @@ def test_placeholders_fill_every_overlay_field() -> None:
         {
             "env": {_PLAIN_VAR: f"{_PLACEHOLDER}-env"},
             "secrets": {_SECRET_VAR: f"secret-{_PLACEHOLDER}"},
-            "annotations": {"k": f"{_PLACEHOLDER}"},
+            "annotations": {_SCALE_KEY: f"{_PLACEHOLDER}"},
             "service_account": f"sa@{_PLACEHOLDER}.iam.gserviceaccount.com",
         }
     )
@@ -696,7 +704,7 @@ def test_placeholders_fill_every_overlay_field() -> None:
     env_vars = {e["name"]: e for e in template["spec"]["containers"][0]["env"]}
     assert env_vars[_PLAIN_VAR]["value"] == "p1-env"
     assert env_vars[_SECRET_VAR]["valueFrom"]["secretKeyRef"]["name"] == "secret-p1"
-    assert template["metadata"]["annotations"]["k"] == "p1"
+    assert template["metadata"]["annotations"][_SCALE_KEY] == "p1"
     assert template["spec"]["serviceAccountName"] == "sa@p1.iam.gserviceaccount.com"
 
 
@@ -792,3 +800,171 @@ def test_annotation_escapes_newlines_so_no_command_is_forged(
     deploy_env._report(deploy_env.DeployRefused("bad\n::warning::forged 100%"), "Deploy refused")
     lines = capsys.readouterr().out.splitlines()
     assert lines == ["::error title=Deploy refused::bad%0A::warning::forged 100%25"]
+
+
+# ── hygiene-review follow-ups: closed schema, shapes, tags, writes ─────────
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        pytest.param({"env": {"BAD NAME": "x"}}, "not a valid environment", id="env-name"),
+        pytest.param({"env": {"PORT": "9"}}, "reserved by Cloud Run", id="reserved-env"),
+        pytest.param({"secrets": {"K_SERVICE": "s"}}, "reserved by Cloud Run", id="reserved-sec"),
+        pytest.param(
+            {"annotations": {"run.googleapis.com/vpc-access-egress": "all"}},
+            "not overridable",
+            id="security-annotation",
+        ),
+        pytest.param({"env": {_PLAIN_VAR: True}}, "quote it in YAML", id="yaml-bool"),
+        pytest.param({"env": {_PLAIN_VAR: 0}}, "quote it in YAML", id="yaml-int"),
+    ],
+)
+def test_overlay_schema_rejects(overrides: dict[str, Any], message: str) -> None:
+    with pytest.raises(deploy_env.DeployConfigError, match=message):
+        _environment(overrides)
+
+
+@pytest.mark.parametrize("section", ["env", "secrets", "annotations"])
+def test_empty_overlay_section_is_treated_as_omitted(section: str) -> None:
+    """``env:`` with nothing under it parses as None — same as ``overrides:``."""
+    assert getattr(_environment({section: None}).overrides, section) == {}
+
+
+def test_ambiguous_ref_is_refused_even_when_an_environment_is_requested() -> None:
+    registry = _registry(
+        a={"trigger": {"tag_pattern": "v*"}, "service": "svc-a"},
+        b={"trigger": {"tag_pattern": "v1*"}, "service": "svc-b"},
+    )
+    with pytest.raises(deploy_env.DeployConfigError, match="several environments"):
+        deploy_env.resolve_environment(registry, "refs/tags/v1.0", "a")
+
+
+@pytest.mark.parametrize("tag", ["v1.0.0+build", "v1/nested", "v" + "1" * 128])
+def test_release_name_that_is_not_an_image_tag_is_refused(tag: str) -> None:
+    """Refused at plan time — not after the image is pushed and the alias tag fails."""
+    with pytest.raises(deploy_env.DeployRefused, match="not a valid image tag"):
+        deploy_env.build_plan(
+            _registry(prod={"trigger": {"tag_pattern": "v*"}, "service": "svc"}),
+            ref=f"refs/tags/{tag}",
+            requested=None,
+            remote=_TEST_REMOTE,
+            run_git=_fake_git(0, stdout="tree"),
+        )
+
+
+def test_ancestry_check_uses_the_fully_qualified_remote_ref() -> None:
+    seen: list[Sequence[str]] = []
+
+    def record(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        seen.append(args)
+        return subprocess.CompletedProcess(["git", *args], 0, "", "")
+
+    deploy_env.verify_ancestry(_registry().environments["prod"], remote="up", run_git=record)
+    assert seen == [["merge-base", "--is-ancestor", "HEAD", f"refs/remotes/up/{_TEST_TAG_BRANCH}"]]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda c: c.__setitem__("env", "not-a-list"), "must be a list"),
+        (lambda c: c["env"].append("not-a-mapping"), "expected a mapping"),
+        (lambda c: c["env"].append(dict(c["env"][0])), "more than once"),
+    ],
+    ids=["env-not-list", "env-entry-not-mapping", "duplicate-env-name"],
+)
+def test_malformed_base_env_is_a_config_error(mutate: Any, message: str) -> None:
+    base = _base_manifest()
+    mutate(base["spec"]["template"]["spec"]["containers"][0])
+    with pytest.raises(deploy_env.DeployConfigError, match=message):
+        deploy_env.render_manifest(base, _environment({"env": {_PLAIN_VAR: "x"}}), _TEST_IMAGE)
+
+
+def test_null_env_and_null_annotations_are_created() -> None:
+    base = _base_manifest()
+    base["spec"]["template"]["spec"]["containers"][0]["env"] = None
+    base["spec"]["template"]["metadata"]["annotations"] = None
+    env = _environment({"env": {_PLAIN_VAR: "x"}, "annotations": {_SCALE_KEY: "1"}})
+    rendered = deploy_env.render_manifest(base, env, _TEST_IMAGE)
+    assert rendered["spec"]["template"]["spec"]["containers"][0]["env"] == [
+        {"name": _PLAIN_VAR, "value": "x"}
+    ]
+    assert rendered["spec"]["template"]["metadata"]["annotations"] == {_SCALE_KEY: "1"}
+
+
+def test_unwritable_github_output_is_a_config_error(tmp_path: Path) -> None:
+    with pytest.raises(deploy_env.DeployConfigError, match="cannot write outputs"):
+        deploy_env.write_outputs({"a": "1"}, tmp_path / "missing-dir" / "out")
+
+
+def test_unwritable_render_output_exits_with_config_error(tmp_path: Path) -> None:
+    code = deploy_env.main(
+        [
+            "--registry",
+            str(_REAL_REGISTRY),
+            "render",
+            "--environment",
+            "prod",
+            "--image",
+            _TEST_IMAGE,
+            "--output",
+            str(tmp_path / "missing-dir" / "out.yaml"),
+            "--base-manifest",
+            str(_REAL_BASE_MANIFEST),
+        ]
+    )
+    assert code == deploy_env.EXIT_CONFIG_ERROR
+
+
+# ── validate subcommand (wired into `make validate-config`) ─────────────────
+
+
+def test_placeholder_names_cover_every_overlay_field() -> None:
+    registry = _registry(
+        x={
+            "trigger": {"branch": _TEST_BRANCH},
+            "service": "svc-x",
+            "overrides": {
+                "env": {_PLAIN_VAR: "${A}"},
+                "secrets": {_SECRET_VAR: "s-${B}"},
+                "annotations": {_SCALE_KEY: "${C}"},
+                "service_account": "sa@${D}",
+            },
+        }
+    )
+    assert deploy_env.placeholder_names(registry) == {"A", "B", "C", "D"}
+
+
+def test_validate_registry_renders_every_environment() -> None:
+    registry = deploy_env.load_registry(_REAL_REGISTRY)
+    assert deploy_env.validate_registry(registry, _base_manifest()) == list(registry.environments)
+
+
+def test_validate_registry_reports_an_environment_that_cannot_render() -> None:
+    """A secret override with no base secretKeyRef only fails at render — validate finds it."""
+    registry = _registry(x={"trigger": {"branch": "b"}, "service": "svc-x"})
+    bad = _registry(
+        y={
+            "trigger": {"branch": "c"},
+            "service": "svc-y",
+            "overrides": {"secrets": {_PLAIN_VAR: "s"}},
+        }
+    )
+    assert deploy_env.validate_registry(registry, _base_manifest()) == ["x"]
+    with pytest.raises(deploy_env.DeployConfigError, match="no secretKeyRef"):
+        deploy_env.validate_registry(bad, _base_manifest())
+
+
+def test_main_validate_exit_codes(tmp_path: Path) -> None:
+    ok = deploy_env.main(
+        ["--registry", str(_REAL_REGISTRY), "validate", "--base-manifest", str(_REAL_BASE_MANIFEST)]
+    )
+    assert ok == deploy_env.EXIT_OK
+    broken = tmp_path / "environments.yaml"
+    broken.write_text("schema_version: 99\n", encoding="utf-8")
+    assert deploy_env.main(["--registry", str(broken), "validate"]) == deploy_env.EXIT_CONFIG_ERROR
+
+
+def test_validate_uses_the_registry_base_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(_REPO_ROOT)
+    assert deploy_env.main(["--registry", str(_REAL_REGISTRY), "validate"]) == deploy_env.EXIT_OK

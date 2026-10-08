@@ -12,18 +12,18 @@ this repo provisions no GCP resources (ADR-0001).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import yaml
 from pydantic import BaseModel
 
 from mangomas.config import Settings
-from tests.deploy import _makefile, _workflows
+from tests.deploy import _makefile, _manifest, _workflows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEPLOY = _REPO_ROOT / "deploy"
-_SERVICE_YAML = _DEPLOY / "service.yaml"
+_SERVICE_YAML = _manifest.SERVICE_YAML
 _README = _DEPLOY / "README.md"
 _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy.yml"
 
@@ -58,11 +58,9 @@ def _deploy_run_bodies() -> list[str]:
 
 
 def _service_container() -> dict[str, Any]:
-    doc = yaml.safe_load(_SERVICE_YAML.read_text(encoding="utf-8"))
+    doc = _manifest.base_manifest(_SERVICE_YAML)
     assert doc["kind"] == "Service"
-    containers = doc["spec"]["template"]["spec"]["containers"]
-    assert len(containers) == 1, "expected exactly one container"
-    return cast("dict[str, Any]", containers[0])
+    return _manifest.container(doc)
 
 
 def test_service_yaml_is_valid_yaml() -> None:
@@ -219,3 +217,14 @@ def test_deploy_workflow_uses_workload_identity_federation() -> None:
     # Guard against a committed key file / inline credentials.
     assert "credentials_json" not in raw
     assert "service_account_key" not in raw
+
+
+def test_validate_config_checks_the_deploy_registry() -> None:
+    """The offline registry check rides the existing `validate-config` CI step and gate."""
+    rule = _makefile.target_body("validate-config").splitlines()[0]
+    assert "deploy-validate" in rule.split("##")[0], (
+        "validate-config must depend on deploy-validate"
+    )
+    body = _makefile.target_body("deploy-validate")
+    assert "$(DEPLOY_SCRIPT)" in body and "validate" in body
+    assert "$(DEPLOY_REGISTRY)" in body

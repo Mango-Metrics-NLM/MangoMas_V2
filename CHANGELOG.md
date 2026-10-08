@@ -9,6 +9,42 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — ADR-0036 hygiene and wiring pass
+
+- **Deploy script hardening** (`scripts/deploy_environment.py`):
+  - The overlay schema is fully closed. Env and secret keys must be valid
+    variable names, Cloud Run's reserved names (`PORT`, `K_*`) are refused,
+    and only `autoscaling.knative.dev/*` annotations may be overridden.
+  - A release name that cannot be an image tag is refused at plan time instead
+    of after the push.
+  - The ambiguity check now runs before a requested environment is honoured.
+  - The ancestry check uses the fully qualified `refs/remotes/<remote>/<branch>`.
+  - Malformed manifests (null or duplicate env entries, null annotations) and
+    unwritable outputs exit `2` instead of tracebacking.
+  - YAML-coerced values get a "quote it" hint.
+- **New `validate` subcommand.** `make deploy-validate` renders every
+  environment offline and now runs inside `make validate-config` (CI lint job
+  and `make gate`).
+- **Deploy workflow:** prereleases never deploy; production matches
+  `v<digit>…` tags only.
+- **Ownership:** `mango-ci-dev` owns `scripts/deploy_environment.py` and the
+  registry. New corpus guards check that every `scripts/` entry point has an
+  owner (or a recorded reason) and that every `make` target and
+  `scripts/`/`tests/` path a skill or agent cites exists.
+- **New `mango-promote` skill:** dev → qa → main promotion, release tags,
+  hotfix, back-merge, and a `/loop` recipe. `mango-deploy` gains an "add an
+  environment" procedure; `mango-release` and `mango-harness` are updated for
+  the branch model.
+- **Tests:**
+  - Shared `tests/deploy/_manifest.py`.
+  - CI's PR branch list is derived from the registry.
+  - New regression module `tests/regression/test_adr0036_deploy_defects.py` (D1–D9).
+  - Spec-0035 added.
+- **Docs and config:** C1 context and cloud-providers updated for
+  per-environment deploy; CONTRIBUTING (branch rulesets and promotion),
+  README, NEXT_STEPS (admin follow-ups), `tests/CLAUDE.md`; `.dockerignore`
+  excludes the deploy tooling and `rendered-service.yaml`.
+
 ### Added — per-environment Cloud Run deploy (ADR-0036)
 
 - `deploy/environments.yaml`: the environment registry — `dev` (push to `dev`
