@@ -20,6 +20,16 @@ script is the only code that reads it. Two subcommands, both driven by
     each ``${NAME}`` placeholder. Wired into ``make validate-config`` so a
     registry edit that would only fail at deploy time fails in CI instead.
 
+``scan-refs``
+    The branches the nightly security scans check out: every environment
+    branch the registry declares (branch triggers, then production's
+    ``ancestor_branch``), filtered to those that exist on the remote, as a JSON
+    list on ``$GITHUB_OUTPUT``. Off unless ``NIGHTLY_SCAN_ENVIRONMENT_BRANCHES``
+    is ``true`` — then it emits ``[""]`` (the default branch only), so a branch
+    whose tooling predates these targets (legacy ``main``) is never scanned by
+    accident. Resolved in a job rather than a workflow expression so a bad
+    setting fails a job the nightly failure reporter sees.
+
 ``render``
     Apply one environment's overlay to the base manifest and set the image,
     then re-read the written file to prove the image landed. The overlay schema
@@ -54,6 +64,7 @@ from __future__ import annotations
 import argparse
 import copy
 import fnmatch
+import json
 import logging
 import os
 import re
@@ -90,6 +101,13 @@ GITHUB_OUTPUT_ENV: Final[str] = "GITHUB_OUTPUT"
 GITHUB_ACTIONS_ENV: Final[str] = "GITHUB_ACTIONS"
 RUNNER_DEBUG_ENV: Final[str] = "RUNNER_DEBUG"
 REQUESTED_ENVIRONMENT_ENV: Final[str] = "DEPLOY_REQUESTED_ENVIRONMENT"
+SCAN_ENABLED_ENV: Final[str] = "NIGHTLY_SCAN_ENVIRONMENT_BRANCHES"
+# actions/checkout treats an empty `ref` as "the event's default ref" — for a
+# scheduled run, the default branch.
+DEFAULT_BRANCH_REF: Final[str] = ""
+SCAN_REFS_OUTPUT_KEY: Final[str] = "refs"
+_BOOLEAN_TOKENS: Final[dict[str, bool]] = {"true": True, "false": False, "": False}
+_GIT_REF_MISSING_RETURNCODE: Final[int] = 1
 
 _OVERLAY_KEYS: Final[frozenset[str]] = frozenset(
     {"env", "secrets", "annotations", "service_account"}
@@ -741,6 +759,64 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def environment_branches(registry: Registry) -> list[str]:
+    """Every branch an environment lives on, in registry order, without repeats.
+
+    Branch triggers (``dev``, ``qa``) first, then the branches release tags must
+    be reachable from (production's ``main``).
+    """
+    branches = registry.branch_triggers() + [
+        env.trigger.ancestor_branch
+        for env in registry.environments.values()
+        if env.trigger.ancestor_branch
+    ]
+    return list(dict.fromkeys(branches))
+
+
+def parse_flag(value: str, where: str) -> bool:
+    """Strict boolean: a typo must fail loudly, not silently mean "off"."""
+    try:
+        return _BOOLEAN_TOKENS[value.strip().lower()]
+    except KeyError as exc:
+        raise DeployConfigError(f"{where}: expected true/false, got {value!r}") from exc
+
+
+def scan_refs(
+    registry: Registry, *, enabled: bool, remote: str, run_git: GitRunner = _run_git
+) -> list[str]:
+    """The refs the nightly security scans should check out."""
+    if not enabled:
+        logger.info("%s is off; scanning the default branch only", SCAN_ENABLED_ENV)
+        return [DEFAULT_BRANCH_REF]
+    present = []
+    for branch in environment_branches(registry):
+        ref = f"refs/remotes/{remote}/{branch}"
+        result = run_git(["rev-parse", "--verify", "--quiet", ref])
+        if result.returncode == 0:
+            present.append(branch)
+        elif result.returncode == _GIT_REF_MISSING_RETURNCODE:
+            logger.warning("Environment branch %s not found at %s; not scanning it", branch, ref)
+        else:
+            detail = result.stderr.strip() or "(no stderr)"
+            raise DeployConfigError(f"cannot resolve {ref}: {detail}")
+    if not present:
+        raise DeployConfigError(
+            f"{SCAN_ENABLED_ENV} is on but none of {environment_branches(registry)} exists "
+            f"under refs/remotes/{remote}/ — was the checkout shallow?"
+        )
+    logger.info("Nightly scans will check out %s", present)
+    return present
+
+
+def _cmd_scan_refs(args: argparse.Namespace) -> int:
+    registry = load_registry(args.registry)
+    refs = scan_refs(
+        registry, enabled=parse_flag(args.enabled, SCAN_ENABLED_ENV), remote=args.remote
+    )
+    write_outputs({SCAN_REFS_OUTPUT_KEY: json.dumps(refs)}, args.github_output)
+    return EXIT_OK
+
+
 def _optional_path(value: str) -> Path | None:
     return Path(value) if value else None
 
@@ -793,6 +869,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the registry's defaults.base_manifest.",
     )
     validate.set_defaults(handler=_cmd_validate)
+
+    scan = sub.add_parser(
+        "scan-refs", help="Resolve the branches the nightly security scans check out."
+    )
+    scan.add_argument(
+        "--enabled",
+        default=os.environ.get(SCAN_ENABLED_ENV, ""),
+        help=f"true/false (default: ${SCAN_ENABLED_ENV}, else false).",
+    )
+    scan.add_argument("--remote", default=DEFAULT_REMOTE)
+    scan.add_argument(
+        "--github-output",
+        type=_optional_path,
+        default=_optional_path(os.environ.get(GITHUB_OUTPUT_ENV, "")),
+        help="File to append the refs output to (default: $GITHUB_OUTPUT, else stdout).",
+    )
+    scan.set_defaults(handler=_cmd_scan_refs)
     return parser
 
 
