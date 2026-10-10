@@ -279,6 +279,9 @@ def test_prereleases_and_unprovisioned_pushes_never_plan() -> None:
     assert "github.event.release.prerelease" in condition
     assert "!(github.event_name == 'release' && github.event.release.prerelease)" in condition
     assert "vars.MULTI_ENV_DEPLOY_ENABLED == 'true'" in condition
+    # Scoped to pushes only: releases and manual dispatch must still plan
+    # while branch-push deploys wait for provisioning (Copilot review, #88).
+    assert "(github.event_name != 'push' || vars.MULTI_ENV_DEPLOY_ENABLED == 'true')" in condition
 
 
 @pytest.mark.parametrize(

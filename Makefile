@@ -82,7 +82,8 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local secret-scan pip-audit sbom-scan \
-        install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply
+        install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply \
+        nightly-scan-refs
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -109,6 +110,9 @@ deploy-render: ## Render ENVIRONMENT's manifest for IMAGE into RENDERED_MANIFEST
 
 deploy-validate: ## Offline registry check: render every environment (no credentials)
 	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) validate
+
+nightly-scan-refs: ## Branches the nightly security scans check out (reads NIGHTLY_SCAN_ENVIRONMENT_BRANCHES)
+	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) scan-refs
 
 deploy-apply: ## Apply RENDERED_MANIFEST to Cloud Run in REGION (the full manifest, never image-only)
 	gcloud run services replace "$(RENDERED_MANIFEST)" --region "$$REGION"

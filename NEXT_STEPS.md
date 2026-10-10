@@ -172,8 +172,11 @@ registry check in `make validate-config`. Open, all admin or follow-up:
       `archive/main-legacy`, reset `main` from `dev`, then drop the legacy
       trunk name from `ci.yml` / `Makefile` `BASE_REF`.
 - [ ] Give production its own runtime service account (changes prod; review).
-- [ ] `nightly.yml` scans only the default branch; add a `ref` matrix so `main`
-      (production) is scanned too, once `main` is reset.
+- [x] Nightly security scans can reach production: a `scan-refs` job derives
+      the environment branches from the registry and `secret-scan` /
+      `sbom-scan` matrix over them. **Admin, after the `main` reset:** set the
+      repository variable `NIGHTLY_SCAN_ENVIRONMENT_BRANCHES=true` (until then
+      the nightly scans the default branch only, as before).
 - [ ] Optional hook (needs a human: `.claude/settings.json` is edit-denied to
       agents): a `PostToolUse` entry that runs `make deploy-validate` when
       `deploy/environments.yaml` is edited.
