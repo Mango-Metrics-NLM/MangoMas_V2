@@ -57,6 +57,7 @@ _SCRIPT_ENV_VARS = (
     deploy_env.GITHUB_ACTIONS_ENV,
     deploy_env.RUNNER_DEBUG_ENV,
     deploy_env.REQUESTED_ENVIRONMENT_ENV,
+    deploy_env.SCAN_ENABLED_ENV,
     _PLACEHOLDER_VAR,
 )
 # Variables that would point git at a repository other than the temp one, or

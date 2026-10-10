@@ -25,7 +25,7 @@ script is the only code that reads it. Two subcommands, both driven by
     branch the registry declares (branch triggers, then production's
     ``ancestor_branch``), filtered to those that exist on the remote, as a JSON
     list on ``$GITHUB_OUTPUT``. Off unless ``NIGHTLY_SCAN_ENVIRONMENT_BRANCHES``
-    is ``true`` — then it emits ``[""]`` (the default branch only), so a branch
+    is ``true``; while off it emits ``[""]`` (the default branch only), so a branch
     whose tooling predates these targets (legacy ``main``) is never scanned by
     accident. Resolved in a job rather than a workflow expression so a bad
     setting fails a job the nightly failure reporter sees.
