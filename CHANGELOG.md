@@ -9,6 +9,28 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — nightly security scans reach production (ADR-0036)
+
+- `scripts/deploy_environment.py scan-refs` and the `make nightly-scan-refs`
+  target:
+  - Derive the environment branches from `deploy/environments.yaml` (branch
+    triggers, then production's `ancestor_branch`).
+  - Keep the ones that exist on the remote, logging each one skipped.
+  - Emit them as a JSON list.
+  - Off unless `NIGHTLY_SCAN_ENVIRONMENT_BRANCHES=true`: until then it emits
+    `[""]`, the default branch only, so the nightly behaves exactly as before.
+  - Fail loudly: a malformed flag, or "on" with no branch found, exits `2`.
+- `nightly.yml`: a new `scan-refs` job feeds a matrix on `secret-scan` and
+  `sbom-scan`, each checking out its branch with `fail-fast: false`. `notify`
+  now also waits on `scan-refs`, so a resolution failure files the tracking
+  issue. The functional suites stay single-branch.
+- Tests:
+  - Unit tests for `scan-refs`, including a real temporary git repo.
+  - Nightly contract tests.
+  - A push-only scoping assertion for the `MULTI_ENV_DEPLOY_ENABLED` guard
+    (Copilot review on #88).
+  - Regression D10.
+
 ### Changed — ADR-0036 hygiene and wiring pass
 
 - **Deploy script hardening** (`scripts/deploy_environment.py`):

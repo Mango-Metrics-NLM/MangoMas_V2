@@ -15,6 +15,7 @@ Defect classes covered:
   D7 — scripts/deploy_environment.py: shipped with no owning agent
   D8 — deploy_environment.py: duplicate base env names were half-overridden
   D9 — deploy_environment.py: a requested environment bypassed the ambiguity check
+  D10 — nightly.yml: security scans only ever checked out the default branch
 """
 
 from __future__ import annotations
@@ -171,3 +172,24 @@ def test_d9_ambiguity_is_checked_before_a_requested_environment() -> None:
     )
     with pytest.raises(deploy_env.DeployConfigError, match="several environments"):
         deploy_env.resolve_environment(registry, f"{deploy_env.TAG_REF_PREFIX}v1.0", "a")
+
+
+# ── D10: production code never scanned ───────────────────────────────────────
+#
+# RCA: scheduled workflows run on the default branch only, so the nightly
+#      secret and SBOM scans never saw `main` — the code actually in production.
+# Fix: a `scan-refs` job derives the environment branches from the registry
+#      (opt-in until legacy `main` is reset) and the scans matrix over them.
+
+
+@pytest.mark.parametrize("job", ["secret-scan", "sbom-scan"])
+def test_d10_security_scans_matrix_over_resolved_branches(job: str) -> None:
+    """D10: each security scan checks out every branch scan-refs resolves."""
+    spec = _workflows.jobs("nightly.yml")[job]
+    assert "needs.scan-refs.outputs.refs" in spec["strategy"]["matrix"]["ref"]
+
+
+def test_d10_registry_branches_include_production() -> None:
+    """D10: the derived scan list reaches the branch production deploys from."""
+    production_branch = _production().trigger.ancestor_branch
+    assert production_branch in deploy_env.environment_branches(_REGISTRY)

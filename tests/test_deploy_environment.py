@@ -57,6 +57,7 @@ _SCRIPT_ENV_VARS = (
     deploy_env.GITHUB_ACTIONS_ENV,
     deploy_env.RUNNER_DEBUG_ENV,
     deploy_env.REQUESTED_ENVIRONMENT_ENV,
+    deploy_env.SCAN_ENABLED_ENV,
     _PLACEHOLDER_VAR,
 )
 # Variables that would point git at a repository other than the temp one, or
@@ -968,3 +969,102 @@ def test_main_validate_exit_codes(tmp_path: Path) -> None:
 def test_validate_uses_the_registry_base_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(_REPO_ROOT)
     assert deploy_env.main(["--registry", str(_REAL_REGISTRY), "validate"]) == deploy_env.EXIT_OK
+
+
+# ── scan-refs: branches the nightly security scans check out ────────────────
+
+
+def test_environment_branches_are_triggers_then_ancestors_without_repeats() -> None:
+    registry = _registry(
+        dev={"trigger": {"branch": _TEST_BRANCH}, "service": "svc-dev"},
+        prod={
+            "trigger": {"tag_pattern": "v*", "ancestor_branch": _TEST_TAG_BRANCH},
+            "service": "svc",
+        },
+        hotfix={
+            "trigger": {"tag_pattern": "h*", "ancestor_branch": _TEST_TAG_BRANCH},
+            "service": "svc-h",
+        },
+    )
+    assert deploy_env.environment_branches(registry) == [_TEST_BRANCH, _TEST_TAG_BRANCH]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("true", True), (" TRUE ", True), ("false", False), ("", False)],
+)
+def test_parse_flag_accepts_booleans(value: str, expected: bool) -> None:
+    assert deploy_env.parse_flag(value, "flag") is expected
+
+
+@pytest.mark.parametrize("value", ["yes", "1", "on", "treu"])
+def test_parse_flag_rejects_anything_else(value: str) -> None:
+    """A typo in the admin variable must fail the job, not quietly mean "off"."""
+    with pytest.raises(deploy_env.DeployConfigError, match="expected true/false"):
+        deploy_env.parse_flag(value, "flag")
+
+
+def test_scan_refs_disabled_scans_the_default_branch_only() -> None:
+    def explode(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        raise AssertionError(f"git must not run while disabled: {args}")
+
+    refs = deploy_env.scan_refs(_registry(), enabled=False, remote=_TEST_REMOTE, run_git=explode)
+    assert refs == [deploy_env.DEFAULT_BRANCH_REF]
+
+
+@pytest.mark.usefixtures("git_repo")
+def test_scan_refs_keeps_existing_branches_and_logs_missing_ones(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Real git: the tag branch exists under refs/remotes/origin, the trigger branch does not."""
+    caplog.set_level(logging.WARNING, logger="deploy_environment")
+    refs = deploy_env.scan_refs(_registry(), enabled=True, remote=_TEST_REMOTE)
+    assert refs == [_TEST_TAG_BRANCH]
+    assert any(_TEST_BRANCH in r.getMessage() for r in caplog.records)
+
+
+def test_scan_refs_in_registry_order_when_all_exist(git_repo: Path) -> None:
+    _git(git_repo, "update-ref", f"refs/remotes/{_TEST_REMOTE}/{_TEST_BRANCH}", "HEAD")
+    refs = deploy_env.scan_refs(_registry(), enabled=True, remote=_TEST_REMOTE)
+    assert refs == [_TEST_BRANCH, _TEST_TAG_BRANCH]
+
+
+@pytest.mark.usefixtures("git_repo")
+def test_scan_refs_enabled_with_no_branches_is_a_config_error() -> None:
+    """Never a silent empty matrix: on, with nothing to scan, is a failure."""
+    with pytest.raises(deploy_env.DeployConfigError, match="none of"):
+        deploy_env.scan_refs(_registry(), enabled=True, remote="nonexistent")
+
+
+def test_scan_refs_git_failure_is_a_config_error() -> None:
+    with pytest.raises(deploy_env.DeployConfigError, match="cannot resolve"):
+        deploy_env.scan_refs(
+            _registry(), enabled=True, remote=_TEST_REMOTE, run_git=_fake_git(128, stderr="bad")
+        )
+
+
+@pytest.mark.usefixtures("git_repo")
+def test_main_scan_refs_writes_a_json_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    out = tmp_path / "github_output"
+    monkeypatch.setenv(deploy_env.SCAN_ENABLED_ENV, "true")
+    code = deploy_env.main(
+        ["--registry", str(_write_registry(tmp_path)), "scan-refs", "--github-output", str(out)]
+    )
+    assert code == deploy_env.EXIT_OK
+    assert out.read_text(encoding="utf-8") == f'refs=["{_TEST_TAG_BRANCH}"]\n'
+
+
+def test_main_scan_refs_disabled_by_default(tmp_path: Path) -> None:
+    out = tmp_path / "github_output"
+    code = deploy_env.main(
+        ["--registry", str(_write_registry(tmp_path)), "scan-refs", "--github-output", str(out)]
+    )
+    assert code == deploy_env.EXIT_OK
+    assert out.read_text(encoding="utf-8") == 'refs=[""]\n'
+
+
+def test_main_scan_refs_bad_flag_exits_with_config_error(tmp_path: Path) -> None:
+    code = deploy_env.main(
+        ["--registry", str(_write_registry(tmp_path)), "scan-refs", "--enabled", "maybe"]
+    )
+    assert code == deploy_env.EXIT_CONFIG_ERROR

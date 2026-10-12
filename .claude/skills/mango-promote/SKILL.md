@@ -67,6 +67,19 @@ Which ref deploys where is `deploy/environments.yaml`, not this table — run
 3. Back-merge immediately (next section). A hotfix that never reaches `dev`
    regresses on the next promotion.
 
+### After the one-time `main` reset
+
+Set `NIGHTLY_SCAN_ENVIRONMENT_BRANCHES=true` (repository variable) so the
+nightly scans every environment branch, then confirm with a manual
+`workflow_dispatch` of `nightly.yml`. Preview the list locally:
+
+```bash
+NIGHTLY_SCAN_ENVIRONMENT_BRANCHES=true make nightly-scan-refs
+```
+
+Each scan leg runs its own branch's Makefile — rename or remove a nightly
+target only after the change has been promoted to `main`, or that leg fails.
+
 ### Back-merge after every release or hotfix
 
 Open `main` → `qa`, then `qa` → `dev`, both as merge commits. `main` requires

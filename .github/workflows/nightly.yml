@@ -34,6 +34,38 @@ permissions:
   contents: read
 
 jobs:
+  # Which branches the security scans below check out (ADR-0036). Scheduled
+  # workflows run on the default branch only, so without this the code in
+  # production (`main`) is never scanned. The list is derived from the
+  # environment registry, filtered to branches that exist, and stays at
+  # "default branch only" until an admin sets NIGHTLY_SCAN_ENVIRONMENT_BRANCHES
+  # after the `main` reset. Resolved in a job, not a workflow expression, so a
+  # bad setting fails a job `notify` reports instead of silencing the run.
+  scan-refs:
+    name: Resolve branches to scan
+    runs-on: ubuntu-latest
+    outputs:
+      refs: ${{ steps.refs.outputs.refs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Every remote branch must be present to be found.
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install deploy tooling
+        run: make install-deploy-tools
+
+      - name: Resolve branches
+        id: refs
+        env:
+          NIGHTLY_SCAN_ENVIRONMENT_BRANCHES: ${{ vars.NIGHTLY_SCAN_ENVIRONMENT_BRANCHES }}
+        run: make nightly-scan-refs
+
   postgres:
     name: Postgres suite (testcontainers)
     runs-on: ubuntu-latest
@@ -93,11 +125,19 @@ jobs:
         run: make embeddings-local
 
   secret-scan:
-    name: Secret scan (working tree + history)
+    name: Secret scan (working tree + history) — ${{ matrix.ref || 'default branch' }}
     runs-on: ubuntu-latest
+    needs: scan-refs
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJSON(needs.scan-refs.outputs.refs) }}
     steps:
+      # Each leg runs the checked-out branch's own Makefile, so every target
+      # used here must exist on every scanned branch (mango-promote).
       - uses: actions/checkout@v7
         with:
+          ref: ${{ matrix.ref }}
           # The `git` pass scans committed history, so it needs all of it.
           fetch-depth: 0
 
@@ -122,11 +162,18 @@ jobs:
         run: make gitleaks-selftest
 
   sbom-scan:
-    name: SBOM / Trivy (baseline, non-blocking)
+    name: SBOM / Trivy (baseline, non-blocking) — ${{ matrix.ref || 'default branch' }}
     runs-on: ubuntu-latest
     continue-on-error: true
+    needs: scan-refs
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJSON(needs.scan-refs.outputs.refs) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.ref }}
 
       # First scan is a baseline: the Make target uses `--exit-code 0` so
       # findings do not fail the job. Not a PR CI gate. continue-on-error
@@ -147,7 +194,7 @@ jobs:
   notify:
     name: File a tracking issue on failure
     runs-on: ubuntu-latest
-    needs: [postgres, embeddings-local, secret-scan, sbom-scan]
+    needs: [scan-refs, postgres, embeddings-local, secret-scan, sbom-scan]
     if: failure()
     permissions:
       issues: write

@@ -88,6 +88,13 @@ mark them required:
   branch from `main`, and every release or hotfix is back-merged
   `main` → `qa` → `dev`.
 
+After the `main` reset, set the repository variable
+`NIGHTLY_SCAN_ENVIRONMENT_BRANCHES=true` so the nightly secret and SBOM scans
+also cover `qa` and `main` (the branches come from `deploy/environments.yaml`;
+a missing branch is skipped and logged, a malformed value fails the run
+visibly). Every `make` target the nightly calls must then exist on every one of
+those branches.
+
 The step-by-step procedure is the `mango-promote` skill.
 
 Do not generate `CODEOWNERS` from the Claude Code skill roster

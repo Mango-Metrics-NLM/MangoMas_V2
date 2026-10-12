@@ -66,8 +66,10 @@ Three long-lived branches, promoted by pull request:
 ### Negative / Trade-offs
 
 - Each release costs two back-merge PRs.
-- Scheduled workflows run on the default branch only, so `nightly.yml` scans
-  `dev`, not the code in production, until it checks out `main` as well.
+- Scheduled workflows run on the default branch only. `nightly.yml` therefore
+  resolves the environment branches from the registry in a `scan-refs` job and
+  runs its security scans per branch, opt-in via
+  `NIGHTLY_SCAN_ENVIRONMENT_BRANCHES` until legacy `main` is reset.
 - Per-environment deploys need GCP provisioning (deploy/README.md). Branch-push
   deploys stay off behind the `MULTI_ENV_DEPLOY_ENABLED` repository variable
   until it exists; releases deploy production as before, still gated by the

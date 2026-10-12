@@ -468,6 +468,57 @@ def test_nightly_jobs_delegate_to_make() -> None:
     assert _step_run_commands(jobs["sbom-scan"]) == ["make sbom-scan"]
 
 
+_NIGHTLY_SCAN_JOBS = ("secret-scan", "sbom-scan")
+_NIGHTLY_SUITE_JOBS = ("postgres", "embeddings-local")
+_SCAN_REFS_JOB = "scan-refs"
+_SCAN_REFS_MATRIX = "${{ fromJSON(needs.scan-refs.outputs.refs) }}"
+
+
+def test_nightly_resolves_scan_refs_through_make() -> None:
+    """The scanned-branch list comes from the registry via make, never a literal list.
+
+    A workflow-expression list (``fromJSON(vars.X)``) would fail the whole run
+    at load on a malformed value — before any job, so the failure reporter
+    never fires and the nightly goes dark. Resolving it in a job keeps a bad
+    setting visible (ADR-0036 nightly follow-up).
+    """
+    job = _workflows.jobs("nightly.yml")[_SCAN_REFS_JOB]
+    runs = [step["run"] for step in job["steps"] if "run" in step]
+    assert runs == ["make install-deploy-tools", "make nightly-scan-refs"]
+    assert job["outputs"]["refs"] == "${{ steps.refs.outputs.refs }}"
+    resolve = next(step for step in job["steps"] if step.get("id") == "refs")
+    assert "NIGHTLY_SCAN_ENVIRONMENT_BRANCHES" in resolve["env"]
+    checkout = next(
+        s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout")
+    )
+    assert checkout["with"]["fetch-depth"] == 0, "branch discovery needs every remote ref"
+
+
+@pytest.mark.parametrize("job_name", _NIGHTLY_SCAN_JOBS)
+def test_nightly_security_scans_check_out_each_resolved_ref(job_name: str) -> None:
+    job = _workflows.jobs("nightly.yml")[job_name]
+    assert job["needs"] == _SCAN_REFS_JOB
+    assert job["strategy"]["matrix"]["ref"] == _SCAN_REFS_MATRIX
+    assert job["strategy"]["fail-fast"] is False, "one branch failing must not hide another"
+    checkouts = [s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout")]
+    assert checkouts and all(s["with"]["ref"] == "${{ matrix.ref }}" for s in checkouts)
+
+
+# Neutral ids: tests/conftest.py gates any node id containing a suite name
+# (e.g. "postgres") behind its RUN_* variable, which would skip this guard.
+@pytest.mark.parametrize(
+    "job_name", _NIGHTLY_SUITE_JOBS, ids=[f"suite-{i}" for i, _ in enumerate(_NIGHTLY_SUITE_JOBS)]
+)
+def test_nightly_functional_suites_stay_single_ref(job_name: str) -> None:
+    """Scanning production is a security concern; re-running suites there doubles cost."""
+    assert "strategy" not in _workflows.jobs("nightly.yml")[job_name]
+
+
+def test_nightly_scan_refs_target_drives_the_deploy_script() -> None:
+    body = _make_target_body("nightly-scan-refs")
+    assert "$(DEPLOY_SCRIPT)" in body and "scan-refs" in body
+
+
 def test_gate_does_not_include_sbom_scan() -> None:
     """The first Trivy/SBOM scan must not block PR CI or `make gate`."""
     assert "sbom-scan" not in _make_target_body("gate")
