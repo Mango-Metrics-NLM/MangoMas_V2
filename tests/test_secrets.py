@@ -12,6 +12,7 @@ import pytest
 from mangomas.composition import _resolve_llm_secrets, build_orchestrator, llm_registry
 from mangomas.config import DBSettings, LLMSettings, SecretsSettings, Settings
 from mangomas.secrets import EnvSecretsProvider, SecretsProvider, secrets_registry
+from tests.constants import IN_MEMORY_SQLITE_URL
 from tests.fakes import FakeSecretsProvider
 
 # ── Protocol + env backend ───────────────────────────────────────────────────
@@ -106,7 +107,7 @@ def test_build_orchestrator_substitutes_api_key_from_secrets_provider() -> None:
             api_key="inline",
             secret_ref="SECRET_FROM_VAULT",  # noqa: S106  -- ref string, not a secret
         ),
-        db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
+        db=DBSettings(provider="sqlite", url=IN_MEMORY_SQLITE_URL),
         secrets=SecretsSettings(provider="fake"),
     )
 

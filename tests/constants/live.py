@@ -146,6 +146,14 @@ GATED_RUNTIME_SKIP_REASON_PREFIXES: tuple[str, ...] = ("VERTEX_", "GCP_", "LMSTU
 GATED_RUNTIME_SKIP_REASON_RE: str = (
     r"^set (?:" + "|".join(GATED_RUNTIME_SKIP_REASON_PREFIXES) + r")\w+ to run [\w \-]+$"
 )
+# Runtime skip reasons used by the live GCP Secret Manager suite. One env var
+# per reason: the regex above admits exactly one ``set <VAR> to run <what>``
+# clause, so a reason naming two variables would be an *unsanctioned* skip and
+# flip the zero-skip guard red on an otherwise-green gated run.
+GCP_SECRETS_LIVE_SKIP_REASONS: tuple[str, ...] = (
+    "set GCP_SECRETS_PROJECT to run live GCP Secret Manager tests",
+    "set GCP_SECRETS_SECRET_NAME to run live GCP Secret Manager tests",
+)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # spec-0029 — hardware-agnostic end-to-end suites
@@ -273,6 +281,7 @@ __all__ = [
     "FLOW_REQUEST_MAX_STEPS",
     "GATED_RUNTIME_SKIP_REASON_PREFIXES",
     "GATED_RUNTIME_SKIP_REASON_RE",
+    "GCP_SECRETS_LIVE_SKIP_REASONS",
     "HARDWARE_CONTRACT_SCOPE",
     "HOSTED_RUNNER_INFEASIBLE",
     "HTTPX_ERROR_PATH_TIMEOUT_SECONDS",

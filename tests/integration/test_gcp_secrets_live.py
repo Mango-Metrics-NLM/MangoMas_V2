@@ -19,7 +19,11 @@ import pytest
 
 from mangomas.config import DEFAULT_GCP_SECRET_VERSION, DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS
 from mangomas.secrets.gcp import GCPSecretManagerProvider
-from tests.constants import GCP_SECRETS_PROJECT_ENV, GCP_SECRETS_SECRET_NAME_ENV
+from tests.constants import (
+    GCP_SECRETS_LIVE_SKIP_REASONS,
+    GCP_SECRETS_PROJECT_ENV,
+    GCP_SECRETS_SECRET_NAME_ENV,
+)
 
 pytestmark = pytest.mark.gcp_secrets
 
@@ -27,11 +31,12 @@ pytestmark = pytest.mark.gcp_secrets
 def test_resolves_pre_seeded_secret() -> None:
     project = os.environ.get(GCP_SECRETS_PROJECT_ENV)
     secret_name = os.environ.get(GCP_SECRETS_SECRET_NAME_ENV)
-    if not project or not secret_name:
-        pytest.skip(
-            f"set {GCP_SECRETS_PROJECT_ENV} and {GCP_SECRETS_SECRET_NAME_ENV} "
-            "to exercise the live GCP Secret Manager"
-        )
+    # One variable per skip reason: the zero-skip guard sanctions exactly the
+    # ``set <VAR> to run <what>`` shape (tests.constants.GATED_RUNTIME_SKIP_REASON_RE).
+    if not project:
+        pytest.skip(GCP_SECRETS_LIVE_SKIP_REASONS[0])
+    if not secret_name:
+        pytest.skip(GCP_SECRETS_LIVE_SKIP_REASONS[1])
 
     provider = GCPSecretManagerProvider(
         project_id=project,

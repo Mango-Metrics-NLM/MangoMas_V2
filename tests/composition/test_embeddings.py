@@ -13,6 +13,7 @@ from mangomas.composition import (
 )
 from mangomas.config import EmbeddingSettings, Settings
 from tests.composition.helpers import close_repo
+from tests.constants import DEFAULT_VERTEX_EMBEDDING_MODEL, IN_MEMORY_SQLITE_URL
 from tests.fakes import FakeEmbeddingClient
 
 
@@ -25,7 +26,7 @@ def test_embedding_factories_registered() -> None:
 
 def test_build_orchestrator_embeddings_disabled_by_default() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert orch.context.embeddings is None
@@ -36,7 +37,7 @@ def test_build_orchestrator_embeddings_disabled_by_default() -> None:
 def test_build_orchestrator_embeddings_enabled_attaches_client() -> None:
     """When ``embeddings.enabled=True`` the factory result is attached to the context."""
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.embeddings.enabled = True
     settings.embeddings.provider = "lmstudio"
 
@@ -111,7 +112,7 @@ def test_vertex_embedding_factory_forwards_settings(monkeypatch: pytest.MonkeyPa
     cfg = EmbeddingSettings(
         enabled=True,
         provider="vertex",
-        model="text-embedding-004",
+        model=DEFAULT_VERTEX_EMBEDDING_MODEL,
         project_id="proj-x",
         location="europe-west4",
     )
@@ -121,5 +122,5 @@ def test_vertex_embedding_factory_forwards_settings(monkeypatch: pytest.MonkeyPa
     assert captured == {
         "project_id": "proj-x",
         "location": "europe-west4",
-        "model": "text-embedding-004",
+        "model": DEFAULT_VERTEX_EMBEDDING_MODEL,
     }

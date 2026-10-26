@@ -9,9 +9,11 @@ Guards:
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
+
+import pytest
 
 from mangomas.adapters.storage.memory import FileMemoryRepository
 from mangomas.config import MemorySettings
@@ -28,37 +30,41 @@ def test_now_returns_aware_utc_datetime() -> None:
     assert result.tzinfo == UTC
 
 
-def test_clock_is_patchable_through_module(tmp_path: Path) -> None:
-    """Monkeypatching the clock seam freezes time for consumers."""
+def test_clock_is_patchable_through_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Monkeypatching the clock seam freezes time for consumers.
+
+    Uses ``monkeypatch`` rather than ``unittest.mock`` (the seam is internal —
+    tests/CLAUDE.md forbids mocking internal protocols) and closes the raw
+    verification connection: an unclosed ``sqlite3.Connection`` surfaced as a
+    ``ResourceWarning`` in every gate run, attributed by GC timing to an
+    unrelated test module.
+    """
     settings = MemorySettings(memory_dir=str(tmp_path), index_file="index.md")
     repo = FileMemoryRepository(settings)
 
     frozen = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
-    with patch.object(clock, "now", return_value=frozen):
-        # We access a private helper here to observe the patched clock.
-        path = repo._episodic_path(prefix="test")
-        assert path.name == "test-2026-01-01.md"
+    monkeypatch.setattr(clock, "now", lambda: frozen)
 
-        # Test sqlite sink uses the mocked clock too
+    # We access a private helper here to observe the patched clock.
+    path = repo._episodic_path(prefix="test")
+    assert path.name == "test-2026-01-01.md"
 
-        db_path = str(tmp_path / "test.db")
-        sink = SqliteResultsSink(db_path=db_path)
+    # The sqlite sink reads the same seam.
+    db_path = str(tmp_path / "test.db")
+    sink = SqliteResultsSink(db_path=db_path)
+    report = EvalReport(
+        scorer="test",
+        agent_name="agent",
+        target_name="target",
+        dataset_size=1,
+        passed=1,
+        failed=0,
+        errored=0,
+        mean_score=1.0,
+        duration_ms=10.0,
+    )
+    sink._write(report, None)
 
-        report = EvalReport(
-            scorer="test",
-            agent_name="agent",
-            target_name="target",
-            dataset_size=1,
-            passed=1,
-            failed=0,
-            errored=0,
-            mean_score=1.0,
-            duration_ms=10.0,
-        )
-
-        sink._write(report, None)
-
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("SELECT ts FROM eval_reports LIMIT 1")
-        row = cursor.fetchone()
-        assert row[0] == "2026-01-01T00:00:00+00:00"
+    with closing(sqlite3.connect(db_path)) as conn:
+        row = conn.execute("SELECT ts FROM eval_reports LIMIT 1").fetchone()
+    assert row[0] == "2026-01-01T00:00:00+00:00"

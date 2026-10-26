@@ -24,6 +24,7 @@ from mangomas.config import (
 from mangomas.errors import ConfigError
 from mangomas.secrets import secrets_registry
 from tests.composition.helpers import close_repo
+from tests.constants import IN_MEMORY_SQLITE_URL
 
 
 def test_postgres_factory_registered_in_storage_registry() -> None:
@@ -43,7 +44,7 @@ def test_gcp_secrets_lazy_registers_on_build_when_provider_selected() -> None:
     """When secrets.provider='gcp', build_orchestrator must lazy-register it."""
     settings = Settings(
         llm=LLMSettings(provider="lmstudio", api_key="inline"),
-        db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
+        db=DBSettings(provider="sqlite", url=IN_MEMORY_SQLITE_URL),
         secrets=SecretsSettings(provider="gcp", project_id="test-proj"),
     )
     # Drop any prior gcp binding so we can observe the lazy registration,
@@ -80,7 +81,7 @@ def test_gcp_secrets_lazy_register_raises_when_project_id_missing() -> None:
     """build_orchestrator must surface the ConfigError eagerly when misconfigured."""
     settings = Settings(
         llm=LLMSettings(provider="lmstudio", api_key="inline"),
-        db=DBSettings(provider="sqlite", url="sqlite:///:memory:"),
+        db=DBSettings(provider="sqlite", url=IN_MEMORY_SQLITE_URL),
         secrets=SecretsSettings(provider="gcp", project_id=None),
     )
     prior = secrets_registry._store.pop("gcp", None)

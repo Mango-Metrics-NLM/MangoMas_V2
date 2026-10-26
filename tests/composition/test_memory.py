@@ -7,12 +7,13 @@ from pathlib import Path
 from mangomas.composition import _file_memory_factory, build_orchestrator
 from mangomas.config import MemorySettings, Settings
 from tests.composition.helpers import close_repo
+from tests.constants import IN_MEMORY_SQLITE_URL
 
 
 def test_build_orchestrator_with_memory_enabled_attaches_repo(tmp_path: Path) -> None:
     """The ``memory.enabled=True`` branch wires a :class:`FileMemoryRepository`."""
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.memory.enabled = True
     settings.memory.memory_dir = str(tmp_path / "mem")
     orch = build_orchestrator(settings)

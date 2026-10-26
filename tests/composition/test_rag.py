@@ -5,6 +5,7 @@ from __future__ import annotations
 from mangomas.composition import _vector_registry, build_orchestrator, embedding_registry
 from mangomas.config import Settings
 from tests.composition.helpers import close_repo, rag_enabled_settings
+from tests.constants import IN_MEMORY_SQLITE_URL
 from tests.fakes import FakeEmbeddingClient, FakeVectorStore
 
 
@@ -25,7 +26,7 @@ def test_build_orchestrator_wires_retrieval_tool_when_both_enabled() -> None:
 
 def test_build_orchestrator_no_tools_when_only_embeddings_enabled() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.embeddings.enabled = True
     settings.embeddings.provider = "lmstudio"
     with embedding_registry.scoped("lmstudio", lambda _cfg: FakeEmbeddingClient()):
@@ -38,7 +39,7 @@ def test_build_orchestrator_no_tools_when_only_embeddings_enabled() -> None:
 
 def test_build_orchestrator_no_tools_when_rag_disabled() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert orch.context.tools is None

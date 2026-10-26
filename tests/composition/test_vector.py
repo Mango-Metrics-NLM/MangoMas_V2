@@ -9,6 +9,7 @@ import pytest
 from mangomas.composition import _vector_registry, build_orchestrator
 from mangomas.config import Settings, VectorSettings
 from tests.composition.helpers import close_repo
+from tests.constants import IN_MEMORY_SQLITE_URL
 from tests.fakes import FakeVectorStore
 
 
@@ -38,7 +39,7 @@ def test_chroma_vector_factory_forwards_settings(monkeypatch: pytest.MonkeyPatch
 
 def test_build_orchestrator_vector_disabled_by_default() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert orch.context.vector_store is None
@@ -49,7 +50,7 @@ def test_build_orchestrator_vector_disabled_by_default() -> None:
 def test_build_orchestrator_vector_enabled_attaches_store() -> None:
     """When ``vector.enabled=True`` the factory result is attached to the context."""
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.vector.enabled = True
     settings.vector.provider = "chroma"
 

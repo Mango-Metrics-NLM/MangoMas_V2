@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.constants import IN_MEMORY_SQLITE_URL
+
 from mangomas.agents._prompt import AGENT_LLM_OVERRIDES_EXTRAS_KEY
 from mangomas.cognitive.constants import (
     COGNITIVE_SETTINGS_EXTRAS_KEY,
@@ -24,7 +26,7 @@ def _close_repo(orch: Orchestrator) -> None:
 
 def test_signal_disabled_does_not_attach_sink() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert COGNITIVE_SINK_EXTRAS_KEY not in orch.context.extras
@@ -42,7 +44,7 @@ def test_signal_disabled_does_not_attach_sink() -> None:
 
 def test_signal_enabled_attaches_jsonl_sink(tmp_path: Path) -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.signal.enabled = True
     settings.signal.dir = str(tmp_path)
     orch = build_orchestrator(settings)

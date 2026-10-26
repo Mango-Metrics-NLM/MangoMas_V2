@@ -19,6 +19,9 @@ ASGI_TEST_BASE_URL: str = "http://testserver"
 # from ``ASGI_TEST_BASE_URL`` so a future refactor that shares the ASGI URL
 # does not accidentally redirect mocked LLM traffic.
 TEST_LMSTUDIO_MOCK_BASE_URL: str = "http://lm/v1"
+# Placeholder model id for settings built against a mock LM Studio endpoint; no
+# config counterpart (the real default is ``DEFAULT_LLM_MODEL``).
+TEST_LMSTUDIO_STUB_MODEL: str = "test-model"
 TEST_LMSTUDIO_MOCK_MODEL: str = "m"
 
 # ── Embeddings mock ───────────────────────────────────────────────────────────
@@ -319,6 +322,7 @@ __all__ = [
     "TEST_HISTORY_SEEDED_TURNS",
     "TEST_LMSTUDIO_MOCK_BASE_URL",
     "TEST_LMSTUDIO_MOCK_MODEL",
+    "TEST_LMSTUDIO_STUB_MODEL",
     "TEST_MAX_TOKENS_OVERRIDE",
     "TEST_PROMPT_EXPLICIT",
     "TEST_PROMPT_SETTINGS",
