@@ -22,14 +22,14 @@ A2A lives at the boundary only: an SDK-backed server façade over the existing
 `Orchestrator` under `api/` + a new pure-domain `a2a/` package, and a
 `RemoteA2AAgent` under `adapters/a2a/` + `agents/` that satisfies the `Agent`
 protocol and is registered under an operator-chosen name bound to a configured
-URL. Default-off; no edit to any `core/` contract.
+URL. Default-off; no `core/` edit.
 
 ## Consequences
 
 ### Positive
 
 - Every topology reaches a remote peer via `orch.register()`; no core change.
-- Flag-off builds are byte-identical; the SDK is an optional extra.
+- Flag-off builds are byte-identical; the SDK is optional.
 - Excluding push notifications and `input-required` removes the two worst
   A2A threat classes.
 
@@ -58,7 +58,7 @@ URL. Default-off; no edit to any `core/` contract.
   `WorkflowNode` union (ADR-0011).
 - **MCP-only interop** — rejected for delegation: no task lifecycle; kept for
   tooling.
-- **Route peers by card `name`** — rejected (arXiv 2609.27624, CWE-706).
+- **Route peers by card `name`** — rejected (arXiv 2609.27624).
 
 ## References
 
