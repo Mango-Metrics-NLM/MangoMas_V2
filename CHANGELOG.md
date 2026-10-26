@@ -18,7 +18,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   under an operator-chosen name — with no change to any `core/` contract.
   v1 scope excludes push notifications and `input-required`; task ownership
   is stated honestly as `(tenant, "shared")` until per-principal auth exists.
-- Research basis: the A2A spec and Python SDK (via Context7), nine arXiv
+- Research basis: the A2A spec and Python SDK (via Context7), twelve arXiv
   papers (incl. A2ABreak 2609.10871, agent-name-collision 2609.27624, the
   York MCP-vs-A2A study 2607.23884) and an independent code-level review.
 - **No runtime change.** Implementation is gated by the spec's go / no-go

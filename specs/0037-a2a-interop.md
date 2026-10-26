@@ -27,7 +27,8 @@ page. It does not override the deferral.
   the edge.
 - R2 — **Server** (Phase 1): publish an Agent Card at
   `/.well-known/agent-card.json` and a JSON-RPC 2.0 endpoint for
-  `SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, backed by the
+  `SendMessage`, `SendStreamingMessage`, `GetTask`, `SubscribeToTask`,
+  `CancelTask`, backed by the
   existing `Orchestrator.dispatch` / `stream_dispatch`. Skill `id` is the
   registry agent name (operator-controlled, stable); the card advertises only
   controls the code enforces (ADR-0033).
@@ -65,8 +66,9 @@ page. It does not override the deferral.
 
 - WHEN `MANGOMAS_A2A__ENABLED` is unset THEN `app.openapi()` equals today's
   snapshot and `sys.modules` has no `a2a` entry after `import mangomas`.
-- WHEN enabled without `MANGOMAS_A2A__PUBLIC_URL` THEN `Settings` parsing
-  fails with `ConfigError` (the URL cannot be inferred behind Cloud Run).
+- WHEN enabled without `MANGOMAS_A2A__PUBLIC_URL` THEN `Settings` validation
+  fails at parse, the same shape as `ALLOWED_MODELS` (ADR-0033); the URL
+  cannot be inferred behind Cloud Run.
 - WHEN the official `a2a` client resolves our card and calls `send_message`
   THEN it receives `Task(submitted)` → `artifactUpdate`(s) → stream closure;
   WHEN it calls `tasks/get` afterwards THEN the task is `completed`.
