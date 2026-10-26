@@ -9,6 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — runtime lockfile security bump
+
+- `requirements.lock`: `certifi` 2026.7.22 → 2026.10.23 (PYSEC-2026-4320) and
+  `opentelemetry-api`/`-sdk` 1.44.0 → 1.45.1 with the matching
+  `opentelemetry-semantic-conventions` 0.65b0 → 0.66b1 (CVE-2026-114603).
+  Regenerated with the documented `pip-compile` command on Python 3.11 using
+  targeted `--upgrade-package` flags; no other pin moves. Clears the
+  `Dependency vulnerability audit` CI job. The `gcp` extra's
+  `opentelemetry-exporter-gcp-trace` sits outside the lock and is unverified
+  against 1.45.1 (gated by `RUN_GCP_TRACE=1`).
+
 ### Added — nightly security scans reach production (ADR-0036)
 
 - `scripts/deploy_environment.py scan-refs` and the `make nightly-scan-refs`
