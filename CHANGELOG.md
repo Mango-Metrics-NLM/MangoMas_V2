@@ -9,6 +9,22 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — A2A interoperability decision record (ADR-0037)
+
+- `specs/0037-a2a-interop.md` and `docs/adr/0037-a2a-boundary-adapter.md`
+  record where and how the Agent2Agent protocol (A2A v1.0.1, `a2a-sdk` 1.2.x)
+  fits: an **opt-in, default-off boundary adapter** — an SDK-backed server
+  façade over the existing `Orchestrator` plus a `RemoteA2AAgent` registered
+  under an operator-chosen name — with no change to any `core/` contract.
+  v1 scope excludes push notifications and `input-required`; task ownership
+  is stated honestly as `(tenant, "shared")` until per-principal auth exists.
+- Research basis: the A2A spec and Python SDK (via Context7), nine arXiv
+  papers (incl. A2ABreak 2609.10871, agent-name-collision 2609.27624, the
+  York MCP-vs-A2A study 2607.23884) and an independent code-level review.
+- **No runtime change.** Implementation is gated by the spec's go / no-go
+  gate; the reliability plan's "revisit after C4" deferral stands. ADR-0001's
+  swap matrix gains an `Interop` row pointing at ADR-0037.
+
 ### Added — nightly security scans reach production (ADR-0036)
 
 - `scripts/deploy_environment.py scan-refs` and the `make nightly-scan-refs`
