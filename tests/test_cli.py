@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from typer.testing import CliRunner
@@ -117,6 +118,8 @@ def test_history_no_repo_exits_nonzero(
 
 # ── Branch audit, Tier A ──────────────────────────────────────────────────────
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
 
 @pytest.mark.parametrize("limit", ["0", "-1", str(DEFAULT_API_HISTORY_MAX_LIMIT + 1)])
 def test_history_limit_is_bounded_like_the_api(runner: CliRunner, limit: str) -> None:
@@ -125,7 +128,9 @@ def test_history_limit_is_bounded_like_the_api(runner: CliRunner, limit: str) ->
     (proved while writing): dropping ``min=1`` lets ``0`` and ``-1`` through."""
     result = runner.invoke(cli_main.app, ["history", "--limit", limit])
     assert result.exit_code == 2
-    assert "--limit" in result.output
+    # Typer renders usage errors through Rich; under FORCE_COLOR (CI) the
+    # option name arrives wrapped in ANSI style codes, so strip them first.
+    assert "--limit" in _ANSI_ESCAPE_RE.sub("", result.output)
 
 
 def test_agents_bootstraps_logging_like_its_siblings(
