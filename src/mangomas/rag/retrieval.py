@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
 
+from mangomas.config import DEFAULT_VECTOR_MAX_TOP_K
 from mangomas.core.tools import ToolEffects, ToolSpec
 from mangomas.rag.models import Chunk, SearchResult
 
@@ -57,10 +58,12 @@ class Retriever:
         embeddings: EmbeddingClient,
         vector_store: VectorStoreRepository,
         top_k: int,
+        max_top_k: int = DEFAULT_VECTOR_MAX_TOP_K,
     ) -> None:
         self._embeddings = embeddings
         self._vector_store = vector_store
-        self._top_k = max(1, top_k)
+        self._max_top_k = max(1, max_top_k)
+        self._top_k = min(max(1, top_k), self._max_top_k)
 
     async def search(self, query: str, *, top_k: int | None = None) -> list[SearchResult]:
         """Return up to ``top_k`` (default the configured depth) results for ``query``.
@@ -77,7 +80,7 @@ class Retriever:
         RAG layer has no way to know whether it carries anything sensitive.
         Only its length is recorded.
         """
-        k = self._top_k if top_k is None else max(1, top_k)
+        k = self._top_k if top_k is None else self._clamp(top_k)
         with trace.get_tracer(__name__).start_as_current_span("rag.search") as span:
             span.set_attribute("rag.top_k", k)
             span.set_attribute("rag.query_chars", len(query))
@@ -104,6 +107,27 @@ class Retriever:
                     },
                 )
             return results
+
+    def _clamp(self, requested: int) -> int:
+        """Bound a per-call depth to ``[1, max_top_k]``.
+
+        The clamp lives on ``search`` (not only on the tool) so a direct caller
+        and the model-driven tool get the same ceiling. Clamping rather than
+        raising: an over-eager ``top_k`` is a bad *argument*, not a failed
+        search, and the model learns nothing useful from a tool error here.
+        """
+        k = min(max(1, requested), self._max_top_k)
+        if k != requested:
+            logger.debug(
+                "Retrieval top_k clamped",
+                extra={
+                    "event": "rag_top_k_clamped",
+                    "requested": requested,
+                    "effective": k,
+                    "max_top_k": self._max_top_k,
+                },
+            )
+        return k
 
 
 class RetrievalTool:
@@ -156,7 +180,10 @@ class RetrievalTool:
             )
             return "No query provided."
         raw_top_k = arguments.get("top_k")
-        top_k = raw_top_k if isinstance(raw_top_k, int) else None
+        # ``bool`` is an ``int`` subclass: ``{"top_k": true}`` would otherwise
+        # read as depth 1. Anything that is not a real integer means "default".
+        is_real_int = isinstance(raw_top_k, int) and not isinstance(raw_top_k, bool)
+        top_k = raw_top_k if is_real_int else None
         results = await self._retriever.search(query, top_k=top_k)
         if not results:
             return "No relevant context found."

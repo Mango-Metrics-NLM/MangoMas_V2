@@ -663,3 +663,35 @@ def test_instruments_singleton_survives_concurrent_first_record() -> None:
     first = results[0]
     assert all(instruments is first for instruments in results)
     assert app_metrics._state.instruments is first
+
+
+def test_instruments_inner_check_returns_the_instance_created_while_waiting() -> None:
+    """Deterministic cover for the inner ``is None`` check of the double-checked
+    lock: a worker blocks on the lock while the test thread installs the
+    singleton, then must return *that* instance rather than build a second one.
+    Mutation: delete the inner check -> the worker constructs a new object."""
+    app_metrics._state.instruments = None
+    sentinel = app_metrics._Instruments()
+    constructed: list[object] = []
+    original = app_metrics._Instruments
+
+    def _counting() -> Any:
+        constructed.append(object())
+        return original()
+
+    app_metrics._instruments_lock.acquire()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(app_metrics._instruments)
+            app_metrics._Instruments = _counting  # type: ignore[misc, assignment]
+            try:
+                app_metrics._state.instruments = sentinel
+            finally:
+                app_metrics._instruments_lock.release()
+            result = future.result(timeout=5)
+    finally:
+        app_metrics._Instruments = original  # type: ignore[misc]
+        if app_metrics._instruments_lock.locked():
+            app_metrics._instruments_lock.release()
+    assert result is sentinel
+    assert constructed == []

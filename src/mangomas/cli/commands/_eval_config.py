@@ -18,7 +18,7 @@ import typer
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.errors import ConfigError
 from mangomas.eval import dataset_source_registry, sink_registry, target_registry
-from mangomas.eval._options import require_non_negative_float
+from mangomas.eval._options import require_non_negative_float, require_unit_float
 
 logger = logging.getLogger(__name__)
 
@@ -169,10 +169,33 @@ def _resolve_regression(
     allow_new_failures: bool | None,
     cfg: EvalSettings,
 ) -> tuple[str | None, float | None, float | None, bool]:
-    """Resolve effective regression-gate config (CLI flag over settings)."""
+    """Resolve effective regression-gate config (CLI flag over settings).
+
+    The ``EvalSettings`` validator only ever sees env / settings values, so a
+    CLI ``--max-*-drop`` used to reach the gate unchecked: ``nan`` compares
+    false against every drop (gate never fails) and a negative value fails
+    every run. Both are rejected here with exit 2, but only when a baseline is
+    in play — an unused tolerance must not block a run (same rule as
+    :func:`_resolve_gating`).
+    """
+    eff_baseline = baseline or cfg.baseline_path
+    eff_mean_drop = (
+        max_mean_score_drop if max_mean_score_drop is not None else cfg.max_mean_score_drop
+    )
+    eff_pass_drop = max_pass_rate_drop if max_pass_rate_drop is not None else cfg.max_pass_rate_drop
+    if eff_baseline:
+        checks = (("max-mean-score-drop", eff_mean_drop), ("max-pass-rate-drop", eff_pass_drop))
+        for field, val in checks:
+            if val is None:
+                continue
+            try:
+                require_unit_float(val, owner="eval", field=field)
+            except ConfigError as exc:
+                typer.echo(f"Eval configuration error: {exc}", err=True)
+                raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
     return (
-        baseline or cfg.baseline_path,
-        max_mean_score_drop if max_mean_score_drop is not None else cfg.max_mean_score_drop,
-        max_pass_rate_drop if max_pass_rate_drop is not None else cfg.max_pass_rate_drop,
+        eff_baseline,
+        eff_mean_drop,
+        eff_pass_drop,
         allow_new_failures if allow_new_failures is not None else cfg.allow_new_failures,
     )

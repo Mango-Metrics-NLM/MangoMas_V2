@@ -285,6 +285,9 @@ from mangomas.config.rag import (
     DEFAULT_VECTOR_ENABLED as DEFAULT_VECTOR_ENABLED,
 )
 from mangomas.config.rag import (
+    DEFAULT_VECTOR_MAX_TOP_K as DEFAULT_VECTOR_MAX_TOP_K,
+)
+from mangomas.config.rag import (
     DEFAULT_VECTOR_PERSIST_DIR as DEFAULT_VECTOR_PERSIST_DIR,
 )
 from mangomas.config.rag import (
@@ -512,6 +515,7 @@ __all__ = [
     "DEFAULT_VALIDATE_OUTPUT",
     "DEFAULT_VECTOR_COLLECTION",
     "DEFAULT_VECTOR_ENABLED",
+    "DEFAULT_VECTOR_MAX_TOP_K",
     "DEFAULT_VECTOR_PERSIST_DIR",
     "DEFAULT_VECTOR_PROVIDER",
     "DEFAULT_VECTOR_TOP_K",

@@ -19,13 +19,20 @@ the process exit code.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from tests.constants import ENV_GATE_SKIP_REASONS
+from tests.constants import (
+    ENV_GATE_SKIP_REASONS,
+    GATED_RUNTIME_SKIP_REASON_RE,
+    GCP_SECRETS_LIVE_SKIP_REASONS,
+    GCP_SECRETS_PROJECT_ENV,
+    GCP_SECRETS_SECRET_NAME_ENV,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -207,3 +214,26 @@ def test_collection_level_importorskip_fails_the_session(tmp_path: Path) -> None
     result = _run_pytest(tmp_path)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "SKIP (collection)" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("reason", "env_name"),
+    list(
+        zip(
+            GCP_SECRETS_LIVE_SKIP_REASONS,
+            (GCP_SECRETS_PROJECT_ENV, GCP_SECRETS_SECRET_NAME_ENV),
+            strict=True,
+        )
+    ),
+)
+def test_live_gcp_skip_reasons_are_sanctioned(reason: str, env_name: str) -> None:
+    """The live GCP suite's runtime skips must match the sanctioned shape.
+
+    The previous reason named two variables in one clause ("set A and B to
+    exercise …"), which ``GATED_RUNTIME_SKIP_REASON_RE`` cannot match — so a
+    gated run without those variables would have turned an otherwise green
+    session red through the zero-skip guard. Pinning the literal here keeps the
+    reason and the regex honest about each other.
+    """
+    assert re.fullmatch(GATED_RUNTIME_SKIP_REASON_RE, reason), reason
+    assert env_name in reason

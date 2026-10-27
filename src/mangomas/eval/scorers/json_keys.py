@@ -26,6 +26,7 @@ import json
 from typing import Any
 
 from mangomas.errors import ConfigError
+from mangomas.eval._options import require_bool
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -100,7 +101,8 @@ def _json_keys_factory(options: dict[str, Any]) -> Scorer:
     if raw is not None and not isinstance(raw, (list, tuple)):
         raise ConfigError("json_keys: 'required_keys' option must be a list or tuple")
     required = [str(k) for k in raw] if raw is not None else None
-    return JsonKeysScorer(required_keys=required, strict=bool(options.get("strict", False)))
+    strict = require_bool(options, "strict", default=False, owner="json_keys")
+    return JsonKeysScorer(required_keys=required, strict=strict)
 
 
 scorer_registry.register("json_keys", _json_keys_factory)

@@ -36,16 +36,21 @@ async def test_main_closes_orchestrator_when_workflow_raises(
     assert orch.closed is True
 
 
-async def test_main_returns_ok_and_closes_orchestrator_on_max_steps(
+async def test_main_fails_and_closes_orchestrator_on_max_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``MaxStepsExceeded`` stays a tolerated outcome: exit 0 + ``aclose``."""
+    """``MaxStepsExceeded`` is a *failed* run: the runtime exit code + ``aclose``.
+
+    It used to return 0, so a CI step calling this script passed with the loop
+    sentinel never emitted. Mutation (proved while writing): restoring the
+    ``return 0`` fails this test."""
     orch = FakeOrchestrator(raise_on_dispatch=MaxStepsExceeded(steps=e2e._LOOP_MAX_STEPS))
     _install(monkeypatch, orch)
 
     exit_code = await e2e._main()
 
-    assert exit_code == constants.WORKFLOW_E2E_EXIT_OK
+    assert exit_code == constants.EXIT_RUNTIME_ERROR
+    assert exit_code != constants.WORKFLOW_E2E_EXIT_OK
     assert orch.closed is True
 
 

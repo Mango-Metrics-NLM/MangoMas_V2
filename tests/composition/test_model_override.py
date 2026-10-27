@@ -12,6 +12,7 @@ from mangomas.composition import (
 )
 from mangomas.config import AgentSettings, LLMSettings, Settings
 from tests.composition.helpers import close_repo
+from tests.constants import IN_MEMORY_SQLITE_URL
 from tests.fakes import FakeLLM
 
 
@@ -92,7 +93,7 @@ def test_build_orchestrator_populates_agent_llm_overrides_extra() -> None:
         return FakeLLM(reply=f"model={cfg.model}")
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.agents = {"chat": AgentSettings(model_override="override-model")}
     with llm_registry.scoped("lmstudio", _fake_factory):
         orch = build_orchestrator(settings)
@@ -107,7 +108,7 @@ def test_build_orchestrator_populates_agent_llm_overrides_extra() -> None:
 def test_build_orchestrator_no_overrides_extra_is_empty_dict() -> None:
     """Backward-compat guard: no MODEL_OVERRIDE configured -> extras key is `{}`."""
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert orch.context.extras["agent_llm_overrides"] == {}
@@ -124,7 +125,7 @@ async def test_orchestrator_aclose_closes_agent_llm_override_clients() -> None:
         return built[cfg.model]
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.agents = {"chat": AgentSettings(model_override="override-model")}
     with llm_registry.scoped("lmstudio", _fake_factory):
         orch = build_orchestrator(settings)
@@ -143,7 +144,7 @@ async def test_orchestrator_aclose_without_overrides_matches_prior_behavior() ->
         return shared_llm
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     with llm_registry.scoped("lmstudio", _fake_factory):
         orch = build_orchestrator(settings)
 
@@ -162,7 +163,7 @@ async def test_harness_orchestrator_aclose_closes_agent_llm_override_clients() -
         return built[cfg.model]
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.harness.enabled = True
     settings.agents = {"chat": AgentSettings(model_override="override-model")}
     with llm_registry.scoped("lmstudio", _fake_factory):

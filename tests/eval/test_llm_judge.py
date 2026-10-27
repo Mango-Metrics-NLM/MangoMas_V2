@@ -104,3 +104,19 @@ def test_llm_judge_registered_in_registry() -> None:
     scorer = scorer_registry.get("llm_judge")({"threshold": 0.8})
     assert scorer.name == "llm_judge"
     assert isinstance(scorer, LLMJudgeScorer)
+
+
+@pytest.mark.parametrize("raw", ['{"score": NaN}', '{"score": Infinity}', '{"score": "nan"}'])
+async def test_llm_judge_non_finite_score_raises_bad_response(raw: str) -> None:
+    """``json.loads`` accepts ``NaN``/``Infinity`` and ``float("nan")`` accepts the
+    string form; ``min(1.0, nan)`` is 1.0, so an unguarded NaN scored a perfect
+    pass. Mutation: delete the ``isfinite`` guard -> ``passed is True``."""
+    scorer = LLMJudgeScorer(threshold=0.7)
+    with pytest.raises(LLMBadResponse, match="not finite"):
+        await scorer.score("p", "e", context=ScorerContext(llm=FakeLLM(reply=raw)))
+
+
+def test_llm_judge_factory_rejects_non_numeric_threshold() -> None:
+    """A mistyped option is a config error (exit 2), not a bare ``ValueError``."""
+    with pytest.raises(ConfigError, match="threshold"):
+        scorer_registry.get("llm_judge")({"threshold": "high"})

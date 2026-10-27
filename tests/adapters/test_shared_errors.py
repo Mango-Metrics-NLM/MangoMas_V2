@@ -13,8 +13,9 @@ from mangomas.adapters._http_errors import translate_httpx_error
 from mangomas.adapters._vertex_errors import translate_vertex_error
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
+from tests.constants import DEFAULT_LLM_BASE_URL
 
-_BASE_URL = "http://localhost:1234/v1"
+_BASE_URL = DEFAULT_LLM_BASE_URL
 _LABEL = "Test upstream"
 
 

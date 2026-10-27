@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -11,7 +12,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import PlainTextResponse, Response, StreamingResponse
+from starlette.types import Message, Receive, Scope, Send
 
 from mangomas.api.app import create_app
 from mangomas.api.middleware import ConcurrencyLimitMiddleware, MaxBodySizeMiddleware
@@ -20,6 +22,8 @@ from mangomas.core import Orchestrator
 from tests.constants import BACKPRESSURE_MAX_BODY_BYTES, BACKPRESSURE_MAX_CONCURRENT
 
 _MSG = {"messages": [{"role": "user", "content": "hi"}]}
+# Test-scoped bound on the saturated-stream probe; no config counterpart.
+_STREAM_TEST_TIMEOUT_S = 5.0
 
 
 # ── MaxBodySizeMiddleware (isolation) ─────────────────────────────────────────
@@ -207,3 +211,77 @@ def test_concurrency_guard_wired_from_settings(
         # A single request is still served normally within the cap.
         r = client.post("/agents/chat/invoke", json=_MSG)
         assert r.status_code == 200
+
+
+# ── The slot covers the whole response body (branch audit, Tier A) ───────────
+# ``BaseHTTPMiddleware.call_next`` resolves at ``http.response.start``, so a
+# streaming body ran entirely after the slot was released and the limit never
+# covered ``/agents/{name}/stream``. Mutation (proved while writing): the
+# previous ``BaseHTTPMiddleware`` implementation makes the second request 200.
+
+
+async def test_concurrency_limit_holds_the_slot_until_the_stream_body_finishes() -> None:
+    first_chunk_sent = asyncio.Event()
+    release = asyncio.Event()
+    app = FastAPI()
+    app.add_middleware(ConcurrencyLimitMiddleware, max_concurrent=1)
+
+    @app.get("/stream")
+    async def stream() -> StreamingResponse:
+        async def body() -> AsyncIterator[bytes]:
+            yield b"first"
+            first_chunk_sent.set()
+            await release.wait()
+            yield b"last"
+
+        return StreamingResponse(body(), media_type="text/plain")
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = asyncio.create_task(client.get("/stream"))
+        await first_chunk_sent.wait()  # headers + one chunk are out; body still open
+        # Bounded: under the old BaseHTTPMiddleware the second request is
+        # *admitted*, its body then blocks on ``release`` and the test would
+        # hang instead of failing.
+        second = await asyncio.wait_for(client.get("/stream"), timeout=_STREAM_TEST_TIMEOUT_S)
+        assert second.status_code == 503
+        assert second.json()["error"] == "server_at_capacity"
+        release.set()
+        first_result = await first
+        assert first_result.status_code == 200
+        assert first_result.content == b"firstlast"
+
+
+async def test_concurrency_slot_is_released_after_the_body_drains() -> None:
+    app = FastAPI()
+    app.add_middleware(ConcurrencyLimitMiddleware, max_concurrent=1)
+
+    @app.get("/one")
+    async def one() -> StreamingResponse:
+        async def body() -> AsyncIterator[bytes]:
+            yield b"x"
+
+        return StreamingResponse(body(), media_type="text/plain")
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        for _ in range(3):
+            assert (await client.get("/one")).status_code == 200
+
+
+async def test_concurrency_limit_passes_non_http_scopes_through() -> None:
+    seen: list[str] = []
+
+    async def inner(scope: Scope, _receive: Receive, _send: Send) -> None:
+        seen.append(scope["type"])
+
+    middleware = ConcurrencyLimitMiddleware(inner, max_concurrent=0)  # saturated for http
+
+    async def receive() -> Message:
+        return {"type": "lifespan.startup"}
+
+    async def send(_: Message) -> None:
+        return None
+
+    await middleware({"type": "lifespan"}, receive, send)
+    assert seen == ["lifespan"]

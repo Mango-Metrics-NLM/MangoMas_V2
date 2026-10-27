@@ -140,3 +140,72 @@ async def test_external_client_not_closed() -> None:
         client = _client(client=external)
         await client.aclose()
         assert not external.is_closed
+
+
+# ── Row placement and count ──────────────────────────────────────────────────
+# The OpenAI dialect carries an ``index`` per row. Mutations (proved while
+# writing): ignoring ``index`` makes the reorder test return the vectors
+# swapped; dropping the count check makes the short-response test return one
+# vector for two texts; moving ``resp.json()`` outside the ``try`` makes the
+# HTML test fail with a raw ``JSONDecodeError``.
+
+
+async def _embed(body: object, texts: list[str]) -> list[list[float]]:
+    respx.post(_EMBEDDINGS_URL).mock(return_value=httpx.Response(200, json=body))
+    client = _client()
+    try:
+        return await client.embed_batch(texts)
+    finally:
+        await client.aclose()
+
+
+@respx.mock
+async def test_rows_are_placed_by_index_not_arrival_order() -> None:
+    out = await _embed(
+        {"data": [{"index": 1, "embedding": [0.4]}, {"index": 0, "embedding": [0.1]}]},
+        ["a", "b"],
+    )
+    assert out == [[0.1], [0.4]]
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("rows", "reason"),
+    [
+        ([{"index": 0, "embedding": [0.1]}], "expected 2 embeddings, got 1"),
+        (
+            [{"index": 0, "embedding": [0.1]}, {"index": 0, "embedding": [0.2]}],
+            "duplicate embedding index 0",
+        ),
+        (
+            [{"index": 0, "embedding": [0.1]}, {"index": 2, "embedding": [0.2]}],
+            "embedding index 2 is outside 0..1",
+        ),
+        (
+            [{"index": 0, "embedding": [0.1]}, {"index": True, "embedding": [0.2]}],
+            "embedding index True is outside 0..1",
+        ),
+        (
+            [{"index": 0, "embedding": [0.1]}, {"index": "1", "embedding": [0.2]}],
+            "embedding index '1' is outside 0..1",
+        ),
+    ],
+    ids=["short", "duplicate", "out-of-range", "bool", "string"],
+)
+async def test_bad_row_set_is_a_typed_error(rows: list[dict[str, object]], reason: str) -> None:
+    with pytest.raises(LMStudioEmbeddingError) as excinfo:
+        await _embed({"data": rows}, ["a", "b"])
+    assert str(excinfo.value) == "Malformed LM Studio embeddings response"
+    assert excinfo.value.detail.startswith(f"ValueError: {reason}")
+
+
+@respx.mock
+async def test_non_json_200_is_a_typed_error() -> None:
+    respx.post(_EMBEDDINGS_URL).mock(return_value=httpx.Response(200, text="<html>proxy</html>"))
+    client = _client()
+    try:
+        with pytest.raises(LMStudioEmbeddingError) as excinfo:
+            await client.embed_batch(["a"])
+    finally:
+        await client.aclose()
+    assert excinfo.value.detail.startswith("JSONDecodeError: ")

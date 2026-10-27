@@ -21,11 +21,12 @@ from mangomas.composition import (
 from mangomas.config import Settings
 from mangomas.core import Orchestrator
 from tests.composition.helpers import close_repo
+from tests.constants import IN_MEMORY_SQLITE_URL
 
 
 def test_build_orchestrator_wires_chat_agent() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert "chat" in orch.list_agents()
@@ -37,7 +38,7 @@ def test_build_orchestrator_wires_chat_agent() -> None:
 
 def test_build_orchestrator_wires_summarize_agent() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert "summarize" in orch.list_agents()
@@ -54,7 +55,7 @@ def test_build_orchestrator_invokes_agent_discovery(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(composition_module, "ensure_agent_plugins", _spy)
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert len(seen) == 1
@@ -106,7 +107,7 @@ def test_build_orchestrator_disabled_harness_returns_plain_orchestrator() -> Non
     all" — verified via ``isinstance``, not exact ``type()`` identity.
     """
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     orch = build_orchestrator(settings)
     try:
         assert isinstance(orch, Orchestrator)
@@ -118,13 +119,13 @@ def test_build_orchestrator_disabled_harness_returns_plain_orchestrator() -> Non
 def test_build_orchestrator_enabled_harness_returns_wrapper() -> None:
     """With ``harness.enabled=True``, the harness subclass is returned and agents match."""
     baseline_settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    baseline_settings.db.url = "sqlite:///:memory:"
+    baseline_settings.db.url = IN_MEMORY_SQLITE_URL
     baseline = build_orchestrator(baseline_settings)
     baseline_agents = baseline.list_agents()
     close_repo(baseline)
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.harness.enabled = True
     orch = build_orchestrator(settings)
     try:
@@ -136,7 +137,7 @@ def test_build_orchestrator_enabled_harness_returns_wrapper() -> None:
 
 def test_build_orchestrator_wires_all_agents() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.memory.enabled = False
     orch = build_orchestrator(settings)
     try:

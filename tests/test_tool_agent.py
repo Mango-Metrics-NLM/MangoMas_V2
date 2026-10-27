@@ -243,7 +243,6 @@ async def test_tool_agent_no_duplicate_system_prompt() -> None:
 # ── Custom system prompt + tools: BOTH prompts sent, custom first ─────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_combines_custom_and_tool_prompt() -> None:
     llm = FakeLLM(reply="ok")
     tool = FakeTool()
@@ -256,7 +255,6 @@ async def test_tool_agent_combines_custom_and_tool_prompt() -> None:
     assert first_message.content == f"{TEST_TOOL_SYSTEM_PROMPT}\n\n{expected_tool_prompt}"
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_tool_prompt_alone_without_custom_prompt() -> None:
     llm = FakeLLM(reply="ok")
     tool = FakeTool()
@@ -271,7 +269,6 @@ async def test_tool_agent_tool_prompt_alone_without_custom_prompt() -> None:
 # ── Blank/whitespace prompts are normalized to None ────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_blank_custom_prompt_no_tools() -> None:
     """Empty string custom prompt with no tools should not inject a system message."""
     llm = FakeLLM(reply="ok")
@@ -281,7 +278,6 @@ async def test_tool_agent_blank_custom_prompt_no_tools() -> None:
     assert len(system_msgs) == 0
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_whitespace_prompt_with_tools() -> None:
     """Whitespace-only custom prompt with tools should use only the tool prompt."""
     llm = FakeLLM(reply="ok")
@@ -295,7 +291,6 @@ async def test_tool_agent_whitespace_prompt_with_tools() -> None:
     assert first_message.content == build_tool_system_prompt([tool.spec])
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_blank_prompt_no_duplicate_prefix() -> None:
     """Blank custom prompt + tools should not produce '\\n\\n' prefix."""
     llm = FakeLLM(reply="ok")
@@ -313,7 +308,6 @@ async def test_tool_agent_blank_prompt_no_duplicate_prefix() -> None:
 # ── metadata["tool_steps"] == actual number of LLM calls ──────────────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_prose_immediately_counts_one_llm_call() -> None:
     llm = FakeLLM(reply="Just prose.")
     reg = _tool_registry()
@@ -323,7 +317,6 @@ async def test_tool_agent_prose_immediately_counts_one_llm_call() -> None:
     assert resp.metadata["tool_steps"] == 1
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_tool_then_prose_counts_llm_calls() -> None:
     llm = FakeLLM(replies=[_tool_reply(), "Final answer."])
     tool = FakeTool()
@@ -336,7 +329,6 @@ async def test_tool_agent_tool_then_prose_counts_llm_calls() -> None:
     assert len(tool.calls) == 1
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_zero_budget_makes_no_llm_calls() -> None:
     llm = FakeLLM(reply=_tool_reply())
     reg = _tool_registry()
@@ -350,7 +342,6 @@ async def test_tool_agent_zero_budget_makes_no_llm_calls() -> None:
 # ── max_tool_steps resolution: constructor > settings > DEFAULT ───────────────
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_uses_settings_max_tool_steps() -> None:
     llm = FakeLLM(reply=_tool_reply())  # keeps requesting tools forever
     reg = _tool_registry()
@@ -360,7 +351,6 @@ async def test_tool_agent_uses_settings_max_tool_steps() -> None:
     assert resp.metadata["tool_steps"] == TEST_TOOL_MAX_STEPS
 
 
-@pytest.mark.asyncio
 async def test_tool_agent_constructor_arg_overrides_settings() -> None:
     llm = FakeLLM(reply=_tool_reply())
     reg = _tool_registry()
@@ -373,7 +363,6 @@ async def test_tool_agent_constructor_arg_overrides_settings() -> None:
     assert resp.metadata["tool_steps"] == TEST_TOOL_MAX_STEPS_OVERRIDE
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("settings", [None, AgentSettings()])
 async def test_tool_agent_defaults_to_config_constant(settings: AgentSettings | None) -> None:
     llm = FakeLLM(reply=_tool_reply())

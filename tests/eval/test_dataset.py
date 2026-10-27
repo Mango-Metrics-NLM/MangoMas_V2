@@ -93,3 +93,12 @@ async def test_load_jsonl_invalid_message_entry_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(DatasetError):
         await load_jsonl(target)
+
+
+async def test_load_jsonl_rejects_non_utf8_file(tmp_path: Path) -> None:
+    """``read_text`` sat outside the ``try``; a binary file now surfaces as the
+    typed ``DatasetError`` rather than a bare ``UnicodeDecodeError``."""
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes(b"\xff\xfe")
+    with pytest.raises(DatasetError, match="unreadable"):
+        await load_jsonl(path)

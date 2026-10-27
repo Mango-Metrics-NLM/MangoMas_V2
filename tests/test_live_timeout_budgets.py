@@ -20,10 +20,12 @@ import pytest
 from mangomas.config import LoopSettings
 from tests.constants import (
     DEFAULT_LIVE_E2E_TIMEOUT_SECONDS,
+    DEFAULT_LLM_BASE_URL,
     DEFAULT_LOOP_STEP_TIMEOUT,
     LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS,
     LMSTUDIO_E2E_TIMEOUT_ENV,
     LOOP_STEP_TIMEOUT_ENV,
+    TEST_LMSTUDIO_STUB_MODEL,
     client_timeout_for,
     resolve_live_timeout,
 )
@@ -153,7 +155,7 @@ def test_make_lmstudio_settings_step_timeout_from_env(
 ) -> None:
     """MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS reaches make_lmstudio_settings."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
-    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+    settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
     assert settings.loop.step_timeout_seconds == 90.0
 
 
@@ -162,7 +164,7 @@ def test_make_lmstudio_settings_step_timeout_default_when_unset(
 ) -> None:
     """Absent env var falls back to DEFAULT_LOOP_STEP_TIMEOUT."""
     monkeypatch.delenv(LOOP_STEP_TIMEOUT_ENV, raising=False)
-    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+    settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
     assert settings.loop.step_timeout_seconds == DEFAULT_LOOP_STEP_TIMEOUT
 
 
@@ -172,7 +174,7 @@ def test_make_lmstudio_settings_explicit_loop_beats_env(
     """An explicit loop= kwarg is not overridden by the env var."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
     explicit = LoopSettings(step_timeout_seconds=5.0)
-    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model", loop=explicit)
+    settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL, loop=explicit)
     assert settings.loop.step_timeout_seconds == 5.0
 
 
@@ -182,7 +184,7 @@ def test_make_lmstudio_settings_malformed_step_timeout_names_env_var(
     """A non-numeric env value raises ValueError that names the env var."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "not-a-number")
     with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
-        make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+        make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
 
 
 @pytest.mark.parametrize(
@@ -201,4 +203,4 @@ def test_make_lmstudio_settings_rejects_non_positive_or_non_finite_step_timeout(
     """A set step timeout must be finite and positive."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, raw)
     with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
-        make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+        make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)

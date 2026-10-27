@@ -6,8 +6,10 @@ which pull in ``pydantic``/``opentelemetry`` — are deferred into function
 bodies wrapped in ``except Exception``, matching this branch's stdin-hook
 hardening (spec-0017 R3/R6): a hook must degrade gracefully, never crash a
 session, even in an interpreter where ``mangomas`` was never installed.
-``mangomas.harness.config_audit`` itself has no such dependency (pure
-stdlib), so ``evaluate_config_change`` imports at module level safely.
+``mangomas.harness.config_audit`` is pure stdlib, but it still lives inside
+the ``mangomas`` package: when that package is absent the import itself
+fails, so it too is deferred (``_evaluate``) and degrades to "allow" — the
+outcome the documented default mode ``off`` always produces.
 
 ``ConfigChange`` fires only for Claude Code's own configuration sources
 (``project_settings`` = ``.claude/settings.json``, ``local_settings`` =
@@ -51,11 +53,12 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import _stdin_json
 
-from mangomas.harness.config_audit import ConfigChangeMode, evaluate_config_change
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.harness.config_audit import ConfigAuditDecision, ConfigChangeMode
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +116,24 @@ def _resolve_mode() -> ConfigChangeMode:
         return _FALLBACK_CONFIG_AUDIT_MODE
 
 
+def _evaluate(source: str | None, mode: ConfigChangeMode) -> ConfigAuditDecision | None:
+    """Run the in-package decision table, or ``None`` when it cannot be imported.
+
+    ``None`` means "allow": without the package there is no policy to enforce,
+    and crashing the hook would block *every* config edit in the session —
+    the opposite of degrading gracefully.
+    """
+    try:
+        from mangomas.harness.config_audit import evaluate_config_change  # noqa: PLC0415
+    except ImportError:
+        logger.warning(
+            "mangomas.harness.config_audit unavailable; allowing the config change",
+            exc_info=True,
+        )
+        return None
+    return evaluate_config_change(source, mode)
+
+
 def _read_stdin_payload() -> dict[str, object]:
     """Return the hook's stdin JSON, or ``{}`` on any parse failure.
 
@@ -149,7 +170,9 @@ def main() -> int:
     source = _extract_source(payload)
     mode = _resolve_mode()
 
-    decision = evaluate_config_change(source, mode)
+    decision = _evaluate(source, mode)
+    if decision is None:
+        return EXIT_OK
     log_extra = {"source": decision.source, "reason": decision.reason}
     if decision.action == "block":
         logger.error("Config change blocked", extra=log_extra)

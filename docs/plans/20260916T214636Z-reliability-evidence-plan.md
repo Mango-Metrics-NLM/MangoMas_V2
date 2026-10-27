@@ -315,7 +315,9 @@ has a stated trust model.
 - **Cognitive signal on a control path.** Stays a shadow channel until it
   publishes above-baseline agreement. ADR-0029's INV-16 (cognition proposes,
   the harness disposes) is unchanged by this plan.
-- **A2A adapter.** Nothing here needs it; revisit after C4.
+- **A2A adapter.** Nothing here needs it; revisit after C4. The design is now
+  recorded in `specs/0037-a2a-interop.md` / ADR-0037 (opt-in boundary adapter,
+  default-off) with a go / no-go gate; this deferral still stands.
 - **MCP `2026-07-28` migration.** Dated 2027 follow-up per E1; the deprecation
   window does not force it sooner.
 

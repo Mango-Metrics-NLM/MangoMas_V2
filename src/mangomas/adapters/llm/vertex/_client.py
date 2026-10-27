@@ -30,7 +30,8 @@ from mangomas.config import (
     DEFAULT_LLM_TIMEOUT_SECONDS,
 )
 from mangomas.core.agent import Message
-from mangomas.errors import LLMBadResponse, LLMTimeout
+from mangomas.errors import LLMBadResponse, LLMError, LLMTimeout
+from mangomas.utils.exc import truncated_exc_detail
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -411,15 +412,32 @@ class VertexClient:
             log_event="Vertex stream request failed",
         )
 
-        async for chunk in _aiter(stream_result):
-            text = _extract_text(chunk)
-            if not text:
-                logger.debug(
-                    "Skipping empty Vertex chunk",
-                    extra={"event": "vertex_chunk_skipped", "model": self._model},
-                )
-                continue
-            yield text
+        # ``_generate`` only bounds and translates the *opening* request; a
+        # failure while draining (connection reset, a safety-blocked chunk)
+        # would otherwise escape raw. Typed errors pass through untouched.
+        try:
+            async for chunk in _aiter(stream_result):
+                text = _extract_text(chunk)
+                if not text:
+                    logger.debug(
+                        "Skipping empty Vertex chunk",
+                        extra={"event": "vertex_chunk_skipped", "model": self._model},
+                    )
+                    continue
+                yield text
+        except LLMError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "Vertex stream failed mid-drain",
+                extra={
+                    "event": "vertex_stream_error",
+                    "model": self._model,
+                    "project": self._project_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            raise self._translate_call_error(exc) from exc
 
     async def aclose(self) -> None:
         """Release underlying resources.
@@ -459,8 +477,18 @@ def _extract_text(response: Any) -> str:
 
     The SDK exposes ``.text``; the fake client may expose the same. Empty or
     missing text returns an empty string so the caller can decide what to do.
+
+    The SDK's ``.text`` property *raises* ``ValueError`` when the response has
+    no usable candidate (safety-blocked, zero or several candidates);
+    ``getattr(..., None)`` only absorbs ``AttributeError``, so that case is
+    mapped to the typed :class:`VertexError` here.
     """
-    text = getattr(response, "text", None)
+    try:
+        text = getattr(response, "text", None)
+    except ValueError as exc:
+        raise VertexError(
+            "Vertex AI returned no usable candidate", detail=truncated_exc_detail(exc)
+        ) from exc
     if text is None:
         return ""
     return str(text)

@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
+    from mangomas.workflow import WorkflowGraph
 
 
 def _structured_agents(orch: Orchestrator) -> StructuredAgentFields:
@@ -49,6 +50,23 @@ def _structured_agents(orch: Orchestrator) -> StructuredAgentFields:
     return STRUCTURED_AGENT_FIELDS
 
 
+def _load_graph(definition: str | None, orch: Orchestrator) -> WorkflowGraph:
+    """Resolve and load the graph both routes execute or validate.
+
+    Path loading is allowed only for the **server-configured** source
+    (``definition is None`` → ``MANGOMAS_WORKFLOW__DEFINITION``): a
+    caller-supplied definition must be inline JSON, so a remote client cannot
+    make the server read an arbitrary file and reflect its contents or the OS
+    error in the 400 body.
+    """
+    source = resolve_workflow_source(definition, get_settings().workflow)
+    return load_workflow(
+        source,
+        structured_agents=_structured_agents(orch),
+        allow_path=definition is None,
+    )
+
+
 def build_workflow_router() -> APIRouter:
     """Build the workflow router (called from inside ``create_app``)."""
     router = APIRouter()
@@ -61,15 +79,14 @@ def build_workflow_router() -> APIRouter:
     async def workflow_run(body: WorkflowRunRequest, http_request: Request) -> AgentResponse:
         """Execute a declarative workflow graph and return the final response.
 
-        A per-request ``definition`` runs even when the feature is disabled;
-        otherwise ``workflow.enabled`` + a configured definition is required
-        (disabled/unset → 400 ``ConfigError``). Graph parse/validation errors
-        (400), an unknown agent (404), and ``MaxStepsExceeded`` (422) all flow
-        through the shared error handler.
+        A per-request ``definition`` (inline JSON only) runs even when the
+        feature is disabled; otherwise ``workflow.enabled`` + a configured
+        definition is required (disabled/unset → 400 ``ConfigError``). Graph
+        parse/validation errors (400), an unknown agent (404), and
+        ``MaxStepsExceeded`` (422) all flow through the shared error handler.
         """
         orch: Orchestrator = http_request.app.state.orchestrator
-        source = resolve_workflow_source(body.definition, get_settings().workflow)
-        graph = load_workflow(source, structured_agents=_structured_agents(orch))
+        graph = _load_graph(body.definition, orch)
         return await execute_workflow(graph, body.request, orch=orch)
 
     @router.post(
@@ -88,8 +105,7 @@ def build_workflow_router() -> APIRouter:
         the runner uses would make this endpoint a liar.
         """
         orch: Orchestrator = http_request.app.state.orchestrator
-        source = resolve_workflow_source(body.definition, get_settings().workflow)
-        graph = load_workflow(source, structured_agents=_structured_agents(orch))
+        graph = _load_graph(body.definition, orch)
         return WorkflowValidateResponse(name=graph.name, root_kind=graph.root.kind)
 
     return router

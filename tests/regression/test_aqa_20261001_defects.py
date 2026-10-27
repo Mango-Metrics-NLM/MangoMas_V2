@@ -24,11 +24,13 @@ from mangomas.adapters.storage.sqlite import SQLiteRepository
 from mangomas.config import LoopSettings
 from mangomas.core.agent import AgentRequest, Message
 from tests.constants import (
+    DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LOOP_STEP_TIMEOUT,
     LLM_MODEL_ENV,
     LMSTUDIO_MODEL_ENV,
     LOOP_STEP_TIMEOUT_ENV,
+    TEST_LMSTUDIO_STUB_MODEL,
 )
 from tests.lmstudio.conftest import make_lmstudio_settings, resolve_lmstudio_model
 
@@ -227,7 +229,7 @@ def test_d5_make_lmstudio_settings_respects_step_timeout_env(
 ) -> None:
     """D5: env var MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS must reach LoopSettings."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
-    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+    settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
     assert settings.loop.step_timeout_seconds == 90.0, (
         f"Expected 90.0 from env; got {settings.loop.step_timeout_seconds}"
     )
@@ -238,7 +240,7 @@ def test_d5_make_lmstudio_settings_defaults_when_env_absent(
 ) -> None:
     """D5: absence of the env var must fall back to DEFAULT_LOOP_STEP_TIMEOUT."""
     monkeypatch.delenv(LOOP_STEP_TIMEOUT_ENV, raising=False)
-    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+    settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
     assert settings.loop.step_timeout_seconds == DEFAULT_LOOP_STEP_TIMEOUT, (
         f"Expected {DEFAULT_LOOP_STEP_TIMEOUT} default; got {settings.loop.step_timeout_seconds}"
     )
@@ -250,7 +252,7 @@ def test_d5_explicit_loop_takes_precedence_over_env(
     """D5: an explicit loop= kwarg must not be overridden by the env var."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
     explicit = LoopSettings(step_timeout_seconds=5.0)
-    settings = make_lmstudio_settings("http://localhost:1234/v1", "test-model", loop=explicit)
+    settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL, loop=explicit)
     assert settings.loop.step_timeout_seconds == 5.0, (
         f"Explicit loop= must take precedence over env; got {settings.loop.step_timeout_seconds}"
     )
@@ -262,7 +264,7 @@ def test_d5_malformed_step_timeout_env_raises_named_error(
     """D5: a non-numeric env value must raise ValueError naming the variable."""
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "not-a-number")
     with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
-        make_lmstudio_settings("http://localhost:1234/v1", "test-model")
+        make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
 
 
 # ── D6: lmstudio_model fixture hardcoded default model fallback ────────────────

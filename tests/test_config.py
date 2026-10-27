@@ -170,6 +170,25 @@ def test_vector_settings_defaults() -> None:
     assert s.vector.persist_dir == config_module.DEFAULT_VECTOR_PERSIST_DIR
     assert s.vector.collection == config_module.DEFAULT_VECTOR_COLLECTION
     assert s.vector.top_k == config_module.DEFAULT_VECTOR_TOP_K
+    assert s.vector.max_top_k == config_module.DEFAULT_VECTOR_MAX_TOP_K
+
+
+def test_vector_settings_max_top_k_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_VECTOR__MAX_TOP_K", "7")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.vector.max_top_k == 7
+
+
+@pytest.mark.parametrize(
+    ("top_k", "max_top_k"),
+    [(0, 0), (-1, -1), (6, 5)],
+    ids=["max-zero", "max-negative", "top_k-above-max"],
+)
+def test_vector_settings_rejects_invalid_depths(top_k: int, max_top_k: int) -> None:
+    """``max_top_k`` must be ``>= 1`` and ``top_k`` may not exceed it.
+    Mutation (proved while writing): removing the validator passes all three."""
+    with pytest.raises(ValidationError):
+        config_module.VectorSettings(top_k=top_k, max_top_k=max_top_k)
 
 
 def test_vector_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

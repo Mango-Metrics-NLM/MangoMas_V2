@@ -9,6 +9,147 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — branch audit, Tier A: eval harness and adapter boundaries
+
+- `llm_judge` rejects a non-finite judge score (`NaN`/`Infinity` parse as
+  valid JSON and clamped to `1.0` → `passed=True`); the threshold and
+  regression gates now **fail** on a non-finite `mean_score` / drop instead of
+  silently passing (every comparison against `NaN` is `False`).
+- `report_payload` serialises non-finite floats as `null`, so `json_file` /
+  `webhook` artefacts stay RFC 8259 JSON when a plugin scorer returns `NaN`.
+- `sqlite_results` wraps directory creation, connect and metadata
+  serialisation in the same typed `PersistenceError` boundary (connection
+  released on every path); `webhook` logs scheme + host only and raises a
+  typed `PersistenceError` without echoing the URL (Slack/Teams URLs carry
+  the secret in the path); the Langfuse sink's `flush()` failure no longer
+  masks the publish error.
+- Scorer/sink boolean options go through `require_bool`: the string `"false"`
+  now means false (`bool("false")` was `True`); `regex_match` rejects a
+  non-list `flags` option at factory time; `timeout_seconds` and `threshold`
+  options are validated as numbers.
+- `load_baseline` / `load_jsonl` raise typed `ConfigError` / `DatasetError`
+  on non-dict rows and undecodable files; `mangomas eval` parses `--baseline`
+  **before** the paid run (malformed → exit 2, zero LLM calls) and validates
+  `--max-mean-score-drop` / `--max-pass-rate-drop` as unit floats.
+- Typed errors at every adapter boundary (the `adapters/CLAUDE.md`
+  invariant): LM Studio chat/embeddings decode the body inside the typed
+  boundary (a proxy's HTML 200 is a `LMStudioError`, not an untyped 500) and
+  refuse `null` content (previously returned the literal string `"None"`);
+  LM Studio embeddings place rows by their OpenAI `index` and require exactly
+  one vector per input; Vertex embeddings and the RAG pipeline refuse a short
+  vector batch before any store write; the Vertex chat client maps a
+  `.text` that raises (safety-blocked / no candidate) to `VertexError` and
+  translates failures raised while draining a stream; Chroma failures become
+  `PersistenceError`. New `mangomas.utils.exc.truncated_exc_detail` replaces
+  eight hand-copied `f"{type(exc).__name__}: {exc}"[:limit]` spellings.
+- `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` now covers streaming responses:
+  `ConcurrencyLimitMiddleware` is pure ASGI, so the slot is held until the
+  last body chunk, an exception or the client's disconnect. Under
+  `BaseHTTPMiddleware` the slot was released at `http.response.start`, i.e.
+  once the headers were out, so `/agents/{name}/stream` bodies — the
+  requests the limit exists for — never counted. Constructor, envelope and
+  log fields are unchanged.
+- API auth strips the **expected** token like the presented one: a secret
+  stored with a trailing newline (the shape Secret Manager payloads and
+  `echo`-written files routinely have) used to reject every request with 401.
+  An all-whitespace secret still fails closed and logs.
+- CLI: every command builds the orchestrator through `_runtime.build_or_exit`,
+  so a bad `MANGOMAS_*` value, an unknown provider or an unresolved secret
+  exits with the documented config code (2) and a one-line message instead of
+  a traceback (`chat`, `agents`, `history`, `rag` were unguarded);
+  `history --limit` is bounded to `[1, MANGOMAS_API__HISTORY_MAX_LIMIT]` like
+  the API's `?limit=` (`-1` reached SQLite as `LIMIT -1` and dumped every
+  turn); `agents` runs the logging bootstrap like its siblings.
+- `scripts/harness_config_audit.py` defers its `mangomas.harness` import as
+  its docstring promised, so the `ConfigChange` hook degrades to "allow" in
+  an interpreter where `mangomas` is absent instead of crashing the session.
+- `configure_telemetry` builds the span exporter **before** re-forcing root
+  logging: a failed exporter (`gcp` without the extra, an unknown token) left
+  logging re-forced with `configured` still `False`, so the next lazy
+  `get_tracer()` re-ran the bootstrap with defaults and silently undid
+  `--verbose` / `MANGOMAS_LOG__FORMAT=json`. Failing first leaves logging
+  exactly as it was.
+
+### Added — A2A interoperability decision record (ADR-0037)
+
+- `specs/0037-a2a-interop.md` and `docs/adr/0037-a2a-boundary-adapter.md`
+  record where and how the Agent2Agent protocol (A2A v1.0.1, `a2a-sdk` 1.2.x)
+  fits: an **opt-in, default-off boundary adapter** — an SDK-backed server
+  façade over the existing `Orchestrator` plus a `RemoteA2AAgent` registered
+  under an operator-chosen name — with no change to any `core/` contract.
+  v1 scope excludes push notifications and `input-required`; task ownership
+  is stated honestly as `(tenant, "shared")` until per-principal auth exists.
+- Research basis: the A2A spec and Python SDK (via Context7), twelve arXiv
+  papers (incl. A2ABreak 2609.10871, agent-name-collision 2609.27624, the
+  York MCP-vs-A2A study 2607.23884) and an independent code-level review.
+- **No runtime change.** Implementation is gated by the spec's go / no-go
+  gate; the reliability plan's "revisit after C4" deferral stands. ADR-0001's
+  swap matrix gains an `Interop` row pointing at ADR-0037.
+
+### Changed — instruction corpus (branch audit, Tier A)
+
+- `CLAUDE.md`'s skills table now lists `mango-composition-builder`,
+  `mango-eval-runner` and `mango-workflow-generator`, and a corpus-contract
+  test asserts every expected skill slug is mentioned there. Stale paths
+  corrected: `workflow/predicate/` and `core/orchestrator/` are packages; the
+  Hypothesis note no longer claims six import-guarded files or an optional
+  dependency. `specs/0037-a2a-interop.md` R4 names the auth mechanism
+  (router-forwarded `Depends(require_auth)` + `ServerCallContextBuilder`;
+  `add_a2a_routes_to_fastapi` not used).
+
+### Added — Hypothesis profiles and three property suites (branch audit, Tier A)
+
+- `tests/conftest.py` registers `dev` (`deadline=None`) and `ci`
+  (`deadline=None`, `derandomize=True`, `print_blob=True`) profiles, selected
+  by `HYPOTHESIS_PROFILE` or the `CI` env var; `--hypothesis-profile` still
+  wins. New suites state the invariants over arbitrary input for
+  `compile_predicate` totality (with the `10**400` breaker as an `@example`),
+  `adapters.storage._url.path_from_sqlite_url`, and the `sanitize_tenant` /
+  `sanitize_inbound_correlation_id` wrappers.
+
+### Added — `MANGOMAS_VECTOR__MAX_TOP_K` (branch audit, Tier A)
+
+- New tunable (default `50`): a ceiling on any **per-call** retrieval depth.
+  The `retrieve` tool lets the model choose `top_k` per call, so an
+  LLM-chosen or prompt-injected depth of a million pulled the whole
+  collection into the prompt; `true` passed `isinstance(int)` as depth 1.
+  `Retriever.search` clamps every caller to `[1, max_top_k]` (debug-logged
+  as `rag_top_k_clamped`), the tool treats a boolean `top_k` as absent, and
+  `VectorSettings` rejects `max_top_k < 1` or `top_k > max_top_k` at parse.
+  `Retriever(..., max_top_k=)` and `_build_rag_tools(..., max_top_k=)` are
+  additive keywords with the config default.
+
+### Changed — branch audit, Tier A: caller-supplied workflow definitions are inline-only
+
+- `POST /workflows/run` and `/workflows/validate` no longer treat a
+  per-request `definition` that is not inline JSON as a **server-side file
+  path**: a remote client could make the server read any readable file and
+  get the OS error (`[Errno 2] …`) or pydantic's `input_value=` fragment of
+  its contents reflected in the 400 body. The response is now a static
+  `workflow definition must be inline JSON` (400). Path loading is unchanged
+  for the server-configured `MANGOMAS_WORKFLOW__DEFINITION` and for the CLI;
+  `load_workflow` gains an additive `allow_path=True` keyword.
+- `compile_predicate` closures are total against hostile JSON: an integer
+  wider than a double, an integer literal past `sys.get_int_max_str_digits()`
+  and a document nested past the recursion limit are "not accepted" rather
+  than an exception out of the acceptance loop.
+
+### Changed — console telemetry exporters write to stderr
+
+- The `console` span and metric exporters now target `sys.stderr` instead of
+  the SDK's `sys.stdout` default. Every CLI command shares the telemetry
+  bootstrap, so span JSON used to interleave with `chat` replies and
+  `history` JSON lines on stdout; diagnostics belong on stderr and stdout
+  stays the command's result. Pipelines that scraped span JSON from stdout
+  must read stderr instead.
+
+### Changed — `scripts/run_workflow_e2e.py` exit code on a non-converging loop
+
+- `MaxStepsExceeded` (the loop sentinel never emitted) now returns the
+  runtime exit code (`1`) instead of `0`, so a CI step calling the script no
+  longer passes on a failed run. The orchestrator is still released on every
+  path.
+
 ### Changed — runtime lockfile security bump
 
 - `requirements.lock`: `certifi` 2026.7.22 → 2026.10.23 (PYSEC-2026-4320) and

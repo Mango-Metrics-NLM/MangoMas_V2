@@ -419,3 +419,42 @@ def test_unencodable_token_fails_closed_instead_of_raising() -> None:
     """
     assert _to_comparable_bytes("\udcff", "utf-8") == b"\xff"
     assert _to_comparable_bytes("\ud800", "utf-8") is None
+
+
+# ── Expected token is stripped like the presented one (branch audit, Tier A) ──
+# Secret Manager payloads and ``echo``-written files routinely carry a trailing
+# newline; the presented token was stripped but the expected one was not, so
+# such a secret 401'd every request. Mutation (proved while writing): dropping
+# the ``.strip()`` in ``resolve_auth_state`` turns the first test into a 401.
+
+
+def test_expected_token_with_trailing_newline_still_authenticates(
+    orchestrator: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MANGOMAS_AUTH__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_AUTH__SECRET_REF", AUTH_SECRET_REF_ENV)
+    monkeypatch.setenv(AUTH_SECRET_REF_ENV, f"{AUTH_TOKEN}\n")
+    get_settings.cache_clear()
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            "/agents/chat/invoke", json=_MSG, headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
+        )
+    assert r.status_code == 200
+
+
+def test_whitespace_only_secret_fails_closed_and_logs(
+    orchestrator: Orchestrator, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("MANGOMAS_AUTH__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_AUTH__SECRET_REF", AUTH_SECRET_REF_ENV)
+    monkeypatch.setenv(AUTH_SECRET_REF_ENV, "   \n")
+    get_settings.cache_clear()
+    with caplog.at_level(logging.ERROR, logger="mangomas.api.auth"):
+        app = create_app(orchestrator=orchestrator)
+        with TestClient(app) as client:
+            r = client.post(
+                "/agents/chat/invoke", json=_MSG, headers={"Authorization": "Bearer    "}
+            )
+    assert r.status_code == 401
+    assert any("resolved to nothing" in rec.getMessage() for rec in caplog.records)

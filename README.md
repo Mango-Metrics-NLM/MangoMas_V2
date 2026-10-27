@@ -241,6 +241,7 @@ mangomas eval --scorer embedding -d data.jsonl   # real cosine scores
 | `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent directory |
 | `MANGOMAS_VECTOR__COLLECTION` | `mangomas` | Collection name |
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
+| `MANGOMAS_VECTOR__MAX_TOP_K` | `50` | Ceiling on any per-call retrieval depth |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
 

@@ -178,3 +178,20 @@ def test_gate_emits_structured_log(caplog: pytest.LogCaptureFixture) -> None:
         evaluate_gate(_report(dataset_size=2, passed=2), min_mean_score=0.5)
     events = [rec for rec in caplog.records if getattr(rec, "event", None) == "eval_gate"]
     assert events, "expected an eval_gate log record"
+
+
+def test_gate_fails_non_finite_mean_score_when_threshold_set() -> None:
+    """``nan < x`` is always False; without the guard a NaN mean passes every
+    threshold. Mutation: remove the ``isfinite`` branch -> ``passed is True``."""
+    result = evaluate_gate(
+        _report(dataset_size=2, passed=1, mean_score=float("nan")), min_mean_score=0.5
+    )
+    assert result.passed is False
+    assert "mean_score is not a finite number" in result.reasons
+
+
+def test_gate_ignores_non_finite_mean_score_without_threshold() -> None:
+    """No threshold means the mean is never inspected — the no-op gate passes."""
+    result = evaluate_gate(_report(dataset_size=2, passed=2, mean_score=float("nan")))
+    assert result.passed is True
+    assert result.reasons == []

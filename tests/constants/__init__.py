@@ -16,6 +16,7 @@ from tests.constants.cli import EXPECTED_CLI_COMMANDS as EXPECTED_CLI_COMMANDS
 from tests.constants.cli import EXPECTED_CLI_HELP_ORDER as EXPECTED_CLI_HELP_ORDER
 from tests.constants.cli import EXPECTED_CLI_PARAMS as EXPECTED_CLI_PARAMS
 from tests.constants.cli import EXPECTED_CLI_ROOT_COMMANDS as EXPECTED_CLI_ROOT_COMMANDS
+from tests.constants.config import DEFAULT_API_HISTORY_MAX_LIMIT as DEFAULT_API_HISTORY_MAX_LIMIT
 from tests.constants.config import DEFAULT_EMBEDDINGS_BATCH_SIZE as DEFAULT_EMBEDDINGS_BATCH_SIZE
 from tests.constants.config import DEFAULT_EMBEDDINGS_DEVICE as DEFAULT_EMBEDDINGS_DEVICE
 from tests.constants.config import DEFAULT_EMBEDDINGS_MODEL as DEFAULT_EMBEDDINGS_MODEL
@@ -56,6 +57,7 @@ from tests.constants.config import (
     DEFAULT_SUMMARIZE_HISTORY_LIMIT as DEFAULT_SUMMARIZE_HISTORY_LIMIT,
 )
 from tests.constants.config import DEFAULT_VECTOR_COLLECTION as DEFAULT_VECTOR_COLLECTION
+from tests.constants.config import DEFAULT_VECTOR_MAX_TOP_K as DEFAULT_VECTOR_MAX_TOP_K
 from tests.constants.config import DEFAULT_VECTOR_PERSIST_DIR as DEFAULT_VECTOR_PERSIST_DIR
 from tests.constants.config import DEFAULT_VECTOR_PROVIDER as DEFAULT_VECTOR_PROVIDER
 from tests.constants.config import DEFAULT_VECTOR_TOP_K as DEFAULT_VECTOR_TOP_K
@@ -185,6 +187,7 @@ from tests.constants.fixtures import AUTH_SECRET_REF_ENV as AUTH_SECRET_REF_ENV
 from tests.constants.fixtures import AUTH_TOKEN as AUTH_TOKEN
 from tests.constants.fixtures import BACKPRESSURE_MAX_BODY_BYTES as BACKPRESSURE_MAX_BODY_BYTES
 from tests.constants.fixtures import BACKPRESSURE_MAX_CONCURRENT as BACKPRESSURE_MAX_CONCURRENT
+from tests.constants.fixtures import CI_ENV as CI_ENV
 from tests.constants.fixtures import DEFAULT_AGENT_NAME as DEFAULT_AGENT_NAME
 from tests.constants.fixtures import DEFAULT_TOOL_NAME as DEFAULT_TOOL_NAME
 from tests.constants.fixtures import DEFAULT_TOOL_RESULT as DEFAULT_TOOL_RESULT
@@ -219,6 +222,9 @@ from tests.constants.fixtures import FAKE_PLUGIN_SINK_NAME as FAKE_PLUGIN_SINK_N
 from tests.constants.fixtures import FAKE_SINK_NAME as FAKE_SINK_NAME
 from tests.constants.fixtures import GCP_SECRETS_PROJECT_ENV as GCP_SECRETS_PROJECT_ENV
 from tests.constants.fixtures import GCP_SECRETS_SECRET_NAME_ENV as GCP_SECRETS_SECRET_NAME_ENV
+from tests.constants.fixtures import HYPOTHESIS_PROFILE_CI as HYPOTHESIS_PROFILE_CI
+from tests.constants.fixtures import HYPOTHESIS_PROFILE_DEV as HYPOTHESIS_PROFILE_DEV
+from tests.constants.fixtures import HYPOTHESIS_PROFILE_ENV as HYPOTHESIS_PROFILE_ENV
 from tests.constants.fixtures import JSONL_FILENAME as JSONL_FILENAME
 from tests.constants.fixtures import LARGE_UPSTREAM_BODY_CHARS as LARGE_UPSTREAM_BODY_CHARS
 from tests.constants.fixtures import LMSTUDIO_EMBEDDING_MODEL_ENV as LMSTUDIO_EMBEDDING_MODEL_ENV
@@ -278,6 +284,7 @@ from tests.constants.fixtures import TEST_HISTORY_LIMIT_OVERRIDE as TEST_HISTORY
 from tests.constants.fixtures import TEST_HISTORY_SEEDED_TURNS as TEST_HISTORY_SEEDED_TURNS
 from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_BASE_URL as TEST_LMSTUDIO_MOCK_BASE_URL
 from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_MODEL as TEST_LMSTUDIO_MOCK_MODEL
+from tests.constants.fixtures import TEST_LMSTUDIO_STUB_MODEL as TEST_LMSTUDIO_STUB_MODEL
 from tests.constants.fixtures import TEST_MAX_TOKENS_OVERRIDE as TEST_MAX_TOKENS_OVERRIDE
 from tests.constants.fixtures import TEST_PROMPT_EXPLICIT as TEST_PROMPT_EXPLICIT
 from tests.constants.fixtures import TEST_PROMPT_SETTINGS as TEST_PROMPT_SETTINGS
@@ -334,6 +341,7 @@ from tests.constants.live import (
     GATED_RUNTIME_SKIP_REASON_PREFIXES as GATED_RUNTIME_SKIP_REASON_PREFIXES,
 )
 from tests.constants.live import GATED_RUNTIME_SKIP_REASON_RE as GATED_RUNTIME_SKIP_REASON_RE
+from tests.constants.live import GCP_SECRETS_LIVE_SKIP_REASONS as GCP_SECRETS_LIVE_SKIP_REASONS
 from tests.constants.live import HARDWARE_CONTRACT_SCOPE as HARDWARE_CONTRACT_SCOPE
 from tests.constants.live import HOSTED_RUNNER_INFEASIBLE as HOSTED_RUNNER_INFEASIBLE
 from tests.constants.live import (
@@ -420,6 +428,7 @@ __all__ = [
     "BASH_RULE_PREFIX",
     "BASH_RULE_WILDCARD_SUFFIX",
     "CHAT_MODEL_OVERRIDE_ENV",
+    "CI_ENV",
     "CLAUDE_AGENTS_DIR_RELPATH",
     "CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH",
     "CLAUDE_SETTINGS_RELPATH",
@@ -430,6 +439,7 @@ __all__ = [
     "DECISION_RECORD_DIRS",
     "DECISION_RECORD_UNNUMBERED_STEMS",
     "DEFAULT_AGENT_NAME",
+    "DEFAULT_API_HISTORY_MAX_LIMIT",
     "DEFAULT_EMBEDDINGS_BATCH_SIZE",
     "DEFAULT_EMBEDDINGS_DEVICE",
     "DEFAULT_EMBEDDINGS_MODEL",
@@ -462,6 +472,7 @@ __all__ = [
     "DEFAULT_TOOL_NAME",
     "DEFAULT_TOOL_RESULT",
     "DEFAULT_VECTOR_COLLECTION",
+    "DEFAULT_VECTOR_MAX_TOP_K",
     "DEFAULT_VECTOR_PERSIST_DIR",
     "DEFAULT_VECTOR_PROVIDER",
     "DEFAULT_VECTOR_TOP_K",
@@ -521,6 +532,7 @@ __all__ = [
     "FLOW_REQUEST_MAX_STEPS",
     "GATED_RUNTIME_SKIP_REASON_PREFIXES",
     "GATED_RUNTIME_SKIP_REASON_RE",
+    "GCP_SECRETS_LIVE_SKIP_REASONS",
     "GCP_SECRETS_PROJECT_ENV",
     "GCP_SECRETS_SECRET_NAME_ENV",
     "HARDWARE_CONTRACT_SCOPE",
@@ -528,6 +540,9 @@ __all__ = [
     "HARNESS_SKILL_SLUG",
     "HOSTED_RUNNER_INFEASIBLE",
     "HTTPX_ERROR_PATH_TIMEOUT_SECONDS",
+    "HYPOTHESIS_PROFILE_CI",
+    "HYPOTHESIS_PROFILE_DEV",
+    "HYPOTHESIS_PROFILE_ENV",
     "INERT_FILE_RULE_PREFIXES",
     "INVALID_AGENT_MODEL_VALUES",
     "INVALID_AGENT_TOOL_TOKENS",
@@ -672,6 +687,7 @@ __all__ = [
     "TEST_HISTORY_SEEDED_TURNS",
     "TEST_LMSTUDIO_MOCK_BASE_URL",
     "TEST_LMSTUDIO_MOCK_MODEL",
+    "TEST_LMSTUDIO_STUB_MODEL",
     "TEST_MAX_TOKENS_OVERRIDE",
     "TEST_PROMPT_EXPLICIT",
     "TEST_PROMPT_SETTINGS",

@@ -12,7 +12,9 @@ from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
+from mangomas.errors import ConfigError
 from tests._seam_guards import forbid_real_orchestrator
+from tests.constants import EXIT_CONFIG_ERROR
 from tests.fakes import FakeEmbeddingClient, FakeLLM, FakeVectorStore
 
 
@@ -165,3 +167,18 @@ def test_rag_query_top_k_option(monkeypatch: pytest.MonkeyPatch, runner: CliRunn
     assert result.exit_code == 0
     # Only one ranked passage printed.
     assert result.stdout.count("score=") == 1
+
+
+@pytest.mark.parametrize("argv", [["rag", "ingest", "x.txt"], ["rag", "query", "hello"]])
+def test_rag_commands_map_a_config_error_to_the_config_exit_code(
+    monkeypatch: pytest.MonkeyPatch, runner: CliRunner, argv: list[str]
+) -> None:
+    """``rag`` built the orchestrator bare; a misconfigured provider was a traceback."""
+
+    def _boom() -> Orchestrator:
+        raise ConfigError("unknown vector provider")
+
+    monkeypatch.setattr(cli_runtime, "_build", _boom)
+    result = runner.invoke(cli_main.app, argv)
+    assert result.exit_code == EXIT_CONFIG_ERROR
+    assert "Configuration error: unknown vector provider" in result.output

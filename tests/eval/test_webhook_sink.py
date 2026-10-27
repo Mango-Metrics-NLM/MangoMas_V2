@@ -9,7 +9,7 @@ import pytest
 import respx
 
 import mangomas.eval.sinks  # noqa: F401 — registers built-in sinks
-from mangomas.errors import ConfigError
+from mangomas.errors import ConfigError, PersistenceError
 from mangomas.eval import evaluate_gate
 from mangomas.eval.runner import EvalReport
 from mangomas.eval.sink_registry import sink_registry
@@ -47,10 +47,31 @@ async def test_webhook_sink_posts_report() -> None:
 
 
 @respx.mock
-async def test_webhook_sink_raises_on_non_2xx() -> None:
-    respx.post(_URL).mock(return_value=httpx.Response(500))
-    with pytest.raises(httpx.HTTPStatusError):
+async def test_webhook_sink_raises_typed_error_without_the_url_on_non_2xx() -> None:
+    """A non-2xx is a typed ``PersistenceError`` whose message carries the origin
+    only: Slack/Teams webhook URLs embed their secret in the path, and
+    ``str(HTTPStatusError)`` would have echoed it through the CLI."""
+    respx.post(_URL).mock(return_value=httpx.Response(500, text="boom"))
+    with pytest.raises(PersistenceError) as excinfo:
         await WebhookSink(url=_URL).emit(_report())
+    message = str(excinfo.value)
+    assert "HTTP 500" in message
+    assert _URL not in message
+    assert excinfo.value.detail == "boom"
+
+
+@respx.mock
+async def test_webhook_sink_wraps_transport_errors() -> None:
+    respx.post(_URL).mock(side_effect=httpx.ConnectError("down"))
+    with pytest.raises(PersistenceError) as excinfo:
+        await WebhookSink(url=_URL).emit(_report())
+    assert _URL not in str(excinfo.value)
+
+
+@pytest.mark.parametrize("bad", [-1, float("nan"), "soon", True])
+def test_webhook_factory_rejects_bad_timeout(bad: object) -> None:
+    with pytest.raises(ConfigError, match="timeout_seconds"):
+        sink_registry.get("webhook")({"url": _URL, "timeout_seconds": bad})
 
 
 def test_webhook_factory_requires_url() -> None:

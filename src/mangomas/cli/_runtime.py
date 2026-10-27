@@ -21,8 +21,11 @@ import logging
 import sys
 from typing import TYPE_CHECKING
 
+import typer
+
 from mangomas.composition import build_orchestrator
 from mangomas.config import get_settings
+from mangomas.errors import MangomasError
 from mangomas.telemetry import configure_metrics, configure_telemetry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -42,6 +45,30 @@ if sys.platform == "win32":  # pragma: no cover — platform-gated
 def _build() -> Orchestrator:
     """Construct the orchestrator with full settings + adapter wiring."""
     return build_orchestrator()
+
+
+def build_or_exit(*, config_exit_code: int) -> Orchestrator:
+    """``_build()`` with the typed-error → exit-code mapping every command needs.
+
+    Composition raises the ``MangomasError`` family for a bad ``MANGOMAS_*``
+    value, an unknown provider or an unresolved secret. Seven call sites used
+    to call ``_build()`` bare, and only ``eval`` / ``workflow`` wrapped it, so
+    ``mangomas chat`` with a typo'd provider died with a traceback and exit 1
+    instead of the documented config exit code. Anything that is not a
+    ``MangomasError`` is a genuine crash and still propagates.
+
+    ``config_exit_code`` is passed in rather than imported: this module is the
+    base layer and imports nothing from ``mangomas.cli`` (asserted by
+    ``tests/test_import_compat.py``), ``exit_codes`` included. Calls ``_build``
+    through the module global on purpose — it is the patch seam the CLI tests
+    replace (see the module docstring).
+    """
+    try:
+        return _build()
+    except MangomasError as exc:
+        detail = f" ({exc.detail})" if exc.detail else ""
+        typer.echo(f"Configuration error: {exc}{detail}", err=True)
+        raise typer.Exit(code=config_exit_code) from exc
 
 
 async def _close_orchestrator(orch: Orchestrator) -> None:

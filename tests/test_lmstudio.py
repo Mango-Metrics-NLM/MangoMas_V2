@@ -355,3 +355,68 @@ async def test_complete_translates_timeout() -> None:
             await client.complete([Message(role="user", content="hi")])
     finally:
         await client.aclose()
+
+
+# ── Typed errors for a 2xx body of the wrong shape ───────────────────────────
+# Mutations (proved while writing): moving ``resp.json()`` back outside the
+# ``try`` makes the HTML test fail with a raw ``JSONDecodeError``; dropping
+# the ``isinstance(content, str)`` check makes the null-content test fail by
+# returning the literal string ``"None"``.
+
+
+@respx.mock
+async def test_non_json_200_is_a_typed_error() -> None:
+    """A proxy answering 200 with an HTML page is a malformed upstream response."""
+    respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(200, text="<html><body>Gateway</body></html>")
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        with pytest.raises(LMStudioError) as excinfo:
+            await client.complete([Message(role="user", content="hi")])
+    finally:
+        await client.aclose()
+    assert str(excinfo.value) == "Malformed LM Studio response"
+    assert excinfo.value.detail.startswith("JSONDecodeError: ")
+    assert len(excinfo.value.detail) <= DEFAULT_ERROR_DETAIL_TRUNCATE
+
+
+@respx.mock
+async def test_null_content_is_a_typed_error_not_the_string_none() -> None:
+    respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": None}}]})
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        with pytest.raises(LMStudioError) as excinfo:
+            await client.complete([Message(role="user", content="hi")])
+    finally:
+        await client.aclose()
+    assert "content is NoneType, not str" in excinfo.value.detail
+
+
+_SSE_SINGLE_CHUNK_BODY = 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n'
+
+
+@respx.mock
+async def test_stream_and_complete_send_the_same_payload_apart_from_stream_flag() -> None:
+    """Regression guard for the shared ``_payload`` builder."""
+    route = respx.post(_CHAT_COMPLETIONS_URL).mock(
+        side_effect=[
+            httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]}),
+            httpx.Response(200, text=_SSE_SINGLE_CHUNK_BODY),
+        ]
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    messages = [Message(role="user", content="hi")]
+    try:
+        await client.complete(messages, max_tokens=TEST_MAX_TOKENS_OVERRIDE)
+        stream = await client.stream(messages, max_tokens=TEST_MAX_TOKENS_OVERRIDE)
+        assert [tok async for tok in stream] == ["ok"]
+    finally:
+        await client.aclose()
+    first = json.loads(route.calls[0].request.content)
+    second = json.loads(route.calls[1].request.content)
+    assert second.pop("stream") is True
+    assert "stream" not in first
+    assert first == second

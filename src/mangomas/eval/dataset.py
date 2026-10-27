@@ -99,7 +99,13 @@ def _read_jsonl(path: Path) -> list[DatasetRow]:
     if not path.is_file():
         raise DatasetError(f"Dataset file not found: {path}")
     rows: list[DatasetRow] = []
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise DatasetError(
+            f"Dataset file unreadable: {path}",
+            detail=str(exc)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+        ) from exc
     for index, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         if not stripped:

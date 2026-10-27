@@ -47,7 +47,7 @@ when". Name them directly:
 | `mango-adr-author` | ADRs in `docs/adr/` (writes markdown only) |
 | `mango-pr-watcher` | PR activity triage (read-only reporter) |
 | `mango-llm-adapter-dev` / `mango-storage-adapter-dev` | `adapters/llm/` / `adapters/storage/` |
-| `mango-orchestrator-dev` | `core/orchestrator.py` and the whole dispatch surface, incl. `stream_dispatch` |
+| `mango-orchestrator-dev` | `core/orchestrator/` and the whole dispatch surface, incl. `stream_dispatch` |
 | `mango-error-taxonomy-dev` | `errors.py` + `api/errors.py::_ERROR_STATUS` |
 | `mango-telemetry-exporter-dev` | The OTel exporter seam in `mangomas.telemetry` |
 | `mango-workflow-graph-dev` | `workflow/` — graph model, registry, predicates, executor |
@@ -201,6 +201,9 @@ tree serves both.
 | `mango-mutation-proof` | Proving a guard fails when the thing it guards breaks |
 | `mango-coverage-audit` | Checking a coverage number is measured over the right denominator |
 | `mango-decompose` | Splitting a god file into a package: extract, facade, wire into `test_import_compat.py`, verify per-submodule coverage |
+| `mango-composition-builder` | Building dynamic, declarative, backwards-compatible LLM factory compositions |
+| `mango-eval-runner` | Creating and executing automated evaluations and custom scorers |
+| `mango-workflow-generator` | Generating and managing declarative workflow definitions (JSON) |
 
 ---
 

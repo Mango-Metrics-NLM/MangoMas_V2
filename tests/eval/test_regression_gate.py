@@ -180,3 +180,25 @@ def test_merge_falls_back_to_defaults_with_no_threshold_verdict() -> None:
     assert merged.min_pass_rate is None
     assert merged.fail_on_error is False
     assert merged.errored == 0
+
+
+def test_regression_gate_fails_on_non_finite_drop() -> None:
+    """A NaN on either side of the diff makes ``drop > max`` always False.
+    Mutation: remove the ``isfinite`` branch -> ``passed is True``."""
+    diff = ReportDiff(
+        baseline_mean_score=float("nan"),
+        current_mean_score=0.5,
+        mean_score_delta=float("nan"),
+        baseline_pass_rate=1.0,
+        current_pass_rate=1.0,
+        pass_rate_delta=0.0,
+        passed_delta=0,
+        failed_delta=0,
+        errored_delta=0,
+        regressed_rows=[],
+        new_rows=[],
+        dropped_rows=[],
+    )
+    result = evaluate_regression_gate(diff, max_mean_score_drop=0.1)
+    assert result.passed is False
+    assert "mean_score drop is not a finite number" in result.reasons

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -32,7 +31,7 @@ from mangomas.cli.commands._eval_config import (
 )
 from mangomas.cli.exit_codes import EVAL_GATE_EXIT_CODE, EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
 from mangomas.config import get_settings
-from mangomas.errors import ConfigError, MangomasError
+from mangomas.errors import MangomasError
 from mangomas.eval import (
     EvalReport,
     EvalRunner,
@@ -83,15 +82,16 @@ async def _evaluate_run_gates(
     min_pass_rate: float | None,
     fail_on_error: bool,
     max_mean_cost_usd: float | None,
-    baseline_path: str | None,
+    baseline: EvalReport | None,
     max_mean_score_drop: float | None,
     max_pass_rate_drop: float | None,
     allow_new_failures: bool,
 ) -> GateResult | None:
     """Compute the merged threshold + regression gate verdict for *report*.
 
-    Returns ``None`` when neither gate is engaged. The baseline is loaded and
-    diffed here (its existence was validated up front for exit-2 semantics).
+    Returns ``None`` when neither gate is engaged. *baseline* is the report
+    already parsed before the run (a malformed file is exit 2 up front, not a
+    lost run after it).
     """
     threshold_gate = (
         evaluate_gate(
@@ -105,8 +105,8 @@ async def _evaluate_run_gates(
         else None
     )
     regression_gate = None
-    if baseline_path:
-        diff = diff_reports(await load_baseline(baseline_path), report)
+    if baseline is not None:
+        diff = diff_reports(baseline, report)
         regression_gate = evaluate_regression_gate(
             diff,
             max_mean_score_drop=max_mean_score_drop,
@@ -271,16 +271,19 @@ def eval_cmd(
         source_instance = _build_dataset_source(
             source_name, cfg.dataset_source_options, dataset_path, cfg.dataset_path
         )
-        # Validate the baseline exists up front so a missing file is exit 2
-        # (config), not exit 1 (runtime). Parsing happens during the run.
-        if effective_baseline and not Path(effective_baseline).is_file():
-            raise ConfigError(f"Baseline report not found: {effective_baseline}")
+        # Parse the baseline up front so a missing *or malformed* file is exit 2
+        # (config) before any LLM spend — previously only existence was checked
+        # here and a malformed file surfaced as exit 1 after the full run, with
+        # no sink output.
+        baseline_report = (
+            asyncio.run(load_baseline(effective_baseline)) if effective_baseline else None
+        )
     except MangomasError as exc:
         detail = f" ({exc.detail})" if exc.detail else ""
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
         raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
 
-    orch = _runtime._build()
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
     runner = EvalRunner(
         orch,
         scorer_instance,
@@ -301,7 +304,7 @@ def eval_cmd(
             min_pass_rate=eff_min_pass,
             fail_on_error=eff_fail_on_error,
             max_mean_cost_usd=eff_max_mean_cost,
-            baseline_path=effective_baseline,
+            baseline=baseline_report,
             max_mean_score_drop=eff_max_mean_drop,
             max_pass_rate_drop=eff_max_pass_drop,
             allow_new_failures=eff_allow_new,

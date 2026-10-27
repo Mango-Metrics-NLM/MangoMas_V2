@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -71,3 +72,29 @@ def test_binary_file_raises_config_error(tmp_path: Path) -> None:
     path.write_bytes(b"\xff\xfe\x00\x01not-utf8")
     with pytest.raises(ConfigError, match="cannot read"):
         load_workflow(str(path))
+
+
+# ── allow_path (branch audit, Tier A) ────────────────────────────────────────
+
+
+def test_allow_path_false_refuses_a_file_path_with_a_static_message(tmp_path: Path) -> None:
+    path = tmp_path / "graph.json"
+    path.write_text(json.dumps(_VALID_GRAPH), encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        load_workflow(str(path), allow_path=False)
+    assert str(excinfo.value) == "workflow definition must be inline JSON"
+    assert str(path) not in str(excinfo.value)
+
+
+def test_allow_path_false_still_loads_inline_json() -> None:
+    graph = load_workflow(json.dumps(_VALID_GRAPH), allow_path=False)
+    assert graph.name == "demo"
+
+
+def test_path_loading_is_logged_at_debug(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    path = tmp_path / "graph.json"
+    path.write_text(json.dumps(_VALID_GRAPH), encoding="utf-8")
+    caplog.set_level(logging.DEBUG, logger="mangomas.workflow.loader")
+    load_workflow(str(path))
+    record = next(r for r in caplog.records if r.name == "mangomas.workflow.loader")
+    assert record.event == "workflow_definition_file"  # type: ignore[attr-defined]

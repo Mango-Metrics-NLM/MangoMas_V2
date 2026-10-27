@@ -16,7 +16,7 @@ from http import HTTPStatus
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 import mangomas.api.errors as api_errors
 
@@ -87,42 +87,51 @@ class MaxBodySizeMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
+class ConcurrencyLimitMiddleware:
     """Reject requests beyond ``max_concurrent`` in-flight with ``503``.
 
     Uses a plain in-flight counter — race-free under asyncio's single-threaded
     event loop, since there is no ``await`` between the check and the increment.
     Excess requests are rejected immediately rather than queued, so a slow
     upstream cannot build an unbounded backlog (ADR-0015).
+
+    Pure ASGI rather than ``BaseHTTPMiddleware`` on purpose: ``call_next``
+    resolves at ``http.response.start``, i.e. once the *headers* are out, so a
+    streaming body (``/agents/{name}/stream``) ran entirely *after* the slot was
+    released and the limit never covered the requests it costs most to run.
+    ``await self.app(...)`` returns only after the last body chunk, an
+    exception, or the client's disconnect, so the slot is held for the whole
+    response. Non-HTTP scopes (lifespan, websocket) pass straight through.
     """
 
     def __init__(self, app: ASGIApp, *, max_concurrent: int) -> None:
-        super().__init__(app)
+        self.app = app
         self._max = max_concurrent
         self._in_flight = 0
 
-    async def dispatch(
-        self,
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
         if self._in_flight >= self._max:
             logger.warning(
                 "server at capacity",
                 extra={
                     "error": _AT_CAPACITY_CODE,
                     "max_concurrent": self._max,
-                    "path": request.url.path,
+                    "path": scope.get("path", ""),
                     "status_code": _AT_CAPACITY_STATUS,
                 },
             )
-            return _json_error(
+            response = _json_error(
                 _AT_CAPACITY_STATUS,
                 _AT_CAPACITY_CODE,
                 "server at capacity; retry later",
             )
+            await response(scope, receive, send)
+            return
         self._in_flight += 1
         try:
-            return await call_next(request)
+            await self.app(scope, receive, send)
         finally:
             self._in_flight -= 1

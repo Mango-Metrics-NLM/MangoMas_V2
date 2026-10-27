@@ -40,6 +40,19 @@ def configure_telemetry(
         if _state.configured:
             return
 
+        # Build the exporter *before* touching logging. ``basicConfig(force=True)``
+        # below replaces the root handlers; if the exporter then failed (``gcp``
+        # without the extra, an unknown token) the process was left with its
+        # logging re-forced to this call's level/format but ``configured`` still
+        # False — so the next lazy ``get_tracer()`` or scoped-tracer build
+        # re-ran this function with *defaults* and silently undid ``--verbose``
+        # and ``MANGOMAS_LOG__FORMAT=json``. Failing first leaves logging alone.
+        span_exporter = exporters._build_span_exporter(exporter)  # noqa: SLF001 -- resolved through the module object on purpose: it is what
+        # lets one monkeypatch on `telemetry.exporters` reach tracing, meters and
+        # scoped at once. A `from ... import` here would bind the name locally and
+        # need three separate patches. The selectors stay underscore-private because
+        # ADR-0009, ADR-0013 and the mango-observability skill cite them by that name.
+
         handler = logging.StreamHandler()
         if log_format == "json":
             handler.setFormatter(JsonFormatter())
@@ -63,11 +76,7 @@ def configure_telemetry(
         set_global_textmap(TraceContextTextMapPropagator())
 
         provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-        provider.add_span_processor(SimpleSpanProcessor(exporters._build_span_exporter(exporter)))  # noqa: SLF001 -- resolved through the module object on purpose: it is what
-        # lets one monkeypatch on `telemetry.exporters` reach tracing, meters and
-        # scoped at once. A `from ... import` here would bind the name locally and
-        # need three separate patches. The selectors stay underscore-private because
-        # ADR-0009, ADR-0013 and the mango-observability skill cite them by that name.
+        provider.add_span_processor(SimpleSpanProcessor(span_exporter))
         trace.set_tracer_provider(provider)
 
         logger.debug(

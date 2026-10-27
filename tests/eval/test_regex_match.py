@@ -55,9 +55,11 @@ def test_regex_match_registered() -> None:
     assert scorer.name == "regex_match"
 
 
-def test_regex_match_factory_ignores_non_list_flags() -> None:
-    scorer = scorer_registry.get("regex_match")({"flags": "ignorecase"})
-    assert scorer.name == "regex_match"
+def test_regex_match_factory_rejects_non_list_flags() -> None:
+    """A mistyped ``flags`` option used to be silently dropped (no flags at all);
+    it is now a factory-time ``ConfigError`` like every other bad option."""
+    with pytest.raises(ConfigError, match="'flags'"):
+        scorer_registry.get("regex_match")({"flags": "ignorecase"})
 
 
 # ── Hypothesis fuzz ───────────────────────────────────────────────────────────

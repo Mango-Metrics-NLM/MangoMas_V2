@@ -19,6 +19,7 @@ import httpx
 
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
+from mangomas.utils.exc import truncated_exc_detail
 
 logger = logging.getLogger(__name__)
 
@@ -51,5 +52,5 @@ def translate_httpx_error(
         )
     return LLMUnavailable(
         f"{label} unreachable at {base_url}",
-        detail=f"{type(exc).__name__}: {exc}"[:limit],
+        detail=truncated_exc_detail(exc, limit=limit),
     )

@@ -14,8 +14,8 @@ import logging
 import typer
 
 from mangomas.cli import _runtime
-from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR
-from mangomas.config import DEFAULT_API_HISTORY_DEFAULT_LIMIT
+from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
+from mangomas.config import DEFAULT_API_HISTORY_DEFAULT_LIMIT, DEFAULT_API_HISTORY_MAX_LIMIT
 from mangomas.core import AgentRequest, Message
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 def agents() -> None:
     """List registered agents."""
-    orch = _runtime._build()
+    # No ``--verbose`` flag (the option surface is pinned by
+    # tests/test_cli_surface.py), but the bootstrap still runs so this command
+    # honours MANGOMAS_LOG_LEVEL / MANGOMAS_LOG__FORMAT like its siblings.
+    _runtime.configure_cli_logging()
+
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
 
     async def _run() -> list[str]:
         try:
@@ -44,7 +49,7 @@ def chat(
     """Send a one-shot message to an agent and print the reply."""
     _runtime.configure_cli_logging(verbose=verbose)
 
-    orch = _runtime._build()
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
     messages: list[Message] = []
     if system:
         messages.append(Message(role="system", content=system))
@@ -63,13 +68,22 @@ def chat(
 
 
 def history(
-    limit: int = typer.Option(DEFAULT_API_HISTORY_DEFAULT_LIMIT, "--limit", "-n"),
+    # Bounded like the API's ``?limit=``: ``-1`` used to reach SQLite as
+    # ``LIMIT -1`` (no limit at all) and dump every persisted turn.
+    limit: int = typer.Option(
+        DEFAULT_API_HISTORY_DEFAULT_LIMIT,
+        "--limit",
+        "-n",
+        min=1,
+        max=DEFAULT_API_HISTORY_MAX_LIMIT,
+        help="Number of most recent turns to print",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Print recent persisted turns as JSON lines."""
     _runtime.configure_cli_logging(verbose=verbose)
 
-    orch = _runtime._build()
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
 
     async def _run() -> list[dict[str, object]] | None:
         """Return rows, or ``None`` to signal "no repository configured"."""

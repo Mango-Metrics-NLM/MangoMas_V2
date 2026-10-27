@@ -8,6 +8,7 @@ domain model: every parse/validation failure is normalised to
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,8 @@ from mangomas.workflow.validation import validate_structured_acceptance
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.workflow.validation import StructuredAgentFields
+
+logger = logging.getLogger(__name__)
 
 # Graph schema versions this build understands. Unlike the settings' forward-compat
 # *warn*, an unknown graph version is rejected: executing an unknown structure
@@ -76,6 +79,7 @@ def load_workflow(
     source: str,
     *,
     structured_agents: StructuredAgentFields | None = None,
+    allow_path: bool = True,
 ) -> WorkflowGraph:
     """Parse *source* into a validated :class:`WorkflowGraph`.
 
@@ -83,6 +87,14 @@ def load_workflow(
     otherwise as a path to a JSON file. Raises
     :class:`~mangomas.errors.ConfigError` on an unreadable file, invalid JSON, a
     schema-validation failure, or an unsupported ``schema_version``.
+
+    *allow_path* (default ``True``, so every pre-existing caller is unchanged)
+    is the surface's choice of whether a non-inline *source* may name a file.
+    The HTTP routes pass ``False`` for a **caller-supplied** definition: a
+    remote client must not be able to make the server read an arbitrary path
+    and echo the OS error or the file's pydantic ``input_value`` back in the
+    400 body. The server-configured ``MANGOMAS_WORKFLOW__DEFINITION`` and the
+    CLI keep path loading.
 
     *structured_agents* maps an agent name to its schema's top-level field names
     (``mangomas.composition.agents.STRUCTURED_AGENT_FIELDS``). When supplied, a
@@ -97,6 +109,14 @@ def load_workflow(
     if stripped.startswith("{"):
         data = _parse_json(stripped)
     else:
+        if not allow_path:
+            # Static message by design: the rejected string is caller input
+            # and must not be reflected.
+            raise ConfigError("workflow definition must be inline JSON")
+        logger.debug(
+            "loading workflow definition from a file",
+            extra={"event": "workflow_definition_file", "path": stripped},
+        )
         try:
             # Use the stripped source (not the raw one) so a path arriving with a
             # trailing newline — common from env vars / CLI args — does not fail

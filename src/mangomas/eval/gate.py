@@ -38,6 +38,8 @@ _COST_UNAVAILABLE_NOTE = "mean_cost_usd unavailable — cost threshold not appli
 _COST_NON_FINITE_THRESHOLD_NOTE = "max_mean_cost_usd is not a finite number"
 _COST_NON_FINITE_MEAN_NOTE = "mean_cost_usd is not a finite number"
 _EMPTY_DATASET_NOTE = "empty dataset — nothing to gate"
+_MEAN_SCORE_NON_FINITE_NOTE = "mean_score is not a finite number"
+_MEAN_DROP_NON_FINITE_NOTE = "mean_score drop is not a finite number"
 
 
 @dataclass(frozen=True)
@@ -104,10 +106,16 @@ def evaluate_gate(
         # pass_rate/mean_score of 0.0 (which would otherwise fail thresholds).
         reasons.append(_EMPTY_DATASET_NOTE)
     else:
-        if min_mean_score is not None and report.mean_score < min_mean_score:
-            reasons.append(
-                f"mean_score {report.mean_score:.3f} < min_mean_score {min_mean_score:.3f}"
-            )
+        if min_mean_score is not None:
+            # ``nan < x`` is always False, so an unguarded NaN mean (a plugin
+            # scorer's ``ScoreResult`` is an unvalidated dataclass) would pass
+            # every threshold. Mirrors the cost ladder below.
+            if not math.isfinite(report.mean_score):
+                reasons.append(_MEAN_SCORE_NON_FINITE_NOTE)
+            elif report.mean_score < min_mean_score:
+                reasons.append(
+                    f"mean_score {report.mean_score:.3f} < min_mean_score {min_mean_score:.3f}"
+                )
         if min_pass_rate is not None and pass_rate < min_pass_rate:
             reasons.append(f"pass_rate {pass_rate:.3f} < min_pass_rate {min_pass_rate:.3f}")
         if fail_on_error and report.errored > 0:
@@ -159,8 +167,12 @@ def evaluate_regression_gate(
     reasons: list[str] = []
     mean_drop = -diff.mean_score_delta
     pass_drop = -diff.pass_rate_delta
-    if max_mean_score_drop is not None and mean_drop > max_mean_score_drop:
-        reasons.append(f"mean_score dropped {mean_drop:.3f} > max {max_mean_score_drop:.3f}")
+    if max_mean_score_drop is not None:
+        if not math.isfinite(mean_drop):
+            # A NaN on either side of the diff makes ``>`` always False.
+            reasons.append(_MEAN_DROP_NON_FINITE_NOTE)
+        elif mean_drop > max_mean_score_drop:
+            reasons.append(f"mean_score dropped {mean_drop:.3f} > max {max_mean_score_drop:.3f}")
     if max_pass_rate_drop is not None and pass_drop > max_pass_rate_drop:
         reasons.append(f"pass_rate dropped {pass_drop:.3f} > max {max_pass_rate_drop:.3f}")
     if not allow_new_failures and diff.regressed_rows:

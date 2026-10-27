@@ -92,7 +92,7 @@ def workflow_run(
     _runtime.configure_cli_logging(verbose=verbose)
 
     graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
-    orch = _runtime._build()
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
     request = AgentRequest(messages=[Message(role="user", content=message)])
 
     async def _run() -> str:

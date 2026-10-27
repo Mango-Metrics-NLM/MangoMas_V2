@@ -18,6 +18,8 @@ import logging
 from typing import Any, Final
 
 from mangomas.adapters.vector.base import VectorMatch
+from mangomas.errors import PersistenceError
+from mangomas.utils.exc import truncated_exc_detail
 
 logger = logging.getLogger(__name__)
 
@@ -89,21 +91,27 @@ class ChromaVectorStore:
         metadatas: list[dict[str, Any]],
     ) -> None:
         """Insert or replace records, running the sync chromadb call off-thread."""
-        await asyncio.to_thread(
-            self._collection.upsert,
-            ids=ids,
-            embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas,
-        )
+        try:
+            await asyncio.to_thread(
+                self._collection.upsert,
+                ids=ids,
+                embeddings=embeddings,
+                documents=documents,
+                metadatas=metadatas,
+            )
+        except Exception as exc:
+            raise self._persistence_error("upsert", exc) from exc
 
     async def query(self, *, embedding: list[float], top_k: int) -> list[VectorMatch]:
         """Return up to ``top_k`` nearest matches, converting distance to similarity."""
-        result = await asyncio.to_thread(
-            self._collection.query,
-            query_embeddings=[embedding],
-            n_results=top_k,
-        )
+        try:
+            result = await asyncio.to_thread(
+                self._collection.query,
+                query_embeddings=[embedding],
+                n_results=top_k,
+            )
+        except Exception as exc:
+            raise self._persistence_error("query", exc) from exc
         return self._parse_query_result(result)
 
     @staticmethod
@@ -141,7 +149,33 @@ class ChromaVectorStore:
             self._collection.delete(where={"source": source})
             return len(ids)
 
-        return await asyncio.to_thread(_delete)
+        try:
+            return await asyncio.to_thread(_delete)
+        except Exception as exc:
+            raise self._persistence_error("delete", exc) from exc
+
+    def _persistence_error(self, operation: str, exc: Exception) -> PersistenceError:
+        """Log a failed chromadb call and return its typed equivalent.
+
+        chromadb raises its own exception classes (and plain ``ValueError`` for
+        malformed input); none of them is part of the Mango-Mas error
+        vocabulary, so a raw one would reach the API as an untyped 500 and the
+        CLI as a traceback. ``PersistenceError`` is what the storage adapters
+        raise for the same class of failure.
+        """
+        logger.error(
+            "Chroma %s failed",
+            operation,
+            extra={
+                "event": "vector_store_error",
+                "operation": operation,
+                "collection": self._collection_name,
+                "error_type": type(exc).__name__,
+            },
+        )
+        return PersistenceError(
+            f"Vector store {operation} failed", detail=truncated_exc_detail(exc)
+        )
 
     async def aclose(self) -> None:
         """Chroma's persistent client flushes on write; satisfies the protocol."""

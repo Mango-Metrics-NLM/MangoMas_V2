@@ -20,6 +20,7 @@ Keep provider-specific code behind existing protocol and registry boundaries. Fu
 | Telemetry | stdout logs + console trace exporter | Cloud Logging + Cloud Trace | Swap telemetry exporter through configuration while preserving structured log fields. |
 | Compute | Docker Compose / local uvicorn | Cloud Run | Keep container non-root, `$PORT` aware, and probe `/healthz`. |
 | Identity | Local credentials | Workload Identity Federation | Provider adapters consume ambient identity, not hardcoded credentials. |
+| Interop | In-process agents behind `/agents/{name}` | A2A peers (any A2A-speaking framework) | Boundary adapter only (ADR-0037): an SDK-backed façade over `Orchestrator` plus a `RemoteA2AAgent` registered by operator-chosen name; no core contract change. |
 
 ## Consequences
 

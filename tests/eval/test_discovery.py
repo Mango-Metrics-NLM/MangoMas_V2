@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
@@ -11,7 +12,11 @@ import pytest
 from mangomas import telemetry
 from mangomas.config import Settings
 from mangomas.eval import discovery
+from mangomas.eval.dataset_source import dataset_source_registry
 from mangomas.eval.protocol import ScorerContext, ScoreResult
+from mangomas.eval.registry import scorer_registry
+from mangomas.eval.sink_registry import sink_registry
+from mangomas.eval.target_registry import target_registry
 from mangomas.registry import Registry
 from tests.constants import FAKE_PLUGIN_SCORER_NAME, FAKE_PLUGIN_SINK_NAME
 
@@ -332,3 +337,45 @@ def test_ensure_eval_plugins_forwards_the_override_setting(
     discovery.ensure_eval_plugins(settings)
 
     assert seen == [True, True, True, True]
+
+
+def test_ensure_eval_plugins_inner_check_skips_a_scan_completed_while_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deterministic cover for the inner latch check of the double-checked lock:
+    a waiter must not rescan registries another thread finished scanning while
+    it blocked. Mutation: delete the inner ``return`` -> ``calls == 4``."""
+    calls: list[str] = []
+
+    def _record(
+        group: str,
+        registry: Registry[Any],  # noqa: ARG001
+        label: str,  # noqa: ARG001
+        *,
+        allow_builtin_override: bool,  # noqa: ARG001
+    ) -> list[str]:
+        calls.append(group)
+        return []
+
+    discovered: set[int] = set()
+    monkeypatch.setattr(discovery, "_discover", _record)
+    monkeypatch.setattr(discovery, "_discovered_registries", discovered)
+    settings = Settings(discovery_enabled=True)
+    registries = (
+        scorer_registry,
+        sink_registry,
+        target_registry,
+        dataset_source_registry,
+    )
+
+    discovery._discovery_lock.acquire()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(discovery.ensure_eval_plugins, settings)
+            discovered.update(id(r) for r in registries)  # "another thread" finished
+            discovery._discovery_lock.release()
+            future.result(timeout=5)
+    finally:
+        if discovery._discovery_lock.locked():
+            discovery._discovery_lock.release()
+    assert calls == []

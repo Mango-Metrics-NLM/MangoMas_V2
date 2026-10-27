@@ -12,7 +12,7 @@ from mangomas.composition import _HarnessOrchestrator, agent_registry
 from mangomas.config import Settings
 from mangomas.core import Orchestrator
 from mangomas.core.agent import AgentContext, AgentRequest, Message
-from tests.constants import DEFAULT_AGENT_NAME, STUB_REPLY
+from tests.constants import DEFAULT_AGENT_NAME, IN_MEMORY_SQLITE_URL, STUB_REPLY
 from tests.fakes import FakeLLM, FakeRepository
 
 # Distinct namespace per streaming-span test so build_scoped_tracer's module-
@@ -74,7 +74,7 @@ def make_traced_stream_wrapper(
 
 def rag_enabled_settings() -> Settings:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
     settings.embeddings.enabled = True
     settings.embeddings.provider = "lmstudio"
     settings.vector.enabled = True

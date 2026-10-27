@@ -8,13 +8,16 @@ request that carries a ``definition`` runs regardless — mirroring the CLI.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from mangomas.api.app import create_app
 from mangomas.composition.agents import (
     STRUCTURED_AGENT_FIELDS_EXTRAS_KEY,
 )
+from mangomas.config import get_settings
 from mangomas.core import Orchestrator
 from mangomas.workflow.validation import StructuredAgentSchema
 from tests.constants import (
@@ -250,3 +253,61 @@ def test_a_non_mapping_published_value_falls_back(orchestrator: Orchestrator) ->
             json={"request": _RUN_BODY, "definition": _CHAT_TEXT_LOOP_GRAPH},
         )
         assert r.status_code == 200
+
+
+# ── Caller-supplied definitions are inline-only (branch audit, Tier A) ───────
+# A per-request ``definition`` that is not inline JSON used to be read as a
+# server-side file path, and the 400 body echoed the OS error (``[Errno 2]``)
+# or pydantic's ``input_value=`` fragment of whatever file it named. Path
+# loading now applies only to the server-configured source. Mutations (proved
+# while writing): ``allow_path=True`` always makes the valid-graph-file test
+# return 200; ``allow_path=False`` always makes the env-configured test 400.
+
+
+def test_run_refuses_a_server_path_as_definition_without_reflecting_it(
+    orchestrator: Orchestrator,
+) -> None:
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            WORKFLOW_RUN_ROUTE, json={"request": _RUN_BODY, "definition": "/etc/hostname"}
+        )
+    assert r.status_code == 400
+    assert r.json()["error"] == "config_error"
+    assert r.json()["message"] == "workflow definition must be inline JSON"
+    assert "Errno" not in r.text
+    assert "/etc/hostname" not in r.text
+
+
+def test_validate_refuses_even_a_valid_graph_file_by_path(
+    orchestrator: Orchestrator, tmp_path: Path
+) -> None:
+    """Policy, not parse failure: the file is a perfectly good graph."""
+    graph_file = tmp_path / "graph.json"
+    graph_file.write_text(_AGENT_GRAPH, encoding="utf-8")
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(WORKFLOW_VALIDATE_ROUTE, json={"definition": str(graph_file)})
+    assert r.status_code == 400
+    assert r.json()["message"] == "workflow definition must be inline JSON"
+
+
+def test_server_configured_definition_may_still_be_a_path(
+    orchestrator: Orchestrator, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    graph_file = tmp_path / "graph.json"
+    graph_file.write_text(_AGENT_GRAPH, encoding="utf-8")
+    monkeypatch.setenv("MANGOMAS_WORKFLOW__ENABLED", "true")
+    monkeypatch.setenv("MANGOMAS_WORKFLOW__DEFINITION", str(graph_file))
+    get_settings.cache_clear()
+    try:
+        app = create_app(orchestrator=orchestrator)
+        with TestClient(app) as client:
+            run = client.post(WORKFLOW_RUN_ROUTE, json={"request": _RUN_BODY})
+            validate = client.post(WORKFLOW_VALIDATE_ROUTE, json={})
+    finally:
+        get_settings.cache_clear()
+    assert run.status_code == 200
+    assert run.json()["content"] == STUB_REPLY
+    assert validate.status_code == 200
+    assert validate.json()["name"] == "t"

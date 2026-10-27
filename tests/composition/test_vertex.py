@@ -11,6 +11,7 @@ from mangomas.adapters.llm import VertexClient
 from mangomas.composition import _vertex_factory, build_orchestrator, llm_registry
 from mangomas.config import LLMSettings, Settings
 from tests.composition.helpers import close_repo
+from tests.constants import IN_MEMORY_SQLITE_URL
 from tests.fakes import FakeVertexGenerativeModel
 
 
@@ -102,7 +103,7 @@ def test_vertex_factory_builds_vertex_client_with_injected_model() -> None:
     settings.llm.provider = "vertex"
     settings.llm.project_id = "test-project"
     settings.llm.model = "gemini-fake"
-    settings.db.url = "sqlite:///:memory:"
+    settings.db.url = IN_MEMORY_SQLITE_URL
 
     with llm_registry.scoped("vertex", _vertex_factory_with_fake):
         orch = build_orchestrator(settings)
