@@ -9,6 +9,29 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — eval harness edge cases (branch audit, Tier A)
+
+- `llm_judge` rejects a non-finite judge score (`NaN`/`Infinity` parse as
+  valid JSON and clamped to `1.0` → `passed=True`); the threshold and
+  regression gates now **fail** on a non-finite `mean_score` / drop instead of
+  silently passing (every comparison against `NaN` is `False`).
+- `report_payload` serialises non-finite floats as `null`, so `json_file` /
+  `webhook` artefacts stay RFC 8259 JSON when a plugin scorer returns `NaN`.
+- `sqlite_results` wraps directory creation, connect and metadata
+  serialisation in the same typed `PersistenceError` boundary (connection
+  released on every path); `webhook` logs scheme + host only and raises a
+  typed `PersistenceError` without echoing the URL (Slack/Teams URLs carry
+  the secret in the path); the Langfuse sink's `flush()` failure no longer
+  masks the publish error.
+- Scorer/sink boolean options go through `require_bool`: the string `"false"`
+  now means false (`bool("false")` was `True`); `regex_match` rejects a
+  non-list `flags` option at factory time; `timeout_seconds` and `threshold`
+  options are validated as numbers.
+- `load_baseline` / `load_jsonl` raise typed `ConfigError` / `DatasetError`
+  on non-dict rows and undecodable files; `mangomas eval` parses `--baseline`
+  **before** the paid run (malformed → exit 2, zero LLM calls) and validates
+  `--max-mean-score-drop` / `--max-pass-rate-drop` as unit floats.
+
 ### Added — A2A interoperability decision record (ADR-0037)
 
 - `specs/0037-a2a-interop.md` and `docs/adr/0037-a2a-boundary-adapter.md`
@@ -24,6 +47,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - **No runtime change.** Implementation is gated by the spec's go / no-go
   gate; the reliability plan's "revisit after C4" deferral stands. ADR-0001's
   swap matrix gains an `Interop` row pointing at ADR-0037.
+
 ### Changed — runtime lockfile security bump
 
 - `requirements.lock`: `certifi` 2026.7.22 → 2026.10.23 (PYSEC-2026-4320) and

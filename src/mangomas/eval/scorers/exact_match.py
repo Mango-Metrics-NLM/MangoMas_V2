@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from mangomas.eval._options import require_bool
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -64,10 +65,13 @@ class ExactMatchScorer:
         )
 
 
+_OWNER = "exact_match"
+
+
 def _exact_match_factory(options: dict[str, Any]) -> Scorer:
     return ExactMatchScorer(
-        case_sensitive=bool(options.get("case_sensitive", False)),
-        strip_whitespace=bool(options.get("strip_whitespace", True)),
+        case_sensitive=require_bool(options, "case_sensitive", default=False, owner=_OWNER),
+        strip_whitespace=require_bool(options, "strip_whitespace", default=True, owner=_OWNER),
     )
 
 

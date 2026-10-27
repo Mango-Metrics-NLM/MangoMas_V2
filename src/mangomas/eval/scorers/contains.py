@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from mangomas.eval._options import require_bool
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -44,7 +45,9 @@ class ContainsScorer:
 
 
 def _contains_factory(options: dict[str, Any]) -> Scorer:
-    return ContainsScorer(case_sensitive=bool(options.get("case_sensitive", False)))
+    return ContainsScorer(
+        case_sensitive=require_bool(options, "case_sensitive", default=False, owner="contains")
+    )
 
 
 scorer_registry.register("contains", _contains_factory)

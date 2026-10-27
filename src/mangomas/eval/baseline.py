@@ -127,7 +127,7 @@ def _read_baseline(path: Path) -> EvalReport:
         raise ConfigError(f"Baseline report not found: {path}")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
         raise ConfigError(f"Malformed baseline report {path}: {exc}") from exc
     return _report_from_dict(data)
 
@@ -148,7 +148,9 @@ def _report_from_dict(data: Mapping[str, Any]) -> EvalReport:
             target_name=data.get("target_name", ""),
             mean_cost_usd=data.get("mean_cost_usd"),
         )
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, AttributeError, ValueError) as exc:
+        # ``AttributeError``: a row that is not an object (``.items`` on a list /
+        # str); ``ValueError``: a scalar where the dataclass expects a type.
         raise ConfigError(f"Invalid baseline report structure: {exc}") from exc
 
 

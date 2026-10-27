@@ -14,12 +14,13 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from mangomas.config import EVAL_COST_USD_METADATA_KEY
+from mangomas.config import DEFAULT_EVAL_PARALLELISM, EVAL_COST_USD_METADATA_KEY
 from mangomas.core import AgentRequest
 from mangomas.correlation import (
     generate_correlation_id,
     set_correlation_id,
 )
+from mangomas.eval.protocol import ScorerContext
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -132,7 +133,7 @@ class EvalRunner:
         orch: Orchestrator,
         scorer: Scorer,
         *,
-        parallelism: int = 1,
+        parallelism: int = DEFAULT_EVAL_PARALLELISM,
         fail_fast: bool = False,
     ) -> None:
         if parallelism < 1:
@@ -148,8 +149,6 @@ class EvalRunner:
         *,
         target: Target,
     ) -> EvalRowResult:
-        from mangomas.eval.protocol import ScorerContext  # noqa: PLC0415
-
         correlation_id = generate_correlation_id()
         set_correlation_id(correlation_id)
         started = time.monotonic()

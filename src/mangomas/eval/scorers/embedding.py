@@ -19,7 +19,7 @@ import logging
 import math
 from typing import Any, Protocol, runtime_checkable
 
-from mangomas.eval._options import require_unit_float
+from mangomas.eval._options import coerce_float, require_unit_float
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -103,7 +103,9 @@ class EmbeddingScorer:
 
 
 def _embedding_factory(options: dict[str, Any]) -> Scorer:
-    threshold = float(options.get("threshold", DEFAULT_EMBEDDING_THRESHOLD))
+    threshold = coerce_float(
+        options.get("threshold", DEFAULT_EMBEDDING_THRESHOLD), owner="embedding", field="threshold"
+    )
     return EmbeddingScorer(threshold=threshold)
 
 

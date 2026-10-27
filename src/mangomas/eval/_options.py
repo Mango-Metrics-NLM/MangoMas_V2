@@ -59,6 +59,43 @@ def require_unit_float(value: float, *, owner: str, field: str = "threshold") ->
     return value
 
 
+def coerce_float(value: object, *, owner: str, field: str) -> float:
+    """Return *value* as a ``float`` or raise :class:`ConfigError`.
+
+    Accepts ``int`` / ``float`` and numeric strings (options arrive as JSON or
+    env text), rejects ``bool`` and anything ``float()`` cannot parse — so a
+    typo such as ``"threshold": "high"`` is a config error (exit 2), not a bare
+    ``ValueError`` escaping a factory. Finiteness is the caller's concern
+    (``require_unit_float`` / ``require_non_negative_float``).
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ConfigError(f"{owner} '{field}' must be a number; got {type(value).__name__}")
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ConfigError(f"{owner} '{field}' must be a number; got {value!r}") from exc
+
+
+def require_bool(options: dict[str, Any], key: str, *, default: bool, owner: str) -> bool:
+    """Return ``options[key]`` as a ``bool``, defaulting when absent.
+
+    Accepts real booleans and the case-insensitive strings ``"true"`` /
+    ``"false"`` (the shapes an env-var JSON blob or CLI-parsed dict yields).
+    Anything else raises :class:`ConfigError`. The previous ``bool(opts.get(...))``
+    idiom read the string ``"false"`` as ``True``.
+    """
+    value = options.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+    raise ConfigError(f"{owner} '{key}' must be a boolean; got {value!r}")
+
+
 def require_non_negative_float(value: object, *, owner: str, field: str) -> float:
     """Return *value* coerced to ``float`` when it is finite and ``>= 0.0``.
 

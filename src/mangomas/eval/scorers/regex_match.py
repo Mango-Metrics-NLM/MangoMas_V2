@@ -20,6 +20,7 @@ import re
 from typing import Any
 
 from mangomas.errors import ConfigError
+from mangomas.eval._options import require_bool
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -76,8 +77,13 @@ class RegexMatchScorer:
 
 def _regex_match_factory(options: dict[str, Any]) -> Scorer:
     raw_flags = options.get("flags", [])
-    flags = [str(f) for f in raw_flags] if isinstance(raw_flags, (list, tuple)) else []
-    return RegexMatchScorer(flags=flags, fullmatch=bool(options.get("fullmatch", False)))
+    if not isinstance(raw_flags, list | tuple):
+        # Factory-time rule: a mistyped option (``"flags": "ignorecase"``) is a
+        # config error, not silently no flags.
+        raise ConfigError("regex_match: 'flags' option must be a list of flag names")
+    flags = [str(f) for f in raw_flags]
+    fullmatch = require_bool(options, "fullmatch", default=False, owner="regex_match")
+    return RegexMatchScorer(flags=flags, fullmatch=fullmatch)
 
 
 scorer_registry.register("regex_match", _regex_match_factory)

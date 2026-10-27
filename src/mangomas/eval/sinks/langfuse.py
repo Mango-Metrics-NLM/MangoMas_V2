@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from opentelemetry import trace
 
 from mangomas.eval._langfuse import build_langfuse_client
+from mangomas.eval._options import require_bool
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
 
@@ -47,7 +48,7 @@ class LangfuseSink:
         # constructor drops it from the kwargs forwarded to the SDK ctor.
         # Default False preserves the aggregate-only behaviour (one trace +
         # one mean_score).
-        self._per_row = bool(opts.get("per_row", False))
+        self._per_row = require_bool(opts, "per_row", default=False, owner=_OWNER)
         self._client = build_langfuse_client(opts, owner=_OWNER, drop_keys=("per_row",))
 
     async def emit(
@@ -95,8 +96,14 @@ class LangfuseSink:
                     client.score(trace_id=row_trace.id, name="row_score", value=row.score)
         finally:
             # Mandatory for short-lived CLI processes — otherwise batched
-            # events are dropped on interpreter exit.
-            client.flush()
+            # events are dropped on interpreter exit. Its own failure must not
+            # mask the exception (if any) that brought us here.
+            try:
+                client.flush()
+            except Exception:
+                logger.exception(
+                    "Langfuse flush failed", extra={"event": "eval_sink_langfuse_flush"}
+                )
         logger.info(
             "Eval report published to Langfuse",
             extra={"event": "eval_sink_langfuse", "scorer": report.scorer},

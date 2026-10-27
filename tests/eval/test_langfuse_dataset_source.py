@@ -42,6 +42,7 @@ class _FakeLangfuseClient:
             [
                 _FakeItem("hello", "world", item_id="a"),
                 _FakeItem({"messages": [{"role": "user", "content": "hi"}]}, "ok"),
+                _FakeItem([{"role": "user", "content": "bare"}], "list"),
             ]
         )
 
@@ -68,13 +69,16 @@ async def test_langfuse_source_maps_items(monkeypatch: pytest.MonkeyPatch) -> No
     _install_fake_langfuse(monkeypatch)
     source = dataset_source_registry.get("langfuse")({"dataset": "d", "public_key": "pk"})
     rows = await source.load()
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert rows[0].id == "a"
     assert rows[0].messages[0].content == "hello"
     assert rows[0].expected == "world"
     # A dict-with-messages input is passed straight through.
     assert rows[1].messages[0].content == "hi"
     assert rows[1].expected == "ok"
+    # A bare messages list is taken as-is (the branch coverage missed).
+    assert rows[2].messages[0].content == "bare"
+    assert rows[2].expected == "list"
 
 
 def test_langfuse_source_filters_dataset_from_client_options(

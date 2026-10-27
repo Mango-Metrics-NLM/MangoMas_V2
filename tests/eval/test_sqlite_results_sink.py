@@ -10,7 +10,7 @@ import pytest
 
 import mangomas.eval.sinks  # noqa: F401 — registers built-in sinks
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
-from mangomas.errors import ConfigError
+from mangomas.errors import ConfigError, PersistenceError
 from mangomas.eval import evaluate_gate
 from mangomas.eval.runner import EvalReport, EvalRowResult
 from mangomas.eval.sink_registry import sink_registry
@@ -204,3 +204,49 @@ def test_sqlite_results_sink_error_detail_truncate_constant() -> None:
     pins the shared constant the sink relies on.
     """
     assert DEFAULT_ERROR_DETAIL_TRUNCATE == 200
+
+
+async def test_sqlite_results_sink_wraps_schema_mismatch_in_persistence_error(
+    tmp_path: Path,
+) -> None:
+    """Pre-creating ``eval_reports`` with the wrong columns makes ``CREATE TABLE IF
+    NOT EXISTS`` a no-op and the INSERT fail — the deterministic trigger for the
+    ``sqlite3.Error`` branch. Mutation: narrow the ``except`` -> raw
+    ``OperationalError``."""
+    db = tmp_path / "bad.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE eval_reports (id INTEGER)")
+    with pytest.raises(PersistenceError) as excinfo:
+        await SqliteResultsSink(db_path=str(db)).emit(_report())
+    assert "SQLite" in str(excinfo.value)
+    assert excinfo.value.detail
+    assert len(excinfo.value.detail) <= DEFAULT_ERROR_DETAIL_TRUNCATE
+
+
+async def test_sqlite_results_sink_wraps_unwritable_path_in_persistence_error(
+    tmp_path: Path,
+) -> None:
+    """The parent ``mkdir`` used to sit outside the ``try``; a file where a
+    directory is expected now surfaces as the typed error."""
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    with pytest.raises(PersistenceError):
+        await SqliteResultsSink(db_path=str(blocker / "results.db")).emit(_report())
+
+
+async def test_sqlite_results_sink_wraps_unserialisable_metadata(tmp_path: Path) -> None:
+    """``json.dumps(row.metadata)`` raising ``TypeError`` is a sink failure, not a
+    bare traceback through the CLI's per-sink isolation."""
+    row = EvalRowResult(
+        row_id="r1",
+        score=1.0,
+        passed=True,
+        duration_ms=1.0,
+        prediction="p",
+        expected="e",
+        metadata={"unserialisable": object()},
+    )
+    report = _report()
+    report = type(report)(**{**report.__dict__, "rows": [row]})
+    with pytest.raises(PersistenceError):
+        await SqliteResultsSink(db_path=str(tmp_path / "r.db")).emit(report)

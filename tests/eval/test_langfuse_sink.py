@@ -181,6 +181,33 @@ async def test_langfuse_sink_flushes_even_on_publish_error(
     assert captured["client"].flushed == 1
 
 
+async def test_langfuse_sink_flush_failure_does_not_mask_the_publish_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``flush()`` ran bare in a ``finally``; if it raised it replaced the
+    exception that brought us there. It is now contained and logged.
+    Mutation: drop the inner ``try`` -> ``ValueError`` escapes instead."""
+    _install_fake_langfuse(monkeypatch)
+    sink = LangfuseSink()
+
+    def _raise_score(self: _FakeLangfuseClient, **_: Any) -> None:  # noqa: ARG001
+        raise RuntimeError("publish failed")
+
+    def _raise_flush(self: _FakeLangfuseClient) -> None:  # noqa: ARG001
+        raise ValueError("flush failed")
+
+    monkeypatch.setattr(_FakeLangfuseClient, "score", _raise_score)
+    monkeypatch.setattr(_FakeLangfuseClient, "flush", _raise_flush)
+    with pytest.raises(RuntimeError, match="publish failed"):
+        await sink.emit(_report())
+
+
+async def test_langfuse_sink_rejects_non_boolean_per_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_langfuse(monkeypatch)
+    with pytest.raises(ConfigError, match="per_row"):
+        LangfuseSink(options={"per_row": "sometimes"})
+
+
 @pytest.mark.langfuse
 async def test_langfuse_sink_real_smoke() -> None:  # pragma: no cover — gated
     """Real SDK smoke test; requires RUN_LANGFUSE=1 + live credentials."""

@@ -135,3 +135,21 @@ async def test_load_baseline_invalid_structure_raises(tmp_path: Path) -> None:
     path.write_text(json.dumps({"scorer": "x"}), encoding="utf-8")
     with pytest.raises(ConfigError):
         await load_baseline(path)
+
+
+async def test_load_baseline_rejects_non_object_rows(tmp_path: Path) -> None:
+    """A row that is a list hits ``.items`` -> ``AttributeError``, which the
+    ``(KeyError, TypeError)`` handler let escape untyped."""
+    path = tmp_path / "baseline.json"
+    payload = json.loads(json.dumps(_report().__dict__, default=lambda o: o.__dict__))
+    payload["rows"] = [["not", "an", "object"]]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ConfigError, match="Invalid baseline report structure"):
+        await load_baseline(path)
+
+
+async def test_load_baseline_rejects_non_utf8_file(tmp_path: Path) -> None:
+    path = tmp_path / "baseline.json"
+    path.write_bytes(b"\xff\xfe{")
+    with pytest.raises(ConfigError, match="Malformed baseline report"):
+        await load_baseline(path)

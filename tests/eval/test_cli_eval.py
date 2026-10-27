@@ -749,3 +749,68 @@ def test_output_json_overrides_a_configured_json_file_path(
     assert result.exit_code == 0
     assert override.is_file(), "--output-json path was not written"
     assert not configured.exists(), "the settings path was written despite the CLI override"
+
+
+def test_eval_cli_malformed_baseline_exits_2_before_the_run(
+    fixtures_dir: Path, tmp_path: Path, eval_orchestrator: Orchestrator
+) -> None:
+    """The baseline used to be only ``is_file()``-checked up front and parsed
+    *after* the paid run (exit 1, no sink output). It is now parsed before the
+    orchestrator is built: exit 2 and zero LLM calls."""
+    runner = CliRunner()
+    bad = tmp_path / "baseline.json"
+    bad.write_text("{not json", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--baseline",
+            str(bad),
+        ],
+    )
+    assert result.exit_code == 2, result.stdout + result.stderr
+    assert "Malformed baseline report" in result.stdout + result.stderr
+    assert eval_orchestrator.context.llm.calls == []  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("flag_value", ["nan", "-0.5", "1.5"])
+def test_eval_cli_rejects_out_of_range_regression_drop(
+    fixtures_dir: Path, tmp_path: Path, flag_value: str
+) -> None:
+    """CLI ``--max-*-drop`` values bypassed the settings validator: ``nan`` made
+    the regression gate unfailable and a negative value failed every run."""
+    runner = CliRunner()
+    baseline = tmp_path / "baseline.json"
+    first = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--output-json",
+            str(baseline),
+        ],
+    )
+    assert first.exit_code == 0, first.stdout
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "--scorer",
+            "exact_match",
+            "--baseline",
+            str(baseline),
+            "--max-mean-score-drop",
+            flag_value,
+        ],
+    )
+    assert result.exit_code == 2, result.stdout + result.stderr
+    assert "max-mean-score-drop" in result.stdout + result.stderr

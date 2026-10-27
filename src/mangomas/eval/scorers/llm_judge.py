@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
-from mangomas.eval._options import require_unit_float
+from mangomas.eval._options import coerce_float, require_unit_float
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -95,6 +96,14 @@ class LLMJudgeScorer:
                 f"{self.name}: judge 'score' is not numeric",
                 detail=str(payload.get("score"))[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
+        if not math.isfinite(score):
+            # ``json.loads`` accepts the non-standard ``NaN`` / ``Infinity``
+            # tokens and ``float()`` accepts their string forms; ``min(1.0, nan)``
+            # returns 1.0, so an unguarded NaN would score a perfect pass.
+            raise LLMBadResponse(
+                f"{self.name}: judge 'score' is not finite",
+                detail=str(payload.get("score"))[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+            )
         # Clamp into [0,1] so a sloppy judge response can still produce a valid
         # ScoreResult; record the unclamped value in metadata for auditability.
         clamped = max(0.0, min(1.0, score))
@@ -111,7 +120,9 @@ class LLMJudgeScorer:
 
 
 def _llm_judge_factory(options: dict[str, Any]) -> Scorer:
-    threshold = float(options.get("threshold", DEFAULT_JUDGE_THRESHOLD))
+    threshold = coerce_float(
+        options.get("threshold", DEFAULT_JUDGE_THRESHOLD), owner="llm_judge", field="threshold"
+    )
     return LLMJudgeScorer(threshold=threshold)
 
 
