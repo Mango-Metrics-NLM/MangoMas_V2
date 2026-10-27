@@ -42,6 +42,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
   translates failures raised while draining a stream; Chroma failures become
   `PersistenceError`. New `mangomas.utils.exc.truncated_exc_detail` replaces
   eight hand-copied `f"{type(exc).__name__}: {exc}"[:limit]` spellings.
+- `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` now covers streaming responses:
+  `ConcurrencyLimitMiddleware` is pure ASGI, so the slot is held until the
+  last body chunk, an exception or the client's disconnect. Under
+  `BaseHTTPMiddleware` the slot was released at `http.response.start`, i.e.
+  once the headers were out, so `/agents/{name}/stream` bodies — the
+  requests the limit exists for — never counted. Constructor, envelope and
+  log fields are unchanged.
+- API auth strips the **expected** token like the presented one: a secret
+  stored with a trailing newline (the shape Secret Manager payloads and
+  `echo`-written files routinely have) used to reject every request with 401.
+  An all-whitespace secret still fails closed and logs.
 
 ### Added — A2A interoperability decision record (ADR-0037)
 

@@ -86,6 +86,12 @@ def resolve_auth_state(settings: Settings) -> AuthState:
         return AuthState(enabled=True, expected_token=None)
 
     expected = provider.get(auth_cfg.secret_ref)
+    if expected is not None:
+        # The presented token is stripped (``_extract_token``); the expected one
+        # must be too, or a secret stored with a trailing newline — the shape
+        # Secret Manager payloads and ``echo``-written files routinely have —
+        # rejects every request. An all-whitespace secret is still "nothing".
+        expected = expected.strip() or None
     if expected is None:
         logger.error(
             "Auth enabled but the secret reference resolved to nothing — every "

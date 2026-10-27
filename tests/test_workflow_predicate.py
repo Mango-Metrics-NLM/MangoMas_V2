@@ -397,7 +397,10 @@ def test_unvalidated_json_field_spec_needs_exactly_one_comparison(spec: Predicat
 
 _WIDER_THAN_A_DOUBLE = 10**400
 _TOO_MANY_DIGITS = "1" * (sys.get_int_max_str_digits() + 1)
-_TOO_DEEP = sys.getrecursionlimit() * 2
+# The C scanner's depth guard is CPython's *C* recursion limit, not
+# ``sys.getrecursionlimit()`` (3.12+ keeps them separate; twice the Python
+# limit parses fine), so the depth is a fixed number proven to raise.
+_TOO_DEEP = 100_000
 
 
 def _score_at_least() -> AcceptanceFn:
