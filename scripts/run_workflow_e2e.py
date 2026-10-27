@@ -18,6 +18,7 @@ import asyncio
 import json
 import time
 
+from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR
 from mangomas.composition import build_orchestrator
 from mangomas.core.agent import AgentRequest, Message
 from mangomas.errors import MaxStepsExceeded
@@ -96,8 +97,11 @@ async def _main() -> int:
         print(f"\n[workflow] elapsed={elapsed:.2f}s loop={loop_meta}")
         return 0
     except MaxStepsExceeded as exc:
+        # A loop that never converged is a failed run, not a tolerated one: a
+        # zero exit here let a CI step calling this script pass with the
+        # sentinel never emitted. Same code the CLI uses for a runtime failure.
         print(f"[loop] MaxStepsExceeded after {exc.steps} steps — sentinel never emitted.")
-        return 0
+        return EXIT_RUNTIME_ERROR
     finally:
         # Always release the LLM httpx pool — even when execute_workflow raises
         # something other than MaxStepsExceeded (e.g. an adapter/network error).

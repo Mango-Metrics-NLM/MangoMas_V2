@@ -181,7 +181,7 @@ def test_vector_settings_max_top_k_env_override(monkeypatch: pytest.MonkeyPatch)
 
 @pytest.mark.parametrize(
     ("top_k", "max_top_k"),
-    [(5, 0), (5, -1), (6, 5)],
+    [(0, 0), (-1, -1), (6, 5)],
     ids=["max-zero", "max-negative", "top_k-above-max"],
 )
 def test_vector_settings_rejects_invalid_depths(top_k: int, max_top_k: int) -> None:

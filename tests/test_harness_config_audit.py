@@ -225,3 +225,49 @@ def test_subprocess_runs_without_mangomas_installed(tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode == hook.EXIT_OK
+
+
+# ── Governance module unavailable (branch audit, Tier A) ─────────────────────
+# The module docstring promised "never crash a session, even in an interpreter
+# where mangomas was never installed", but ``evaluate_config_change`` was
+# imported at module level — the one import the pydantic stub above does not
+# exercise. Mutation (proved while writing): narrowing ``_evaluate``'s
+# ``except ImportError`` makes the in-process test raise.
+
+
+def test_main_allows_when_the_governance_module_cannot_be_imported(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # ``None`` in sys.modules makes ``import`` raise ImportError for that name.
+    monkeypatch.setitem(sys.modules, "mangomas.harness.config_audit", None)
+    monkeypatch.setenv("MANGOMAS_HARNESS__CONFIG_AUDIT_MODE", "block")
+    config_module.get_settings.cache_clear()
+    monkeypatch.setattr(sys, "stdin", StringIO(json.dumps({"source": "project_settings"})))
+    caplog.set_level(logging.WARNING, logger=hook.__name__)
+    assert hook.main() == hook.EXIT_OK
+    assert any("config_audit unavailable" in rec.message for rec in caplog.records)
+
+
+def test_subprocess_runs_when_mangomas_itself_is_absent(tmp_path: Path) -> None:
+    """The stronger form of the pydantic-stub test: the whole package is gone."""
+    stub_dir = tmp_path / "stub_site_packages"
+    stub_dir.mkdir()
+    (stub_dir / "mangomas.py").write_text(
+        "raise ImportError('stub: mangomas intentionally unavailable for this test')\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(stub_dir) + os.pathsep + env.get("PYTHONPATH", "")
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(_SCRIPT_PATH)],
+        input=json.dumps({"source": "project_settings"}),
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == hook.EXIT_OK, result.stderr
+    # The fallback is *logged* (with the import error's traceback, as the
+    # sibling fallbacks do), not raised.
+    assert "config_audit unavailable; allowing the config change" in result.stderr

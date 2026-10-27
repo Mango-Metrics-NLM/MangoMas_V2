@@ -17,9 +17,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import typer
 
 from mangomas.cli import _runtime
 from mangomas.core import Orchestrator
+from mangomas.errors import ConfigError
+from tests.constants import EXIT_CONFIG_ERROR
 
 
 async def test_build_returns_a_real_orchestrator(
@@ -333,3 +336,36 @@ def test_config_error_is_not_swallowed_as_a_logging_problem(
 
     with pytest.raises(ValueError, match="invalid MANGOMAS_ setting"):
         _runtime.configure_cli_logging(verbose=False)
+
+
+# ── build_or_exit (branch audit, Tier A) ─────────────────────────────────────
+
+
+def test_build_or_exit_returns_what_build_returns(monkeypatch: pytest.MonkeyPatch) -> None:
+    sentinel = object()
+    monkeypatch.setattr(_runtime, "_build", lambda: sentinel)
+    assert _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR) is sentinel
+
+
+def test_build_or_exit_maps_a_mangomas_error_to_the_config_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _boom() -> Orchestrator:
+        raise ConfigError("bad settings", detail="db.provider='nope'")
+
+    monkeypatch.setattr(_runtime, "_build", _boom)
+    with pytest.raises(typer.Exit) as excinfo:
+        _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
+    assert excinfo.value.exit_code == EXIT_CONFIG_ERROR
+    assert "Configuration error: bad settings (db.provider='nope')" in capsys.readouterr().err
+
+
+def test_build_or_exit_lets_a_genuine_crash_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the typed family is a *configuration* problem; anything else is a bug."""
+
+    def _crash() -> Orchestrator:
+        raise RuntimeError("not a config problem")
+
+    monkeypatch.setattr(_runtime, "_build", _crash)
+    with pytest.raises(RuntimeError):
+        _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)

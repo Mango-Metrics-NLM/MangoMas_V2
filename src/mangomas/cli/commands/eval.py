@@ -283,7 +283,7 @@ def eval_cmd(
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
         raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
 
-    orch = _runtime._build()
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
     runner = EvalRunner(
         orch,
         scorer_instance,

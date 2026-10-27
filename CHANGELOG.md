@@ -53,6 +53,16 @@ Versioning: [Semantic Versioning](https://semver.org/).
   stored with a trailing newline (the shape Secret Manager payloads and
   `echo`-written files routinely have) used to reject every request with 401.
   An all-whitespace secret still fails closed and logs.
+- CLI: every command builds the orchestrator through `_runtime.build_or_exit`,
+  so a bad `MANGOMAS_*` value, an unknown provider or an unresolved secret
+  exits with the documented config code (2) and a one-line message instead of
+  a traceback (`chat`, `agents`, `history`, `rag` were unguarded);
+  `history --limit` is bounded to `[1, MANGOMAS_API__HISTORY_MAX_LIMIT]` like
+  the API's `?limit=` (`-1` reached SQLite as `LIMIT -1` and dumped every
+  turn); `agents` runs the logging bootstrap like its siblings.
+- `scripts/harness_config_audit.py` defers its `mangomas.harness` import as
+  its docstring promised, so the `ConfigChange` hook degrades to "allow" in
+  an interpreter where `mangomas` is absent instead of crashing the session.
 
 ### Added — A2A interoperability decision record (ADR-0037)
 
@@ -96,6 +106,13 @@ Versioning: [Semantic Versioning](https://semver.org/).
   wider than a double, an integer literal past `sys.get_int_max_str_digits()`
   and a document nested past the recursion limit are "not accepted" rather
   than an exception out of the acceptance loop.
+
+### Changed — `scripts/run_workflow_e2e.py` exit code on a non-converging loop
+
+- `MaxStepsExceeded` (the loop sentinel never emitted) now returns the
+  runtime exit code (`1`) instead of `0`, so a CI step calling the script no
+  longer passes on a failed run. The orchestrator is still released on every
+  path.
 
 ### Changed — runtime lockfile security bump
 

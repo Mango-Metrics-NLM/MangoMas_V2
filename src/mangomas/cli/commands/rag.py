@@ -51,7 +51,7 @@ def rag_ingest(
     _runtime.configure_cli_logging(verbose=verbose)
 
     cfg = get_settings()
-    orch = _runtime._build()
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
 
     async def _run() -> IngestReport:
         try:
@@ -83,7 +83,7 @@ def rag_query(
     _runtime.configure_cli_logging(verbose=verbose)
 
     cfg = get_settings()
-    orch = _runtime._build()
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
 
     async def _run() -> list[str]:
         try:

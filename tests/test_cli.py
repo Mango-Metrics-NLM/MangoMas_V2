@@ -11,8 +11,9 @@ from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
+from mangomas.errors import ConfigError
 from tests._seam_guards import forbid_real_orchestrator
-from tests.constants import STUB_REPLY
+from tests.constants import DEFAULT_API_HISTORY_MAX_LIMIT, EXIT_CONFIG_ERROR, STUB_REPLY
 from tests.fakes import FakeLLM
 
 
@@ -112,3 +113,40 @@ def test_history_no_repo_exits_nonzero(
     result = runner.invoke(cli_main.app, ["history"])
     assert result.exit_code == 1
     assert "No repository" in result.stdout or "No repository" in (result.stderr or "")
+
+
+# ── Branch audit, Tier A ──────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", str(DEFAULT_API_HISTORY_MAX_LIMIT + 1)])
+def test_history_limit_is_bounded_like_the_api(runner: CliRunner, limit: str) -> None:
+    """``--limit -1`` used to reach SQLite as ``LIMIT -1`` and dump every turn.
+    Typer reports a usage error (exit 2) for an out-of-range option. Mutation
+    (proved while writing): dropping ``min=1`` lets ``0`` and ``-1`` through."""
+    result = runner.invoke(cli_main.app, ["history", "--limit", limit])
+    assert result.exit_code == 2
+    assert "--limit" in result.output
+
+
+def test_agents_bootstraps_logging_like_its_siblings(
+    runner: CliRunner, cli_logging_calls: list[dict[str, object]]
+) -> None:
+    result = runner.invoke(cli_main.app, ["agents"])
+    assert result.exit_code == 0
+    assert cli_logging_calls == [{}]
+
+
+def test_chat_maps_a_composition_config_error_to_the_config_exit_code(
+    monkeypatch: pytest.MonkeyPatch, runner: CliRunner
+) -> None:
+    """A bad MANGOMAS_* value used to escape ``chat`` as a traceback (exit 1).
+    Mutation (proved while writing): narrowing ``build_or_exit``'s except."""
+
+    def _boom() -> Orchestrator:
+        raise ConfigError("unknown llm provider", detail="llm.provider='nope'")
+
+    monkeypatch.setattr(cli_runtime, "_build", _boom)
+    result = runner.invoke(cli_main.app, ["chat", "hi"])
+    assert result.exit_code == EXIT_CONFIG_ERROR
+    assert "Configuration error: unknown llm provider (llm.provider='nope')" in result.output
+    assert "Traceback" not in result.output

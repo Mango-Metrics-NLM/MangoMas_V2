@@ -9,6 +9,7 @@ on ``__init__.py``.
 from __future__ import annotations
 
 from mangomas.config import (
+    DEFAULT_API_HISTORY_MAX_LIMIT,
     DEFAULT_EMBEDDINGS_BATCH_SIZE,
     DEFAULT_EMBEDDINGS_DEVICE,
     DEFAULT_EMBEDDINGS_MODEL,
@@ -49,6 +50,7 @@ from mangomas.config import (
 )
 
 __all__ = [
+    "DEFAULT_API_HISTORY_MAX_LIMIT",
     "DEFAULT_EMBEDDINGS_BATCH_SIZE",
     "DEFAULT_EMBEDDINGS_DEVICE",
     "DEFAULT_EMBEDDINGS_MODEL",
