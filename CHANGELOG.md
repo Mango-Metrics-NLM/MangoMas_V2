@@ -86,6 +86,16 @@ Versioning: [Semantic Versioning](https://semver.org/).
   gate; the reliability plan's "revisit after C4" deferral stands. ADR-0001's
   swap matrix gains an `Interop` row pointing at ADR-0037.
 
+### Added — Hypothesis profiles and three property suites (branch audit, Tier A)
+
+- `tests/conftest.py` registers `dev` (`deadline=None`) and `ci`
+  (`deadline=None`, `derandomize=True`, `print_blob=True`) profiles, selected
+  by `HYPOTHESIS_PROFILE` or the `CI` env var; `--hypothesis-profile` still
+  wins. New suites state the invariants over arbitrary input for
+  `compile_predicate` totality (with the `10**400` breaker as an `@example`),
+  `adapters.storage._url.path_from_sqlite_url`, and the `sanitize_tenant` /
+  `sanitize_inbound_correlation_id` wrappers.
+
 ### Added — `MANGOMAS_VECTOR__MAX_TOP_K` (branch audit, Tier A)
 
 - New tunable (default `50`): a ceiling on any **per-call** retrieval depth.

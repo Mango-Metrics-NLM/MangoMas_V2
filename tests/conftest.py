@@ -15,8 +15,40 @@ from mangomas.cli import _runtime
 from mangomas.config import Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.secrets import secrets_registry
-from tests.constants import ENV_GATE_SKIP_REASONS, GATED_RUNTIME_SKIP_REASON_RE
+from tests.constants import (
+    CI_ENV,
+    ENV_GATE_SKIP_REASONS,
+    GATED_RUNTIME_SKIP_REASON_RE,
+    HYPOTHESIS_PROFILE_CI,
+    HYPOTHESIS_PROFILE_DEV,
+    HYPOTHESIS_PROFILE_ENV,
+)
 from tests.fakes import FakeLLM, FakeMemoryRepository, FakeRepository, FakeTool
+
+# ── Hypothesis profiles ───────────────────────────────────────────────────────
+# One registration site for every property test (MacIver & Hatfield-Dodds,
+# JOSS 2019): ``deadline=None`` because the per-example deadline flakes on a
+# loaded CI runner for reasons unrelated to the code under test; ``ci`` adds
+# ``derandomize=True`` so a CI failure reproduces locally from the same seed
+# and ``print_blob=True`` so the failing example can be replayed. ``hypothesis``
+# is a hard ``dev`` extra, but the guard keeps a bare ``pip install -e .``
+# interpreter importable. The plugin's ``--hypothesis-profile`` flag still wins:
+# it loads its profile in ``pytest_configure``, after this module runs.
+try:
+    from hypothesis import settings as _hypothesis_settings
+except ImportError:  # pragma: no cover - dev extra absent
+    pass
+else:
+    _hypothesis_settings.register_profile(HYPOTHESIS_PROFILE_DEV, deadline=None)
+    _hypothesis_settings.register_profile(
+        HYPOTHESIS_PROFILE_CI, deadline=None, derandomize=True, print_blob=True
+    )
+    _hypothesis_settings.load_profile(
+        os.environ.get(
+            HYPOTHESIS_PROFILE_ENV,
+            HYPOTHESIS_PROFILE_CI if os.environ.get(CI_ENV) else HYPOTHESIS_PROFILE_DEV,
+        )
+    )
 
 # ── Cross-test isolation for lazy-registered cloud providers ──────────────────
 

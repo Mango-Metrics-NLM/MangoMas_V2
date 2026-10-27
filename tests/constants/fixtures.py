@@ -174,6 +174,13 @@ PREDICATE_JSON_ARRAY: str = "[1, 2]"
 PREDICATE_INVALID_JSON: str = "not json at all"
 
 # ── Workflow E2E demo script (scripts/run_workflow_e2e.py) ────────────────────
+# Hypothesis profile selection (tests/conftest.py). The env var is Hypothesis'
+# own convention for choosing a registered profile; ``CI`` is what GitHub
+# Actions (and most CI systems) export. Test-scoped: no config counterpart.
+HYPOTHESIS_PROFILE_ENV: str = "HYPOTHESIS_PROFILE"
+HYPOTHESIS_PROFILE_CI: str = "ci"
+HYPOTHESIS_PROFILE_DEV: str = "dev"
+CI_ENV: str = "CI"
 WORKFLOW_E2E_SCRIPT: str = "run_workflow_e2e.py"
 # Marker the script prints on its elapsed-time report line (happy path only).
 WORKFLOW_E2E_ELAPSED_MARKER: str = "elapsed="
@@ -245,6 +252,7 @@ __all__ = [
     "AUTH_TOKEN",
     "BACKPRESSURE_MAX_BODY_BYTES",
     "BACKPRESSURE_MAX_CONCURRENT",
+    "CI_ENV",
     "DEFAULT_AGENT_NAME",
     "DEFAULT_TOOL_NAME",
     "DEFAULT_TOOL_RESULT",
@@ -273,6 +281,9 @@ __all__ = [
     "FAKE_SINK_NAME",
     "GCP_SECRETS_PROJECT_ENV",
     "GCP_SECRETS_SECRET_NAME_ENV",
+    "HYPOTHESIS_PROFILE_CI",
+    "HYPOTHESIS_PROFILE_DEV",
+    "HYPOTHESIS_PROFILE_ENV",
     "JSONL_FILENAME",
     "LARGE_UPSTREAM_BODY_CHARS",
     "LMSTUDIO_EMBEDDING_MODEL_ENV",

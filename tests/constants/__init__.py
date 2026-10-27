@@ -187,6 +187,7 @@ from tests.constants.fixtures import AUTH_SECRET_REF_ENV as AUTH_SECRET_REF_ENV
 from tests.constants.fixtures import AUTH_TOKEN as AUTH_TOKEN
 from tests.constants.fixtures import BACKPRESSURE_MAX_BODY_BYTES as BACKPRESSURE_MAX_BODY_BYTES
 from tests.constants.fixtures import BACKPRESSURE_MAX_CONCURRENT as BACKPRESSURE_MAX_CONCURRENT
+from tests.constants.fixtures import CI_ENV as CI_ENV
 from tests.constants.fixtures import DEFAULT_AGENT_NAME as DEFAULT_AGENT_NAME
 from tests.constants.fixtures import DEFAULT_TOOL_NAME as DEFAULT_TOOL_NAME
 from tests.constants.fixtures import DEFAULT_TOOL_RESULT as DEFAULT_TOOL_RESULT
@@ -221,6 +222,9 @@ from tests.constants.fixtures import FAKE_PLUGIN_SINK_NAME as FAKE_PLUGIN_SINK_N
 from tests.constants.fixtures import FAKE_SINK_NAME as FAKE_SINK_NAME
 from tests.constants.fixtures import GCP_SECRETS_PROJECT_ENV as GCP_SECRETS_PROJECT_ENV
 from tests.constants.fixtures import GCP_SECRETS_SECRET_NAME_ENV as GCP_SECRETS_SECRET_NAME_ENV
+from tests.constants.fixtures import HYPOTHESIS_PROFILE_CI as HYPOTHESIS_PROFILE_CI
+from tests.constants.fixtures import HYPOTHESIS_PROFILE_DEV as HYPOTHESIS_PROFILE_DEV
+from tests.constants.fixtures import HYPOTHESIS_PROFILE_ENV as HYPOTHESIS_PROFILE_ENV
 from tests.constants.fixtures import JSONL_FILENAME as JSONL_FILENAME
 from tests.constants.fixtures import LARGE_UPSTREAM_BODY_CHARS as LARGE_UPSTREAM_BODY_CHARS
 from tests.constants.fixtures import LMSTUDIO_EMBEDDING_MODEL_ENV as LMSTUDIO_EMBEDDING_MODEL_ENV
@@ -424,6 +428,7 @@ __all__ = [
     "BASH_RULE_PREFIX",
     "BASH_RULE_WILDCARD_SUFFIX",
     "CHAT_MODEL_OVERRIDE_ENV",
+    "CI_ENV",
     "CLAUDE_AGENTS_DIR_RELPATH",
     "CLAUDE_SETTINGS_LOCAL_EXAMPLE_RELPATH",
     "CLAUDE_SETTINGS_RELPATH",
@@ -535,6 +540,9 @@ __all__ = [
     "HARNESS_SKILL_SLUG",
     "HOSTED_RUNNER_INFEASIBLE",
     "HTTPX_ERROR_PATH_TIMEOUT_SECONDS",
+    "HYPOTHESIS_PROFILE_CI",
+    "HYPOTHESIS_PROFILE_DEV",
+    "HYPOTHESIS_PROFILE_ENV",
     "INERT_FILE_RULE_PREFIXES",
     "INVALID_AGENT_MODEL_VALUES",
     "INVALID_AGENT_TOOL_TOKENS",
