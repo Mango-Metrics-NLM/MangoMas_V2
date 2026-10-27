@@ -21,6 +21,7 @@ silently in the one place that does not assert loudly.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -81,7 +82,11 @@ def _build_span_exporter(exporter: str) -> Any:
     if exporter == EXPORTER_GCP:
         return _lazy_cloud_trace_exporter()
     if exporter == EXPORTER_CONSOLE:
-        return ConsoleSpanExporter()
+        # stderr, not the SDK's stdout default: every CLI command shares this
+        # bootstrap, and span JSON on stdout interleaved with `chat` replies
+        # and `history` JSON lines. Diagnostics belong on stderr; stdout stays
+        # the command's result.
+        return ConsoleSpanExporter(out=sys.stderr)
     raise ConfigError(
         f"Unknown telemetry exporter {exporter!r}; expected one of {sorted(_VALID_APP_EXPORTERS)}."
     )
@@ -118,7 +123,8 @@ def _build_metric_reader(exporter: str) -> Any:
     if exporter == EXPORTER_GCP:
         return PeriodicExportingMetricReader(_lazy_cloud_monitoring_exporter())
     if exporter == EXPORTER_CONSOLE:
-        return PeriodicExportingMetricReader(ConsoleMetricExporter())
+        # Same stdout/stderr split as the span exporter above.
+        return PeriodicExportingMetricReader(ConsoleMetricExporter(out=sys.stderr))
     raise ConfigError(
         f"Unknown telemetry exporter {exporter!r}; expected one of {sorted(_VALID_APP_EXPORTERS)}."
     )

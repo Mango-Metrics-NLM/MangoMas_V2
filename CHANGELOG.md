@@ -63,6 +63,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - `scripts/harness_config_audit.py` defers its `mangomas.harness` import as
   its docstring promised, so the `ConfigChange` hook degrades to "allow" in
   an interpreter where `mangomas` is absent instead of crashing the session.
+- `configure_telemetry` builds the span exporter **before** re-forcing root
+  logging: a failed exporter (`gcp` without the extra, an unknown token) left
+  logging re-forced with `configured` still `False`, so the next lazy
+  `get_tracer()` re-ran the bootstrap with defaults and silently undid
+  `--verbose` / `MANGOMAS_LOG__FORMAT=json`. Failing first leaves logging
+  exactly as it was.
 
 ### Added — A2A interoperability decision record (ADR-0037)
 
@@ -106,6 +112,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
   wider than a double, an integer literal past `sys.get_int_max_str_digits()`
   and a document nested past the recursion limit are "not accepted" rather
   than an exception out of the acceptance loop.
+
+### Changed — console telemetry exporters write to stderr
+
+- The `console` span and metric exporters now target `sys.stderr` instead of
+  the SDK's `sys.stdout` default. Every CLI command shares the telemetry
+  bootstrap, so span JSON used to interleave with `chat` replies and
+  `history` JSON lines on stdout; diagnostics belong on stderr and stdout
+  stays the command's result. Pipelines that scraped span JSON from stdout
+  must read stderr instead.
 
 ### Changed — `scripts/run_workflow_e2e.py` exit code on a non-converging loop
 

@@ -330,3 +330,50 @@ def test_importing_entry_point_does_not_configure_telemetry(module: str) -> None
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ── Console exporters write to stderr; exporter failure leaves logging alone ──
+# (branch audit, Tier A). Mutations (proved while writing): ``out=sys.stdout``
+# in either console builder fails its test; building the span exporter after
+# ``basicConfig(force=True)`` again fails the handlers-untouched test.
+
+
+def test_console_span_exporter_writes_to_stderr() -> None:
+    """Span JSON on stdout interleaved with ``chat`` replies and ``history`` lines."""
+    exporter = telemetry._build_span_exporter(telemetry.EXPORTER_CONSOLE)
+    assert exporter.out is sys.stderr
+
+
+def test_console_metric_reader_writes_to_stderr() -> None:
+    reader = telemetry.exporters._build_metric_reader(telemetry.EXPORTER_CONSOLE)
+    try:
+        assert reader._exporter.out is sys.stderr
+    finally:
+        reader.shutdown()
+
+
+def test_configure_telemetry_leaves_logging_untouched_when_the_exporter_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed exporter must not re-force root logging.
+
+    Before the fix ``basicConfig(force=True)`` ran first, so a ``gcp`` exporter
+    without the extra left logging re-forced to this call's level/format with
+    ``configured`` still False — and the next lazy ``get_tracer()`` re-ran the
+    bootstrap with *defaults*, silently undoing ``--verbose`` / JSON logging.
+    """
+    _reset()
+    root = logging.getLogger()
+    handlers_before = list(root.handlers)
+    level_before = root.level
+
+    def _boom(_token: str) -> object:
+        raise ConfigError("exporter unavailable")
+
+    monkeypatch.setattr(telemetry.exporters, "_build_span_exporter", _boom)
+    with pytest.raises(ConfigError):
+        telemetry.configure_telemetry(log_level="DEBUG", log_format="json")
+
+    assert telemetry._state.configured is False
+    assert root.handlers == handlers_before
+    assert root.level == level_before
