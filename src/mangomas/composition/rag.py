@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from mangomas.config import DEFAULT_VECTOR_MAX_TOP_K
 from mangomas.core.tools import ToolRegistry
 from mangomas.registry import Registry
 
@@ -19,6 +20,7 @@ def _build_rag_tools(
     embeddings: Any | None,
     vector_store: Any | None,
     top_k: int,
+    max_top_k: int = DEFAULT_VECTOR_MAX_TOP_K,
 ) -> ToolRegistry | None:
     """Return a ToolRegistry holding a RetrievalTool, or ``None`` if RAG is off.
 
@@ -32,15 +34,17 @@ def _build_rag_tools(
 
     logger.debug(
         "Building RAG tools",
-        extra={"top_k": top_k, "embeddings": type(embeddings).__name__},
+        extra={"top_k": top_k, "max_top_k": max_top_k, "embeddings": type(embeddings).__name__},
     )
     from mangomas.rag import RetrievalTool, Retriever  # noqa: PLC0415
 
-    retriever = Retriever(embeddings=embeddings, vector_store=vector_store, top_k=top_k)
+    retriever = Retriever(
+        embeddings=embeddings, vector_store=vector_store, top_k=top_k, max_top_k=max_top_k
+    )
     tool = RetrievalTool(retriever)
     registry: ToolRegistry = Registry("tool")
     registry.register(tool.name, tool)
-    logger.info("RAG retrieval tool registered (top_k=%d)", top_k)
+    logger.info("RAG retrieval tool registered (top_k=%d, max_top_k=%d)", top_k, max_top_k)
     return registry
 
 

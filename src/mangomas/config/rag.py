@@ -86,13 +86,21 @@ DEFAULT_VECTOR_COLLECTION: str = "mangomas"
 DEFAULT_VECTOR_TOP_K: int = 5
 
 
+# Hard ceiling on a *per-call* retrieval depth. The ``RetrievalTool`` lets the
+# model choose ``top_k`` per call; without a ceiling an LLM-chosen (or
+# prompt-injected) ``top_k`` of a million pulls the whole collection into the
+# prompt. Generous enough that a deliberate deep search still works.
+DEFAULT_VECTOR_MAX_TOP_K: int = 50
+
+
 class VectorSettings(BaseModel):
     """Vector store configuration.
 
     Gated by ``enabled`` (default ``False``) like :class:`MemorySettings`, so
     default behaviour is unchanged. ``provider`` selects the backend (``chroma``);
-    ``persist_dir`` / ``collection`` configure on-disk storage and ``top_k`` is
-    the default retrieval depth.
+    ``persist_dir`` / ``collection`` configure on-disk storage, ``top_k`` is
+    the default retrieval depth and ``max_top_k`` the ceiling any per-call
+    depth (tool argument or ``Retriever.search(top_k=...)``) is clamped to.
     """
 
     enabled: bool = DEFAULT_VECTOR_ENABLED
@@ -100,6 +108,15 @@ class VectorSettings(BaseModel):
     persist_dir: str = DEFAULT_VECTOR_PERSIST_DIR
     collection: str = DEFAULT_VECTOR_COLLECTION
     top_k: int = DEFAULT_VECTOR_TOP_K
+    max_top_k: int = DEFAULT_VECTOR_MAX_TOP_K
+
+    @model_validator(mode="after")
+    def _check_depths(self) -> VectorSettings:
+        if self.max_top_k < 1:
+            raise ValueError(f"max_top_k must be >= 1 (got {self.max_top_k})")
+        if self.top_k > self.max_top_k:
+            raise ValueError(f"top_k ({self.top_k}) must be <= max_top_k ({self.max_top_k})")
+        return self
 
 
 # RAG ingestion/chunking defaults.

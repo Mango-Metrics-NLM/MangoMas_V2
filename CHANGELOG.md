@@ -70,6 +70,18 @@ Versioning: [Semantic Versioning](https://semver.org/).
   gate; the reliability plan's "revisit after C4" deferral stands. ADR-0001's
   swap matrix gains an `Interop` row pointing at ADR-0037.
 
+### Added — `MANGOMAS_VECTOR__MAX_TOP_K` (branch audit, Tier A)
+
+- New tunable (default `50`): a ceiling on any **per-call** retrieval depth.
+  The `retrieve` tool lets the model choose `top_k` per call, so an
+  LLM-chosen or prompt-injected depth of a million pulled the whole
+  collection into the prompt; `true` passed `isinstance(int)` as depth 1.
+  `Retriever.search` clamps every caller to `[1, max_top_k]` (debug-logged
+  as `rag_top_k_clamped`), the tool treats a boolean `top_k` as absent, and
+  `VectorSettings` rejects `max_top_k < 1` or `top_k > max_top_k` at parse.
+  `Retriever(..., max_top_k=)` and `_build_rag_tools(..., max_top_k=)` are
+  additive keywords with the config default.
+
 ### Changed — branch audit, Tier A: caller-supplied workflow definitions are inline-only
 
 - `POST /workflows/run` and `/workflows/validate` no longer treat a

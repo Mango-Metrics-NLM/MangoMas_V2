@@ -163,7 +163,9 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
 
     # When both retrieval seams are present, expose a RetrievalTool so the
     # ToolAgent auto-discovers it via ctx.tools. RAG disabled → tools stays None.
-    tools = _build_rag_tools(embeddings, vector_store, cfg.vector.top_k)
+    tools = _build_rag_tools(
+        embeddings, vector_store, cfg.vector.top_k, max_top_k=cfg.vector.max_top_k
+    )
 
     # Create agent context with all wired components
     ctx = AgentContext(

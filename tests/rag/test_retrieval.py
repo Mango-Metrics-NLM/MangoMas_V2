@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from mangomas.core.tools import Tool, ToolCallParser
 from mangomas.rag.retrieval import RetrievalTool, Retriever
+from tests.constants import DEFAULT_VECTOR_MAX_TOP_K
 from tests.fakes import FakeEmbeddingClient, FakeVectorStore
 
 
@@ -232,3 +233,64 @@ async def test_search_emits_a_span() -> None:
     matches = attributes["rag.matches"]
     assert isinstance(matches, int)
     assert matches >= 1
+
+
+# ── max_top_k ceiling (branch audit, Tier A) ─────────────────────────────────
+# The model chooses ``top_k`` per tool call; without a ceiling an LLM-chosen or
+# prompt-injected depth of a million pulled the whole collection into the
+# prompt, and ``True`` passed ``isinstance(int)`` as depth 1. Mutations (proved
+# while writing): dropping the ``bool`` guard makes the ``True`` test return one
+# result; dropping the clamp makes the huge-depth tests return every record.
+
+
+async def _seed_many(store: FakeVectorStore, emb: FakeEmbeddingClient, count: int) -> None:
+    for i in range(count):
+        text = f"doc {i}"
+        vec = await emb.embed(text)
+        await store.upsert(
+            ids=[f"{i}.txt#0"],
+            embeddings=[vec],
+            documents=[text],
+            metadatas=[{"source": f"{i}.txt", "index": 0}],
+        )
+
+
+async def test_search_clamps_a_huge_depth_to_max_top_k() -> None:
+    emb, store = FakeEmbeddingClient(), FakeVectorStore()
+    await _seed_many(store, emb, 4)
+    retriever = Retriever(embeddings=emb, vector_store=store, top_k=2, max_top_k=3)
+    assert len(await retriever.search("doc 1", top_k=10**6)) == 3
+
+
+async def test_configured_top_k_is_itself_bounded_by_max_top_k() -> None:
+    emb, store = FakeEmbeddingClient(), FakeVectorStore()
+    await _seed_many(store, emb, 4)
+    retriever = Retriever(embeddings=emb, vector_store=store, top_k=10**6, max_top_k=2)
+    assert len(await retriever.search("doc 1")) == 2
+
+
+async def test_default_ceiling_is_the_config_default() -> None:
+    emb, store = FakeEmbeddingClient(), FakeVectorStore()
+    await _seed_many(store, emb, DEFAULT_VECTOR_MAX_TOP_K + 5)
+    retriever = Retriever(embeddings=emb, vector_store=store, top_k=1)
+    assert len(await retriever.search("doc 1", top_k=10**6)) == DEFAULT_VECTOR_MAX_TOP_K
+
+
+async def test_tool_treats_a_boolean_top_k_as_absent() -> None:
+    emb, store = FakeEmbeddingClient(), FakeVectorStore()
+    await _seed_many(store, emb, 4)
+    tool = RetrievalTool(Retriever(embeddings=emb, vector_store=store, top_k=3))
+    out = await tool.execute({"query": "doc 1", "top_k": True})
+    assert out.count("score=") == 3  # the configured depth, not ``int(True) == 1``
+
+
+async def test_tool_clamps_a_huge_top_k(caplog: pytest.LogCaptureFixture) -> None:
+    emb, store = FakeEmbeddingClient(), FakeVectorStore()
+    await _seed_many(store, emb, 4)
+    tool = RetrievalTool(Retriever(embeddings=emb, vector_store=store, top_k=1, max_top_k=2))
+    caplog.set_level(logging.DEBUG, logger="mangomas.rag.retrieval")
+    out = await tool.execute({"query": "doc 1", "top_k": 10**6})
+    assert out.count("score=") == 2
+    record = next(r for r in caplog.records if getattr(r, "event", "") == "rag_top_k_clamped")
+    assert record.effective == 2  # type: ignore[attr-defined]
+    assert record.requested == 10**6  # type: ignore[attr-defined]

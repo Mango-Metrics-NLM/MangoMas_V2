@@ -45,3 +45,33 @@ def test_build_orchestrator_no_tools_when_rag_disabled() -> None:
         assert orch.context.tools is None
     finally:
         close_repo(orch)
+
+
+async def test_build_orchestrator_wires_max_top_k_from_settings() -> None:
+    """The ceiling reaches the tool through ``_build_rag_tools``. Mutation
+    (proved while writing): dropping the ``max_top_k=`` pass-through in
+    ``builder.py`` leaves the default ceiling and the tool returns 3 passages."""
+    settings = rag_enabled_settings()
+    settings.vector.top_k = 1
+    settings.vector.max_top_k = 2
+    emb, store = FakeEmbeddingClient(), FakeVectorStore()
+    for i in range(3):
+        text = f"doc {i}"
+        await store.upsert(
+            ids=[f"{i}#0"],
+            embeddings=[await emb.embed(text)],
+            documents=[text],
+            metadatas=[{"source": f"{i}.txt", "index": 0}],
+        )
+    with (
+        embedding_registry.scoped("lmstudio", lambda _cfg: emb),
+        _vector_registry.scoped("chroma", lambda _cfg: store),
+    ):
+        orch = build_orchestrator(settings)
+        try:
+            tools = orch.context.tools
+            assert tools is not None
+            out = await tools.get("retrieve").execute({"query": "doc 1", "top_k": 10**6})
+        finally:
+            close_repo(orch)
+    assert out.count("score=") == 2

@@ -232,6 +232,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent dir |
 | `MANGOMAS_VECTOR__COLLECTION` | `mangomas` | Collection name |
 | `MANGOMAS_VECTOR__TOP_K` | `5` | Default retrieval depth |
+| `MANGOMAS_VECTOR__MAX_TOP_K` | `50` | Ceiling on any per-call depth (tool argument or `search(top_k=)`); validated `>= 1` and `>= TOP_K` |
 | `MANGOMAS_RAG__CHUNK_WORDS` | `800` | Chunk size (words) |
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
