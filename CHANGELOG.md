@@ -59,6 +59,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
   gate; the reliability plan's "revisit after C4" deferral stands. ADR-0001's
   swap matrix gains an `Interop` row pointing at ADR-0037.
 
+### Changed — branch audit, Tier A: caller-supplied workflow definitions are inline-only
+
+- `POST /workflows/run` and `/workflows/validate` no longer treat a
+  per-request `definition` that is not inline JSON as a **server-side file
+  path**: a remote client could make the server read any readable file and
+  get the OS error (`[Errno 2] …`) or pydantic's `input_value=` fragment of
+  its contents reflected in the 400 body. The response is now a static
+  `workflow definition must be inline JSON` (400). Path loading is unchanged
+  for the server-configured `MANGOMAS_WORKFLOW__DEFINITION` and for the CLI;
+  `load_workflow` gains an additive `allow_path=True` keyword.
+- `compile_predicate` closures are total against hostile JSON: an integer
+  wider than a double, an integer literal past `sys.get_int_max_str_digits()`
+  and a document nested past the recursion limit are "not accepted" rather
+  than an exception out of the acceptance loop.
+
 ### Changed — runtime lockfile security bump
 
 - `requirements.lock`: `certifi` 2026.7.22 → 2026.10.23 (PYSEC-2026-4320) and

@@ -208,7 +208,13 @@ def _as_number(found: Any) -> float | None:
     if isinstance(found, bool):
         return None
     if isinstance(found, int | float):
-        return float(found)
+        try:
+            return float(found)
+        except OverflowError:
+            # A JSON integer wider than a double (``10**400`` parses fine as a
+            # Python int) must not make the closure raise; it is simply not a
+            # number this comparison can judge.
+            return None
     return None
 
 
@@ -276,7 +282,12 @@ def _parse_object(content: str) -> dict[str, Any] | None:
     """
     try:
         return parse_llm_json_object(content)
-    except LLMBadResponse:
+    except (LLMBadResponse, ValueError, RecursionError):
+        # ``json.loads`` raises a bare ``ValueError`` for an integer literal
+        # past ``sys.get_int_max_str_digits()`` and ``RecursionError`` for a
+        # document nested deeper than the interpreter allows; neither is a
+        # ``JSONDecodeError``, so the strict parser lets them through. The
+        # closure is total (R2): both are "not an object", never an exception.
         return None
 
 

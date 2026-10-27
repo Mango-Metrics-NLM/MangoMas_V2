@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from typing import Literal
 
 import pytest
@@ -382,3 +383,41 @@ def test_unvalidated_json_field_spec_without_a_field_refuses_to_compile() -> Non
 def test_unvalidated_json_field_spec_needs_exactly_one_comparison(spec: PredicateSpec) -> None:
     with pytest.raises(ConfigError, match="requires exactly one of"):
         compile_predicate(spec)
+
+
+# ── Totality against hostile JSON (branch audit, Tier A) ─────────────────────
+# ``compile_predicate`` promises the closure never raises. Three inputs used to
+# break that promise without being ``JSONDecodeError``s: an integer wider than a
+# double (``float()`` → ``OverflowError``), an integer literal past
+# ``sys.get_int_max_str_digits()`` (``json.loads`` → bare ``ValueError``) and a
+# document nested past the recursion limit (``RecursionError``). Mutations
+# (proved while writing): removing the ``except OverflowError`` fails the first
+# test; narrowing ``_parse_object``'s except back to ``LLMBadResponse`` fails the
+# other two.
+
+_WIDER_THAN_A_DOUBLE = 10**400
+_TOO_MANY_DIGITS = "1" * (sys.get_int_max_str_digits() + 1)
+_TOO_DEEP = sys.getrecursionlimit() * 2
+
+
+def _score_at_least() -> AcceptanceFn:
+    return compile_predicate(
+        PredicateSpec(
+            kind=JSON_FIELD_KIND, field=REVIEW_SCORE_FIELD, at_least=REVIEW_SCORE_AT_LEAST
+        )
+    )
+
+
+def test_an_integer_wider_than_a_double_is_not_accepted_and_does_not_raise() -> None:
+    content = json.dumps({REVIEW_SCORE_FIELD: _WIDER_THAN_A_DOUBLE})
+    assert _score_at_least()(_resp(content)) is False
+
+
+def test_an_integer_literal_past_the_digit_limit_is_not_an_object() -> None:
+    content = f'{{"{REVIEW_SCORE_FIELD}": {_TOO_MANY_DIGITS}}}'
+    assert _score_at_least()(_resp(content)) is False
+
+
+def test_a_document_nested_past_the_recursion_limit_is_not_an_object() -> None:
+    content = '{"a":' * _TOO_DEEP + "1" + "}" * _TOO_DEEP
+    assert _score_at_least()(_resp(content)) is False

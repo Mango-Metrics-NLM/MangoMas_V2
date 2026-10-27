@@ -16,8 +16,9 @@ class WorkflowRunRequest(BaseModel):
     """Body for ``POST /workflows/run``.
 
     Carries the ``request`` (an :class:`AgentRequest` fed to the graph's root
-    node) plus an optional per-request ``definition`` (inline JSON or a path)
-    that overrides ``settings.workflow.definition``.
+    node) plus an optional per-request ``definition`` (inline JSON only — a
+    path is accepted solely from ``settings.workflow.definition``) that
+    overrides the server-configured graph.
     """
 
     request: AgentRequest
@@ -27,7 +28,8 @@ class WorkflowRunRequest(BaseModel):
 class WorkflowValidateRequest(BaseModel):
     """Body for ``POST /workflows/validate``.
 
-    An optional ``definition`` (inline JSON or a path); falls back to
+    An optional ``definition`` (inline JSON only; a path is accepted solely
+    from the server-configured source); falls back to
     ``settings.workflow.definition`` when omitted.
     """
 
