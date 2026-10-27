@@ -10,11 +10,7 @@ from typing import Any, Final
 import httpx
 
 from mangomas.adapters._openai_client import OpenAICompatHTTPClient
-from mangomas.config import (
-    DEFAULT_ERROR_DETAIL_TRUNCATE,
-    DEFAULT_LLM_TEMPERATURE,
-    DEFAULT_LLM_TIMEOUT_SECONDS,
-)
+from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
 
@@ -62,6 +58,37 @@ class LMStudioClient(OpenAICompatHTTPClient):
         max_tokens: int | None = None,
     ) -> str:
         """Call ``/chat/completions`` and return the first choice's content."""
+        payload = self._payload(messages, temperature=temperature, max_tokens=max_tokens)
+        resp = await self._request(
+            "POST", "/chat/completions", json=payload, log_event="LM Studio request failed"
+        )
+        # ``resp.json()`` sits inside the ``try``: a proxy that answers 200 with
+        # an HTML page is a malformed *upstream* response, not a bug in this
+        # process, so it must surface as the same typed ``LMStudioError`` as a
+        # JSON body of the wrong shape rather than as an untyped 500.
+        body: Any = None
+        try:
+            body = resp.json()
+            content = body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise self._malformed_response(f"{type(exc).__name__}: {exc}", body=body) from exc
+        if not isinstance(content, str):
+            # ``null`` content (a refusal or a tool-only turn) used to be
+            # stringified to the literal ``"None"`` and handed to the caller.
+            raise self._malformed_response(
+                f"content is {type(content).__name__}, not str", body=body
+            )
+        return content
+
+    def _payload(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float | None,
+        max_tokens: int | None,
+        stream: bool = False,
+    ) -> dict[str, Any]:
+        """Build the ``/chat/completions`` request body shared by ``complete`` and ``stream``."""
         payload: dict[str, Any] = {
             "model": self._model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
@@ -69,24 +96,9 @@ class LMStudioClient(OpenAICompatHTTPClient):
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
-        resp = await self._request(
-            "POST", "/chat/completions", json=payload, log_event="LM Studio request failed"
-        )
-        data = resp.json()
-        try:
-            return str(data["choices"][0]["message"]["content"])
-        except (KeyError, IndexError, TypeError) as exc:
-            logger.error(
-                "Malformed LM Studio response",
-                extra={"response_keys": list(data.keys()) if isinstance(data, dict) else []},
-            )
-            # Keep the client-visible message static; the (truncated) body goes
-            # into ``detail`` so an arbitrarily large upstream payload can never
-            # blow out an error envelope or log line (spec 0014 / D2).
-            raise LMStudioError(
-                "Malformed LM Studio response",
-                detail=repr(data)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
-            ) from exc
+        if stream:
+            payload["stream"] = True
+        return payload
 
     async def ping(self) -> None:
         """GET ``/models`` to verify the LM Studio server is reachable."""
@@ -111,14 +123,9 @@ class LMStudioClient(OpenAICompatHTTPClient):
         max_tokens: int | None = None,
     ) -> AsyncGenerator[str, None]:
         """Async generator: yields SSE content tokens from LM Studio."""
-        payload: dict[str, Any] = {
-            "model": self._model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": (self._default_temperature if temperature is None else temperature),
-            "stream": True,
-        }
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
+        payload = self._payload(
+            messages, temperature=temperature, max_tokens=max_tokens, stream=True
+        )
         try:
             stream_cm = self._client.stream(
                 "POST", f"{self._base_url}/chat/completions", json=payload

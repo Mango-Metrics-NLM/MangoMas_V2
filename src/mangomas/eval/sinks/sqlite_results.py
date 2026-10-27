@@ -20,12 +20,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mangomas.adapters.storage._url import path_from_sqlite_url
-from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import PersistenceError
 from mangomas.eval._options import require_str
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
 from mangomas.utils import clock
+from mangomas.utils.exc import truncated_exc_detail
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.gate import GateResult
@@ -104,8 +104,9 @@ class SqliteResultsSink:
         except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
             # Mirror the storage adapter's truncated-detail convention (D2):
             # keep the message short and bound the untrusted exception text.
-            detail = f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE]
-            raise PersistenceError("Failed to write eval report to SQLite", detail=detail) from exc
+            raise PersistenceError(
+                "Failed to write eval report to SQLite", detail=truncated_exc_detail(exc)
+            ) from exc
 
     @staticmethod
     def _insert(conn: sqlite3.Connection, report: EvalReport, gate_json: str | None) -> None:

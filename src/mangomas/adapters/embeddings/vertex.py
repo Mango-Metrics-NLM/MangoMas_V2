@@ -19,6 +19,7 @@ from typing import Any
 from mangomas.adapters._vertex_errors import translate_vertex_error
 from mangomas.adapters.embeddings._shared import NoTransportAcloseMixin, SingleTextEmbedMixin
 from mangomas.config import DEFAULT_VERTEX_LOCATION
+from mangomas.errors import LLMBadResponse
 
 logger = logging.getLogger(__name__)
 
@@ -90,4 +91,21 @@ class VertexEmbeddingClient(SingleTextEmbedMixin, NoTransportAcloseMixin):
                 },
             )
             raise translate_vertex_error(exc, project=self._project_id) from exc
-        return [[float(x) for x in emb.values] for emb in embeddings]
+        vectors = [[float(x) for x in emb.values] for emb in embeddings]
+        if len(vectors) != len(texts):
+            # Downstream zips vectors against texts by position; a short reply
+            # would silently attach the wrong vector to a chunk.
+            logger.error(
+                "Vertex embeddings count mismatch",
+                extra={
+                    "event": "vertex_embedding_count_mismatch",
+                    "model": self._model,
+                    "expected": len(texts),
+                    "received": len(vectors),
+                },
+            )
+            raise LLMBadResponse(
+                "Vertex embeddings response count does not match the request",
+                detail=f"expected {len(texts)} vectors, received {len(vectors)}",
+            )
+        return vectors

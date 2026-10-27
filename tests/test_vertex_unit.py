@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -24,7 +26,7 @@ from mangomas.config import DEFAULT_VERTEX_LOCATION
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 from tests.constants import TEST_MAX_TOKENS_OVERRIDE
-from tests.fakes import FakeVertexGenerativeModel
+from tests.fakes import FakeVertexGenerativeModel, _FakeGenerationResponse
 
 _TEST_PROJECT = "unit-test-project"
 _TEST_MODEL = "gemini-fake"
@@ -536,3 +538,88 @@ def test_build_contents_real_sdk_branch() -> None:
     assert out[0].parts[0].text == "hi"
     assert out[1].role == "user"
     assert out[1].parts[0].text == "[system] be terse"
+
+
+# ── ``.text`` that raises, and failures while draining a stream ─────────────
+# The real SDK's ``GenerationResponse.text`` raises ``ValueError`` when the
+# response has no usable candidate (safety-blocked, zero or several
+# candidates); ``getattr(..., None)`` only absorbs ``AttributeError``.
+# Mutations (proved while writing): removing the ``except ValueError`` in
+# ``_extract_text`` makes the two ``VertexError`` tests fail with the raw
+# ``ValueError``; removing the mid-drain ``except Exception`` makes the last
+# test fail with the raw synthesised SDK exception.
+
+
+class _BlockedResponse:
+    """Mimics the SDK response whose ``.text`` property raises."""
+
+    @property
+    def text(self) -> str:
+        raise ValueError("Response has no candidates (finish_reason: SAFETY)")
+
+
+@dataclass
+class _BlockedModel:
+    stream: bool = False
+    calls: int = 0
+
+    async def generate_content_async(self, *_: Any, **__: Any) -> Any:
+        self.calls += 1
+        if self.stream:
+            return self._chunks()
+        return _BlockedResponse()
+
+    async def _chunks(self) -> AsyncGenerator[Any, None]:
+        yield _FakeGenerationResponse(text="first")
+        yield _BlockedResponse()
+
+
+@dataclass
+class _MidStreamFailureModel:
+    exc: Exception
+
+    async def generate_content_async(self, *_: Any, **__: Any) -> Any:
+        return self._chunks()
+
+    async def _chunks(self) -> AsyncGenerator[Any, None]:
+        yield _FakeGenerationResponse(text="first")
+        raise self.exc
+
+
+def _vertex(model: Any) -> VertexClient:
+    return VertexClient(
+        project_id=_TEST_PROJECT, location=DEFAULT_VERTEX_LOCATION, model=_TEST_MODEL, client=model
+    )
+
+
+async def test_complete_maps_a_blocked_response_to_vertex_error() -> None:
+    with pytest.raises(VertexError) as excinfo:
+        await _vertex(_BlockedModel()).complete([Message(role="user", content="hi")])
+    assert str(excinfo.value) == "Vertex AI returned no usable candidate"
+    assert excinfo.value.detail.startswith("ValueError: ")
+
+
+async def test_stream_maps_a_blocked_chunk_to_vertex_error_after_earlier_tokens() -> None:
+    client = _vertex(_BlockedModel(stream=True))
+    received: list[str] = []
+    with pytest.raises(VertexError):
+        stream = await client.stream([Message(role="user", content="hi")])
+        async for tok in stream:
+            received.append(tok)
+    assert received == ["first"]
+
+
+async def test_stream_translates_sdk_exception_raised_mid_drain(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR, logger="mangomas.adapters.llm.vertex._client")
+    exc = _make_vertex_exception("google.api_core.exceptions.ServiceUnavailable")
+    client = _vertex(_MidStreamFailureModel(exc=exc))
+    received: list[str] = []
+    with pytest.raises(LLMUnavailable):
+        stream = await client.stream([Message(role="user", content="hi")])
+        async for tok in stream:
+            received.append(tok)
+    assert received == ["first"]
+    record = next(r for r in caplog.records if r.getMessage() == "Vertex stream failed mid-drain")
+    assert record.error_type == "ServiceUnavailable"  # type: ignore[attr-defined]

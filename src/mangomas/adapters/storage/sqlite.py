@@ -27,6 +27,7 @@ from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
 from mangomas.utils import clock
+from mangomas.utils.exc import truncated_exc_detail
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +75,7 @@ class SQLiteRepository:
         multi-tenancy gets the column via ``ALTER`` (existing rows adopt the
         ``'default'`` column default). Called under ``self._lock``.
         """
-        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(turns)")}
-        if "tenant" not in columns:
+        if "tenant" not in self._existing_columns():
             self._conn.execute(
                 f"ALTER TABLE turns ADD COLUMN tenant TEXT NOT NULL DEFAULT '{DEFAULT_TENANT}'"
             )
@@ -155,7 +155,7 @@ class SQLiteRepository:
                 )
                 raise PersistenceError(
                     "Failed to persist turn",
-                    detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+                    detail=truncated_exc_detail(exc),
                 ) from exc
         logger.debug(
             "%s ok",
@@ -248,7 +248,7 @@ class SQLiteRepository:
                     )
                     raise PersistenceError(
                         "Failed to list turns",
-                        detail=f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+                        detail=truncated_exc_detail(exc),
                     ) from exc
             logger.debug(
                 "list_turns ok",

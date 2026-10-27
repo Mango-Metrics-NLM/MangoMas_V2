@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
 
 from mangomas.adapters.vector.chroma import ChromaVectorStore, _similarity_from_distance
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
+from mangomas.errors import PersistenceError
 from tests.constants import TEST_VECTOR_COLLECTION, TEST_VECTOR_PERSIST_DIR
 
 
@@ -141,3 +144,68 @@ def test_similarity_clamps_to_unit_interval() -> None:
     assert _similarity_from_distance(-0.001) == 1.0
     assert _similarity_from_distance(2.5) == 0.0
     assert _similarity_from_distance(1.0) == pytest.approx(0.5)
+
+
+# ── Typed errors at the boundary ─────────────────────────────────────────────
+# chromadb raises its own exception classes; none is a MangomasError, so a raw
+# one would reach the API as an untyped 500. Mutation (proved while writing):
+# removing any one ``except`` in the adapter makes the matching test below
+# fail with the raw ``RuntimeError``.
+
+
+@dataclass
+class _RaisingCollection(_FakeCollection):
+    """Every call fails the way a corrupt or locked Chroma collection would."""
+
+    error: Exception = field(default_factory=lambda: RuntimeError("hnsw index corrupt"))
+
+    def upsert(self, **_: Any) -> None:
+        raise self.error
+
+    def query(self, **_: Any) -> dict[str, Any]:
+        raise self.error
+
+    def get(self, **_: Any) -> dict[str, Any]:
+        raise self.error
+
+
+async def test_upsert_failure_is_a_typed_persistence_error() -> None:
+    store = _store(_RaisingCollection())
+    with pytest.raises(PersistenceError) as excinfo:
+        await store.upsert(ids=["a"], embeddings=[[1.0]], documents=["d"], metadatas=[{}])
+    assert str(excinfo.value) == "Vector store upsert failed"
+    assert excinfo.value.detail == "RuntimeError: hnsw index corrupt"
+
+
+async def test_query_failure_is_a_typed_persistence_error() -> None:
+    store = _store(_RaisingCollection())
+    with pytest.raises(PersistenceError) as excinfo:
+        await store.query(embedding=[1.0], top_k=1)
+    assert str(excinfo.value) == "Vector store query failed"
+
+
+async def test_delete_failure_is_a_typed_persistence_error() -> None:
+    store = _store(_RaisingCollection())
+    with pytest.raises(PersistenceError) as excinfo:
+        await store.delete_by_source("doc.md")
+    assert str(excinfo.value) == "Vector store delete failed"
+
+
+async def test_failure_detail_is_bounded() -> None:
+    huge = _RaisingCollection(error=RuntimeError("x" * (DEFAULT_ERROR_DETAIL_TRUNCATE * 3)))
+    with pytest.raises(PersistenceError) as excinfo:
+        await _store(huge).query(embedding=[1.0], top_k=1)
+    assert len(excinfo.value.detail) <= DEFAULT_ERROR_DETAIL_TRUNCATE
+
+
+async def test_failure_is_logged_with_operation_and_error_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR, logger="mangomas.adapters.vector.chroma")
+    with pytest.raises(PersistenceError):
+        await _store(_RaisingCollection()).upsert(
+            ids=["a"], embeddings=[[1.0]], documents=["d"], metadatas=[{}]
+        )
+    record = next(r for r in caplog.records if r.getMessage() == "Chroma upsert failed")
+    assert record.operation == "upsert"  # type: ignore[attr-defined]
+    assert record.error_type == "RuntimeError"  # type: ignore[attr-defined]

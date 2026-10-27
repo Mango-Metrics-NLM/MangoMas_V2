@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, NoReturn
 import httpx
 
 from mangomas.adapters._http_errors import translate_httpx_error
+from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.errors import LLMBadResponse
@@ -88,6 +89,28 @@ class OpenAICompatHTTPClient:
         """
         logger.error(log_event, extra={"error": type(exc).__name__, "base_url": self._base_url})
         raise self._translate_error(exc) from exc
+
+    def _malformed_response(self, reason: str, *, body: object) -> LLMBadResponse:
+        """Log a 2xx response of the wrong shape and return the adapter's typed error.
+
+        The client-visible message is static (``"Malformed <label> response"``);
+        ``reason`` and a bounded ``repr`` of the body go into ``detail`` so an
+        arbitrarily large upstream payload can never blow out an error envelope
+        or a log line (spec 0014 / D2). ``body`` is ``None`` when the response
+        was not JSON at all.
+        """
+        message = f"Malformed {self._LABEL} response"
+        logger.error(
+            message,
+            extra={
+                "base_url": self._base_url,
+                "reason": reason[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+                "response_keys": sorted(body.keys()) if isinstance(body, dict) else [],
+            },
+        )
+        return self._BAD_RESPONSE(
+            message, detail=f"{reason}; body={body!r}"[:DEFAULT_ERROR_DETAIL_TRUNCATE]
+        )
 
     async def _request(
         self,

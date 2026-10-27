@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from mangomas.config import RagSettings
-from mangomas.errors import LLMUnavailable
+from mangomas.errors import LLMBadResponse, LLMUnavailable
 from mangomas.rag.pipeline import IngestionPipeline, IngestReport
 from tests.fakes import FakeEmbeddingClient, FakeVectorStore
 
@@ -457,3 +457,30 @@ async def test_ingest_never_logs_document_text_or_embeddings(
         for name, value in _extras(record).items():
             assert not _looks_like_a_vector(value), f"embedding leaked via {name}"
             assert not any(w in str(value) for w in words), f"document text leaked via {name}"
+
+
+# ── Vector count guard ───────────────────────────────────────────────────────
+# ids / documents / metadatas are built positionally from the batch, so a
+# client returning fewer vectors than texts would attach the wrong vector to a
+# chunk (or crash inside the store). Mutation (proved while writing): removing
+# the ``len(embeddings) != len(batch)`` check makes this test fail on the
+# missing raise.
+
+
+class _ShortEmbeddingClient(FakeEmbeddingClient):
+    """A plugin client that silently drops the last vector of every batch."""
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        vectors = await super().embed_batch(texts)
+        return vectors[:-1]
+
+
+async def test_short_embedding_batch_is_refused_before_any_store_write(tmp_path: Path) -> None:
+    f = tmp_path / "doc.txt"
+    f.write_text("one two three four five six", encoding="utf-8")  # 2 chunks
+    store = FakeVectorStore()
+    with pytest.raises(LLMBadResponse) as excinfo:
+        await _pipeline(_ShortEmbeddingClient(), store, batch_size=10).ingest(str(f))
+    assert excinfo.value.detail == "expected 2 vectors, received 1"
+    assert store.upserts == []
+    assert store.deleted_sources == []

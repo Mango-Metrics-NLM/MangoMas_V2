@@ -12,8 +12,8 @@ exercised in unit tests without installing the Google SDK.
 
 from __future__ import annotations
 
-from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
+from mangomas.utils.exc import truncated_exc_detail
 
 
 def _qualname(exc: BaseException) -> str:
@@ -61,7 +61,7 @@ def translate_vertex_error(
     :data:`~mangomas.config.DEFAULT_ERROR_DETAIL_TRUNCATE`.
     """
     qualname = _qualname(exc)
-    detail = f"{type(exc).__name__}: {exc}"[:DEFAULT_ERROR_DETAIL_TRUNCATE]
+    detail = truncated_exc_detail(exc)
     if qualname in _VERTEX_TIMEOUT_TYPES:
         return LLMTimeout(f"Vertex AI request timed out (project={project!r})", detail=detail)
     if qualname in _VERTEX_BAD_REQUEST_TYPES:

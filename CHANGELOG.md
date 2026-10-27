@@ -9,7 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed — eval harness edge cases (branch audit, Tier A)
+### Fixed — branch audit, Tier A: eval harness and adapter boundaries
 
 - `llm_judge` rejects a non-finite judge score (`NaN`/`Infinity` parse as
   valid JSON and clamped to `1.0` → `passed=True`); the threshold and
@@ -31,6 +31,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
   on non-dict rows and undecodable files; `mangomas eval` parses `--baseline`
   **before** the paid run (malformed → exit 2, zero LLM calls) and validates
   `--max-mean-score-drop` / `--max-pass-rate-drop` as unit floats.
+- Typed errors at every adapter boundary (the `adapters/CLAUDE.md`
+  invariant): LM Studio chat/embeddings decode the body inside the typed
+  boundary (a proxy's HTML 200 is a `LMStudioError`, not an untyped 500) and
+  refuse `null` content (previously returned the literal string `"None"`);
+  LM Studio embeddings place rows by their OpenAI `index` and require exactly
+  one vector per input; Vertex embeddings and the RAG pipeline refuse a short
+  vector batch before any store write; the Vertex chat client maps a
+  `.text` that raises (safety-blocked / no candidate) to `VertexError` and
+  translates failures raised while draining a stream; Chroma failures become
+  `PersistenceError`. New `mangomas.utils.exc.truncated_exc_detail` replaces
+  eight hand-copied `f"{type(exc).__name__}: {exc}"[:limit]` spellings.
 
 ### Added — A2A interoperability decision record (ADR-0037)
 

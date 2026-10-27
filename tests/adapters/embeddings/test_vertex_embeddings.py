@@ -10,7 +10,7 @@ import pytest
 from mangomas.adapters.embeddings import vertex as vertex_module
 from mangomas.adapters.embeddings.vertex import VertexEmbeddingClient
 from mangomas.config import DEFAULT_VERTEX_LOCATION
-from mangomas.errors import LLMTimeout, LLMUnavailable
+from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 from tests.constants import DEFAULT_EMBEDDINGS_MODEL, TEST_VERTEX_PROJECT
 
 
@@ -33,14 +33,16 @@ class _FakeModelClient:
     replies: list[list[float]] = field(default_factory=lambda: [[0.1, 0.2]])
     raise_on_call: BaseException | None = None
     calls: list[list[str]] = field(default_factory=list)
+    # Vectors withheld from each reply — the short-response shape the adapter
+    # must refuse rather than let the caller zip against the wrong texts.
+    drop_last: int = 0
 
     async def get_embeddings_async(self, texts: list[str]) -> list[Any]:
         self.calls.append(list(texts))
         if self.raise_on_call is not None:
             raise self.raise_on_call
-        return [
-            _FakeEmbedding(values=self.replies[i % len(self.replies)]) for i in range(len(texts))
-        ]
+        count = max(0, len(texts) - self.drop_last)
+        return [_FakeEmbedding(values=self.replies[i % len(self.replies)]) for i in range(count)]
 
 
 def _client(model: _FakeModelClient) -> VertexEmbeddingClient:
@@ -105,3 +107,18 @@ def test_omitting_client_triggers_lazy_sdk_init(monkeypatch: pytest.MonkeyPatch)
         "location": DEFAULT_VERTEX_LOCATION,
         "model": DEFAULT_EMBEDDINGS_MODEL,
     }
+
+
+async def test_short_response_is_a_typed_bad_response() -> None:
+    """A reply with fewer vectors than texts is malformed, not silently misaligned.
+    Mutation (proved while writing): removing the count check returns one vector
+    for two texts and this test fails on the missing raise."""
+    model = _FakeModelClient(drop_last=1)
+    with pytest.raises(LLMBadResponse) as excinfo:
+        await _client(model).embed_batch(["a", "b"])
+    assert excinfo.value.detail == "expected 2 vectors, received 1"
+
+
+async def test_exact_count_passes_through() -> None:
+    vectors = await _client(_FakeModelClient()).embed_batch(["a", "b"])
+    assert len(vectors) == 2

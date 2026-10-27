@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
 
+from mangomas.errors import LLMBadResponse
 from mangomas.rag.chunker import chunk_text
 from mangomas.rag.loader import load_documents
 
@@ -212,6 +213,23 @@ class IngestionPipeline:
                         },
                     )
                     raise
+            if len(embeddings) != len(batch):
+                # Every adapter checks this at its own boundary; the pipeline
+                # re-checks because a plugin client is not under our control and
+                # the ids/documents/metadatas below are built positionally.
+                logger.error(
+                    "Embedding client returned the wrong number of vectors",
+                    extra={
+                        "event": "rag_embed_count_mismatch",
+                        "source": source,
+                        "expected": len(batch),
+                        "received": len(embeddings),
+                    },
+                )
+                raise LLMBadResponse(
+                    "Embedding client returned the wrong number of vectors for a batch",
+                    detail=f"expected {len(batch)} vectors, received {len(embeddings)}",
+                )
             batches.append(
                 _PreparedBatch(
                     ids=[f"{source}#{start + offset}" for offset in range(len(batch))],

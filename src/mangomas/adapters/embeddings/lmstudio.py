@@ -17,7 +17,7 @@ import httpx
 
 from mangomas.adapters._openai_client import OpenAICompatHTTPClient
 from mangomas.adapters.embeddings._shared import SingleTextEmbedMixin
-from mangomas.config import DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS, DEFAULT_ERROR_DETAIL_TRUNCATE
+from mangomas.config import DEFAULT_EMBEDDINGS_TIMEOUT_SECONDS
 from mangomas.errors import LLMBadResponse
 
 logger = logging.getLogger(__name__)
@@ -50,24 +50,45 @@ class LMStudioEmbeddingClient(SingleTextEmbedMixin, OpenAICompatHTTPClient):
         )
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """POST ``/embeddings`` and return one vector per input text, in order."""
+        """POST ``/embeddings`` and return one vector per input text, in order.
+
+        The OpenAI dialect returns ``data[]`` rows each carrying an ``index``;
+        rows are placed by that index (a reordered response would otherwise be
+        zipped against the wrong chunks downstream) and the count must equal
+        ``len(texts)`` — a short or duplicated response is a malformed one.
+        """
         payload: dict[str, Any] = {"model": self._model, "input": texts}
         resp = await self._request(
             "POST", "/embeddings", json=payload, log_event="LM Studio embeddings request failed"
         )
-        data = resp.json()
+        # ``resp.json()`` sits inside the ``try`` so a non-JSON 200 (a proxy's
+        # HTML page) surfaces as the typed error rather than an untyped 500.
+        body: Any = None
         try:
-            rows = data["data"]
-            return [[float(x) for x in row["embedding"]] for row in rows]
+            body = resp.json()
+            return _vectors_in_order(body["data"], expected=len(texts))
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            logger.error(
-                "Malformed LM Studio embeddings response",
-                extra={"response_keys": list(data.keys()) if isinstance(data, dict) else []},
-            )
-            # Keep the client-visible message static; the (truncated) body goes
-            # into ``detail`` so an arbitrarily large upstream payload can never
-            # blow out an error envelope or log line (spec 0014 / D2).
-            raise LMStudioEmbeddingError(
-                "Malformed LM Studio embeddings response",
-                detail=repr(data)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
-            ) from exc
+            raise self._malformed_response(f"{type(exc).__name__}: {exc}", body=body) from exc
+
+
+def _vectors_in_order(rows: Any, *, expected: int) -> list[list[float]]:
+    """Place ``rows`` by their ``index`` field and require exactly ``expected`` of them.
+
+    Raises ``ValueError`` (caught by the caller's malformed-response boundary)
+    for a missing, duplicated or out-of-range index, or a count mismatch; a
+    row without ``index`` keeps its position, as the pre-``index`` dialect did.
+    """
+    vectors: list[list[float] | None] = [None] * expected
+    seen = 0
+    for position, row in enumerate(rows):
+        embedding = row["embedding"]
+        index = row.get("index", position)
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < expected:
+            raise ValueError(f"embedding index {index!r} is outside 0..{expected - 1}")
+        if vectors[index] is not None:
+            raise ValueError(f"duplicate embedding index {index}")
+        vectors[index] = [float(x) for x in embedding]
+        seen += 1
+    if seen != expected:
+        raise ValueError(f"expected {expected} embeddings, got {seen}")
+    return [vector for vector in vectors if vector is not None]
