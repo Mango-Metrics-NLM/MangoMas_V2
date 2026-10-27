@@ -140,6 +140,20 @@ def test_docs_do_not_reference_a_retired_corpus_path(relpath: str, retired: str)
     assert retired not in path.read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("slug", sorted(EXPECTED_SKILL_SLUGS))
+def test_claude_md_skills_table_names_every_skill(slug: str) -> None:
+    """`CLAUDE.md`'s skills table is the only index a session reads at startup.
+
+    The roster test above proves the directory matches the constant; nothing
+    proved the *table* did, and three skills sat on disk for months without a
+    row. A backticked mention anywhere in the file is the bar — the table is
+    where it belongs, but a prose pointer is not a false positive. Mutation
+    (proved while writing): deleting a row fails exactly that slug's case.
+    """
+    text = (_REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    assert f"`{slug}`" in text, f"CLAUDE.md does not mention skill `{slug}`"
+
+
 # ── Agents (spec-0018 / ADR-0024) ─────────────────────────────────────────────
 #
 # Parametrised off the linter's own glob, so these survive the move to

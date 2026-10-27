@@ -86,6 +86,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
   gate; the reliability plan's "revisit after C4" deferral stands. ADR-0001's
   swap matrix gains an `Interop` row pointing at ADR-0037.
 
+### Changed — instruction corpus (branch audit, Tier A)
+
+- `CLAUDE.md`'s skills table now lists `mango-composition-builder`,
+  `mango-eval-runner` and `mango-workflow-generator`, and a corpus-contract
+  test asserts every expected skill slug is mentioned there. Stale paths
+  corrected: `workflow/predicate/` and `core/orchestrator/` are packages; the
+  Hypothesis note no longer claims six import-guarded files or an optional
+  dependency. `specs/0037-a2a-interop.md` R4 names the auth mechanism
+  (router-forwarded `Depends(require_auth)` + `ServerCallContextBuilder`;
+  `add_a2a_routes_to_fastapi` not used).
+
 ### Added — Hypothesis profiles and three property suites (branch audit, Tier A)
 
 - `tests/conftest.py` registers `dev` (`deadline=None`) and `ci`

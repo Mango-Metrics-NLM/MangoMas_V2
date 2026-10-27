@@ -43,7 +43,12 @@ page. It does not override the deferral.
   public by A2A convention. Because `require_auth` is a single shared secret
   with no principal, v1 task/context ownership is `(tenant, "shared")` and
   documented as such; per-principal auth (ADR-0014 revisit) is a prerequisite
-  for multi-party deployments (arXiv 2609.10871, finding 3).
+  for multi-party deployments (arXiv 2609.10871, finding 3). Mechanism: the
+  SDK's `add_a2a_routes_to_fastapi` is **not** used (its routes cannot carry a
+  `Depends`); a Mango-Mas `APIRouter` declares `dependencies=[Depends(require_auth)]`
+  and forwards the JSON-RPC body to the SDK's request handler, with a custom
+  `ServerCallContextBuilder` carrying the resolved tenant — so the 401 envelope
+  and `TenancyMiddleware` apply exactly as on every other guarded route.
 - R5 — v1 **excludes** push notifications (`pushNotifications=false`; removes
   the webhook-SSRF class, spec §13.2), `input-required` / `auth-required`
   (agents are single-shot; removes the unbounded-interrupted-state class),

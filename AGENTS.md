@@ -95,7 +95,7 @@ src/mangomas/
 │   └── retrieval.py    Retriever + RetrievalTool (satisfies Tool)
 ├── workflow/       Declarative workflow-graph layer (opt-in; spec 0005)
 │   ├── graph.py        Frozen node models + WorkflowNode union + WorkflowGraph
-│   ├── predicate.py    PredicateSpec + compile_predicate → sync AcceptanceFn
+│   ├── predicate/      PredicateSpec + compile_predicate → sync AcceptanceFn (package; `_client.py` behind the facade)
 │   ├── registry.py     node_registry + resolve_executor
 │   ├── nodes/_factory.py make_node_factory — shared typed factory + guard
 │   ├── executor.py     NodeExecutor protocol + execute_workflow driver
@@ -397,9 +397,10 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
   why `PLR2004` is disabled for `tests/*` in `pyproject.toml`. Config-mirroring
   defaults must be **re-exported** (`X as X`), never restated.
 - **No mocking of internal protocols** — use Fake* classes from `fakes.py`
-- **Hypothesis fuzz** tests live in six files — `test_tools.py`, `rag/test_chunker.py`,
-  and `eval/test_{contains,json_keys,regex_match,diff_reports}.py` (all import-guarded,
-  since `hypothesis` is an optional dev dependency)
+- **Hypothesis fuzz** tests — `test_tools.py`, `test_*_properties.py`,
+  `agents/test_structured_fuzz.py`, `rag/test_chunker.py`, the `cognitive/` and
+  `eval/` scorer suites. `hypothesis` is a **required** `dev` extra; profiles
+  (`dev` / `ci`, `HYPOTHESIS_PROFILE`) are registered once in `tests/conftest.py`
 - **Integration tests** in `tests/integration/`; gated by `RUN_INTEGRATION=1`
 
 ---
@@ -462,7 +463,7 @@ under `asyncio.gather`. See spec 0005 / ADR-0011 and
 - **Model** (`workflow/graph.py`) — frozen Pydantic discriminated union;
   metadata-transparent executors, so an all-agent `sequence` equals
   `dispatch_pipeline`.
-- **Predicate** (`workflow/predicate.py`) — `PredicateSpec`
+- **Predicate** (`workflow/predicate/`) — `PredicateSpec`
   (`contains`/`regex`/`json_field`) compiles once to a pure sync `AcceptanceFn`.
   `json_field` (spec-0032 / ADR-0034) binds acceptance to a **parsed** field —
   dotted path, exactly one of `equals`/`at_least`/`at_most`, strict whole-text
