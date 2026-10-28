@@ -48,6 +48,9 @@ _PR_TRIGGER_BRANCHES = (
     ),
 )
 _PROTECTED_PATHS_BASE_EXPR = "${{ github.base_ref || github.event.repository.default_branch }}"
+# `sys.platform` of the runtime image (python:*-slim is Debian); the lock
+# targets must compile there because environment markers resolve on the host.
+_IMAGE_PLATFORM = "linux"
 
 # Opt-in suite targets that must never trip the global coverage gate when run
 # standalone — the concrete regression this milestone locks in (D5: `make
@@ -277,8 +280,15 @@ def test_lock_target_compiles_the_cloud_extra() -> None:
         assert "pip-tools==$(PIP_TOOLS_VERSION)" in body, "pip-tools must be exact-pinned"
         assert "$(LOCKFILE_HEADER)" in body, "the tracked header must be prepended"
         assert "$(LOCK_NORMALIZE)" in body, "the self-reference filter must run"
-        assert "LOCK_PYTHON_MINOR" in body, "the Python 3.11 guard must run"
+        assert "$(LOCK_GUARD)" in body, "the host guard must run before compiling"
+    # The guard pins BOTH the Python minor and the platform: pip-compile
+    # evaluates environment markers on the compiling host, so a Windows
+    # compile drops Linux-only pins (uvloop) that `-c` can then never hold.
+    guard = _makefile_variable("LOCK_GUARD")
+    assert "$(LOCK_PYTHON_MINOR)" in guard
+    assert 'sys.platform) == ("$(LOCK_PYTHON_MINOR)", "$(LOCK_PLATFORM)")' in guard
     assert _makefile_variable("LOCK_PYTHON_MINOR") == _dockerfile_python_minor()
+    assert _makefile_variable("LOCK_PLATFORM") == _IMAGE_PLATFORM
 
 
 def _dockerfile_python_minor() -> str:

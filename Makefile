@@ -72,11 +72,17 @@ LOCK_EXTRAS ?= cloud
 # resolver and the output format both change between releases, and the lock's
 # diff is the review record.
 PIP_TOOLS_VERSION ?= 7.6.2
-# The interpreter that compiles the lock. Environment markers resolve against
-# the compiling interpreter, so this must be the runtime image's minor
-# (python:3.11-slim in the Dockerfile); `lock` refuses anything else.
+# The interpreter that compiles the lock. pip-compile evaluates environment
+# markers against the compiling HOST, not the image: a Windows compile drops
+# `uvloop` (uvicorn[standard] excludes it on win32) and a 3.12 one can pin a
+# different closure, and `-c` cannot hold a pin the resolver never emits. So
+# both lock targets refuse any host that is not the image's Python minor on
+# Linux (python:3.11-slim in the Dockerfile); on Windows/macOS run them in a
+# Linux container or WSL.
 LOCK_PYTHON ?= $(PYTHON)
 LOCK_PYTHON_MINOR ?= 3.11
+LOCK_PLATFORM ?= linux
+LOCK_GUARD = $(LOCK_PYTHON) -c 'import sys; v = "%d.%d" % sys.version_info[:2]; sys.exit(0 if (v, sys.platform) == ("$(LOCK_PYTHON_MINOR)", "$(LOCK_PLATFORM)") else "lock targets compile on Python $(LOCK_PYTHON_MINOR)/$(LOCK_PLATFORM) (the runtime image; markers resolve against this host), got %s/%s" % (v, sys.platform))'
 # The compile command both lock targets share; `lock` adds `-c` so existing
 # pins are held, `lock-upgrade` omits it so every pin may move.
 LOCK_COMPILE = $(LOCK_PYTHON) -m piptools compile --strip-extras --no-header $(LOCK_EXTRAS:%=--extra %) --output-file=- pyproject.toml
@@ -332,8 +338,8 @@ LOCK_NORMALIZE = awk ' \
     } \
   }'
 
-lock: ## Regenerate requirements.lock additively — new names pinned, existing pins held (Python 3.11)
-	$(LOCK_PYTHON) -c 'import sys; v = "%d.%d" % sys.version_info[:2]; sys.exit(0 if v == "$(LOCK_PYTHON_MINOR)" else "make lock: compile on Python $(LOCK_PYTHON_MINOR) (the runtime image), got " + v)'
+lock: ## Regenerate requirements.lock additively — new names pinned, existing pins held (Linux + Python 3.11)
+	$(LOCK_GUARD)
 	$(LOCK_PYTHON) -m pip install --quiet "pip-tools==$(PIP_TOOLS_VERSION)"
 	$(LOCK_COMPILE) -c $(RUNTIME_LOCKFILE) > $(RUNTIME_LOCKFILE).compiled
 	cat $(LOCKFILE_HEADER) > $(RUNTIME_LOCKFILE).new
@@ -342,7 +348,7 @@ lock: ## Regenerate requirements.lock additively — new names pinned, existing 
 	mv $(RUNTIME_LOCKFILE).new $(RUNTIME_LOCKFILE)
 
 lock-upgrade: ## Regenerate requirements.lock from scratch — every pin may move (review the diff)
-	$(LOCK_PYTHON) -c 'import sys; v = "%d.%d" % sys.version_info[:2]; sys.exit(0 if v == "$(LOCK_PYTHON_MINOR)" else "make lock-upgrade: compile on Python $(LOCK_PYTHON_MINOR) (the runtime image), got " + v)'
+	$(LOCK_GUARD)
 	$(LOCK_PYTHON) -m pip install --quiet "pip-tools==$(PIP_TOOLS_VERSION)"
 	$(LOCK_COMPILE) > $(RUNTIME_LOCKFILE).compiled
 	cat $(LOCKFILE_HEADER) > $(RUNTIME_LOCKFILE).new

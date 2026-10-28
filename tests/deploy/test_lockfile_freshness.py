@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.constants.deploy import CLOUD_EXTRA, IMAGE_EXTRAS_BUILD_ARG
+from tests.constants.deploy import CLOUD_EXTRA, IMAGE_EXTRAS_BUILD_ARG, LINUX_ONLY_LOCK_CANARY
 from tests.deploy import _dockerfile, _makefile
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -264,6 +264,23 @@ def test_lockfile_never_names_the_project_itself() -> None:
         if re.match(r"^mangomas(\s|==|@|\[|$)", line)
     ]
     assert offending == [], f"{_LOCKFILE.name} names the project itself: {offending}"
+
+
+def test_lockfile_was_compiled_on_the_image_platform() -> None:
+    """A Linux-only transitive pin must be present: it fingerprints the host.
+
+    pip-compile resolves environment markers on the compiling host, not the
+    image. A lock regenerated on Windows silently loses ``uvloop`` (excluded
+    on ``win32`` by ``uvicorn[standard]``) — ``-c`` cannot hold a pin the
+    resolver never emitted — and the Linux image then resolves it
+    unconstrained, invisible to ``make pip-audit -r``. The Makefile guard
+    refuses such hosts; this catches a lock that bypassed the guard.
+    """
+    assert LINUX_ONLY_LOCK_CANARY in locked_distributions(), (
+        f"{_LOCKFILE.name} does not pin {LINUX_ONLY_LOCK_CANARY!r}; it was compiled "
+        f"on a non-Linux host. Run `make lock` on Linux + Python 3.11 (a container "
+        f"or WSL on Windows)."
+    )
 
 
 # ── mutation proofs (mango-mutation-proof, two-sided) ─────────────────────────
