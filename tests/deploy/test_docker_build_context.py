@@ -19,8 +19,11 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from tests.constants.deploy import CLOUD_EXTRA, IMAGE_EXTRAS_BUILD_ARG
+from tests.deploy import _dockerfile
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DOCKERFILE = _REPO_ROOT / "Dockerfile"
+_DOCKERFILE = _dockerfile.DOCKERFILE
 _DOCKERIGNORE = _REPO_ROOT / ".dockerignore"
 
 # ``COPY [--flag ...] <src>... <dest>`` — capture the argument span, minus flags.
@@ -147,6 +150,42 @@ def test_lockfile_exists_and_actually_pins() -> None:
     assert len(pins) >= _MIN_LOCKED_PINS, f"only {len(pins)} pins — lockfile emptied?"
     unpinned = [pin for pin in pins if "==" not in pin]
     assert unpinned == []
+
+
+# ── extras (spec-0038) ────────────────────────────────────────────────────────
+
+
+def test_runtime_install_defaults_to_the_cloud_extras() -> None:
+    """The image installs ``mangomas[cloud]`` unless a build arg says otherwise.
+
+    ``deploy/service.yaml`` selects Vertex, Cloud SQL Postgres, Secret Manager
+    and Cloud Trace; each adapter lazy-imports its SDK, so an image built
+    without the extras *boots* and fails on the first request. The default
+    must therefore be the cloud set, and the install line must expand it.
+    """
+    assert _dockerfile.build_arg_default(IMAGE_EXTRAS_BUILD_ARG) == CLOUD_EXTRA
+    dockerfile = _dockerfile.text()
+    # The `${VAR:+[${VAR}]}` form appends `[cloud]` to the wheel path when the
+    # arg is non-empty and nothing when it is empty (a slim local image).
+    assert f"${{{IMAGE_EXTRAS_BUILD_ARG}:+[${{{IMAGE_EXTRAS_BUILD_ARG}}}]}}" in dockerfile, (
+        f"runtime install does not expand {IMAGE_EXTRAS_BUILD_ARG} into the wheel's extras"
+    )
+
+
+def test_an_emptied_extras_default_is_detected() -> None:
+    """Mutation proof: ``ARG MANGOMAS_EXTRAS=`` (slim image) must read as empty."""
+    real = _dockerfile.text()
+    mutated = re.sub(
+        rf"^(\s*ARG\s+{IMAGE_EXTRAS_BUILD_ARG}=)\S*", r"\1", real, count=1, flags=re.MULTILINE
+    )
+    assert mutated != real
+    assert _dockerfile.build_arg_default(IMAGE_EXTRAS_BUILD_ARG, source=mutated) == ""
+
+
+def test_a_missing_extras_declaration_is_detected() -> None:
+    """A Dockerfile without the ARG must fail the parser, not return ``""``."""
+    with pytest.raises(AssertionError, match=IMAGE_EXTRAS_BUILD_ARG):
+        _dockerfile.build_arg_default(IMAGE_EXTRAS_BUILD_ARG, source="FROM scratch\n")
 
 
 # ── matcher semantics ─────────────────────────────────────────────────────────

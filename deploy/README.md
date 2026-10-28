@@ -13,6 +13,13 @@ separate Cloud Run service built from the same base manifest. See
 
 - `service.yaml` — Cloud Run (Knative serving v1) base service manifest; as
   written it *is* the production service. The image is set at deploy time.
+- `../Dockerfile` — the image every environment runs. It installs
+  `mangomas[cloud]` (Vertex, Cloud SQL Postgres, Secret Manager, Cloud Trace)
+  by default — `ARG MANGOMAS_EXTRAS`, empty for a slim local image — through
+  `../requirements.lock`, which pins that whole closure. After any change to
+  `[project].dependencies` or the extras `cloud` expands to, run `make lock`
+  (additive; `make lock-upgrade` to move every pin); the header the lock
+  carries is `../requirements.lock.header` (spec-0038).
 - `environments.yaml` — the environment registry: which ref deploys where,
   and each environment's overlay on `service.yaml` (service name, `MANGOMAS_*`
   values, secret names, autoscaling bounds, runtime service account).

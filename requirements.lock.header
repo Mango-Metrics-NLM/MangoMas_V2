@@ -1,0 +1,20 @@
+# Runtime-dependency constraints lockfile (roadmap item 0.3, supply-chain
+# baseline). Pins the full transitive closure of pyproject.toml's [project]
+# dependencies PLUS the `cloud` extra (vertex, postgres, gcp) — the closure the
+# production image installs (Dockerfile `ARG MANGOMAS_EXTRAS=cloud`). The
+# Dockerfile's runtime stage passes this file to pip as a constraints file
+# (`-c`), which pins versions without adding dependencies, so an extra the
+# lock does not cover would silently float.
+#
+# This file is GENERATED — do not edit by hand. The preamble above the first
+# pin is `requirements.lock.header`, prepended by the Makefile. Regenerate on
+# Python 3.11 (the interpreter the runtime image ships) after ANY change to
+# [project].dependencies or to the extras `cloud` expands to:
+#
+#   make lock          # additive: existing pins held, new names pinned
+#   make lock-upgrade  # move every pin to the newest resolvable version
+#
+# Dependabot does NOT cover this file (see .github/dependabot.yml) — only the
+# two targets above refresh it, and tests/deploy/test_lockfile_freshness.py
+# fails when a declared name is missing. --strip-extras is required: pip
+# rejects extras in constraints files. Dev pins stay in pyproject's [dev] extra.

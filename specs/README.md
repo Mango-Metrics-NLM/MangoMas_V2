@@ -77,6 +77,7 @@ thinking tool, not a gate.
 | [0034](0034-structured-acceptance-enforcement.md) | Structured-acceptance enforcement |
 | [0035](0035-environment-branching-and-deploy.md) | Environment branches and per-environment deploy |
 | [0037](0037-a2a-interop.md) | Agent2Agent (A2A) interoperability as an opt-in boundary adapter (design only; 0036 is reserved by the reliability plan for the trust boundary) |
+| [0038](0038-cloud-image-closure-and-manifest-contract.md) | Cloud image closure (extras + one lock) and manifest provider contract |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -87,4 +88,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0038** (0036 is reserved); next free ADR: **0038**.
+than reused. Next free spec on this branch: **0039** (0036 is reserved); next free ADR: **0038**.

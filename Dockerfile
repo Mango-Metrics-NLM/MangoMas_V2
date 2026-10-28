@@ -44,7 +44,17 @@ COPY --from=builder /dist/*.whl /tmp/wheels/
 # constraints pin, they never add dependencies.
 COPY requirements.lock /tmp/requirements.lock
 
-RUN pip install --no-cache-dir -c /tmp/requirements.lock /tmp/wheels/*.whl \
+# The extras the image installs. `cloud` is what deploy/service.yaml selects
+# (Vertex, Cloud SQL Postgres, Secret Manager, Cloud Trace); an image built
+# without it boots and then fails on the first lazy SDK import. Override with
+# `--build-arg MANGOMAS_EXTRAS=` (empty) for a slim local image.
+# tests/deploy/test_manifest_provider_contract.py ties this default to the
+# providers the manifest selects.
+ARG MANGOMAS_EXTRAS=cloud
+
+RUN pip install --no-cache-dir -c /tmp/requirements.lock \
+      "$(ls /tmp/wheels/mangomas-*.whl)${MANGOMAS_EXTRAS:+[${MANGOMAS_EXTRAS}]}" \
+      /tmp/wheels/mango_integration_contracts-*.whl \
     && rm -rf /tmp/wheels /tmp/requirements.lock
 
 # Create writable data dir for default SQLite path (./data/mangomas.db) and the

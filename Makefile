@@ -59,6 +59,27 @@ PIP_AUDIT_VERSION ?= 2.10.1
 # which file is authoritative; tests/deploy/test_lockfile_freshness.py and
 # tests/deploy/test_ci_make_parity.py both read this contract.
 RUNTIME_LOCKFILE ?= requirements.lock
+# Hand-written preamble prepended to the generated lock. pip-compile's own
+# header (suppressed with --no-header) records the compiling machine's command
+# line and paths, so it is not reproducible; this one is tracked, and
+# tests/deploy/test_lockfile_freshness.py pins that the lock starts with it.
+LOCKFILE_HEADER ?= requirements.lock.header
+# Extras compiled into the lock on top of [project].dependencies: the closure
+# the production image installs (Dockerfile `ARG MANGOMAS_EXTRAS`). Space-
+# separated; each becomes a `--extra` flag.
+LOCK_EXTRAS ?= cloud
+# pip-tools is exact-pinned for the same reason as PIP_AUDIT_VERSION: the
+# resolver and the output format both change between releases, and the lock's
+# diff is the review record.
+PIP_TOOLS_VERSION ?= 7.6.2
+# The interpreter that compiles the lock. Environment markers resolve against
+# the compiling interpreter, so this must be the runtime image's minor
+# (python:3.11-slim in the Dockerfile); `lock` refuses anything else.
+LOCK_PYTHON ?= $(PYTHON)
+LOCK_PYTHON_MINOR ?= 3.11
+# The compile command both lock targets share; `lock` adds `-c` so existing
+# pins are held, `lock-upgrade` omits it so every pin may move.
+LOCK_COMPILE = $(LOCK_PYTHON) -m piptools compile --strip-extras --no-header $(LOCK_EXTRAS:%=--extra %) --output-file=- pyproject.toml
 # Per-environment deploy (ADR-0036). deploy/environments.yaml is the single
 # source of environment data; scripts/deploy_environment.py is the only reader.
 # deploy.yml drives both targets below, passing ENVIRONMENT/IMAGE on the
@@ -83,6 +104,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local secret-scan pip-audit sbom-scan \
         install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply \
+        lock lock-upgrade \
         nightly-scan-refs
 
 help: ## Show this help
@@ -278,6 +300,55 @@ pip-audit: ## Audit the installed env AND the runtime lockfile for known CVEs (d
 	#    scanned. tests/deploy/test_lockfile_freshness.py keeps the lock in sync
 	#    with pyproject; this keeps it free of known CVEs.
 	$(PYTHON) -m pip_audit -r $(RUNTIME_LOCKFILE)
+
+# ── Lockfile ─────────────────────────────────────────────────────────────────
+# Both targets write $(RUNTIME_LOCKFILE) as $(LOCKFILE_HEADER) + pip-compile's
+# pins, passed through LOCK_NORMALIZE, which makes the output a fixed point of
+# `make lock` (so `make lock && git diff --exit-code` proves freshness in ONE
+# run) by:
+#  1. dropping the project's own line (`mangomas @ file://…` / `mangomas==…`)
+#     and its `# via` continuation — the self-referential `cloud` extra makes
+#     pip-compile emit it, and a constraints file naming the project would pin
+#     the wheel being installed to a path that does not exist in the image;
+#  2. dropping `#   -c <lockfile>` provenance lines, which `lock` adds to every
+#     pin the previous lock already held (a pin's first and second
+#     regeneration would otherwise differ), and re-collapsing a `# via` block
+#     left with one entry back to pip-compile's single-line `# via <name>` form.
+LOCK_NORMALIZE = awk ' \
+  /^mangomas([[:space:]]|==|@|\[|$$)/ { skip = 1; next } \
+  skip && /^[[:space:]]/ { next } \
+  { skip = 0 } \
+  /^[[:space:]]+\#   -c / { next } \
+  { lines[n++] = $$0 } \
+  END { \
+    for (i = 0; i < n; i++) { \
+      if (lines[i] ~ /^[[:space:]]+\# via$$/) { \
+        j = i + 1; children = 0; \
+        while (j < n && lines[j] ~ /^[[:space:]]+\#   /) { children++; j++ } \
+        if (children == 0) continue; \
+        if (children == 1) { sub(/\#   /, "\# via ", lines[i + 1]); print lines[i + 1]; i = j - 1; continue } \
+      } \
+      print lines[i] \
+    } \
+  }'
+
+lock: ## Regenerate requirements.lock additively — new names pinned, existing pins held (Python 3.11)
+	$(LOCK_PYTHON) -c 'import sys; v = "%d.%d" % sys.version_info[:2]; sys.exit(0 if v == "$(LOCK_PYTHON_MINOR)" else "make lock: compile on Python $(LOCK_PYTHON_MINOR) (the runtime image), got " + v)'
+	$(LOCK_PYTHON) -m pip install --quiet "pip-tools==$(PIP_TOOLS_VERSION)"
+	$(LOCK_COMPILE) -c $(RUNTIME_LOCKFILE) > $(RUNTIME_LOCKFILE).compiled
+	cat $(LOCKFILE_HEADER) > $(RUNTIME_LOCKFILE).new
+	$(LOCK_NORMALIZE) $(RUNTIME_LOCKFILE).compiled >> $(RUNTIME_LOCKFILE).new
+	rm -f $(RUNTIME_LOCKFILE).compiled
+	mv $(RUNTIME_LOCKFILE).new $(RUNTIME_LOCKFILE)
+
+lock-upgrade: ## Regenerate requirements.lock from scratch — every pin may move (review the diff)
+	$(LOCK_PYTHON) -c 'import sys; v = "%d.%d" % sys.version_info[:2]; sys.exit(0 if v == "$(LOCK_PYTHON_MINOR)" else "make lock-upgrade: compile on Python $(LOCK_PYTHON_MINOR) (the runtime image), got " + v)'
+	$(LOCK_PYTHON) -m pip install --quiet "pip-tools==$(PIP_TOOLS_VERSION)"
+	$(LOCK_COMPILE) > $(RUNTIME_LOCKFILE).compiled
+	cat $(LOCKFILE_HEADER) > $(RUNTIME_LOCKFILE).new
+	$(LOCK_NORMALIZE) $(RUNTIME_LOCKFILE).compiled >> $(RUNTIME_LOCKFILE).new
+	rm -f $(RUNTIME_LOCKFILE).compiled
+	mv $(RUNTIME_LOCKFILE).new $(RUNTIME_LOCKFILE)
 
 sbom-scan: ## CycloneDX SBOM + Trivy fs scan (downloads a pinned binary; needs network, not part of gate)
 	# Same download-and-verify pattern as secret-scan. Baseline scan: findings
