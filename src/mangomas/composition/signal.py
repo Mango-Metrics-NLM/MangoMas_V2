@@ -14,6 +14,11 @@ def _attach_cognitive_extras(extras: dict[str, Any], settings: SignalSettings) -
     """Attach sink + settings when enabled; no-op (and no contracts import) otherwise."""
     if not settings.enabled:
         return
+    # Fail at build time, as a ConfigError, when the envelope package is
+    # missing — not as an ImportError on the first planner request.
+    from mangomas.cognitive._contracts import require_contracts  # noqa: PLC0415
+
+    require_contracts()
     from mangomas.cognitive.constants import (  # noqa: PLC0415
         COGNITIVE_SETTINGS_EXTRAS_KEY,
         COGNITIVE_SINK_EXTRAS_KEY,

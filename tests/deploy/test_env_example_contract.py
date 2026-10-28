@@ -20,11 +20,13 @@ import re
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
+from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from mangomas.config import Settings
 from tests.constants.corpus import ROOT_INSTRUCTION_RELPATHS
+from tests.constants.deploy import ENV_EXAMPLE_INTENTIONAL_OVERRIDES
 from tests.deploy import _settings_names
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -392,3 +394,101 @@ def test_every_settings_default_is_documented_in_a_table_row() -> None:
         f"Add a row to whichever of {list(ROOT_INSTRUCTION_RELPATHS)} documents that "
         "group, or record the omission in _DEFAULT_UNDOCUMENTED_OK with a reason."
     )
+
+
+# ── .env.example commented values equal the defaults (spec-0031 S11; P0-C1) ──
+# A commented `# MANGOMAS_X=value` line reads as "the default" to whoever
+# uncomments it. Four of them contradicted the field (BODY_TRUNCATE 2000/512,
+# READY_TIMEOUT 5.0/2.0, HISTORY_DEFAULT_LIMIT 50/10, HISTORY_MAX_LIMIT
+# 500/1000) and the name-only contract above could not see it. Values are
+# coerced through the field's own type (so `60` == `60.0` and `["console"]`
+# parses) and compared to the declared default; an unset optional has no
+# default to restate, and the recorded overrides are provider examples.
+
+_COMMENTED_LINE_RE = re.compile(r"^#\s*(MANGOMAS_[A-Z0-9_]+)=(.*)$")
+
+
+def commented_env_values(text: str) -> list[tuple[str, str]]:
+    """``(name, raw value)`` for every commented-out assignment, trailing comment stripped."""
+    found: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        match = _COMMENTED_LINE_RE.match(line)
+        if match is None:
+            continue
+        value = match.group(2).split("  #", 1)[0].split(" #", 1)[0].strip()
+        found.append((match.group(1), value))
+    return found
+
+
+def _flat_fields() -> dict[str, FieldInfo]:
+    """``MANGOMAS_GROUP__FIELD -> FieldInfo`` for every nested-model field."""
+    flat: dict[str, FieldInfo] = {}
+    for name, field in Settings.model_fields.items():
+        annotation = field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            for sub, sub_field in annotation.model_fields.items():
+                flat[f"{_PREFIX}{name.upper()}{_NESTED_DELIMITER}{sub.upper()}"] = sub_field
+        else:
+            flat[f"{_PREFIX}{name.upper()}"] = field
+    return flat
+
+
+def _coerce(raw: str, field: FieldInfo) -> object:
+    annotation = field.annotation
+    assert annotation is not None, "a Settings field without an annotation"
+    adapter: TypeAdapter[object] = TypeAdapter(annotation)
+    if raw.startswith(("[", "{")):
+        return adapter.validate_json(raw)
+    return adapter.validate_python(raw)
+
+
+def contradicting_env_values(text: str) -> list[tuple[str, str, object]]:
+    """``(name, documented, default)`` for commented values that differ from the field default."""
+    fields = _flat_fields()
+    bad: list[tuple[str, str, object]] = []
+    for name, raw in commented_env_values(text):
+        if name.startswith(f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}"):
+            continue  # per-agent placeholders are illustrative by construction
+        field = fields.get(name)
+        if field is None or name in ENV_EXAMPLE_INTENTIONAL_OVERRIDES:
+            continue
+        default = _field_default(field)
+        if default is None or default is PydanticUndefined:
+            continue  # an unset optional: the line is a sample, not a default
+        if _coerce(raw, field) != default:
+            bad.append((name, raw, default))
+    return bad
+
+
+def test_env_example_commented_values_are_actually_parsed() -> None:
+    """Guard the denominator; zero parsed lines would make the next test vacuous."""
+    assert len(commented_env_values(_ENV_EXAMPLE.read_text(encoding="utf-8"))) >= 10
+
+
+def test_env_example_commented_values_match_model_defaults() -> None:
+    contradictions = contradicting_env_values(_ENV_EXAMPLE.read_text(encoding="utf-8"))
+    assert contradictions == [], (
+        ".env.example states a commented value that differs from the field default "
+        f"(name, documented, default): {contradictions}. Fix the line, or record a "
+        "deliberate provider example in ENV_EXAMPLE_INTENTIONAL_OVERRIDES."
+    )
+
+
+def test_a_contradicting_commented_value_is_detected() -> None:
+    """Mutation proof: READY_TIMEOUT_SECONDS=5.0 (the old line) must be reported."""
+    real = _ENV_EXAMPLE.read_text(encoding="utf-8")
+    mutated = real.replace(
+        "# MANGOMAS_API__READY_TIMEOUT_SECONDS=2.0", "# MANGOMAS_API__READY_TIMEOUT_SECONDS=5.0"
+    )
+    assert mutated != real, "the READY_TIMEOUT line moved — fixture needs updating"
+    names = [name for name, _, _ in contradicting_env_values(mutated)]
+    assert names == [f"{_PREFIX}API{_NESTED_DELIMITER}READY_TIMEOUT_SECONDS"]
+
+
+def test_intentional_overrides_name_real_fields_that_really_differ() -> None:
+    """An override entry for a line that already matches is dead weight."""
+    fields = _flat_fields()
+    values = dict(commented_env_values(_ENV_EXAMPLE.read_text(encoding="utf-8")))
+    for name in ENV_EXAMPLE_INTENTIONAL_OVERRIDES:
+        assert name in fields, f"{name} is not a Settings field"
+        assert name in values, f"{name} has no commented line to override"

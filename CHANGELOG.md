@@ -9,6 +9,49 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — wiring: readiness budget, contracts refusal at build time (spec-0031 S4/S12; P0-C1)
+
+- `/readyz` now honours `MANGOMAS_API__READY_TIMEOUT_SECONDS`: `check_ready`
+  takes `timeout_seconds` and bounds **each** probe (LLM ping, DB
+  `list_turns`) with `asyncio.wait_for`, reporting a hung dependency as
+  `error` / `timed out after Ns` instead of holding an unauthenticated probe
+  open for the dependency's own timeout (60 s for the LLM client). `create_app`
+  stores the budget on `app.state.ready_timeout_seconds` and the route passes
+  it — `health.py` never calls `get_settings()` (the spec-0031 wiring note).
+  Direct callers that pass nothing keep the unbounded contract. `FakeLLM`
+  gains `ping_delay_seconds`. Tests: `test_readiness_probe_honours_the_timeout_budget`
+  (mutation: drop the `wait_for` → red), `test_readyz_route_passes_the_configured_budget`,
+  `test_readiness_probe_without_a_budget_stays_unbounded`, `test_default_budget_reaches_app_state`.
+- `MANGOMAS_SIGNAL__ENABLED=true` without the `mango-integration-contracts`
+  sibling package is now a `ConfigError` at `build_orchestrator` naming the
+  install (`cognitive/_contracts.py::require_contracts`, called from
+  `composition/signal.py` on the flag-on path only), not an `ImportError`
+  on the first planner request. Flag-off dispatch is pinned to never import
+  the package (`test_flag_off_dispatch_never_imports_contracts`); the flag-on
+  refusal is mutation-proved (drop the call → red).
+
+### Removed — `MANGOMAS_LOG__BODY_TRUNCATE` (spec-0031 S12; P0-C1)
+
+- `LogSettings.body_truncate` and `DEFAULT_LOG_BODY_TRUNCATE` were declared,
+  documented (as `512`; `.env.example` said `2000`) and read by nothing — a
+  value set for it changed no log line. Removed from the model, the config
+  facade, `AGENTS.md` and `.env.example`. `LogSettings` is a `BaseModel`
+  under the `BaseSettings` root, so an environment that still exports the
+  variable is ignored, not rejected.
+
+### Changed — `.env.example` commented values are the defaults (spec-0031 S11; P0-C1)
+
+- `READY_TIMEOUT_SECONDS` 5.0 → 2.0, `HISTORY_DEFAULT_LIMIT` 50 → 10,
+  `HISTORY_MAX_LIMIT` 500 → 1000. New contract
+  `test_env_example_commented_values_match_model_defaults` coerces every
+  commented `# MANGOMAS_X=value` through the field's own type and compares it
+  to the declared default; an unset optional is a sample by nature, and the
+  eight deliberate provider examples (Vertex, Cloud SQL, Secret Manager
+  switches; a non-empty model roster; the opt-in CORS allow-list and method
+  set) are recorded in `ENV_EXAMPLE_INTENTIONAL_OVERRIDES`, each required to
+  name a real field whose line really differs. Mutation: the old
+  `READY_TIMEOUT_SECONDS=5.0` line → red.
+
 ### Fixed — the reference manifest carries what its providers need (spec-0038, P0-B)
 
 - `deploy/service.yaml` selected Vertex, Cloud SQL Postgres and Secret

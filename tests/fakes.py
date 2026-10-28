@@ -56,6 +56,10 @@ class FakeLLM:
     # and a real LLM's latency is exactly what a hardware-agnostic test may not
     # depend on.
     delay_seconds: float = 0.0
+    # Seconds `ping()` awaits before answering — separate from `delay_seconds`
+    # so a slow completion never slows a readiness probe by accident. Drives the
+    # `/readyz` per-probe budget (spec-0031 S4); 0.0 skips the sleep entirely.
+    ping_delay_seconds: float = 0.0
 
     async def _maybe_delay(self) -> None:
         """Await the configured delay, or nothing at all when it is zero."""
@@ -79,6 +83,8 @@ class FakeLLM:
 
     async def ping(self) -> None:
         self.pinged = True
+        if self.ping_delay_seconds > 0:
+            await asyncio.sleep(self.ping_delay_seconds)
         if self.ping_error is not None:
             raise self.ping_error
 

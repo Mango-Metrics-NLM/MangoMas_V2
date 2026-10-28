@@ -9,14 +9,16 @@ from pydantic import BaseModel
 DEFAULT_LOG_FORMAT: Literal["text", "json"] = "text"
 
 
-DEFAULT_LOG_BODY_TRUNCATE: int = 512
-
-
 class LogSettings(BaseModel):
-    """Logging format and filtering configuration."""
+    """Logging format configuration.
+
+    ``body_truncate`` (``MANGOMAS_LOG__BODY_TRUNCATE``) was removed: it was
+    declared and documented but read by nothing, so a value set for it changed
+    no log line (spec-0031 S12). ``LogSettings`` is a ``BaseModel`` under a
+    ``BaseSettings`` root, so a still-exported variable is ignored, not rejected.
+    """
 
     format: Literal["text", "json"] = DEFAULT_LOG_FORMAT
-    body_truncate: int = DEFAULT_LOG_BODY_TRUNCATE
 
 
 DEFAULT_TELEMETRY_EXPORTER: Literal["console", "gcp"] = "console"

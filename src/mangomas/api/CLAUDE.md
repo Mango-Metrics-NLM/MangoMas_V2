@@ -57,6 +57,8 @@ load-bearing rather than cosmetic.
   The test resolves helper calls rather than sorting by line.
 - Backpressure inner of log/trace is the point: a 413 or 503 that nothing
   recorded is an outage you cannot see.
+- `/readyz` bounds each probe by `app.state.ready_timeout_seconds`, which `create_app`
+  sets from `api.ready_timeout_seconds`; `health.py` never calls `get_settings()`.
 - Health routes are never authenticated, and never capped by `ConcurrencyLimitMiddleware`
   (`create_app` passes `health.PROBE_PATHS` as `exempt_paths`): a saturated
   instance that 503s its own liveness probe is restarted mid-request.

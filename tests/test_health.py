@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -13,8 +14,15 @@ from mangomas.adapters.storage.base import TurnRepository
 from mangomas.agents import ChatAgent
 from mangomas.api.app import create_app
 from mangomas.api.health import CheckResult, ReadinessReport, check_ready
+from mangomas.config import get_settings
 from mangomas.core import AgentContext, Orchestrator
+from tests.constants import DEFAULT_API_READY_TIMEOUT
 from tests.fakes import FakeLLM, FakeRepository, NonPingableFakeLLM
+
+# Test-scoped timing: a ping that outlasts the budget by a wide margin, and a
+# budget short enough that the suite never waits for the ping itself.
+_SLOW_PING_SECONDS = 0.5
+_TIGHT_BUDGET_SECONDS = 0.02
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -207,3 +215,57 @@ async def test_check_ready_ping_error() -> None:
     assert report.ready is False
     statuses = {c.name: c.status for c in report.checks}
     assert statuses["llm"] == "error"
+
+
+# ── Readiness budget (spec-0031 S4; P0-C1) ───────────────────────────────────
+# Before this `check_ready` awaited `ping()` and `list_turns()` unbounded, so an
+# unauthenticated /readyz was held open for the dependency's own timeout (60 s
+# for the LLM client) while `MANGOMAS_API__READY_TIMEOUT_SECONDS` was read by
+# nothing. Mutation (proved while writing): remove the `asyncio.wait_for` in
+# `_bounded` and the first test below hangs past the budget and fails.
+
+
+async def test_readiness_probe_honours_the_timeout_budget() -> None:
+    slow = FakeLLM(ping_delay_seconds=_SLOW_PING_SECONDS)
+    orch = Orchestrator(AgentContext(llm=slow, repo=None))
+    report = await asyncio.wait_for(
+        check_ready(orch, timeout_seconds=_TIGHT_BUDGET_SECONDS),
+        timeout=_SLOW_PING_SECONDS / 2,  # fails loudly if the budget is not enforced
+    )
+    assert report.ready is False
+    llm = next(c for c in report.checks if c.name == "llm")
+    assert llm.status == "error"
+    assert "timed out after" in llm.detail
+
+
+async def test_readiness_probe_without_a_budget_stays_unbounded() -> None:
+    """``timeout_seconds=None`` is the pre-budget contract, kept for direct callers."""
+    slow = FakeLLM(ping_delay_seconds=_TIGHT_BUDGET_SECONDS)
+    orch = Orchestrator(AgentContext(llm=slow, repo=None))
+    report = await check_ready(orch)
+    assert report.ready is True
+
+
+def test_readyz_route_passes_the_configured_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The route reads the budget from ``app.state`` (set by ``create_app`` from
+    settings), never from ``get_settings()`` inside health.py."""
+    monkeypatch.setenv("MANGOMAS_API__READY_TIMEOUT_SECONDS", str(_TIGHT_BUDGET_SECONDS))
+    get_settings.cache_clear()
+    try:
+        slow = FakeLLM(ping_delay_seconds=_SLOW_PING_SECONDS)
+        app = create_app(orchestrator=_make_orch(llm=slow, repo=FakeRepository()))
+        assert app.state.ready_timeout_seconds == _TIGHT_BUDGET_SECONDS
+        with TestClient(app) as client:
+            r = client.get("/readyz")
+    finally:
+        get_settings.cache_clear()
+    assert r.status_code == 503
+    statuses = {c["name"]: c for c in r.json()["checks"]}
+    assert statuses["llm"]["status"] == "error"
+    assert "timed out after" in statuses["llm"]["detail"]
+    assert statuses["db"]["status"] == "ok"  # the budget is per probe, not shared
+
+
+def test_default_budget_reaches_app_state() -> None:
+    app = create_app(orchestrator=_make_orch())
+    assert app.state.ready_timeout_seconds == DEFAULT_API_READY_TIMEOUT

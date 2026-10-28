@@ -152,6 +152,9 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     # through AccessLog (X-Request-ID + access-log line). CORS is added last so
     # it sits outermost (correct for preflight).
     api_cfg = get_settings().api
+    # The readiness budget travels on app.state, like `auth` below, so
+    # health.py never reaches for get_settings() (spec-0031 S4).
+    app.state.ready_timeout_seconds = api_cfg.ready_timeout_seconds
     _install_backpressure(app, api_cfg)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(TraceMiddleware)

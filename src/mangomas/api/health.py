@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any, Final
@@ -81,7 +83,23 @@ class ReadinessReport:
         }
 
 
-async def check_ready(orchestrator: Orchestrator) -> ReadinessReport:
+async def _bounded(probe: Awaitable[Any], timeout_seconds: float | None) -> Any:
+    """Await *probe*, failing it after *timeout_seconds* when a budget is set.
+
+    ``None`` keeps the pre-budget behaviour (unbounded) for callers that pass
+    nothing — the route always passes the configured budget.
+    """
+    if timeout_seconds is None:
+        return await probe
+    try:
+        return await asyncio.wait_for(probe, timeout=timeout_seconds)
+    except TimeoutError as exc:
+        raise TimeoutError(f"timed out after {timeout_seconds}s") from exc
+
+
+async def check_ready(
+    orchestrator: Orchestrator, *, timeout_seconds: float | None = None
+) -> ReadinessReport:
     """Run all readiness checks and return an aggregated report.
 
     Checks performed:
@@ -91,6 +109,12 @@ async def check_ready(orchestrator: Orchestrator) -> ReadinessReport:
     - **db**: If a :class:`~mangomas.adapters.storage.base.TurnRepository` is
       configured, ``list_turns(limit=1)`` is called as a liveness probe.
       When no repository is configured the result is ``"not_configured"``.
+
+    *timeout_seconds* bounds **each** probe (``MANGOMAS_API__READY_TIMEOUT_SECONDS``,
+    passed by the route from ``app.state`` — spec-0031 S4). A probe that hangs
+    past it is reported as ``"error"`` with a ``timed out`` detail instead of
+    holding an unauthenticated ``/readyz`` open for the dependency's own
+    timeout (60 s for the LLM client by default).
     """
     report = ReadinessReport()
     ctx = orchestrator.context
@@ -98,7 +122,7 @@ async def check_ready(orchestrator: Orchestrator) -> ReadinessReport:
     # ── LLM check ─────────────────────────────────────────────────────────────
     if isinstance(ctx.llm, PingableLLMClient):
         try:
-            await ctx.llm.ping()
+            await _bounded(ctx.llm.ping(), timeout_seconds)
             report.checks.append(CheckResult(name="llm", status=_STATUS_OK))
             logger.debug("Readiness: LLM ping OK")
         except Exception as exc:  # broad: any ping failure degrades readiness
@@ -117,7 +141,7 @@ async def check_ready(orchestrator: Orchestrator) -> ReadinessReport:
         logger.debug("Readiness: no repository configured")
     else:
         try:
-            await ctx.repo.list_turns(limit=1)
+            await _bounded(ctx.repo.list_turns(limit=1), timeout_seconds)
             report.checks.append(CheckResult(name="db", status=_STATUS_OK))
             logger.debug("Readiness: DB probe OK")
         except Exception as exc:  # broad: any DB error degrades readiness
