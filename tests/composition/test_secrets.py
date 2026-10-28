@@ -42,7 +42,11 @@ def test_postgres_factory_constructs_repo_without_io() -> None:
 
 
 # Test-scoped: a DSN whose userinfo carries a password (no config counterpart).
-_DSN_WITH_PASSWORD = "postgresql://svc:s3cret-pw@db.internal:5432/mangomas"  # noqa: S105 — fixture, not a secret
+# The host is RFC 6761-reserved (`.test`), which is what .gitleaks.toml's
+# fixture allowlist keys on — a credential that cannot address real
+# infrastructure; the password is deliberately NOT a placeholder word so the
+# redaction assertion below still discriminates.
+_DSN_WITH_PASSWORD = "postgresql://svc:s3cret-pw@db.example.test:5432/mangomas"  # noqa: S105 — fixture, not a secret
 _DSN_PASSWORD = "s3cret-pw"  # noqa: S105 — the fixture's userinfo, asserted absent from logs
 
 
@@ -65,7 +69,7 @@ def test_postgres_factory_never_logs_the_dsn_password(caplog: pytest.LogCaptureF
         rendered = record.getMessage() + repr(vars(record))
         assert _DSN_PASSWORD not in rendered
         assert _DSN_WITH_PASSWORD not in rendered
-    assert getattr(records[0], "dsn_host", None) == "db.internal"
+    assert getattr(records[0], "dsn_host", None) == "db.example.test"
 
 
 def test_gcp_secrets_lazy_registers_on_build_when_provider_selected() -> None:

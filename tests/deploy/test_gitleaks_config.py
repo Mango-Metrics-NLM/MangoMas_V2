@@ -296,3 +296,25 @@ def test_real_gitleaks_catches_every_planted_secret(tmp_path: Path) -> None:
 
     false_positives = sorted({name for _l, name, _line in _MUST_IGNORE} & flagged)
     assert false_positives == [], f"scan flagged repo fixtures: {false_positives}"
+
+
+# ── .gitleaksignore stays a list of fingerprints ──────────────────────────────
+# A bare path or rule id in that file would exempt a whole file or rule from
+# both scan passes; a fingerprint exempts one finding in one commit. Mutation
+# (proved while writing): a `tests/` line → red.
+
+_GITLEAKSIGNORE = _REPO_ROOT / ".gitleaksignore"
+_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{40}:[^:\s]+:[a-z0-9-]+:\d+$")
+
+
+def test_gitleaksignore_entries_are_single_finding_fingerprints() -> None:
+    if not _GITLEAKSIGNORE.exists():
+        pytest.skip("no .gitleaksignore in the tree")
+    entries = [
+        line.strip()
+        for line in _GITLEAKSIGNORE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert entries, ".gitleaksignore exists but ignores nothing — delete it"
+    malformed = [entry for entry in entries if not _FINGERPRINT_RE.match(entry)]
+    assert malformed == [], f"not <commit>:<file>:<rule>:<line> fingerprints: {malformed}"
