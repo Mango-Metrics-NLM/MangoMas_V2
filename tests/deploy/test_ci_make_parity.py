@@ -193,6 +193,18 @@ def test_secret_scan_job_delegates_to_make() -> None:
     assert commands == ["make secret-scan"]
 
 
+def test_docker_smoke_job_delegates_to_make() -> None:
+    """The image build + in-image provider import live in `make docker-smoke`.
+
+    The image is the one artefact that reaches production and, before this
+    job, nothing in CI built it (spec-0038). Bounded by a job timeout so a
+    registry hang cannot hold a runner.
+    """
+    job = _ci_jobs()["docker-smoke"]
+    assert _step_run_commands(job) == ["make docker-smoke"]
+    assert isinstance(job.get("timeout-minutes"), int)
+
+
 def test_pip_audit_job_delegates_to_make() -> None:
     """The dependency-CVE audit lives in exactly one place: `make pip-audit`.
 

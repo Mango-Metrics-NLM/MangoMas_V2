@@ -23,8 +23,9 @@ import pytest
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from mangomas.config import AgentSettings, Settings
+from mangomas.config import Settings
 from tests.constants.corpus import ROOT_INSTRUCTION_RELPATHS
+from tests.deploy import _settings_names
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ENV_EXAMPLE = _REPO_ROOT / ".env.example"
@@ -64,33 +65,10 @@ _PLACEHOLDER_RE = re.compile(r"<[A-Za-z_]+>")
 _PLACEHOLDER_SLUG = "SLUG"
 
 
-def _declared_names() -> set[str]:
-    """Return every `MANGOMAS_*` name the settings tree actually declares.
-
-    Per-agent names are returned in their `MANGOMAS_AGENTS__<FIELD>` shape with
-    the slug elided; `_normalize` collapses a real name to match.
-    """
-    names: set[str] = set()
-    for name, field in Settings.model_fields.items():
-        annotation = field.annotation
-        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            for sub in annotation.model_fields:
-                names.add(f"{_PREFIX}{name.upper()}{_NESTED_DELIMITER}{sub.upper()}")
-        else:
-            names.add(f"{_PREFIX}{name.upper()}")
-    for sub in AgentSettings.model_fields:
-        names.add(f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}{sub.upper()}")
-    return names
-
-
-def _normalize(name: str) -> str:
-    """Collapse `MANGOMAS_AGENTS__<SLUG>__<FIELD>` to `MANGOMAS_AGENTS__<FIELD>`."""
-    parts = name.split(_NESTED_DELIMITER)
-    if len(parts) == 3 and parts[0] == f"{_PREFIX}{_AGENTS_FIELD}":
-        # `MANGOMAS_AGENTS__<NAME>__*` collapses to the bare group prefix, which
-        # `_is_group_prefix` then validates; a concrete field keeps its name.
-        return f"{parts[0]}{_NESTED_DELIMITER}{parts[2]}"
-    return name
+# The declared-names walk and the per-agent normalisation live in
+# tests/deploy/_settings_names.py, shared with the manifest provider contract.
+_declared_names = _settings_names.declared_names
+_normalize = _settings_names.normalize
 
 
 def _names_in(path: Path) -> set[str]:
@@ -109,30 +87,11 @@ def _is_group_prefix(name: str) -> bool:
     return name.endswith(_NESTED_DELIMITER)
 
 
-def _settings_groups() -> set[str]:
-    groups = {
-        f"{_PREFIX}{name.upper()}{_NESTED_DELIMITER}"
-        for name, field in Settings.model_fields.items()
-        if isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel)
-    }
-    # `agents` is a dict, not a nested model, so the comprehension above misses
-    # it — but `MANGOMAS_AGENTS__` is a real prefix operators use.
-    groups.add(f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}")
-    return groups
+_settings_groups = _settings_names.settings_groups
 
 
 def _unresolved(path: Path) -> list[str]:
-    declared = _declared_names()
-    groups = _settings_groups()
-    unresolved: list[str] = []
-    for name in _names_in(path):
-        normalized = _normalize(name)
-        if _is_group_prefix(normalized):
-            if normalized not in groups:
-                unresolved.append(name)
-        elif normalized not in declared:
-            unresolved.append(name)
-    return sorted(unresolved)
+    return _settings_names.unresolved(_names_in(path))
 
 
 def _instruction_text() -> str:

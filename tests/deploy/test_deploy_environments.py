@@ -11,6 +11,7 @@ base manifest — an overlay can only change the fields it is allowed to.
 
 from __future__ import annotations
 
+import string
 import subprocess
 import typing
 from pathlib import Path
@@ -24,6 +25,7 @@ from tests._script_loader import load_script_module
 from tests.constants.deploy import (
     ENV_LABEL_VAR,
     PROJECT_ID_PLACEHOLDER_VAR,
+    RENDER_PLACEHOLDER_VALUES,
     TEST_IMAGE_REF,
     TEST_PROJECT_ID,
 )
@@ -36,7 +38,7 @@ _REGISTRY_PATH = _REPO_ROOT / _makefile.variable("DEPLOY_REGISTRY")
 _DEPLOY_WORKFLOW = "deploy.yml"
 _ENV_LABEL_VAR = ENV_LABEL_VAR
 _TEST_IMAGE = TEST_IMAGE_REF
-_RENDER_VARIABLES = {PROJECT_ID_PLACEHOLDER_VAR: TEST_PROJECT_ID}
+_RENDER_VARIABLES = dict(RENDER_PLACEHOLDER_VALUES)
 
 _REGISTRY = deploy_env.load_registry(_REGISTRY_PATH)
 _ENVIRONMENT_NAMES = list(_REGISTRY.environments)
@@ -215,10 +217,29 @@ def test_non_production_environments_use_their_own_secrets() -> None:
             )
 
 
+def _placeholder_env_value_paths(manifest: dict[str, Any]) -> list[tuple[Any, ...]]:
+    """Paths of base env values that carry a ``${...}`` placeholder.
+
+    The base manifest is never substituted, so these are exactly the values a
+    render must change; derived from the manifest, never listed by hand.
+    """
+    env = _manifest.container(manifest).get("env") or []
+    return [
+        (*_IMAGE_PATH[:-1], "env", index, "value")
+        for index, entry in enumerate(env)
+        if string.Template(str(entry.get("value", ""))).get_identifiers()
+    ]
+
+
 def test_production_render_is_the_base_manifest() -> None:
-    """Backwards compatibility: the release deploy is unchanged apart from the image."""
-    diff = list(_diff_paths(_base_manifest(), _rendered(_production().name)))
-    assert diff == [_IMAGE_PATH]
+    """Backwards compatibility: the release deploy is the base apart from the
+    image and the filled render placeholders (project id, model) — nothing else.
+    """
+    base = _base_manifest()
+    placeholders = _placeholder_env_value_paths(base)
+    assert placeholders, "the base manifest carries no render placeholders — fixture stale?"
+    diff = sorted(_diff_paths(base, _rendered(_production().name)), key=str)
+    assert diff == sorted([_IMAGE_PATH, *placeholders], key=str)
 
 
 def test_each_environment_has_its_own_image_repository() -> None:

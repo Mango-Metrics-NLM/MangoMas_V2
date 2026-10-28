@@ -82,7 +82,38 @@ configuration table; this is the deploy-time contract by settings group.
 Recommended production baseline: `MANGOMAS_ENV=prod`,
 `MANGOMAS_LOG__FORMAT=json`, `MANGOMAS_TELEMETRY__EXPORTER=gcp`,
 `MANGOMAS_LLM__PROVIDER=vertex`, `MANGOMAS_DB__PROVIDER=postgres`,
-`MANGOMAS_SECRETS__PROVIDER=gcp`, `MANGOMAS_SECRETS__STRICT=true`.
+`MANGOMAS_SECRETS__PROVIDER=gcp`, `MANGOMAS_SECRETS__STRICT=true`, plus the
+safe defaults `service.yaml` ships with: `MANGOMAS_AUTH__ENABLED=true` (token
+resolved from the Secret Manager secret `MANGOMAS_AUTH__SECRET_REF` names),
+`MANGOMAS_API__MAX_BODY_BYTES=1048576` and
+`MANGOMAS_API__MAX_CONCURRENT_REQUESTS` equal to the manifest's
+`containerConcurrency`.
+
+### Provider contract (spec-0038)
+
+Selecting a provider commits the deploy to an image extra and to settings the
+provider cannot run without. `tests/deploy/test_manifest_provider_contract.py`
+checks every rendered environment against this table (kept as
+`PROVIDER_REQUIREMENTS` in `tests/constants/deploy.py`), against the extras the
+`Dockerfile` installs (`ARG MANGOMAS_EXTRAS=cloud`, expanded through
+pyproject's extras), and against the SDKs `make docker-smoke` imports inside
+the built image (the `docker-smoke` CI job).
+
+| Selected by | Extra in the image | Required settings | Smoke import |
+|---|---|---|---|
+| `MANGOMAS_LLM__PROVIDER=vertex` | `vertex` | `MANGOMAS_LLM__PROJECT_ID`, `MANGOMAS_LLM__MODEL` | `vertexai` |
+| `MANGOMAS_DB__PROVIDER=postgres` | `postgres` | `MANGOMAS_DB__URL` (secretKeyRef) | `asyncpg` |
+| `MANGOMAS_SECRETS__PROVIDER=gcp` | `gcp` | `MANGOMAS_SECRETS__PROJECT_ID` | `google.cloud.secretmanager` |
+| `MANGOMAS_TELEMETRY__EXPORTER=gcp` | `gcp` | — | `opentelemetry.exporter.cloud_trace` |
+| `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` | `gcp-monitoring` (alpha-only; not in `cloud`) | — | `opentelemetry.exporter.cloud_monitoring` |
+
+`${PROJECT_ID}` and `${LLM_MODEL}` in `service.yaml` are render-time
+placeholders. The base is never substituted, so every overlay in
+`environments.yaml` restates them and the deploy workflow supplies the values:
+`PROJECT_ID` from the `GCP_PROJECT_ID` secret, `LLM_MODEL` from the
+**`VERTEX_MODEL` repository variable** (admin: set it before the first deploy —
+the render fails on an empty placeholder rather than sending `local-model` to
+Vertex). A rendered manifest may not contain `${` (tested).
 
 ## Environments (ADR-0036)
 
@@ -127,9 +158,12 @@ an image under a tree hash production later trusts.
      `roles/run.invoker` on *that service only*, `roles/iam.serviceAccountUser`
      on *that runtime account only*, and `roles/artifactregistry.writer` on
      *that repository only*;
-   - the Secret Manager secrets its overlay names (e.g.
-     `mangomas-llm-api-key-dev`), readable only by its runtime account, and
-     its own database.
+   - the Secret Manager secrets its overlay names, readable only by its
+     runtime account: the LLM API key (`mangomas-llm-api-key[-dev|-qa]`), the
+     Cloud SQL DSN (`mangomas-db-url[-dev|-qa]`, a full `postgresql://`
+     URL — it carries the password, hence a `secretKeyRef`) and the API bearer
+     token (`mangomas-api-token[-dev|-qa]`, resolved at runtime by the gcp
+     secrets provider from `MANGOMAS_AUTH__SECRET_REF`); and its own database.
 2. **Bind each WIF principal to this repository and environment**, by numeric
    id so a renamed or squatted repository cannot match:
    `assertion.repository_id == '<id>' && assertion.repository_owner_id == '<id>'
@@ -144,6 +178,9 @@ an image under a tree hash production later trusts.
    environment rule trusts the tag, so the tag must be trustworthy.
 5. Set the repository variable `MULTI_ENV_DEPLOY_ENABLED=true`. Until then a
    push to `dev`/`qa` skips the deploy (releases still deploy production).
+6. Set the repository variable `VERTEX_MODEL` to the Vertex model id every
+   environment runs (`MANGOMAS_LLM__MODEL`; a per-environment model is a
+   registry overlay away).
 
 **Debugging.** `plan` logs which environment a ref resolved to and why; a
 refusal (exit `3`) or configuration error (exit `2`) also appears as an error
@@ -153,7 +190,8 @@ locally:
 
 ```bash
 make deploy-plan DEPLOY_LOG_LEVEL=DEBUG GITHUB_REF=refs/heads/qa
-PROJECT_ID=my-project make deploy-render ENVIRONMENT=qa IMAGE=example:tag DEPLOY_LOG_LEVEL=DEBUG
+PROJECT_ID=my-project LLM_MODEL=gemini-2.5-flash make deploy-render ENVIRONMENT=qa IMAGE=example:tag DEPLOY_LOG_LEVEL=DEBUG
+make docker-smoke   # build the image and import every selected provider's SDK inside it
 ```
 
 ## Deploy
@@ -170,7 +208,7 @@ private: `services replace` never creates an `allUsers` invoker binding). To
 deploy locally instead, mirror the workflow:
 
 ```bash
-export PROJECT_ID=my-project REGION=us-central1
+export PROJECT_ID=my-project REGION=us-central1 LLM_MODEL=gemini-2.5-flash
 ENVIRONMENT=qa   # dev | qa | prod — repository and service come from deploy/environments.yaml
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/mangomas-qa/mangomas:$(git rev-parse 'HEAD^{tree}')"
 docker build -t "$IMAGE" .

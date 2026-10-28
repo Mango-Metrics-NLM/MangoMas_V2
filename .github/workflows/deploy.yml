@@ -144,6 +144,12 @@ jobs:
       IMAGE_TAG: ${{ needs.plan.outputs.image_tag }}
       RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
       PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      # Vertex model id for MANGOMAS_LLM__MODEL (spec-0038). A repository
+      # variable, not a secret: a model name is configuration. Admin: set
+      # `VERTEX_MODEL` in repository variables before the first deploy — the
+      # render step fails on an empty placeholder rather than deploying
+      # `local-model` to Vertex.
+      LLM_MODEL: ${{ vars.VERTEX_MODEL }}
       # Smoke-probe tunables (workflow env, not hard-coded in the script):
       # /readyz exercises the live LLM/DB reachability probe, so allow the
       # revision a short settling window before declaring the deploy failed.
@@ -204,7 +210,8 @@ jobs:
       - name: Render service manifest
         # deploy/service.yaml (the base, via the registry's base_manifest) plus
         # this environment's overlay from deploy/environments.yaml; PROJECT_ID
-        # (job env) fills the overlay's ${PROJECT_ID} placeholders. The script
+        # and LLM_MODEL (job env, the Makefile's DEPLOY_RENDER_ENV_VARS) fill
+        # the overlay's ${PROJECT_ID} / ${LLM_MODEL} placeholders. The script
         # re-reads its output and fails unless the image landed, so a manifest
         # reshape cannot silently deploy the placeholder image.
         run: make deploy-render ENVIRONMENT="$DEPLOY_ENVIRONMENT"

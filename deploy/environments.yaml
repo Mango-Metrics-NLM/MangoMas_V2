@@ -25,7 +25,11 @@
 #
 # Overlay strings may use ${NAME} placeholders, filled at render time only from
 # the environment variables listed in the Makefile's DEPLOY_RENDER_ENV_VARS
-# (today: PROJECT_ID) — never hard-code a project here. `$$` is a literal `$`.
+# (today: PROJECT_ID, LLM_MODEL) — never hard-code a project here. `$$` is a
+# literal `$`. The base manifest is NOT substituted, so every `${...}` value it
+# carries (MANGOMAS_LLM__PROJECT_ID, MANGOMAS_LLM__MODEL,
+# MANGOMAS_SECRETS__PROJECT_ID) must be restated by every overlay below;
+# tests/deploy/test_manifest_provider_contract.py fails on an unfilled one.
 #
 # Trigger keys: `branch` (push to that branch) or `tag_pattern` (fnmatch on a
 # release tag) plus `ancestor_branch` (the tagged commit must be reachable
@@ -50,8 +54,15 @@ environments:
       env:
         MANGOMAS_ENV: dev
         MANGOMAS_LOG_LEVEL: DEBUG
+        MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
+        MANGOMAS_LLM__MODEL: ${LLM_MODEL}
+        MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}
+        # A Secret Manager secret *name* (resolved at runtime), not a value;
+        # per environment so a dev token never opens production.
+        MANGOMAS_AUTH__SECRET_REF: mangomas-api-token-dev
       secrets:
         MANGOMAS_LLM__API_KEY: mangomas-llm-api-key-dev
+        MANGOMAS_DB__URL: mangomas-db-url-dev
       annotations:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "2"
@@ -65,8 +76,13 @@ environments:
       service_account: mangomas-qa-runtime@${PROJECT_ID}.iam.gserviceaccount.com
       env:
         MANGOMAS_ENV: qa
+        MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
+        MANGOMAS_LLM__MODEL: ${LLM_MODEL}
+        MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}
+        MANGOMAS_AUTH__SECRET_REF: mangomas-api-token-qa
       secrets:
         MANGOMAS_LLM__API_KEY: mangomas-llm-api-key-qa
+        MANGOMAS_DB__URL: mangomas-db-url-qa
       annotations:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "3"
@@ -79,10 +95,14 @@ environments:
       ancestor_branch: main
     # Production is the base manifest as-is: the overlay restates the values
     # the base already carries, so rendering prod is the pre-ADR-0036 deploy
-    # apart from the image (pinned by a test). It keeps defaults.repository
-    # and the Cloud Run default runtime identity for the same reason; giving
-    # it a dedicated runtime account is a deliberate, reviewed follow-up.
+    # apart from the image and the filled placeholders (pinned by a test). It
+    # keeps defaults.repository and the Cloud Run default runtime identity for
+    # the same reason; giving it a dedicated runtime account is a deliberate,
+    # reviewed follow-up.
     service: mangomas
     overrides:
       env:
         MANGOMAS_ENV: prod
+        MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
+        MANGOMAS_LLM__MODEL: ${LLM_MODEL}
+        MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}
