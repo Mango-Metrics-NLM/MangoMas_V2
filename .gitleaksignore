@@ -1,0 +1,15 @@
+# Gitleaks fingerprints to skip — one per line, `<commit>:<file>:<rule>:<line>`.
+#
+# Every entry must be a full fingerprint (tests/deploy/test_gitleaks_config.py
+# rejects a bare path or rule), so this file can only ever exempt one finding
+# in one commit, never a file or a rule. Add an entry only for a finding that
+# is provably not a credential and that already sits in committed history,
+# where the fix (a reserved host, a placeholder) cannot reach.
+#
+# PR #101: the password-bearing test fixture DSN in
+# tests/composition/test_secrets.py, which the repo's own connection-string
+# rule correctly caught because its host (`db.internal`) was not RFC-reserved.
+# The fixture now uses `db.example.test`; this entry covers the one commit that
+# carried the old host. The password was never a credential: it exists to be
+# asserted *absent* from log records.
+dad188cacef65045fa95f835c3c2e8d6950f68d2:tests/composition/test_secrets.py:mangomas-connection-string-password:45

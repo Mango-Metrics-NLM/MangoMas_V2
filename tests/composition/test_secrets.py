@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
@@ -38,6 +39,37 @@ def test_postgres_factory_constructs_repo_without_io() -> None:
     repo = factory(cfg)
     # Lazy-pool invariant from PostgresRepository.
     assert repo._pool is None
+
+
+# Test-scoped: a DSN whose userinfo carries a password (no config counterpart).
+# The host is RFC 6761-reserved (`.test`), which is what .gitleaks.toml's
+# fixture allowlist keys on — a credential that cannot address real
+# infrastructure; the password is deliberately NOT a placeholder word so the
+# redaction assertion below still discriminates.
+_DSN_WITH_PASSWORD = "postgresql://svc:s3cret-pw@db.example.test:5432/mangomas"  # noqa: S105 — fixture, not a secret
+_DSN_PASSWORD = "s3cret-pw"  # noqa: S105 — the fixture's userinfo, asserted absent from logs
+
+
+def test_postgres_factory_never_logs_the_dsn_password(caplog: pytest.LogCaptureFixture) -> None:
+    """The factory's DEBUG record carries the host only, never the URL.
+
+    ``MANGOMAS_DB__URL`` is a Secret Manager secret on Cloud Run and dev runs
+    at DEBUG with the JSON formatter forwarding every ``extra`` field, so a
+    ``{"url": cfg.url}`` record (the previous code) shipped the password to
+    Cloud Logging on every startup (spec-0038; Copilot review on PR #101).
+    Mutation (proved while writing): restore ``extra={"url": cfg.url}`` and
+    this fails on the password check.
+    """
+    factory = _storage_registry.get("postgres")
+    with caplog.at_level(logging.DEBUG, logger="mangomas.composition.storage"):
+        factory(DBSettings(provider="postgres", url=_DSN_WITH_PASSWORD))
+    records = [r for r in caplog.records if r.name == "mangomas.composition.storage"]
+    assert records, "the factory no longer logs at DEBUG — the guard is vacuous"
+    for record in records:
+        rendered = record.getMessage() + repr(vars(record))
+        assert _DSN_PASSWORD not in rendered
+        assert _DSN_WITH_PASSWORD not in rendered
+    assert getattr(records[0], "dsn_host", None) == "db.example.test"
 
 
 def test_gcp_secrets_lazy_registers_on_build_when_provider_selected() -> None:

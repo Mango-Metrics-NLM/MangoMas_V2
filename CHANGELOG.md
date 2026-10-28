@@ -9,6 +9,59 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — the reference manifest carries what its providers need (spec-0038, P0-B)
+
+- `deploy/service.yaml` selected Vertex, Cloud SQL Postgres and Secret
+  Manager without their settings: no `MANGOMAS_DB__URL` (so `DBSettings.url`
+  kept the SQLite default inside a Cloud Run container), no
+  `MANGOMAS_LLM__PROJECT_ID` / `MANGOMAS_LLM__MODEL` (Vertex would be asked
+  for `local-model`), and no `MANGOMAS_SECRETS__PROJECT_ID` (the gcp secrets
+  provider raises `ConfigError` at build time). The DSN is a `secretKeyRef`
+  (`mangomas-db-url`, re-pointed per environment); the project id and model
+  are `${PROJECT_ID}` / `${LLM_MODEL}` render placeholders that every overlay
+  restates and `deploy.yml` fills (`LLM_MODEL` from the new `VERTEX_MODEL`
+  repository variable; `DEPLOY_RENDER_ENV_VARS` names both).
+- New `tests/deploy/test_manifest_provider_contract.py` over every rendered
+  environment: each env name resolves to a `Settings` field, each selected
+  provider's extra is in the image (Dockerfile `ARG` expanded through
+  pyproject's meta-extras) and its required settings are present, secret-shaped
+  settings are never literals, no `${` survives a render, auth and
+  backpressure are on, non-production environments use their own API-token
+  secret ref, and `IMAGE_SMOKE_IMPORTS` covers every selected provider's SDK.
+  The rows live in `tests/constants/deploy.py::PROVIDER_REQUIREMENTS`; the
+  settings-name walk moved to `tests/deploy/_settings_names.py` (shared with
+  the `.env.example` contract) and the extras closure to
+  `tests/deploy/_pyproject.py`. Eight mutation proofs recorded in the PR.
+- Two defects the safe defaults would have exposed (Copilot review on PR
+  #101): `ConcurrencyLimitMiddleware` now takes `exempt_paths` and `create_app`
+  passes `mangomas.api.health.PROBE_PATHS` (`/healthz`, `/health`, `/readyz`,
+  `/ready`, the one constant the system router also mounts), so a saturated
+  Cloud Run instance still answers its liveness probe instead of being
+  restarted mid-request (the platform does not route probes through
+  `containerConcurrency`); and `composition/storage.py` logs the Postgres
+  DSN's **host only** (`dsn_host`, moved to `adapters/storage/_url.py` and
+  shared with the adapter) — the previous `{"url": cfg.url}` DEBUG record
+  would have forwarded the password-bearing Secret Manager DSN to Cloud
+  Logging on every dev startup. Both regression tests mutation-proved.
+- CI builds the production image: new `docker-smoke` job (`make docker-smoke`
+  = `docker-build` + an in-image `python -c "import <every selected SDK>;
+  from mangomas.api.app import create_app"`, `timeout-minutes: 20`). Until now
+  the one artefact that reaches production was never built by CI.
+
+### Changed — reference manifest safe defaults (spec-0038, P0-B)
+
+- `deploy/service.yaml` now ships `MANGOMAS_AUTH__ENABLED=true` with
+  `MANGOMAS_AUTH__SECRET_REF=mangomas-api-token` (`-dev` / `-qa` per
+  environment; the gcp secrets provider resolves it),
+  `MANGOMAS_API__MAX_BODY_BYTES=1048576` and
+  `MANGOMAS_API__MAX_CONCURRENT_REQUESTS=80` (equal to `containerConcurrency`
+  so the app never refuses what Cloud Run routes). A copied manifest no
+  longer yields an open, unbounded service. **Admin before the next deploy:**
+  the `VERTEX_MODEL` repository variable and the `mangomas-db-url[-dev|-qa]`
+  / `mangomas-api-token[-dev|-qa]` Secret Manager secrets.
+- `test_production_render_is_the_base_manifest` now expects the base plus the
+  image *and the filled placeholders* (derived from the manifest, not listed).
+
 ### Fixed — production image installs the cloud extras it needs (spec-0038, P0-A)
 
 - `Dockerfile` installs `mangomas[cloud]` by default (`ARG MANGOMAS_EXTRAS=cloud`;

@@ -25,7 +25,6 @@ import json
 import logging
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from mangomas.adapters.storage._schema import (
     TURN_RECORD_COLUMNS,
@@ -34,6 +33,7 @@ from mangomas.adapters.storage._schema import (
     TurnStatus,
     postgres_column_ddl,
 )
+from mangomas.adapters.storage._url import dsn_host
 from mangomas.config import (
     DEFAULT_ERROR_DETAIL_TRUNCATE,
     DEFAULT_STORAGE_LIST_TURNS_LIMIT,
@@ -95,16 +95,9 @@ def _normalise_dsn(url: str) -> str:
     return stripped
 
 
-def _dsn_host(url: str) -> str | None:
-    """Extract the host component of a DSN for structured logging.
-
-    Returns ``None`` if the URL does not parse — never raises. The full
-    DSN is **never** logged because it may carry a password in userinfo.
-    """
-    try:
-        return urlparse(url).hostname
-    except (ValueError, AttributeError):  # pragma: no cover  -- urlparse is very lenient
-        return None
+# Shared with composition/storage.py so the factory's DEBUG record and the
+# adapter's records redact the DSN the same way (never the full URL).
+_dsn_host = dsn_host
 
 
 def _driver_failures(driver: ModuleType) -> tuple[type[BaseException], ...]:

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from mangomas.api.health import check_ready
+from mangomas.api.health import LIVENESS_PATHS, READINESS_PATHS, check_ready
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +24,14 @@ def build_system_router() -> APIRouter:
     """Build the system router (called from inside ``create_app``)."""
     router = APIRouter()
 
-    @router.get("/healthz")
-    @router.get("/health")
+    @router.get(LIVENESS_PATHS[0])
+    @router.get(LIVENESS_PATHS[1])
     async def healthz() -> dict[str, str]:
         """Liveness probe. ``/health`` is retained as a compatibility alias."""
         return {"status": "ok"}
 
-    @router.get("/readyz")
-    @router.get("/ready")
+    @router.get(READINESS_PATHS[0])
+    @router.get(READINESS_PATHS[1])
     async def readyz(request: Request) -> JSONResponse:
         """Readiness probe. ``/ready`` is retained as a compatibility alias."""
         orch: Orchestrator = request.app.state.orchestrator

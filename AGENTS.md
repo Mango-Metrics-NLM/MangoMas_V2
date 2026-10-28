@@ -204,7 +204,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_API__HISTORY_DEFAULT_LIMIT` | `10` | Default page size for `GET /history` |
 | `MANGOMAS_API__HISTORY_MAX_LIMIT` | `1000` | Hard cap on the history `limit` query param |
 | `MANGOMAS_API__MAX_BODY_BYTES` | `0` | Max request body bytes (`0` = off; 413 when exceeded; ADR-0015) |
-| `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; ADR-0015) |
+| `MANGOMAS_API__MAX_CONCURRENT_REQUESTS` | `0` | Max in-flight requests (`0` = off; 503 when saturated; the probe routes in `api.health.PROBE_PATHS` are never capped; ADR-0015) |
 | `MANGOMAS_AUTH__ENABLED` | `false` | Enforce bearer / API-key auth on data + execution routes (ADR-0014) |
 | `MANGOMAS_AUTH__SECRET_REF` | _(none)_ | `SecretsProvider` ref resolving to the expected API token (required when enabled) |
 | `MANGOMAS_TENANCY__ENABLED` | `false` | Tenant-scoped conversation storage via a row filter (ADR-0017). **Storage partitioning, not access control** — the header is client-asserted and unbound to any credential (ADR-0033) |

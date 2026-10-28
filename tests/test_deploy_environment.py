@@ -25,8 +25,8 @@ from tests._script_loader import load_script_module
 from tests.constants.deploy import (
     ENV_LABEL_VAR,
     LLM_API_KEY_VAR,
+    RENDER_PLACEHOLDER_VALUES,
     TEST_IMAGE_REF,
-    TEST_PROJECT_ID,
 )
 from tests.deploy import _manifest
 
@@ -571,7 +571,17 @@ def test_main_plan_reads_github_environment(
     assert "service=svc-dev\n" in out.read_text(encoding="utf-8")
 
 
-def test_main_render_writes_manifest(tmp_path: Path) -> None:
+def _substitute_flags(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """`--substitute-from-env NAME` for every placeholder the real registry
+    uses, with its test value exported — the same set the Makefile supplies."""
+    flags: list[str] = []
+    for name, value in RENDER_PLACEHOLDER_VALUES.items():
+        monkeypatch.setenv(name, value)
+        flags.extend(["--substitute-from-env", name])
+    return flags
+
+
+def test_main_render_writes_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     out = tmp_path / "rendered.yaml"
     code = deploy_env.main(
         [
@@ -586,6 +596,7 @@ def test_main_render_writes_manifest(tmp_path: Path) -> None:
             str(out),
             "--base-manifest",
             str(_REAL_BASE_MANIFEST),
+            *_substitute_flags(monkeypatch),
         ]
     )
     assert code == deploy_env.EXIT_OK
@@ -597,7 +608,6 @@ def test_main_render_uses_registry_base_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(_REPO_ROOT)
-    monkeypatch.setenv("PROJECT_ID", TEST_PROJECT_ID)
     out = tmp_path / "rendered.yaml"
     args = [
         "render",
@@ -607,8 +617,7 @@ def test_main_render_uses_registry_base_manifest(
         _TEST_IMAGE,
         "--output",
         str(out),
-        "--substitute-from-env",
-        "PROJECT_ID",
+        *_substitute_flags(monkeypatch),
     ]
     assert deploy_env.main(["--registry", str(_REAL_REGISTRY), *args]) == deploy_env.EXIT_OK
     expected = deploy_env.load_registry(_REAL_REGISTRY).environments["dev"].service

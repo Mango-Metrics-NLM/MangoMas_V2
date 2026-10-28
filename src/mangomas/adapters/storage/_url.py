@@ -1,4 +1,4 @@
-"""Shared SQLite URL/path normalisation.
+"""Shared storage-URL helpers: SQLite path normalisation and DSN redaction.
 
 Promoted out of :mod:`mangomas.adapters.storage.sqlite` so every consumer that
 accepts a SQLite connection target — the ``SQLiteRepository`` turn store and
@@ -12,6 +12,21 @@ would create a literal directory named ``sqlite:`` next to a file named
 from __future__ import annotations
 
 from urllib.parse import urlparse
+
+
+def dsn_host(url: str) -> str | None:
+    """Extract the host component of a DSN for structured logging.
+
+    Returns ``None`` if the URL does not parse — never raises. This is the
+    **only** form in which a DSN may reach a log record: the full URL may
+    carry a password in its userinfo, and ``MANGOMAS_DB__URL`` is a Secret
+    Manager secret on Cloud Run (spec-0038), so logging it at any level
+    would forward the credential into Cloud Logging.
+    """
+    try:
+        return urlparse(url).hostname
+    except (ValueError, AttributeError):  # pragma: no cover  -- urlparse is very lenient
+        return None
 
 
 def path_from_sqlite_url(url: str) -> str:

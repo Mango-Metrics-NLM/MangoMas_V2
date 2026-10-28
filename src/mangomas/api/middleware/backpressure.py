@@ -102,15 +102,25 @@ class ConcurrencyLimitMiddleware:
     ``await self.app(...)`` returns only after the last body chunk, an
     exception, or the client's disconnect, so the slot is held for the whole
     response. Non-HTTP scopes (lifespan, websocket) pass straight through.
+
+    ``exempt_paths`` bypass the cap entirely (served, never counted). The
+    platform's health probes are not routed through ``containerConcurrency``,
+    so with the cap equal to it a saturated instance would answer its own
+    liveness probe with 503 and be restarted mid-request after
+    ``failureThreshold`` misses — exactly when it is doing the most work
+    (spec-0038). ``create_app`` passes :data:`mangomas.api.health.PROBE_PATHS`.
     """
 
-    def __init__(self, app: ASGIApp, *, max_concurrent: int) -> None:
+    def __init__(
+        self, app: ASGIApp, *, max_concurrent: int, exempt_paths: frozenset[str] = frozenset()
+    ) -> None:
         self.app = app
         self._max = max_concurrent
+        self._exempt_paths = exempt_paths
         self._in_flight = 0
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] != "http" or scope.get("path", "") in self._exempt_paths:
             await self.app(scope, receive, send)
             return
         if self._in_flight >= self._max:

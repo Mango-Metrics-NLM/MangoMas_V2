@@ -1,6 +1,6 @@
 # Spec-0038: Cloud image closure and manifest provider contract
 
-- **Status:** In progress — P0-A (image closure) implemented; P0-B (manifest contract) pending
+- **Status:** Implemented — P0-A (image closure) and P0-B (manifest contract)
 - **Linked ADR:** _none — no boundary change_ (deploy/build surface only)
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Fixed — production image installs the cloud extras it needs`
 
@@ -44,11 +44,15 @@ self-consistent and adds the CI smoke job (pending half).
   pre-release floor and is **not** part of `cloud`; `METRICS_ENABLED` stays off
   in the manifest. The runtime install hint names that extra.
 - R7 (P0-B) — The manifest carries every provider-required setting
-  (`DB__URL` via secret ref, `LLM__MODEL`, `LLM__PROJECT_ID`), enables auth and
-  bounded body/concurrency by default, and a contract test over every rendered
+  (`DB__URL` via secret ref, `LLM__MODEL`, `LLM__PROJECT_ID`, and
+  `SECRETS__PROJECT_ID`, which the gcp secrets provider refuses to build
+  without — found while writing the rows), enables auth and bounded
+  body/concurrency by default, and a contract test over every rendered
   environment ties selected providers → image extras → required settings →
   `Settings` field names. A CI `docker-smoke` job builds the image and imports
-  each selected provider's SDK.
+  each selected provider's SDK. `${...}` values in the base manifest are
+  render placeholders every overlay must restate (the base is never
+  substituted); a rendered manifest may not contain one.
 - Must remain **additive & default-OFF**: the application code path is
   untouched; a slim image is one build arg away; no `MANGOMAS_*` default
   changes in P0-A.
@@ -71,6 +75,35 @@ self-consistent and adds the CI smoke job (pending half).
 - WHEN `make lock` loses its `-c $(RUNTIME_LOCKFILE)` or `LOCK_EXTRAS` no longer
   names the image's extras THEN `test_lock_target_compiles_the_cloud_extra` /
   `test_lock_extras_cover_the_image_default_extras` fail (proved, both).
+- WHEN the manifest selects a provider whose required setting is absent (the
+  `MANGOMAS_DB__URL` secretKeyRef deleted) THEN
+  `test_each_selected_provider_has_its_required_settings` fails (proved); WHEN
+  an env name is not a `Settings` field (`MANGOMAS_LLM__MODL`) THEN
+  `test_every_manifest_env_name_resolves_to_a_settings_field` fails (proved);
+  WHEN `AUTH__ENABLED` is `false` THEN
+  `test_reference_manifest_enables_auth_and_backpressure` fails (proved); WHEN
+  an overlay forgets to restate a placeholder THEN
+  `test_rendered_manifests_contain_no_unfilled_placeholders` fails (proved);
+  WHEN `postgres` leaves the `cloud` meta-extra THEN
+  `test_each_selected_provider_has_its_extra_in_the_image` fails (proved);
+  WHEN `asyncpg` leaves `IMAGE_SMOKE_IMPORTS` THEN
+  `test_smoke_import_list_covers_every_selected_provider` fails (proved); WHEN
+  the `docker-smoke` job loses its timeout THEN
+  `test_docker_smoke_job_delegates_to_make` fails (proved); WHEN dev reuses
+  production's token ref THEN
+  `test_non_production_environments_use_their_own_auth_token_ref` fails
+  (proved). Each passes on the shipped tree, and the denominator test proves
+  the base manifest selects at least three provider rows.
+- WHEN every concurrency slot is held THEN a request to any `PROBE_PATHS`
+  route is still served 200 while a data route is 503
+  (`test_saturated_limiter_still_serves_probe_paths`; proved: dropping the
+  exemption branch → red for all four paths); WHEN the guard is built without
+  `exempt_paths` THEN probes are capped like everything else (the pre-existing
+  contract, pinned).
+- WHEN the Postgres factory logs at DEBUG with a password-bearing DSN THEN no
+  record carries the URL or the password, only `dsn_host`
+  (`test_postgres_factory_never_logs_the_dsn_password`; proved: restoring
+  `extra={"url": cfg.url}` → red).
 
 ## Config / env additions
 
@@ -120,4 +153,4 @@ self-consistent and adds the CI smoke job (pending half).
 - [x] Lock covers the `cloud` closure; pip-audit of the result is clean.
 - [x] `ruff`, `mypy`, `pytest` (95 % gate), `frontmatter-lint` clean.
 - [x] CHANGELOG updated; Dependabot `docker` ecosystem added.
-- [ ] P0-B: manifest carries DB URL / model / project id, auth + backpressure on, provider contract test, `docker-smoke` CI job, deploy README table.
+- [x] P0-B: manifest carries DB URL / model / project ids, auth + backpressure on, provider contract test, `docker-smoke` CI job, deploy README table.

@@ -36,14 +36,44 @@ spec:
               value: "json"
             - name: MANGOMAS_TELEMETRY__EXPORTER
               value: "gcp"
+            # Every provider selected below carries the settings it requires
+            # (spec-0038): tests/deploy/test_manifest_provider_contract.py
+            # fails when a provider is selected without them, when a name is
+            # not a Settings field, or when the image lacks the provider's
+            # extra. `${PROJECT_ID}` / `${LLM_MODEL}` are render-time
+            # placeholders: the base is never substituted, so EVERY overlay in
+            # environments.yaml restates them (a rendered manifest must contain
+            # no `${`) and deploy.yml supplies the values (PROJECT_ID from the
+            # GCP_PROJECT_ID secret, LLM_MODEL from the VERTEX_MODEL variable).
             - name: MANGOMAS_LLM__PROVIDER
               value: "vertex"
+            - name: MANGOMAS_LLM__PROJECT_ID
+              value: "${PROJECT_ID}"
+            - name: MANGOMAS_LLM__MODEL
+              value: "${LLM_MODEL}"
             - name: MANGOMAS_DB__PROVIDER
               value: "postgres"
             - name: MANGOMAS_SECRETS__PROVIDER
               value: "gcp"
+            - name: MANGOMAS_SECRETS__PROJECT_ID
+              value: "${PROJECT_ID}"
             - name: MANGOMAS_SECRETS__STRICT
               value: "true"
+            # Safe defaults (spec-0038): the reference manifest is what a new
+            # environment copies, so it must not ship an open, unbounded
+            # service. Auth is on — the token is resolved by the gcp secrets
+            # provider from the Secret Manager secret this ref names (a name,
+            # not a secret) — and request body / in-flight concurrency are
+            # bounded; MAX_CONCURRENT_REQUESTS equals containerConcurrency so
+            # the app never refuses what Cloud Run routes (ADR-0014/0015).
+            - name: MANGOMAS_AUTH__ENABLED
+              value: "true"
+            - name: MANGOMAS_AUTH__SECRET_REF
+              value: "mangomas-api-token"
+            - name: MANGOMAS_API__MAX_BODY_BYTES
+              value: "1048576"
+            - name: MANGOMAS_API__MAX_CONCURRENT_REQUESTS
+              value: "80"
             # Secret material comes from Secret Manager, not literals. Prefer
             # LLMSettings.secret_ref resolved by the gcp secrets provider; this
             # secretKeyRef form is shown for parity with other MANGOMAS_* vars.
@@ -51,6 +81,13 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: mangomas-llm-api-key
+                  key: latest
+            # The Cloud SQL DSN is a credential (it carries the password), so
+            # it is a secretKeyRef too; dev/qa re-point it in environments.yaml.
+            - name: MANGOMAS_DB__URL
+              valueFrom:
+                secretKeyRef:
+                  name: mangomas-db-url
                   key: latest
           livenessProbe:
             httpGet:

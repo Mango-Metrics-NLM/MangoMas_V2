@@ -5,13 +5,20 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import Any
+from typing import Any, Final
 
 from mangomas.adapters.llm.base import PingableLLMClient
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
+
+# The probe routes, in one place: ``routes/system.py`` mounts them and the
+# concurrency guard exempts them (``create_app``). Each pair is the canonical
+# path plus its retained compatibility alias.
+LIVENESS_PATHS: Final[tuple[str, str]] = ("/healthz", "/health")
+READINESS_PATHS: Final[tuple[str, str]] = ("/readyz", "/ready")
+PROBE_PATHS: Final[frozenset[str]] = frozenset((*LIVENESS_PATHS, *READINESS_PATHS))
 
 _STATUS_OK = "ok"
 _STATUS_ERROR = "error"

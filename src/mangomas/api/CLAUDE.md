@@ -57,7 +57,9 @@ load-bearing rather than cosmetic.
   The test resolves helper calls rather than sorting by line.
 - Backpressure inner of log/trace is the point: a 413 or 503 that nothing
   recorded is an outage you cannot see.
-- Health routes are never authenticated.
+- Health routes are never authenticated, and never capped by `ConcurrencyLimitMiddleware`
+  (`create_app` passes `health.PROBE_PATHS` as `exempt_paths`): a saturated
+  instance that 503s its own liveness probe is restarted mid-request.
 - The error handler walks the exception MRO and picks the most specific status,
   so a new subclass inherits a sane mapping instead of falling to 500.
 - Route handlers raise typed errors; they never build a status code by hand.

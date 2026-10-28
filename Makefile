@@ -97,7 +97,14 @@ DEPLOY_LOG_LEVEL  ?= INFO
 RENDERED_MANIFEST ?= rendered-service.yaml
 # Environment variables whose values fill ${NAME} placeholders in overlays.
 # Values are read from the environment by the script, never put on argv.
-DEPLOY_RENDER_ENV_VARS ?= PROJECT_ID
+DEPLOY_RENDER_ENV_VARS ?= PROJECT_ID LLM_MODEL
+# Image smoke (spec-0038): build the production image and import, inside it,
+# the SDK of every provider deploy/service.yaml selects plus the app factory.
+# The import list is held to the manifest's providers by
+# tests/deploy/test_manifest_provider_contract.py. cloud_monitoring is absent
+# on purpose: metrics stay off in the manifest and that exporter is alpha-only.
+DOCKER_IMAGE ?= mangomas:ci
+IMAGE_SMOKE_IMPORTS ?= vertexai, asyncpg, google.cloud.secretmanager, opentelemetry.exporter.cloud_trace, mango_contracts
 # SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
 TRIVY_VERSION ?= 0.74.0
@@ -110,7 +117,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local secret-scan pip-audit sbom-scan \
         install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply \
-        lock lock-upgrade \
+        lock lock-upgrade docker-build docker-smoke \
         nightly-scan-refs
 
 help: ## Show this help
@@ -306,6 +313,14 @@ pip-audit: ## Audit the installed env AND the runtime lockfile for known CVEs (d
 	#    scanned. tests/deploy/test_lockfile_freshness.py keeps the lock in sync
 	#    with pyproject; this keeps it free of known CVEs.
 	$(PYTHON) -m pip_audit -r $(RUNTIME_LOCKFILE)
+
+# ── Image ────────────────────────────────────────────────────────────────────
+
+docker-build: ## Build the production image as DOCKER_IMAGE (the Dockerfile's default extras)
+	docker build -t "$(DOCKER_IMAGE)" .
+
+docker-smoke: docker-build ## Build the image, then import every selected provider's SDK + create_app inside it
+	docker run --rm "$(DOCKER_IMAGE)" python -c "import $(IMAGE_SMOKE_IMPORTS); from mangomas.api.app import create_app; print('image smoke OK')"
 
 # ── Lockfile ─────────────────────────────────────────────────────────────────
 # Both targets write $(RUNTIME_LOCKFILE) as $(LOCKFILE_HEADER) + pip-compile's

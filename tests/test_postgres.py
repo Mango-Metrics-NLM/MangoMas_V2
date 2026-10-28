@@ -23,6 +23,7 @@ from mangomas.adapters.storage._schema import (
     TURN_SELECT_COLUMNS,
     TurnStatus,
 )
+from mangomas.adapters.storage._url import dsn_host
 from mangomas.adapters.storage.postgres import (
     _PG_RECORD_MIGRATIONS,
     _PG_SCHEMA,
@@ -41,6 +42,14 @@ from tests.constants import TENANT_A
 #: Logger name the adapter emits under — derived, never restated, so a module
 #: move cannot leave these assertions silently matching nothing.
 _PG_LOGGER = postgres_module.__name__
+
+
+def test_dsn_host_is_the_shared_url_helper() -> None:
+    """The adapter and composition/storage.py must redact the DSN the same way."""
+    assert _dsn_host is dsn_host
+    assert dsn_host("postgresql://u:p@h:5432/db") == "h"
+    assert dsn_host("not a url") is None
+
 
 # ── _normalise_dsn ────────────────────────────────────────────────────────────
 

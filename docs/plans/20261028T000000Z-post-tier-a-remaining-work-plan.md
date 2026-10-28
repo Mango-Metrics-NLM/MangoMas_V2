@@ -66,24 +66,28 @@ and "next free" line.
   `opentelemetry.exporter.cloud_trace`, `mango_contracts` and `create_app`
   import; `cloud_monitoring` absent by design; `pip check` clean.
 
-## PR P0-B — deploy: manifest contract, safe defaults, docker smoke job (spec-0038)
+## PR P0-B — deploy: manifest contract, safe defaults, docker smoke job (spec-0038) ✅
 
-### Milestone B0 — manifest carries what its providers need
+### Milestone B0 — manifest carries what its providers need ✅
 
 - **Failing test first:** `test_each_selected_provider_has_its_required_settings`
   (red: no `MANGOMAS_DB__URL`, `LLM__MODEL`, `LLM__PROJECT_ID`).
 - **Depends on:** P0-A (extras expansion reused from `tests/deploy/_dockerfile.py`).
 - `deploy/service.yaml`: `DB__URL` via `secretKeyRef mangomas-db-url`,
-  `LLM__MODEL: ${LLM_MODEL}`, `LLM__PROJECT_ID: ${PROJECT_ID}`; safe defaults
+  `LLM__MODEL: ${LLM_MODEL}`, `LLM__PROJECT_ID: ${PROJECT_ID}`,
+  `SECRETS__PROJECT_ID: ${PROJECT_ID}` (found while writing the rows: the gcp
+  secrets provider refuses to build without it); safe defaults
   `AUTH__ENABLED=true`, `AUTH__SECRET_REF=mangomas-api-token`,
-  `API__MAX_BODY_BYTES=1048576`, `API__MAX_CONCURRENT_REQUESTS=64`;
+  `API__MAX_BODY_BYTES=1048576`, `API__MAX_CONCURRENT_REQUESTS=80`
+  (= `containerConcurrency`, not 64: the app must never refuse what Cloud Run
+  routes);
   per-environment overlays in `deploy/environments.yaml`;
   `DEPLOY_RENDER_ENV_VARS += LLM_MODEL`; `deploy.yml` `LLM_MODEL: ${{ vars.VERTEX_MODEL }}`.
 - `tests/constants/deploy.py::PROVIDER_REQUIREMENTS`;
   `tests/deploy/test_manifest_provider_contract.py` (six named tests over
   every rendered environment).
 
-### Milestone B1 — CI builds the image and imports each provider's SDK
+### Milestone B1 — CI builds the image and imports each provider's SDK ✅
 
 - **Failing test first:** `test_docker_smoke_job_delegates_to_make`.
 - **Depends on:** B0.

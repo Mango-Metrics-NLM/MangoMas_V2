@@ -199,6 +199,24 @@ jobs:
       - name: Scripts coverage (isolated, measured floor)
         run: make scripts-coverage
 
+  docker-smoke:
+    name: Image smoke (cloud extras importable)
+    runs-on: ubuntu-latest
+    # The image is what reaches production and nothing else here builds it:
+    # the manifest selects Vertex, Cloud SQL Postgres, Secret Manager and
+    # Cloud Trace, every one lazy-imports its SDK, and an image without the
+    # extras boots and then fails on the first request (spec-0038). Bounded
+    # because a build that hangs on a registry must not hold a runner.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # Build + in-image import of every selected provider's SDK live in one
+      # place: `make docker-smoke` (IMAGE_SMOKE_IMPORTS), which
+      # tests/deploy/test_manifest_provider_contract.py ties to the manifest.
+      - name: Build image and import the selected providers' SDKs
+        run: make docker-smoke
+
   pip-audit:
     name: Dependency vulnerability audit
     runs-on: ubuntu-latest

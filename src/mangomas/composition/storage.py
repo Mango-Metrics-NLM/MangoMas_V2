@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from mangomas.adapters.storage import SQLiteRepository
+from mangomas.adapters.storage._url import dsn_host
 from mangomas.config import DBSettings
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,10 @@ def _postgres_factory(cfg: DBSettings) -> Any:
     The asyncpg SDK is lazy-imported to keep the optional ``postgres`` extra
     genuinely optional.
     """
-    logger.debug("Building PostgresRepository", extra={"url": cfg.url})
+    # Host only, never the URL: the DSN carries the password in its userinfo
+    # and dev runs at DEBUG with the JSON formatter forwarding every ``extra``
+    # field to Cloud Logging (spec-0038; Copilot review on PR #101).
+    logger.debug("Building PostgresRepository", extra={"dsn_host": dsn_host(cfg.url)})
     from mangomas.adapters.storage.postgres import PostgresRepository  # noqa: PLC0415
 
     return PostgresRepository(cfg)
