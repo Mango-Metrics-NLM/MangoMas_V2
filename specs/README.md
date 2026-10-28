@@ -78,6 +78,10 @@ thinking tool, not a gate.
 | [0035](0035-environment-branching-and-deploy.md) | Environment branches and per-environment deploy |
 | [0037](0037-a2a-interop.md) | Agent2Agent (A2A) interoperability as an opt-in boundary adapter (design only; 0036 is reserved by the reliability plan for the trust boundary) |
 | [0038](0038-cloud-image-closure-and-manifest-contract.md) | Cloud image closure (extras + one lock) and manifest provider contract |
+| [0042](0042-paired-evaluation-statistics.md) | Paired evaluation statistics (score rate, ternary CI, group bootstrap, `eval compare`) — 0039–0041 reserved by the 2026-10-28 plan |
+| [0043](0043-pairwise-judge-and-paired-runner.md) | `PairwiseJudge` protocol with mandatory order swap + `eval paired` runner |
+| [0044](0044-decision-records.md) | Decision records: (state digest, action, predicted/observed) on an extras-hung sink |
+| [0045](0045-plan-search-spike.md) | Plan-search spike with a pre-registered kill criterion (no runtime code) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -88,4 +92,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0039** (0036 is reserved); next free ADR: **0038**.
+than reused. Next free spec on this branch: **0046** (0036 reserved by the reliability plan; 0039–0041 reserved by the 2026-10-28 plan); next free ADR: **0043** (0038–0040 reserved by the 2026-10-28 plan).
