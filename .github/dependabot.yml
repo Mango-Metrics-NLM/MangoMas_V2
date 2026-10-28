@@ -45,3 +45,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+
+  # Base-image digests. The Dockerfile pins python:3.11-slim by digest in both
+  # stages (supply-chain baseline); without this entry those digests were only
+  # ever bumped by hand.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly

@@ -9,6 +9,39 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — production image installs the cloud extras it needs (spec-0038, P0-A)
+
+- `Dockerfile` installs `mangomas[cloud]` by default (`ARG MANGOMAS_EXTRAS=cloud`;
+  `--build-arg MANGOMAS_EXTRAS=` for the former slim image). The reference
+  manifest selects Vertex, Cloud SQL Postgres, Secret Manager and Cloud Trace,
+  every one of which lazy-imports its SDK — so the image built, booted, and
+  failed on the first request. Dependabot now also watches the base image
+  (`docker` ecosystem).
+- `requirements.lock` pins the `cloud` closure too (32 → 68 pins, no existing
+  pin moved): the image's `-c` install, `make pip-audit -r` and the freshness
+  contract now cover the cloud SDKs with no new plumbing.
+- `make lock` (additive: compiles with the current lock as `-c`, so base pins
+  never move as a side effect) and `make lock-upgrade` (every pin may move)
+  replace the hand-typed `pip-compile` command in the lock's header, which
+  silently dropped the header itself (`--no-header`) and wrongly claimed
+  Dependabot refreshes the file. Both refuse to run off Python 3.11 (the
+  image's interpreter), prepend the tracked `requirements.lock.header`, strip
+  the self-referential `mangomas @ file://…` line the `cloud` meta-extra makes
+  pip-compile emit, and produce a fixed point — `make lock && git diff --exit-code`
+  proves freshness in one run.
+- New extra `gcp-monitoring` for `opentelemetry-exporter-gcp-monitoring`,
+  which has only ever shipped alpha releases on PyPI (a `>=1.6` floor cannot
+  resolve); it is deliberately **not** part of `cloud`, and the runtime
+  install hint names it. Previously the package was in no extra at all.
+- Contracts (`tests/deploy/`): every distribution `mangomas[cloud]` installs is
+  pinned (meta-extra expanded through pyproject's own self-references); the
+  lock begins with the tracked header and never names the project; the
+  Dockerfile's extras default is `cloud` and the install line expands it;
+  `LOCK_EXTRAS` covers the image's extras; `lock` keeps `-c`, `lock-upgrade`
+  omits it, both pin pip-tools and guard the Python minor against the
+  Dockerfile base tag. Each guard was mutation-proved. New shared reader
+  `tests/deploy/_dockerfile.py`.
+
 ### Fixed — branch audit, Tier A: eval harness and adapter boundaries
 
 - `llm_judge` rejects a non-finite judge score (`NaN`/`Infinity` parse as

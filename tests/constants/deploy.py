@@ -27,3 +27,17 @@ TEST_PROJECT_ID: Final[str] = "test-project-0000"
 TEST_IMAGE_REF: Final[str] = (
     "test-region-docker.pkg.dev/test-project-0000/test-repo/test-image@sha256:" + "0" * 64
 )
+
+# The build arg selecting the extras the production image installs, and the
+# extra the reference manifest's providers need (pyproject's `cloud` meta-extra
+# = vertex + postgres + gcp). The Makefile's LOCK_EXTRAS and the Dockerfile's
+# ARG default are both held to this name by tests/deploy/.
+IMAGE_EXTRAS_BUILD_ARG: Final[str] = "MANGOMAS_EXTRAS"
+CLOUD_EXTRA: Final[str] = "cloud"
+
+# A pin that exists only when the lock was compiled on the image's platform:
+# uvicorn[standard] pulls uvloop under `sys_platform != "win32"`, and
+# pip-compile evaluates that marker on the compiling host. Its absence is the
+# fingerprint of a Windows-compiled lock, which the Linux image would then
+# resolve unconstrained.
+LINUX_ONLY_LOCK_CANARY: Final[str] = "uvloop"

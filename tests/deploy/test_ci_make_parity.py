@@ -22,7 +22,8 @@ from typing import Any, cast
 import pytest
 
 from tests._script_loader import load_script_module
-from tests.deploy import _makefile, _workflows
+from tests.constants.deploy import CLOUD_EXTRA
+from tests.deploy import _dockerfile, _makefile, _workflows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
@@ -47,6 +48,9 @@ _PR_TRIGGER_BRANCHES = (
     ),
 )
 _PROTECTED_PATHS_BASE_EXPR = "${{ github.base_ref || github.event.repository.default_branch }}"
+# `sys.platform` of the runtime image (python:*-slim is Debian); the lock
+# targets must compile there because environment markers resolve on the host.
+_IMAGE_PLATFORM = "linux"
 
 # Opt-in suite targets that must never trip the global coverage gate when run
 # standalone — the concrete regression this milestone locks in (D5: `make
@@ -246,6 +250,52 @@ def test_runtime_lockfile_variable_names_the_file_the_dockerfile_uses() -> None:
         f"Makefile audits {lockfile!r} but the Dockerfile constrains on a "
         f"different file — the audit would scan something the image never installs"
     )
+
+
+def test_lock_target_compiles_the_cloud_extra() -> None:
+    """`make lock` pins the closure the image installs, held by the current lock.
+
+    Three properties, each previously a hand-typed instruction in the lock's
+    header rather than a target: the compile is ``--strip-extras`` (pip rejects
+    extras in a constraints file) with ``--extra`` for every image extra;
+    ``lock`` passes the current lock back as ``-c`` so base pins never move
+    under an additive regeneration; and ``lock-upgrade`` is the one target that
+    omits ``-c`` so every pin may move — a deliberate, separately reviewed run.
+    """
+    compile_cmd = _makefile_variable("LOCK_COMPILE")
+    assert "--strip-extras" in compile_cmd
+    assert "--no-header" in compile_cmd
+    assert "$(LOCK_EXTRAS:%=--extra %)" in compile_cmd
+    assert _makefile_variable("LOCK_EXTRAS").split() == [CLOUD_EXTRA]
+
+    lock = _make_target_body("lock")
+    assert "$(LOCK_COMPILE) -c $(RUNTIME_LOCKFILE)" in lock, (
+        "`make lock` must hold existing pins with `-c $(RUNTIME_LOCKFILE)`"
+    )
+    upgrade = _make_target_body("lock-upgrade")
+    assert "-c $(RUNTIME_LOCKFILE)" not in upgrade, (
+        "`make lock-upgrade` must NOT constrain itself to the current lock"
+    )
+    for body in (lock, upgrade):
+        assert "pip-tools==$(PIP_TOOLS_VERSION)" in body, "pip-tools must be exact-pinned"
+        assert "$(LOCKFILE_HEADER)" in body, "the tracked header must be prepended"
+        assert "$(LOCK_NORMALIZE)" in body, "the self-reference filter must run"
+        assert "$(LOCK_GUARD)" in body, "the host guard must run before compiling"
+    # The guard pins BOTH the Python minor and the platform: pip-compile
+    # evaluates environment markers on the compiling host, so a Windows
+    # compile drops Linux-only pins (uvloop) that `-c` can then never hold.
+    guard = _makefile_variable("LOCK_GUARD")
+    assert "$(LOCK_PYTHON_MINOR)" in guard
+    assert 'sys.platform) == ("$(LOCK_PYTHON_MINOR)", "$(LOCK_PLATFORM)")' in guard
+    assert _makefile_variable("LOCK_PYTHON_MINOR") == _dockerfile_python_minor()
+    assert _makefile_variable("LOCK_PLATFORM") == _IMAGE_PLATFORM
+
+
+def _dockerfile_python_minor() -> str:
+    """``python:3.11-slim@sha256:…`` → ``3.11`` — the interpreter the image ships."""
+    match = re.search(r"^FROM python:(\d+\.\d+)-", _dockerfile.text(), re.MULTILINE)
+    assert match is not None, "Dockerfile base image is not a python:<minor>- tag"
+    return match.group(1)
 
 
 def test_secret_scan_runs_both_gitleaks_passes() -> None:

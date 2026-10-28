@@ -94,7 +94,19 @@ gcp = [
     "google-auth>=2.30",
     "opentelemetry-exporter-gcp-trace>=1.6",
 ]
-# Convenience meta-extra: install all cloud adapters.
+# Cloud Monitoring metric exporter (`MANGOMAS_TELEMETRY__EXPORTER=gcp` with
+# `MANGOMAS_TELEMETRY__METRICS_ENABLED=true`) — `pip install 'mangomas[gcp-monitoring]'`.
+# Upstream has only ever published alpha releases (1.0.0a0 … 1.15.0a0), so the
+# floor names a pre-release on purpose; a final-only floor cannot resolve.
+# Deliberately NOT part of `cloud`: metrics are default-off and the reference
+# manifest leaves them off, so production never imports an alpha package.
+gcp-monitoring = [
+    "opentelemetry-exporter-gcp-monitoring>=1.6.0a0",
+]
+# Convenience meta-extra: install all cloud adapters the reference manifest
+# selects (Vertex, Cloud SQL, Secret Manager + Cloud Trace). The runtime image
+# installs this extra (Dockerfile `MANGOMAS_EXTRAS`) and requirements.lock pins
+# its closure (`make lock`).
 cloud = [
     "mangomas[vertex,postgres,gcp]",
 ]

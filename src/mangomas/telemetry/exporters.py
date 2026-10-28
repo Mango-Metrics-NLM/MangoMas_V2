@@ -94,7 +94,7 @@ def _build_span_exporter(exporter: str) -> Any:
 
 _GCP_MONITORING_INSTALL_HINT = (
     "Cloud Monitoring metric exporter is not installed. "
-    "Install: pip install opentelemetry-exporter-gcp-monitoring"
+    "Install the optional extra: pip install 'mangomas[gcp-monitoring]'"
 )
 
 
