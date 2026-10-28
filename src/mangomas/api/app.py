@@ -26,6 +26,7 @@ from mangomas.api.errors import (
     error_envelope,
     register_error_handler,
 )
+from mangomas.api.health import PROBE_PATHS
 from mangomas.api.middleware import (
     AccessLogMiddleware,
     ConcurrencyLimitMiddleware,
@@ -84,7 +85,11 @@ def _install_backpressure(app: FastAPI, api_cfg: APISettings) -> None:
     """
     if api_cfg.max_concurrent_requests > 0:
         app.add_middleware(
-            ConcurrencyLimitMiddleware, max_concurrent=api_cfg.max_concurrent_requests
+            ConcurrencyLimitMiddleware,
+            max_concurrent=api_cfg.max_concurrent_requests,
+            # Liveness/readiness are never capped: a saturated instance must
+            # still answer the platform's probes or it is restarted (spec-0038).
+            exempt_paths=PROBE_PATHS,
         )
     if api_cfg.max_body_bytes > 0:
         app.add_middleware(MaxBodySizeMiddleware, max_bytes=api_cfg.max_body_bytes)

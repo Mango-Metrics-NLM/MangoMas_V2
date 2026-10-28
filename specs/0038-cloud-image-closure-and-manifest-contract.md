@@ -94,6 +94,16 @@ self-consistent and adds the CI smoke job (pending half).
   `test_non_production_environments_use_their_own_auth_token_ref` fails
   (proved). Each passes on the shipped tree, and the denominator test proves
   the base manifest selects at least three provider rows.
+- WHEN every concurrency slot is held THEN a request to any `PROBE_PATHS`
+  route is still served 200 while a data route is 503
+  (`test_saturated_limiter_still_serves_probe_paths`; proved: dropping the
+  exemption branch → red for all four paths); WHEN the guard is built without
+  `exempt_paths` THEN probes are capped like everything else (the pre-existing
+  contract, pinned).
+- WHEN the Postgres factory logs at DEBUG with a password-bearing DSN THEN no
+  record carries the URL or the password, only `dsn_host`
+  (`test_postgres_factory_never_logs_the_dsn_password`; proved: restoring
+  `extra={"url": cfg.url}` → red).
 
 ## Config / env additions
 

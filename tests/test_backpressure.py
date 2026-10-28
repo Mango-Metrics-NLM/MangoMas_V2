@@ -16,7 +16,9 @@ from starlette.responses import PlainTextResponse, Response, StreamingResponse
 from starlette.types import Message, Receive, Scope, Send
 
 from mangomas.api.app import create_app
+from mangomas.api.health import PROBE_PATHS
 from mangomas.api.middleware import ConcurrencyLimitMiddleware, MaxBodySizeMiddleware
+from mangomas.api.routes.system import build_system_router
 from mangomas.config import get_settings
 from mangomas.core import Orchestrator
 from tests.constants import BACKPRESSURE_MAX_BODY_BYTES, BACKPRESSURE_MAX_CONCURRENT
@@ -167,6 +169,81 @@ async def test_concurrency_limit_rejects_when_saturated(
     assert getattr(rec, "status_code", None) == 503
 
 
+# ── Probe paths bypass the cap (spec-0038; Copilot review on PR #101) ─────────
+# Cloud Run does not route its health probes through containerConcurrency, so
+# with the app cap equal to it a saturated instance would 503 its own liveness
+# probe and be restarted mid-request. Mutation (proved while writing): drop the
+# ``exempt_paths`` branch in ``ConcurrencyLimitMiddleware.__call__`` and the
+# probe request below is 503.
+
+
+@pytest.mark.parametrize("probe", sorted(PROBE_PATHS))
+async def test_saturated_limiter_still_serves_probe_paths(probe: str) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    app = FastAPI()
+    app.add_middleware(ConcurrencyLimitMiddleware, max_concurrent=1, exempt_paths=PROBE_PATHS)
+
+    @app.get("/slow")
+    async def slow() -> dict[str, bool]:
+        started.set()
+        await release.wait()
+        return {"ok": True}
+
+    @app.get(probe)
+    async def probe_route() -> dict[str, str]:
+        return {"status": "ok"}
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = asyncio.create_task(client.get("/slow"))
+        await started.wait()  # the only slot is held
+        assert (await client.get("/slow")).status_code == 503  # the cap still bites
+        assert (await client.get(probe)).status_code == 200  # ...but never a probe
+        release.set()
+        assert (await first).status_code == 200
+
+
+async def test_exempt_paths_default_to_none() -> None:
+    """Without the keyword the guard caps everything — the pre-existing contract."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+    app = FastAPI()
+    app.add_middleware(ConcurrencyLimitMiddleware, max_concurrent=1)
+
+    @app.get("/slow")
+    async def slow() -> dict[str, bool]:
+        started.set()
+        await release.wait()
+        return {"ok": True}
+
+    @app.get("/healthz")
+    async def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = asyncio.create_task(client.get("/slow"))
+        await started.wait()
+        assert (await client.get("/healthz")).status_code == 503
+        release.set()
+        await first
+
+
+def test_probe_paths_are_exactly_the_system_router_probe_routes() -> None:
+    """The exemption set and the mounted probe routes come from one constant.
+
+    If a probe route were added under a path the set does not name, the
+    saturation restart would come back for that one route only.
+    """
+    router_paths = {getattr(route, "path", None) for route in build_system_router().routes}
+    assert router_paths >= PROBE_PATHS, PROBE_PATHS - router_paths
+    # Every probe route is a GET with no body and no auth — the only shape
+    # worth exempting; `/agents` is a data route and must stay capped.
+    assert "/agents" in router_paths
+    assert "/agents" not in PROBE_PATHS
+
+
 # ── create_app wiring ─────────────────────────────────────────────────────────
 
 
@@ -205,8 +282,15 @@ def test_concurrency_guard_wired_from_settings(
     app = create_app(orchestrator=orchestrator)
     # The guard is actually installed from settings (not a no-op wiring branch);
     # the 503 reject path itself is proven in the isolation test above.
-    installed = {getattr(m.cls, "__name__", "") for m in app.user_middleware}
-    assert ConcurrencyLimitMiddleware.__name__ in installed
+    guards = [
+        m
+        for m in app.user_middleware
+        if getattr(m.cls, "__name__", "") == ConcurrencyLimitMiddleware.__name__
+    ]
+    assert len(guards) == 1
+    # create_app passes the probe exemption, so a saturated Cloud Run instance
+    # still answers its liveness probe (spec-0038).
+    assert guards[0].kwargs["exempt_paths"] == PROBE_PATHS
     with TestClient(app) as client:
         # A single request is still served normally within the cap.
         r = client.post("/agents/chat/invoke", json=_MSG)

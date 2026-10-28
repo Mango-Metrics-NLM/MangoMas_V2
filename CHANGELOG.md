@@ -32,6 +32,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
   settings-name walk moved to `tests/deploy/_settings_names.py` (shared with
   the `.env.example` contract) and the extras closure to
   `tests/deploy/_pyproject.py`. Eight mutation proofs recorded in the PR.
+- Two defects the safe defaults would have exposed (Copilot review on PR
+  #101): `ConcurrencyLimitMiddleware` now takes `exempt_paths` and `create_app`
+  passes `mangomas.api.health.PROBE_PATHS` (`/healthz`, `/health`, `/readyz`,
+  `/ready`, the one constant the system router also mounts), so a saturated
+  Cloud Run instance still answers its liveness probe instead of being
+  restarted mid-request (the platform does not route probes through
+  `containerConcurrency`); and `composition/storage.py` logs the Postgres
+  DSN's **host only** (`dsn_host`, moved to `adapters/storage/_url.py` and
+  shared with the adapter) — the previous `{"url": cfg.url}` DEBUG record
+  would have forwarded the password-bearing Secret Manager DSN to Cloud
+  Logging on every dev startup. Both regression tests mutation-proved.
 - CI builds the production image: new `docker-smoke` job (`make docker-smoke`
   = `docker-build` + an in-image `python -c "import <every selected SDK>;
   from mangomas.api.app import create_app"`, `timeout-minutes: 20`). Until now
