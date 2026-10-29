@@ -152,6 +152,9 @@ class FakeRepository:
     """In-memory stub satisfying the TurnRepository protocol."""
 
     _turns: list[dict[str, Any]] = field(default_factory=list)
+    # Seconds `list_turns()` awaits before answering — drives the `/readyz`
+    # per-probe budget on the DB side (spec-0031 S4); 0.0 skips the sleep.
+    list_turns_delay_seconds: float = 0.0
     closed: bool = False
 
     async def save_turn(
@@ -208,6 +211,8 @@ class FakeRepository:
         return row_id
 
     async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
+        if self.list_turns_delay_seconds > 0:
+            await asyncio.sleep(self.list_turns_delay_seconds)
         return list(reversed(self._turns[-limit:]))
 
     def close(self) -> None:

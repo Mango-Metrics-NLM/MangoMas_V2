@@ -485,10 +485,41 @@ def test_a_contradicting_commented_value_is_detected() -> None:
     assert names == [f"{_PREFIX}API{_NESTED_DELIMITER}READY_TIMEOUT_SECONDS"]
 
 
-def test_intentional_overrides_name_real_fields_that_really_differ() -> None:
-    """An override entry for a line that already matches is dead weight."""
+def stale_overrides(text: str) -> list[str]:
+    """Override entries whose every commented line already equals the default.
+
+    An exemption only earns its place while the line it covers differs; once
+    the line is corrected the entry would silently blind the contract to a
+    future regression of that same line. A name with several commented lines
+    (``LLM__MODEL``: the uncommented default and the Vertex sample) is live
+    while any one of them differs.
+    """
     fields = _flat_fields()
-    values = dict(commented_env_values(_ENV_EXAMPLE.read_text(encoding="utf-8")))
-    for name in ENV_EXAMPLE_INTENTIONAL_OVERRIDES:
+    values = commented_env_values(text)
+    stale: list[str] = []
+    for name in sorted(ENV_EXAMPLE_INTENTIONAL_OVERRIDES):
         assert name in fields, f"{name} is not a Settings field"
-        assert name in values, f"{name} has no commented line to override"
+        raws = [raw for candidate, raw in values if candidate == name]
+        assert raws, f"{name} has no commented line to override"
+        default = _field_default(fields[name])
+        if all(_coerce(raw, fields[name]) == default for raw in raws):
+            stale.append(name)
+    return stale
+
+
+def test_intentional_overrides_really_differ_from_the_defaults() -> None:
+    """An override entry for a line that already matches is dead weight — and a
+    blind spot. (Copilot review on PR #102: the first cut checked only that the
+    name and line existed.)"""
+    assert stale_overrides(_ENV_EXAMPLE.read_text(encoding="utf-8")) == []
+
+
+def test_an_override_whose_line_now_matches_is_detected() -> None:
+    """Mutation proof: CORS_ALLOW_METHODS reverted to its `["*"]` default."""
+    real = _ENV_EXAMPLE.read_text(encoding="utf-8")
+    mutated = real.replace(
+        '# MANGOMAS_API__CORS_ALLOW_METHODS=["GET","POST"]',
+        '# MANGOMAS_API__CORS_ALLOW_METHODS=["*"]',
+    )
+    assert mutated != real, "the CORS methods line moved — fixture needs updating"
+    assert stale_overrides(mutated) == [f"{_PREFIX}API{_NESTED_DELIMITER}CORS_ALLOW_METHODS"]

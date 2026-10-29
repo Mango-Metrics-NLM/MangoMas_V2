@@ -238,6 +238,25 @@ async def test_readiness_probe_honours_the_timeout_budget() -> None:
     assert "timed out after" in llm.detail
 
 
+async def test_readiness_probe_bounds_the_db_probe_too() -> None:
+    """The budget is applied per probe: a hung repository times out on its own
+    while a healthy LLM still reports ok. Mutation (proved while writing): drop
+    the `_bounded` wrapper on `list_turns` alone and this test fails — the
+    LLM-only tests above cannot see that wrapper. (Copilot review on PR #102.)
+    """
+    repo = FakeRepository(list_turns_delay_seconds=_SLOW_PING_SECONDS)
+    orch = Orchestrator(AgentContext(llm=FakeLLM(), repo=repo))
+    report = await asyncio.wait_for(
+        check_ready(orch, timeout_seconds=_TIGHT_BUDGET_SECONDS),
+        timeout=_SLOW_PING_SECONDS / 2,
+    )
+    assert report.ready is False
+    statuses = {c.name: c for c in report.checks}
+    assert statuses["llm"].status == "ok"
+    assert statuses["db"].status == "error"
+    assert "timed out after" in statuses["db"].detail
+
+
 async def test_readiness_probe_without_a_budget_stays_unbounded() -> None:
     """``timeout_seconds=None`` is the pre-budget contract, kept for direct callers."""
     slow = FakeLLM(ping_delay_seconds=_TIGHT_BUDGET_SECONDS)
