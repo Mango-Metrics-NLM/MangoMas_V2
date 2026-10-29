@@ -17,6 +17,7 @@ from tests.constants.cli import EXPECTED_CLI_HELP_ORDER as EXPECTED_CLI_HELP_ORD
 from tests.constants.cli import EXPECTED_CLI_PARAMS as EXPECTED_CLI_PARAMS
 from tests.constants.cli import EXPECTED_CLI_ROOT_COMMANDS as EXPECTED_CLI_ROOT_COMMANDS
 from tests.constants.config import DEFAULT_API_HISTORY_MAX_LIMIT as DEFAULT_API_HISTORY_MAX_LIMIT
+from tests.constants.config import DEFAULT_API_READY_TIMEOUT as DEFAULT_API_READY_TIMEOUT
 from tests.constants.config import DEFAULT_EMBEDDINGS_BATCH_SIZE as DEFAULT_EMBEDDINGS_BATCH_SIZE
 from tests.constants.config import DEFAULT_EMBEDDINGS_DEVICE as DEFAULT_EMBEDDINGS_DEVICE
 from tests.constants.config import DEFAULT_EMBEDDINGS_MODEL as DEFAULT_EMBEDDINGS_MODEL

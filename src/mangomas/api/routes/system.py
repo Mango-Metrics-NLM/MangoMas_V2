@@ -35,7 +35,10 @@ def build_system_router() -> APIRouter:
     async def readyz(request: Request) -> JSONResponse:
         """Readiness probe. ``/ready`` is retained as a compatibility alias."""
         orch: Orchestrator = request.app.state.orchestrator
-        report = await check_ready(orch)
+        # create_app stores the configured budget on app.state; an app built
+        # without it (a bare FastAPI in a test) keeps the unbounded contract.
+        budget: float | None = getattr(request.app.state, "ready_timeout_seconds", None)
+        report = await check_ready(orch, timeout_seconds=budget)
         return JSONResponse(status_code=report.http_status, content=report.as_dict())
 
     @router.get("/agents")

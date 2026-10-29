@@ -56,6 +56,10 @@ class FakeLLM:
     # and a real LLM's latency is exactly what a hardware-agnostic test may not
     # depend on.
     delay_seconds: float = 0.0
+    # Seconds `ping()` awaits before answering — separate from `delay_seconds`
+    # so a slow completion never slows a readiness probe by accident. Drives the
+    # `/readyz` per-probe budget (spec-0031 S4); 0.0 skips the sleep entirely.
+    ping_delay_seconds: float = 0.0
 
     async def _maybe_delay(self) -> None:
         """Await the configured delay, or nothing at all when it is zero."""
@@ -79,6 +83,8 @@ class FakeLLM:
 
     async def ping(self) -> None:
         self.pinged = True
+        if self.ping_delay_seconds > 0:
+            await asyncio.sleep(self.ping_delay_seconds)
         if self.ping_error is not None:
             raise self.ping_error
 
@@ -146,6 +152,9 @@ class FakeRepository:
     """In-memory stub satisfying the TurnRepository protocol."""
 
     _turns: list[dict[str, Any]] = field(default_factory=list)
+    # Seconds `list_turns()` awaits before answering — drives the `/readyz`
+    # per-probe budget on the DB side (spec-0031 S4); 0.0 skips the sleep.
+    list_turns_delay_seconds: float = 0.0
     closed: bool = False
 
     async def save_turn(
@@ -202,6 +211,8 @@ class FakeRepository:
         return row_id
 
     async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
+        if self.list_turns_delay_seconds > 0:
+            await asyncio.sleep(self.list_turns_delay_seconds)
         return list(reversed(self._turns[-limit:]))
 
     def close(self) -> None:

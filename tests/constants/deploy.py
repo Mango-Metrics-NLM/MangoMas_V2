@@ -135,3 +135,25 @@ PROVIDER_REQUIREMENTS: Final[tuple[ProviderRequirement, ...]] = (
         smoke_module="opentelemetry.exporter.cloud_monitoring",
     ),
 )
+
+
+# `.env.example` lines whose commented value deliberately differs from the
+# field default: a provider switch, or a sample value for a field whose default
+# is a different provider's. Everything else commented in that file must equal
+# the real default (tests/deploy/test_env_example_contract.py), and an unset
+# optional (default None) is a sample by nature and needs no entry here.
+ENV_EXAMPLE_INTENTIONAL_OVERRIDES: Final[frozenset[str]] = frozenset(
+    {
+        _var("LLM", "PROVIDER"),  # the Vertex block switches the provider
+        _var("LLM", "MODEL"),  # ...and shows a Vertex model id
+        _var("LLM", "ALLOWED_MODELS"),  # a non-empty roster is the illustrative case
+        _var("DB", "PROVIDER"),  # the Cloud SQL block
+        _var("DB", "URL"),  # ...with a postgresql:// shape, not the sqlite default
+        _var("SECRETS", "PROVIDER"),  # the Secret Manager block
+        # Opt-in CORS: the default (empty origins) means the middleware is not
+        # installed at all, so a sample has to be a non-empty allow-list and a
+        # narrower method set than the `["*"]` default to illustrate anything.
+        _var("API", "CORS_ALLOW_ORIGINS"),
+        _var("API", "CORS_ALLOW_METHODS"),
+    }
+)

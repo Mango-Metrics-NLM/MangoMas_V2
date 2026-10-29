@@ -364,10 +364,21 @@ and 2 proposed: `API__CORS_ALLOW_ORIGINS`, `API__CORS_ALLOW_METHODS`,
 `EVAL__DATASET_PATH`. The test is trivial; **deciding which lines are
 illustrative is the deliverable.**
 
+**Resolved (P0-C1).** The four contradicting lines are fixed (`BODY_TRUNCATE`
+removed with its field). The decision: a line whose field default is `None`
+(an unset optional — `AUTH__SECRET_REF`, `EMBEDDINGS__DEVICE`,
+`WORKFLOW__DEFINITION`, `EVAL__DATASET_PATH`, …) is a sample by nature and is
+skipped; the eight remaining differences are provider switches and the opt-in
+CORS pair, recorded in `tests/constants/deploy.py::ENV_EXAMPLE_INTENTIONAL_OVERRIDES`
+and each required to name a line that really differs.
+`tests/deploy/test_env_example_contract.py::test_env_example_commented_values_match_model_defaults`.
+
 **S12 — a documented setting must reach a consumer. [run]** Three `ApiSettings`
 fields resolve, parse and are documented, and are read by nothing outside
 `config/`: `ready_timeout_seconds` (S4), `host`, `port`. A fourth,
-`log.body_truncate`, is the same shape. `host`/`port` are *uncommented* in
+`log.body_truncate`, is the same shape. *(P0-C1: `ready_timeout_seconds` is read
+by `create_app` → `app.state` → `/readyz`; `log.body_truncate` is removed.
+`host`/`port` are consumed by `mangomas serve` in P0-C2.)* `host`/`port` are *uncommented* in
 `.env.example:63-64`, so they read as live knobs while the real serving contract
 is the plain `PORT` variable (`Dockerfile:31,62`).
 
@@ -552,10 +563,12 @@ three-copy arrangement) and resolving the `parse_or_recover` contradiction
 - [ ] A RAG re-ingest that fails after the delete leaves the prior vectors intact.
 - [ ] With auth enabled, `GET /agents` returns 401; `/docs`, `/redoc` and
       `/openapi.json` are unreachable when `MANGOMAS_ENV != "local"`.
-- [ ] `deploy/service.yaml` sets auth and both backpressure knobs, asserted by a
-      test; `deploy/README.md` documents the required set.
-- [ ] `/readyz` honours `ready_timeout_seconds`, wired via `app.state` rather than
-      a `get_settings()` call inside `health.py`.
+- [x] `deploy/service.yaml` sets auth and both backpressure knobs, asserted by a
+      test; `deploy/README.md` documents the required set. (spec-0038 P0-B,
+      `tests/deploy/test_manifest_provider_contract.py`)
+- [x] `/readyz` honours `ready_timeout_seconds`, wired via `app.state` rather than
+      a `get_settings()` call inside `health.py`. (P0-C1,
+      `tests/test_health.py::test_readyz_route_passes_the_configured_budget`)
 - [ ] The snapshot projection includes per-property validation keywords, proven
       by the S6 mutation.
 - [ ] No per-package coverage floor is below its measured value minus its stated,

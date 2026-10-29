@@ -231,9 +231,6 @@ from mangomas.config.llm import (
     LLMSettings as LLMSettings,
 )
 from mangomas.config.observability import (
-    DEFAULT_LOG_BODY_TRUNCATE as DEFAULT_LOG_BODY_TRUNCATE,
-)
-from mangomas.config.observability import (
     DEFAULT_LOG_FORMAT as DEFAULT_LOG_FORMAT,
 )
 from mangomas.config.observability import (
@@ -483,7 +480,6 @@ __all__ = [
     "DEFAULT_LLM_PROVIDER",
     "DEFAULT_LLM_TEMPERATURE",
     "DEFAULT_LLM_TIMEOUT_SECONDS",
-    "DEFAULT_LOG_BODY_TRUNCATE",
     "DEFAULT_LOG_FORMAT",
     "DEFAULT_LOOP_MAX_STEPS",
     "DEFAULT_LOOP_STEP_TIMEOUT",
