@@ -14,8 +14,8 @@ from mangomas.agents._prompt import (
 )
 from mangomas.config import DEFAULT_TOOL_MAX_STEPS
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
-from mangomas.core.tools import ToolCallParser, build_tool_system_prompt
-from mangomas.errors import ToolExecutionError, ToolNotFound, UnknownProvider
+from mangomas.core.tools import ToolCall, ToolCallParser, build_tool_system_prompt
+from mangomas.errors import LLMBadResponse, ToolExecutionError, ToolNotFound, UnknownProvider
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import AgentSettings
@@ -59,32 +59,81 @@ class ToolAgent:
             self._max_tool_steps = DEFAULT_TOOL_MAX_STEPS
         self._parser = ToolCallParser()
 
+    def _build_tool_messages(self, request: AgentRequest, ctx: AgentContext) -> list[Message]:
+        """System prompt plus history, with the tool contract appended when tools exist."""
+        tool_prompt: str | None = None
+        if ctx.tools is not None:
+            specs = [ctx.tools.get(name).spec for name in ctx.tools.available()]
+            tool_prompt = build_tool_system_prompt(specs)
+        # settings=None: self._system_prompt was resolved once in __init__.
+        effective_prompt = resolve_system_prompt(self._system_prompt, None, suffix=tool_prompt)
+        return build_messages(request, effective_prompt)
+
+    def _parse_step_tool_call(
+        self,
+        content: str,
+        *,
+        ctx: AgentContext,
+        step: int,
+    ) -> ToolCall | None:
+        """Parse one completion. No registry means a non-tool JSON block is content."""
+        try:
+            tool_call = self._parser.parse(content)
+        except LLMBadResponse:
+            if ctx.tools is not None:
+                logger.warning(
+                    "ToolAgent: malformed tool call JSON",
+                    extra={"event": "tool_agent_bad_tool_call", "step": step},
+                )
+                raise
+            logger.debug(
+                "ToolAgent: no tool registry; treating JSON block as content",
+                extra={"event": "tool_agent_no_registry_json", "step": step},
+            )
+            return None
+        if tool_call is None:
+            logger.debug("ToolAgent: no tool call detected, returning response")
+        return tool_call
+
+    async def _dispatch_tool(self, tool_call: ToolCall, ctx: AgentContext) -> str:
+        """Resolve and run *tool_call*, mapping registry misses to ``ToolNotFound``."""
+        if ctx.tools is None:
+            logger.error(
+                "Tool call requested but no tool registry is configured",
+                extra={"tool_name": tool_call.tool},
+            )
+            raise ToolNotFound(tool_call.tool, [])
+        try:
+            tool = ctx.tools.get(tool_call.tool)
+        except UnknownProvider:
+            logger.error(
+                "Tool call requested unknown tool",
+                extra={
+                    "tool_name": tool_call.tool,
+                    "available_tools": ctx.tools.available(),
+                },
+            )
+            raise ToolNotFound(tool_call.tool, ctx.tools.available()) from None
+        try:
+            return await tool.execute(tool_call.arguments)
+        except ToolExecutionError:
+            logger.exception("Tool raised ToolExecutionError", extra={"tool_name": tool_call.tool})
+            raise
+        except Exception as exc:
+            logger.exception("Tool execution failed", extra={"tool_name": tool_call.tool})
+            raise ToolExecutionError(
+                f"Tool {tool_call.tool!r} raised: {exc}",
+                tool_name=tool_call.tool,
+            ) from exc
+
     async def handle(self, request: AgentRequest, ctx: AgentContext) -> AgentResponse:
         """Process *request*, executing any tool calls until a plain response is produced.
 
         Issues at most ``max_tool_steps`` LLM calls in total;
         ``metadata["tool_steps"]`` reports the exact number made.
         """
-        # Build tool-aware system prompt when tools are registered.
-        tool_prompt: str | None = None
-        if ctx.tools is not None:
-            specs = [ctx.tools.get(n).spec for n in ctx.tools.available()]
-            tool_prompt = build_tool_system_prompt(specs)
-
-        # A custom system prompt must not displace the tool-format prompt —
-        # concatenate custom-first (mirroring PlannerAgent) so the LLM always
-        # learns the tool-call JSON contract when tools are registered.
-        # Reuses resolve_system_prompt's suffix-combination: settings=None
-        # means precedence is moot here — self._system_prompt was already
-        # resolved once in __init__.
-        effective_prompt = resolve_system_prompt(self._system_prompt, None, suffix=tool_prompt)
-        messages = build_messages(request, effective_prompt)
-
-        # Resolved once per request: the agent-scoped override (if configured)
-        # or ctx.llm — every LLM call in the inner loop below uses the same
-        # client (ADR-0028).
+        messages = self._build_tool_messages(request, ctx)
         llm = resolve_llm(ctx, self.name)
-
         content = ""
         steps = 0
         while steps < self._max_tool_steps:
@@ -95,12 +144,9 @@ class ToolAgent:
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
             )
-            tool_call = self._parser.parse(content)
-
+            tool_call = self._parse_step_tool_call(content, ctx=ctx, step=steps)
             if tool_call is None:
-                logger.debug("ToolAgent: no tool call detected, returning response")
                 break
-
             if steps == self._max_tool_steps:
                 logger.debug(
                     "ToolAgent: LLM-call budget exhausted; returning last response "
@@ -108,48 +154,8 @@ class ToolAgent:
                     tool_call.tool,
                 )
                 break
-
             logger.debug("ToolAgent: dispatching tool %r", tool_call.tool)
-
-            # Resolve the tool — re-raise UnknownProvider as ToolNotFound.
-            if ctx.tools is None:
-                logger.error(
-                    "Tool call requested but no tool registry is configured",
-                    extra={"tool_name": tool_call.tool},
-                )
-                raise ToolNotFound(tool_call.tool, [])
-            try:
-                tool = ctx.tools.get(tool_call.tool)
-            except UnknownProvider:
-                logger.error(
-                    "Tool call requested unknown tool",
-                    extra={
-                        "tool_name": tool_call.tool,
-                        "available_tools": ctx.tools.available(),
-                    },
-                )
-                raise ToolNotFound(tool_call.tool, ctx.tools.available()) from None
-
-            # Execute — wrap unexpected exceptions as ToolExecutionError.
-            try:
-                result_output = await tool.execute(tool_call.arguments)
-            except ToolExecutionError:
-                logger.exception(
-                    "Tool raised ToolExecutionError",
-                    extra={"tool_name": tool_call.tool},
-                )
-                raise
-            except Exception as exc:
-                logger.exception(
-                    "Tool execution failed",
-                    extra={"tool_name": tool_call.tool},
-                )
-                raise ToolExecutionError(
-                    f"Tool {tool_call.tool!r} raised: {exc}",
-                    tool_name=tool_call.tool,
-                ) from exc
-
-            # Re-inject: assistant (tool call) then tool result.
+            result_output = await self._dispatch_tool(tool_call, ctx)
             messages = [
                 *messages,
                 Message(role="assistant", content=content),
@@ -158,8 +164,6 @@ class ToolAgent:
                     content=json.dumps({"tool": tool_call.tool, "output": result_output}),
                 ),
             ]
-
-        # ``steps`` equals the number of LLM calls actually made (<= max_tool_steps).
         return AgentResponse(
             content=content,
             agent=self.name,

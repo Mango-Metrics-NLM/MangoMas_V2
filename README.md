@@ -359,7 +359,7 @@ What ships in the harness:
 
 | Surface | Path | Status |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 21 skills — live in Claude Code and VS Code Copilot |
+| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 23 skills — live in Claude Code and VS Code Copilot |
 | Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
 | Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
 | SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
@@ -435,9 +435,13 @@ mypy (`src/` only), frontmatter, `validate-config`, and `lint-imports`.
 Neither is `make gate`; run `make gate` before opening a PR.
 
 Per-package floors (`scripts/check_coverage.py` — the authoritative gate):
-`errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy`, `_headers`
-at **100 %**; `composition`, `agents`, `api`, `cli`, `eval`, `rag`, `workflow`,
-`cognitive` at **95 %**; `adapters` at **85 %**; global at **95 %**. The
+`errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy`, `_headers`,
+`utils`, `_entry_points` at **100 %**; `composition`, `agents`, `api`, `cli`,
+`config`, `telemetry`, `metrics`, `eval`, `rag`, `workflow`, `cognitive`,
+`harness` at **95 %**; `adapters` at **85 %**; global at **95 %**. Scripts are
+a separate measured floor (`SCRIPTS_FLOOR` = 94 %). `make gpu` (`RUN_GPU=1`)
+fails when no CUDA device is visible. `make guard-probe` is the falsifiability
+probe and is not part of `make gate`. The
 `--cov-fail-under` in `pyproject.toml` mirrors the global floor for local
 runs.
 
@@ -511,6 +515,7 @@ src/mangomas/
   metrics.py    Opt-in OTel MeterProvider + agent metrics
   telemetry/    OpenTelemetry configuration, one module per dependency layer
                 behind a permanent re-export facade
+  utils/        Shared helpers (clock, exception text, regex flags)
 
 tests/
   (root)         Unit tests, named after the module under test

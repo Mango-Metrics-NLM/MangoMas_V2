@@ -63,12 +63,12 @@ mangomas workflow run "ship it" -f graph.json
 | File | Role |
 |------|------|
 | `src/mangomas/workflow/graph.py` | Node models + `WorkflowNode` union + `WorkflowGraph` |
-| `src/mangomas/workflow/predicate.py` | `PredicateSpec` + `compile_predicate` |
+| `src/mangomas/workflow/predicate/` | `PredicateSpec` + `compile_predicate` |
 | `src/mangomas/workflow/executor.py` | `NodeExecutor` protocol + `execute_workflow` |
 | `src/mangomas/workflow/nodes/` | Self-registering `agent` / `sequence` / `fan_out` / `loop` / `branch` executors |
 | `src/mangomas/workflow/nodes/_factory.py` | `make_node_factory(kind, node_cls, executor_cls)` — the shared registry factory + `ConfigError` type guard every node module registers through |
 | `src/mangomas/workflow/loader.py` | Path/inline JSON → `WorkflowGraph` |
-| `src/mangomas/core/orchestrator.py` | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out` (the primitives graphs compile to) |
+| `src/mangomas/core/orchestrator/` | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out` (the primitives graphs compile to) |
 | `src/mangomas/core/loop.py` | `AcceptanceFn` type alias |
 | `tests/test_workflow_executor.py` | Reference parity + composition tests |
 
@@ -133,10 +133,8 @@ mangomas workflow run "ship it" -f graph.json
 
 - DO NOT reimplement the acceptance loop or fan-out `gather` — delegate to `Orchestrator`.
 - DO NOT put workflow provenance in `AgentResponse.metadata` (breaks parity); use spans.
-- DO NOT import from `mangomas.eval` — `workflow` is a pure sibling, so a helper it
-  needs is re-stated under `workflow/` (and, if more than one workflow module wants
-  it, extracted into a shared `workflow/` module such as `nodes/_factory.py` — never
-  duplicated within the package).
+- DO NOT import from `mangomas.eval` — `workflow` is a pure sibling. Shared
+  regex flags live in `mangomas.utils.regex_flags`, not a copy under `workflow/`.
 - DO NOT nest a `sequence` inside a `sequence`, or a composite inside `loop`
   (`LoopNode.agent` is an agent *name*, not a node). A composite **is** allowed
   inside `fan_out` — that shipped in ADR-0018 / spec 0013.

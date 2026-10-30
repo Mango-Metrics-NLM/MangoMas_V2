@@ -1,0 +1,74 @@
+{
+  "entries": [
+    {
+      "id": "MUT-AQA-D1",
+      "path": "tests/constants/live.py",
+      "fixed": "    if raw is None or not raw.strip():\n        return adapter_timeout_seconds\n",
+      "defect": "    if raw is None or not raw.strip():\n        return 30.0\n",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d1", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D2",
+      "path": "src/mangomas/agents/tool_agent.py",
+      "fixed": "            logger.debug(\n                \"ToolAgent: no tool registry; treating JSON block as content\",\n                extra={\"event\": \"tool_agent_no_registry_json\", \"step\": step},\n            )\n            return None\n",
+      "defect": "            raise\n            logger.debug(\n                \"ToolAgent: no tool registry; treating JSON block as content\",\n                extra={\"event\": \"tool_agent_no_registry_json\", \"step\": step},\n            )\n            return None\n",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d2_no_registry", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D2-boundary",
+      "path": "src/mangomas/agents/tool_agent.py",
+      "fixed": "                extra={\"event\": \"tool_agent_bad_tool_call\", \"step\": step},\n                )\n                raise\n",
+      "defect": "                extra={\"event\": \"tool_agent_bad_tool_call\", \"step\": step},\n                )\n                return None\n",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d2_a_configured", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D3",
+      "path": "tests/test_auth.py",
+      "fixed": "headers={b\"X-API-Key\": _NON_ASCII_WIRE}",
+      "defect": "headers={\"X-API-Key\": _NON_ASCII_WIRE}",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d3_auth", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D4-llm",
+      "path": "src/mangomas/adapters/llm/lmstudio.py",
+      "fixed": "        except (KeyError, IndexError, TypeError, ValueError, RecursionError) as exc:\n            raise self._malformed_response(",
+      "defect": "        except (KeyError, IndexError, TypeError, ValueError) as exc:\n            raise self._malformed_response(",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d4_chat", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D4-embeddings",
+      "path": "src/mangomas/adapters/embeddings/lmstudio.py",
+      "fixed": "ValueError, RecursionError) as exc:",
+      "defect": "ValueError) as exc:",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d4_embeddings", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D5-delta",
+      "path": "src/mangomas/adapters/llm/lmstudio.py",
+      "fixed": "        if not isinstance(delta, dict):\n",
+      "defect": "        if False:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d5 and (null or string or survives)", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D5-nested",
+      "path": "src/mangomas/adapters/llm/lmstudio.py",
+      "fixed": "json.JSONDecodeError, RecursionError) as exc:",
+      "defect": "json.JSONDecodeError) as exc:",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d5 and nested", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D6",
+      "path": "src/mangomas/cli/_app.py",
+      "fixed": "no_args_is_help=True, cls=SettingsErrorGroup)",
+      "defect": "no_args_is_help=True)",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d6_invalid_settings", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-AQA-D6-scope",
+      "path": "src/mangomas/cli/_app.py",
+      "fixed": "            if exc.title != Settings.__name__:\n                raise\n",
+      "defect": "",
+      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d6_a_non_settings", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    }
+  ]
+}

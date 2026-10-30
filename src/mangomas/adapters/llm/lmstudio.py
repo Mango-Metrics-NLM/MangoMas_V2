@@ -5,14 +5,16 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import httpx
 
 from mangomas.adapters._openai_client import OpenAICompatHTTPClient
 from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
-from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.core.agent import Message
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +72,9 @@ class LMStudioClient(OpenAICompatHTTPClient):
         try:
             body = resp.json()
             content = body["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        # RecursionError: the C JSON scanner's answer to a pathologically
+        # nested body — still a malformed upstream response (spec-0039 D-4).
+        except (KeyError, IndexError, TypeError, ValueError, RecursionError) as exc:
             raise self._malformed_response(f"{type(exc).__name__}: {exc}", body=body) from exc
         if not isinstance(content, str):
             # ``null`` content (a refusal or a tool-only turn) used to be
@@ -155,8 +159,22 @@ class LMStudioClient(OpenAICompatHTTPClient):
             return ""
         try:
             data = json.loads(chunk_data)
-            content = str(data["choices"][0]["delta"].get("content") or "")
-            return content or None
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            logger.debug("Skipping unparseable SSE chunk: %s", exc)
+            delta = data["choices"][0]["delta"]
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError, RecursionError) as exc:
+            logger.debug(
+                "Skipping unparseable SSE chunk: %s",
+                exc,
+                extra={"event": "lmstudio_sse_chunk_skipped"},
+            )
             return None
+        if not isinstance(delta, dict):
+            # `"delta": null` or a string would otherwise raise AttributeError
+            # and abort the whole stream (spec-0039 D-5).
+            logger.debug(
+                "Skipping SSE chunk whose delta is %s",
+                type(delta).__name__,
+                extra={"event": "lmstudio_sse_chunk_skipped"},
+            )
+            return None
+        content = str(delta.get("content") or "")
+        return content or None

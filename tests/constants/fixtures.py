@@ -38,6 +38,10 @@ TEST_VERTEX_PROJECT: str = "test-project"
 # Comfortably larger than ``DEFAULT_ERROR_DETAIL_TRUNCATE`` (200) so the
 # truncation of client-visible error detail is observable in regression tests.
 LARGE_UPSTREAM_BODY_CHARS: int = 5000
+# Deeper than CPython's C JSON scanner will recurse on any supported build, so
+# ``json.loads`` raises RecursionError rather than returning a value (spec-0039 D-4).
+DEEP_JSON_NESTING_DEPTH: int = 200_000
+DEEP_NESTED_JSON: str = "[" * DEEP_JSON_NESTING_DEPTH + "]" * DEEP_JSON_NESTING_DEPTH
 
 # ── Vector store test-scoped values ───────────────────────────────────────────
 TEST_VECTOR_PERSIST_DIR: str = "./data/test-chroma"
@@ -253,6 +257,8 @@ __all__ = [
     "BACKPRESSURE_MAX_BODY_BYTES",
     "BACKPRESSURE_MAX_CONCURRENT",
     "CI_ENV",
+    "DEEP_JSON_NESTING_DEPTH",
+    "DEEP_NESTED_JSON",
     "DEFAULT_AGENT_NAME",
     "DEFAULT_TOOL_NAME",
     "DEFAULT_TOOL_RESULT",

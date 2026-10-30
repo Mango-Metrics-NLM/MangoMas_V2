@@ -3,3 +3,5 @@
 Shared helpers live in ``tests.composition.helpers``. Pytest collects these
 modules in place of the former ``tests/test_composition.py``.
 """
+
+from __future__ import annotations

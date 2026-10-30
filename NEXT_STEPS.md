@@ -8,6 +8,21 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: origin-delta AQA and guard probe (2026-10-29)
+
+`spec-0039` closed the live and CUDA gaps found against
+`origin/feat/initial-release`:
+
+- D-1 and D-2 were the `test_plan_execute_review.py` failures. The live
+  per-step budget now follows the adapter budget, and `ToolAgent` treats a
+  fenced non-tool JSON reply as content when no tool registry is configured.
+  `make lmstudio` is 18/18 with no timeout override.
+- `make gpu` (`RUN_GPU=1`) closes the silent CPU-fallback gap: a missing CUDA
+  device fails the lane.
+- `make guard-probe` mechanises `spec-0033`. It is not part of `make gate`.
+
+---
+
 ## Overlay: E2E model gap triage (2026-10-01)
 
 Two live LM Studio failures against `nvidia/nemotron-3-nano-omni` require

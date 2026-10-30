@@ -67,6 +67,10 @@ def build_or_exit(*, config_exit_code: int) -> Orchestrator:
         return _build()
     except MangomasError as exc:
         detail = f" ({exc.detail})" if exc.detail else ""
+        logging.getLogger(__name__).error(
+            "Configuration error",
+            extra={"event": "cli_config_error", "error_code": exc.code},
+        )
         typer.echo(f"Configuration error: {exc}{detail}", err=True)
         raise typer.Exit(code=config_exit_code) from exc
 
@@ -180,7 +184,6 @@ def configure_cli_logging(*, verbose: bool = False) -> None:
             "Telemetry not configured; falling back to basicConfig",
             exc_info=True,
         )
-        return
     # configure_telemetry is idempotent: if anything already configured
     # telemetry (an earlier command in-process, a test, or a lazy get_tracer),
     # the call above returned without touching the level. Re-apply it

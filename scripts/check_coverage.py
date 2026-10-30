@@ -20,6 +20,8 @@ import subprocess
 import sys
 from typing import NamedTuple
 
+import _stdio
+
 
 class Floor(NamedTuple):
     include: str
@@ -99,6 +101,7 @@ def _check(floor: Floor) -> bool:
 
 
 def main() -> None:
+    _stdio.configure_utf8_stdio()
     print("Checking per-package coverage floors…")
     failures: list[str] = []
 

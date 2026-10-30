@@ -17,7 +17,7 @@ from mangomas.agents._prompt import AGENT_LLM_OVERRIDES_EXTRAS_KEY
 from mangomas.config import AgentSettings, LLMSettings
 from mangomas.errors import ConfigError
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.llm.base import LLMClient
 
 logger = logging.getLogger(__name__)

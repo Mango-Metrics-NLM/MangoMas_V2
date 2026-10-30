@@ -118,6 +118,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(skip["RUN_LANGFUSE"])
         if "gitleaks" in item.keywords and not enabled["RUN_GITLEAKS"]:
             item.add_marker(skip["RUN_GITLEAKS"])
+        if item.get_closest_marker("gpu") is not None and not enabled["RUN_GPU"]:
+            item.add_marker(skip["RUN_GPU"])
 
 
 # ── Zero-skip session guard (spec-0022 R8) ────────────────────────────────────

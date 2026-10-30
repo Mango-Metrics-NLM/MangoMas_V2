@@ -40,7 +40,7 @@ from mangomas.errors import LLMBadResponse
 from mangomas.rag.chunker import chunk_text
 from mangomas.rag.loader import load_documents
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.vector.base import VectorStoreRepository
     from mangomas.config import RagSettings

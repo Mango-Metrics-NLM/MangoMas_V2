@@ -38,6 +38,7 @@ from mangomas.config import (
     DEFAULT_VERTEX_LOCATION,
     DBSettings,
     LLMSettings,
+    LoopSettings,
     Settings,
 )
 from mangomas.core import Orchestrator
@@ -50,6 +51,7 @@ from tests.constants import (
     VERTEX_MODEL_ENV,
     VERTEX_PROJECT_ENV,
     client_timeout_for,
+    resolve_live_step_timeout,
     resolve_live_timeout,
 )
 from tests.lmstudio.conftest import orchestrator_cleanup
@@ -64,6 +66,7 @@ def make_vertex_settings(
     *,
     credentials_path: str | None = None,
     timeout_seconds: float | None = None,
+    loop: LoopSettings | None = None,
 ) -> Settings:
     """Construct fresh :class:`Settings` pointed at Vertex + in-memory SQLite.
 
@@ -75,6 +78,8 @@ def make_vertex_settings(
     resolved = (
         resolve_live_timeout(VERTEX_E2E_TIMEOUT_ENV) if timeout_seconds is None else timeout_seconds
     )
+    if loop is None:
+        loop = LoopSettings(step_timeout_seconds=resolve_live_step_timeout(resolved))
     return Settings(
         llm=LLMSettings(
             provider="vertex",
@@ -85,6 +90,7 @@ def make_vertex_settings(
             timeout_seconds=resolved,
         ),
         db=DBSettings(provider="sqlite", url=_E2E_DB_URL),
+        loop=loop,
     )
 
 

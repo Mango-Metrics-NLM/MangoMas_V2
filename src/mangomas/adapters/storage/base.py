@@ -7,10 +7,12 @@ between ``core/agent.py`` and ``adapters/storage/sqlite.py``.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from mangomas.config import DEFAULT_STORAGE_LIST_TURNS_LIMIT
-from mangomas.core.agent import AgentRequest, AgentResponse
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.core.agent import AgentRequest, AgentResponse
 
 
 @runtime_checkable

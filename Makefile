@@ -112,10 +112,10 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
 
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck lint-imports frontmatter \
-        protected-paths test test-xml \
+        protected-paths test test-xml guard-probe \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        gated-suites embeddings-local secret-scan pip-audit sbom-scan \
+        gated-suites embeddings-local gpu secret-scan pip-audit sbom-scan \
         install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply \
         lock lock-upgrade docker-build docker-smoke \
         nightly-scan-refs
@@ -227,6 +227,11 @@ scripts-coverage: ## scripts/ isolated coverage gate (measured floor — see SCR
 	  $(SCRIPTS_TESTS) -o addopts="" $(PYTEST_FLAGS)
 	COVERAGE_FILE=.coverage.scripts $(PYTHON) -m coverage report --show-missing --fail-under=$(SCRIPTS_FLOOR)
 
+# Deliberately not a dependency of `gate` (spec-0033 R6): the probe mutates the
+# working tree, and `gate` must stay safe to run on a dirty checkout.
+guard-probe: ## Prove each manifest mutation turns its guard red, then restore
+	$(PYTHON) scripts/guard_probe.py
+
 gate: validate-config lint format-check typecheck lint-imports frontmatter protected-paths test coverage bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
 
 precommit: ## Run every pre-commit hook over the whole tree
@@ -253,6 +258,11 @@ gated-suites: integration rag ## Gated suites needing no service, extra or netwo
 
 embeddings-local: ## Local sentence-transformers suite (needs the embeddings-local extra)
 	RUN_EMBEDDINGS_LOCAL=1 RUN_RAG=1 $(PYTHON) -m pytest tests/rag --no-cov $(PYTEST_FLAGS)
+
+# Separate from embeddings-local on purpose: RUN_GPU=1 asserts a CUDA device is
+# visible and FAILS without one, so it must never ride the nightly CPU job.
+gpu: ## CUDA placement + CPU ranking parity on every visible GPU (needs CUDA + embeddings-local)
+	RUN_GPU=1 RUN_EMBEDDINGS_LOCAL=1 RUN_RAG=1 $(PYTHON) -m pytest -m gpu tests/rag --no-cov $(PYTEST_FLAGS)
 
 # The next three suites are gated by marker (not directory — the tests live
 # alongside their unit-test siblings), so each target selects with `-m`

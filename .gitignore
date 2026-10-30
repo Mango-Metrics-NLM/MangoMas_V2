@@ -31,6 +31,11 @@ trivy
 trivy.tar.gz
 sbom.cdx.json
 
+# Local validation artefacts and lock drafts (not source).
+artifacts/
+requirements.lock.compiled
+requirements.lock.new
+
 # Env / secrets
 .env
 .env.*

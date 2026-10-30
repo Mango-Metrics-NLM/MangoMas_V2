@@ -1,12 +1,9 @@
-"""Direct unit tests for ``scripts/_governance.py`` and ``scripts/_stdin_json.py``.
+"""Direct unit tests for shared script helpers.
 
-Both are shared by two consumers each (``check_protected_paths.py`` +
-``lint_agent_frontmatter.py`` for governance;  ``lint_agent_frontmatter.py``
-+ ``harness_config_audit.py`` for stdin-JSON reading), but each consumer's
-own test suite only exercises the branches its own error-handling wraps
-around them — this file tests the shared modules on their own terms so
-every branch has direct coverage, not just incidental coverage through one
-caller's happy/unhappy path.
+``scripts/_governance.py`` and ``scripts/_stdin_json.py`` are each shared by
+two consumers. ``scripts/_stdio.py`` is the Windows UTF-8 stdio seam. This
+file tests those modules on their own terms so every branch has direct
+coverage, not only the path one caller happens to hit.
 """
 
 from __future__ import annotations
@@ -130,3 +127,46 @@ def test_read_json_payload_logs_a_warning_on_non_dict_json(
     records = [r for r in caplog.records if "not an object" in r.message]
     assert len(records) == 1
     assert getattr(records[0], "payload_type", None) == "list"
+
+
+stdio = load_script_module("_stdio.py")
+
+
+class _RecordingStream:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def reconfigure(self, **kwargs: str) -> None:
+        self.calls.append(kwargs)
+
+
+def test_configure_utf8_stdio_is_a_no_op_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    stream = _RecordingStream()
+    monkeypatch.setattr(stdio.sys, "platform", "linux")
+    monkeypatch.setattr(stdio.sys, "stdout", stream)
+    monkeypatch.setattr(stdio.sys, "stderr", stream)
+    stdio.configure_utf8_stdio()
+    assert stream.calls == []
+
+
+def test_configure_utf8_stdio_skips_streams_that_cannot_reconfigure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(stdio.sys, "platform", "win32")
+    monkeypatch.setattr(stdio.sys, "stdout", object())
+    monkeypatch.setattr(stdio.sys, "stderr", object())
+    stdio.configure_utf8_stdio()
+
+
+def test_configure_utf8_stdio_reconfigures_both_streams_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stdout = _RecordingStream()
+    stderr = _RecordingStream()
+    monkeypatch.setattr(stdio.sys, "platform", "win32")
+    monkeypatch.setattr(stdio.sys, "stdout", stdout)
+    monkeypatch.setattr(stdio.sys, "stderr", stderr)
+    stdio.configure_utf8_stdio()
+    expected = {"encoding": "utf-8", "errors": "replace"}
+    assert stdout.calls == [expected]
+    assert stderr.calls == [expected]

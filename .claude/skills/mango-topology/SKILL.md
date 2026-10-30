@@ -62,7 +62,7 @@ python -m pytest --tb=short -q
 
 | File | Role |
 |------|------|
-| `src/mangomas/core/orchestrator.py` | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out`, `stream_dispatch` |
+| `src/mangomas/core/orchestrator/` | `dispatch`, `dispatch_pipeline`, `dispatch_fan_out`, `stream_dispatch` |
 | `src/mangomas/core/loop.py` | `AcceptanceFn` type alias |
 | `src/mangomas/agents/_streaming.py` | Shared streaming-fallback helper |
 | `src/mangomas/agents/planner.py` | Structured output for use in pipelines |
@@ -70,6 +70,11 @@ python -m pytest --tb=short -q
 | `tests/test_topologies.py` | Reference pipeline + fan-out tests |
 | `tests/test_streaming.py` | Reference streaming tests (including fallback) |
 | `tests/test_control_loop.py` | Reference acceptance-loop tests |
+
+A governed local-model edit uses `mango-repair-loop`: stage the candidate,
+then promote it only after the oracle passes. When the request already
+contains an assistant prefill, dispatch a single step so the loop does not
+re-send that prefill.
 
 ---
 

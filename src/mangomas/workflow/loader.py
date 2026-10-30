@@ -14,12 +14,13 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
-from mangomas.config import DEFAULT_WORKFLOW_SCHEMA_VERSION, WorkflowSettings
+from mangomas.config import DEFAULT_WORKFLOW_SCHEMA_VERSION
 from mangomas.errors import ConfigError
 from mangomas.workflow.graph import WorkflowGraph
 from mangomas.workflow.validation import validate_structured_acceptance
 
 if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.config import WorkflowSettings
     from mangomas.workflow.validation import StructuredAgentFields
 
 logger = logging.getLogger(__name__)

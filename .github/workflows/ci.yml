@@ -199,6 +199,27 @@ jobs:
       - name: Scripts coverage (isolated, measured floor)
         run: make scripts-coverage
 
+  guard-probe:
+    name: Guard falsifiability probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: make install
+
+      # spec-0033 R6: its own job, never a step of the offline gate. The
+      # probe mutates the tree and restores it; a dirty checkout must not
+      # be a precondition of `make gate`.
+      - name: Prove guards still fire
+        run: make guard-probe
+
   docker-smoke:
     name: Image smoke (cloud extras importable)
     runs-on: ubuntu-latest

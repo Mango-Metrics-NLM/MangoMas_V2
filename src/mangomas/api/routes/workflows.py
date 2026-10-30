@@ -26,13 +26,13 @@ from mangomas.composition.agents import (
 from mangomas.config import get_settings
 from mangomas.core import AgentResponse
 from mangomas.workflow import execute_workflow, load_workflow, resolve_workflow_source
-from mangomas.workflow.validation import StructuredAgentFields
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
     from mangomas.workflow import WorkflowGraph
+    from mangomas.workflow.validation import StructuredAgentFields
 
 
 def _structured_agents(orch: Orchestrator) -> StructuredAgentFields:
