@@ -423,9 +423,40 @@ def test_d6_allowlist_mismatch_redacts_quoted_values(
     assert "Traceback" not in output
 
 
+def test_d6_allowlist_redacts_both_quote_styles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``!r`` switches quotes and escapes the one it keeps; both must be scrubbed.
+
+    An apostrophe-only id is double-quoted. An id that also contains a double
+    quote stays single-quoted with a backslash before the apostrophe, which a
+    ``'[^']*'`` scrub cuts in half and leaks.
+    """
+    forbid_real_orchestrator(monkeypatch)
+    token = secrets.token_hex(4)
+    model = f"it's-{token}\"end"
+    roster = f"o'{token}"
+    monkeypatch.setenv(LLM_MODEL_ENV, model)
+    monkeypatch.setenv(LLM_ALLOWED_MODELS_ENV, json.dumps([roster]))
+    get_settings.cache_clear()
+    try:
+        result = CliRunner().invoke(app, ["agents"])
+    finally:
+        get_settings.cache_clear()
+    output = result.output
+    assert result.exit_code == EXIT_CONFIG_ERROR, output
+    assert token not in output, output
+    assert model not in output, output
+    assert roster not in output, output
+    assert "'<redacted>'" in output
+    assert "Traceback" not in output
+
+
 def _non_list_embedding_client() -> httpx.AsyncClient:
     def respond(_request: httpx.Request) -> httpx.Response:
-        body = json.dumps({"data": [{"embedding": "not-a-list", "index": 0}]})
+        # ``"12"`` iterates to ``[1.0, 2.0]`` if the list check is gone.
+        # ``"not-a-list"`` already dies in ``float()`` and would not notice.
+        body = json.dumps({"data": [{"embedding": "12", "index": 0}]})
         return httpx.Response(
             200, content=body.encode(), headers={"content-type": "application/json"}
         )
@@ -434,7 +465,12 @@ def _non_list_embedding_client() -> httpx.AsyncClient:
 
 
 async def test_d4_a_non_list_embedding_is_a_typed_error() -> None:
-    """A scalar ``embedding`` is a malformed body, not an untyped TypeError."""
+    """A numeric string is not a vector of floats.
+
+    Without the list check, ``"12"`` is accepted as ``[1.0, 2.0]``. A
+    non-numeric string fails inside ``float()`` either way, so it cannot
+    show that the guard was removed.
+    """
     client = LMStudioEmbeddingClient(
         TEST_LMSTUDIO_MOCK_BASE_URL,
         TEST_LMSTUDIO_STUB_MODEL,

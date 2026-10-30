@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 # carries the raw JSON the operator typed. Keep the name, drop the value.
 _SETTINGS_FIELD_RE = re.compile(r'field "([A-Za-z0-9_]+)"')
 _REDACTED_LITERAL = "'<redacted>'"
+# ``!r`` uses single quotes, or double quotes when the value contains an
+# apostrophe, and escapes whichever delimiter it kept. A single-quote-only
+# scrub leaves that model id on stderr.
+_QUOTED_LITERAL_RE = re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
 
 
 def _settings_env_prefix() -> str:
@@ -52,9 +56,10 @@ def format_settings_error(exc: ValidationError) -> str:
 
     The offending *value* is never included (``include_input=False``): the
     field may hold a credential, and pydantic's default rendering echoes it.
-    Single-quoted literals inside a custom validator message are scrubbed
-    the same way — ``LLMSettings`` names the rejected model id in quotes,
-    and that id can be a secret an operator pasted into the wrong field.
+    Quoted literals inside a custom validator message are scrubbed the same
+    way — ``LLMSettings`` names the rejected model id with ``!r``, which may
+    use either quote style, and that id can be a secret pasted into the
+    wrong field.
     An empty ``loc`` (a model-level error) must not print ``MANGOMAS_:``.
     """
     prefix = _settings_env_prefix()
@@ -66,7 +71,7 @@ def format_settings_error(exc: ValidationError) -> str:
             env_var = prefix + delimiter.join(str(part) for part in loc).upper()
         else:
             env_var = prefix.rstrip("_") or "MANGOMAS"
-        message = re.sub(r"'[^']*'", _REDACTED_LITERAL, str(error["msg"]))
+        message = _QUOTED_LITERAL_RE.sub(_REDACTED_LITERAL, str(error["msg"]))
         lines.append(f"  {env_var}: {message}")
     return "\n".join(lines)
 
