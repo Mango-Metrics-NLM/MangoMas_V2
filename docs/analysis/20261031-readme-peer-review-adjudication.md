@@ -76,12 +76,16 @@ Ranked by how much harm a reader takes from them.
 These are code defects, not documentation. The README now documents the
 current behaviour honestly; each is a follow-up.
 
-- `mangomas chat` with LM Studio unreachable prints an `LLMUnavailable`
-  traceback and exits 1. `cli/commands/chat.py` does not catch `LLMError`;
-  `workflow run` does.
-- A missing optional extra (`vertex`, `rag`, `embeddings-local`) raises a plain
-  `ImportError` with an install hint rather than a `ConfigError`, so the CLI
-  shows a traceback instead of exit 2.
+- **Fixed (same PR).** `mangomas chat` with LM Studio unreachable printed an
+  `LLMUnavailable` traceback and exited 1. Only `workflow run` and `eval`
+  caught `MangomasError`. Every command now runs through
+  `cli/_runtime.py::run_or_exit` and prints `<Command> failed: <message>
+  (<detail>)` with exit 1.
+- **Fixed (same PR).** A missing optional extra (`vertex`, `rag`,
+  `embeddings-local`) raised a plain `ImportError` from an adapter constructor,
+  inside `_build()`, so the CLI showed a traceback. `build_or_exit` now maps it
+  to `Missing optional dependency: <install hint>` with exit 2. The API still
+  fails at startup with the `ImportError`.
 - A wrong model id is invisible to `/readyz`, whose LM Studio ping is `GET
   /models`. It surfaces as `502 llm_bad_response` on the first call.
 - `MANGOMAS_LLM__PROJECT_ID` is not validated for `PROVIDER=vertex`, unlike the
@@ -102,5 +106,10 @@ Changed in the same commit as this record:
 - `AGENTS.md`: integration-test comment corrected.
 - `CONTRIBUTING.md`: protected-path intro names the ADR-0030 governance surface.
 
+Also changed in a follow-up commit: the two CLI gaps in §3 (`cli/_runtime.py`
+and the command modules), and two README Troubleshooting corrections from
+review (the error-envelope scope versus FastAPI's 422, and `504 step_timeout`).
+
 Not changed: the review's wrap-check and coverage-badge recommendations
-(rejected above); the code gaps in §3; the Vertex model id; no `LICENSE` file.
+(rejected above); the `/readyz` model check and the Vertex `PROJECT_ID`
+validation in §3; the Vertex model id; no `LICENSE` file.

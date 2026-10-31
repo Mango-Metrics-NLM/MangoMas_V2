@@ -450,19 +450,29 @@ Two separate things share the word "harness":
 
 Start with `GET /readyz`: it returns `503` with
 `{"ready": false, "checks": [{"name": "llm", "status": "error", "detail": "…"}, …]}`
-when the LLM ping or the database check fails. API errors share one envelope,
-`{"error": "<code>", "message": "…", "detail": …}`.
+when the LLM ping or the database check fails.
+
+Typed Mango-Mas errors and the backpressure rejections (`413` / `503`) share one
+envelope, `{"error": "<code>", "message": "…"}`, plus a `"detail"` key only when
+there is one. Request-validation failures are FastAPI's own `422`, shaped
+`{"detail": [{"loc": …, "msg": …, "type": …}, …]}` — check the status before
+parsing the body.
+
+On the CLI, the same typed errors print one line,
+`<Command> failed: <message> (<detail>)`, and exit `1`. Configuration problems,
+including a missing optional extra, exit `2`.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| API `503` `llm_unavailable`; `/readyz` LLM check `error`; `mangomas chat` exits 1 with a traceback | LM Studio not running, or its local server is off | Start the server on `:1234`, or point `MANGOMAS_LLM__BASE_URL` at it |
+| API `503` `llm_unavailable`; `/readyz` LLM check `error`; CLI `Chat failed: LM Studio unreachable at …`, exit `1` | LM Studio not running, or its local server is off | Start the server on `:1234`, or point `MANGOMAS_LLM__BASE_URL` at it |
 | API `502` `llm_bad_response` ("LM Studio returned HTTP …") while `/readyz` is green | `MANGOMAS_LLM__MODEL` does not match a loaded model (`/readyz` only lists models, so it cannot catch this) | Set the model id exactly as `GET {base_url}/models` reports it |
-| API `504` `llm_timeout` | Model slow to load or generate | Raise `MANGOMAS_LLM__TIMEOUT_SECONDS` (default `60.0`) |
-| `ImportError: Vertex AI SDK is not installed …` at startup | `MANGOMAS_LLM__PROVIDER=vertex` without the extra | `pip install 'mangomas[vertex]'` |
+| API `504` `step_timeout` | One agent step — every LLM call it makes, plus tool calls — exceeded `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` (default `30.0`) | Raise `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS`. With the defaults this deadline fires **before** the LLM timeout, so raising only the LLM timeout changes nothing |
+| API `504` `llm_timeout` | A single LLM call exceeded `MANGOMAS_LLM__TIMEOUT_SECONDS` (default `60.0`). Reachable only once the step timeout is above it | Raise `MANGOMAS_LLM__TIMEOUT_SECONDS`, keeping it below the step timeout |
+| CLI `Missing optional dependency: Vertex AI SDK is not installed …`, exit `2` (the API fails at startup with the same `ImportError`) | `MANGOMAS_LLM__PROVIDER=vertex` without the extra | `pip install 'mangomas[vertex]'` |
 | Vertex fails at startup with a project or credentials error | No `MANGOMAS_LLM__PROJECT_ID` and no ADC project, or no credentials | Set `PROJECT_ID`; run `gcloud auth application-default login` or set `MANGOMAS_LLM__CREDENTIALS_PATH` |
 | `mangomas rag ingest` / `rag query` exits `2`: "RAG is not enabled" | Embeddings or vector store disabled | Set both `MANGOMAS_EMBEDDINGS__ENABLED=true` and `MANGOMAS_VECTOR__ENABLED=true` |
-| `ImportError` mentioning `chromadb` or `sentence_transformers` | RAG enabled without its extras | `pip install -e ".[rag,embeddings-local]"` |
-| CLI exits `2` with a configuration message | Invalid `MANGOMAS_*` value | Fix the variable named in the message; `.env.example` lists every supported one |
+| CLI `Missing optional dependency:` naming `chromadb` or `sentence-transformers`, exit `2` | RAG enabled without its extras | `pip install -e ".[rag,embeddings-local]"` |
+| CLI exits `2` with a configuration message | Invalid `MANGOMAS_*` value | Fix the variable named in the message; `.env.example` documents each settings group |
 
 ---
 

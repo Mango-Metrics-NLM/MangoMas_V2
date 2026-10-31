@@ -7,7 +7,6 @@ adds the group.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -102,8 +101,8 @@ def workflow_run(
         finally:
             await _runtime._close_orchestrator(orch)
 
-    try:
-        typer.echo(asyncio.run(_run()))
-    except MangomasError as exc:
-        typer.echo(f"Workflow run failed: {exc}", err=True)
-        raise typer.Exit(code=EXIT_RUNTIME_ERROR) from exc
+    typer.echo(
+        _runtime.run_or_exit(
+            _run(), failure_label="Workflow run failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+        )
+    )

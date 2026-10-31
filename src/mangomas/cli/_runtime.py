@@ -17,9 +17,10 @@ this module is imported by every command path.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import typer
 
@@ -29,8 +30,12 @@ from mangomas.errors import MangomasError
 from mangomas.telemetry import configure_metrics, configure_telemetry
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Coroutine
+
     from mangomas.config import Settings
     from mangomas.core import Orchestrator
+
+_T = TypeVar("_T")
 
 # Windows default console codec is cp1252; LLM replies routinely contain
 # em-dashes, smart quotes, etc. that cp1252 cannot encode, which crashes
@@ -57,22 +62,61 @@ def build_or_exit(*, config_exit_code: int) -> Orchestrator:
     instead of the documented config exit code. Anything that is not a
     ``MangomasError`` is a genuine crash and still propagates.
 
+    An ``ImportError`` is the one other exception mapped here. Every module in
+    the package is already imported by the time a command runs, and composition
+    imports each adapter factory module unconditionally, so an ``ImportError``
+    raised *inside* ``_build()`` can only come from an adapter's lazy optional-SDK
+    import (``vertex``, ``rag``, ``embeddings-local``). Each of those carries a
+    ``pip install 'mangomas[...]'`` hint, which is a configuration fix, not a
+    crash. The traceback is still logged at DEBUG, so ``--verbose`` shows it.
+
     ``config_exit_code`` is passed in rather than imported: this module is the
     base layer and imports nothing from ``mangomas.cli`` (asserted by
     ``tests/test_import_compat.py``), ``exit_codes`` included. Calls ``_build``
     through the module global on purpose — it is the patch seam the CLI tests
     replace (see the module docstring).
     """
+    log = logging.getLogger(__name__)
     try:
         return _build()
     except MangomasError as exc:
         detail = f" ({exc.detail})" if exc.detail else ""
-        logging.getLogger(__name__).error(
+        log.error(
             "Configuration error",
             extra={"event": "cli_config_error", "error_code": exc.code},
         )
         typer.echo(f"Configuration error: {exc}{detail}", err=True)
         raise typer.Exit(code=config_exit_code) from exc
+    except ImportError as exc:
+        log.error("Missing optional dependency", extra={"event": "cli_missing_extra"})
+        log.debug("Optional dependency import failed", exc_info=True)
+        typer.echo(f"Missing optional dependency: {exc}", err=True)
+        raise typer.Exit(code=config_exit_code) from exc
+
+
+def run_or_exit(coro: Coroutine[Any, Any, _T], *, failure_label: str, runtime_exit_code: int) -> _T:
+    """``asyncio.run(coro)`` with the typed-error → exit-code mapping commands need.
+
+    The runtime twin of :func:`build_or_exit`. ``chat``, ``history`` and the
+    ``rag`` commands used to call ``asyncio.run`` bare, so an unreachable LLM
+    surfaced as an ``LLMUnavailable`` traceback while ``workflow run`` and
+    ``eval`` printed one line. Every command now prints
+    ``<failure_label>: <message> (<detail>)`` and exits ``runtime_exit_code``.
+
+    Only the ``MangomasError`` family is mapped. A ``typer.Exit`` raised inside
+    the coroutine (``rag``'s "not enabled" check) passes through unchanged, and
+    anything else is a genuine crash and still propagates.
+    """
+    try:
+        return asyncio.run(coro)
+    except MangomasError as exc:
+        detail = f" ({exc.detail})" if exc.detail else ""
+        logging.getLogger(__name__).error(
+            failure_label,
+            extra={"event": "cli_runtime_error", "error_code": exc.code},
+        )
+        typer.echo(f"{failure_label}: {exc}{detail}", err=True)
+        raise typer.Exit(code=runtime_exit_code) from exc
 
 
 async def _close_orchestrator(orch: Orchestrator) -> None:
