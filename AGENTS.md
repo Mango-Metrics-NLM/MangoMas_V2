@@ -29,7 +29,7 @@ mangomas chat "hello"
 # Tests (unit; addopts supply --cov + the global 95 % floor)
 python -m pytest --tb=short -q
 
-# Integration tests (requires LM Studio running)
+# Integration tests (hermetic in-process ASGI; no LM Studio needed — CI runs them)
 $env:RUN_INTEGRATION='1' ; python -m pytest tests/integration --no-cov -q
 
 # Lint (auto-fix)

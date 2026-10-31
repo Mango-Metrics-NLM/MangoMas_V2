@@ -25,6 +25,20 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - Skills `mango-aqa` and `mango-repair-loop`. The skill corpus is 23; the
   agent corpus stays 27.
 
+### Changed — README accuracy and onboarding
+
+- `README.md` adds Prerequisites, Built-in agents, Troubleshooting and a
+  sample session, and corrects statements the code contradicted. The Vertex
+  `MODEL`/`PROJECT_ID` table now matches the code. Workflow "default-OFF" now
+  says that `POST /workflows/run` runs inline graphs unless
+  `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION=false`. The SSE envelope now
+  shows the `metadata` frame. The tool agent is named `tool`. Runtime harness
+  tracing is split from the contributor tooling. AGENTS.md and CONTRIBUTING.md
+  get matching one-line fixes. The adjudication is recorded in
+  `docs/analysis/20261031-readme-peer-review-adjudication.md`. The edits stay
+  within `tests/tooling/test_doc_links.py` and
+  `tests/tooling/test_corpus_contract.py`.
+
 ### Fixed — origin-delta AQA on a CUDA + LM Studio workstation (spec-0039)
 
 - `ToolAgent` with no tool registry (the shipped default) rejected any fenced

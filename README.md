@@ -1,10 +1,32 @@
 # Mango-Mas V2
 
+[![CI](https://github.com/Mango-Metrics-NLM/MangoMas_V2/actions/workflows/ci.yml/badge.svg)](https://github.com/Mango-Metrics-NLM/MangoMas_V2/actions/workflows/ci.yml)
+
 Local-first, modular agent platform built on FastAPI and LM Studio. Designed
 for local development today; architected for GCP swap-in without rewriting
 core agent contracts.
 
-> **License** Proprietary. All rights reserved.
+> **License** Proprietary. All rights reserved. This is a private repository;
+> [CONTRIBUTING.md](CONTRIBUTING.md) is for its authorized contributors.
+
+**What this is not.** This FastAPI runtime is not the Hugging Face Gradio demo
+([`ianshank/MangoMAS`](https://huggingface.co/spaces/ianshank/MangoMAS),
+[`MangoMas-Demo`](https://github.com/Mango-Metrics-NLM/MangoMas-Demo),
+[`MangoMAS-MoE-7M`](https://huggingface.co/ianshank/MangoMAS-MoE-7M)), not OFFIS
+[`mango-agents`](https://github.com/OFFIS-DAI/mango), and not the hospitality
+product [mangometrics.io](https://mangometrics.io/). See
+[`docs/analysis/20260912-council-peer-review-rewrite.md`](docs/analysis/20260912-council-peer-review-rewrite.md).
+
+---
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| Python **3.11+** | `requires-python = ">=3.11"`; CI tests 3.11 and 3.12; the Docker image is `python:3.11-slim` |
+| An LLM backend | [LM Studio](https://lmstudio.ai/) with a model loaded and its local server enabled on `:1234` (default), **or** a GCP project with Vertex AI and the `vertex` extra (see [LLM providers](#llm-providers)) |
+| Docker | Optional — only for the container image |
+| `make` | Optional — every CI step is also a `Makefile` target (`make help`) |
 
 ---
 
@@ -36,12 +58,41 @@ mangomas chat "hello"
 ### bash / macOS / Linux
 
 ```bash
+# 1. Create venv and install all dev dependencies
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pip install -e ./mango-integration-contracts
+
+# 2. Start LM Studio, load a model, and enable the local server on :1234
+
+# 3. Copy the example env file, then set MANGOMAS_LLM__MODEL to your loaded
+#    model id (the shipped value, local-model, will not match it)
 cp .env.example .env
+
+# 4. Run the API (factory pattern required)
 uvicorn mangomas.api.app:create_app --factory --reload
+
+# Or run the CLI
+mangomas chat "hello"
 ```
+
+### Sample session
+
+Illustrative output — the reply text depends on your model:
+
+```console
+$ mangomas chat "Name one benefit of a local-first agent platform."
+Your data never leaves the machine, so you can iterate without network
+latency or per-token cost.
+
+$ curl -s localhost:8000/agents/chat/invoke \
+    -H 'Content-Type: application/json' \
+    -d '{"messages": [{"role": "user", "content": "hello"}]}'
+{"content": "Hello! How can I help you today?", "agent": "chat", "metadata": {...}}
+```
+
+`GET /agents` lists every registered agent name; `GET /readyz` tells you
+whether the LLM backend is reachable (see [Troubleshooting](#troubleshooting)).
 
 ---
 
@@ -90,9 +141,9 @@ MANGOMAS_LLM__MODEL=gemini-1.5-flash
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `MANGOMAS_LLM__PROJECT_ID` | yes | — | GCP project hosting the Vertex endpoint |
+| `MANGOMAS_LLM__PROJECT_ID` | in practice | — | GCP project hosting the Vertex endpoint. Not validated: when unset, the SDK falls back to the ADC / environment project, and fails if there is none |
 | `MANGOMAS_LLM__LOCATION` | no | `us-central1` | GCP region |
-| `MANGOMAS_LLM__MODEL` | yes | — | Gemini model id |
+| `MANGOMAS_LLM__MODEL` | in practice | `local-model` | Gemini model id. The shared default is an LM Studio placeholder, so set it explicitly for Vertex |
 | `MANGOMAS_LLM__CREDENTIALS_PATH` | no | — | Path to a service-account JSON key |
 | `MANGOMAS_LLM__SECRET_REF` | no | — | Secrets-provider key resolving to the JSON key body |
 
@@ -138,8 +189,16 @@ Each token is delivered as an SSE `data:` frame with a JSON payload:
 ```
 data: {"event": "token", "data": {"content": "Hello"}, "content": "Hello"}
 
+data: {"event": "metadata", "data": {"agent": "chat", "degraded": false, "chunks": 1}}
+
 data: {"event": "done"}
 ```
+
+The `metadata` frame precedes `done`; `degraded` is `true` when the agent has
+no native `stream()` and its buffered reply was sent as a single chunk. An
+error after the stream has started cannot become an HTTP error envelope (the
+`200` headers are already sent), so the stream simply ends with no `done`
+frame — treat a missing `done` as failure.
 
 The top-level `content` key is included for backwards compatibility with
 consumers that have not yet adopted the `event`/`data` structure.
@@ -161,6 +220,25 @@ agent_registry.register("my-agent", lambda settings: MyAgent(settings=settings))
 ```
 
 No changes to `Orchestrator`, `app.py`, or any existing agent are needed.
+
+### Built-in agents
+
+Registered by default (`DEFAULT_AGENTS` in `composition/agents.py`); call them
+by the **registered name** in the first column.
+
+| Name | Class | What it does | Streams natively |
+|---|---|---|---|
+| `chat` | `ChatAgent` | Sends the conversation (plus an optional system prompt) to the LLM and returns the reply | yes |
+| `summarize` | `SummarizeAgent` | Loads recent persisted turns (`HISTORY_LIMIT`, default 10) and asks the LLM to summarize them with the request | no |
+| `tool` | `ToolAgent` | Runs an inner loop: parse a tool-call block from the reply, execute the tool, feed the result back; capped by `MAX_TOOL_STEPS` (default 5). Tools come from `ctx.tools`, e.g. the RAG `retrieve` tool | no |
+| `planner` | `PlannerAgent` | Returns JSON in the `ExecutionPlan` shape: `{goal, steps: [{step, description, agent?}]}` | yes |
+| `reviewer` | `ReviewerAgent` | Returns JSON in the `ReviewResult` shape: `{passed, score, feedback, suggestions}` | yes |
+
+Per-agent overrides use `MANGOMAS_AGENTS__<NAME>__*` (system prompt,
+temperature, max tokens, model). `planner` / `reviewer` output is validated
+against its schema only when `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT=true`.
+Streaming a non-streaming agent still works: the reply arrives as one chunk and
+the SSE `metadata` frame carries `"degraded": true`.
 
 ---
 
@@ -255,8 +333,9 @@ so `mangomas.adapters.embeddings` / `.vector` stay importable without the extras
 
 ## Declarative workflow graphs (opt-in)
 
-Compose agents through a declarative JSON graph consumed by the `Orchestrator`,
-default-OFF so existing deployments see no change. A `WorkflowGraph` is a bounded
+Compose agents through a declarative JSON graph consumed by the `Orchestrator`.
+Server-configured graphs are default-OFF (but see the inline-definition note
+below the table). A `WorkflowGraph` is a bounded
 tree — a `sequence` of `agent` / `fan_out` / `loop` / `branch` steps — compiled
 down to the existing `dispatch_pipeline` / `dispatch_fan_out` / acceptance-loop
 primitives. Every leaf is one public dispatch call, so an all-agent `sequence` is
@@ -283,6 +362,14 @@ mangomas workflow run "ship the feature"            # prints the final node's re
 |---|---|---|
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative graph dispatch |
 | `MANGOMAS_WORKFLOW__DEFINITION` | _(none)_ | Path to a JSON graph, or inline JSON |
+| `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION` | `true` | Allow a caller-supplied inline graph on `POST /workflows/run` |
+
+> **`ENABLED=false` does not close `POST /workflows/run`.** A request that
+> carries its own inline `definition` runs even when the feature is disabled,
+> because `ALLOW_INLINE_DEFINITION` defaults to `true`. Set it to `false` to
+> require server-configured graphs only (ADR-0033) — recommended for any
+> deployment where one shared credential should not authorize composing and
+> running an arbitrary agent graph.
 
 The feature adds no new error types: a malformed graph is a `ConfigError` (400),
 an unknown agent is `AgentNotFound` (404), and loop exhaustion is
@@ -300,16 +387,9 @@ Claude Code harness (`MANGOMAS_HARNESS__*`): cognition proposes; the sibling
 harness disposes (INV-16). The sink hangs on `AgentContext.extras["cognitive_sink"]`
 — no new `AgentContext` field.
 
-This FastAPI runtime is **not** the Hugging Face Gradio demo
-([`ianshank/MangoMAS`](https://huggingface.co/spaces/ianshank/MangoMAS),
-[`MangoMas-Demo`](https://github.com/Mango-Metrics-NLM/MangoMas-Demo),
-[`MangoMAS-MoE-7M`](https://huggingface.co/ianshank/MangoMAS-MoE-7M)),
-not OFFIS [`mango-agents`](https://github.com/OFFIS-DAI/mango), and not
-the hospitality product [mangometrics.io](https://mangometrics.io/).
-The Hub MoE checkpoint is a separate research artifact;
-`routing.recommendation` is a reserved payload schema, not a capability
-grant. Identity and eval-honesty notes:
-[`docs/analysis/20260912-council-peer-review-rewrite.md`](docs/analysis/20260912-council-peer-review-rewrite.md).
+The Hub MoE checkpoint (see [What this is not](#mango-mas-v2)) is a separate
+research artifact; `routing.recommendation` is a reserved payload schema, not a
+capability grant.
 
 ```env
 MANGOMAS_SIGNAL__ENABLED=true
@@ -336,46 +416,53 @@ no harness role (`retrieve` stays local RAG).
 
 ---
 
-## Claude Code harness (opt-in)
+## Harness tracing (opt-in) and contributor tooling
 
-The repository ships an enterprise Claude Code harness configured under
-`.claude/skills/`, `.claude/agents/`, and
-`.claude/settings.json`. It is **opt-in** — production callers behave
-identically until the switch is flipped:
+Two separate things share the word "harness":
 
-```env
-MANGOMAS_HARNESS__ENABLED=true
-MANGOMAS_HARNESS__METRICS_NAMESPACE=mangomas.harness
-MANGOMAS_HARNESS__HOOK_LOG_LEVEL=INFO
-```
+- **Runtime harness tracing** — opt-in, off by default. Production callers
+  behave identically until the switch is flipped:
 
-When enabled, `build_orchestrator` returns a `_HarnessOrchestrator`
-wrapper that adds a `harness.agent_invoke` parent span (with
-`agent.name`, `harness.topology`, `messages.count` attributes) above the
-existing `orchestrator.*` spans. Otherwise, the wrapper is bypassed and
-no extra spans, logs, or hooks are emitted by the runtime process.
+  ```env
+  MANGOMAS_HARNESS__ENABLED=true
+  MANGOMAS_HARNESS__METRICS_NAMESPACE=mangomas.harness
+  MANGOMAS_HARNESS__HOOK_LOG_LEVEL=INFO
+  ```
 
-What ships in the harness:
+  When enabled, `build_orchestrator` returns a `_HarnessOrchestrator`
+  wrapper that adds a `harness.agent_invoke` parent span (with
+  `agent.name`, `harness.topology`, `messages.count` attributes) above the
+  existing `orchestrator.*` spans. Otherwise, the wrapper is bypassed and
+  no extra spans, logs, or hooks are emitted by the runtime process.
 
-| Surface | Path | Status |
+- **Contributor tooling** — the Claude Code agent and skill corpus under
+  `.claude/`, its hooks, the frontmatter linter and the `.mcp.json` servers.
+  It is always in the tree, has no effect on the running service, and is
+  documented for contributors in [CLAUDE.md](CLAUDE.md) (which imports
+  [AGENTS.md](AGENTS.md)) and
+  [`docs/tooling/claude-code-ecosystem.md`](docs/tooling/claude-code-ecosystem.md).
+  `docs/architecture/c2-container.md` and `c3-component.md` show where it sits
+  in the C4 model.
+
+---
+
+## Troubleshooting
+
+Start with `GET /readyz`: it returns `503` with
+`{"ready": false, "checks": [{"name": "llm", "status": "error", "detail": "…"}, …]}`
+when the LLM ping or the database check fails. API errors share one envelope,
+`{"error": "<code>", "message": "…", "detail": …}`.
+
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| Skills (workflow helpers) | `.claude/skills/<name>/SKILL.md` | 23 skills — live in Claude Code and VS Code Copilot |
-| Agents | `.claude/agents/mango-<slug>.md` | 27 agents, flat: 4 routers + 23 specialists |
-| Frontmatter linter | `scripts/lint_agent_frontmatter.py` | CI + local pre-commit gate |
-| SessionStart hook | `scripts/harness_session_start.py` | Probe venv + LM Studio reachability |
-| Project settings | `.claude/settings.json` | Allow/Deny + SessionStart/PreToolUse/PostToolUse/Stop hooks |
-| MCP servers | `.mcp.json` | 6 servers: filesystem/git/fetch/sequential-thinking/repomix + optional github |
-| Cross-session memory (per-contributor, user-scoped) | external `~/.claude-mem/` | claude-mem — no shared config |
-| Secret scan | `.gitleaks.toml` + `make secret-scan` | Declared ruleset; working tree + history; proved non-vacuous nightly |
-| Scheduled automation | `.github/workflows/nightly.yml` | Postgres suite + secret scan; files a tracking issue on failure |
-| Dependency updates | `.github/dependabot.yml` | Monthly `github-actions` + root `pip` + `/mango-integration-contracts` pip |
-| PR template | `.github/PULL_REQUEST_TEMPLATE.md` | Mandatory PR checklist |
-
-See `CLAUDE.md` (which imports `AGENTS.md`) for the full skill/agent map and protected-path
-table; `docs/tooling/claude-code-ecosystem.md` for the full external
-tooling catalog (MCP servers, hooks, rejected/reference-only tools);
-`docs/architecture/c2-container.md` and `c3-component.md` for where the
-harness sits in the C4 model.
+| API `503` `llm_unavailable`; `/readyz` LLM check `error`; `mangomas chat` exits 1 with a traceback | LM Studio not running, or its local server is off | Start the server on `:1234`, or point `MANGOMAS_LLM__BASE_URL` at it |
+| API `502` `llm_bad_response` ("LM Studio returned HTTP …") while `/readyz` is green | `MANGOMAS_LLM__MODEL` does not match a loaded model (`/readyz` only lists models, so it cannot catch this) | Set the model id exactly as `GET {base_url}/models` reports it |
+| API `504` `llm_timeout` | Model slow to load or generate | Raise `MANGOMAS_LLM__TIMEOUT_SECONDS` (default `60.0`) |
+| `ImportError: Vertex AI SDK is not installed …` at startup | `MANGOMAS_LLM__PROVIDER=vertex` without the extra | `pip install 'mangomas[vertex]'` |
+| Vertex fails at startup with a project or credentials error | No `MANGOMAS_LLM__PROJECT_ID` and no ADC project, or no credentials | Set `PROJECT_ID`; run `gcloud auth application-default login` or set `MANGOMAS_LLM__CREDENTIALS_PATH` |
+| `mangomas rag ingest` / `rag query` exits `2`: "RAG is not enabled" | Embeddings or vector store disabled | Set both `MANGOMAS_EMBEDDINGS__ENABLED=true` and `MANGOMAS_VECTOR__ENABLED=true` |
+| `ImportError` mentioning `chromadb` or `sentence_transformers` | RAG enabled without its extras | `pip install -e ".[rag,embeddings-local]"` |
+| CLI exits `2` with a configuration message | Invalid `MANGOMAS_*` value | Fix the variable named in the message; `.env.example` lists every supported one |
 
 ---
 
@@ -429,6 +516,11 @@ gate` — every other gate step runs fully offline, and downloading a pinned
 release binary is the one exception. Run it directly to reproduce that CI job
 locally (needs network access).
 
+Scheduled and repository automation outside the gate:
+`.github/workflows/nightly.yml` (Postgres suite + secret scan; files a tracking
+issue on failure), `.github/dependabot.yml` (monthly `github-actions` and `pip`
+updates), and the mandatory checklist in `.github/PULL_REQUEST_TEMPLATE.md`.
+
 **Hooks ≠ gate.** The Claude Code Stop hook is
 `make typecheck format-check` plus `pytest --no-cov`. Pre-commit is ruff,
 mypy (`src/` only), frontmatter, `validate-config`, and `lint-imports`.
@@ -447,14 +539,12 @@ runs.
 
 > **Current baseline:** comfortably above every floor — run
 > `python -m pytest -q && python scripts/check_coverage.py` for the live numbers.
-
-Coverage today sits comfortably above each floor — never lower a
-floor to land a change, fix the test coverage in the same commit.
+> Never lower a floor to land a change; fix the test coverage in the same commit.
 
 ### Integration tests
 
 ```powershell
-# Requires no external service — uses in-process ASGI transport
+# Requires no external service — uses in-process ASGI transport; CI runs it on every push
 $env:RUN_INTEGRATION = '1'
 python -m pytest tests/integration --no-cov
 ```
@@ -492,7 +582,7 @@ src/mangomas/
                 _http_errors.py / _vertex_errors.py (error translation),
                 _openai_client.py (OpenAI-compatible httpx lifecycle),
                 embeddings/_shared.py (embed / aclose mixins)
-  agents/       Concrete agents: chat, summarize, tool_agent, planner, reviewer
+  agents/       Concrete agents: chat, summarize, tool (tool_agent.py), planner, reviewer
   rag/          Opt-in RAG layer — chunker, loader, ingestion pipeline, retriever + RetrievalTool
   workflow/     Opt-in declarative workflow graphs — frozen node models, predicate
                 compiler, node registry + executors, loader (compiles to dispatch)
