@@ -6,7 +6,10 @@ against a temporary git repo and a stub gate, never against this checkout.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
+import py_compile
 import subprocess
 from pathlib import Path
 
@@ -206,6 +209,66 @@ def test_an_empty_gate_command_is_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(probe.ProbeError, match="empty"):
         probe.load_manifest(path)
+
+
+def test_drop_bytecode_evicts_a_cache_compiled_from_the_defect(tmp_path: Path) -> None:
+    """The CI failure of MUT-0040-M06, reproduced deterministically.
+
+    A ``.pyc`` compiled from the *defect* source, stamped with the same mtime
+    and size as the fixed source now on disk, is valid to CPython: the gate
+    imports the defect and goes red on a correct tree. Dropping the cache is
+    what makes the next gate compile the bytes that are actually there.
+    """
+    target = tmp_path / "guard_mod.py"
+    gate = tmp_path / "gate.py"
+    gate.write_text(
+        "import sys\nimport guard_mod\nsys.exit(1 if guard_mod.FLAG == 'BA' else 0)\n",
+        encoding="utf-8",
+    )
+    stamp = 1_700_000_000
+    # Compile the cache from the defect, then put the fixed bytes back with the
+    # identical mtime and byte count — exactly what a same-size mutation that is
+    # written, gated and restored within one second produces.
+    target.write_text('FLAG = "BA"\n', encoding="utf-8")
+    os.utime(target, (stamp, stamp))
+    py_compile.compile(
+        str(target),
+        cfile=importlib.util.cache_from_source(str(target)),
+        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
+    )
+    target.write_text('FLAG = "AB"\n', encoding="utf-8")
+    os.utime(target, (stamp, stamp))
+
+    assert probe.run_gate(("{python}", "gate.py"), tmp_path) == 1, "stale cache must bite"
+    probe.drop_bytecode(target)
+    assert probe.run_gate(("{python}", "gate.py"), tmp_path) == 0
+
+
+def test_drop_bytecode_ignores_a_non_python_target(tmp_path: Path) -> None:
+    target = tmp_path / "AGENTS.md"
+    target.write_text("row\n", encoding="utf-8")
+    probe.drop_bytecode(target)  # must not raise or touch anything
+    assert target.read_text(encoding="utf-8") == "row\n"
+
+
+def test_restore_keeps_the_original_mtime_and_round_trips_a_same_size_mutation(
+    tmp_path: Path,
+) -> None:
+    """Bytes *and* mtime come back, so a cache keyed on them cannot outlive the probe."""
+    _init_repo(tmp_path)
+    target = tmp_path / "target.txt"
+    stamp = 1_700_000_000
+    os.utime(target, (stamp, stamp))
+    before = target.stat()
+    # Same byte count as the fixed snippet, and it still trips the stub gate.
+    probe.run_probe(
+        tmp_path,
+        _manifest(tmp_path, fixed="prefix FIXED", defect="DEFECT FIXED"),
+        allow_dirty=False,
+    )
+    after = target.stat()
+    assert after.st_mtime_ns == before.st_mtime_ns
+    assert target.read_bytes() == b"prefix FIXED suffix\n"
 
 
 def test_shipped_manifest_snippets_each_occur_once() -> None:
