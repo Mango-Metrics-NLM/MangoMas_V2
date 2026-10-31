@@ -37,12 +37,16 @@ _INSTRUCTION_DOCS = tuple(_REPO_ROOT / rel for rel in ROOT_INSTRUCTION_RELPATHS)
 
 _PREFIX = "MANGOMAS_"
 _NESTED_DELIMITER = "__"
-# `Settings.agents` is `dict[str, AgentSettings]`, so the middle segment of
-# MANGOMAS_AGENTS__<NAME>__<FIELD> is a free-form agent slug, not a field. A
-# plain `model_fields` walk cannot resolve it. Exempting everything under
-# AGENTS__ would also exempt the per-agent fields themselves, so the dict is
-# special-cased to validate the trailing field name against AgentSettings.
-_AGENTS_FIELD = "AGENTS"
+# `Settings.agents` is `dict[str, AgentSettings]` and `Settings.llm_profiles`
+# is `dict[str, LLMProfileSettings]`, so the middle segment of
+# MANGOMAS_<GROUP>__<NAME>__<FIELD> is a free-form slug, not a field. A plain
+# `model_fields` walk cannot resolve it. Exempting everything under such a
+# group would also exempt the per-slug fields themselves, so each dict group is
+# handled in its slug-elided shape and the trailing field name is validated
+# against the value model. The set is derived from the annotations
+# (`_settings_names.dict_model_groups`), never named by hand.
+_DICT_GROUPS = _settings_names.dict_model_groups()
+_AGENTS_GROUP = "AGENTS"
 
 # Placeholder names used in prose as "add a new tunable" templates rather than
 # as real settings. Kept explicit so a genuine typo cannot hide behind them.
@@ -142,6 +146,16 @@ def test_settings_tree_is_non_empty() -> None:
     assert _declared_names()
 
 
+def test_dict_model_groups_are_discovered() -> None:
+    """The dict-group walk must find the two groups that exist, not return `{}`.
+
+    Every exemption set below is derived from it; an empty result would make
+    those sets empty and the per-slug rows unchecked, while every assertion
+    stayed green.
+    """
+    assert {_AGENTS_GROUP, "LLM_PROFILES"} <= set(_DICT_GROUPS)
+
+
 # ── The contract ──────────────────────────────────────────────────────────────
 
 
@@ -161,10 +175,13 @@ def test_instruction_doc_names_all_resolve() -> None:
 
 
 # Settings fields intentionally undocumented in CLAUDE.md's config tables.
-# `MANGOMAS_AGENTS` is the dict field behind the documented per-agent
-# `MANGOMAS_AGENTS__<NAME>__*` rows — the nested form IS its documentation.
-# Kept explicit so any further exemption is a reviewed edit, not a regex hole.
-_INSTRUCTIONS_UNDOCUMENTED_OK: frozenset[str] = frozenset({f"{_PREFIX}{_AGENTS_FIELD}"})
+# A dict-valued container (`MANGOMAS_AGENTS`, `MANGOMAS_LLM_PROFILES`) is the
+# field behind the documented per-slug `MANGOMAS_<GROUP>__<NAME>__*` rows — the
+# nested form IS its documentation. Derived from the annotations so a new dict
+# group needs no edit here; any *other* exemption is a reviewed edit.
+_INSTRUCTIONS_UNDOCUMENTED_OK: frozenset[str] = frozenset(
+    f"{_PREFIX}{group}" for group in _DICT_GROUPS
+)
 
 
 def test_instruction_docs_document_every_settings_field() -> None:
@@ -184,14 +201,18 @@ def test_instruction_docs_document_every_settings_field() -> None:
 @pytest.mark.parametrize(
     "group",
     sorted(
-        name.upper()
-        for name, field in Settings.model_fields.items()
-        if isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel)
+        prefix.removeprefix(_PREFIX).removesuffix(_NESTED_DELIMITER)
+        for prefix in _settings_names.settings_groups()
     ),
 )
 def test_env_example_documents_every_settings_group(group: str) -> None:
     """A whole group missing from `.env.example` is the drift that hid RAG,
-    workflow, tenancy, auth, CORS and backpressure from operators entirely."""
+    workflow, tenancy, auth, CORS and backpressure from operators entirely.
+
+    Dict-valued groups (`AGENTS`, `LLM_PROFILES`) are included: an operator
+    learns the `MANGOMAS_<GROUP>__<NAME>__*` shape from the example file or
+    not at all.
+    """
     prefix = f"{_PREFIX}{group}{_NESTED_DELIMITER}"
     assert any(n.startswith(prefix) for n in _names_in(_ENV_EXAMPLE)), (
         f"no {prefix}* variable documented in .env.example"
@@ -231,8 +252,10 @@ def test_env_file_is_not_read_during_these_assertions() -> None:
 # code and the auto-loaded doc keeps asserting the old one to every session.
 
 _ROW_RE = re.compile(r"^\|\s*`(MANGOMAS_[A-Z0-9_]+)`\s*\|\s*(.+?)\s*\|", re.MULTILINE)
-# Rows whose Default cell is prose rather than a value.
-_NOT_A_VALUE = frozenset({"_(none)_", "—", "-", ""})
+# Rows whose Default cell is prose rather than a value. `_(required)_` marks a
+# field with no default at all (a profile's `PROVIDER` / `MODEL`), which is a
+# different honest answer from `_(none)_` (an unset optional).
+_NOT_A_VALUE = frozenset({"_(none)_", "_(required)_", "—", "-", ""})
 # Per-agent rows document the *effective* default an agent falls back to when
 # the field is unset (`AgentSettings.max_tool_steps` is None; `ToolAgent`
 # supplies DEFAULT_TOOL_MAX_STEPS). Comparing those to the field default would
@@ -241,21 +264,18 @@ _NOT_A_VALUE = frozenset({"_(none)_", "—", "-", ""})
 # the walk below never emitted them and nothing recorded why.
 _EFFECTIVE_NOT_FIELD_DEFAULT: frozenset[str] = frozenset(
     {
-        f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}MAX_TOOL_STEPS",
-        f"{_PREFIX}{_AGENTS_FIELD}{_NESTED_DELIMITER}HISTORY_LIMIT",
+        f"{_PREFIX}{_AGENTS_GROUP}{_NESTED_DELIMITER}MAX_TOOL_STEPS",
+        f"{_PREFIX}{_AGENTS_GROUP}{_NESTED_DELIMITER}HISTORY_LIMIT",
     }
 )
 # Fields with a real default that legitimately have no table row of their own.
-# Explicit, because the reverse-direction check below is only as strong as the
-# list of things it agrees to ignore.
-_DEFAULT_UNDOCUMENTED_OK: frozenset[str] = frozenset(
-    {
-        # `Settings.agents` is a dict keyed by agent name, so the documented
-        # rows are the per-agent placeholders (`MANGOMAS_AGENTS__<NAME>__*`).
-        # A row for the bare container would document nothing a reader can set.
-        f"{_PREFIX}{_AGENTS_FIELD}",
-    }
-)
+# A dict-valued container (`Settings.agents`, `Settings.llm_profiles`) is keyed
+# by a slug, so the documented rows are the per-slug placeholders
+# (`MANGOMAS_<GROUP>__<NAME>__*`); a row for the bare container would document
+# nothing a reader can set. Derived from the annotations; the reverse-direction
+# check below is only as strong as the list of things it agrees to ignore, so
+# anything *else* added here is a reviewed edit.
+_DEFAULT_UNDOCUMENTED_OK: frozenset[str] = frozenset(f"{_PREFIX}{group}" for group in _DICT_GROUPS)
 
 
 def _documented_defaults() -> dict[str, str]:
