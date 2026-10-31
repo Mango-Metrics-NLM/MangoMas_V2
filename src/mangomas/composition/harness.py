@@ -14,7 +14,8 @@ from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
-from mangomas.composition.llm import _AgentLLMOverrideCloseMixin
+from mangomas.agents._prompt import LLM_PROFILE_METADATA_KEY
+from mangomas.composition.llm import _AgentLLMOverrideCloseMixin, _LLMProfileDispatchMixin
 from mangomas.composition.recording import _FailureRecordingMixin
 from mangomas.config import HarnessSettings, LoopSettings
 from mangomas.core import AgentContext, Orchestrator
@@ -30,7 +31,21 @@ _HARNESS_TOPOLOGY_DISPATCH = "dispatch"
 _HARNESS_TOPOLOGY_STREAM = "stream"
 
 
-class _HarnessOrchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator):
+def _set_profile_attribute(span: trace.Span, request: AgentRequest) -> None:
+    """Record the selected ``llm_profile`` on *span* (spec-0039 R5), when present.
+
+    Conditional on purpose: OTel rejects ``None`` attribute values, and a
+    request that names no profile must leave the span byte-identical to the
+    pre-spec-0039 shape (default-OFF).
+    """
+    profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)
+    if isinstance(profile, str):
+        span.set_attribute("llm.profile", profile)
+
+
+class _HarnessOrchestrator(
+    _LLMProfileDispatchMixin, _FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator
+):
     """Orchestrator subclass that wraps dispatch paths in a harness-level span.
 
     Engaged only when ``Settings.harness.enabled`` is ``True``. The parent
@@ -43,7 +58,11 @@ class _HarnessOrchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, 
 
     Also picks up :class:`~mangomas.composition.llm._AgentLLMOverrideCloseMixin`
     so per-agent ``MODEL_OVERRIDE`` clients (spec-0028 / ADR-0028) are closed
-    on :meth:`aclose` the same as the harness-disabled orchestrator.
+    on :meth:`aclose` the same as the harness-disabled orchestrator, and
+    :class:`~mangomas.composition.llm._LLMProfileDispatchMixin` (spec-0039),
+    which sits *inside* this class's own ``dispatch`` in the MRO — so the
+    profile check runs under the harness span and the ``llm.profile``
+    attribute below describes the same request the mixin validated.
     """
 
     def __init__(
@@ -83,6 +102,7 @@ class _HarnessOrchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, 
             span.set_attribute("agent.name", agent_name)
             span.set_attribute("harness.topology", _HARNESS_TOPOLOGY_DISPATCH)
             span.set_attribute("messages.count", len(request.messages))
+            _set_profile_attribute(span, request)
             logger.debug(
                 "Harness wrapping dispatch",
                 extra={"agent": agent_name, "messages": len(request.messages)},
@@ -156,6 +176,7 @@ class _HarnessOrchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, 
         span.set_attribute("agent.name", agent_name)
         span.set_attribute("harness.topology", _HARNESS_TOPOLOGY_STREAM)
         span.set_attribute("messages.count", len(request.messages))
+        _set_profile_attribute(span, request)
         try:
             while True:
                 token = otel_context.attach(trace.set_span_in_context(span))

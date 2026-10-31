@@ -110,7 +110,7 @@ class SummarizeAgent:
             Message(role="user", content=user_content),
         ]
 
-        llm = resolve_llm(ctx, self.name)
+        llm = resolve_llm(ctx, self.name, request)
         content = await llm.complete(
             messages,
             temperature=self._temperature,

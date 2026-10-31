@@ -21,6 +21,8 @@ Covers (spec-0014 milestone M5):
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from mangomas.adapters.llm.base import LLMClient, PingableLLMClient, StreamingLLMClient
@@ -33,16 +35,27 @@ from mangomas.agents import (
     SummarizeAgent,
     ToolAgent,
 )
-from mangomas.agents._prompt import build_messages, resolve_llm, resolve_system_prompt
+from mangomas.agents._prompt import (
+    AGENT_LLM_OVERRIDES_EXTRAS_KEY,
+    LLM_PROFILE_METADATA_KEY,
+    LLM_PROFILES_EXTRAS_KEY,
+    build_messages,
+    resolve_llm,
+    resolve_system_prompt,
+    select_llm_profile,
+)
 from mangomas.config import AgentSettings
 from mangomas.core.agent import AgentContext, AgentRequest, Message
 from mangomas.core.tools import build_structured_prompt
+from mangomas.errors import ConfigError
 from tests.constants import (
+    TEST_LLM_PROFILE_NAME,
     TEST_MAX_TOKENS_OVERRIDE,
     TEST_PROMPT_EXPLICIT,
     TEST_PROMPT_SETTINGS,
     TEST_PROMPT_SUFFIX,
     TEST_TEMPERATURE_OVERRIDE,
+    UNKNOWN_LLM_PROFILE_NAME,
 )
 from tests.fakes import FakeLLM
 
@@ -595,3 +608,184 @@ async def test_reviewer_agent_handle_uses_default_llm_when_no_override() -> None
     req = AgentRequest(messages=[Message(role="user", content="review")])
     await agent.handle(req, ctx)
     assert default_llm.calls
+
+
+# ── spec-0039: request-scoped profile selection ───────────────────────────────
+
+
+_SHADOW_EVENT = "llm_profile_shadows_override"
+
+
+def _shadow_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if getattr(r, "event", None) == _SHADOW_EVENT]
+
+
+def _profile_request(name: object | None) -> AgentRequest:
+    metadata = {} if name is None else {LLM_PROFILE_METADATA_KEY: name}
+    return AgentRequest(messages=[Message(role="user", content="hi")], metadata=metadata)
+
+
+def test_select_llm_profile_absent_returns_none() -> None:
+    assert select_llm_profile({}, {}) is None
+    assert select_llm_profile({LLM_PROFILES_EXTRAS_KEY: {"fast": FakeLLM()}}, {}) is None
+
+
+def test_select_llm_profile_known_returns_name() -> None:
+    extras = {LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: FakeLLM()}}
+    metadata = {LLM_PROFILE_METADATA_KEY: TEST_LLM_PROFILE_NAME}
+    assert select_llm_profile(extras, metadata) == TEST_LLM_PROFILE_NAME
+
+
+def test_select_llm_profile_unknown_raises_config_error_naming_it() -> None:
+    """An unknown name is a 400-class ``ConfigError``, and the message says which."""
+    extras = {LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: FakeLLM()}}
+    with pytest.raises(ConfigError, match=UNKNOWN_LLM_PROFILE_NAME):
+        select_llm_profile(extras, {LLM_PROFILE_METADATA_KEY: UNKNOWN_LLM_PROFILE_NAME})
+    # No profiles configured at all: still a ConfigError, never a KeyError.
+    with pytest.raises(ConfigError):
+        select_llm_profile({}, {LLM_PROFILE_METADATA_KEY: TEST_LLM_PROFILE_NAME})
+
+
+def test_select_llm_profile_non_string_raises() -> None:
+    extras = {LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: FakeLLM()}}
+    with pytest.raises(ConfigError):
+        select_llm_profile(extras, {LLM_PROFILE_METADATA_KEY: 7})
+
+
+def test_resolve_llm_without_request_is_unchanged() -> None:
+    """Default-OFF: the two-argument call keeps its spec-0028 behaviour exactly."""
+    default_llm = FakeLLM()
+    override_llm = FakeLLM()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={
+            AGENT_LLM_OVERRIDES_EXTRAS_KEY: {"chat": override_llm},
+            LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: FakeLLM()},
+        },
+    )
+    assert resolve_llm(ctx, "chat") is override_llm
+    assert resolve_llm(ctx, "tool") is default_llm
+
+
+def test_resolve_llm_request_without_profile_falls_through_to_override() -> None:
+    default_llm = FakeLLM()
+    override_llm = FakeLLM()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={
+            AGENT_LLM_OVERRIDES_EXTRAS_KEY: {"chat": override_llm},
+            LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: FakeLLM()},
+        },
+    )
+    assert resolve_llm(ctx, "chat", _profile_request(None)) is override_llm
+
+
+def test_resolve_llm_profile_beats_agent_override() -> None:
+    """R2 precedence: profile > MODEL_OVERRIDE > ctx.llm.
+
+    Mutation proof: swap the two branches in ``resolve_llm`` and this goes red
+    while ``test_resolve_llm_request_without_profile_falls_through_to_override``
+    stays green — the pair discriminates the ordering, not just the lookup.
+    """
+    default_llm = FakeLLM()
+    override_llm = FakeLLM()
+    profile_llm = FakeLLM()
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={
+            AGENT_LLM_OVERRIDES_EXTRAS_KEY: {"chat": override_llm},
+            LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: profile_llm},
+        },
+    )
+    result = resolve_llm(ctx, "chat", _profile_request(TEST_LLM_PROFILE_NAME))
+    assert result is profile_llm
+    assert result is not override_llm
+    assert result is not default_llm
+
+
+def test_resolve_llm_profile_shadow_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """The shadowed override is logged with structured fields (risk register row 3)."""
+    ctx = AgentContext(
+        llm=FakeLLM(),
+        repo=None,
+        extras={
+            AGENT_LLM_OVERRIDES_EXTRAS_KEY: {"chat": FakeLLM()},
+            LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: FakeLLM()},
+        },
+    )
+    with caplog.at_level("INFO", logger="mangomas.agents._prompt"):
+        resolve_llm(ctx, "chat", _profile_request(TEST_LLM_PROFILE_NAME))
+    shadow = [
+        r for r in caplog.records if getattr(r, "event", None) == "llm_profile_shadows_override"
+    ]
+    assert len(shadow) == 1
+    assert shadow[0].agent == "chat"  # type: ignore[attr-defined]
+    assert shadow[0].llm_profile == TEST_LLM_PROFILE_NAME  # type: ignore[attr-defined]
+
+
+def test_resolve_llm_profile_without_override_logs_no_shadow(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Negative half: no override, no shadow line — the log is a signal, not noise."""
+    ctx = AgentContext(
+        llm=FakeLLM(),
+        repo=None,
+        extras={LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: FakeLLM()}},
+    )
+    with caplog.at_level("INFO", logger="mangomas.agents._prompt"):
+        resolve_llm(ctx, "chat", _profile_request(TEST_LLM_PROFILE_NAME))
+    assert not [
+        r for r in caplog.records if getattr(r, "event", None) == "llm_profile_shadows_override"
+    ]
+
+
+def test_resolve_llm_unknown_profile_raises() -> None:
+    ctx = AgentContext(llm=FakeLLM(), repo=None, extras={LLM_PROFILES_EXTRAS_KEY: {}})
+    with pytest.raises(ConfigError, match=UNKNOWN_LLM_PROFILE_NAME):
+        resolve_llm(ctx, "chat", _profile_request(UNKNOWN_LLM_PROFILE_NAME))
+
+
+@pytest.mark.parametrize(
+    "agent",
+    [ChatAgent(), SummarizeAgent(), ToolAgent(), PlannerAgent(), ReviewerAgent()],
+    ids=["chat", "summarize", "tool", "planner", "reviewer"],
+)
+async def test_every_builtin_agent_handle_uses_the_profile_client(agent: object) -> None:
+    """Each built-in agent threads ``request`` into ``resolve_llm``.
+
+    A caller that forgot the third argument would silently run on the shared
+    client while the response claimed a profile — the exact defect R2 exists
+    to prevent, and one this test sees per agent.
+    """
+    default_llm = FakeLLM(reply='{"steps": [], "ok": true, "issues": [], "score": 1}')
+    profile_llm = FakeLLM(reply='{"steps": [], "ok": true, "issues": [], "score": 1}')
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: profile_llm}},
+    )
+    await agent.handle(_profile_request(TEST_LLM_PROFILE_NAME), ctx)  # type: ignore[attr-defined]
+    assert profile_llm.calls, "profile client should have received the request"
+    assert not default_llm.calls, "shared default client must not be called"
+
+
+@pytest.mark.parametrize(
+    "agent",
+    [ChatAgent(), PlannerAgent(), ReviewerAgent()],
+    ids=["chat", "planner", "reviewer"],
+)
+async def test_streaming_agents_stream_uses_the_profile_client(agent: object) -> None:
+    default_llm = FakeLLM(chunks=["default"])
+    profile_llm = FakeLLM(chunks=["profile"])
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: profile_llm}},
+    )
+    stream = await agent.stream(_profile_request(TEST_LLM_PROFILE_NAME), ctx)  # type: ignore[attr-defined]
+    received = [chunk async for chunk in stream]
+    assert received == ["profile"]
+    assert not default_llm.calls

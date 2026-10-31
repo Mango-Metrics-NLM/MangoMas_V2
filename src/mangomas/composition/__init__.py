@@ -23,6 +23,23 @@ import mangomas.composition.agents  # noqa: F401
 
 # Imports needed for test monkeypatching
 from mangomas.adapters.llm import VertexClient as VertexClient
+
+# Profile-selection seam (spec-0039): the extras/metadata keys and the pure
+# selector live beside the agents' resolver so reader and writer cannot drift;
+# re-exported here because ``api/`` depends on ``composition`` and ``core``
+# only, never on ``agents`` directly.
+from mangomas.agents._prompt import (
+    LLM_PROFILE_INFO_EXTRAS_KEY as LLM_PROFILE_INFO_EXTRAS_KEY,
+)
+from mangomas.agents._prompt import (
+    LLM_PROFILE_METADATA_KEY as LLM_PROFILE_METADATA_KEY,
+)
+from mangomas.agents._prompt import (
+    LLM_PROFILES_EXTRAS_KEY as LLM_PROFILES_EXTRAS_KEY,
+)
+from mangomas.agents._prompt import (
+    select_llm_profile as select_llm_profile,
+)
 from mangomas.agents.discovery import ensure_agent_plugins as ensure_agent_plugins
 
 # Registries (used by tests via Registry.scoped and by builder)
@@ -91,7 +108,13 @@ from mangomas.composition.harness import (
 
 # LLM factories (used by tests for direct testing)
 from mangomas.composition.llm import (
+    LLMProfiles as LLMProfiles,
+)
+from mangomas.composition.llm import (
     _AgentLLMOverrideCloseMixin as _AgentLLMOverrideCloseMixin,
+)
+from mangomas.composition.llm import (
+    _LLMProfileDispatchMixin as _LLMProfileDispatchMixin,
 )
 from mangomas.composition.llm import (
     _lmstudio_factory as _lmstudio_factory,
@@ -101,6 +124,9 @@ from mangomas.composition.llm import (
 )
 from mangomas.composition.llm import (
     build_agent_llm_overrides as build_agent_llm_overrides,
+)
+from mangomas.composition.llm import (
+    build_llm_profiles as build_llm_profiles,
 )
 
 # Memory factory (used by tests for direct testing)
@@ -143,12 +169,17 @@ from mangomas.secrets import secrets_registry as secrets_registry
 
 __all__ = [
     "DEFAULT_AGENTS",
+    "LLM_PROFILES_EXTRAS_KEY",
+    "LLM_PROFILE_INFO_EXTRAS_KEY",
+    "LLM_PROFILE_METADATA_KEY",
     "STRUCTURED_AGENT_FIELDS",
     "STRUCTURED_AGENT_FIELDS_EXTRAS_KEY",
     "AgentFactory",
+    "LLMProfiles",
     "VertexClient",
     "_AgentLLMOverrideCloseMixin",
     "_HarnessOrchestrator",
+    "_LLMProfileDispatchMixin",
     "_attach_cognitive_extras",
     "_build_gcp_secrets_provider",
     "_build_rag_tools",
@@ -167,6 +198,7 @@ __all__ = [
     "_vertex_factory",
     "agent_registry",
     "build_agent_llm_overrides",
+    "build_llm_profiles",
     "build_orchestrator",
     "describe_schema",
     "embedding_registry",
@@ -174,6 +206,7 @@ __all__ = [
     "ensure_secrets_provider",
     "llm_registry",
     "secrets_registry",
+    "select_llm_profile",
     "structured_agent_schemas",
     "structured_agent_schemas_for_instances",
 ]

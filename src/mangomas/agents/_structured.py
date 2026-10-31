@@ -149,7 +149,7 @@ class StructuredOutputAgent:
         """
         messages = self._build_messages(request)
         logger.debug("%s: calling LLM for structured output", self.name)
-        llm = resolve_llm(ctx, self.name)
+        llm = resolve_llm(ctx, self.name, request)
         content = await llm.complete(
             messages,
             temperature=self._temperature,
@@ -198,7 +198,7 @@ class StructuredOutputAgent:
     ) -> AsyncGenerator[str, None]:
         messages = self._build_messages(request)
         logger.debug("%s streaming %d messages", self.name, len(messages))
-        llm = resolve_llm(ctx, self.name)
+        llm = resolve_llm(ctx, self.name, request)
         async for chunk in stream_with_buffered_fallback(
             self.name,
             messages,
