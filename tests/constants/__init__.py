@@ -35,6 +35,9 @@ from tests.constants.config import DEFAULT_EVAL_MAX_MEAN_COST_USD as DEFAULT_EVA
 from tests.constants.config import DEFAULT_LLM_ALLOWED_MODELS as DEFAULT_LLM_ALLOWED_MODELS
 from tests.constants.config import DEFAULT_LLM_BASE_URL as DEFAULT_LLM_BASE_URL
 from tests.constants.config import DEFAULT_LLM_MODEL as DEFAULT_LLM_MODEL
+from tests.constants.config import (
+    DEFAULT_LLM_PROVIDER_ALLOWLIST as DEFAULT_LLM_PROVIDER_ALLOWLIST,
+)
 from tests.constants.config import DEFAULT_LOOP_MAX_STEPS as DEFAULT_LOOP_MAX_STEPS
 from tests.constants.config import DEFAULT_LOOP_STEP_TIMEOUT as DEFAULT_LOOP_STEP_TIMEOUT
 from tests.constants.config import DEFAULT_RAG_CHUNK_OVERLAP as DEFAULT_RAG_CHUNK_OVERLAP
@@ -109,6 +112,9 @@ from tests.constants.corpus import LEGACY_AGENT_FIELDS as LEGACY_AGENT_FIELDS
 from tests.constants.corpus import LIVE_CORPUS_COUNT_DOCS as LIVE_CORPUS_COUNT_DOCS
 from tests.constants.corpus import LLM_ALLOWED_MODELS_ENV as LLM_ALLOWED_MODELS_ENV
 from tests.constants.corpus import LLM_MODEL_ENV as LLM_MODEL_ENV
+from tests.constants.corpus import LLM_PROFILE_MODEL_ENV as LLM_PROFILE_MODEL_ENV
+from tests.constants.corpus import LLM_PROFILE_PROVIDER_ENV as LLM_PROFILE_PROVIDER_ENV
+from tests.constants.corpus import LLM_PROVIDER_ALLOWLIST_ENV as LLM_PROVIDER_ALLOWLIST_ENV
 from tests.constants.corpus import (
     MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS as MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS,
 )
@@ -227,6 +233,7 @@ from tests.constants.fixtures import HYPOTHESIS_PROFILE_DEV as HYPOTHESIS_PROFIL
 from tests.constants.fixtures import HYPOTHESIS_PROFILE_ENV as HYPOTHESIS_PROFILE_ENV
 from tests.constants.fixtures import JSONL_FILENAME as JSONL_FILENAME
 from tests.constants.fixtures import LARGE_UPSTREAM_BODY_CHARS as LARGE_UPSTREAM_BODY_CHARS
+from tests.constants.fixtures import LLM_PROFILES_ROUTE as LLM_PROFILES_ROUTE
 from tests.constants.fixtures import LMSTUDIO_EMBEDDING_MODEL_ENV as LMSTUDIO_EMBEDDING_MODEL_ENV
 from tests.constants.fixtures import PASSED_NEEDLE_COMPACT as PASSED_NEEDLE_COMPACT
 from tests.constants.fixtures import PASSED_NEEDLE_QUOTELESS as PASSED_NEEDLE_QUOTELESS
@@ -282,6 +289,8 @@ from tests.constants.fixtures import TEST_EMBEDDINGS_MOCK_MODEL as TEST_EMBEDDIN
 from tests.constants.fixtures import TEST_HISTORY_LIMIT as TEST_HISTORY_LIMIT
 from tests.constants.fixtures import TEST_HISTORY_LIMIT_OVERRIDE as TEST_HISTORY_LIMIT_OVERRIDE
 from tests.constants.fixtures import TEST_HISTORY_SEEDED_TURNS as TEST_HISTORY_SEEDED_TURNS
+from tests.constants.fixtures import TEST_LLM_PROFILE_MODEL as TEST_LLM_PROFILE_MODEL
+from tests.constants.fixtures import TEST_LLM_PROFILE_NAME as TEST_LLM_PROFILE_NAME
 from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_BASE_URL as TEST_LMSTUDIO_MOCK_BASE_URL
 from tests.constants.fixtures import TEST_LMSTUDIO_MOCK_MODEL as TEST_LMSTUDIO_MOCK_MODEL
 from tests.constants.fixtures import TEST_LMSTUDIO_STUB_MODEL as TEST_LMSTUDIO_STUB_MODEL
@@ -299,6 +308,7 @@ from tests.constants.fixtures import TEST_VERTEX_PROJECT as TEST_VERTEX_PROJECT
 from tests.constants.fixtures import TINY_STEP_TIMEOUT_SECONDS as TINY_STEP_TIMEOUT_SECONDS
 from tests.constants.fixtures import TOOL_MAX_STEPS_ENV as TOOL_MAX_STEPS_ENV
 from tests.constants.fixtures import UNAUTHORIZED_TOOL_NAME as UNAUTHORIZED_TOOL_NAME
+from tests.constants.fixtures import UNKNOWN_LLM_PROFILE_NAME as UNKNOWN_LLM_PROFILE_NAME
 from tests.constants.fixtures import UNPARSED_GOAL as UNPARSED_GOAL
 from tests.constants.fixtures import UNPARSED_PLANNER_STEP as UNPARSED_PLANNER_STEP
 from tests.constants.fixtures import UNTIMED_AGENT_DELAY_SECONDS as UNTIMED_AGENT_DELAY_SECONDS
@@ -555,6 +565,10 @@ __all__ = [
     "LIVE_STEP_TIMEOUT_SECONDS",
     "LLM_ALLOWED_MODELS_ENV",
     "LLM_MODEL_ENV",
+    "LLM_PROFILES_ROUTE",
+    "LLM_PROFILE_MODEL_ENV",
+    "LLM_PROFILE_PROVIDER_ENV",
+    "LLM_PROVIDER_ALLOWLIST_ENV",
     "LMSTUDIO_BASE_URL_ENV",
     "LMSTUDIO_E2E_TIMEOUT_ENV",
     "LMSTUDIO_EMBEDDING_MODEL_ENV",
@@ -685,6 +699,8 @@ __all__ = [
     "TEST_HISTORY_LIMIT",
     "TEST_HISTORY_LIMIT_OVERRIDE",
     "TEST_HISTORY_SEEDED_TURNS",
+    "TEST_LLM_PROFILE_MODEL",
+    "TEST_LLM_PROFILE_NAME",
     "TEST_LMSTUDIO_MOCK_BASE_URL",
     "TEST_LMSTUDIO_MOCK_MODEL",
     "TEST_LMSTUDIO_STUB_MODEL",
@@ -703,6 +719,7 @@ __all__ = [
     "TOOL_MAX_STEPS_ENV",
     "TORCH_DEVICE_NAMES",
     "UNAUTHORIZED_TOOL_NAME",
+    "UNKNOWN_LLM_PROFILE_NAME",
     "UNOWNED_SCRIPT_ENTRY_POINTS",
     "UNOWNED_SOURCE_SURFACES",
     "UNPARSED_GOAL",

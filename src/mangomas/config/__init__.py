@@ -222,10 +222,16 @@ from mangomas.config.llm import (
     DEFAULT_LLM_PROVIDER as DEFAULT_LLM_PROVIDER,
 )
 from mangomas.config.llm import (
+    DEFAULT_LLM_PROVIDER_ALLOWLIST as DEFAULT_LLM_PROVIDER_ALLOWLIST,
+)
+from mangomas.config.llm import (
     DEFAULT_LLM_TEMPERATURE as DEFAULT_LLM_TEMPERATURE,
 )
 from mangomas.config.llm import (
     DEFAULT_LLM_TIMEOUT_SECONDS as DEFAULT_LLM_TIMEOUT_SECONDS,
+)
+from mangomas.config.llm import (
+    LLMProfileSettings as LLMProfileSettings,
 )
 from mangomas.config.llm import (
     LLMSettings as LLMSettings,
@@ -481,6 +487,7 @@ __all__ = [
     "DEFAULT_LLM_BASE_URL",
     "DEFAULT_LLM_MODEL",
     "DEFAULT_LLM_PROVIDER",
+    "DEFAULT_LLM_PROVIDER_ALLOWLIST",
     "DEFAULT_LLM_TEMPERATURE",
     "DEFAULT_LLM_TIMEOUT_SECONDS",
     "DEFAULT_LOG_BODY_TRUNCATE",
@@ -536,6 +543,7 @@ __all__ = [
     "EmbeddingSettings",
     "EvalSettings",
     "HarnessSettings",
+    "LLMProfileSettings",
     "LLMSettings",
     "LogSettings",
     "LoopSettings",

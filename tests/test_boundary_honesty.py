@@ -26,9 +26,14 @@ from tests.constants import (
     DEFAULT_WORKFLOW_ALLOW_INLINE_DEFINITION,
     LLM_ALLOWED_MODELS_ENV,
     LLM_MODEL_ENV,
+    LLM_PROFILE_MODEL_ENV,
+    LLM_PROFILE_PROVIDER_ENV,
+    LLM_PROVIDER_ALLOWLIST_ENV,
     MAX_SIGNAL_TTL_SECONDS,
     SHORT_SIGNAL_TTL_SECONDS,
     SIGNAL_TTL_SECONDS_ENV,
+    TEST_LLM_PROFILE_MODEL,
+    TEST_LLM_PROFILE_NAME,
     WORKFLOW_ALLOW_INLINE_DEFINITION_ENV,
 )
 
@@ -258,6 +263,44 @@ def test_a_signal_ttl_over_the_ceiling_is_refused_through_the_environment(
     get_settings.cache_clear()
     try:
         with pytest.raises(ValidationError, match="ttl_seconds"):
+            get_settings()
+    finally:
+        get_settings.cache_clear()
+
+
+# ── spec-0039: the provider allowlist and the profile group are nested too ────
+
+
+def test_provider_allowlist_round_trips_through_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The provider roster arrives as a JSON list under the real env name."""
+    monkeypatch.setenv(LLM_PROVIDER_ALLOWLIST_ENV, json.dumps(["lmstudio"]))
+    get_settings.cache_clear()
+    try:
+        assert get_settings().llm.provider_allowlist == ["lmstudio"], (
+            f"{LLM_PROVIDER_ALLOWLIST_ENV} did not reach LLMSettings.provider_allowlist; "
+            "the roster would be empty and every provider permitted"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_an_env_provider_allowlist_that_excludes_a_profile_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The root validator fires on the env path: a vertex profile under local-only fails.
+
+    The two-sided half of the round trip above, and the scenario spec-0039
+    states for ``PROVIDER_ALLOWLIST=["lmstudio"]``: the refusal names the
+    profile, and it happens at parse — before any client is built.
+    """
+    monkeypatch.setenv(LLM_PROVIDER_ALLOWLIST_ENV, json.dumps(["lmstudio"]))
+    monkeypatch.setenv(LLM_PROFILE_PROVIDER_ENV, "vertex")
+    monkeypatch.setenv(LLM_PROFILE_MODEL_ENV, TEST_LLM_PROFILE_MODEL)
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValidationError, match=TEST_LLM_PROFILE_NAME):
             get_settings()
     finally:
         get_settings.cache_clear()
