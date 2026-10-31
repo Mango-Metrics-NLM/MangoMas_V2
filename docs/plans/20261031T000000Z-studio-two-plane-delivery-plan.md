@@ -33,7 +33,7 @@ decision with its own owner.
 | F3 | CognitiveSignal wire break: this runtime emits **1.1.0** and rejects 1.0.0; the harness accepts **only 1.0.0** and has no ingest route or file reader for external signals | `config/signal.py:24` (`Literal["1.1.0"]`); `cognitive/constants.py:56` (`signals.jsonl`); harness `cognitive_signal.py` | A signals view has nothing to show until the harness bumps (D-6) |
 | F4 | The harness already ships a dashboard (`api_server/static/`) | harness `api_server/` | Studio is the third UI; the README identity note must name all three |
 | F6 (corrected) | No `dev` or `qa` branch exists; the default branch is `feat/initial-release` (`a98b626`); a **legacy `main` exists** at `beb01bf` and has diverged (ADR-0036 tags it `archive/main-legacy`) | `git ls-remote --heads origin`; `git remote show origin` | D-10 is a maintainer task, below; the earlier "no `main`" claim was wrong |
-| F7 | `make guard-probe` landed with PR #103 (spec-0033 Implemented; `scripts/guard_probe.py` + `scripts/guard_probe_manifest.json`, not part of `make gate`) after this plan was drafted | `Makefile:232`; `specs/0033` | Gates are proven by mutation tests here; replaying them through the manifest is a follow-up |
+| F7 | `make guard-probe` landed with PR #103 (spec-0033 Implemented; `scripts/guard_probe.py` + `scripts/guard_probe_manifest.json`, not part of `make gate`) after this plan was drafted | `Makefile:232`; `specs/0033` | The fourteen spec-0040 mutation proofs are manifest entries `MUT-0040-M01…M14`, replayed on every PR ✅ |
 | F8 | `resolve_llm(ctx, agent_name)` took no request; `build_llm` does not exist (the client is built inline in `builder.py`); `Settings` had no root validator; `AgentSettings` has no validator | `agents/_prompt.py`, `composition/builder.py`, `config/_root.py`, `config/agents.py` | spec-0040 R2 passes `request` as an optional third argument; R3/R4 add the first root validator |
 | F9 | Pipelines forward `response.metadata` into the next stage's request | `core/orchestrator/_client.py` `_pipeline_pass` | Stamping the profile on the response carries it across a pipeline; documented as behaviour |
 | F10 | Eval cost is declared in the dataset, never measured; `LLMClient.complete` returns no usage | `eval/scorers/cost_budget.py`; `adapters/llm/base.py`; 2026-09-19 replan N3 | A cost tab needs D-7 first |
@@ -173,7 +173,7 @@ e2e against LM Studio and a network assertion of zero harness connections.
 - `GET /llm/profiles` reporting the effective model per agent — not in R6;
   would need a per-agent projection and is a separate ask.
 - Measured eval cost (D-7) — needs `LLMClient` usage reporting; its own spec.
-- Replaying this PR's eleven mutations through `scripts/guard_probe_manifest.json` (`make guard-probe`, spec-0033) — a follow-up.
+- ~~Replaying this PR's mutations through `scripts/guard_probe_manifest.json`~~ — done: `MUT-0040-M01…M14` (the follow-up PR after #104).
 
 ## Risks
 
