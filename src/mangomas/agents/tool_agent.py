@@ -133,7 +133,10 @@ class ToolAgent:
         ``metadata["tool_steps"]`` reports the exact number made.
         """
         messages = self._build_tool_messages(request, ctx)
-        llm = resolve_llm(ctx, self.name)
+        # Resolved once per request: the request's llm_profile (spec-0040), else
+        # the agent-scoped override (if configured), else ctx.llm — every LLM
+        # call in the inner loop below uses the same client (ADR-0028).
+        llm = resolve_llm(ctx, self.name, request)
         content = ""
         steps = 0
         while steps < self._max_tool_steps:

@@ -27,6 +27,24 @@
       ],
       "required": []
     },
+    "LLMProfileSummary": {
+      "properties": [
+        "model",
+        "name",
+        "provider"
+      ],
+      "required": [
+        "model",
+        "name",
+        "provider"
+      ]
+    },
+    "LLMProfilesResponse": {
+      "properties": [
+        "profiles"
+      ],
+      "required": []
+    },
     "Message": {
       "properties": [
         "content",
@@ -96,6 +114,9 @@
     },
     "/history": {
       "get": "history_history_get"
+    },
+    "/llm/profiles": {
+      "get": "list_llm_profiles_llm_profiles_get"
     },
     "/ready": {
       "get": "readyz_ready_get"

@@ -1,6 +1,6 @@
 ---
 name: mango-api-impl-dev
-description: "Owns the FastAPI assembly layer: the create_app factory and its middleware install order, api/middleware/, auth.py, health.py, tracing.py, and the system/workflows routers. SSE framing, DTO shape and the status table belong to their own agents. Invoked by name, not by topic match."
+description: "Owns the FastAPI assembly layer: the create_app factory and its middleware install order, api/middleware/, auth.py, health.py, tracing.py, and the system/workflows/llm routers. SSE framing, DTO shape and the status table belong to their own agents. Invoked by name, not by topic match."
 tools: Read, Grep, Glob, Skill, Edit, Write, Bash
 model: inherit
 ---
@@ -26,6 +26,10 @@ adding a tunable — do not restate either here.
 - `src/mangomas/api/routes/system.py` — `/healthz`, `/health`, `/readyz`,
   `/ready`, `GET /agents`
 - `src/mangomas/api/routes/workflows.py` — `/workflows/run`, `/workflows/validate`
+- `src/mangomas/api/routes/llm.py` — `GET /llm/profiles`, the secret-free
+  provider-profile roster (spec-0040); the selection check the agent and
+  workflow routes run before dispatch imports `select_llm_profile` from
+  `mangomas.composition`, never from `agents/`
 - `src/mangomas/tenancy.py` — the tenant `ContextVar` `TenancyMiddleware`
   writes and the storage layer filters on (ADR-0017). Carries a 100%
   coverage floor

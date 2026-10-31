@@ -9,6 +9,12 @@ import pytest
 from pydantic import ValidationError
 
 from mangomas import config as config_module
+from tests.constants import (
+    LLM_PROFILE_MODEL_ENV,
+    LLM_PROFILE_PROVIDER_ENV,
+    TEST_LLM_PROFILE_MODEL,
+    TEST_LLM_PROFILE_NAME,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -313,3 +319,113 @@ def test_secrets_gcp_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.secrets.project_id == "my-gcp-project"
     assert s.secrets.timeout_seconds == 10.0
     assert s.secrets.default_version == "3"
+
+
+# ── LLM provider profiles + provider allowlist (spec-0040) ────────────────────
+# Each guard is stated in both directions: the refusing case proves the
+# validator can fire, the accepting case proves it is not vacuously red.
+
+
+def test_llm_profiles_and_provider_allowlist_default_off() -> None:
+    """Default-OFF proof: no profile built, no provider constraint."""
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.llm_profiles == {}
+    assert s.llm.provider_allowlist == []
+    assert s.llm.provider_allowlist == config_module.DEFAULT_LLM_PROVIDER_ALLOWLIST
+
+
+def test_llm_profile_env_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`MANGOMAS_LLM_PROFILES__<NAME>__*` reaches `Settings().llm_profiles[<name>]`."""
+    monkeypatch.setenv(LLM_PROFILE_PROVIDER_ENV, "lmstudio")
+    monkeypatch.setenv(LLM_PROFILE_MODEL_ENV, TEST_LLM_PROFILE_MODEL)
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert set(s.llm_profiles) == {TEST_LLM_PROFILE_NAME}
+    profile = s.llm_profiles[TEST_LLM_PROFILE_NAME]
+    assert profile.provider == "lmstudio"
+    assert profile.model == TEST_LLM_PROFILE_MODEL
+    # Unset fields stay None so the composition root can tell "inherit" apart
+    # from "explicitly the same value as the base".
+    assert profile.base_url is None
+    assert profile.api_key is None
+    assert profile.temperature is None
+
+
+def test_llm_profile_requires_provider_and_model() -> None:
+    """A half-declared profile fails at parse rather than inheriting a provider."""
+    with pytest.raises(ValidationError, match="provider"):
+        config_module.LLMProfileSettings(model=TEST_LLM_PROFILE_MODEL)  # type: ignore[call-arg]
+    with pytest.raises(ValidationError, match="model"):
+        config_module.LLMProfileSettings(provider="lmstudio")  # type: ignore[call-arg]
+
+
+def test_provider_allowlist_must_include_base_provider() -> None:
+    with pytest.raises(ValidationError, match="provider_allowlist"):
+        config_module.LLMSettings(provider="lmstudio", provider_allowlist=["vertex"])
+
+
+def test_provider_allowlist_listing_base_provider_passes() -> None:
+    cfg = config_module.LLMSettings(provider="lmstudio", provider_allowlist=["lmstudio"])
+    assert cfg.provider_allowlist == ["lmstudio"]
+
+
+def test_profile_provider_outside_allowlist_is_refused_naming_the_profile() -> None:
+    """R4, refusing half: the message names the offending profile."""
+    with pytest.raises(ValidationError, match=TEST_LLM_PROFILE_NAME):
+        config_module.Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            llm=config_module.LLMSettings(provider="lmstudio", provider_allowlist=["lmstudio"]),
+            llm_profiles={
+                TEST_LLM_PROFILE_NAME: config_module.LLMProfileSettings(
+                    provider="vertex", model=TEST_LLM_PROFILE_MODEL
+                )
+            },
+        )
+
+
+def test_profile_provider_inside_allowlist_passes() -> None:
+    """R4, accepting half — including a LAN/docker base URL, which is still local-only."""
+    s = config_module.Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        llm=config_module.LLMSettings(provider="lmstudio", provider_allowlist=["lmstudio"]),
+        llm_profiles={
+            TEST_LLM_PROFILE_NAME: config_module.LLMProfileSettings(
+                provider="lmstudio",
+                model=TEST_LLM_PROFILE_MODEL,
+                base_url="http://host.docker.internal:1234/v1",
+            )
+        },
+    )
+    assert set(s.llm_profiles) == {TEST_LLM_PROFILE_NAME}
+
+
+def test_profile_model_outside_allowed_models_is_refused_naming_the_profile() -> None:
+    """R3, refusing half: the base roster governs every profile's model."""
+    with pytest.raises(ValidationError, match=TEST_LLM_PROFILE_NAME):
+        config_module.Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            llm=config_module.LLMSettings(
+                model=config_module.DEFAULT_LLM_MODEL,
+                allowed_models=[config_module.DEFAULT_LLM_MODEL],
+            ),
+            llm_profiles={
+                TEST_LLM_PROFILE_NAME: config_module.LLMProfileSettings(
+                    provider="lmstudio", model=TEST_LLM_PROFILE_MODEL
+                )
+            },
+        )
+
+
+def test_profile_model_inside_allowed_models_passes() -> None:
+    s = config_module.Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        llm=config_module.LLMSettings(
+            model=config_module.DEFAULT_LLM_MODEL,
+            allowed_models=[config_module.DEFAULT_LLM_MODEL, TEST_LLM_PROFILE_MODEL],
+        ),
+        llm_profiles={
+            TEST_LLM_PROFILE_NAME: config_module.LLMProfileSettings(
+                provider="lmstudio", model=TEST_LLM_PROFILE_MODEL
+            )
+        },
+    )
+    assert s.llm_profiles[TEST_LLM_PROFILE_NAME].model == TEST_LLM_PROFILE_MODEL

@@ -9,10 +9,18 @@ from typer.testing import CliRunner
 
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
+from mangomas.composition import LLM_PROFILES_EXTRAS_KEY
 from mangomas.config import get_settings
 from mangomas.core import Orchestrator
 from tests._seam_guards import forbid_real_orchestrator
-from tests.constants import STUB_REPLY, WORKFLOW_CONFIG_EXIT_CODE, WORKFLOW_RUNTIME_EXIT_CODE
+from tests.constants import (
+    STUB_REPLY,
+    TEST_LLM_PROFILE_NAME,
+    UNKNOWN_LLM_PROFILE_NAME,
+    WORKFLOW_CONFIG_EXIT_CODE,
+    WORKFLOW_RUNTIME_EXIT_CODE,
+)
+from tests.fakes import FakeLLM
 
 _AGENT_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "chat"}})
 _GHOST_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "ghost"}})
@@ -55,6 +63,32 @@ def test_run_malformed_definition_exits_config_code(runner: CliRunner) -> None:
 def test_run_unknown_agent_exits_runtime_code(runner: CliRunner) -> None:
     result = runner.invoke(cli_main.app, ["workflow", "run", "hi", "-f", _GHOST_GRAPH])
     assert result.exit_code == WORKFLOW_RUNTIME_EXIT_CODE
+
+
+def test_run_profile_routes_every_node_to_the_profile_client(
+    runner: CliRunner, orchestrator: Orchestrator
+) -> None:
+    profile_llm = FakeLLM(reply="profile-reply")
+    orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {TEST_LLM_PROFILE_NAME: profile_llm}
+    result = runner.invoke(
+        cli_main.app,
+        ["workflow", "run", "hi", "-f", _AGENT_GRAPH, "--profile", TEST_LLM_PROFILE_NAME],
+    )
+    assert result.exit_code == 0
+    assert "profile-reply" in result.stdout
+    assert profile_llm.calls
+
+
+def test_run_unknown_profile_exits_runtime_code(
+    runner: CliRunner, orchestrator: Orchestrator
+) -> None:
+    orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {}
+    result = runner.invoke(
+        cli_main.app,
+        ["workflow", "run", "hi", "-f", _AGENT_GRAPH, "-p", UNKNOWN_LLM_PROFILE_NAME],
+    )
+    assert result.exit_code == WORKFLOW_RUNTIME_EXIT_CODE
+    assert UNKNOWN_LLM_PROFILE_NAME in result.output
 
 
 def test_validate_ok(runner: CliRunner) -> None:

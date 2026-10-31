@@ -200,3 +200,66 @@ async def test_sequence_unknown_agent_raises() -> None:
 async def test_node_executors_satisfy_protocol() -> None:
     executor = resolve_executor(SequenceNode(steps=[AgentNode(agent="a")]))
     assert isinstance(executor, NodeExecutor)
+
+
+# ── spec-0040: the run-scoped profile survives a concat join ──────────────────
+
+
+async def test_concat_fan_out_followed_by_agent_keeps_the_profile() -> None:
+    """A ``concat`` join synthesises its response; the selector must still thread on.
+
+    Without the carry in ``nodes/fan_out.py`` the branches would run on the
+    profile client and the step *after* the join would silently fall back to
+    the default client — the mixed-provider run the user asked for, half
+    honoured. Mutation proof: return ``metadata={}`` from the join again and
+    the third call lands on ``default_llm``.
+    """
+    from mangomas.agents._prompt import LLM_PROFILES_EXTRAS_KEY  # noqa: PLC0415
+    from mangomas.composition.builder import _Orchestrator  # noqa: PLC0415
+    from mangomas.config import LLM_PROFILE_METADATA_KEY  # noqa: PLC0415
+
+    default_llm = FakeLLM(reply="default")
+    profile_llm = FakeLLM(reply="profile")
+    ctx = AgentContext(
+        llm=default_llm,
+        repo=None,
+        extras={LLM_PROFILES_EXTRAS_KEY: {"fast": profile_llm}},
+    )
+    orch = _Orchestrator(ctx)
+    for name in ("a", "b", "c"):
+        orch.register(_NamedChat(name))
+    graph = _graph(
+        {
+            "kind": "sequence",
+            "steps": [
+                {
+                    "kind": "fan_out",
+                    "join": "concat",
+                    "branches": [{"kind": "agent", "agent": "a"}, {"kind": "agent", "agent": "b"}],
+                },
+                {"kind": "agent", "agent": "c"},
+            ],
+        }
+    )
+    request = AgentRequest(
+        messages=[Message(role="user", content="go")],
+        metadata={LLM_PROFILE_METADATA_KEY: "fast"},
+    )
+    wf = await execute_workflow(graph, request, orch=orch)
+    assert len(profile_llm.calls) == 3, "both branches and the step after the join"
+    assert default_llm.calls == []
+    assert wf.agent == "c"
+    assert wf.metadata[LLM_PROFILE_METADATA_KEY] == "fast"
+
+
+async def test_concat_fan_out_without_profile_stays_metadata_empty() -> None:
+    """Default-OFF half: a run that names no profile gets the join's old empty metadata."""
+    graph = _graph(
+        {
+            "kind": "fan_out",
+            "join": "concat",
+            "branches": [{"kind": "agent", "agent": "a"}, {"kind": "agent", "agent": "b"}],
+        }
+    )
+    wf = await execute_workflow(graph, _req(), orch=_orch(FakeLLM(reply="X"), "a", "b"))
+    assert wf.metadata == {}

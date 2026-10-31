@@ -17,14 +17,22 @@ flag) rather than silently unified.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+import logging
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Final
 
+from mangomas.config import (
+    LLM_PROFILE_METADATA_KEY as LLM_PROFILE_METADATA_KEY,  # noqa: PLC0414 -- explicit re-export under mypy --strict
+)
 from mangomas.core.agent import AgentRequest, Message
+from mangomas.errors import ConfigError
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.llm.base import LLMClient
     from mangomas.config import AgentSettings
     from mangomas.core.agent import AgentContext
+
+logger = logging.getLogger(__name__)
 
 
 #: ``AgentContext.extras`` key carrying per-agent ``LLMClient`` overrides
@@ -34,22 +42,87 @@ if TYPE_CHECKING:  # pragma: no cover
 #: error anywhere.
 AGENT_LLM_OVERRIDES_EXTRAS_KEY: Final[str] = "agent_llm_overrides"
 
+#: ``AgentContext.extras`` key carrying the named provider-profile clients
+#: (spec-0040 / ADR-0038): ``dict[str, LLMClient]`` keyed by profile name, built
+#: once at startup by ``composition/llm.py::build_llm_profiles``. Same
+#: reader-beside-writer rationale as the override key above.
+LLM_PROFILES_EXTRAS_KEY: Final[str] = "llm_profiles"
 
-def resolve_llm(ctx: AgentContext, agent_name: str) -> LLMClient:
-    """Return the agent-scoped LLM override client, or ``ctx.llm`` when none is set.
+#: ``AgentContext.extras`` key carrying the **secret-free** profile summaries
+#: (``name -> {"provider", "model"}``) that ``GET /llm/profiles`` serialises.
+#: Kept apart from the clients so the API never has to introspect one.
+LLM_PROFILE_INFO_EXTRAS_KEY: Final[str] = "llm_profile_info"
 
-    Per ADR-0028, per-agent model overrides are carried in
-    ``ctx.extras["agent_llm_overrides"]: dict[str, LLMClient]`` — a seam built
-    by the composition layer (``composition/builder.py``), not this package.
-    This resolver has no opinion on how (or whether) that dict is populated;
-    it degrades gracefully to ``ctx.llm`` when ``extras`` lacks the key
-    entirely, or lacks *this* agent's name within it — the identical
+#: ``LLM_PROFILE_METADATA_KEY`` is defined in ``mangomas.config.llm`` (the
+#: workflow layer's fan-out join needs it too) and re-exported here so the
+#: resolver's readers keep importing it from beside the resolver.
+
+
+def select_llm_profile(extras: Mapping[str, Any], metadata: Mapping[str, Any]) -> str | None:
+    """Return the profile name *metadata* selects, validated against *extras*.
+
+    ``None`` when the request names no profile. A name that is not a string, or
+    that no built profile answers to, raises :class:`~mangomas.errors.ConfigError`
+    (HTTP 400) — the route handlers call this **before** dispatch so an unknown
+    name is refused before any SSE header goes out, and
+    :func:`resolve_llm` calls it again at use time so the CLI and workflow
+    paths get the same answer with no HTTP layer in front of them.
+
+    Pure: reads two mappings, touches nothing.
+    """
+    name = metadata.get(LLM_PROFILE_METADATA_KEY)
+    if name is None:
+        return None
+    profiles = extras.get(LLM_PROFILES_EXTRAS_KEY) or {}
+    if not isinstance(name, str) or name not in profiles:
+        raise ConfigError(f"unknown llm_profile {name!r}; configured profiles: {sorted(profiles)}")
+    return name
+
+
+def resolve_llm(
+    ctx: AgentContext, agent_name: str, request: AgentRequest | None = None
+) -> LLMClient:
+    """Return the LLM client this agent should use for this request.
+
+    Precedence, most specific first:
+
+    1. the **request-scoped profile** named by
+       ``request.metadata["llm_profile"]`` (spec-0040; explicit, per run);
+    2. the **agent-scoped override** in ``ctx.extras["agent_llm_overrides"]``
+       (ADR-0028 / spec-0028; a deployment default for one agent);
+    3. ``ctx.llm``, the shared default.
+
+    Per ADR-0028, the override dict is a seam built by the composition layer
+    (``composition/builder.py``), not this package; the same is true of the
+    profile dict. This resolver has no opinion on how (or whether) either is
+    populated; it degrades gracefully to ``ctx.llm`` when ``extras`` lacks the
+    keys, or lacks *this* agent's name within the override map — the identical
     "explicit-arg -> per-agent override -> shared default" shape
     :func:`resolve_sampling` uses, just resolved at call time (``handle``/
     ``stream``) rather than construction time, since agents only receive
-    ``ctx`` once a request arrives.
+    ``ctx`` once a request arrives. *request* is optional so callers that
+    predate spec-0040 keep working unchanged.
+
+    When a profile shadows a configured override the fact is logged at INFO
+    (``event="llm_profile_shadows_override"``), because the two are set by
+    different people — the override by the operator, the profile by the
+    caller — and a silently losing override is the confusion the risk register
+    predicted.
     """
     overrides: dict[str, LLMClient] = ctx.extras.get(AGENT_LLM_OVERRIDES_EXTRAS_KEY, {})
+    profile = select_llm_profile(ctx.extras, request.metadata) if request is not None else None
+    if profile is not None:
+        if agent_name in overrides:
+            logger.info(
+                "llm_profile shadows the agent's MODEL_OVERRIDE for this request",
+                extra={
+                    "event": "llm_profile_shadows_override",
+                    "agent": agent_name,
+                    "llm_profile": profile,
+                },
+            )
+        profiles: dict[str, LLMClient] = ctx.extras[LLM_PROFILES_EXTRAS_KEY]
+        return profiles[profile]
     return overrides.get(agent_name, ctx.llm)
 
 

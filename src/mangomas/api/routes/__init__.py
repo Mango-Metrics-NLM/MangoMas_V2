@@ -9,7 +9,13 @@ settings-cache semantics the tests rely on.
 from __future__ import annotations
 
 from mangomas.api.routes.agents import build_agent_router
+from mangomas.api.routes.llm import build_llm_router
 from mangomas.api.routes.system import build_system_router
 from mangomas.api.routes.workflows import build_workflow_router
 
-__all__ = ["build_agent_router", "build_system_router", "build_workflow_router"]
+__all__ = [
+    "build_agent_router",
+    "build_llm_router",
+    "build_system_router",
+    "build_workflow_router",
+]

@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
+from mangomas.composition import LLM_PROFILES_EXTRAS_KEY
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.errors import ConfigError, LLMUnavailable
 from tests._seam_guards import forbid_real_orchestrator
@@ -19,6 +20,8 @@ from tests.constants import (
     EXIT_CONFIG_ERROR,
     EXIT_RUNTIME_ERROR,
     STUB_REPLY,
+    TEST_LLM_PROFILE_NAME,
+    UNKNOWN_LLM_PROFILE_NAME,
 )
 from tests.fakes import FakeLLM
 
@@ -61,6 +64,29 @@ def test_chat_command_with_system(runner: CliRunner) -> None:
         cli_main.app, ["chat", "hello", "--system", "be brief", "--agent", "chat"]
     )
     assert result.exit_code == 0
+
+
+def test_chat_command_profile_routes_to_the_profile_client(
+    runner: CliRunner, orchestrator: Orchestrator
+) -> None:
+    """`--profile` rides request.metadata like HTTP does (spec-0040 R2)."""
+    profile_llm = FakeLLM(reply="profile-reply")
+    orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {TEST_LLM_PROFILE_NAME: profile_llm}
+    result = runner.invoke(cli_main.app, ["chat", "hello", "--profile", TEST_LLM_PROFILE_NAME])
+    assert result.exit_code == 0
+    assert "profile-reply" in result.stdout
+    assert profile_llm.calls
+
+
+def test_chat_command_unknown_profile_fails(runner: CliRunner, orchestrator: Orchestrator) -> None:
+    """The unknown profile surfaces as a typed ``ConfigError`` during dispatch, which
+    ``run_or_exit`` reports as one line with the runtime exit code — not a traceback."""
+    orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {}
+    result = runner.invoke(cli_main.app, ["chat", "hello", "--profile", UNKNOWN_LLM_PROFILE_NAME])
+    assert result.exit_code == EXIT_RUNTIME_ERROR
+    assert "Chat failed:" in result.output
+    assert UNKNOWN_LLM_PROFILE_NAME in result.output
+    assert not isinstance(result.exception, ConfigError)
 
 
 def test_chat_command_verbose_requests_debug_logging(

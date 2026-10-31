@@ -11,6 +11,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
+from mangomas.agents._prompt import LLM_PROFILE_METADATA_KEY, LLM_PROFILES_EXTRAS_KEY
 from mangomas.composition import _HarnessOrchestrator, agent_registry
 from mangomas.config import Settings
 from mangomas.core.agent import AgentContext, AgentRequest, Message
@@ -19,7 +20,7 @@ from tests.composition.helpers import (
     HARNESS_STREAM_SPAN_NAMESPACE,
     make_traced_stream_wrapper,
 )
-from tests.constants import DEFAULT_AGENT_NAME, STUB_REPLY
+from tests.constants import DEFAULT_AGENT_NAME, STUB_REPLY, TEST_LLM_PROFILE_NAME
 from tests.fakes import FakeLLM, FakeRepository
 
 
@@ -350,3 +351,73 @@ async def test_harness_stream_dispatch_agent_not_found_raises_before_any_span(
         await wrapper.stream_dispatch("no-such-agent", request)
 
     assert exporter.get_finished_spans() == ()
+
+
+# ── spec-0040 R5: the harness span carries the selected profile ───────────────
+
+
+def _profile_wrapper(
+    monkeypatch: pytest.MonkeyPatch, exporter: InMemorySpanExporter, *, namespace: str
+) -> tuple[_HarnessOrchestrator, AgentRequest, FakeLLM]:
+    wrapper, request = make_traced_stream_wrapper(monkeypatch, exporter, namespace=namespace)
+    profile_llm = FakeLLM(reply=STUB_REPLY, chunks=["pro", "file"])
+    wrapper.context.extras[LLM_PROFILES_EXTRAS_KEY] = {TEST_LLM_PROFILE_NAME: profile_llm}
+    return wrapper, request, profile_llm
+
+
+async def test_harness_dispatch_span_carries_llm_profile_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = InMemorySpanExporter()
+    wrapper, request, profile_llm = _profile_wrapper(
+        monkeypatch, exporter, namespace="test.harness.profile.dispatch"
+    )
+    selected = request.model_copy(
+        update={"metadata": {LLM_PROFILE_METADATA_KEY: TEST_LLM_PROFILE_NAME}}
+    )
+    response = await wrapper.dispatch(DEFAULT_AGENT_NAME, selected)
+
+    assert response.metadata[LLM_PROFILE_METADATA_KEY] == TEST_LLM_PROFILE_NAME
+    assert profile_llm.calls, "the profile client, not ctx.llm, must serve the request"
+    harness = [s for s in exporter.get_finished_spans() if s.name == "harness.agent_invoke"]
+    assert len(harness) == 1
+    assert harness[0].attributes is not None
+    assert harness[0].attributes.get("llm.profile") == TEST_LLM_PROFILE_NAME
+
+
+async def test_harness_dispatch_span_has_no_profile_attribute_when_unselected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default-OFF half: an unselected request leaves the span byte-identical."""
+    exporter = InMemorySpanExporter()
+    wrapper, request, _ = _profile_wrapper(
+        monkeypatch, exporter, namespace="test.harness.profile.dispatch.off"
+    )
+    response = await wrapper.dispatch(DEFAULT_AGENT_NAME, request)
+
+    assert LLM_PROFILE_METADATA_KEY not in response.metadata
+    harness = [s for s in exporter.get_finished_spans() if s.name == "harness.agent_invoke"]
+    assert len(harness) == 1
+    assert harness[0].attributes is not None
+    assert "llm.profile" not in harness[0].attributes
+
+
+async def test_harness_stream_span_carries_llm_profile_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = InMemorySpanExporter()
+    wrapper, request, profile_llm = _profile_wrapper(
+        monkeypatch, exporter, namespace="test.harness.profile.stream"
+    )
+    selected = request.model_copy(
+        update={"metadata": {LLM_PROFILE_METADATA_KEY: TEST_LLM_PROFILE_NAME}}
+    )
+    stream = await wrapper.stream_dispatch(DEFAULT_AGENT_NAME, selected)
+    received = [chunk async for chunk in stream]
+
+    assert "".join(received) == "profile"
+    assert profile_llm.calls
+    harness = [s for s in exporter.get_finished_spans() if s.name == "harness.agent_invoke"]
+    assert len(harness) == 1
+    assert harness[0].attributes is not None
+    assert harness[0].attributes.get("llm.profile") == TEST_LLM_PROFILE_NAME
