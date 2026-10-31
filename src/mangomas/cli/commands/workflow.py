@@ -15,6 +15,7 @@ import typer
 
 from mangomas.cli import _runtime
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
+from mangomas.composition import LLM_PROFILE_METADATA_KEY
 from mangomas.composition.agents import STRUCTURED_AGENT_FIELDS
 from mangomas.config import get_settings
 from mangomas.core import AgentRequest, Message
@@ -86,6 +87,12 @@ def workflow_run(
     definition: str | None = typer.Option(
         None, "--definition", "-f", help="Path or inline JSON graph (falls back to settings)."
     ),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Named LLM provider profile (MANGOMAS_LLM_PROFILES__<NAME>__*) for every node",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Execute a declarative workflow graph and print the final node's response."""
@@ -93,7 +100,10 @@ def workflow_run(
 
     graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
     orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
-    request = AgentRequest(messages=[Message(role="user", content=message)])
+    # Same selector as HTTP (spec-0039 R2); every agent node dispatches the
+    # request unchanged, so one metadata key covers the whole graph.
+    metadata = {LLM_PROFILE_METADATA_KEY: profile} if profile else {}
+    request = AgentRequest(messages=[Message(role="user", content=message)], metadata=metadata)
 
     async def _run() -> str:
         try:
