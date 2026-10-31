@@ -37,6 +37,10 @@ class FakeLLM:
     closed: bool = False
     pinged: bool = False
     ping_error: BaseException | None = None
+    # Raised by complete() when set — the buffered-call twin of `ping_error`, so a
+    # CLI or API test can drive a typed LLM failure (e.g. `LLMUnavailable`)
+    # through a real agent instead of stubbing the agent layer.
+    raise_on_complete: BaseException | None = None
     # Token chunks for streaming; defaults to [reply] when empty.
     chunks: list[str] = field(default_factory=list)
     # Records the (temperature, max_tokens) kwargs each complete()/stream()
@@ -72,6 +76,8 @@ class FakeLLM:
         self.calls.append(list(messages))
         self.call_kwargs.append({"temperature": temperature, "max_tokens": max_tokens})
         await self._maybe_delay()
+        if self.raise_on_complete is not None:
+            raise self.raise_on_complete
         idx = len(self.calls) - 1
         if self.replies and idx < len(self.replies):
             return self.replies[idx]

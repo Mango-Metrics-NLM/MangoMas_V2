@@ -21,8 +21,8 @@ import typer
 
 from mangomas.cli import _runtime
 from mangomas.core import Orchestrator
-from mangomas.errors import ConfigError
-from tests.constants import EXIT_CONFIG_ERROR
+from mangomas.errors import ConfigError, LLMUnavailable
+from tests.constants import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
 
 
 async def test_build_returns_a_real_orchestrator(
@@ -369,3 +369,72 @@ def test_build_or_exit_lets_a_genuine_crash_propagate(monkeypatch: pytest.Monkey
     monkeypatch.setattr(_runtime, "_build", _crash)
     with pytest.raises(RuntimeError):
         _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
+
+
+def test_build_or_exit_maps_a_missing_optional_extra_to_the_config_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every lazy SDK import raises ``ImportError(<install hint>)`` from an adapter
+    constructor, i.e. inside ``_build()``. That used to escape as a traceback with
+    exit 1. Mutation (proved while writing): deleting the ``except ImportError``."""
+    hint = "Vertex AI SDK is not installed. Install the optional extra: pip install 'x[y]'"
+
+    def _missing_extra() -> Orchestrator:
+        raise ImportError(hint)
+
+    monkeypatch.setattr(_runtime, "_build", _missing_extra)
+    with pytest.raises(typer.Exit) as excinfo:
+        _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
+    assert excinfo.value.exit_code == EXIT_CONFIG_ERROR
+    assert f"Missing optional dependency: {hint}" in capsys.readouterr().err
+
+
+# ── run_or_exit ───────────────────────────────────────────────────────────────
+
+
+async def _returns(value: object) -> object:
+    return value
+
+
+async def _raises(exc: BaseException) -> object:
+    raise exc
+
+
+def test_run_or_exit_returns_what_the_coroutine_returns() -> None:
+    sentinel = object()
+    result = _runtime.run_or_exit(
+        _returns(sentinel), failure_label="Chat failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+    )
+    assert result is sentinel
+
+
+def test_run_or_exit_maps_a_mangomas_error_to_the_runtime_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mutation (proved while writing): narrowing the except to ``ConfigError``."""
+    exc = LLMUnavailable("LM Studio unreachable", detail="ConnectError: refused")
+    with pytest.raises(typer.Exit) as excinfo:
+        _runtime.run_or_exit(
+            _raises(exc), failure_label="Chat failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+        )
+    assert excinfo.value.exit_code == EXIT_RUNTIME_ERROR
+    assert "Chat failed: LM Studio unreachable (ConnectError: refused)" in capsys.readouterr().err
+
+
+def test_run_or_exit_omits_an_empty_detail(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(typer.Exit):
+        _runtime.run_or_exit(
+            _raises(LLMUnavailable("down")),
+            failure_label="Chat failed",
+            runtime_exit_code=EXIT_RUNTIME_ERROR,
+        )
+    assert capsys.readouterr().err.strip() == "Chat failed: down"
+
+
+def test_run_or_exit_lets_a_genuine_crash_propagate() -> None:
+    with pytest.raises(RuntimeError):
+        _runtime.run_or_exit(
+            _raises(RuntimeError("bug")),
+            failure_label="Chat failed",
+            runtime_exit_code=EXIT_RUNTIME_ERROR,
+        )

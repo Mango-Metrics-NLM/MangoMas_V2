@@ -13,11 +13,12 @@ from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.composition import LLM_PROFILES_EXTRAS_KEY
 from mangomas.core import AgentContext, Orchestrator
-from mangomas.errors import ConfigError
+from mangomas.errors import ConfigError, LLMUnavailable
 from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import (
     DEFAULT_API_HISTORY_MAX_LIMIT,
     EXIT_CONFIG_ERROR,
+    EXIT_RUNTIME_ERROR,
     STUB_REPLY,
     TEST_LLM_PROFILE_NAME,
     UNKNOWN_LLM_PROFILE_NAME,
@@ -78,10 +79,14 @@ def test_chat_command_profile_routes_to_the_profile_client(
 
 
 def test_chat_command_unknown_profile_fails(runner: CliRunner, orchestrator: Orchestrator) -> None:
+    """The unknown profile surfaces as a typed ``ConfigError`` during dispatch, which
+    ``run_or_exit`` reports as one line with the runtime exit code — not a traceback."""
     orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {}
     result = runner.invoke(cli_main.app, ["chat", "hello", "--profile", UNKNOWN_LLM_PROFILE_NAME])
-    assert result.exit_code != 0
-    assert isinstance(result.exception, ConfigError)
+    assert result.exit_code == EXIT_RUNTIME_ERROR
+    assert "Chat failed:" in result.output
+    assert UNKNOWN_LLM_PROFILE_NAME in result.output
+    assert not isinstance(result.exception, ConfigError)
 
 
 def test_chat_command_verbose_requests_debug_logging(
@@ -181,3 +186,37 @@ def test_chat_maps_a_composition_config_error_to_the_config_exit_code(
     assert result.exit_code == EXIT_CONFIG_ERROR
     assert "Configuration error: unknown llm provider (llm.provider='nope')" in result.output
     assert "Traceback" not in result.output
+
+
+def test_chat_maps_an_unreachable_llm_to_a_one_line_runtime_error(
+    monkeypatch: pytest.MonkeyPatch, runner: CliRunner
+) -> None:
+    """LM Studio down used to print an ``LLMUnavailable`` traceback. The command
+    now prints one line and exits with the runtime code. Mutation (proved while
+    writing): reverting ``chat`` to a bare ``asyncio.run``."""
+    down = LLMUnavailable("LM Studio unreachable", detail="ConnectError: refused")
+    orch = Orchestrator(AgentContext(llm=FakeLLM(raise_on_complete=down), repo=None))
+    orch.register(ChatAgent())
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orch)
+
+    result = runner.invoke(cli_main.app, ["chat", "hi"])
+    assert result.exit_code == EXIT_RUNTIME_ERROR
+    assert "Chat failed: LM Studio unreachable (ConnectError: refused)" in result.output
+    assert not isinstance(result.exception, LLMUnavailable)
+
+
+def test_chat_maps_a_missing_optional_extra_to_the_config_exit_code(
+    monkeypatch: pytest.MonkeyPatch, runner: CliRunner
+) -> None:
+    """``MANGOMAS_LLM__PROVIDER=vertex`` without the extra raises ``ImportError``
+    from the adapter constructor, inside ``_build()``."""
+    hint = "Vertex AI SDK is not installed. Install the optional extra: pip install 'x[y]'"
+
+    def _missing_extra() -> Orchestrator:
+        raise ImportError(hint)
+
+    monkeypatch.setattr(cli_runtime, "_build", _missing_extra)
+    result = runner.invoke(cli_main.app, ["chat", "hi"])
+    assert result.exit_code == EXIT_CONFIG_ERROR
+    assert f"Missing optional dependency: {hint}" in result.output
+    assert not isinstance(result.exception, ImportError)

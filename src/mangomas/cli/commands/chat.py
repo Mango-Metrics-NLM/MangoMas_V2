@@ -75,7 +75,11 @@ def chat(
         finally:
             await _runtime._close_orchestrator(orch)
 
-    typer.echo(asyncio.run(_run()))
+    typer.echo(
+        _runtime.run_or_exit(
+            _run(), failure_label="Chat failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+        )
+    )
 
 
 def history(
@@ -106,7 +110,9 @@ def history(
         finally:
             await _runtime._close_orchestrator(orch)
 
-    rows = asyncio.run(_run())
+    rows = _runtime.run_or_exit(
+        _run(), failure_label="History failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+    )
     if rows is None:
         typer.echo("No repository configured.", err=True)
         raise typer.Exit(code=EXIT_RUNTIME_ERROR)

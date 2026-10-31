@@ -27,7 +27,11 @@ for `make gate`.
 
 ## The one rule that will surprise you
 
-Six files are **protected paths**:
+These core contracts are **protected paths** — and, since
+[ADR-0030](docs/adr/0030-self-protecting-governance-gate.md), so is the
+governance mechanism itself (`.mcp.json`, `pyproject.toml`,
+`scripts/_governance.py`, `scripts/check_protected_paths.py`,
+`sitecustomize.py`, `src/mangomas/harness/governance.py`):
 
 | Path | Why |
 |---|---|

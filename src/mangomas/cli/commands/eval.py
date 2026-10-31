@@ -229,11 +229,9 @@ def _run_eval_pipeline(
         sink_error = await _emit_sinks(sinks, report, gate_result)
         return report, gate_result, sink_error
 
-    try:
-        _report, gate_result, sink_error = asyncio.run(_run_eval())
-    except MangomasError as exc:
-        typer.echo(f"Eval run failed: {exc}", err=True)
-        raise typer.Exit(code=EXIT_RUNTIME_ERROR) from exc
+    _report, gate_result, sink_error = _runtime.run_or_exit(
+        _run_eval(), failure_label="Eval run failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+    )
     _finish_eval(output_json=output_json, sink_error=sink_error, gate_result=gate_result)
 
 

@@ -12,9 +12,9 @@ from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
 from mangomas.core import AgentContext, Orchestrator
-from mangomas.errors import ConfigError
+from mangomas.errors import ConfigError, LLMUnavailable
 from tests._seam_guards import forbid_real_orchestrator
-from tests.constants import EXIT_CONFIG_ERROR
+from tests.constants import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
 from tests.fakes import FakeEmbeddingClient, FakeLLM, FakeVectorStore
 
 
@@ -182,3 +182,25 @@ def test_rag_commands_map_a_config_error_to_the_config_exit_code(
     result = runner.invoke(cli_main.app, argv)
     assert result.exit_code == EXIT_CONFIG_ERROR
     assert "Configuration error: unknown vector provider" in result.output
+
+
+def test_rag_ingest_maps_an_embedding_failure_to_a_runtime_error(
+    monkeypatch: pytest.MonkeyPatch, runner: CliRunner, tmp_path: Path
+) -> None:
+    """An embedding backend failure mid-ingest used to escape as a traceback."""
+    orch = Orchestrator(
+        AgentContext(
+            llm=FakeLLM(),
+            repo=None,
+            embeddings=FakeEmbeddingClient(raise_on_batch=LLMUnavailable("embeddings down")),
+            vector_store=FakeVectorStore(),
+        )
+    )
+    monkeypatch.setattr(cli_runtime, "_build", lambda: orch)
+    doc = tmp_path / "a.txt"
+    doc.write_text("one two three", encoding="utf-8")
+
+    result = runner.invoke(cli_main.app, ["rag", "ingest", str(doc)])
+    assert result.exit_code == EXIT_RUNTIME_ERROR
+    assert "RAG ingest failed: embeddings down" in result.output
+    assert not isinstance(result.exception, LLMUnavailable)

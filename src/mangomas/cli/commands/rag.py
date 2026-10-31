@@ -8,14 +8,13 @@ it. That keeps the `ingest, query` listing order pinned by statement order.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
 import typer
 
 from mangomas.cli import _runtime
-from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
+from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
 from mangomas.config import get_settings
 from mangomas.rag import IngestionPipeline, IngestReport, Retriever
 
@@ -66,7 +65,9 @@ def rag_ingest(
         finally:
             await _runtime._close_orchestrator(orch)
 
-    report = asyncio.run(_run())
+    report = _runtime.run_or_exit(
+        _run(), failure_label="RAG ingest failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+    )
     typer.echo(
         f"ingested docs={report.documents} chunks={report.chunks} "
         f"batches={report.batches} deleted_sources={report.deleted_sources}"
@@ -101,7 +102,9 @@ def rag_query(
         finally:
             await _runtime._close_orchestrator(orch)
 
-    lines = asyncio.run(_run())
+    lines = _runtime.run_or_exit(
+        _run(), failure_label="RAG query failed", runtime_exit_code=EXIT_RUNTIME_ERROR
+    )
     if not lines:
         typer.echo("No relevant context found.")
         return
