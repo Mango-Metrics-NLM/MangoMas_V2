@@ -6,7 +6,11 @@ from pathlib import Path
 
 from tests.constants import IN_MEMORY_SQLITE_URL
 
-from mangomas.agents._prompt import AGENT_LLM_OVERRIDES_EXTRAS_KEY
+from mangomas.agents._prompt import (
+    AGENT_LLM_OVERRIDES_EXTRAS_KEY,
+    LLM_PROFILE_INFO_EXTRAS_KEY,
+    LLM_PROFILES_EXTRAS_KEY,
+)
 from mangomas.cognitive.constants import (
     COGNITIVE_SETTINGS_EXTRAS_KEY,
     COGNITIVE_SINK_EXTRAS_KEY,
@@ -32,10 +36,14 @@ def test_signal_disabled_does_not_attach_sink() -> None:
         assert COGNITIVE_SINK_EXTRAS_KEY not in orch.context.extras
         assert COGNITIVE_SETTINGS_EXTRAS_KEY not in orch.context.extras
         # Exact set, deliberately: this is what catches a stray extras key
-        # leaking out of composition. Both members are named constants so the
-        # assertion cannot drift from the writer's spelling.
+        # leaking out of composition. Every member is a named constant so the
+        # assertion cannot drift from the writer's spelling. The two profile
+        # keys (spec-0040) are always published, empty when no profile is
+        # configured — the same shape as the override map.
         assert set(orch.context.extras) == {
             AGENT_LLM_OVERRIDES_EXTRAS_KEY,
+            LLM_PROFILES_EXTRAS_KEY,
+            LLM_PROFILE_INFO_EXTRAS_KEY,
             STRUCTURED_AGENT_FIELDS_EXTRAS_KEY,
         }
     finally:

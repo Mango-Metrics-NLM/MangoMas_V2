@@ -11,10 +11,17 @@ from typer.testing import CliRunner
 from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
+from mangomas.composition import LLM_PROFILES_EXTRAS_KEY
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.errors import ConfigError
 from tests._seam_guards import forbid_real_orchestrator
-from tests.constants import DEFAULT_API_HISTORY_MAX_LIMIT, EXIT_CONFIG_ERROR, STUB_REPLY
+from tests.constants import (
+    DEFAULT_API_HISTORY_MAX_LIMIT,
+    EXIT_CONFIG_ERROR,
+    STUB_REPLY,
+    TEST_LLM_PROFILE_NAME,
+    UNKNOWN_LLM_PROFILE_NAME,
+)
 from tests.fakes import FakeLLM
 
 
@@ -56,6 +63,25 @@ def test_chat_command_with_system(runner: CliRunner) -> None:
         cli_main.app, ["chat", "hello", "--system", "be brief", "--agent", "chat"]
     )
     assert result.exit_code == 0
+
+
+def test_chat_command_profile_routes_to_the_profile_client(
+    runner: CliRunner, orchestrator: Orchestrator
+) -> None:
+    """`--profile` rides request.metadata like HTTP does (spec-0040 R2)."""
+    profile_llm = FakeLLM(reply="profile-reply")
+    orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {TEST_LLM_PROFILE_NAME: profile_llm}
+    result = runner.invoke(cli_main.app, ["chat", "hello", "--profile", TEST_LLM_PROFILE_NAME])
+    assert result.exit_code == 0
+    assert "profile-reply" in result.stdout
+    assert profile_llm.calls
+
+
+def test_chat_command_unknown_profile_fails(runner: CliRunner, orchestrator: Orchestrator) -> None:
+    orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {}
+    result = runner.invoke(cli_main.app, ["chat", "hello", "--profile", UNKNOWN_LLM_PROFILE_NAME])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ConfigError)
 
 
 def test_chat_command_verbose_requests_debug_logging(

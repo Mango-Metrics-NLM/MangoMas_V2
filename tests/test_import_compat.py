@@ -201,6 +201,7 @@ _PRIVATE_FACADE_CONTRACT: dict[str, dict[str, str]] = {
     # shipped once already.
     "mangomas.composition": {
         "_HarnessOrchestrator": "harness",
+        "_LLMProfileDispatchMixin": "llm",
         "_build_gcp_secrets_provider": "secrets",
         "_build_rag_tools": "rag",
         "_attach_cognitive_extras": "signal",

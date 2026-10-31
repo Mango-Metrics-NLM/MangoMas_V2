@@ -40,7 +40,7 @@ class ChatAgent:
         """Send the messages to the LLM and wrap the reply."""
         messages = build_messages(request, self._system_prompt)
         logger.debug("ChatAgent dispatching %d messages", len(messages))
-        llm = resolve_llm(ctx, self.name)
+        llm = resolve_llm(ctx, self.name, request)
         content = await llm.complete(
             messages,
             temperature=self._temperature,
@@ -63,7 +63,7 @@ class ChatAgent:
     ) -> AsyncGenerator[str, None]:
         messages = build_messages(request, self._system_prompt)
         logger.debug("ChatAgent streaming %d messages", len(messages))
-        llm = resolve_llm(ctx, self.name)
+        llm = resolve_llm(ctx, self.name, request)
         async for chunk in stream_with_buffered_fallback(
             self.name,
             messages,

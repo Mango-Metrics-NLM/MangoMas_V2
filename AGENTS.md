@@ -110,13 +110,15 @@ src/mangomas/
 ├── api/
 │   ├── app.py          FastAPI app factory (lifespan, middleware installation)
 │   ├── errors.py       Error-status mapping, error-envelope builder
-│   ├── models.py       DTO models (WorkflowRunRequest, WorkflowValidateRequest/Response)
+│   ├── models.py       DTO models (WorkflowRunRequest, WorkflowValidateRequest/Response,
+│   │                   LLMProfileSummary / LLMProfilesResponse)
 │   ├── middleware/     MaxBodySize, ConcurrencyLimit, Tenancy, AccessLog
 │   │                   (ADR-0019 facade; install order unchanged)
 │   └── routes/         Endpoint routers by resource
 │       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
 │       ├── system.py   /healthz + /health, /readyz + /ready, GET /agents
-│       └── workflows.py /workflows/run, /workflows/validate endpoints
+│       ├── workflows.py /workflows/run, /workflows/validate endpoints
+│       └── llm.py      GET /llm/profiles — secret-free provider-profile roster (spec-0040)
 ├── cli/            Typer CLI, one module per dependency layer behind a
 │                   permanent facade (ADR-0019 / spec-0015 R1):
 │   ├── main.py         FACADE — re-exports + the `python -m` entry block
@@ -177,6 +179,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_LLM__BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
 | `MANGOMAS_LLM__MODEL` | `local-model` | Model id |
 | `MANGOMAS_LLM__ALLOWED_MODELS` | `[]` | Approved-model roster; empty = unconstrained. A non-empty list must include `MODEL` itself (ADR-0033) |
+| `MANGOMAS_LLM__PROVIDER_ALLOWLIST` | `[]` | Approved-provider roster covering the base client **and every `MANGOMAS_LLM_PROFILES__*` profile**; empty = unconstrained. `["lmstudio"]` is the local-only configuration; a disallowed provider fails `Settings` parse, so it is never built. Governs the LLM seam only (ADR-0033; spec-0040) |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
 | `MANGOMAS_LLM__API_KEY` | `lm-studio` | LM Studio bearer (placeholder) |
 | `MANGOMAS_LLM__TIMEOUT_SECONDS` | `60.0` | httpx timeout for LLM calls |
@@ -281,6 +284,16 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_AGENTS__<NAME>__HISTORY_LIMIT` | `10` (`DEFAULT_SUMMARIZE_HISTORY_LIMIT`) | `SummarizeAgent`-only: persisted turns loaded into the summary context |
 | `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT` | false (`DEFAULT_VALIDATE_OUTPUT`) | Structured-output agents (`planner`/`reviewer`) only: validate the JSON reply against the agent's schema after `handle`; `LLMBadResponse` on mismatch. Streaming is untouched |
 | `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Per-agent model, same provider as `MANGOMAS_LLM__PROVIDER`. Resolved via a dedicated `LLMClient` in `ctx.extras["agent_llm_overrides"]`, built by `composition/llm.py::build_agent_llm_overrides` (spec-0028 / ADR-0028) |
+| `MANGOMAS_LLM_PROFILES__<NAME>__PROVIDER` | _(required)_ | Named LLM provider profile (spec-0040 / ADR-0038): registry entry (`lmstudio` \| `vertex`), subject to `MANGOMAS_LLM__PROVIDER_ALLOWLIST`. Every profile is built at startup by `composition/llm.py::build_llm_profiles` into `ctx.extras["llm_profiles"]` and selected per run via `AgentRequest.metadata["llm_profile"]` (precedence: profile > `MODEL_OVERRIDE` > shared client; the name is stamped on `response.metadata["llm_profile"]` and so carries across `dispatch_pipeline` stages). `<NAME>` is lowercased by pydantic-settings |
+| `MANGOMAS_LLM_PROFILES__<NAME>__MODEL` | _(required)_ | Profile model id, subject to `MANGOMAS_LLM__ALLOWED_MODELS` when that roster is non-empty |
+| `MANGOMAS_LLM_PROFILES__<NAME>__BASE_URL` | _(none)_ | Inherits `MANGOMAS_LLM__BASE_URL` when unset |
+| `MANGOMAS_LLM_PROFILES__<NAME>__API_KEY` | _(none)_ | Inherits `MANGOMAS_LLM__API_KEY` only when the profile's provider equals the base provider; otherwise set it (or `SECRET_REF`) per profile |
+| `MANGOMAS_LLM_PROFILES__<NAME>__SECRET_REF` | _(none)_ | `SecretsProvider` ref overriding the profile's `API_KEY`; inherits from `MANGOMAS_LLM__SECRET_REF` only for a same-provider profile |
+| `MANGOMAS_LLM_PROFILES__<NAME>__PROJECT_ID` | _(none)_ | Inherits `MANGOMAS_LLM__PROJECT_ID` when unset (Vertex) |
+| `MANGOMAS_LLM_PROFILES__<NAME>__LOCATION` | _(none)_ | Inherits `MANGOMAS_LLM__LOCATION` when unset (Vertex) |
+| `MANGOMAS_LLM_PROFILES__<NAME>__CREDENTIALS_PATH` | _(none)_ | Inherits `MANGOMAS_LLM__CREDENTIALS_PATH` only for a same-provider profile (Vertex) |
+| `MANGOMAS_LLM_PROFILES__<NAME>__TIMEOUT_SECONDS` | _(none)_ | Inherits `MANGOMAS_LLM__TIMEOUT_SECONDS` when unset |
+| `MANGOMAS_LLM_PROFILES__<NAME>__TEMPERATURE` | _(none)_ | Inherits `MANGOMAS_LLM__TEMPERATURE` when unset |
 
 ---
 

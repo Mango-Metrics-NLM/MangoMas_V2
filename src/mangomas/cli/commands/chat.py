@@ -15,6 +15,7 @@ import typer
 
 from mangomas.cli import _runtime
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
+from mangomas.composition import LLM_PROFILE_METADATA_KEY
 from mangomas.config import DEFAULT_API_HISTORY_DEFAULT_LIMIT, DEFAULT_API_HISTORY_MAX_LIMIT
 from mangomas.core import AgentRequest, Message
 
@@ -44,6 +45,12 @@ def chat(
     message: str = typer.Argument(..., help="User message"),
     agent: str = typer.Option("chat", "--agent", "-a", help="Agent name"),
     system: str | None = typer.Option(None, "--system", "-s", help="Optional system prompt"),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Named LLM provider profile (MANGOMAS_LLM_PROFILES__<NAME>__*) for this run",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable DEBUG logging"),
 ) -> None:
     """Send a one-shot message to an agent and print the reply."""
@@ -55,7 +62,11 @@ def chat(
         messages.append(Message(role="system", content=system))
     messages.append(Message(role="user", content=message))
 
-    request = AgentRequest(messages=messages)
+    # The selector rides request.metadata exactly as it does over HTTP
+    # (spec-0040 R2); an unknown name is the same ConfigError the API maps to
+    # 400, surfaced here on the dispatch path like any other config error.
+    metadata = {LLM_PROFILE_METADATA_KEY: profile} if profile else {}
+    request = AgentRequest(messages=messages, metadata=metadata)
 
     async def _run() -> str:
         try:

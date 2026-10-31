@@ -14,8 +14,9 @@ from fastapi.testclient import TestClient
 from mangomas.adapters.llm.base import LLMClient
 from mangomas.agents import ChatAgent
 from mangomas.api.app import create_app
+from mangomas.composition import LLM_PROFILE_METADATA_KEY, LLM_PROFILES_EXTRAS_KEY
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Orchestrator
-from tests.constants import STUB_REPLY
+from tests.constants import STUB_REPLY, TEST_LLM_PROFILE_NAME, UNKNOWN_LLM_PROFILE_NAME
 from tests.fakes import FakeLLM, NonPingableFakeLLM
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -256,3 +257,68 @@ async def test_mid_stream_failure_truncates_without_done_or_error_frame() -> Non
     assert _token_contents(payloads) == ["a", "b"]
     assert {"event": "done"} not in payloads
     assert all(payload.get("event") == "token" for payload in payloads)
+
+
+# ── spec-0040: profile selection on the stream route ─────────────────────────
+
+
+def _make_profile_client(profile_llm: FakeLLM) -> TestClient:
+    ctx = AgentContext(
+        llm=FakeLLM(chunks=["default"]),
+        repo=None,
+        extras={LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: profile_llm}},
+    )
+    orch = Orchestrator(ctx)
+    orch.register(ChatAgent())
+    return TestClient(create_app(orchestrator=orch))
+
+
+def test_stream_unknown_profile_is_400_before_sse_headers() -> None:
+    """R2 on the stream route: a JSON 400, not a truncated ``text/event-stream``.
+
+    Mutation proof: move the ``select_llm_profile`` call after
+    ``stream_dispatch`` and the agent raises mid-stream instead — this sees a
+    200 with the SSE content type and no error envelope.
+    """
+    profile_llm = FakeLLM(chunks=["profile"])
+    client = _make_profile_client(profile_llm)
+    resp = client.post(
+        "/agents/chat/stream",
+        json={**_INVOKE_BODY, "metadata": {LLM_PROFILE_METADATA_KEY: UNKNOWN_LLM_PROFILE_NAME}},
+    )
+    assert resp.status_code == 400
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.json()["error"] == "config_error"
+    assert "data: " not in resp.text
+    assert not profile_llm.calls
+
+
+def test_stream_metadata_frame_carries_llm_profile_when_selected() -> None:
+    profile_llm = FakeLLM(chunks=["pro", "file"])
+    client = _make_profile_client(profile_llm)
+    resp = client.post(
+        "/agents/chat/stream",
+        json={**_INVOKE_BODY, "metadata": {LLM_PROFILE_METADATA_KEY: TEST_LLM_PROFILE_NAME}},
+    )
+    assert resp.status_code == 200
+    payloads = _parse_sse(resp.text)
+    assert _token_contents(payloads) == ["pro", "file"]
+    metadata = next(p for p in payloads if p.get("event") == "metadata")
+    assert metadata["data"] == {
+        "agent": "chat",
+        "degraded": False,
+        "chunks": 2,
+        LLM_PROFILE_METADATA_KEY: TEST_LLM_PROFILE_NAME,
+    }
+    assert profile_llm.calls
+
+
+def test_stream_metadata_frame_omits_llm_profile_when_unselected() -> None:
+    """Default-OFF half, with a profile *configured* but not selected."""
+    client = _make_profile_client(FakeLLM(chunks=["profile"]))
+    resp = client.post("/agents/chat/stream", json=_INVOKE_BODY)
+    assert resp.status_code == 200
+    metadata = next(p for p in _parse_sse(resp.text) if p.get("event") == "metadata")
+    data = metadata["data"]
+    assert isinstance(data, dict)
+    assert LLM_PROFILE_METADATA_KEY not in data

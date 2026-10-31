@@ -8,14 +8,14 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mangomas.config.agents import AgentSettings, LoopSettings
 from mangomas.config.api import APISettings, AuthSettings, TenancySettings
 from mangomas.config.evaluation import EvalSettings
 from mangomas.config.harness import HarnessSettings
-from mangomas.config.llm import LLMSettings
+from mangomas.config.llm import LLMProfileSettings, LLMSettings
 from mangomas.config.observability import LogSettings, TelemetrySettings
 from mangomas.config.rag import EmbeddingSettings, RagSettings, VectorSettings
 from mangomas.config.secrets import SecretsSettings
@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # Per-agent overrides keyed by agent name.
     agents: dict[str, AgentSettings] = Field(default_factory=dict)
 
+    # Named LLM provider profiles keyed by profile name (spec-0040). Empty by
+    # default: no extra client is built and dispatch is byte-identical.
+    llm_profiles: dict[str, LLMProfileSettings] = Field(default_factory=dict)
+
     loop: LoopSettings = Field(default_factory=LoopSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     embeddings: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
@@ -73,6 +77,29 @@ class Settings(BaseSettings):
     # Agent discovery has always refused built-in collisions; this closes the
     # asymmetry without removing the capability.
     discovery_allow_builtin_override: bool = False
+
+    @model_validator(mode="after")
+    def _validate_llm_profiles(self) -> Settings:
+        """Every profile must satisfy the base LLM rosters (spec-0040 R3/R4).
+
+        The only root-level validator: the provider allowlist and the model
+        roster live on ``llm`` while the profiles live beside it, so no group
+        can check this alone. Failing here means a disallowed profile is never
+        built, which is what makes ``PROVIDER_ALLOWLIST`` a startup control
+        rather than a request-time check something could bypass.
+        """
+        for name, profile in self.llm_profiles.items():
+            if self.llm.provider_allowlist and profile.provider not in self.llm.provider_allowlist:
+                raise ValueError(
+                    f"llm_profiles[{name!r}].provider {profile.provider!r} is not in "
+                    f"llm.provider_allowlist {self.llm.provider_allowlist!r}"
+                )
+            if self.llm.allowed_models and profile.model not in self.llm.allowed_models:
+                raise ValueError(
+                    f"llm_profiles[{name!r}].model {profile.model!r} is not in "
+                    f"llm.allowed_models {self.llm.allowed_models!r}"
+                )
+        return self
 
 
 @lru_cache(maxsize=1)

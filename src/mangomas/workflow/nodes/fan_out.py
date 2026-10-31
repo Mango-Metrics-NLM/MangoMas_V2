@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from opentelemetry import trace
 
+from mangomas.config import LLM_PROFILE_METADATA_KEY
 from mangomas.core import AgentResponse
 from mangomas.workflow.graph import AgentNode, FanOutNode
 from mangomas.workflow.nodes._factory import register_node
@@ -62,9 +63,26 @@ class FanOutNodeExecutor:
                 return AgentResponse(
                     content="\n".join(r.content for r in responses),
                     agent=_FAN_OUT_AGENT,
-                    metadata={},
+                    metadata=_carry_run_scope(request),
                 )
             return responses[0]
+
+
+def _carry_run_scope(request: AgentRequest) -> dict[str, object]:
+    """Metadata for a synthesised ``concat`` response: the run-scoped selector only.
+
+    A joined reply has no single agent's metadata to keep, but a ``sequence``
+    threads this response's metadata into the next step's request
+    (``nodes/sequence.py``). Dropping ``llm_profile`` here would silently run
+    every node *after* a concat fan-out on the default client while the
+    branches ran on the selected profile (spec-0040 R5). Nothing else from the
+    inbound request is carried: the join stays metadata-empty apart from the
+    selector, exactly as before for a run that names no profile.
+    """
+    profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)
+    if isinstance(profile, str):
+        return {LLM_PROFILE_METADATA_KEY: profile}
+    return {}
 
 
 register_node("fan_out", FanOutNode, FanOutNodeExecutor)

@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import logging
 
-from mangomas.agents._prompt import AGENT_LLM_OVERRIDES_EXTRAS_KEY
+from mangomas.agents._prompt import (
+    AGENT_LLM_OVERRIDES_EXTRAS_KEY,
+    LLM_PROFILE_INFO_EXTRAS_KEY,
+    LLM_PROFILES_EXTRAS_KEY,
+)
 from mangomas.composition._registries import (
     _memory_registry,
     _storage_registry,
@@ -30,9 +34,11 @@ from mangomas.composition.embeddings import (
 from mangomas.composition.harness import _HarnessOrchestrator
 from mangomas.composition.llm import (
     _AgentLLMOverrideCloseMixin,
+    _LLMProfileDispatchMixin,
     _lmstudio_factory,
     _vertex_factory,
     build_agent_llm_overrides,
+    build_llm_profiles,
 )
 from mangomas.composition.memory import _file_memory_factory
 from mangomas.composition.rag import _build_rag_tools
@@ -48,7 +54,9 @@ from mangomas.core.agent import Agent
 logger = logging.getLogger(__name__)
 
 
-class _Orchestrator(_FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator):
+class _Orchestrator(
+    _LLMProfileDispatchMixin, _FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator
+):
     """``Orchestrator`` extended to also close per-agent LLM override clients.
 
     Used for the harness-disabled branch of :func:`build_orchestrator`; the
@@ -139,6 +147,13 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
             extra={"agents": sorted(agent_llm_overrides)},
         )
 
+    # Named provider profiles (spec-0040 / ADR-0038). Built from the *raw*
+    # ``cfg.llm`` so each profile resolves its own secret; empty when none is
+    # configured. Selected per run via ``request.metadata["llm_profile"]``.
+    llm_profiles = build_llm_profiles(cfg.llm_profiles, cfg.llm, cfg.secrets.provider)
+    if llm_profiles.clients:
+        logger.info("LLM profiles built", extra={"profiles": sorted(llm_profiles.clients)})
+
     # Build storage repository
     repo = _storage_registry.get(cfg.db.provider)(cfg.db)
     logger.debug("Storage repository built", extra={"provider": cfg.db.provider})
@@ -175,7 +190,11 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         embeddings=embeddings,
         vector_store=vector_store,
         tools=tools,
-        extras={AGENT_LLM_OVERRIDES_EXTRAS_KEY: agent_llm_overrides},
+        extras={
+            AGENT_LLM_OVERRIDES_EXTRAS_KEY: agent_llm_overrides,
+            LLM_PROFILES_EXTRAS_KEY: llm_profiles.clients,
+            LLM_PROFILE_INFO_EXTRAS_KEY: llm_profiles.info,
+        },
     )
     _attach_cognitive_extras(ctx.extras, cfg.signal)
     logger.debug("AgentContext created with all components")

@@ -40,6 +40,7 @@ from mangomas.api.models import (
 )
 from mangomas.api.routes import (
     build_agent_router,
+    build_llm_router,
     build_system_router,
     build_workflow_router,
 )
@@ -189,6 +190,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     app.include_router(build_system_router())
     app.include_router(build_agent_router(api_cfg))
     app.include_router(build_workflow_router())
+    app.include_router(build_llm_router())
 
     return app
 

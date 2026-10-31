@@ -134,6 +134,13 @@ WORKFLOW_CONFIG_EXIT_CODE: int = EXIT_CONFIG_ERROR
 WORKFLOW_RUNTIME_EXIT_CODE: int = EXIT_RUNTIME_ERROR
 
 # Workflow HTTP routes (spec 0008).
+# spec-0040: the read-only profile roster route and the test profile names.
+# ``fast`` is the slug `tests/constants/corpus.py::LLM_PROFILE_*_ENV` spell, so
+# an env round-trip and a hand-built extras dict agree on the name.
+LLM_PROFILES_ROUTE: str = "/llm/profiles"
+TEST_LLM_PROFILE_NAME: str = "fast"
+TEST_LLM_PROFILE_MODEL: str = "fast-model"
+UNKNOWN_LLM_PROFILE_NAME: str = "ghost-profile"
 WORKFLOW_RUN_ROUTE: str = "/workflows/run"
 WORKFLOW_VALIDATE_ROUTE: str = "/workflows/validate"
 
@@ -292,6 +299,7 @@ __all__ = [
     "HYPOTHESIS_PROFILE_ENV",
     "JSONL_FILENAME",
     "LARGE_UPSTREAM_BODY_CHARS",
+    "LLM_PROFILES_ROUTE",
     "LMSTUDIO_EMBEDDING_MODEL_ENV",
     "PASSED_NEEDLE_COMPACT",
     "PASSED_NEEDLE_QUOTELESS",
@@ -337,6 +345,8 @@ __all__ = [
     "TEST_HISTORY_LIMIT",
     "TEST_HISTORY_LIMIT_OVERRIDE",
     "TEST_HISTORY_SEEDED_TURNS",
+    "TEST_LLM_PROFILE_MODEL",
+    "TEST_LLM_PROFILE_NAME",
     "TEST_LMSTUDIO_MOCK_BASE_URL",
     "TEST_LMSTUDIO_MOCK_MODEL",
     "TEST_LMSTUDIO_STUB_MODEL",
@@ -354,6 +364,7 @@ __all__ = [
     "TINY_STEP_TIMEOUT_SECONDS",
     "TOOL_MAX_STEPS_ENV",
     "UNAUTHORIZED_TOOL_NAME",
+    "UNKNOWN_LLM_PROFILE_NAME",
     "UNPARSED_GOAL",
     "UNPARSED_PLANNER_STEP",
     "UNTIMED_AGENT_DELAY_SECONDS",

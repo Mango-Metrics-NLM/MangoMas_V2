@@ -34,7 +34,7 @@ EXPECTED_CLI_COMMANDS: tuple[str, ...] = (
 # make the set churn without protecting anything a script depends on.
 EXPECTED_CLI_PARAMS: dict[str, tuple[str, ...]] = {
     "agents": (),
-    "chat": ("--agent", "--system", "--verbose", "<message>"),
+    "chat": ("--agent", "--profile", "--system", "--verbose", "<message>"),
     "eval": (
         "--agent",
         "--allow-new-failures",
@@ -64,7 +64,7 @@ EXPECTED_CLI_PARAMS: dict[str, tuple[str, ...]] = {
     "rag ingest": ("--verbose", "<path>"),
     "rag query": ("--top-k", "--verbose", "<text>"),
     "workflow": (),
-    "workflow run": ("--definition", "--verbose", "<message>"),
+    "workflow run": ("--definition", "--profile", "--verbose", "<message>"),
     "workflow validate": ("--definition", "--verbose"),
 }
 
