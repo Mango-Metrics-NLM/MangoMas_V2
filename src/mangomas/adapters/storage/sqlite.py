@@ -11,7 +11,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mangomas.adapters.storage._schema import (
     TURN_RECORD_COLUMNS,
@@ -23,11 +23,13 @@ from mangomas.adapters.storage._schema import (
 )
 from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_STORAGE_LIST_TURNS_LIMIT
-from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
 from mangomas.utils import clock
 from mangomas.utils.exc import truncated_exc_detail
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.core.agent import AgentRequest, AgentResponse
 
 logger = logging.getLogger(__name__)
 

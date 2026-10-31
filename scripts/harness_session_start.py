@@ -66,7 +66,11 @@ def _check_venv(root: Path) -> bool:
     return exists
 
 
-async def _probe_lmstudio(base_url: str) -> bool:
+async def _probe_lmstudio(
+    base_url: str,
+    *,
+    timeout_seconds: float = LMSTUDIO_PROBE_TIMEOUT_SECONDS,
+) -> bool:
     """Return ``True`` when LM Studio responds to a quick GET ``/models``."""
     url = base_url.rstrip("/") + PROBE_PATH
     if httpx is None:
@@ -76,7 +80,7 @@ async def _probe_lmstudio(base_url: str) -> bool:
         )
         return False
     try:
-        async with httpx.AsyncClient(timeout=LMSTUDIO_PROBE_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.get(url)
             response.raise_for_status()
     except (httpx.HTTPError, httpx.InvalidURL) as exc:
@@ -113,7 +117,7 @@ def main() -> int:
             extra={"error": str(exc)},
         )
 
-    repo_root = Path.cwd()
+    repo_root = Path(__file__).resolve().parents[1]
     _check_venv(repo_root)
 
     if not _MANGOMAS_AVAILABLE:
@@ -122,7 +126,13 @@ def main() -> int:
 
     try:
         cfg = get_settings()
-        asyncio.run(_probe_lmstudio(cfg.llm.base_url))
+        if cfg.llm.provider == "lmstudio":
+            asyncio.run(
+                _probe_lmstudio(
+                    cfg.llm.base_url,
+                    timeout_seconds=cfg.api.ready_timeout_seconds,
+                )
+            )
     except Exception as exc:  # never fail the session over an unreachable upstream
         logger.warning("Probe skipped", extra={"error": str(exc)})
 

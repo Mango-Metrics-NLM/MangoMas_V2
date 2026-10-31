@@ -39,7 +39,6 @@ from mangomas.config import (
     DEFAULT_STORAGE_LIST_TURNS_LIMIT,
     DBSettings,
 )
-from mangomas.core.agent import AgentRequest, AgentResponse
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
 from mangomas.utils import clock
@@ -47,6 +46,8 @@ from mangomas.utils.exc import truncated_exc_detail
 
 if TYPE_CHECKING:  # pragma: no cover
     import asyncpg
+
+    from mangomas.core.agent import AgentRequest, AgentResponse
 
 logger = logging.getLogger(__name__)
 

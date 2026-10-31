@@ -10,7 +10,9 @@ Your single job is to evolve retrieval without changing behaviour for a
 deployment that never turned it on.
 
 Use the `mango-rag` skill for the provider recipe, the extras matrix and the
-gated-test commands.
+gated-test commands. Use the `mango-aqa` skill for the CUDA placement lane:
+`tests/rag/test_device_resolution_gpu.py` runs under `RUN_GPU=1` and fails,
+rather than skips, when no CUDA device is visible.
 
 ## Surface You Own
 

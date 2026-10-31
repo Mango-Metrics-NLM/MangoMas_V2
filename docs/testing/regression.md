@@ -66,6 +66,7 @@ the per-suite sections below, or use the matching `make` target
 | Cognitive producer | `tests/cognitive/` | Flag-off identity, JSONL/HTTP/composite sinks, INV-16 PDP refuse-don't-strip (byte-identical projections), role map, retrieve-only, GenAI span exporter, planner step cap, camelCase authority keys |
 | Gated-suite parity | `tests/deploy/test_gated_suite_homes.py` | Every `RUN_*` suite has an executing home or a recorded infeasibility reason — and never both |
 | Hardware contract | `tests/tooling/test_e2e_hardware_contract.py` | Lints tiers 2/3 for elapsed-time assertions, numeric timeouts, device literals, embedding equality |
+| Origin-delta AQA (2026-10-29) | `tests/regression/test_aqa_20261029_defects.py` | spec-0039 D-1..D-6: live step budget ≥ adapter budget, `ToolAgent` without a registry, `test_auth` header typing, nested-body / malformed-SSE typing, CLI settings errors → exit 2; register in `docs/testing/rca-20261029.md` |
 | Eval serializer | `tests/eval/test_serialize.py` | `report_payload` shape + round trip through `load_baseline` |
 | Workflow graph | `tests/test_workflow_*.py` | graph model, predicates, loader, registry (per-kind factory guards), executors, HTTP endpoints, CLI |
 | Deploy contract | `tests/deploy/` | `service.yaml` / `deploy.yml` shape; Dockerfile ↔ `.dockerignore` build-context consistency |
@@ -227,6 +228,38 @@ already serving an LLM — and the way one machine can compare a forced device
 against auto-detect. The nightly job deliberately leaves it unset: the runner
 has no GPU, so auto-detect resolves to CPU by itself, and pinning it would make
 the parity assertion vacuous.
+
+### CUDA placement gate (`make gpu`, spec-0039)
+
+Ranking parity cannot tell a CUDA run from a silent CPU fallback: both rank
+identically. `tests/rag/test_device_resolution_gpu.py` asserts the device the
+model actually loaded on: auto-detect lands on `cuda`, and every visible index
+loads there with CPU ranking parity. With `RUN_GPU=1` and no visible device it
+**fails**; it never skips. Keep it off CPU-only runners.
+
+```powershell
+$env:RUN_GPU = '1'; $env:RUN_EMBEDDINGS_LOCAL = '1'; $env:RUN_RAG = '1'
+python -m pytest -m gpu tests/rag -q   # make gpu
+```
+
+Install the CUDA torch build **after** the extras, then confirm with
+`python -c "import torch; print(torch.cuda.is_available())"`. Installing
+`.[dev,...]` over `torch==2.11.0+cu128` silently replaces it with PyPI's
+CPU-only wheel on Windows, because the cu128 build caps `setuptools<82` and
+`[dev]` floors `setuptools>=83`. The cu130 build (`--index-url
+https://download.pytorch.org/whl/cu130`) has no such cap and resolves cleanly.
+
+### Guard falsifiability (`make guard-probe`, spec-0033)
+
+`scripts/guard_probe.py` reads `scripts/guard_probe_manifest.json`, applies
+each mutation, requires the named guard to exit non-zero, restores the
+original bytes, and requires the guard to exit zero. It refuses a dirty tree
+unless `--allow-dirty` is passed. It is not a dependency of `make gate`.
+
+```powershell
+python scripts/guard_probe.py --allow-dirty   # this checkout is dirty
+make guard-probe                               # clean tree
+```
 
 ---
 

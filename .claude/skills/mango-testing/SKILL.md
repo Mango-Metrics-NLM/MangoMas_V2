@@ -22,6 +22,7 @@ argument-hint: "Describe the module to test, paste a failing test, or say 'run a
   package facade; define test-scoped values in the domain modules)
 - Verify the coverage gate
 - Add or run integration tests gated by `RUN_INTEGRATION=1`
+- Run the CUDA placement lane or the origin-delta register — use `mango-aqa`
 
 ---
 
@@ -45,6 +46,12 @@ python -m pytest tests/test_<module>.py -v
 
 # Per-package coverage floors — the authoritative gate
 python scripts/check_coverage.py
+
+# CUDA placement lane (fail-not-skip; needs a visible CUDA device)
+make gpu
+
+# Falsifiability probe (mutates the tree; not part of make gate)
+make guard-probe
 
 # Which lines are uncovered (only when chasing a specific gap)
 python -m pytest --cov-report=term-missing -q

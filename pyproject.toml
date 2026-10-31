@@ -311,6 +311,10 @@ module = [
     "langfuse.*",
     "sentence_transformers",
     "sentence_transformers.*",
+    # torch arrives with the embeddings-local extra; only the CUDA placement
+    # gate (tests/rag/test_device_resolution_gpu.py) imports it directly.
+    "torch",
+    "torch.*",
 ]
 ignore_missing_imports = true
 
@@ -347,6 +351,7 @@ markers = [
     "rag: tests that require the chromadb extra installed",
     "langfuse: tests that require the langfuse extra installed (RUN_LANGFUSE=1)",
     "gitleaks: tests that shell out to the real gitleaks binary (RUN_GITLEAKS=1)",
+    "gpu: tests that require a visible CUDA device (RUN_GPU=1); fail, never skip, when none is",
 ]
 
 [tool.coverage.run]

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from mangomas.core.agent import Message
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.core.agent import Message
 
 
 @runtime_checkable

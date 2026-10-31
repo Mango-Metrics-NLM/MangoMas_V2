@@ -130,6 +130,7 @@ WORKFLOW_ALLOW_INLINE_DEFINITION_ENV: str = "MANGOMAS_WORKFLOW__ALLOW_INLINE_DEF
 WORKFLOW_ENABLED_ENV: str = "MANGOMAS_WORKFLOW__ENABLED"
 WORKFLOW_DEFINITION_ENV: str = "MANGOMAS_WORKFLOW__DEFINITION"
 LLM_MODEL_ENV: str = "MANGOMAS_LLM__MODEL"
+LLM_TEMPERATURE_ENV: str = "MANGOMAS_LLM__TEMPERATURE"
 
 # A model name that is *not* the LLM default, so an allowlist built from it
 # genuinely excludes the default rather than accidentally containing it.
@@ -187,6 +188,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
     {
         "mango-adapter",
         "mango-agent-add",
+        "mango-aqa",
         "mango-cognitive",
         "mango-composition-builder",
         "mango-config",
@@ -202,6 +204,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-promote",
         "mango-rag",
         "mango-release",
+        "mango-repair-loop",
         "mango-testing",
         "mango-topology",
         "mango-workflow",
@@ -507,7 +510,7 @@ RETIRED_AGENTS_DIR_RELPATH: str = ".github/agents"
 # reintroduce the convention — a file nothing loads cannot be kept honest.
 RETIRED_STRAY_AGENT_FILENAME: str = "agent.md"
 
-# The 25 agents, by slug. Set equality, so a change names what appeared or
+# The 27 agents, by slug. Set equality, so a change names what appeared or
 # vanished and editing this tuple is the review record.
 EXPECTED_AGENT_SLUGS: tuple[str, ...] = (
     "mango-adr-author",
@@ -614,19 +617,19 @@ MIN_CORPUS_TRACEABILITY_REFS: int = 4
 # steps are their own operating loop, not a recipe a skill owns.
 AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
-    "mango-agent-impl-dev": ("mango-agent-add", "mango-cognitive"),
+    "mango-agent-impl-dev": ("mango-agent-add", "mango-cognitive", "mango-repair-loop"),
     "mango-api-impl-dev": ("mango-observability", "mango-config"),
-    "mango-ci-dev": ("mango-deploy", "mango-mutation-proof"),
+    "mango-ci-dev": ("mango-aqa", "mango-deploy", "mango-mutation-proof"),
     "mango-error-taxonomy-dev": ("mango-error",),
     "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
     "mango-harness-dev": ("mango-harness",),
     "mango-hypothesis-fuzz": ("mango-testing",),
-    "mango-integration-runner": ("mango-testing",),
+    "mango-integration-runner": ("mango-aqa", "mango-testing"),
     "mango-llm-adapter-dev": ("mango-adapter",),
     "mango-orchestrator-dev": ("mango-topology", "mango-observability"),
     "mango-pr-watcher": ("mango-release",),
-    "mango-rag-dev": ("mango-rag",),
+    "mango-rag-dev": ("mango-aqa", "mango-rag"),
     "mango-schema-evolution": ("mango-agent-add",),
     # Two skills, deliberately: `mango-adapter` supplies the Protocol-first
     # contract and the fake pattern, but its "register the factory" rule and
@@ -903,6 +906,7 @@ __all__ = [
     "LLM_PROFILE_MODEL_ENV",
     "LLM_PROFILE_PROVIDER_ENV",
     "LLM_PROVIDER_ALLOWLIST_ENV",
+    "LLM_TEMPERATURE_ENV",
     "MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS",
     "MALFORMED_SKILL_FRONTMATTER_SHORT_DESCRIPTION",
     "MAX_ROUTER_DESCRIPTION_JACCARD",

@@ -134,6 +134,10 @@ guard), `tests/test_harness_session_start.py::test_bare_interpreter_exits_ok`
 (stub modules on `PYTHONPATH` to fake an absent dependency), and
 `tests/test_lint_agent_frontmatter.py`'s hook-mode subprocess block.
 
+The same loop is mechanised by `scripts/guard_probe.py` (`make guard-probe`).
+The manifest names each mutation and the gate that must go red under it and
+green after the original bytes are restored. It is not part of `make gate`.
+
 ## Checklist
 
 - [ ] Baseline green before mutating.

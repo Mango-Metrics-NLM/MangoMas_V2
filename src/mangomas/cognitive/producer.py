@@ -36,7 +36,7 @@ from mangomas.cognitive.roles import harness_role_for_agent
 from mangomas.correlation import get_correlation_id
 from mangomas.utils import clock
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config.signal import SignalSettings
     from mangomas.core.agent import AgentContext, AgentRequest
 

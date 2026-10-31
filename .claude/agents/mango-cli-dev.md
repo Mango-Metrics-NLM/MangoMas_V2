@@ -12,7 +12,9 @@ behaving identically while the package underneath it changes.
 This surface has no owning skill, so the workflow below is yours. Reach for
 `mango-config` when a command reads a new setting, and `mango-eval` /
 `mango-rag` / `mango-workflow` when a subcommand's *domain* changes rather than
-its CLI shape.
+its CLI shape. `SettingsErrorGroup` and `format_settings_error` turn an invalid
+`MANGOMAS_*` value into the config exit code and scrub quoted literals so a
+mis-set secret is not echoed.
 
 ## Surface You Own
 

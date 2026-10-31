@@ -20,88 +20,35 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
-from typing import TYPE_CHECKING, Any, Final
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
-from mangomas.adapters._vertex_errors import translate_vertex_error
+from mangomas.adapters.llm.vertex._messages import (
+    _PING_PROMPT,
+    _aiter,
+    _annotate,
+    _extract_text,
+    _vertex_role_for,
+)
+from mangomas.adapters.llm.vertex._sdk import (
+    VertexError,
+    _lazy_import_credentials,
+    _lazy_import_vertex,
+    _translate_vertex_error,
+)
 from mangomas.config import (
     DEFAULT_ERROR_DETAIL_TRUNCATE,
     DEFAULT_LLM_TEMPERATURE,
     DEFAULT_LLM_TIMEOUT_SECONDS,
 )
-from mangomas.core.agent import Message
-from mangomas.errors import LLMBadResponse, LLMError, LLMTimeout
-from mangomas.utils.exc import truncated_exc_detail
+from mangomas.errors import LLMError, LLMTimeout
 
 if TYPE_CHECKING:  # pragma: no cover
-    pass
+    from mangomas.core.agent import Message
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["VertexClient", "VertexError"]
-
-# Minimal prompt used by ``VertexClient.ping`` to exercise the Vertex endpoint.
-# Vertex AI does not expose a free-form health endpoint; the cheapest reachable
-# probe is a one-token completion. Module-level so the literal is named.
-_PING_PROMPT: Final[str] = "ping"
-
-
-class VertexError(LLMBadResponse):
-    """Raised when Vertex AI returns an unexpected or malformed response."""
-
-
-def _translate_vertex_error(exc: BaseException, *, project: str | None) -> Exception:
-    """Map a Vertex SDK exception to the typed Mango-Mas error vocabulary.
-
-    Thin wrapper over the shared :func:`~mangomas.adapters._vertex_errors.translate_vertex_error`
-    that supplies this adapter's :class:`VertexError` bad-request subtype. Retained
-    as a module-level name so existing callers/tests can import it from here.
-    """
-    return translate_vertex_error(exc, project=project, bad_request_error=VertexError)
-
-
-# ── Lazy SDK loader ──────────────────────────────────────────────────────────
-
-
-_SDK_INSTALL_HINT = (
-    "Vertex AI SDK is not installed. Install the optional extra: pip install 'mangomas[vertex]'"
-)
-
-
-def _lazy_import_vertex() -> tuple[Any, Any, Any]:  # pragma: no cover - requires vertex extra
-    """Import ``vertexai``, ``Content``, ``Part`` lazily.
-
-    Returns a tuple of ``(vertexai_module, Content_cls, Part_cls)``. Raises
-    :class:`ImportError` with a clear install hint if the SDK is absent.
-
-    Excluded from coverage because the success path requires the optional
-    ``vertex`` extra to be installed; the failure path is exercised in
-    ``tests/test_vertex_unit.py::test_constructor_without_sdk_raises_import_error``
-    by monkeypatching this helper.
-    """
-    try:
-        # Lazy: SDK is an optional extra; importing at module load would force
-        # the dependency on every user, defeating the optional-extra contract.
-        import vertexai  # noqa: PLC0415
-        from vertexai.generative_models import Content, Part  # noqa: PLC0415
-    except ImportError as exc:
-        raise ImportError(_SDK_INSTALL_HINT) from exc
-    return vertexai, Content, Part
-
-
-def _lazy_import_credentials() -> Any:  # pragma: no cover - requires vertex extra
-    """Import ``google.oauth2.service_account.Credentials`` lazily.
-
-    Used only when explicit credentials are supplied. With Application Default
-    Credentials the SDK resolves auth on its own and this helper is not called.
-    Coverage exclusion mirrors :func:`_lazy_import_vertex`.
-    """
-    try:
-        # Lazy: same optional-extra contract as ``_lazy_import_vertex``.
-        from google.oauth2 import service_account  # noqa: PLC0415
-    except ImportError as exc:
-        raise ImportError(_SDK_INSTALL_HINT) from exc
-    return service_account.Credentials
+__all__ = ["VertexClient", "VertexError", "_translate_vertex_error"]
 
 
 # ── Adapter ──────────────────────────────────────────────────────────────────
@@ -452,58 +399,3 @@ class VertexClient:
                 result = close()
                 if hasattr(result, "__await__"):
                     await result
-
-
-# ── Helpers (module-private) ─────────────────────────────────────────────────
-
-
-def _vertex_role_for(role: str) -> str:
-    """Map Mango-Mas roles to Vertex Gemini roles.
-
-    Gemini supports ``user`` and ``model``; everything else folds into ``user``.
-    """
-    return "model" if role == "assistant" else "user"
-
-
-def _annotate(m: Message) -> str:
-    """Prefix non-user/assistant roles so context is preserved across the fold."""
-    if m.role in ("user", "assistant"):
-        return m.content
-    return f"[{m.role}] {m.content}"
-
-
-def _extract_text(response: Any) -> str:
-    """Extract text content from a ``GenerationResponse``-like object.
-
-    The SDK exposes ``.text``; the fake client may expose the same. Empty or
-    missing text returns an empty string so the caller can decide what to do.
-
-    The SDK's ``.text`` property *raises* ``ValueError`` when the response has
-    no usable candidate (safety-blocked, zero or several candidates);
-    ``getattr(..., None)`` only absorbs ``AttributeError``, so that case is
-    mapped to the typed :class:`VertexError` here.
-    """
-    try:
-        text = getattr(response, "text", None)
-    except ValueError as exc:
-        raise VertexError(
-            "Vertex AI returned no usable candidate", detail=truncated_exc_detail(exc)
-        ) from exc
-    if text is None:
-        return ""
-    return str(text)
-
-
-async def _aiter(stream_result: Any) -> AsyncIterable[Any]:
-    """Normalise ``stream_result`` to an async iterable.
-
-    ``GenerativeModel.generate_content_async(stream=True)`` returns an object
-    that is itself async-iterable. Some fakes hand back a plain async generator
-    instead. This helper accepts either.
-    """
-    if hasattr(stream_result, "__aiter__"):
-        async for item in stream_result:
-            yield item
-        return
-    for item in stream_result:  # pragma: no cover - sync-iterable fallback
-        yield item

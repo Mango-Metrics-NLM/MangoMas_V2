@@ -78,6 +78,7 @@ thinking tool, not a gate.
 | [0035](0035-environment-branching-and-deploy.md) | Environment branches and per-environment deploy |
 | [0037](0037-a2a-interop.md) | Agent2Agent (A2A) interoperability as an opt-in boundary adapter (design only; 0036 is reserved by the reliability plan for the trust boundary) |
 | [0038](0038-cloud-image-closure-and-manifest-contract.md) | Cloud image closure (extras + one lock) and manifest provider contract |
+| [0039](0039-origin-delta-aqa.md) | Origin-delta AQA and the CUDA placement gate |
 | [0040](0040-llm-provider-profiles.md) | LLM provider profiles and the Studio boundary (`MANGOMAS_LLM_PROFILES__*`, `PROVIDER_ALLOWLIST`, `GET /llm/profiles`) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies

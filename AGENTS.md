@@ -139,6 +139,7 @@ src/mangomas/
 ├── telemetry/      OpenTelemetry, one module per dependency layer behind a
 │                   permanent facade: _state, logs, exporters (console|gcp),
 │                   tracing, meters, scoped
+├── utils/          Shared helpers: clock seam, exception text, regex flags
 ├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
 ├── _entry_points.py Shared entry-point iteration for eval plugin discovery
 └── metrics.py      Instrumentation registry (singleton, double-checked lock)
@@ -400,8 +401,12 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
 - **Coverage gate**: `scripts/check_coverage.py` is the single source of truth —
   95 % global minimum plus per-package floors
-  (`errors`/`registry`/`core`/`secrets`/`correlation`/`tenancy`/`_headers`
-  = 100 %, `adapters` = 85 %, `cognitive`/`eval`/`rag`/`workflow` and the rest = 95 %). The pytest `--cov-fail-under=95` addopt in
+  (`errors`/`registry`/`core`/`secrets`/`correlation`/`tenancy`/`_headers`/
+  `utils`/`_entry_points` = 100 %, `adapters` = 85 %, `cognitive`/`eval`/`rag`/
+  `workflow`/`harness` and the rest = 95 %). Scripts are measured separately
+  (`SCRIPTS_FLOOR` = 94 %). `make gpu` (`RUN_GPU=1`) is fail-not-skip CUDA
+  placement. `make guard-probe` proves guards still fire and is not part of
+  `make gate`. The pytest `--cov-fail-under=95` addopt in
   `pyproject.toml` mirrors the global floor.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink`
 - **Constants**: `tests.constants` — no magic **domain** values in tests

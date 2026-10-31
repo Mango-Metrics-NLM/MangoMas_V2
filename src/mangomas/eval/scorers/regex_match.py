@@ -23,22 +23,7 @@ from mangomas.errors import ConfigError
 from mangomas.eval._options import require_bool
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
-
-_FLAG_BY_NAME: dict[str, re.RegexFlag] = {
-    "ignorecase": re.IGNORECASE,
-    "multiline": re.MULTILINE,
-    "dotall": re.DOTALL,
-}
-
-
-def _resolve_flags(names: list[str]) -> int:
-    flags = 0
-    for name in names:
-        flag = _FLAG_BY_NAME.get(name.lower())
-        if flag is None:
-            raise ConfigError(f"unknown regex flag {name!r}; valid: {sorted(_FLAG_BY_NAME)}")
-        flags |= flag
-    return flags
+from mangomas.utils.regex_flags import resolve_regex_flags
 
 
 class RegexMatchScorer:
@@ -47,7 +32,7 @@ class RegexMatchScorer:
     name = "regex_match"
 
     def __init__(self, *, flags: list[str] | None = None, fullmatch: bool = False) -> None:
-        self._flags = _resolve_flags(flags or [])
+        self._flags = resolve_regex_flags(flags or [])
         self._fullmatch = fullmatch
 
     async def score(

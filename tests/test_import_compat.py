@@ -96,8 +96,8 @@ _FACADES: dict[str, tuple[str, ...]] = {
         "tenancy",
     ),
     "mangomas.core.orchestrator": ("_client",),
-    "mangomas.workflow.predicate": ("_client",),
-    "mangomas.adapters.llm.vertex": ("_client",),
+    "mangomas.workflow.predicate": ("_client", "_json_field", "_spec"),
+    "mangomas.adapters.llm.vertex": ("_client", "_messages", "_sdk"),
 }
 
 
@@ -685,14 +685,15 @@ def test_console_script_entry_point_matches_the_facade() -> None:
     ],
 )
 def test_decomposed_facade_reexports_are_identical_objects(package: str) -> None:
-    """Every public name in the facade is the same object as in `_client`."""
+    """Every public name a decomposed submodule defines is the same object on the facade."""
     facade_mod = importlib.import_module(package)
-    home = importlib.import_module(f"{package}._client")
-    for name in _owned_names(package, "_client"):
-        assert hasattr(facade_mod, name), f"{package} does not re-export {name!r}"
-        assert getattr(facade_mod, name) is getattr(home, name), (
-            f"{package}.{name} is not the same object as {package}._client.{name}"
-        )
+    for submodule in _FACADES[package]:
+        home = importlib.import_module(f"{package}.{submodule}")
+        for name in _owned_names(package, submodule):
+            assert hasattr(facade_mod, name), f"{package} does not re-export {submodule}.{name}"
+            assert getattr(facade_mod, name) is getattr(home, name), (
+                f"{package}.{name} is not the same object as {package}.{submodule}.{name}"
+            )
 
 
 @pytest.mark.parametrize(

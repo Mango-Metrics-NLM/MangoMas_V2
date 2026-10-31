@@ -27,11 +27,13 @@ from pathlib import Path
 import pytest
 
 from tests.constants import (
+    ENV_FLAG_ON,
     ENV_GATE_SKIP_REASONS,
     GATED_RUNTIME_SKIP_REASON_RE,
     GCP_SECRETS_LIVE_SKIP_REASONS,
     GCP_SECRETS_PROJECT_ENV,
     GCP_SECRETS_SECRET_NAME_ENV,
+    RUN_GPU_ENV,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -112,6 +114,40 @@ def test_unmarked_directory_is_not_skipped(tmp_path: Path) -> None:
     directory runs untouched with no ``RUN_*`` env set.
     """
     _write(tmp_path, "plain/test_gate_probe.py", _PASSING_TEST)
+    result = _run_pytest(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+
+
+_GPU_MARKED = (
+    "import pytest\n\n@pytest.mark.gpu\ndef test_needs_device() -> None:\n    assert True\n"
+)
+
+
+def test_device_mark_is_skipped_without_its_env_gate(tmp_path: Path) -> None:
+    """``@pytest.mark.gpu`` skips with the sanctioned reason when the gate is unset."""
+    _write(tmp_path, "test_device_probe.py", _GPU_MARKED)
+    result = _run_pytest(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 skipped" in result.stdout
+    assert ENV_GATE_SKIP_REASONS[RUN_GPU_ENV] in result.stdout
+
+
+def test_device_mark_runs_when_its_env_gate_is_set(tmp_path: Path) -> None:
+    """The same mark executes once the operator asserts a device is present."""
+    _write(tmp_path, "test_device_probe.py", _GPU_MARKED)
+    result = _run_pytest(tmp_path, {RUN_GPU_ENV: ENV_FLAG_ON})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+
+
+def test_an_unmarked_name_containing_gpu_is_not_skipped(tmp_path: Path) -> None:
+    """The device gate is the mark, not the letters inside a function name."""
+    _write(
+        tmp_path,
+        "test_name_only.py",
+        "def test_gpu_word_in_name() -> None:\n    assert True\n",
+    )
     result = _run_pytest(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "1 passed" in result.stdout

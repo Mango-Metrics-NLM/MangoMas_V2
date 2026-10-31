@@ -1,6 +1,6 @@
 # Spec-0033: Gate falsifiability probe (`make guard-probe`)
 
-- **Status:** Draft
+- **Status:** Implemented
 - **Linked ADR:** _none — no boundary change_
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added`
 

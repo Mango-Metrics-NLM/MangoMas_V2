@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import _stdin_json
 
@@ -75,18 +75,33 @@ _SOURCE_KEY_CANDIDATES: Final[tuple[str, ...]] = ("source", "config_source", "ho
 _FALLBACK_CONFIG_AUDIT_MODE: Final[ConfigChangeMode] = "off"
 
 
-def _configure_logging() -> None:
+def _load_settings() -> Any | None:
+    """Return settings, or ``None`` when mangomas cannot be imported or parsed."""
+    try:
+        from mangomas.config import get_settings  # noqa: PLC0415
+
+        return get_settings()
+    except Exception:
+        return None
+
+
+def _configure_logging(cfg: Any | None = None) -> None:
     """Best-effort structured logging via the app's telemetry setup.
 
     Falls back to bare ``basicConfig`` on any failure (including
     ``mangomas.telemetry`` — and everything it needs — not being importable)
     since a hook must never crash a session over its own plumbing.
+
+    *cfg* is the settings object ``main`` already loaded, so a successful
+    session does not parse settings twice.
     """
     try:
-        from mangomas.config import get_settings  # noqa: PLC0415
         from mangomas.telemetry import configure_telemetry  # noqa: PLC0415
 
-        cfg = get_settings()
+        if cfg is None:
+            from mangomas.config import get_settings  # noqa: PLC0415
+
+            cfg = get_settings()
         configure_telemetry(
             service_name=cfg.harness.metrics_namespace,
             log_level=cfg.harness.hook_log_level,
@@ -100,10 +115,12 @@ def _configure_logging() -> None:
         )
 
 
-def _resolve_mode() -> ConfigChangeMode:
+def _resolve_mode(cfg: Any | None = None) -> ConfigChangeMode:
     """Return the configured ``config_audit_mode``, falling back to the
     documented default on any failure — including ``mangomas`` not being
     importable at all, not just a settings-validation error."""
+    if cfg is not None:
+        return cfg.harness.config_audit_mode  # type: ignore[no-any-return]
     try:
         from mangomas.config import get_settings  # noqa: PLC0415
 
@@ -165,10 +182,11 @@ def _extract_source(payload: dict[str, object]) -> str | None:
 
 def main() -> int:
     """Evaluate a ``ConfigChange`` firing; return ``EXIT_OK`` or ``EXIT_BLOCK``."""
-    _configure_logging()
+    cfg = _load_settings()
+    _configure_logging(cfg)
     payload = _read_stdin_payload()
     source = _extract_source(payload)
-    mode = _resolve_mode()
+    mode = _resolve_mode(cfg)
 
     decision = _evaluate(source, mode)
     if decision is None:
