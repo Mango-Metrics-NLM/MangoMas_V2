@@ -23,7 +23,7 @@ from mangomas.composition.secrets import _resolve_llm_secrets
 from mangomas.config import AgentSettings, LLMProfileSettings, LLMSettings
 from mangomas.errors import ConfigError
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.llm.base import LLMClient
     from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse
     from mangomas.core.loop import AcceptanceFn

@@ -15,6 +15,7 @@ from collections.abc import Callable
 import pytest
 
 from mangomas.agents._prompt import (
+    AGENT_LLM_OVERRIDES_EXTRAS_KEY,
     LLM_PROFILE_INFO_EXTRAS_KEY,
     LLM_PROFILE_METADATA_KEY,
     LLM_PROFILES_EXTRAS_KEY,
@@ -318,6 +319,35 @@ async def test_aclose_closes_profile_clients(harness_enabled: bool) -> None:
     await orch.aclose()
     assert profile_llm.closed
     assert isinstance(orch, _HarnessOrchestrator) is harness_enabled
+
+
+class _NoCloseClient:
+    """A minimal client with no ``aclose`` — the shape ``_close_hooks`` must skip."""
+
+    async def complete(self, messages: object, **kwargs: object) -> str:  # noqa: ARG002
+        return "ok"
+
+
+async def test_close_hooks_skip_clients_without_aclose() -> None:
+    """Both loops in ``_close_hooks`` tolerate a client that cannot be closed.
+
+    Covers the false arm of each ``hasattr(client, "aclose")`` guard, which
+    every ``FakeLLM``-based test leaves untaken, and proves ``aclose()`` still
+    completes rather than raising on the missing attribute.
+    """
+    ctx = AgentContext(
+        llm=FakeLLM(),
+        repo=None,
+        extras={
+            AGENT_LLM_OVERRIDES_EXTRAS_KEY: {"chat": _NoCloseClient()},
+            LLM_PROFILES_EXTRAS_KEY: {TEST_LLM_PROFILE_NAME: _NoCloseClient()},
+        },
+    )
+    orch = _Orchestrator(ctx)
+    labels = [label for label, _ in orch._close_hooks()]
+    assert not any(label.startswith("LLM override") for label in labels)
+    assert not any(label.startswith("LLM profile") for label in labels)
+    await orch.aclose()
 
 
 # ── _LLMProfileDispatchMixin ──────────────────────────────────────────────────
