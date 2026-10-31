@@ -9,7 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added — LLM provider profiles (spec-0039 / ADR-0038)
+### Added — LLM provider profiles (spec-0040 / ADR-0038)
 
 - Named LLM provider profiles, built once at startup in the composition root
   and selected per run. `MANGOMAS_LLM_PROFILES__<NAME>__PROVIDER` / `MODEL`
@@ -47,7 +47,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
   groups (`AGENTS`, `LLM_PROFILES`) from the annotations instead of naming
   `AGENTS` by hand, so the per-profile rows pass the env-contract in both
   directions; `_(required)_` is accepted as a Default cell.
-- Docs: `specs/0039-llm-provider-profiles.md`,
+- Docs: `specs/0040-llm-provider-profiles.md`,
   `docs/adr/0038-studio-two-plane-consumer.md` (Studio is a two-plane
   consumer: no execution through MangoMAS, no approval inbox in v1, profiles
   not headers), and

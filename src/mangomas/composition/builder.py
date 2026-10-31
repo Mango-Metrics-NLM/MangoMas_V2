@@ -147,7 +147,7 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
             extra={"agents": sorted(agent_llm_overrides)},
         )
 
-    # Named provider profiles (spec-0039 / ADR-0038). Built from the *raw*
+    # Named provider profiles (spec-0040 / ADR-0038). Built from the *raw*
     # ``cfg.llm`` so each profile resolves its own secret; empty when none is
     # configured. Selected per run via ``request.metadata["llm_profile"]``.
     llm_profiles = build_llm_profiles(cfg.llm_profiles, cfg.llm, cfg.secrets.provider)

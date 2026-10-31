@@ -68,7 +68,7 @@ def test_chat_command_with_system(runner: CliRunner) -> None:
 def test_chat_command_profile_routes_to_the_profile_client(
     runner: CliRunner, orchestrator: Orchestrator
 ) -> None:
-    """`--profile` rides request.metadata like HTTP does (spec-0039 R2)."""
+    """`--profile` rides request.metadata like HTTP does (spec-0040 R2)."""
     profile_llm = FakeLLM(reply="profile-reply")
     orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {TEST_LLM_PROFILE_NAME: profile_llm}
     result = runner.invoke(cli_main.app, ["chat", "hello", "--profile", TEST_LLM_PROFILE_NAME])

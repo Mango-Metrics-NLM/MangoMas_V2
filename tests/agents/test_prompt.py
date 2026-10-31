@@ -610,7 +610,7 @@ async def test_reviewer_agent_handle_uses_default_llm_when_no_override() -> None
     assert default_llm.calls
 
 
-# ── spec-0039: request-scoped profile selection ───────────────────────────────
+# ── spec-0040: request-scoped profile selection ───────────────────────────────
 
 
 _SHADOW_EVENT = "llm_profile_shadows_override"

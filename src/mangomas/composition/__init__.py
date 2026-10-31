@@ -24,7 +24,7 @@ import mangomas.composition.agents  # noqa: F401
 # Imports needed for test monkeypatching
 from mangomas.adapters.llm import VertexClient as VertexClient
 
-# Profile-selection seam (spec-0039): the extras/metadata keys and the pure
+# Profile-selection seam (spec-0040): the extras/metadata keys and the pure
 # selector live beside the agents' resolver so reader and writer cannot drift;
 # re-exported here because ``api/`` depends on ``composition`` and ``core``
 # only, never on ``agents`` directly.

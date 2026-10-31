@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # Per-agent overrides keyed by agent name.
     agents: dict[str, AgentSettings] = Field(default_factory=dict)
 
-    # Named LLM provider profiles keyed by profile name (spec-0039). Empty by
+    # Named LLM provider profiles keyed by profile name (spec-0040). Empty by
     # default: no extra client is built and dispatch is byte-identical.
     llm_profiles: dict[str, LLMProfileSettings] = Field(default_factory=dict)
 
@@ -80,7 +80,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_llm_profiles(self) -> Settings:
-        """Every profile must satisfy the base LLM rosters (spec-0039 R3/R4).
+        """Every profile must satisfy the base LLM rosters (spec-0040 R3/R4).
 
         The only root-level validator: the provider allowlist and the model
         roster live on ``llm`` while the profiles live beside it, so no group

@@ -1,4 +1,4 @@
-"""Named LLM provider profiles (spec-0039 / ADR-0038).
+"""Named LLM provider profiles (spec-0040 / ADR-0038).
 
 Composition-root half: building the per-profile clients from settings, the
 credential-inheritance rule, secret resolution, the dispatch mixin that

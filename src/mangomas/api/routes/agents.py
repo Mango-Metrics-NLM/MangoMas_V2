@@ -69,7 +69,7 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
         # HTTP envelope.
         orch: Orchestrator = http_request.app.state.orchestrator
         # An unknown ``metadata["llm_profile"]`` is a 400 here, before dispatch
-        # (spec-0039 R2). The composition mixin re-checks; this call exists so
+        # (spec-0040 R2). The composition mixin re-checks; this call exists so
         # the invoke and stream routes refuse at the same point.
         select_llm_profile(orch.context.extras, request.metadata)
         return await orch.dispatch(name, request)
@@ -79,7 +79,7 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
         name: str, request: AgentRequest, http_request: Request
     ) -> StreamingResponse:
         orch: Orchestrator = http_request.app.state.orchestrator
-        # The profile is validated *before* stream_dispatch (spec-0039 R2): it is
+        # The profile is validated *before* stream_dispatch (spec-0040 R2): it is
         # the only point at which an unknown name can still become a JSON 400.
         # Once the text/event-stream headers are out, the agent's own
         # ``resolve_llm`` would raise mid-stream and the client would see a
@@ -130,7 +130,7 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
                     }
                     yield f"data: {json.dumps(payload)}\n\n".encode()
             data: dict[str, Any] = {"agent": name, "degraded": degraded, "chunks": chunks}
-            # Streams have no AgentResponse to stamp (spec-0039 R5), so the
+            # Streams have no AgentResponse to stamp (spec-0040 R5), so the
             # metadata frame carries the selected profile instead — only when
             # one was selected, keeping the default frame byte-identical.
             if profile is not None:

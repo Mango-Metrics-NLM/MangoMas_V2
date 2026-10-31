@@ -80,7 +80,7 @@ class ToolAgent:
         effective_prompt = resolve_system_prompt(self._system_prompt, None, suffix=tool_prompt)
         messages = build_messages(request, effective_prompt)
 
-        # Resolved once per request: the request's llm_profile (spec-0039), else
+        # Resolved once per request: the request's llm_profile (spec-0040), else
         # the agent-scoped override (if configured), else ctx.llm — every LLM
         # call in the inner loop below uses the same client (ADR-0028).
         llm = resolve_llm(ctx, self.name, request)

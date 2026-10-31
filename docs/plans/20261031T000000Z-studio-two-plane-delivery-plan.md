@@ -6,7 +6,7 @@
 - **Target release:** rolling (pre-0.5.0)
 - **Status:** In progress — PR A executing; M2–M4 are backlog pending the
   open decisions below
-- **Specs:** spec-0039
+- **Specs:** spec-0040
 - **ADRs:** ADR-0038
 
 ## Executive summary
@@ -15,7 +15,7 @@ MangoMas Studio is a React/TS front end over two services: MangoMas_V2 (the
 cognitive plane) and Mango_Code_Agent-Harness (the authority plane). This
 plan sequences five milestones across three repositories, but only **one
 backend change in this repository is needed for Studio v1**: named LLM
-provider profiles (spec-0039), so a user can draft on a local model and
+provider profiles (spec-0040), so a user can draft on a local model and
 review on a cloud one without two processes. Everything after gate G2 is
 about closing the propose → dispose loop, which no UI can do until the
 harness ingests CognitiveSignal 1.1.0 and someone owns identity. The one
@@ -33,28 +33,28 @@ decision with its own owner.
 | F3 | CognitiveSignal wire break: this runtime emits **1.1.0** and rejects 1.0.0; the harness accepts **only 1.0.0** and has no ingest route or file reader for external signals | `config/signal.py:24` (`Literal["1.1.0"]`); `cognitive/constants.py:56` (`signals.jsonl`); harness `cognitive_signal.py` | A signals view has nothing to show until the harness bumps (D-6) |
 | F4 | The harness already ships a dashboard (`api_server/static/`) | harness `api_server/` | Studio is the third UI; the README identity note must name all three |
 | F6 (corrected) | No `dev` or `qa` branch exists; the default branch is `feat/initial-release` (`a98b626`); a **legacy `main` exists** at `beb01bf` and has diverged (ADR-0036 tags it `archive/main-legacy`) | `git ls-remote --heads origin`; `git remote show origin` | D-10 is a maintainer task, below; the earlier "no `main`" claim was wrong |
-| F7 | `make guard-probe` does not exist; spec-0033 is Draft | `Makefile`; `specs/0033` | Gates are proven by mutation tests, not a probe target |
-| F8 | `resolve_llm(ctx, agent_name)` took no request; `build_llm` does not exist (the client is built inline in `builder.py`); `Settings` had no root validator; `AgentSettings` has no validator | `agents/_prompt.py`, `composition/builder.py`, `config/_root.py`, `config/agents.py` | spec-0039 R2 passes `request` as an optional third argument; R3/R4 add the first root validator |
+| F7 | `make guard-probe` landed with PR #103 (spec-0033 Implemented; `scripts/guard_probe.py` + `scripts/guard_probe_manifest.json`, not part of `make gate`) after this plan was drafted | `Makefile:232`; `specs/0033` | Gates are proven by mutation tests here; replaying them through the manifest is a follow-up |
+| F8 | `resolve_llm(ctx, agent_name)` took no request; `build_llm` does not exist (the client is built inline in `builder.py`); `Settings` had no root validator; `AgentSettings` has no validator | `agents/_prompt.py`, `composition/builder.py`, `config/_root.py`, `config/agents.py` | spec-0040 R2 passes `request` as an optional third argument; R3/R4 add the first root validator |
 | F9 | Pipelines forward `response.metadata` into the next stage's request | `core/orchestrator/_client.py` `_pipeline_pass` | Stamping the profile on the response carries it across a pipeline; documented as behaviour |
 | F10 | Eval cost is declared in the dataset, never measured; `LLMClient.complete` returns no usage | `eval/scorers/cost_budget.py`; `adapters/llm/base.py`; 2026-09-19 replan N3 | A cost tab needs D-7 first |
-| F11 | Numbering: `specs/README.md` says next free spec **0039**, ADR **0038**; the 2026-10-28 post-Tier-A plan had pencilled those numbers for Sprint-2 items that have not been authored | `specs/README.md:91`; `docs/plans/20261028T000000Z-*.md:7-8` | Numbers are allocated by the directory, not by prose: this plan takes 0039/0038; the Sprint-2 items take the next free numbers when authored |
+| F11 | Numbering: while this PR was open, PR #103 landed `specs/0039-origin-delta-aqa.md`, so this spec is **0040** and ADR **0038** (the uploaded document said 0039/0038). The 2026-10-28 post-Tier-A plan had pencilled 0039/0040 and ADR-0038/0039 for unauthored Sprint-2 items | `specs/README.md`; `docs/plans/20261028T000000Z-*.md:7-8` | Numbers are allocated by the directory, not by prose; the Sprint-2 items take the next free numbers when authored |
 
 ## Decision register
 
 | ID | Decision | Status | Owner | Recommendation and evidence |
 |---|---|---|---|---|
 | D-1 | Studio never executes code, touches a filesystem or calls GitHub through MangoMAS. Execution stays in the harness broker | Settled | SDLC | ADR-0029; INV-16; ADR-0038 §1 |
-| D-2 | Provider profiles built once in `composition/`, selected per run via `AgentRequest.metadata["llm_profile"]`, recorded in `response.metadata`, root-level `PROVIDER_ALLOWLIST` fails startup on a disallowed provider | **Implemented** (spec-0039, PR A) | AI | `composition/CLAUDE.md` composition-root rule; header selection dropped |
+| D-2 | Provider profiles built once in `composition/`, selected per run via `AgentRequest.metadata["llm_profile"]`, recorded in `response.metadata`, root-level `PROVIDER_ALLOWLIST` fails startup on a disallowed provider | **Implemented** (spec-0040, PR A) | AI | `composition/CLAUDE.md` composition-root rule; header selection dropped |
 | D-3 | Studio v1 ships **no approval inbox**. Identity for approvals is a separate decision: (a) a Studio BFF owns identity and hands the harness a signed approval, (b) the harness grows a principal, or (c) defer | Open | Product + SDLC | F1, F2. Recommend (c) for v1 and (a) for v2 |
 | D-4 | UI ↔ runtime contract: extend the bespoke SSE on `POST /agents/{name}/stream`, or reopen spec-0037 (A2A) | Open | SDLC | Bespoke SSE for v1; A2A go/no-go at G3 with its two deferrals adjudicated in writing |
 | D-5 | planlint adoption in MangoMAS | Open, out of Studio scope | SDLC | Harness-side pane first; MangoMAS adoption is its own spec |
 | D-6 | Harness accepts CognitiveSignal 1.1.0 (a schema rewrite plus an ingest path, since none exists) | Prerequisite (harness repo) | AI | F3; ADR-0029 "ingest stays blocked until the companion bump" |
 | D-7 | Eval cost is measured, not declared, before any cost tab | Prerequisite (MangoMAS) | ML | F10 |
-| D-8 | Numbering: spec-0039, ADR-0038; 0036 stays reserved | Settled | Scrum | `specs/README.md` "next free" line; F11 |
+| D-8 | Numbering: spec-0040 (not 0039, taken by PR #103), ADR-0038; 0036 stays reserved | Settled | Scrum | `specs/README.md` "next free" line; F11 |
 | D-9 | Studio lives in a new repo `Mango-Metrics-NLM/MangoMas_Studio`, not in-tree | Proposed | SDLC + Product | MangoMAS gates are Python-only; ADR-0038 §2 |
 | D-10 | `dev` and `qa` branches are created on MangoMas_V2 before M1 lands | Proposed | Scrum / maintainer | F6; ADR-0036. See "Maintainer tasks" |
 
-## PR A — LLM provider profiles (spec-0039 / ADR-0038), this repository
+## PR A — LLM provider profiles (spec-0040 / ADR-0038), this repository
 
 One PR, seven commits, each green on its own. No protected path is touched.
 
@@ -63,7 +63,7 @@ One PR, seven commits, each green on its own. No protected path is touched.
 - **Failing test first:** none — documentation only. `specs/README.md` row
   and "next free" line updated so `tests/tooling` stays truthful.
 - **Depends on:** nothing — parallel-safe.
-- `specs/0039-llm-provider-profiles.md`, `docs/adr/0038-studio-two-plane-consumer.md`,
+- `specs/0040-llm-provider-profiles.md`, `docs/adr/0038-studio-two-plane-consumer.md`,
   this plan.
 
 ### Milestone A1 — env-contract generalisation ✅
@@ -134,7 +134,7 @@ files the result on the PR).
 
 | Sprint | Goal | Author → Reviewer | Exit |
 |---|---|---|---|
-| S1 | Close D-3, D-4, D-9, D-10; merge spec-0039 + ADR-0038 (PR A); scaffold Studio repo; create `dev`/`qa` | AI → SDLC (PR A); Product → ML (spec); Scrum (branches) | G0/G1 |
+| S1 | Close D-3, D-4, D-9, D-10; merge spec-0040 + ADR-0038 (PR A); scaffold Studio repo; create `dev`/`qa` | AI → SDLC (PR A); Product → ML (spec); Scrum (branches) | G0/G1 |
 | S2 | Studio run timeline + profile picker against `GET /llm/profiles` | AI → SDLC (UI); Product → ML (copy) | — |
 | S3 | Workflow templates, eval viewer, README identity note, e2e suite | AI → SDLC; ML → Product | G2 — Studio v1 |
 | S4 | Harness 1.1.0 envelope spec + DEC + ingest decision; N3 measured cost; A2A memo | AI → SDLC; ML → Product; SDLC → Product | G3 |
@@ -173,7 +173,7 @@ e2e against LM Studio and a network assertion of zero harness connections.
 - `GET /llm/profiles` reporting the effective model per agent — not in R6;
   would need a per-agent projection and is a separate ask.
 - Measured eval cost (D-7) — needs `LLMClient` usage reporting; its own spec.
-- `make guard-probe` (spec-0033) — Draft; these tests are its first corpus.
+- Replaying this PR's eleven mutations through `scripts/guard_probe_manifest.json` (`make guard-probe`, spec-0033) — a follow-up.
 
 ## Risks
 
@@ -182,7 +182,7 @@ e2e against LM Studio and a network assertion of zero harness connections.
 | Harness does not take the 1.1.0 bump | Medium | M3 and any signals view slip | Studio v1 ships at G2 without a signals view; G3 becomes a MangoMAS-side JSONL viewer of `data/cognitive-signals/` |
 | Identity stalls; pressure to ship an inbox on the shared key | Medium | A `human_approved` caller with no principal breaks DEC-065 | ADR-0038 §4 makes it out of scope; Scrum escalates |
 | Profile precedence vs `MODEL_OVERRIDE` confuses operators | Medium | Wrong model silently used | The shadowed override is logged (`llm_profile_shadows_override`); a test asserts the log line |
-| Cross-provider profile inherits the wrong credential | Low (guarded) | Vertex given an LM Studio bearer as SA JSON | Credentials never inherit across providers (spec-0039 R1; tested both ways) |
+| Cross-provider profile inherits the wrong credential | Low (guarded) | Vertex given an LM Studio bearer as SA JSON | Credentials never inherit across providers (spec-0040 R1; tested both ways) |
 | Studio repo drifts from MangoMAS gate standards | Medium | Lower bar on the UI | Studio `make gate` mirrors the parity list in `AGENTS.md`; SDLC owns both |
 | `main` not the default upstream; `dev`/`qa` missing | Certain today | Promotion path has nowhere to run | D-10 maintainer task above; `make deploy-plan` dry run as proof |
 | Estimates are agent-sized | High | Weeks mean nothing until S1 ends | Re-baseline at G0 from measured S1 velocity |

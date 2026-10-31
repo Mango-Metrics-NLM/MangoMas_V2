@@ -38,7 +38,7 @@ def test_signal_disabled_does_not_attach_sink() -> None:
         # Exact set, deliberately: this is what catches a stray extras key
         # leaking out of composition. Every member is a named constant so the
         # assertion cannot drift from the writer's spelling. The two profile
-        # keys (spec-0039) are always published, empty when no profile is
+        # keys (spec-0040) are always published, empty when no profile is
         # configured — the same shape as the override map.
         assert set(orch.context.extras) == {
             AGENT_LLM_OVERRIDES_EXTRAS_KEY,

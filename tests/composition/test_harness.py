@@ -353,7 +353,7 @@ async def test_harness_stream_dispatch_agent_not_found_raises_before_any_span(
     assert exporter.get_finished_spans() == ()
 
 
-# ── spec-0039 R5: the harness span carries the selected profile ───────────────
+# ── spec-0040 R5: the harness span carries the selected profile ───────────────
 
 
 def _profile_wrapper(

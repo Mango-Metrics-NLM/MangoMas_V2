@@ -3,7 +3,7 @@
 Api-layer only: the core ``AgentRequest``/``AgentResponse`` models are untouched
 and remain the bodies of the ``/agents/*`` routes. These models exist purely for
 the ``/workflows/*`` HTTP surface (spec 0008 / ADR-0012) and the read-only
-``GET /llm/profiles`` roster (spec-0039 / ADR-0038).
+``GET /llm/profiles`` roster (spec-0040 / ADR-0038).
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class WorkflowValidateResponse(BaseModel):
 class LLMProfileSummary(BaseModel):
     """One row of ``GET /llm/profiles``: the three fields a caller may learn.
 
-    Deliberately no ``base_url``, ``api_key`` or ``secret_ref`` (spec-0039 R6);
+    Deliberately no ``base_url``, ``api_key`` or ``secret_ref`` (spec-0040 R6);
     a test asserts the serialised body never carries those names.
     """
 

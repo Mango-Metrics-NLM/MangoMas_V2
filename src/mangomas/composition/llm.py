@@ -31,7 +31,7 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 # Fields a profile inherits from the base ``LLMSettings`` only when it names the
-# *same* provider (spec-0039). A Vertex profile under an LM Studio base must
+# *same* provider (spec-0040). A Vertex profile under an LM Studio base must
 # not receive the local bearer as its service-account body, and an LM Studio
 # profile under a Vertex base must not receive the SA JSON as its bearer.
 _CREDENTIAL_FIELDS: Final[frozenset[str]] = frozenset({"api_key", "secret_ref", "credentials_path"})
@@ -169,7 +169,7 @@ def build_llm_profiles(
     base_llm_cfg: LLMSettings,
     secrets_provider: str,
 ) -> LLMProfiles:
-    """Build one ``LLMClient`` per named profile (spec-0039 R1).
+    """Build one ``LLMClient`` per named profile (spec-0040 R1).
 
     Each profile is merged onto the **raw** base settings (not the already
     secret-resolved client config, so a base secret is resolved once and a
@@ -200,7 +200,7 @@ def build_llm_profiles(
 class _LLMProfileDispatchMixin:
     """Validate the requested profile before dispatch; stamp it on the response.
 
-    spec-0039 R2/R5 at the one site every non-streaming topology passes
+    spec-0040 R2/R5 at the one site every non-streaming topology passes
     through: ``dispatch_pipeline`` and ``dispatch_fan_out`` both delegate to
     ``dispatch``. Placed **first** in the base list of both composition
     orchestrators, so an unknown profile raises :class:`ConfigError` before
@@ -266,7 +266,7 @@ class _AgentLLMOverrideCloseMixin:
         for agent_name, client in overrides.items():
             if hasattr(client, "aclose"):
                 hooks.append((f"LLM override ({agent_name})", client.aclose))
-        # Named profile clients (spec-0039) close on the same path.
+        # Named profile clients (spec-0040) close on the same path.
         profiles: dict[str, LLMClient] = self.context.extras.get(  # type: ignore[attr-defined]
             LLM_PROFILES_EXTRAS_KEY, {}
         )

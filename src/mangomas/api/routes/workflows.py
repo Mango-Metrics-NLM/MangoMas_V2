@@ -88,7 +88,7 @@ def build_workflow_router() -> APIRouter:
         """
         orch: Orchestrator = http_request.app.state.orchestrator
         # An unknown ``metadata["llm_profile"]`` is a 400 before the graph is
-        # even loaded (spec-0039 R2). Every agent node dispatches ``request``
+        # even loaded (spec-0040 R2). Every agent node dispatches ``request``
         # unchanged, so one check here covers the whole graph.
         select_llm_profile(orch.context.extras, body.request.metadata)
         graph = _load_graph(body.definition, orch)

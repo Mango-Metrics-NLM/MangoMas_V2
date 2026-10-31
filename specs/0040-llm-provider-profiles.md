@@ -1,9 +1,9 @@
-# Spec-0039: LLM provider profiles and the Studio boundary
+# Spec-0040: LLM provider profiles and the Studio boundary
 
 - **Status:** Implemented
 - **Linked ADR:** ADR-0038 (new boundary: a second deployment surface consumes
   the API; provider selection moves from one static setting to a built roster)
-- **Linked CHANGELOG entry:** `[Unreleased]` › `Added — LLM provider profiles (spec-0039 / ADR-0038)`
+- **Linked CHANGELOG entry:** `[Unreleased]` › `Added — LLM provider profiles (spec-0040 / ADR-0038)`
 
 ## Problem
 
@@ -198,9 +198,10 @@ beyond inheritance) — **no hard-coded values**.
   Studio server with two loaded models; `RUN_VERTEX=1` for a mixed
   local+cloud run — the M2/G2 e2e in the delivery plan.
 - Gates: both directions per scenario, proven the way `mango-mutation-proof`
-  prescribes. `make guard-probe` (spec-0033) is still Draft and absent from
-  the Makefile, so it is not a dependency; when it lands, these tests are its
-  first corpus.
+  prescribes (eleven mutations recorded on the PR). `make guard-probe`
+  (spec-0033, Implemented; not part of `make gate`) can replay them: adding
+  these entries to `scripts/guard_probe_manifest.json` is a follow-up, not a
+  dependency.
 - Coverage: `composition`, `agents`, `api`, `config` stay at their 95 %
   floors; `core` is untouched at 100 %.
 

@@ -1,4 +1,4 @@
-"""HTTP surface of LLM provider profiles (spec-0039 / ADR-0038).
+"""HTTP surface of LLM provider profiles (spec-0040 / ADR-0038).
 
 ``GET /llm/profiles`` (R6: names, providers, models — never a secret) and the
 pre-dispatch validation of ``AgentRequest.metadata["llm_profile"]`` on the

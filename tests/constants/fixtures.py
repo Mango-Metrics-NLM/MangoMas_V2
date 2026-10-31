@@ -130,7 +130,7 @@ WORKFLOW_CONFIG_EXIT_CODE: int = EXIT_CONFIG_ERROR
 WORKFLOW_RUNTIME_EXIT_CODE: int = EXIT_RUNTIME_ERROR
 
 # Workflow HTTP routes (spec 0008).
-# spec-0039: the read-only profile roster route and the test profile names.
+# spec-0040: the read-only profile roster route and the test profile names.
 # ``fast`` is the slug `tests/constants/corpus.py::LLM_PROFILE_*_ENV` spell, so
 # an env round-trip and a hand-built extras dict agree on the name.
 LLM_PROFILES_ROUTE: str = "/llm/profiles"

@@ -36,7 +36,7 @@ DEFAULT_LLM_TEMPERATURE: float = 0.2
 DEFAULT_LLM_ALLOWED_MODELS: list[str] = []
 
 
-# Providers the base client *and every named profile* may use (spec-0039 R4).
+# Providers the base client *and every named profile* may use (spec-0040 R4).
 # Empty means unconstrained; ``["lmstudio"]`` is the local-only configuration.
 # Enforced at ``Settings`` parse so a disallowed profile is never built and no
 # request-time check exists to bypass. Scoped to the LLM seam on purpose — the
@@ -73,7 +73,7 @@ class LLMSettings(BaseModel):
     # environment that sets nothing behaves exactly as before.
     allowed_models: list[str] = Field(default_factory=lambda: list(DEFAULT_LLM_ALLOWED_MODELS))
     # Approved-provider roster covering this base client and every
-    # ``MANGOMAS_LLM_PROFILES__<NAME>__PROVIDER`` (spec-0039 R4). The profile
+    # ``MANGOMAS_LLM_PROFILES__<NAME>__PROVIDER`` (spec-0040 R4). The profile
     # half is checked by the root ``Settings`` validator, which is the only
     # place that sees both.
     provider_allowlist: list[str] = Field(
@@ -112,7 +112,7 @@ class LLMSettings(BaseModel):
 
 
 class LLMProfileSettings(BaseModel):
-    """One named LLM provider profile (``MANGOMAS_LLM_PROFILES__<NAME>__*``; spec-0039).
+    """One named LLM provider profile (``MANGOMAS_LLM_PROFILES__<NAME>__*``; spec-0040).
 
     A profile is a second ``LLMClient`` built at startup in the composition
     root and selected per run through ``AgentRequest.metadata["llm_profile"]``.

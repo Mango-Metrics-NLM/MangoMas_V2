@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 AGENT_LLM_OVERRIDES_EXTRAS_KEY: Final[str] = "agent_llm_overrides"
 
 #: ``AgentContext.extras`` key carrying the named provider-profile clients
-#: (spec-0039 / ADR-0038): ``dict[str, LLMClient]`` keyed by profile name, built
+#: (spec-0040 / ADR-0038): ``dict[str, LLMClient]`` keyed by profile name, built
 #: once at startup by ``composition/llm.py::build_llm_profiles``. Same
 #: reader-beside-writer rationale as the override key above.
 LLM_PROFILES_EXTRAS_KEY: Final[str] = "llm_profiles"
@@ -52,7 +52,7 @@ LLM_PROFILE_INFO_EXTRAS_KEY: Final[str] = "llm_profile_info"
 
 #: ``AgentRequest.metadata`` / ``AgentResponse.metadata`` key naming the
 #: selected profile. The selector rides the existing free-form dict rather
-#: than a new DTO field, so ``core/agent.py`` is untouched (spec-0039 R2/R5).
+#: than a new DTO field, so ``core/agent.py`` is untouched (spec-0040 R2/R5).
 LLM_PROFILE_METADATA_KEY: Final[str] = "llm_profile"
 
 
@@ -85,7 +85,7 @@ def resolve_llm(
     Precedence, most specific first:
 
     1. the **request-scoped profile** named by
-       ``request.metadata["llm_profile"]`` (spec-0039; explicit, per run);
+       ``request.metadata["llm_profile"]`` (spec-0040; explicit, per run);
     2. the **agent-scoped override** in ``ctx.extras["agent_llm_overrides"]``
        (ADR-0028 / spec-0028; a deployment default for one agent);
     3. ``ctx.llm``, the shared default.
@@ -99,7 +99,7 @@ def resolve_llm(
     :func:`resolve_sampling` uses, just resolved at call time (``handle``/
     ``stream``) rather than construction time, since agents only receive
     ``ctx`` once a request arrives. *request* is optional so callers that
-    predate spec-0039 keep working unchanged.
+    predate spec-0040 keep working unchanged.
 
     When a profile shadows a configured override the fact is logged at INFO
     (``event="llm_profile_shadows_override"``), because the two are set by

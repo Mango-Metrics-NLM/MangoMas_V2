@@ -1,4 +1,4 @@
-"""LLM routes: the read-only provider-profile roster (spec-0039 / ADR-0038).
+"""LLM routes: the read-only provider-profile roster (spec-0040 / ADR-0038).
 
 ``GET /llm/profiles`` lets a client (MangoMas Studio's profile picker) discover
 the names it may put in ``AgentRequest.metadata["llm_profile"]``. It serialises

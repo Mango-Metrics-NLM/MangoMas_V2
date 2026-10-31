@@ -317,7 +317,7 @@ def test_server_configured_definition_may_still_be_a_path(
     assert validate.json()["name"] == "t"
 
 
-# ── spec-0039: profile selection on /workflows/run ───────────────────────────
+# ── spec-0040: profile selection on /workflows/run ───────────────────────────
 
 
 def test_run_unknown_profile_is_400_before_the_graph_loads(orchestrator: Orchestrator) -> None:

@@ -321,7 +321,7 @@ def test_secrets_gcp_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.secrets.default_version == "3"
 
 
-# ── LLM provider profiles + provider allowlist (spec-0039) ────────────────────
+# ── LLM provider profiles + provider allowlist (spec-0040) ────────────────────
 # Each guard is stated in both directions: the refusing case proves the
 # validator can fire, the accepting case proves it is not vacuously red.
 

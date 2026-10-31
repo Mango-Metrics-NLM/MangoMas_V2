@@ -120,7 +120,7 @@ SIGNAL_TTL_SECONDS_ENV: str = "MANGOMAS_SIGNAL__TTL_SECONDS"
 # delimiter parses as no override at all and the setting silently keeps its
 # default, which for these two means the restriction is simply not applied.
 LLM_ALLOWED_MODELS_ENV: str = "MANGOMAS_LLM__ALLOWED_MODELS"
-# spec-0039: the provider allowlist is nested too, and the profile group is a
+# spec-0040: the provider allowlist is nested too, and the profile group is a
 # dict keyed by a slug — a wrong delimiter in either shape parses as "no
 # profile configured", which is the permissive default.
 LLM_PROVIDER_ALLOWLIST_ENV: str = "MANGOMAS_LLM__PROVIDER_ALLOWLIST"

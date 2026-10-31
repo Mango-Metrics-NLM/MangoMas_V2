@@ -268,7 +268,7 @@ def test_a_signal_ttl_over_the_ceiling_is_refused_through_the_environment(
         get_settings.cache_clear()
 
 
-# ── spec-0039: the provider allowlist and the profile group are nested too ────
+# ── spec-0040: the provider allowlist and the profile group are nested too ────
 
 
 def test_provider_allowlist_round_trips_through_the_environment(
@@ -291,7 +291,7 @@ def test_an_env_provider_allowlist_that_excludes_a_profile_is_refused(
 ) -> None:
     """The root validator fires on the env path: a vertex profile under local-only fails.
 
-    The two-sided half of the round trip above, and the scenario spec-0039
+    The two-sided half of the round trip above, and the scenario spec-0040
     states for ``PROVIDER_ALLOWLIST=["lmstudio"]``: the refusal names the
     profile, and it happens at parse — before any client is built.
     """

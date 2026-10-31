@@ -27,7 +27,7 @@ adding a tunable — do not restate either here.
   `/ready`, `GET /agents`
 - `src/mangomas/api/routes/workflows.py` — `/workflows/run`, `/workflows/validate`
 - `src/mangomas/api/routes/llm.py` — `GET /llm/profiles`, the secret-free
-  provider-profile roster (spec-0039); the selection check the agent and
+  provider-profile roster (spec-0040); the selection check the agent and
   workflow routes run before dispatch imports `select_llm_profile` from
   `mangomas.composition`, never from `agents/`
 - `src/mangomas/tenancy.py` — the tenant `ContextVar` `TenancyMiddleware`

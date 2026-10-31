@@ -3,7 +3,7 @@
 ## Status
 
 Proposed (2026-10-31). The MangoMas-side decision (§3) is implemented by
-spec-0039; §1, §2, §4 and §5 bind the Studio repository and need a reviewer
+spec-0040; §1, §2, §4 and §5 bind the Studio repository and need a reviewer
 from that side before they are marked Accepted.
 
 ## Context
@@ -33,7 +33,7 @@ has diverged (ADR-0036 tags it `archive/main-legacy`). The earlier claim that
    validation) go to MangoMAS; anything that runs, writes or approves goes to
    the harness, and in v1 Studio does not call the harness at all.
 2. **Studio lives in its own repository** (`Mango-Metrics-NLM/MangoMas_Studio`).
-   MangoMAS changes are limited to spec-0039 (profiles, `GET /llm/profiles`,
+   MangoMAS changes are limited to spec-0040 (profiles, `GET /llm/profiles`,
    the existing CORS allow-list).
 3. **Provider selection is a roster of profiles** built at startup in the
    composition root and selected by name per run through the existing
@@ -68,7 +68,7 @@ has diverged (ADR-0036 tags it `archive/main-legacy`). The earlier claim that
 - Cross-repo coordination for the CognitiveSignal 1.1.0 bump is a dependency
   outside this repo's control.
 - An unknown profile refused before dispatch emits no error metric — the same
-  position rule as a pre-stream `AgentNotFound`, and stated in spec-0039.
+  position rule as a pre-stream `AgentNotFound`, and stated in spec-0040.
 
 ### Neutral
 
@@ -113,5 +113,5 @@ has diverged (ADR-0036 tags it `archive/main-legacy`). The earlier claim that
   `_LLMProfileDispatchMixin`), `src/mangomas/agents/_prompt.py`
   (`select_llm_profile`, `resolve_llm`), `src/mangomas/api/routes/llm.py`
 - Related ADRs: ADR-0028, ADR-0029, ADR-0030, ADR-0033, ADR-0036, ADR-0037
-- Specs: spec-0028, spec-0037, spec-0039
+- Specs: spec-0028, spec-0037, spec-0040
 - Delivery plan: `docs/plans/20261031T000000Z-studio-two-plane-delivery-plan.md`

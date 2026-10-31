@@ -100,7 +100,7 @@ def workflow_run(
 
     graph = _load_workflow_or_exit(_resolve_workflow_source(definition))
     orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
-    # Same selector as HTTP (spec-0039 R2); every agent node dispatches the
+    # Same selector as HTTP (spec-0040 R2); every agent node dispatches the
     # request unchanged, so one metadata key covers the whole graph.
     metadata = {LLM_PROFILE_METADATA_KEY: profile} if profile else {}
     request = AgentRequest(messages=[Message(role="user", content=message)], metadata=metadata)

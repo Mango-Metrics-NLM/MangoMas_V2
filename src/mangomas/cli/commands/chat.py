@@ -63,7 +63,7 @@ def chat(
     messages.append(Message(role="user", content=message))
 
     # The selector rides request.metadata exactly as it does over HTTP
-    # (spec-0039 R2); an unknown name is the same ConfigError the API maps to
+    # (spec-0040 R2); an unknown name is the same ConfigError the API maps to
     # 400, surfaced here on the dispatch path like any other config error.
     metadata = {LLM_PROFILE_METADATA_KEY: profile} if profile else {}
     request = AgentRequest(messages=messages, metadata=metadata)

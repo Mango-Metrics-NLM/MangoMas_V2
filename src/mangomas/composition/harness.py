@@ -32,11 +32,11 @@ _HARNESS_TOPOLOGY_STREAM = "stream"
 
 
 def _set_profile_attribute(span: trace.Span, request: AgentRequest) -> None:
-    """Record the selected ``llm_profile`` on *span* (spec-0039 R5), when present.
+    """Record the selected ``llm_profile`` on *span* (spec-0040 R5), when present.
 
     Conditional on purpose: OTel rejects ``None`` attribute values, and a
     request that names no profile must leave the span byte-identical to the
-    pre-spec-0039 shape (default-OFF).
+    pre-spec-0040 shape (default-OFF).
     """
     profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)
     if isinstance(profile, str):
@@ -59,7 +59,7 @@ class _HarnessOrchestrator(
     Also picks up :class:`~mangomas.composition.llm._AgentLLMOverrideCloseMixin`
     so per-agent ``MODEL_OVERRIDE`` clients (spec-0028 / ADR-0028) are closed
     on :meth:`aclose` the same as the harness-disabled orchestrator, and
-    :class:`~mangomas.composition.llm._LLMProfileDispatchMixin` (spec-0039),
+    :class:`~mangomas.composition.llm._LLMProfileDispatchMixin` (spec-0040),
     which sits *inside* this class's own ``dispatch`` in the MRO — so the
     profile check runs under the harness span and the ``llm.profile``
     attribute below describes the same request the mixin validated.

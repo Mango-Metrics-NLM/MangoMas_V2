@@ -259,7 +259,7 @@ async def test_mid_stream_failure_truncates_without_done_or_error_frame() -> Non
     assert all(payload.get("event") == "token" for payload in payloads)
 
 
-# ── spec-0039: profile selection on the stream route ─────────────────────────
+# ── spec-0040: profile selection on the stream route ─────────────────────────
 
 
 def _make_profile_client(profile_llm: FakeLLM) -> TestClient:
