@@ -17,21 +17,25 @@ from __future__ import annotations
 
 import pytest
 
-from mangomas.config import LoopSettings
+from mangomas.config import DEFAULT_VERTEX_LOCATION, LoopSettings, Settings
 from tests.constants import (
     DEFAULT_LIVE_E2E_TIMEOUT_SECONDS,
     DEFAULT_LLM_BASE_URL,
-    DEFAULT_LOOP_STEP_TIMEOUT,
+    DEFAULT_VERTEX_TEST_MODEL,
     LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS,
     LMSTUDIO_E2E_TIMEOUT_ENV,
     LOOP_STEP_TIMEOUT_ENV,
+    SLOW_BOX_LIVE_TIMEOUT_SECONDS,
     TEST_LMSTUDIO_STUB_MODEL,
+    TEST_VERTEX_PROJECT,
+    VERTEX_E2E_TIMEOUT_ENV,
     client_timeout_for,
     resolve_live_timeout,
 )
 from tests.lmstudio.conftest import make_lmstudio_settings
+from tests.vertex.conftest import make_vertex_settings
 
-_A_SLOW_BOX_BUDGET = 600.0
+_A_SLOW_BOX_BUDGET = SLOW_BOX_LIVE_TIMEOUT_SECONDS
 
 
 # ── resolve_live_timeout ──────────────────────────────────────────────────────
@@ -162,10 +166,10 @@ def test_make_lmstudio_settings_step_timeout_from_env(
 def test_make_lmstudio_settings_step_timeout_default_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Absent env var falls back to DEFAULT_LOOP_STEP_TIMEOUT."""
+    """Absent env var, the step budget is the adapter budget it wraps (spec-0039 D-1)."""
     monkeypatch.delenv(LOOP_STEP_TIMEOUT_ENV, raising=False)
     settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
-    assert settings.loop.step_timeout_seconds == DEFAULT_LOOP_STEP_TIMEOUT
+    assert settings.loop.step_timeout_seconds == settings.llm.timeout_seconds
 
 
 def test_make_lmstudio_settings_explicit_loop_beats_env(
@@ -204,3 +208,65 @@ def test_make_lmstudio_settings_rejects_non_positive_or_non_finite_step_timeout(
     monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, raw)
     with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
         make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
+
+
+# ── alternate live provider: step budget follows the adapter budget ──────────
+#
+# Same contract as the suite above, on the other live settings factory. Names
+# and parametrize ids stay clear of the collection-gate tokens ``vertex`` and
+# ``lmstudio``: those are exact keywords, and a bare one skips the proof.
+
+
+def _clear_alternate_budgets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(LOOP_STEP_TIMEOUT_ENV, raising=False)
+    monkeypatch.delenv(VERTEX_E2E_TIMEOUT_ENV, raising=False)
+
+
+def _alternate_live_settings(*, loop: LoopSettings | None = None) -> Settings:
+    return make_vertex_settings(
+        TEST_VERTEX_PROJECT,
+        DEFAULT_VERTEX_LOCATION,
+        DEFAULT_VERTEX_TEST_MODEL,
+        loop=loop,
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param("default_when_unset", id="default_when_unset"),
+        pytest.param("from_env", id="from_env"),
+        pytest.param("explicit_loop_beats_env", id="explicit_loop_beats_env"),
+        pytest.param("malformed_env", id="malformed_env"),
+    ],
+)
+def test_alternate_live_step_budget(monkeypatch: pytest.MonkeyPatch, case: str) -> None:
+    """Step-budget resolution on the non-local live settings factory."""
+    _clear_alternate_budgets(monkeypatch)
+    if case == "malformed_env":
+        monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "not-a-number")
+        with pytest.raises(ValueError, match=LOOP_STEP_TIMEOUT_ENV):
+            _alternate_live_settings()
+        return
+    explicit = case == "explicit_loop_beats_env"
+    if case == "from_env" or explicit:
+        monkeypatch.setenv(LOOP_STEP_TIMEOUT_ENV, "90")
+    settings = _alternate_live_settings(
+        loop=LoopSettings(step_timeout_seconds=5.0) if explicit else None,
+    )
+    if case == "default_when_unset":
+        assert settings.loop.step_timeout_seconds == settings.llm.timeout_seconds
+        return
+    expected = 5.0 if explicit else 90.0
+    assert settings.loop.step_timeout_seconds == expected
+
+
+def test_alternate_live_adapter_budget_follows_its_timeout_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Raising the adapter env raises the step budget that wraps the call."""
+    _clear_alternate_budgets(monkeypatch)
+    monkeypatch.setenv(VERTEX_E2E_TIMEOUT_ENV, str(SLOW_BOX_LIVE_TIMEOUT_SECONDS))
+    settings = _alternate_live_settings()
+    assert settings.llm.timeout_seconds == SLOW_BOX_LIVE_TIMEOUT_SECONDS
+    assert settings.loop.step_timeout_seconds >= settings.llm.timeout_seconds

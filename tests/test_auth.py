@@ -324,8 +324,9 @@ def test_non_ascii_bearer_credential_is_rejected_not_crashed(
         r = client.post(
             "/agents/chat/invoke",
             json=_MSG,
-            # Intentional: raw bytes simulate non-ASCII wire bytes.
-            headers={"Authorization": b"Bearer " + _NON_ASCII_WIRE},
+            # Intentional: raw bytes simulate non-ASCII wire bytes. All-bytes
+            # keys too: dict[str, bytes] is not an httpx HeaderTypes member.
+            headers={b"Authorization": b"Bearer " + _NON_ASCII_WIRE},
         )
     _assert_error_envelope(_cast_response(r))
     assert not [rec for rec in caplog.records if rec.exc_info], (
@@ -337,7 +338,7 @@ def test_non_ascii_api_key_credential_is_rejected_not_crashed(auth_app: FastAPI)
     """The X-API-Key path reaches the same comparison, so it needs the same guard."""
     with TestClient(auth_app) as client:
         # Intentional: raw bytes simulate non-ASCII wire bytes.
-        r = client.post("/agents/chat/invoke", json=_MSG, headers={"X-API-Key": _NON_ASCII_WIRE})
+        r = client.post("/agents/chat/invoke", json=_MSG, headers={b"X-API-Key": _NON_ASCII_WIRE})
     _assert_error_envelope(_cast_response(r))
 
 
@@ -371,7 +372,7 @@ def test_non_ascii_configured_token_accepts_the_matching_credential(
             "/agents/chat/invoke",
             json=_MSG,
             # Intentional: raw bytes simulate non-ASCII wire bytes.
-            headers={"Authorization": b"Bearer " + _NON_ASCII_WIRE},
+            headers={b"Authorization": b"Bearer " + _NON_ASCII_WIRE},
         )
     assert r.status_code == 200, f"got {r.status_code} {r.content!r}"
 

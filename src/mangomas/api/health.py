@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from mangomas.adapters.llm.base import PingableLLMClient
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
-from mangomas.core.orchestrator import Orchestrator
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.core.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 

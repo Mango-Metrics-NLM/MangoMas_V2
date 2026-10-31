@@ -38,7 +38,9 @@ from mangomas.cli import _app as _app
 from mangomas.cli import _runtime as _runtime
 from mangomas.cli import commands as commands
 from mangomas.cli import exit_codes as exit_codes
+from mangomas.cli._app import SettingsErrorGroup as SettingsErrorGroup
 from mangomas.cli._app import app as app
+from mangomas.cli._app import format_settings_error as format_settings_error
 from mangomas.cli._runtime import VERBOSE_LOG_LEVEL as VERBOSE_LOG_LEVEL
 from mangomas.cli._runtime import _build as _build
 from mangomas.cli._runtime import _close_orchestrator as _close_orchestrator
@@ -74,10 +76,15 @@ __all__ = [
     "EVAL_GATE_EXIT_CODE",
     "EXIT_CONFIG_ERROR",
     "EXIT_RUNTIME_ERROR",
+    "VERBOSE_LOG_LEVEL",
+    "SettingsErrorGroup",
     "agents",
     "app",
+    "build_or_exit",
     "chat",
+    "configure_cli_logging",
     "eval_cmd",
+    "format_settings_error",
     "history",
     "rag_app",
     "rag_ingest",

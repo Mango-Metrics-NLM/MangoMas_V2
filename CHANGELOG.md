@@ -9,6 +9,54 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `make guard-probe` / `scripts/guard_probe.py` (spec-0033): a manifest-driven
+  falsifiability probe. Each entry mutates one guard, requires that guard to
+  fail, restores the original bytes, and requires the guard to pass. It
+  refuses a dirty tree unless `--allow-dirty` is passed, and it is not part
+  of `make gate`.
+- `mangomas.utils.regex_flags`: the shared `ignorecase` / `multiline` /
+  `dotall` resolver used by the eval `regex_match` scorer and workflow
+  predicates.
+- `adapters/llm/vertex/` is split into `_sdk.py`, `_messages.py`, and
+  `_client.py`. `workflow/predicate/` is split into `_spec.py`,
+  `_json_field.py`, and `_client.py`. Both stay behind their package facades.
+- Skills `mango-aqa` and `mango-repair-loop`. The skill corpus is 23; the
+  agent corpus stays 27.
+
+### Fixed — origin-delta AQA on a CUDA + LM Studio workstation (spec-0039)
+
+- `ToolAgent` with no tool registry (the shipped default) rejected any fenced
+  JSON reply as a botched tool call, so the shipped `plan-execute-review`
+  graph failed whenever the tool hop echoed the planner's plan. Without a
+  registry no tool contract is sent, so such a block is now content. A
+  configured registry still rejects it, and a valid tool call with no
+  registry still raises `ToolNotFound`.
+- The LM Studio chat and embedding adapters map a `RecursionError` from a
+  pathologically nested 2xx body to their typed malformed-response error
+  (502) instead of an untyped 500. One malformed SSE chunk (`"delta": null`,
+  a string `delta`, or a nested chunk) is now skipped instead of aborting the
+  stream.
+- An invalid `MANGOMAS_*` value now fails every CLI command with
+  `EXIT_CONFIG_ERROR` (2) and names the variable, instead of printing a
+  pydantic traceback that echoed the offending value (`SettingsErrorGroup`).
+- Live LM Studio suite: the default per-step budget is now the adapter budget
+  (240 s) rather than the 30 s production default it wrapped, so scenarios no
+  longer time out on the step for any model slower than 30 s (spec-0029 R2.5).
+- `tests/test_auth.py` passes all-bytes header mappings, so `mypy --strict`
+  stays clean when `httpx2` arrives through the `embeddings-local` extra.
+
+### Added — CUDA placement gate (spec-0039)
+
+- `make gpu` / `RUN_GPU=1` / `@pytest.mark.gpu`:
+  `tests/rag/test_device_resolution_gpu.py` asserts that auto-detect lands on
+  CUDA, and that every visible device index loads there with CPU ranking
+  parity. With the gate set and no CUDA device, it fails rather than skips.
+  The suite is listed in `HOSTED_RUNNER_INFEASIBLE`.
+- `tests/regression/test_aqa_20261029_defects.py`: mutation-proven guards for
+  the six defects above (register: `docs/testing/rca-20261029.md`).
+
 ### Fixed — the reference manifest carries what its providers need (spec-0038, P0-B)
 
 - `deploy/service.yaml` selected Vertex, Cloud SQL Postgres and Secret

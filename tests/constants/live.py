@@ -53,6 +53,12 @@ HTTPX_ERROR_PATH_TIMEOUT_SECONDS: float = 30.0
 # this fast, so the timeout fires identically on every device. Contrast
 # TINY_STEP_TIMEOUT_SECONDS, which bounds an in-process fake.
 LIVE_STEP_TIMEOUT_SECONDS: float = 0.001
+# A budget a slow box raises the adapter timeout to. Named once so the
+# regression guard and the timeout-budget contract assert the same number.
+SLOW_BOX_LIVE_TIMEOUT_SECONDS: float = 600.0
+# Opt-in CUDA gate. The string is also the key in ENV_GATE_SUITES below;
+# tests must import this rather than spell the name.
+RUN_GPU_ENV: str = "RUN_GPU"
 
 
 def _validated_budget(value: float, source: str) -> float:
@@ -93,6 +99,29 @@ def resolve_live_timeout(env_var: str) -> float:
     return _validated_budget(parsed, env_var)
 
 
+def resolve_live_step_timeout(adapter_timeout_seconds: float) -> float:
+    """Read the live per-step budget, defaulting to the adapter budget.
+
+    Unset or blank ``MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS`` means the step
+    budget *is* the adapter budget. The production default (30 s) is tighter
+    than a CPU-sized call, so using it here made must-not-fire step timeouts
+    fire on any model slower than 30 s per step (spec-0039 D-1).
+
+    A malformed or non-finite value names ``LOOP_STEP_TIMEOUT_ENV``, the same
+    contract ``resolve_live_timeout`` gives the adapter budget.
+    """
+    raw = os.environ.get(LOOP_STEP_TIMEOUT_ENV)
+    if raw is None or not raw.strip():
+        return adapter_timeout_seconds
+    try:
+        parsed = float(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"{LOOP_STEP_TIMEOUT_ENV} must be a finite positive number of seconds, got {raw!r}",
+        ) from exc
+    return _validated_budget(parsed, LOOP_STEP_TIMEOUT_ENV)
+
+
 def client_timeout_for(adapter_timeout_seconds: float) -> float:
     """Derive the httpx client budget from the adapter budget.
 
@@ -125,6 +154,10 @@ ENV_GATE_SUITES: dict[str, str] = {
     "RUN_RAG": "chromadb-backed RAG tests",
     "RUN_LANGFUSE": "Langfuse sink tests",
     "RUN_GITLEAKS": "gitleaks config behaviour tests",
+    # Opt-in, never auto-detected: with the gate set, a missing CUDA device is
+    # a FAILURE, not a skip — a GPU box whose torch silently became a CPU
+    # wheel must go red (spec-0039, tests/rag/test_device_resolution_gpu.py).
+    RUN_GPU_ENV: "CUDA device tests",
 }
 
 
@@ -204,6 +237,7 @@ HARDWARE_CONTRACT_SCOPE: tuple[str, ...] = (
     "tests/vertex/*.py",
     "tests/rag/test_end_to_end*.py",
     "tests/rag/test_cli_local_round_trip.py",
+    "tests/rag/test_device_resolution*.py",
 )
 # Minimum number of files the scope must match. A glob that matches nothing
 # would make the lint vacuously green — the same fail-open shape
@@ -225,6 +259,10 @@ HOSTED_RUNNER_INFEASIBLE: dict[str, str] = {
     "RUN_GCP_SECRETS": ("needs GCP Secret Manager access (ADC + project) — roadmap decision D2"),
     "RUN_GCP_TRACE": ("needs the gcp extra plus a Cloud Trace destination — roadmap decision D2"),
     "RUN_LANGFUSE": ("needs the langfuse extra plus Langfuse credentials — roadmap decision D2"),
+    RUN_GPU_ENV: (
+        "needs a CUDA device plus the embeddings-local extra; hosted runners have "
+        "no GPU and no self-hosted GPU runner is provisioned"
+    ),
 }
 
 # ── Tier-1 integration-flow values (spec-0029 R3) ─────────────────────────────
@@ -302,7 +340,9 @@ __all__ = [
     "RAG_DEVICE_EXPECTED_TOP_SOURCE",
     "RAG_DEVICE_QUERY",
     "REVIEWER_VALIDATE_OUTPUT_ENV",
+    "RUN_GPU_ENV",
     "SETTINGS_ENV_PREFIX",
+    "SLOW_BOX_LIVE_TIMEOUT_SECONDS",
     "STUB_VERTEX_REPLY",
     "TENANCY_ENABLED_ENV",
     "TORCH_DEVICE_NAMES",
@@ -315,5 +355,6 @@ __all__ = [
     "VERTEX_PROJECT_ENV",
     "client_timeout_for",
     "env_gate_skip_reason",
+    "resolve_live_step_timeout",
     "resolve_live_timeout",
 ]

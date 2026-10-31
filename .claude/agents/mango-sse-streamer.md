@@ -19,7 +19,7 @@ Use the `mango-topology` skill for `stream_dispatch` and the streaming recipe.
 - `src/mangomas/_headers.py` — shared HTTP header sanitisation for the
   correlation and tenancy headers. Carries a 100% coverage floor
 
-`core/orchestrator.py::stream_dispatch` is **not** yours — it is a protected
+`core/orchestrator/::stream_dispatch` is **not** yours — it is a protected
 path owned by `mango-orchestrator-dev`. You consume the iterator it returns.
 
 ## Invariants
@@ -51,7 +51,7 @@ data: {"event": "done"}
 - DO NOT invent an `{"event": "error"}` frame without a spec — clients today
   detect failure by a missing `done`, and adding one changes that contract.
 - DO NOT remove the `aclosing` wrapper, or a disconnect leaks an open span.
-- DO NOT edit `core/orchestrator.py` — hand `stream_dispatch` changes to
+- DO NOT edit `core/orchestrator/` — hand `stream_dispatch` changes to
   `mango-orchestrator-dev`.
 
 ## Diagnosing Failures

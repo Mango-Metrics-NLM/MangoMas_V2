@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from mango_contracts.validation import POLICY_INPUT_KEYS, policy_input_from_signal
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mango_contracts import CognitiveSignal
 
 FORBIDDEN_PDP_KEYS: frozenset[str] = frozenset(

@@ -138,7 +138,7 @@ hook (below) is **advisory only**: it cannot be a complete gate regardless
 of internal correctness, since `Bash`/MCP filesystem tool calls bypass its
 `Edit|Write|NotebookEdit` matcher entirely.
 
-Four scripts in `scripts/` complete the harness:
+Harness scripts in `scripts/` complete the layer:
 
 - `lint_agent_frontmatter.py` — Pydantic-validated lint of
   `.claude/agents/mango-*.md` / `.claude/skills/*/SKILL.md` frontmatter
@@ -172,6 +172,9 @@ Four scripts in `scripts/` complete the harness:
 - `harness_session_start.py` — SessionStart hook for Claude Code on
   the web. Emits a single-line JSON probe report (venv + LM Studio)
   so a fresh session knows what's available. Always returns `EXIT_OK`.
+- `guard_probe.py` — manifest-driven falsifiability probe (`make guard-probe`).
+  It mutates a guard, requires the gate to go red, and restores the original
+  bytes. It is not part of `make gate`.
 
 ## Claude Code Skills
 
@@ -186,6 +189,7 @@ tree serves both.
 | `mango-testing` | Writing/running tests, extending fakes, coverage |
 | `mango-adapter` | Adding a new LLM/storage/memory/secrets adapter |
 | `mango-agent-add` | Adding a new agent following the 4-step pattern |
+| `mango-aqa` | Origin-delta lanes, red-first guards, `make gpu`, `make guard-probe` |
 | `mango-error` | Adding a new error type with HTTP mapping |
 | `mango-observability` | Instrumenting with spans + structured logging |
 | `mango-config` | Adding a new tunable to `Settings` |
@@ -197,6 +201,7 @@ tree serves both.
 | `mango-harness` | Protected-path governance, the `BREAKING-CHANGE` trailer, hooks |
 | `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
+| `mango-repair-loop` | Governed local-LLM repair: stage, oracle, then promote |
 | `mango-promote` | dev → qa → main promotion, release tags, hotfix + back-merge (ADR-0036) |
 | `mango-mutation-proof` | Proving a guard fails when the thing it guards breaks |
 | `mango-coverage-audit` | Checking a coverage number is measured over the right denominator |

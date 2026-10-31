@@ -26,8 +26,8 @@ from mangomas.core.agent import AgentRequest, Message
 from tests.constants import (
     DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
-    DEFAULT_LOOP_STEP_TIMEOUT,
     LLM_MODEL_ENV,
+    LMSTUDIO_E2E_TIMEOUT_ENV,
     LMSTUDIO_MODEL_ENV,
     LOOP_STEP_TIMEOUT_ENV,
     TEST_LMSTUDIO_STUB_MODEL,
@@ -219,7 +219,7 @@ async def test_d4_save_failed_turn_appears_in_list_turns(tmp_path: Path) -> None
 #
 # Fix (commit d59aa95): when loop=None, read MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS
 # from the environment and pass it into LoopSettings(step_timeout_seconds=...).
-# Falls back to DEFAULT_LOOP_STEP_TIMEOUT unchanged.  An explicit loop= argument
+# Falls back to the adapter budget (2026-10-29 D-1).  An explicit loop= argument
 # takes precedence over the env var.  A malformed value raises a named ValueError
 # (mirrors resolve_live_timeout).
 
@@ -238,11 +238,19 @@ def test_d5_make_lmstudio_settings_respects_step_timeout_env(
 def test_d5_make_lmstudio_settings_defaults_when_env_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """D5: absence of the env var must fall back to DEFAULT_LOOP_STEP_TIMEOUT."""
+    """D5: absent the env var, the step budget falls back to the adapter budget.
+
+    Originally pinned DEFAULT_LOOP_STEP_TIMEOUT (30 s), which is smaller than
+    the 240 s adapter budget the step wraps — superseded by the 2026-10-29 D-1
+    fix (docs/testing/rca-20261029.md); the env and explicit-loop precedence
+    below are unchanged.
+    """
     monkeypatch.delenv(LOOP_STEP_TIMEOUT_ENV, raising=False)
+    monkeypatch.delenv(LMSTUDIO_E2E_TIMEOUT_ENV, raising=False)
     settings = make_lmstudio_settings(DEFAULT_LLM_BASE_URL, TEST_LMSTUDIO_STUB_MODEL)
-    assert settings.loop.step_timeout_seconds == DEFAULT_LOOP_STEP_TIMEOUT, (
-        f"Expected {DEFAULT_LOOP_STEP_TIMEOUT} default; got {settings.loop.step_timeout_seconds}"
+    assert settings.loop.step_timeout_seconds == settings.llm.timeout_seconds, (
+        f"Expected the adapter budget {settings.llm.timeout_seconds}; "
+        f"got {settings.loop.step_timeout_seconds}"
     )
 
 

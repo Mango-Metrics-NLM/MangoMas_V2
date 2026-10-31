@@ -18,6 +18,8 @@ import asyncio
 import json
 import time
 
+import _stdio
+
 from mangomas.cli.exit_codes import EXIT_RUNTIME_ERROR
 from mangomas.composition import build_orchestrator
 from mangomas.core.agent import AgentRequest, Message
@@ -79,6 +81,7 @@ def _preview(text: str, limit: int = _PREVIEW_CHARS) -> str:
 
 
 async def _main() -> int:
+    _stdio.configure_utf8_stdio()
     _hr("Declarative workflow — sequence(agent → fan_out ∥ → loop)")
     graph = load_workflow(json.dumps(_GRAPH))
     print(f"graph: {graph.name}  root={graph.root.kind}")

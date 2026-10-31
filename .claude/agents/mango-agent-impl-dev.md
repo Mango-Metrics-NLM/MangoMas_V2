@@ -12,6 +12,9 @@ changing the contract they satisfy.
 Use the `mango-agent-add` skill for the Agent / StreamingAgent contract, the
 registration pattern and the reference table. Use the `mango-cognitive` skill
 for `MANGOMAS_SIGNAL__*` emission, extras-only sink wiring, and INV-16.
+Use the `mango-repair-loop` skill when a local model proposes an edit that a
+deterministic oracle must accept before promotion. `ToolAgent.handle` is split
+into `_build_tool_messages`, `_parse_step_tool_call`, and `_dispatch_tool`.
 
 ## Surface You Own
 

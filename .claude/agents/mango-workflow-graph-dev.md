@@ -14,7 +14,7 @@ Use the `mango-workflow` skill for graph shape and the node template, and `mango
 ## Surface You Own
 
 - `src/mangomas/workflow/graph.py` — frozen node models + `WorkflowNode` union + `WorkflowGraph`
-- `src/mangomas/workflow/predicate.py` — `PredicateSpec` + `compile_predicate`
+- `src/mangomas/workflow/predicate/` — `PredicateSpec` + `compile_predicate`
 - `src/mangomas/workflow/registry.py` — `node_registry` + `resolve_executor`
 - `src/mangomas/workflow/executor.py` — `NodeExecutor` protocol + `execute_workflow`
 - `src/mangomas/workflow/loader.py` — path/inline JSON → `WorkflowGraph`
@@ -31,7 +31,7 @@ Use the `mango-workflow` skill for graph shape and the node template, and `mango
 | Node kinds (v1) | `agent` / `fan_out` / `loop` / `sequence` / `branch` (predicate-routed, spec 0012 / ADR-0016). `FanOutNode.branches` is `list[WorkflowStep]`, so a branch may be composite (spec 0013 / ADR-0018); `SequenceNode` stays outside `WorkflowStep`, and `LoopNode.agent` is a name, so a loop body cannot be a node. Opt-in precedence for the graph source is the shared `workflow.resolve_workflow_source` — reused by the CLI and the HTTP `/workflows/*` routes |
 | `AcceptanceFn` stays sync | `compile_predicate` returns a plain `Callable[[AgentResponse], bool]` |
 | Metadata-transparent | Executors return the `dispatch*` result verbatim (provenance in spans) so an all-agent `sequence` equals `dispatch_pipeline` |
-| No `eval` import | `workflow` is a pure sibling of `eval`, so a helper it needs (e.g. the regex-flag map) is re-stated under `workflow/` — and, once a second workflow module wants it, extracted into a shared `workflow/` module (as `nodes/_factory.py` did) rather than duplicated in-package |
+| No `eval` import | `workflow` is a pure sibling of `eval`. Shared regex flags live in `mangomas.utils.regex_flags` rather than a second copy under `workflow/` |
 | One registration line per node | Register via `make_node_factory` — no hand-written `_X_factory` + `isinstance` guard + `# pragma: no cover` boilerplate |
 | Registry seeded once | Node modules self-register; `import mangomas.workflow` wires them via submodule paths |
 

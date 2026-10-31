@@ -57,6 +57,14 @@ class LMStudioEmbeddingClient(SingleTextEmbedMixin, OpenAICompatHTTPClient):
         zipped against the wrong chunks downstream) and the count must equal
         ``len(texts)`` — a short or duplicated response is a malformed one.
         """
+        logger.debug(
+            "LM Studio embed_batch",
+            extra={
+                "event": "lmstudio_embed_batch",
+                "model": self._model,
+                "count": len(texts),
+            },
+        )
         payload: dict[str, Any] = {"model": self._model, "input": texts}
         resp = await self._request(
             "POST", "/embeddings", json=payload, log_event="LM Studio embeddings request failed"
@@ -67,7 +75,8 @@ class LMStudioEmbeddingClient(SingleTextEmbedMixin, OpenAICompatHTTPClient):
         try:
             body = resp.json()
             return _vectors_in_order(body["data"], expected=len(texts))
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        # RecursionError: a pathologically nested body (spec-0039 D-4).
+        except (KeyError, IndexError, TypeError, ValueError, RecursionError) as exc:
             raise self._malformed_response(f"{type(exc).__name__}: {exc}", body=body) from exc
 
 
@@ -82,6 +91,8 @@ def _vectors_in_order(rows: Any, *, expected: int) -> list[list[float]]:
     seen = 0
     for position, row in enumerate(rows):
         embedding = row["embedding"]
+        if not isinstance(embedding, list):
+            raise TypeError("embedding must be a list")
         index = row.get("index", position)
         if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < expected:
             raise ValueError(f"embedding index {index!r} is outside 0..{expected - 1}")

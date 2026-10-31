@@ -9,7 +9,9 @@ You are the integration-runner agent.
 Your single job is to keep `tests/integration/` and `tests/lmstudio/` reliable,
 gated, and free of network coupling in the default unit suite.
 
-Use the `mango-testing` skill for the recipe.
+Use the `mango-testing` skill for the recipe and the `mango-aqa` skill for
+the lane matrix. A live step budget must be at least the adapter budget it
+wraps: `loop.step_timeout_seconds >= llm.timeout_seconds`.
 
 ## Invariants
 | Suite | Env var | Skip when unset |

@@ -16,6 +16,12 @@ htmlcov/
 .gemini/
 product-sdlc-antigravity/
 scratch/
+artifacts/
+requirements.lock.compiled
+requirements.lock.new
+scripts/guard_probe.py
+scripts/guard_probe_manifest.json
+scripts/_stdio.py
 data/
 memory/
 eval-output/

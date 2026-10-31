@@ -36,7 +36,7 @@ import httpx
 
 from mangomas.cognitive.constants import JSONL_FILENAME
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mango_contracts import CognitiveSignal
     from mangomas.config.signal import SignalSettings
 

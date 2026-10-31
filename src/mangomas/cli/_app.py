@@ -19,14 +19,108 @@ imported in turn only by the facade.
 
 from __future__ import annotations
 
+import logging
+import re
+from typing import Any
+
 import typer
+from pydantic import ValidationError
+from pydantic_settings import SettingsError
+from typer.core import TyperGroup
 
 from mangomas.cli.commands import chat as chat_commands
 from mangomas.cli.commands import eval as eval_commands
 from mangomas.cli.commands import rag as rag_commands
 from mangomas.cli.commands import workflow as workflow_commands
+from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
+from mangomas.config import Settings
 
-app = typer.Typer(help="Mango-Mas V2 CLI", no_args_is_help=True)
+logger = logging.getLogger(__name__)
+
+# pydantic-settings names the field inside quotes; the rest of the message
+# carries the raw JSON the operator typed. Keep the name, drop the value.
+_SETTINGS_FIELD_RE = re.compile(r'field "([A-Za-z0-9_]+)"')
+_REDACTED_LITERAL = "'<redacted>'"
+# ``!r`` uses single quotes, or double quotes when the value contains an
+# apostrophe, and escapes whichever delimiter it kept. A single-quote-only
+# scrub leaves that model id on stderr.
+_QUOTED_LITERAL_RE = re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
+
+
+def _settings_env_prefix() -> str:
+    return str(Settings.model_config.get("env_prefix") or "")
+
+
+def format_settings_error(exc: ValidationError) -> str:
+    """Render a settings ``ValidationError`` as env-var names plus reasons.
+
+    The offending *value* is never included (``include_input=False``): the
+    field may hold a credential, and pydantic's default rendering echoes it.
+    Quoted literals inside a custom validator message are scrubbed the same
+    way — ``LLMSettings`` names the rejected model id with ``!r``, which may
+    use either quote style, and that id can be a secret pasted into the
+    wrong field.
+    An empty ``loc`` (a model-level error) must not print ``MANGOMAS_:``.
+    """
+    prefix = _settings_env_prefix()
+    delimiter = str(Settings.model_config.get("env_nested_delimiter") or "__")
+    lines = ["Configuration error: invalid setting(s)"]
+    for error in exc.errors(include_input=False, include_url=False):
+        loc = error["loc"]
+        if loc:
+            env_var = prefix + delimiter.join(str(part) for part in loc).upper()
+        else:
+            env_var = prefix.rstrip("_") or "MANGOMAS"
+        message = _QUOTED_LITERAL_RE.sub(_REDACTED_LITERAL, str(error["msg"]))
+        lines.append(f"  {env_var}: {message}")
+    return "\n".join(lines)
+
+
+def _format_settings_source_error(exc: SettingsError) -> str:
+    """Name the field of a source-parse error without echoing its JSON value."""
+    match = _SETTINGS_FIELD_RE.search(str(exc))
+    field = match.group(1) if match is not None else "setting"
+    return f"  {_settings_env_prefix()}{field.upper()}: invalid JSON value"
+
+
+def _exit_for_settings_error(message: str) -> None:
+    """Log a structured config failure and leave with the config exit code."""
+    logger.error("CLI settings validation failed", extra={"event": "cli_settings_error"})
+    typer.echo(message, err=True)
+    raise typer.Exit(code=EXIT_CONFIG_ERROR) from None
+
+
+class SettingsErrorGroup(TyperGroup):
+    """Root group that maps an invalid ``MANGOMAS_*`` value to ``EXIT_CONFIG_ERROR``.
+
+    Every command reads settings first (``configure_cli_logging``), and
+    ``get_settings()`` raises pydantic's ``ValidationError`` rather than a
+    ``MangomasError``, so ``build_or_exit``'s mapping never saw it: each command
+    died with a traceback and exit 1 (spec-0039 D-6). Only an error raised for
+    :class:`Settings` itself is a configuration error; any other model's
+    validation failure is a genuine crash and still propagates.
+    """
+
+    # `Any`: the supertype takes Typer's vendored Click `Context`, which is only
+    # importable from the private `typer._click`.
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)
+        except ValidationError as exc:
+            if exc.title != Settings.__name__:
+                raise
+            _exit_for_settings_error(format_settings_error(exc))
+        except SettingsError as exc:
+            # pydantic-settings raises SettingsError (a ValueError subclass, not
+            # ValidationError) when parsing a complex JSON env var fails before
+            # model validation. Never echo str(exc): its JSONDecodeError carries
+            # the raw env value. Name the field so the operator knows which
+            # variable to fix.
+            header = "Configuration error: invalid setting(s)"
+            _exit_for_settings_error(f"{header}\n{_format_settings_source_error(exc)}")
+
+
+app = typer.Typer(help="Mango-Mas V2 CLI", no_args_is_help=True, cls=SettingsErrorGroup)
 
 # Root commands, in `--help` order.
 app.command(name="agents")(chat_commands.agents)

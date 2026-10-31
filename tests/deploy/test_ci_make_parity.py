@@ -61,6 +61,8 @@ _OPT_IN_TARGETS = (
     "vertex",
     "postgres",
     "rag",
+    "embeddings-local",
+    "gpu",
     "gcp-secrets",
     "gcp-trace",
     "langfuse",
@@ -478,6 +480,7 @@ def test_ci_jobs_that_need_the_package_call_make_install() -> None:
         "bridge-coverage",
         "contracts-coverage",
         "scripts-coverage",
+        "guard-probe",
         "pip-audit",
     )
     for name in needing:

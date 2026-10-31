@@ -134,6 +134,109 @@ def _finish_eval(
         raise typer.Exit(code=EVAL_GATE_EXIT_CODE)
 
 
+def _run_eval_pipeline(
+    *,
+    dataset_path: str | None,
+    dataset_source: str | None,
+    scorer: str | None,
+    agent: str | None,
+    target: str | None,
+    parallelism: int | None,
+    fail_fast: bool | None,
+    output_json: str | None,
+    gate: bool | None,
+    min_mean_score: float | None,
+    min_pass_rate: float | None,
+    fail_on_error: bool | None,
+    max_mean_cost_usd: float | None,
+    baseline: str | None,
+    max_mean_score_drop: float | None,
+    max_pass_rate_drop: float | None,
+    allow_new_failures: bool | None,
+) -> None:
+    """Resolve eval config, run the dataset, emit sinks, and apply the gate."""
+    settings = get_settings()
+    cfg = settings.eval
+    ensure_eval_plugins(settings)
+    scorer_name = scorer or cfg.scorer
+    target_name = target or cfg.target
+    source_name = dataset_source or cfg.dataset_source
+    effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
+    effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
+    logger.debug(
+        "Eval run starting",
+        extra={"event": "eval_run_start", "scorer": scorer_name, "target": target_name},
+    )
+    gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error, eff_max_mean_cost = (
+        _resolve_gating(
+            gate=gate,
+            min_mean_score=min_mean_score,
+            min_pass_rate=min_pass_rate,
+            fail_on_error=fail_on_error,
+            max_mean_cost_usd=max_mean_cost_usd,
+            cfg=cfg,
+        )
+    )
+    effective_baseline, eff_max_mean_drop, eff_max_pass_drop, eff_allow_new = _resolve_regression(
+        baseline=baseline,
+        max_mean_score_drop=max_mean_score_drop,
+        max_pass_rate_drop=max_pass_rate_drop,
+        allow_new_failures=allow_new_failures,
+        cfg=cfg,
+    )
+    try:
+        scorer_factory = scorer_registry.get(scorer_name)
+        scorer_instance = scorer_factory(dict(cfg.scorer_options))
+        sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
+        target_instance = _build_target(target_name, cfg.target_options, agent, cfg.agent)
+        source_instance = _build_dataset_source(
+            source_name, cfg.dataset_source_options, dataset_path, cfg.dataset_path
+        )
+        baseline_report = (
+            asyncio.run(load_baseline(effective_baseline)) if effective_baseline else None
+        )
+    except MangomasError as exc:
+        detail = f" ({exc.detail})" if exc.detail else ""
+        typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
+        raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
+
+    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
+    runner = EvalRunner(
+        orch,
+        scorer_instance,
+        parallelism=effective_parallelism,
+        fail_fast=effective_fail_fast,
+    )
+
+    async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:
+        try:
+            dataset = await source_instance.load()
+            report = await runner.run(dataset, target=target_instance)
+        finally:
+            await _runtime._close_orchestrator(orch)
+        gate_result = await _evaluate_run_gates(
+            report,
+            gating_engaged=gating_engaged,
+            min_mean_score=eff_min_mean,
+            min_pass_rate=eff_min_pass,
+            fail_on_error=eff_fail_on_error,
+            max_mean_cost_usd=eff_max_mean_cost,
+            baseline=baseline_report,
+            max_mean_score_drop=eff_max_mean_drop,
+            max_pass_rate_drop=eff_max_pass_drop,
+            allow_new_failures=eff_allow_new,
+        )
+        sink_error = await _emit_sinks(sinks, report, gate_result)
+        return report, gate_result, sink_error
+
+    try:
+        _report, gate_result, sink_error = asyncio.run(_run_eval())
+    except MangomasError as exc:
+        typer.echo(f"Eval run failed: {exc}", err=True)
+        raise typer.Exit(code=EXIT_RUNTIME_ERROR) from exc
+    _finish_eval(output_json=output_json, sink_error=sink_error, gate_result=gate_result)
+
+
 def eval_cmd(
     dataset_path: str | None = typer.Option(
         None,
@@ -230,92 +333,22 @@ def eval_cmd(
 ) -> None:
     """Run the configured scorer over a JSONL dataset, emit to sinks, and gate."""
     _runtime.configure_cli_logging(verbose=verbose)
-
-    settings = get_settings()
-    cfg = settings.eval
-    # Layer in any entry-point scorer/sink/target/source plugins (no-op unless enabled).
-    ensure_eval_plugins(settings)
-
-    scorer_name = scorer or cfg.scorer
-    target_name = target or cfg.target
-    source_name = dataset_source or cfg.dataset_source
-    effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
-    effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
-
-    gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error, eff_max_mean_cost = (
-        _resolve_gating(
-            gate=gate,
-            min_mean_score=min_mean_score,
-            min_pass_rate=min_pass_rate,
-            fail_on_error=fail_on_error,
-            max_mean_cost_usd=max_mean_cost_usd,
-            cfg=cfg,
-        )
-    )
-
-    effective_baseline, eff_max_mean_drop, eff_max_pass_drop, eff_allow_new = _resolve_regression(
+    _run_eval_pipeline(
+        dataset_path=dataset_path,
+        dataset_source=dataset_source,
+        scorer=scorer,
+        agent=agent,
+        target=target,
+        parallelism=parallelism,
+        fail_fast=fail_fast,
+        output_json=output_json,
+        gate=gate,
+        min_mean_score=min_mean_score,
+        min_pass_rate=min_pass_rate,
+        fail_on_error=fail_on_error,
+        max_mean_cost_usd=max_mean_cost_usd,
         baseline=baseline,
         max_mean_score_drop=max_mean_score_drop,
         max_pass_rate_drop=max_pass_rate_drop,
         allow_new_failures=allow_new_failures,
-        cfg=cfg,
     )
-
-    # Build scorer + sinks up front so misconfiguration fails fast (exit 2)
-    # before a (potentially long) eval run.
-    try:
-        scorer_factory = scorer_registry.get(scorer_name)
-        scorer_instance = scorer_factory(dict(cfg.scorer_options))
-        sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
-        target_instance = _build_target(target_name, cfg.target_options, agent, cfg.agent)
-        source_instance = _build_dataset_source(
-            source_name, cfg.dataset_source_options, dataset_path, cfg.dataset_path
-        )
-        # Parse the baseline up front so a missing *or malformed* file is exit 2
-        # (config) before any LLM spend — previously only existence was checked
-        # here and a malformed file surfaced as exit 1 after the full run, with
-        # no sink output.
-        baseline_report = (
-            asyncio.run(load_baseline(effective_baseline)) if effective_baseline else None
-        )
-    except MangomasError as exc:
-        detail = f" ({exc.detail})" if exc.detail else ""
-        typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
-        raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
-
-    orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
-    runner = EvalRunner(
-        orch,
-        scorer_instance,
-        parallelism=effective_parallelism,
-        fail_fast=effective_fail_fast,
-    )
-
-    async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:
-        try:
-            dataset = await source_instance.load()
-            report = await runner.run(dataset, target=target_instance)
-        finally:
-            await _runtime._close_orchestrator(orch)
-        gate_result = await _evaluate_run_gates(
-            report,
-            gating_engaged=gating_engaged,
-            min_mean_score=eff_min_mean,
-            min_pass_rate=eff_min_pass,
-            fail_on_error=eff_fail_on_error,
-            max_mean_cost_usd=eff_max_mean_cost,
-            baseline=baseline_report,
-            max_mean_score_drop=eff_max_mean_drop,
-            max_pass_rate_drop=eff_max_pass_drop,
-            allow_new_failures=eff_allow_new,
-        )
-        sink_error = await _emit_sinks(sinks, report, gate_result)
-        return report, gate_result, sink_error
-
-    try:
-        _report, gate_result, sink_error = asyncio.run(_run_eval())
-    except MangomasError as exc:
-        typer.echo(f"Eval run failed: {exc}", err=True)
-        raise typer.Exit(code=EXIT_RUNTIME_ERROR) from exc
-
-    _finish_eval(output_json=output_json, sink_error=sink_error, gate_result=gate_result)

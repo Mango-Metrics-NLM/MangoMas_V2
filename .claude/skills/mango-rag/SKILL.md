@@ -116,6 +116,11 @@ mypy
 python -m pytest --tb=short -q
 python scripts/check_coverage.py     # adapters >= 85%, rag >= 95%
 
+# CUDA placement: RUN_GPU=1 fails when torch sees no CUDA device.
+# Resolve the cu130 wheel for the embeddings-local extra; do not let a
+# CPU-only torch replace it.
+make gpu
+
 # Gated end-to-end (local backend, no server needed)
 pip install -e ".[dev,embeddings-local,rag]"
 $env:RUN_EMBEDDINGS_LOCAL='1' ; $env:RUN_RAG='1' ; python -m pytest tests -q

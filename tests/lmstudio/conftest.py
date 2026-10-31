@@ -56,7 +56,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -81,14 +80,13 @@ from mangomas.config import (
 )
 from mangomas.core import Orchestrator
 from tests.constants import (
-    DEFAULT_LOOP_STEP_TIMEOUT,
     IN_MEMORY_SQLITE_URL,
     LLM_MODEL_ENV,
     LMSTUDIO_BASE_URL_ENV,
     LMSTUDIO_E2E_TIMEOUT_ENV,
     LMSTUDIO_MODEL_ENV,
-    LOOP_STEP_TIMEOUT_ENV,
     client_timeout_for,
+    resolve_live_step_timeout,
     resolve_live_timeout,
 )
 
@@ -137,28 +135,13 @@ def make_lmstudio_settings(
         if timeout_seconds is None
         else timeout_seconds
     )
-    # When no explicit loop= is given, honour MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS
-    # so a slow model (e.g. a large omni model on a local GPU) can be
-    # accommodated by setting that env var rather than by editing test code.
-    # Mirrors how LMSTUDIO_E2E_TIMEOUT_SECONDS governs the adapter budget.
+    # When no explicit loop= is given, honour MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS;
+    # unset, the per-step budget IS the adapter budget. The step wraps the call,
+    # so a tighter step (the 30 s production default) fires before the CPU-sized
+    # call budget can, and the suite goes red on any model slower than 30 s per
+    # step — spec-0029 R2.5 (spec-0039 D-1).
     if loop is None:
-        raw_step = os.environ.get(LOOP_STEP_TIMEOUT_ENV)
-        if raw_step is not None and raw_step.strip():
-            try:
-                step_seconds: float = float(raw_step)
-            except ValueError as exc:
-                raise ValueError(
-                    f"{LOOP_STEP_TIMEOUT_ENV} must be a finite positive number of seconds, "
-                    f"got {raw_step!r}",
-                ) from exc
-            if not math.isfinite(step_seconds) or step_seconds <= 0:
-                raise ValueError(
-                    f"{LOOP_STEP_TIMEOUT_ENV} must be a finite positive number of seconds, "
-                    f"got {raw_step!r}",
-                )
-        else:
-            step_seconds = DEFAULT_LOOP_STEP_TIMEOUT
-        loop = LoopSettings(step_timeout_seconds=step_seconds)
+        loop = LoopSettings(step_timeout_seconds=resolve_live_step_timeout(resolved))
 
     # Each group is passed explicitly (falling back to its own default) rather
     # than splatted in conditionally: a `**{...}` splat is untypeable against
