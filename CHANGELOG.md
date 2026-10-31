@@ -9,6 +9,51 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — LLM provider profiles (spec-0039 / ADR-0038)
+
+- Named LLM provider profiles, built once at startup in the composition root
+  and selected per run. `MANGOMAS_LLM_PROFILES__<NAME>__PROVIDER` / `MODEL`
+  declare a profile (`LLMProfileSettings`; `Settings.llm_profiles`); the
+  other fields inherit `MANGOMAS_LLM__*` when unset, except credentials,
+  which inherit only for a same-provider profile.
+  `composition/llm.py::build_llm_profiles` merges, resolves the profile's own
+  `secret_ref`, and builds each client through `llm_registry` — so a profile
+  may name a different provider than the base — into
+  `ctx.extras["llm_profiles"]`, with a secret-free summary in
+  `ctx.extras["llm_profile_info"]`. Profile clients close on `aclose()` with
+  the override clients.
+- Selection rides `AgentRequest.metadata["llm_profile"]` (no DTO change, no
+  protected-path edit): `agents/_prompt.py::select_llm_profile` is the pure
+  validator and `resolve_llm(ctx, agent_name, request=None)` applies the
+  precedence profile > `MODEL_OVERRIDE` > `ctx.llm`, logging
+  `llm_profile_shadows_override` when a profile shadows an override. The
+  invoke, stream and `workflows/run` routes validate before dispatch, so an
+  unknown name is a JSON 400 before any SSE header; `mangomas chat` and
+  `mangomas workflow run` gain `--profile`.
+- `MANGOMAS_LLM__PROVIDER_ALLOWLIST` (default `[]`): the first root-level
+  `Settings` validator refuses, at parse, any profile or base provider not on
+  the list, and any profile model outside `ALLOWED_MODELS`, naming the
+  offender. `["lmstudio"]` is the local-only configuration.
+- `_LLMProfileDispatchMixin` (first in both composition orchestrators'
+  bases) pre-validates and stamps `response.metadata["llm_profile"]`, which
+  `_pipeline_pass` already forwards, so a profile carries across pipeline
+  stages. Streams carry it in the SSE `metadata` frame instead; the
+  `harness.agent_invoke` span gains `llm.profile`. All three only when a
+  profile is selected — the default frames and spans are byte-identical.
+- New `GET /llm/profiles` (under `require_auth`; `LLMProfilesResponse` /
+  `LLMProfileSummary` in `api/models.py`): names, providers and models only.
+  The OpenAPI snapshot grows by exactly that path and its two schemas.
+- `tests/deploy/_settings_names.py` now derives the dict-valued settings
+  groups (`AGENTS`, `LLM_PROFILES`) from the annotations instead of naming
+  `AGENTS` by hand, so the per-profile rows pass the env-contract in both
+  directions; `_(required)_` is accepted as a Default cell.
+- Docs: `specs/0039-llm-provider-profiles.md`,
+  `docs/adr/0038-studio-two-plane-consumer.md` (Studio is a two-plane
+  consumer: no execution through MangoMAS, no approval inbox in v1, profiles
+  not headers), and
+  `docs/plans/20261031T000000Z-studio-two-plane-delivery-plan.md` with the
+  corrected branch finding (a legacy `main` exists; `dev`/`qa` do not).
+
 ### Fixed — the reference manifest carries what its providers need (spec-0038, P0-B)
 
 - `deploy/service.yaml` selected Vertex, Cloud SQL Postgres and Secret
