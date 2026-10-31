@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 from pydantic import BaseModel, Field, model_validator
 
 from mangomas.config._shared import DEFAULT_VERTEX_LOCATION
@@ -43,6 +45,15 @@ DEFAULT_LLM_ALLOWED_MODELS: list[str] = []
 # name promises no control over secrets, embeddings or telemetry egress
 # (ADR-0033).
 DEFAULT_LLM_PROVIDER_ALLOWLIST: list[str] = []
+
+
+#: ``AgentRequest.metadata`` / ``AgentResponse.metadata`` key naming the
+#: selected provider profile (spec-0040 R2/R5). Defined here, in the lowest
+#: layer, because three layers read it — ``agents/`` (the resolver),
+#: ``composition/`` (the stamp) and ``workflow/`` (the fan-out join that must
+#: carry a run-scoped selector across a synthesised response) — and none of
+#: them may import the others for a string.
+LLM_PROFILE_METADATA_KEY: Final[str] = "llm_profile"
 
 
 class LLMSettings(BaseModel):

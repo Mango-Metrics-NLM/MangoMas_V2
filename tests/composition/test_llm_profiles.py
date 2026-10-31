@@ -394,13 +394,40 @@ async def test_dispatch_stamps_llm_profile_on_response() -> None:
 
 
 async def test_dispatch_without_profile_leaves_metadata_unchanged() -> None:
-    """Default-OFF: no selector, no stamp — the response is the agent's own."""
+    """Default-OFF: a profile-free dispatch is byte-identical to the bare orchestrator.
+
+    The oracle is a real ``Orchestrator`` running the same agent on the same
+    request, not a hand-written dict — so a mixin that dropped the agent's own
+    ``kept`` key, or added anything of its own, would differ from the baseline
+    rather than from an expectation that happened to match.
+    """
     orch, _ = _mixin_orchestrator()
+    baseline = Orchestrator(AgentContext(llm=FakeLLM(), repo=None))
+    baseline.register(_EchoAgent())
     response = await orch.dispatch("echo", _request())
+    expected = await baseline.dispatch("echo", _request())
+    assert response.metadata == expected.metadata
+    assert response.metadata == {"kept": True, "loop": {"steps_taken": 1, "accepted": False}}
     assert LLM_PROFILE_METADATA_KEY not in response.metadata
-    assert response.metadata == {"kept": True, "loop": response.metadata.get("loop")} or (
-        LLM_PROFILE_METADATA_KEY not in response.metadata
-    )
+
+
+async def test_dispatch_persists_the_stamped_response() -> None:
+    """R5: the stored turn carries the same ``llm_profile`` as the returned response.
+
+    ``Orchestrator._dispatch_once`` persists *before* returning, so a stamp
+    applied after ``super().dispatch`` would leave the row and the response
+    disagreeing. Mutation proof: move the stamp from ``_handle_step`` back
+    into ``dispatch`` and the stored row loses the key while the returned
+    response keeps it.
+    """
+    repo = FakeRepository()
+    orch, _ = _mixin_orchestrator(repo=repo)
+    response = await orch.dispatch("echo", _request(TEST_LLM_PROFILE_NAME))
+    assert response.metadata[LLM_PROFILE_METADATA_KEY] == TEST_LLM_PROFILE_NAME
+    (row,) = repo._turns
+    stored = row["response"]["metadata"]
+    assert stored[LLM_PROFILE_METADATA_KEY] == TEST_LLM_PROFILE_NAME
+    assert stored == response.metadata, "stored and returned metadata must agree"
 
 
 async def test_dispatch_unknown_profile_raises_before_any_agent_call_and_records_no_row() -> None:

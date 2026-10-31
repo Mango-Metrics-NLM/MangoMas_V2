@@ -65,14 +65,23 @@ CORS allow-list.
 - **R5 — Observability.** The selected name is written to
   `response.metadata["llm_profile"]` by `_LLMProfileDispatchMixin`
   (`composition/llm.py`), which sits **first** in the base list of both
-  composition orchestrators and pre-validates before `super().dispatch`. The
-  turn record already persists `metadata` as JSON (`TURN_SCHEMA_VERSION`
-  stays 2). Because `_pipeline_pass` seeds each stage with
-  `response.metadata`, the stamp is also what carries a profile across every
-  `dispatch_pipeline` stage — a documented behaviour. Streams have no response
-  object, so the SSE `metadata` frame carries `llm_profile` instead, only
-  when selected. The `harness.agent_invoke` span gains `llm.profile` on both
-  the dispatch and stream paths, only when selected.
+  composition orchestrators: its `dispatch` pre-validates before
+  `super().dispatch`, and its `_handle_step` override stamps each step
+  response **before** `Orchestrator._dispatch_once` persists it, so the
+  stored turn and the returned response carry the same name (the turn record
+  already persists `metadata` as JSON; `TURN_SCHEMA_VERSION` stays 2).
+  Because `_pipeline_pass` seeds each stage with `response.metadata`, the
+  stamp is also what carries a profile across every `dispatch_pipeline`
+  stage, and the workflow `fan_out` `concat` join carries the run-scoped
+  selector onto its synthesised response for the same reason (a `sequence`
+  threads the join's metadata into the next step). Streams have no response
+  object and are persisted inside `core/orchestrator`, so the SSE `metadata`
+  frame carries `llm_profile` instead, only when selected; the stored
+  streamed turn is **not** stamped (stated limitation). The
+  `harness.agent_invoke` span gains `llm.profile` on both the dispatch and
+  stream paths, only when selected. The metadata key constant lives in
+  `config/llm.py::LLM_PROFILE_METADATA_KEY` because `agents/`,
+  `composition/` and `workflow/` all read it.
 - **R6 — `GET /llm/profiles`** (`api/routes/llm.py`, under `require_auth`)
   returns names, providers and models only, projected from
   `ctx.extras["llm_profile_info"]`. Never a key, a `secret_ref` value or a
@@ -122,6 +131,18 @@ that transcribes it is named.
   `credentials_path` token, and no sentinel planted on the client or in an
   extra summary field reaches the wire
   (`tests/test_llm_profiles_api.py::test_get_llm_profiles_body_never_contains_secrets`).
+- WHEN a profile is selected THEN the persisted turn's response metadata
+  equals the returned response metadata, `llm_profile` included
+  (`tests/composition/test_llm_profiles.py::test_dispatch_persists_the_stamped_response`;
+  mutation: stamp after `super().dispatch` instead of in `_handle_step`).
+  WHEN no profile is selected THEN the response is byte-identical to a bare
+  `Orchestrator` running the same agent (`::test_dispatch_without_profile_leaves_metadata_unchanged`).
+- WHEN a workflow `sequence` runs a `concat` `fan_out` and then an agent with
+  a profile selected THEN every branch *and* the following agent run on the
+  profile client and the final response is stamped
+  (`tests/test_workflow_executor.py::test_concat_fan_out_followed_by_agent_keeps_the_profile`;
+  mutation: the join returns `metadata={}` again). WHEN no profile is
+  selected THEN the join's metadata stays `{}` as before.
 - WHEN an unknown profile reaches `dispatch` directly THEN `ConfigError` is
   raised before any agent runs and **no failed-turn row is recorded** — not a
   turn, by the position rule `composition/recording.py` already applies

@@ -21,6 +21,9 @@ import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Final
 
+from mangomas.config import (
+    LLM_PROFILE_METADATA_KEY as LLM_PROFILE_METADATA_KEY,  # noqa: PLC0414 -- explicit re-export under mypy --strict
+)
 from mangomas.core.agent import AgentRequest, Message
 from mangomas.errors import ConfigError
 
@@ -50,10 +53,9 @@ LLM_PROFILES_EXTRAS_KEY: Final[str] = "llm_profiles"
 #: Kept apart from the clients so the API never has to introspect one.
 LLM_PROFILE_INFO_EXTRAS_KEY: Final[str] = "llm_profile_info"
 
-#: ``AgentRequest.metadata`` / ``AgentResponse.metadata`` key naming the
-#: selected profile. The selector rides the existing free-form dict rather
-#: than a new DTO field, so ``core/agent.py`` is untouched (spec-0040 R2/R5).
-LLM_PROFILE_METADATA_KEY: Final[str] = "llm_profile"
+#: ``LLM_PROFILE_METADATA_KEY`` is defined in ``mangomas.config.llm`` (the
+#: workflow layer's fan-out join needs it too) and re-exported here so the
+#: resolver's readers keep importing it from beside the resolver.
 
 
 def select_llm_profile(extras: Mapping[str, Any], metadata: Mapping[str, Any]) -> str | None:

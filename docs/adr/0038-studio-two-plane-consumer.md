@@ -69,6 +69,9 @@ has diverged (ADR-0036 tags it `archive/main-legacy`). The earlier claim that
   outside this repo's control.
 - An unknown profile refused before dispatch emits no error metric — the same
   position rule as a pre-stream `AgentNotFound`, and stated in spec-0040.
+- A streamed turn's stored record is not stamped with the profile (the SSE
+  frame carries it); stamping it would need an edit inside the protected
+  `core/orchestrator`. Non-streaming turns are stamped before persistence.
 
 ### Neutral
 

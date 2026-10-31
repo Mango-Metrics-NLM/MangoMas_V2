@@ -231,6 +231,9 @@ from mangomas.config.llm import (
     DEFAULT_LLM_TIMEOUT_SECONDS as DEFAULT_LLM_TIMEOUT_SECONDS,
 )
 from mangomas.config.llm import (
+    LLM_PROFILE_METADATA_KEY as LLM_PROFILE_METADATA_KEY,
+)
+from mangomas.config.llm import (
     LLMProfileSettings as LLMProfileSettings,
 )
 from mangomas.config.llm import (
@@ -535,6 +538,7 @@ __all__ = [
     "EVAL_COST_INPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_OUTPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_USD_METADATA_KEY",
+    "LLM_PROFILE_METADATA_KEY",
     "MAX_SIGNAL_TTL_SECONDS",
     "APISettings",
     "AgentSettings",

@@ -35,11 +35,18 @@ Versioning: [Semantic Versioning](https://semver.org/).
   the list, and any profile model outside `ALLOWED_MODELS`, naming the
   offender. `["lmstudio"]` is the local-only configuration.
 - `_LLMProfileDispatchMixin` (first in both composition orchestrators'
-  bases) pre-validates and stamps `response.metadata["llm_profile"]`, which
-  `_pipeline_pass` already forwards, so a profile carries across pipeline
-  stages. Streams carry it in the SSE `metadata` frame instead; the
-  `harness.agent_invoke` span gains `llm.profile`. All three only when a
-  profile is selected — the default frames and spans are byte-identical.
+  bases) pre-validates in `dispatch` and stamps
+  `response.metadata["llm_profile"]` in its `_handle_step` override — before
+  `_dispatch_once` persists the turn, so the stored row and the returned
+  response agree. `_pipeline_pass` already forwards that metadata, so a
+  profile carries across pipeline stages, and the workflow `fan_out`
+  `concat` join now carries the run-scoped selector onto its synthesised
+  response so a `sequence` step after the join stays on the profile. Streams
+  carry it in the SSE `metadata` frame instead (the stored streamed turn is
+  not stamped); the `harness.agent_invoke` span gains `llm.profile`. All
+  only when a profile is selected — the default frames, rows and spans are
+  byte-identical. `LLM_PROFILE_METADATA_KEY` is defined in `config/llm.py`
+  and re-exported from `agents/_prompt.py`.
 - New `GET /llm/profiles` (under `require_auth`; `LLMProfilesResponse` /
   `LLMProfileSummary` in `api/models.py`): names, providers and models only.
   The OpenAPI snapshot grows by exactly that path and its two schemas.

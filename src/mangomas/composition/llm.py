@@ -25,7 +25,7 @@ from mangomas.errors import ConfigError
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.llm.base import LLMClient
-    from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse
+    from mangomas.core.agent import Agent, AgentContext, AgentRequest, AgentResponse
     from mangomas.core.loop import AcceptanceFn
 
 logger = logging.getLogger(__name__)
@@ -198,7 +198,7 @@ def build_llm_profiles(
 
 
 class _LLMProfileDispatchMixin:
-    """Validate the requested profile before dispatch; stamp it on the response.
+    """Validate the requested profile before dispatch; stamp it before persistence.
 
     spec-0040 R2/R5 at the one site every non-streaming topology passes
     through: ``dispatch_pipeline`` and ``dispatch_fan_out`` both delegate to
@@ -208,12 +208,19 @@ class _LLMProfileDispatchMixin:
     ``Orchestrator.dispatch``'s metrics — no agent ran, so it is not a turn,
     the same position-based rule recording.py applies to ``max_steps < 1``.
 
-    The stamp is a copy, not a mutation (``AgentResponse`` is mutable, but the
-    orchestrator's own convention is to re-wrap). Because ``_pipeline_pass``
-    seeds each next stage's request with ``response.metadata``, stamping here
-    is also what carries a profile across every pipeline stage. Streams are
-    not stamped — there is no response object — so the SSE ``metadata`` frame
-    carries the name instead (``api/routes/agents.py``).
+    The stamp happens in :meth:`_handle_step`, not after ``dispatch`` returns:
+    ``Orchestrator._dispatch_once`` persists the response through
+    ``ctx.repo.save_turn`` *before* returning it, so a post-dispatch stamp
+    would leave the stored turn and the returned response disagreeing. Each
+    step response is re-wrapped (a copy, matching the orchestrator's own
+    convention) with the name the step request carries; ``_dispatch_once``
+    then adds its loop telemetry on top and persists the stamped row. Because
+    ``_pipeline_pass`` seeds each next stage's request with
+    ``response.metadata``, the same stamp is what carries a profile across
+    every pipeline stage. Streams are not stamped — ``_handle_step`` is not on
+    the streaming path and the streamed turn is persisted inside
+    ``core/orchestrator`` — so the SSE ``metadata`` frame carries the name
+    instead (``api/routes/agents.py``); the stored streamed turn does not.
     """
 
     if TYPE_CHECKING:  # pragma: no cover
@@ -229,15 +236,27 @@ class _LLMProfileDispatchMixin:
     ) -> AgentResponse:
         # Mirrors ``Orchestrator.dispatch``'s signature exactly, for the reason
         # recording.py gives: ``**kwargs`` would silently drop a keyword a
-        # future dispatch grows.
-        profile = select_llm_profile(self.context.extras, request.metadata)
+        # future dispatch grows. Validation only — the stamp is below.
+        select_llm_profile(self.context.extras, request.metadata)
         response: AgentResponse = await super().dispatch(  # type: ignore[misc]
             agent_name,
             request,
             acceptance_fn=acceptance_fn,
             max_steps=max_steps,
         )
-        if profile is None:
+        return response
+
+    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:
+        """Run the step, then stamp the selected profile onto its response.
+
+        ``step_request.metadata`` is ``request.metadata`` verbatim (the
+        orchestrator rebuilds only ``messages`` per step), so the name here is
+        the one :meth:`dispatch` already validated. The result flows into the
+        loop-telemetry re-wrap and then into ``save_turn``, which is the point.
+        """
+        response: AgentResponse = await super()._handle_step(agent, step_request)  # type: ignore[misc]
+        profile = step_request.metadata.get(LLM_PROFILE_METADATA_KEY)
+        if not isinstance(profile, str):
             return response
         return response.model_copy(
             update={"metadata": {**response.metadata, LLM_PROFILE_METADATA_KEY: profile}}
