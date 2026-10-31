@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from mangomas.api.auth import require_auth
+from mangomas.composition import LLM_PROFILE_METADATA_KEY, select_llm_profile
 from mangomas.core import AgentRequest, AgentResponse
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,10 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
         # double-count. A MangomasError flows to the shared handler for its
         # HTTP envelope.
         orch: Orchestrator = http_request.app.state.orchestrator
+        # An unknown ``metadata["llm_profile"]`` is a 400 here, before dispatch
+        # (spec-0039 R2). The composition mixin re-checks; this call exists so
+        # the invoke and stream routes refuse at the same point.
+        select_llm_profile(orch.context.extras, request.metadata)
         return await orch.dispatch(name, request)
 
     @router.post("/agents/{name}/stream", dependencies=[Depends(require_auth)])
@@ -74,6 +79,12 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
         name: str, request: AgentRequest, http_request: Request
     ) -> StreamingResponse:
         orch: Orchestrator = http_request.app.state.orchestrator
+        # The profile is validated *before* stream_dispatch (spec-0039 R2): it is
+        # the only point at which an unknown name can still become a JSON 400.
+        # Once the text/event-stream headers are out, the agent's own
+        # ``resolve_llm`` would raise mid-stream and the client would see a
+        # truncated 200 with no error envelope (spec-0022 R14).
+        profile = select_llm_profile(orch.context.extras, request.metadata)
         # stream_dispatch validates the agent eagerly — an AgentNotFound here
         # is raised before any streaming begins, so the exception handler can
         # still return a proper 404 JSON response. It runs *first* so the
@@ -118,10 +129,13 @@ def build_agent_router(api_cfg: APISettings) -> APIRouter:
                         "content": chunk,
                     }
                     yield f"data: {json.dumps(payload)}\n\n".encode()
-            metadata = {
-                "event": "metadata",
-                "data": {"agent": name, "degraded": degraded, "chunks": chunks},
-            }
+            data: dict[str, Any] = {"agent": name, "degraded": degraded, "chunks": chunks}
+            # Streams have no AgentResponse to stamp (spec-0039 R5), so the
+            # metadata frame carries the selected profile instead — only when
+            # one was selected, keeping the default frame byte-identical.
+            if profile is not None:
+                data[LLM_PROFILE_METADATA_KEY] = profile
+            metadata = {"event": "metadata", "data": data}
             yield f"data: {json.dumps(metadata)}\n\n".encode()
             yield f"data: {json.dumps({'event': 'done'})}\n\n".encode()
 

@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mangomas.api.app import create_app
+from mangomas.composition import LLM_PROFILE_METADATA_KEY, LLM_PROFILES_EXTRAS_KEY
 from mangomas.composition.agents import (
     STRUCTURED_AGENT_FIELDS_EXTRAS_KEY,
 )
@@ -22,9 +23,12 @@ from mangomas.core import Orchestrator
 from mangomas.workflow.validation import StructuredAgentSchema
 from tests.constants import (
     STUB_REPLY,
+    TEST_LLM_PROFILE_NAME,
+    UNKNOWN_LLM_PROFILE_NAME,
     WORKFLOW_RUN_ROUTE,
     WORKFLOW_VALIDATE_ROUTE,
 )
+from tests.fakes import FakeLLM
 
 _AGENT_GRAPH = json.dumps({"name": "t", "root": {"kind": "agent", "agent": "chat"}})
 _GHOST_AGENT = "ghost"
@@ -311,3 +315,47 @@ def test_server_configured_definition_may_still_be_a_path(
     assert run.json()["content"] == STUB_REPLY
     assert validate.status_code == 200
     assert validate.json()["name"] == "t"
+
+
+# ── spec-0039: profile selection on /workflows/run ───────────────────────────
+
+
+def test_run_unknown_profile_is_400_before_the_graph_loads(orchestrator: Orchestrator) -> None:
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            WORKFLOW_RUN_ROUTE,
+            json={
+                "request": {
+                    **_RUN_BODY,
+                    "metadata": {LLM_PROFILE_METADATA_KEY: UNKNOWN_LLM_PROFILE_NAME},
+                },
+                # A malformed graph would also be a 400; an *unparseable* one
+                # proves the profile check ran first, because this definition
+                # never reaches the loader.
+                "definition": "not json",
+            },
+        )
+        assert r.status_code == 400
+        assert r.json()["error"] == "config_error"
+        assert UNKNOWN_LLM_PROFILE_NAME in r.json()["message"]
+
+
+def test_run_profile_reaches_every_agent_node(orchestrator: Orchestrator) -> None:
+    profile_llm = FakeLLM(reply="profile-reply")
+    orchestrator.context.extras[LLM_PROFILES_EXTRAS_KEY] = {TEST_LLM_PROFILE_NAME: profile_llm}
+    app = create_app(orchestrator=orchestrator)
+    with TestClient(app) as client:
+        r = client.post(
+            WORKFLOW_RUN_ROUTE,
+            json={
+                "request": {
+                    **_RUN_BODY,
+                    "metadata": {LLM_PROFILE_METADATA_KEY: TEST_LLM_PROFILE_NAME},
+                },
+                "definition": _FANOUT_CONCAT_GRAPH,
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["content"] == "profile-reply\nprofile-reply"
+    assert len(profile_llm.calls) == 2

@@ -19,6 +19,7 @@ from mangomas.api.models import (
     WorkflowValidateRequest,
     WorkflowValidateResponse,
 )
+from mangomas.composition import select_llm_profile
 from mangomas.composition.agents import (
     STRUCTURED_AGENT_FIELDS,
     STRUCTURED_AGENT_FIELDS_EXTRAS_KEY,
@@ -86,6 +87,10 @@ def build_workflow_router() -> APIRouter:
         ``MaxStepsExceeded`` (422) all flow through the shared error handler.
         """
         orch: Orchestrator = http_request.app.state.orchestrator
+        # An unknown ``metadata["llm_profile"]`` is a 400 before the graph is
+        # even loaded (spec-0039 R2). Every agent node dispatches ``request``
+        # unchanged, so one check here covers the whole graph.
+        select_llm_profile(orch.context.extras, body.request.metadata)
         graph = _load_graph(body.definition, orch)
         return await execute_workflow(graph, body.request, orch=orch)
 
