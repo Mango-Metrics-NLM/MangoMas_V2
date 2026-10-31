@@ -150,8 +150,8 @@
     {
       "id": "MUT-0040-M12",
       "path": "src/mangomas/composition/llm.py",
-      "fixed": "        profile = step_request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n",
-      "defect": "        return response\n        profile = step_request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n",
+      "fixed": "        return response\n\n    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:\n        \"\"\"Run the step, then stamp the selected profile onto its response.\n\n        ``step_request.metadata`` is ``request.metadata`` verbatim (the\n        orchestrator rebuilds only ``messages`` per step), so the name here is\n        the one :meth:`dispatch` already validated. The result flows into the\n        loop-telemetry re-wrap and then into ``save_turn``, which is the point.\n        \"\"\"\n        response: AgentResponse = await super()._handle_step(agent, step_request)  # type: ignore[misc]\n        profile = step_request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n        return response.model_copy(\n            update={\"metadata\": {**response.metadata, LLM_PROFILE_METADATA_KEY: profile}}\n        )\n",
+      "defect": "        profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n        return response.model_copy(\n            update={\"metadata\": {**response.metadata, LLM_PROFILE_METADATA_KEY: profile}}\n        )\n\n    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:\n        return await super()._handle_step(agent, step_request)  # type: ignore[misc]\n",
       "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_persists_the_stamped_response", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     },
     {
