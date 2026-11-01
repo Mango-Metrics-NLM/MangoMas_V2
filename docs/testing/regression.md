@@ -256,10 +256,14 @@ each mutation, requires the named guard to exit non-zero, restores the
 original bytes, and requires the guard to exit zero. It refuses a dirty tree
 unless `--allow-dirty` is passed. It is not a dependency of `make gate`.
 
-The manifest holds two families. `MUT-AQA-*` covers the spec-0039 defects.
+The manifest holds three families. `MUT-AQA-*` covers the spec-0039 defects.
 `MUT-PROF-01`..`MUT-PROF-14` replay the fourteen provider-profile mutations
 recorded on PR #104 (spec-0040). Those include the precedence swap, both
 allowlist validators, the stream pre-check, mixin order, and stamp-before-persist.
+`MUT-STUDIO-01`/`02` drop the request from `ChatAgent`'s invoke and stream
+`resolve_llm` calls. Their gate is the Studio consumer probe's mock run
+(spec-0041), whose stub reply names the serving model. Live LM Studio never
+does, so the stream-path regression is invisible to `make lmstudio`.
 Each gate is a single test node id, so a mutation that broke collection would show
 up as an error rather than a pass.
 

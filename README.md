@@ -14,7 +14,11 @@ core agent contracts.
 [`MangoMas-Demo`](https://github.com/Mango-Metrics-NLM/MangoMas-Demo),
 [`MangoMAS-MoE-7M`](https://huggingface.co/ianshank/MangoMAS-MoE-7M)), not OFFIS
 [`mango-agents`](https://github.com/OFFIS-DAI/mango), and not the hospitality
-product [mangometrics.io](https://mangometrics.io/). See
+product [mangometrics.io](https://mangometrics.io/). Three UIs sit around this
+runtime, and none of them ships in this repository: the Gradio demo above, the
+harness dashboard, and MangoMas Studio. Studio is a separate-repository client
+of this API (ADR-0038). `make studio-probe-mock` checks the contract it
+consumes (spec-0041). See
 [`docs/analysis/20260912-council-peer-review-rewrite.md`](docs/analysis/20260912-council-peer-review-rewrite.md).
 
 ---

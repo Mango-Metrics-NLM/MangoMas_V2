@@ -40,6 +40,11 @@ Record every lane as one of `PASS`, `FAIL`, `NOT-RUN`, or `FAIL(GATE)`.
 6. Live suites resolve `loop.step_timeout_seconds` from
    `resolve_live_step_timeout`, so an unset step budget equals the adapter
    budget instead of the 30s production default.
+7. A live oracle can only see what the server reports. LM Studio answers an
+   unknown model id from the loaded model and never names the model that
+   served a reply. Prove routing live with a bad API-version path. Prove
+   which model answered in `make studio-probe-mock`, whose stub names the
+   serving model.
 
 ## Commands
 
@@ -47,6 +52,8 @@ Record every lane as one of `PASS`, `FAIL`, `NOT-RUN`, or `FAIL(GATE)`.
 python -m pytest tests/regression -q --no-cov
 make gpu
 make guard-probe
+make studio-probe-mock
+make studio-probe   # needs LM Studio + LMSTUDIO_OVERRIDE_MODEL
 ```
 
 `make guard-probe` mutates the tree. Do not run it as part of `make gate`.

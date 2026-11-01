@@ -271,6 +271,12 @@ loaded model, so neither proves routing. With routing disabled in `ChatAgent`
 the stamp test stays green and only the `broken` test goes red (recorded in
 spec-0041).
 
+The `broken` oracle covers invoke only. A stream-path routing regression
+stays green here, because no live reply names its model. The Studio consumer
+probe catches it: `make studio-probe-mock` runs the same journeys against an
+in-process stub that names the serving model (`MUT-STUDIO-02`).
+`make studio-probe` runs those journeys against this server.
+
 ---
 
 ## Implementation notes

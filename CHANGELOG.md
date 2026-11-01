@@ -9,6 +9,28 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Studio-contract AQA lane (spec-0041)
+
+- `scripts/studio_consumer_probe.py` drives the HTTP contract MangoMas Studio
+  consumes (ADR-0038) through the real app. Journeys: profile picker, invoke
+  stamp, routing oracle, stream timeline plus `GET /history`, unknown-profile
+  400 before any SSE header, workflow validate/run through a `concat`
+  fan_out, the eval report viewer, CORS preflight and an allowed-hosts network
+  guard. `make studio-probe-mock` runs it against the in-process
+  `scripts/_openai_compat_stub.py` (no port, no network) and is a step of
+  CI's `test` job. `make studio-probe` is the opt-in run against LM Studio.
+- Live Scenario 13 (`tests/lmstudio/test_llm_profiles.py`) runs `draft`,
+  `review` and `broken` profiles on one LM Studio server. The routing oracle
+  is an unserved API version, because LM Studio answers an unknown model id
+  from the loaded model.
+- `make guard-probe` replays spec-0040's fourteen mutations
+  (`MUT-PROF-01..14`) and two probe mutations (`MUT-STUDIO-01/02`). The
+  stream-path entry closes a gap the live suite cannot see.
+- Recorded, not built: D-11 (profile readiness), D-12 (streamed turns are
+  stored without `llm_profile`; the probe pins it), D-13 (the stamp means
+  "requested", not "served"), A5 (eval targets cannot select a profile).
+  No runtime code changed.
+
 ### Added — LLM provider profiles (spec-0040 / ADR-0038)
 
 - Named LLM provider profiles, built once at startup in the composition root
