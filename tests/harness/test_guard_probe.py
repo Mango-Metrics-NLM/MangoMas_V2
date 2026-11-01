@@ -92,6 +92,21 @@ def test_gate_exception_restores_bytes(tmp_path: Path, monkeypatch: pytest.Monke
     assert (tmp_path / "target.txt").read_bytes() == original
 
 
+def test_gates_never_cache_bytecode_of_the_mutated_module(tmp_path: Path) -> None:
+    # A same-length mutation restored within one mtime second would otherwise
+    # be served from the mutated .pyc, failing the restore run (MUT-PROF-07 on CI).
+    _init_repo(tmp_path)
+    (tmp_path / "target_mod.py").write_text("VALUE = 'AB'\n", encoding="utf-8")
+    (tmp_path / "gate.py").write_text(
+        "import sys\nsys.path.insert(0, '.')\nimport target_mod\n"
+        "sys.exit(1 if target_mod.VALUE == 'BA' else 0)\n",
+        encoding="utf-8",
+    )
+    manifest = _manifest(tmp_path, path="target_mod.py", fixed="'AB'", defect="'BA'")
+    probe.run_probe(tmp_path, manifest, allow_dirty=True)
+    assert not (tmp_path / "__pycache__").exists()
+
+
 def test_crlf_files_round_trip(tmp_path: Path) -> None:
     _init_repo(tmp_path, newline="\r\n")
     original = (tmp_path / "target.txt").read_bytes()

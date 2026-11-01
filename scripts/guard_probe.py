@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 EXIT_OK = 0
 EXIT_PROBE = 1
 _PYTHON_TOKENS = frozenset({"{python}", "python"})
+_NO_BYTECODE_ENV = "PYTHONDONTWRITEBYTECODE"
 
 
 class ProbeError(Exception):
@@ -135,7 +137,14 @@ def resolve_command(gate: tuple[str, ...]) -> list[str]:
 
 
 def run_gate(gate: tuple[str, ...], cwd: Path) -> int:
-    proc = subprocess.run(resolve_command(gate), cwd=cwd, check=False)
+    """Run *gate* without writing bytecode.
+
+    A ``.pyc`` is validated by source mtime (whole seconds) and size, so a
+    same-length mutation restored within one second would be served from the
+    mutated cache and turn the restore run red.
+    """
+    env = {**os.environ, _NO_BYTECODE_ENV: "1"}
+    proc = subprocess.run(resolve_command(gate), cwd=cwd, check=False, env=env)
     return proc.returncode
 
 

@@ -33,6 +33,10 @@ Versioning: [Semantic Versioning](https://semver.org/).
   errors (exit 2), adds `--log-level`, and returns exit 1 on an unwritable
   report instead of a traceback. The stub answers a non-object JSON body with
   400.
+- `scripts/guard_probe.py` runs gates with `PYTHONDONTWRITEBYTECODE=1`. A
+  same-length mutation (`MUT-PROF-07`) restored within one mtime second was
+  served from the mutated `.pyc`, so CI reported "gate stayed red after
+  restore" on a correct tree.
 - Recorded, not built: D-11 (profile readiness), D-12 (streamed turns are
   stored without `llm_profile`; the probe pins it), D-13 (the stamp means
   "requested", not "served"), A5 (eval targets cannot select a profile).
