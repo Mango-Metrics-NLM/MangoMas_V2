@@ -87,6 +87,11 @@ jobs:
       - name: Gated suites that need no external service
         run: make gated-suites
 
+      # The Studio consumer contract (spec-0041) against an in-process LLM
+      # stub: hermetic, and any real socket the app opens fails the run.
+      - name: Studio consumer probe (mock)
+        run: make studio-probe-mock
+
       - name: Upload coverage report
         # Third-party action pinned to a full commit SHA (supply-chain
         # hardening — codecov's 2021 uploader compromise is the case study);

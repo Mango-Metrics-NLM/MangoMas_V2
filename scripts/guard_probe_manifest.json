@@ -167,6 +167,20 @@
       "fixed": "        if not isinstance(profile, str):\n            return response\n",
       "defect": "        if not isinstance(profile, str):\n            return response.model_copy(update={\"metadata\": {}})\n",
       "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py::test_dispatch_without_profile_leaves_metadata_unchanged", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-STUDIO-01",
+      "path": "src/mangomas/agents/chat.py",
+      "fixed": "        logger.debug(\"ChatAgent dispatching %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name, request)\n",
+      "defect": "        logger.debug(\"ChatAgent dispatching %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_mock_run_passes_every_check_without_touching_the_network", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-STUDIO-02",
+      "path": "src/mangomas/agents/chat.py",
+      "fixed": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name, request)\n",
+      "defect": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_mock_run_passes_every_check_without_touching_the_network", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }

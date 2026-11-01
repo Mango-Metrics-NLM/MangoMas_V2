@@ -121,7 +121,14 @@ def test_test_job_delegates_to_make() -> None:
     # `gated-suites` runs tests/integration + tests/rag: env-gated so a plain
     # `pytest` stays fast, but needing no service, extra or network. They were
     # absent from CI purely because nothing set the gate.
-    assert commands == ["make test-xml", "make coverage", "make gated-suites"]
+    # `studio-probe-mock` drives the Studio contract through an in-process
+    # stub (spec-0041), so it too needs no service.
+    assert commands == [
+        "make test-xml",
+        "make coverage",
+        "make gated-suites",
+        "make studio-probe-mock",
+    ]
 
 
 def test_bridge_coverage_job_delegates_to_make() -> None:
