@@ -43,6 +43,10 @@ def embed_text(text: str) -> list[float]:
     return [byte / 255 for byte in digest[:EMBEDDING_DIMENSIONS]]
 
 
+def _bad_request(message: str) -> JSONResponse:
+    return JSONResponse({"error": {"message": message}}, status_code=_UPSTREAM_REJECTED_STATUS)
+
+
 def _completion_body(model: str, text: str) -> dict[str, Any]:
     return {
         "object": "chat.completion",
@@ -70,20 +74,21 @@ def build_stub_app(models: list[str]) -> FastAPI:
     @app.post("/v1/chat/completions", response_model=None)
     async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
         body = await request.json()
+        if not isinstance(body, dict):
+            return _bad_request("request body must be a JSON object")
         model = str(body.get("model", ""))
         if model == FAIL_MODEL:
-            return JSONResponse(
-                {"error": {"message": f"model {model!r} is not loaded"}},
-                status_code=_UPSTREAM_REJECTED_STATUS,
-            )
+            return _bad_request(f"model {model!r} is not loaded")
         text = reply_for(model, list(body.get("messages", [])))
         if body.get("stream"):
             return StreamingResponse(_sse_frames(text), media_type="text/event-stream")
         return JSONResponse(_completion_body(model, text))
 
-    @app.post("/v1/embeddings")
-    async def embeddings(request: Request) -> dict[str, Any]:
+    @app.post("/v1/embeddings", response_model=None)
+    async def embeddings(request: Request) -> JSONResponse | dict[str, Any]:
         body = await request.json()
+        if not isinstance(body, dict):
+            return _bad_request("request body must be a JSON object")
         raw = body.get("input", [])
         inputs = [raw] if isinstance(raw, str) else list(raw)
         data = [

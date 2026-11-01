@@ -181,6 +181,13 @@
       "fixed": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name, request)\n",
       "defect": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name)\n",
       "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_mock_run_passes_every_check_without_touching_the_network", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-STUDIO-03",
+      "path": "scripts/_studio_probe_journeys.py",
+      "fixed": "        ctx.rec.skip(name, LIVE_ROUTING_SKIP_REASON)\n",
+      "defect": "        ctx.rec.expect(name, True, LIVE_ROUTING_SKIP_REASON)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_routing_is_skipped_where_no_reply_names_its_model", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }

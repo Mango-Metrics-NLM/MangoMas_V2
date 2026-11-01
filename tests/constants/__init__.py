@@ -387,6 +387,11 @@ from tests.constants.live import RUN_GPU_ENV as RUN_GPU_ENV
 from tests.constants.live import SETTINGS_ENV_PREFIX as SETTINGS_ENV_PREFIX
 from tests.constants.live import SLOW_BOX_LIVE_TIMEOUT_SECONDS as SLOW_BOX_LIVE_TIMEOUT_SECONDS
 from tests.constants.live import STUB_VERTEX_REPLY as STUB_VERTEX_REPLY
+from tests.constants.live import STUDIO_PROBE_LIVE_BASE_URL as STUDIO_PROBE_LIVE_BASE_URL
+from tests.constants.live import STUDIO_PROBE_LIVE_HOST as STUDIO_PROBE_LIVE_HOST
+from tests.constants.live import STUDIO_PROBE_LIVE_MODEL as STUDIO_PROBE_LIVE_MODEL
+from tests.constants.live import STUDIO_PROBE_LIVE_REVIEW_MODEL as STUDIO_PROBE_LIVE_REVIEW_MODEL
+from tests.constants.live import STUDIO_PROBE_LIVE_UNSERVED_URL as STUDIO_PROBE_LIVE_UNSERVED_URL
 from tests.constants.live import TENANCY_ENABLED_ENV as TENANCY_ENABLED_ENV
 from tests.constants.live import TORCH_DEVICE_NAMES as TORCH_DEVICE_NAMES
 from tests.constants.live import UNSERVED_API_VERSION_SUFFIX as UNSERVED_API_VERSION_SUFFIX
@@ -709,6 +714,11 @@ __all__ = [
     "SPELLED_NUMBERS",
     "STUB_REPLY",
     "STUB_VERTEX_REPLY",
+    "STUDIO_PROBE_LIVE_BASE_URL",
+    "STUDIO_PROBE_LIVE_HOST",
+    "STUDIO_PROBE_LIVE_MODEL",
+    "STUDIO_PROBE_LIVE_REVIEW_MODEL",
+    "STUDIO_PROBE_LIVE_UNSERVED_URL",
     "SUBSET_COUNT_CLAIMS",
     "SUMMARIZE_HISTORY_LIMIT_ENV",
     "TENANCY_ENABLED_ENV",

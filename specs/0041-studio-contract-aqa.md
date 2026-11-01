@@ -83,7 +83,13 @@ Every red found on the way gets a root cause.
 | `make embeddings-local` (P2) | 66 passed |
 | `make lmstudio` | 17/18. The remaining test passes with `LMSTUDIO_EMBEDDING_MODEL` set (T1). Scenario 13: 8/8 |
 | `studio_consumer_probe.py --mode mock` | 30/30, no hosts contacted |
-| `studio_consumer_probe.py --mode live` | 30/30, only `localhost` contacted (the stream-routing check passes vacuously live, T7) |
+| `studio_consumer_probe.py --mode live` | 26/30 passed, 4 skipped, 0 failed; only `localhost` contacted |
+
+Live replies never name the model that served them, so the four routing checks
+report `SKIP` in live mode instead of an unfalsifiable `PASS`; they stay hard
+assertions in mock mode, where the stub echoes the model id. A skip never fails
+the run (exit 0); only a `FAIL` exits 1. `MUT-STUDIO-03` proves the skip cannot
+silently revert to a pass.
 | Review pass (Bugbot) | 2 findings, both fixed with red-first tests: stub clients leaked when composition failed, and the D-12 check read the newest turn rather than the streamed one |
 | Secret scan (host `gitleaks` 8.30.1) | git pass clean (T2, T3) |
 

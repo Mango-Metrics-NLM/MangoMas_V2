@@ -24,8 +24,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
   is an unserved API version, because LM Studio answers an unknown model id
   from the loaded model.
 - `make guard-probe` replays spec-0040's fourteen mutations
-  (`MUT-PROF-01..14`) and two probe mutations (`MUT-STUDIO-01/02`). The
+  (`MUT-PROF-01..14`) and three probe mutations (`MUT-STUDIO-01..03`). The
   stream-path entry closes a gap the live suite cannot see.
+- The probe reports `SKIP` for a check live mode cannot observe (no live
+  reply names its model) rather than a pass that could not fail; skips exit 0.
+  It is split into `_studio_probe_model` / `_seams` / `_journeys` behind the
+  entry point, validates `--timeout-seconds` and a live `--base-url` as config
+  errors (exit 2), adds `--log-level`, and returns exit 1 on an unwritable
+  report instead of a traceback. The stub answers a non-object JSON body with
+  400.
 - Recorded, not built: D-11 (profile readiness), D-12 (streamed turns are
   stored without `llm_profile`; the probe pins it), D-13 (the stamp means
   "requested", not "served"), A5 (eval targets cannot select a profile).

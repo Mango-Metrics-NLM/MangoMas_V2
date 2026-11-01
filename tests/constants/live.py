@@ -28,6 +28,13 @@ LIVE_DRAFT_PROFILE: str = "draft"
 LIVE_REVIEW_PROFILE: str = "review"
 LIVE_BROKEN_PROFILE: str = "broken"
 LIVE_CLOUD_PROFILE: str = "cloud"
+# Studio consumer probe (spec-0041): a live-mode config resolved without a
+# network call, so the host and model ids are placeholders, never contacted.
+STUDIO_PROBE_LIVE_HOST: str = "probe-host.example"
+STUDIO_PROBE_LIVE_BASE_URL: str = f"http://{STUDIO_PROBE_LIVE_HOST}:1234/v1"
+STUDIO_PROBE_LIVE_UNSERVED_URL: str = f"http://{STUDIO_PROBE_LIVE_HOST}:1234/v999"
+STUDIO_PROBE_LIVE_MODEL: str = "live-draft"
+STUDIO_PROBE_LIVE_REVIEW_MODEL: str = "live-review"
 
 # ── Vertex AI E2E env-var names (single source of truth) ──────────────────────
 VERTEX_PROJECT_ENV: str = "VERTEX_PROJECT_ID"
@@ -363,6 +370,11 @@ __all__ = [
     "SETTINGS_ENV_PREFIX",
     "SLOW_BOX_LIVE_TIMEOUT_SECONDS",
     "STUB_VERTEX_REPLY",
+    "STUDIO_PROBE_LIVE_BASE_URL",
+    "STUDIO_PROBE_LIVE_HOST",
+    "STUDIO_PROBE_LIVE_MODEL",
+    "STUDIO_PROBE_LIVE_REVIEW_MODEL",
+    "STUDIO_PROBE_LIVE_UNSERVED_URL",
     "TENANCY_ENABLED_ENV",
     "TORCH_DEVICE_NAMES",
     "UNSERVED_API_VERSION_SUFFIX",

@@ -275,7 +275,9 @@ The `broken` oracle covers invoke only. A stream-path routing regression
 stays green here, because no live reply names its model. The Studio consumer
 probe catches it: `make studio-probe-mock` runs the same journeys against an
 in-process stub that names the serving model (`MUT-STUDIO-02`).
-`make studio-probe` runs those journeys against this server.
+`make studio-probe` runs those journeys against this server and reports
+those four model-naming checks as `SKIP`, not `PASS`: a skip exits 0, and
+only a `FAIL` exits 1 (`MUT-STUDIO-03`).
 
 ---
 

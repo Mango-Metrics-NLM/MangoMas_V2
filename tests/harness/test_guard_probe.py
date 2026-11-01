@@ -212,8 +212,8 @@ def test_shipped_manifest_snippets_each_occur_once() -> None:
     """The real manifest must still match the tree, or the probe cannot run."""
     entries = probe.load_manifest(probe._default_manifest())
     # 10 MUT-AQA-* (spec-0039) + 14 MUT-PROF-* (spec-0040 / spec-0041)
-    # + 2 MUT-STUDIO-* (spec-0041 consumer probe).
-    assert len(entries) == 26
+    # + 3 MUT-STUDIO-* (spec-0041 consumer probe).
+    assert len(entries) == 27
     assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
     for entry in entries:
         text = (probe._repo_root() / entry.path).read_text(encoding="utf-8")
