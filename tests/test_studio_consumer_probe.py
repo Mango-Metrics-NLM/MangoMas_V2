@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,7 @@ import httpx
 import pytest
 
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
+from mangomas.composition import llm_registry
 from tests._script_loader import load_script_module
 
 stub = load_script_module("_openai_compat_stub.py")
@@ -109,6 +112,43 @@ async def test_a_crashed_journey_is_a_failed_check_not_a_crash() -> None:
     crashed = [c for c in checks if c.journey == "explodes"]
     assert [c.ok for c in crashed] == [False]
     assert "RuntimeError: boom" in crashed[0].detail
+
+
+async def test_stub_clients_close_when_composition_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[list[httpx.AsyncClient]] = []
+    real_seam = probe._provider_seam
+
+    @contextmanager
+    def _spy(cfg: Any) -> Iterator[list[httpx.AsyncClient]]:
+        with real_seam(cfg) as clients:
+            captured.append(clients)
+            yield clients
+
+    def _build_then_fail(settings: Any) -> Any:
+        llm_registry.get("lmstudio")(settings.llm)
+        raise RuntimeError("composition failed")
+
+    monkeypatch.setattr(probe, "_provider_seam", _spy)
+    monkeypatch.setattr(probe, "build_orchestrator", _build_then_fail)
+    with pytest.raises(RuntimeError, match="composition failed"):
+        await probe.run_probe(_mock_config())
+    assert len(captured[0]) == 1
+    assert captured[0][0].is_closed
+
+
+async def test_stored_turn_binds_to_its_prompt_not_to_the_newest_row() -> None:
+    found: dict[str, Any] = {}
+
+    async def journey_lookup(ctx: Any) -> None:
+        await ctx.client.post("/agents/chat/invoke", json=probe._request("first"))
+        await ctx.client.post("/agents/chat/invoke", json=probe._request("second"))
+        found["first"] = await probe._stored_turn(ctx.client, "first")
+        found["absent"] = await probe._stored_turn(ctx.client, "never sent")
+
+    await probe.run_probe(_mock_config(), journeys=[journey_lookup])
+    assert found["first"]["request"]["messages"][-1]["content"] == "first"
+    assert found["absent"] is None
+    assert probe._turn_metadata(None) == {}
 
 
 def test_main_mock_exits_zero_and_writes_the_report(tmp_path: Path) -> None:

@@ -82,8 +82,9 @@ Every red found on the way gets a root cause.
 | `make gpu` (P2 interpreter, cu130, 2 GPUs) | 3/3 |
 | `make embeddings-local` (P2) | 66 passed |
 | `make lmstudio` | 17/18. The remaining test passes with `LMSTUDIO_EMBEDDING_MODEL` set (T1). Scenario 13: 8/8 |
-| `studio_consumer_probe.py --mode mock` | 29/29, no hosts contacted |
-| `studio_consumer_probe.py --mode live` | 29/29, only `localhost` contacted (the stream-routing check passes vacuously live, T7) |
+| `studio_consumer_probe.py --mode mock` | 30/30, no hosts contacted |
+| `studio_consumer_probe.py --mode live` | 30/30, only `localhost` contacted (the stream-routing check passes vacuously live, T7) |
+| Review pass (Bugbot) | 2 findings, both fixed with red-first tests: stub clients leaked when composition failed, and the D-12 check read the newest turn rather than the streamed one |
 | Secret scan (host `gitleaks` 8.30.1) | git pass clean (T2, T3) |
 
 Live models: `draft` = `nvidia/nemotron-3-nano-omni`, `review` =

@@ -86,6 +86,9 @@ DEFAULT_TIMEOUT_SECONDS = 240.0
 CLIENT_TIMEOUT_HEADROOM_SECONDS = 30.0
 IN_MEMORY_DB_URL = "sqlite:///:memory:"
 PROMPT = "Reply with one short sentence about mangoes."
+INVOKE_PROMPT = "Reply with one short sentence about mango orchards."
+STREAM_PROMPT = "Reply with one short sentence about mango season."
+HISTORY_SCAN_LIMIT = 20
 SECRET_FIELDS = ("api_key", "secret_ref", "credentials_path")
 _HTTP_BAD_REQUEST = 400
 _HTTP_BAD_GATEWAY = 502
@@ -304,10 +307,22 @@ def _routed_to(cfg: ProbeConfig, content: str, model: str) -> tuple[bool, str]:
     return content.startswith(f"[{model}]"), content[:60]
 
 
-async def _newest_turn_metadata(client: httpx.AsyncClient) -> dict[str, Any]:
-    resp = await client.get("/history", params={"limit": 1})
-    turns = resp.json().get("turns", [])
-    return dict(turns[0]["response"].get("metadata", {})) if turns else {}
+async def _stored_turn(client: httpx.AsyncClient, prompt: str) -> dict[str, Any] | None:
+    """The newest stored turn whose last message is *prompt*, if any.
+
+    Binding to the prompt, not to "newest", keeps a check from passing on an
+    older turn when the run under test persisted nothing.
+    """
+    resp = await client.get("/history", params={"limit": HISTORY_SCAN_LIMIT})
+    for turn in resp.json().get("turns", []):
+        messages = turn.get("request", {}).get("messages", [])
+        if messages and messages[-1].get("content") == prompt:
+            return dict(turn)
+    return None
+
+
+def _turn_metadata(turn: dict[str, Any] | None) -> dict[str, Any]:
+    return dict(turn["response"].get("metadata", {})) if turn else {}
 
 
 async def journey_profile_picker(ctx: JourneyContext) -> None:
@@ -325,14 +340,15 @@ async def journey_profile_picker(ctx: JourneyContext) -> None:
 
 async def journey_invoke_stamp(ctx: JourneyContext) -> None:
     """An invoke answers from the chosen profile and the stored turn says so."""
-    resp = await ctx.client.post("/agents/chat/invoke", json=_request(PROMPT, REVIEW_PROFILE))
+    payload = _request(INVOKE_PROMPT, REVIEW_PROFILE)
+    resp = await ctx.client.post("/agents/chat/invoke", json=payload)
     body = resp.json()
     ctx.rec.expect("status 200", resp.status_code == httpx.codes.OK, str(resp.status_code))
     stamp = body.get("metadata", {}).get(PROFILE_KEY)
     ctx.rec.expect("response stamp", stamp == REVIEW_PROFILE, str(stamp))
     routed, detail = _routed_to(ctx.cfg, str(body.get("content", "")), ctx.cfg.review_model)
     ctx.rec.expect("served by the review model", routed, detail)
-    stored = (await _newest_turn_metadata(ctx.client)).get(PROFILE_KEY)
+    stored = _turn_metadata(await _stored_turn(ctx.client, INVOKE_PROMPT)).get(PROFILE_KEY)
     ctx.rec.expect("history stamp", stored == REVIEW_PROFILE, str(stored))
 
 
@@ -365,7 +381,8 @@ def _sse_events(text: str) -> list[dict[str, Any]]:
 
 async def journey_run_timeline(ctx: JourneyContext) -> None:
     """The stream names its profile up front; the stored turn does not (D-12)."""
-    resp = await ctx.client.post("/agents/chat/stream", json=_request(PROMPT, REVIEW_PROFILE))
+    payload = _request(STREAM_PROMPT, REVIEW_PROFILE)
+    resp = await ctx.client.post("/agents/chat/stream", json=payload)
     events = _sse_events(resp.text)
     kinds = [e.get("event") for e in events]
     ctx.rec.expect("status 200", resp.status_code == httpx.codes.OK, str(resp.status_code))
@@ -381,10 +398,12 @@ async def journey_run_timeline(ctx: JourneyContext) -> None:
     )
     routed, detail = _routed_to(ctx.cfg, streamed, ctx.cfg.review_model)
     ctx.rec.expect("tokens served by the review model", routed, detail)
-    stored = await _newest_turn_metadata(ctx.client)
+    turn = await _stored_turn(ctx.client, STREAM_PROMPT)
+    ctx.rec.expect("streamed turn persisted", turn is not None)
+    stored = _turn_metadata(turn)
     ctx.rec.expect(
         "D-12 limitation: streamed turn is unstamped (update spec-0041 if this fails)",
-        PROFILE_KEY not in stored,
+        turn is not None and PROFILE_KEY not in stored,
         json.dumps(stored)[:120],
     )
 
@@ -512,11 +531,14 @@ async def run_probe(cfg: ProbeConfig, journeys: Sequence[Journey] = JOURNEYS) ->
         record_network_hosts() as hosts,
         _provider_seam(cfg) as stub_clients,
     ):
-        orch = build_orchestrator(build_settings(cfg))
         try:
-            await _drive(orch, cfg, rec, journeys)
+            orch = build_orchestrator(build_settings(cfg))
+            try:
+                await _drive(orch, cfg, rec, journeys)
+            finally:
+                await orch.aclose()
         finally:
-            await orch.aclose()
+            # Runs even when composition fails after a factory built a client.
             for http in stub_clients:
                 await http.aclose()
     rec.journey = "network"
