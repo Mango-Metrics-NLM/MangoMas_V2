@@ -80,7 +80,7 @@ thinking tool, not a gate.
 | [0038](0038-cloud-image-closure-and-manifest-contract.md) | Cloud image closure (extras + one lock) and manifest provider contract |
 | [0039](0039-origin-delta-aqa.md) | Origin-delta AQA and the CUDA placement gate |
 | [0040](0040-llm-provider-profiles.md) | LLM provider profiles and the Studio boundary (`MANGOMAS_LLM_PROFILES__*`, `PROVIDER_ALLOWLIST`, `GET /llm/profiles`) |
-| [0041](0041-studio-contract-aqa.md) | Studio-contract E2E and AQA: live two-profile scenario, `MUT-PROF`/`MUT-STUDIO` replays, consumer probe (`make studio-probe-mock`) |
+| [0041](0041-studio-contract-aqa.md) | Studio-contract E2E and AQA: live two-profile scenario, `MUT-STUDIO` replays, consumer probe (`make studio-probe-mock`) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch

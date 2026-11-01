@@ -49,9 +49,10 @@ Record every lane as one of `PASS`, `FAIL`, `NOT-RUN`, or `FAIL(GATE)`.
    with `Recorder.skip(name, reason)`, state the reason, and pin the skip with a
    `guard_probe_manifest.json` entry (`MUT-STUDIO-03`). A `SKIP` exits 0, so it
    never masks a real `FAIL`.
-9. A `guard_probe` gate runs with `PYTHONDONTWRITEBYTECODE=1`. A same-length
-   mutation restored within one second would otherwise be served from its
-   stale `.pyc`.
+9. Before adding a manifest entry, check that no existing entry already
+   mutates the same file and gates on the same test. The manifest test
+   rejects a duplicate under a new id. The probe evicts the target's `.pyc` and restores
+   its mtime, so a same-size mutation needs no workaround.
 
 ## Commands
 

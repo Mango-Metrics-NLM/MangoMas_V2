@@ -23,9 +23,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `review` and `broken` profiles on one LM Studio server. The routing oracle
   is an unserved API version, because LM Studio answers an unknown model id
   from the loaded model.
-- `make guard-probe` replays spec-0040's fourteen mutations
-  (`MUT-PROF-01..14`) and three probe mutations (`MUT-STUDIO-01..03`). The
-  stream-path entry closes a gap the live suite cannot see.
+- `make guard-probe` adds three probe mutations (`MUT-STUDIO-01..03`) to the
+  spec-0040 replays (`MUT-0040-M01..M14`). The stream-path entry closes a gap
+  the live suite cannot see. This branch had its own `MUT-PROF-*` copy of
+  those fourteen, with different ids and snippet wording; it was dropped at
+  merge. `test_shipped_manifest_snippets_each_occur_once` now rejects two
+  entries that prove the same guard: same file, same selected test.
 - The probe reports `SKIP` for a check live mode cannot observe (no live
   reply names its model) rather than a pass that could not fail; skips exit 0.
   It is split into `_studio_probe_model` / `_seams` / `_journeys` behind the
@@ -44,10 +47,6 @@ Versioning: [Semantic Versioning](https://semver.org/).
   the real-binary planted-secret test still passes.
 - `docs/testing/regression.md` lists all 14 LM Studio suites with the
   env vars each needs. The old table stopped at v0.3.1's seven.
-- `scripts/guard_probe.py` runs gates with `PYTHONDONTWRITEBYTECODE=1`. A
-  same-length mutation (`MUT-PROF-07`) restored within one mtime second was
-  served from the mutated `.pyc`, so CI reported "gate stayed red after
-  restore" on a correct tree.
 - Recorded, not built: D-11 (profile readiness), D-12 (streamed turns are
   stored without `llm_profile`; the probe pins it), D-13 (the stamp means
   "requested", not "served"), A5 (eval targets cannot select a profile).
@@ -111,7 +110,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   falsifiability probe. Each entry mutates one guard, requires that guard to
   fail, restores the original bytes, and requires the guard to pass. It
   refuses a dirty tree unless `--allow-dirty` is passed, and it is not part
-  of `make gate`.
+  of `make gate`. The manifest also carries the fourteen spec-0040 LLM-profile
+  proofs (`MUT-0040-M01` … `M14`, numbered as in PR #104), so those guards are
+  re-proven on every PR rather than once in a PR body.
 - `mangomas.utils.regex_flags`: the shared `ignorecase` / `multiline` /
   `dotall` resolver used by the eval `regex_match` scorer and workflow
   predicates.

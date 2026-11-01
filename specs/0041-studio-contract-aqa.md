@@ -30,8 +30,10 @@ Every red found on the way gets a root cause.
   allowlist. It skips with the sanctioned phrasing unless
   `LMSTUDIO_OVERRIDE_MODEL` is set.
 - **R2 — Mutations replayed.** `scripts/guard_probe_manifest.json` carries
-  `MUT-PROF-01..14`, one per spec-0040 guard. Each gate is a single pytest
-  node id that goes red under the mutation and green after the restore.
+  `MUT-0040-M01..M14`, one per spec-0040 guard. These landed first through
+  PR #106, so this branch's equivalent `MUT-PROF-01..14` set was dropped at
+  merge. Each gate selects a single pytest test that goes red under the
+  mutation and green after the restore.
 - **R3 — Studio consumer probe.** `scripts/studio_consumer_probe.py` calls
   the real app over `httpx.ASGITransport` and reports one check per contract
   assertion. Its journeys are:
@@ -66,7 +68,7 @@ Every red found on the way gets a root cause.
 - WHEN `ChatAgent.stream` drops `request` THEN "tokens served by the review
   model" fails (`MUT-STUDIO-02`). The live suite cannot see this regression
   because LM Studio never names the serving model (T7).
-- WHEN any spec-0040 guard in `MUT-PROF-01..14` is mutated THEN its gate
+- WHEN any spec-0040 guard in `MUT-0040-M01..M14` is mutated THEN its gate
   fails, and passes after the restore.
 - WHEN the app opens a real socket in mock mode THEN the network check fails.
 - WHEN a streamed turn gains a stored `llm_profile` (D-12 closed) THEN the
@@ -77,7 +79,7 @@ Every red found on the way gets a root cause.
 | Lane | Result |
 |------|--------|
 | `make gate` (baseline) | 3670 passed, 69 sanctioned skips |
-| `make guard-probe` | 10/10 baseline. 26/26 with `MUT-PROF-01..14` and `MUT-STUDIO-01/02` |
+| `make guard-probe` | 10/10 baseline. 27/27 after merging PR #106: `MUT-AQA` (10), `MUT-0040-M01..M14`, `MUT-STUDIO-01..03` |
 | `make gated-suites` | green |
 | `make gpu` (P2 interpreter, cu130, 2 GPUs) | 3/3 |
 | `make embeddings-local` (P2) | 66 passed |
@@ -178,7 +180,7 @@ value afterwards.
   floor).
 - Live: `tests/lmstudio/test_llm_profiles.py` (`RUN_LMSTUDIO=1` plus
   `LMSTUDIO_OVERRIDE_MODEL`).
-- Guards: `MUT-PROF-01..14` and `MUT-STUDIO-01/02` in `make guard-probe`.
+- Guards: `MUT-0040-M01..M14` and `MUT-STUDIO-01..03` in `make guard-probe`.
 
 ## Acceptance criteria
 

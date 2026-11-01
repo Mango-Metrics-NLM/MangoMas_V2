@@ -272,7 +272,7 @@ original bytes, and requires the guard to exit zero. It refuses a dirty tree
 unless `--allow-dirty` is passed. It is not a dependency of `make gate`.
 
 The manifest holds three families. `MUT-AQA-*` covers the spec-0039 defects.
-`MUT-PROF-01`..`MUT-PROF-14` replay the fourteen provider-profile mutations
+`MUT-0040-M01`..`M14` replay the fourteen provider-profile mutations
 recorded on PR #104 (spec-0040). Those include the precedence swap, both
 allowlist validators, the stream pre-check, mixin order, and stamp-before-persist.
 `MUT-STUDIO-01`/`02` drop the request from `ChatAgent`'s invoke and stream
@@ -282,11 +282,13 @@ does, so the stream-path regression is invisible to `make lmstudio`.
 `MUT-STUDIO-03` turns the live routing `SKIP` back into a `PASS`, and its gate
 must go red. A check that cannot fail must not count as passed.
 
-Gates run with `PYTHONDONTWRITEBYTECODE=1`. `MUT-PROF-07` swaps two
-equal-length names, and a restore inside the same mtime second was otherwise
-served from the mutated `.pyc` (`test_gates_never_cache_bytecode_of_the_mutated_module`).
-Each gate is a single test node id, so a mutation that broke collection would show
-up as an error rather than a pass.
+Before each gate the probe evicts the target's `.pyc`, and the restore puts back
+the original mtime as well as the bytes. A same-size mutation restored within
+one second is otherwise served from stale bytecode
+(`test_drop_bytecode_evicts_a_cache_compiled_from_the_defect`). Each gate selects
+a single test, so a mutation that broke collection shows up as an error rather
+than a pass. A guard is identified by the mutated file plus the test its gate
+selects, so the same proof cannot be listed twice under different ids.
 
 ```powershell
 python scripts/guard_probe.py --allow-dirty   # this checkout is dirty

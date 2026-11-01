@@ -6,7 +6,10 @@ against a temporary git repo and a stub gate, never against this checkout.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
+import py_compile
 import subprocess
 from pathlib import Path
 
@@ -90,21 +93,6 @@ def test_gate_exception_restores_bytes(tmp_path: Path, monkeypatch: pytest.Monke
     with pytest.raises(RuntimeError, match="gate crashed"):
         probe.probe_entry(tmp_path, entry)
     assert (tmp_path / "target.txt").read_bytes() == original
-
-
-def test_gates_never_cache_bytecode_of_the_mutated_module(tmp_path: Path) -> None:
-    # A same-length mutation restored within one mtime second would otherwise
-    # be served from the mutated .pyc, failing the restore run (MUT-PROF-07 on CI).
-    _init_repo(tmp_path)
-    (tmp_path / "target_mod.py").write_text("VALUE = 'AB'\n", encoding="utf-8")
-    (tmp_path / "gate.py").write_text(
-        "import sys\nsys.path.insert(0, '.')\nimport target_mod\n"
-        "sys.exit(1 if target_mod.VALUE == 'BA' else 0)\n",
-        encoding="utf-8",
-    )
-    manifest = _manifest(tmp_path, path="target_mod.py", fixed="'AB'", defect="'BA'")
-    probe.run_probe(tmp_path, manifest, allow_dirty=True)
-    assert not (tmp_path / "__pycache__").exists()
 
 
 def test_crlf_files_round_trip(tmp_path: Path) -> None:
@@ -223,13 +211,95 @@ def test_an_empty_gate_command_is_rejected(tmp_path: Path) -> None:
         probe.load_manifest(path)
 
 
+def test_drop_bytecode_evicts_a_cache_compiled_from_the_defect(tmp_path: Path) -> None:
+    """The CI failure of MUT-0040-M06, reproduced deterministically.
+
+    A ``.pyc`` compiled from the *defect* source, stamped with the same mtime
+    and size as the fixed source now on disk, is valid to CPython: the gate
+    imports the defect and goes red on a correct tree. Dropping the cache is
+    what makes the next gate compile the bytes that are actually there.
+    """
+    target = tmp_path / "guard_mod.py"
+    gate = tmp_path / "gate.py"
+    gate.write_text(
+        "import sys\nimport guard_mod\nsys.exit(1 if guard_mod.FLAG == 'BA' else 0)\n",
+        encoding="utf-8",
+    )
+    stamp = 1_700_000_000
+    # Compile the cache from the defect, then put the fixed bytes back with the
+    # identical mtime and byte count — exactly what a same-size mutation that is
+    # written, gated and restored within one second produces.
+    target.write_text('FLAG = "BA"\n', encoding="utf-8")
+    os.utime(target, (stamp, stamp))
+    py_compile.compile(
+        str(target),
+        cfile=importlib.util.cache_from_source(str(target)),
+        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
+    )
+    target.write_text('FLAG = "AB"\n', encoding="utf-8")
+    os.utime(target, (stamp, stamp))
+
+    assert probe.run_gate(("{python}", "gate.py"), tmp_path) == 1, "stale cache must bite"
+    probe.drop_bytecode(target)
+    assert probe.run_gate(("{python}", "gate.py"), tmp_path) == 0
+
+
+def test_drop_bytecode_ignores_a_non_python_target(tmp_path: Path) -> None:
+    target = tmp_path / "AGENTS.md"
+    target.write_text("row\n", encoding="utf-8")
+    probe.drop_bytecode(target)  # must not raise or touch anything
+    assert target.read_text(encoding="utf-8") == "row\n"
+
+
+def test_restore_keeps_the_original_mtime_and_round_trips_a_same_size_mutation(
+    tmp_path: Path,
+) -> None:
+    """Bytes *and* mtime come back, so a cache keyed on them cannot outlive the probe."""
+    _init_repo(tmp_path)
+    target = tmp_path / "target.txt"
+    stamp = 1_700_000_000
+    os.utime(target, (stamp, stamp))
+    before = target.stat()
+    # Same byte count as the fixed snippet, and it still trips the stub gate.
+    probe.run_probe(
+        tmp_path,
+        _manifest(tmp_path, fixed="prefix FIXED", defect="DEFECT FIXED"),
+        allow_dirty=False,
+    )
+    after = target.stat()
+    assert after.st_mtime_ns == before.st_mtime_ns
+    assert target.read_bytes() == b"prefix FIXED suffix\n"
+
+
+def _gate_test(gate: tuple[str, ...]) -> str:
+    """The test a gate selects, as ``file::name`` whether written as a node id or ``-k``.
+
+    Two branches once replayed the same fourteen spec-0040 mutations under
+    different ids *and* different snippet wording, so ``(path, fixed, defect)``
+    matched only three of them. The mutated file plus the test that proves it
+    matched all fourteen.
+    """
+    target = next(part for part in gate if part.startswith("tests/"))
+    if "-k" in gate:
+        return f"{target}::{gate[gate.index('-k') + 1]}"
+    return target
+
+
+def test_gate_test_identity_is_spelling_independent() -> None:
+    node_id = ("{python}", "-m", "pytest", "tests/test_x.py::test_y", "-q")
+    keyword = ("{python}", "-m", "pytest", "tests/test_x.py", "-k", "test_y", "-q")
+    assert _gate_test(node_id) == _gate_test(keyword) == "tests/test_x.py::test_y"
+
+
 def test_shipped_manifest_snippets_each_occur_once() -> None:
     """The real manifest must still match the tree, or the probe cannot run."""
     entries = probe.load_manifest(probe._default_manifest())
-    # 10 MUT-AQA-* (spec-0039) + 14 MUT-PROF-* (spec-0040 / spec-0041)
-    # + 3 MUT-STUDIO-* (spec-0041 consumer probe).
+    # 10 MUT-AQA-* (spec-0039) + 14 MUT-0040-M* (spec-0040) + 3 MUT-STUDIO-* (spec-0041).
     assert len(entries) == 27
     assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
+    proofs = [(entry.path, _gate_test(entry.gate)) for entry in entries]
+    duplicated = sorted({proof for proof in proofs if proofs.count(proof) > 1})
+    assert duplicated == [], f"the same guard is proven twice under different ids: {duplicated}"
     for entry in entries:
         text = (probe._repo_root() / entry.path).read_text(encoding="utf-8")
         assert probe._to_lf(text).count(probe._to_lf(entry.fixed)) == 1, entry.entry_id

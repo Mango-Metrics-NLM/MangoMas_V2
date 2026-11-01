@@ -136,9 +136,20 @@ def test_reply_without_a_user_turn_is_just_the_model_tag() -> None:
 
 async def test_mock_run_passes_every_check_without_touching_the_network() -> None:
     checks = await probe.run_probe(_mock_config())
-    assert [c for c in checks if c.status != "pass"] == [], probe.render(checks)
+    assert [c for c in checks if c.status != probe.CHECK_OK] == [], probe.render(checks)
     names = {j.__name__.removeprefix("journey_") for j in probe.JOURNEYS}
     assert {c.journey for c in checks} == names | {"network"}
+
+
+@pytest.mark.parametrize(
+    "journey", probe.JOURNEYS, ids=lambda j: j.__name__.removeprefix("journey_")
+)
+async def test_each_journey_passes_alone_in_mock_mode(journey: Any) -> None:
+    """One node per journey, so a guard-probe gate names the journey that must catch it."""
+    checks = await probe.run_probe(_mock_config(), (journey,))
+    name = journey.__name__.removeprefix("journey_")
+    assert {c.journey for c in checks} == {name, "network"}
+    assert [c for c in checks if c.status != probe.CHECK_OK] == [], probe.render(checks)
 
 
 async def test_a_crashed_journey_is_a_failed_check_and_a_logged_warning(

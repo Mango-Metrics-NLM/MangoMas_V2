@@ -207,6 +207,9 @@ jobs:
   guard-probe:
     name: Guard falsifiability probe
     runs-on: ubuntu-latest
+    # 27 entries x 2 gate runs is about a minute locally; a bound keeps a hung
+    # gate from holding the runner for the 360-minute default.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 

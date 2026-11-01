@@ -16,7 +16,7 @@ defect:
 - `make studio-probe-mock` (CI) and `make studio-probe` (LM Studio) drive the
   Studio consumer contract. Scenario 13 proves two live profiles and a broken
   one on a single server.
-- `make guard-probe` now has 27 entries: `MUT-AQA` (10), `MUT-PROF` (14) and
+- `make guard-probe` now has 27 entries: `MUT-AQA` (10), `MUT-0040` (14) and
   `MUT-STUDIO` (3). `MUT-STUDIO-03` pins live routing checks as `SKIP`
   rather than an unfalsifiable `PASS`.
 - Follow-ups from the pre-PR review:
