@@ -15,8 +15,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
 
@@ -27,6 +29,11 @@ from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR, EXIT_RUNTIME_ERROR
 from mangomas.composition import llm_registry
 from tests._script_loader import load_script_module
 from tests.constants import (
+    API_CORS_ALLOW_METHODS_ENV,
+    HTTP_PROXY_ENV,
+    LOOPBACK_HOST,
+    STUDIO_PROBE_DEAD_PROXY_URL,
+    STUDIO_PROBE_GET_ONLY_METHODS,
     STUDIO_PROBE_LIVE_BASE_URL,
     STUDIO_PROBE_LIVE_HOST,
     STUDIO_PROBE_LIVE_MODEL,
@@ -301,8 +308,15 @@ def test_live_config_routes_broken_to_an_unserved_api_version() -> None:
 
 @pytest.mark.parametrize(
     "base_url",
-    ["localhost:1234/v1", "ftp://host.example/v1", "http:///v1"],
-    ids=["no-scheme", "wrong-scheme", "no-host"],
+    [
+        "localhost:1234/v1",
+        "ftp://host.example/v1",
+        "http:///v1",
+        "http://[::1/v1",
+        "http://localhost:99999/v1",
+        "http://localhost:abc/v1",
+    ],
+    ids=["no-scheme", "wrong-scheme", "no-host", "bad-authority", "port-range", "port-nan"],
 )
 def test_live_base_url_without_an_http_host_is_a_config_error(base_url: str) -> None:
     args = probe.parse_args(
@@ -390,3 +404,67 @@ def test_cors_env_is_restored(monkeypatch: pytest.MonkeyPatch, previous: str | N
 def test_live_provider_seam_injects_nothing() -> None:
     with probe.provider_seam(_live_config()) as clients:
         assert clients == []
+
+
+@pytest.mark.parametrize("previous", [None, "kept.example"], ids=["unset", "set"])
+def test_live_seam_bypasses_proxies_and_restores_no_proxy(
+    monkeypatch: pytest.MonkeyPatch, previous: str | None
+) -> None:
+    for name in probe.NO_PROXY_ENVS:
+        if previous is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, previous)
+    with probe.provider_seam(_live_config()):
+        assert {os.environ[n] for n in probe.NO_PROXY_ENVS} == {probe.BYPASS_ALL_PROXIES}
+    assert [os.environ.get(n) for n in probe.NO_PROXY_ENVS] == [previous] * len(probe.NO_PROXY_ENVS)
+
+
+class _OkHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        self.send_response(httpx.codes.OK)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *_args: object) -> None:
+        """Silence the stdlib access log in test output."""
+
+
+@pytest.fixture
+def loopback_url() -> Iterator[str]:
+    server = ThreadingHTTPServer((LOOPBACK_HOST, 0), _OkHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://{LOOPBACK_HOST}:{server.server_port}/"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+async def test_live_run_reaches_the_audited_host_not_an_environment_proxy(
+    monkeypatch: pytest.MonkeyPatch, loopback_url: str
+) -> None:
+    """A proxy would make the host audit record the destination while another peer
+    is contacted. The first request proves the proxy applies; inside the live seam
+    the same ``trust_env`` client must connect directly."""
+    for name in probe.NO_PROXY_ENVS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(HTTP_PROXY_ENV, STUDIO_PROBE_DEAD_PROXY_URL)
+    async with httpx.AsyncClient() as proxied:
+        with pytest.raises(httpx.TransportError):
+            await proxied.get(loopback_url)
+    with probe.provider_seam(_live_config()):
+        async with httpx.AsyncClient() as direct:
+            assert (await direct.get(loopback_url)).status_code == httpx.codes.OK
+
+
+async def test_cors_fails_when_the_preflight_is_refused_for_the_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Starlette echoes the allowed origin on a 400 preflight; the origin alone must not pass."""
+    monkeypatch.setenv(API_CORS_ALLOW_METHODS_ENV, STUDIO_PROBE_GET_ONLY_METHODS)
+    checks = await probe.run_probe(_mock_config(), (journeys.journey_cors,))
+    listed = next(c for c in checks if c.name == "listed origin allowed")
+    assert listed.failed
+    assert listed.detail == f"{httpx.codes.BAD_REQUEST} {probe.STUDIO_ORIGIN}"

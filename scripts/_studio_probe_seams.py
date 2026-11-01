@@ -1,8 +1,8 @@
 """Process seams the Studio consumer probe installs for one run (spec-0041).
 
 Each is a context manager that restores what it changed: the CORS env var and
-the settings cache, httpx's real transports, and the ``lmstudio`` registry
-entry.
+the settings cache, the ``NO_PROXY`` env vars, httpx's real transports, and the
+``lmstudio`` registry entry.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager
 
 import httpx
 from _openai_compat_stub import build_stub_app
@@ -24,22 +24,47 @@ from mangomas.config import LLMSettings, get_settings
 logger = logging.getLogger("studio_consumer_probe")
 
 CORS_ORIGINS_ENV = "MANGOMAS_API__CORS_ALLOW_ORIGINS"
+NO_PROXY_ENVS: tuple[str, ...] = ("NO_PROXY", "no_proxy")
+BYPASS_ALL_PROXIES = "*"
+
+
+@contextmanager
+def _scoped_env(values: dict[str, str]) -> Iterator[None]:
+    """Set *values* for the block, then restore each name exactly, including absence."""
+    previous = {name: os.environ.get(name) for name in values}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for name, old in previous.items():
+            if old is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = old
 
 
 @contextmanager
 def cors_allow_origin(origin: str) -> Iterator[None]:
     """Expose *origin* to ``create_app``, which reads CORS from ``get_settings``."""
-    previous = os.environ.get(CORS_ORIGINS_ENV)
-    os.environ[CORS_ORIGINS_ENV] = json.dumps([origin])
-    get_settings.cache_clear()
-    try:
-        yield
-    finally:
-        if previous is None:
-            os.environ.pop(CORS_ORIGINS_ENV, None)
-        else:
-            os.environ[CORS_ORIGINS_ENV] = previous
+    with _scoped_env({CORS_ORIGINS_ENV: json.dumps([origin])}):
         get_settings.cache_clear()
+        try:
+            yield
+        finally:
+            get_settings.cache_clear()
+
+
+@contextmanager
+def bypass_env_proxies() -> Iterator[list[httpx.AsyncClient]]:
+    """Make live clients connect directly, so the host audit sees the real peer.
+
+    The audit records ``request.url.host``, which is the destination even when
+    httpx (``trust_env=True``) tunnels through ``HTTP(S)_PROXY`` / ``ALL_PROXY``
+    or, on Windows, the registry proxy. ``NO_PROXY=*`` disables every source.
+    """
+    logger.debug("environment proxies bypassed for the live run")
+    with _scoped_env(dict.fromkeys(NO_PROXY_ENVS, BYPASS_ALL_PROXIES)):
+        yield []
 
 
 @contextmanager
@@ -102,7 +127,7 @@ def stub_llm_provider(models: list[str]) -> Iterator[list[httpx.AsyncClient]]:
 
 
 def provider_seam(cfg: ProbeConfig) -> AbstractContextManager[list[httpx.AsyncClient]]:
-    """The stub in mock mode; the real ``lmstudio`` factory in live mode."""
+    """The stub in mock mode; the real ``lmstudio`` factory, proxy-free, in live mode."""
     if cfg.mode == MODE_MOCK:
         return stub_llm_provider([cfg.draft_model, cfg.review_model])
-    return nullcontext([])
+    return bypass_env_proxies()

@@ -165,10 +165,16 @@ def test_model_does_not_describe_landed_work_as_future() -> None:
         )
 
 
+def _route_token(path: str) -> re.Pattern[str]:
+    """*path* as a whole token, so ``/healthz`` cannot stand in for ``/health``
+    nor ``/agents/{name}/invoke`` for ``/agents``."""
+    return re.compile(rf"(?<![\w/{{}}-]){re.escape(path)}(?![\w/{{}}-])")
+
+
 def _routes_missing_from(c3_text: str) -> list[str]:
     snapshot = json.loads(_OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
     model = "\n".join(_mermaid_blocks(c3_text))
-    return sorted(path for path in snapshot["paths"] if path not in model)
+    return sorted(path for path in snapshot["paths"] if not _route_token(path).search(model))
 
 
 def test_every_http_route_appears_in_the_c3_model() -> None:
@@ -183,10 +189,17 @@ def test_every_http_route_appears_in_the_c3_model() -> None:
     assert missing == [], f"route(s) absent from every C3 diagram: {missing}"
 
 
-def test_route_coverage_catches_a_dropped_route() -> None:
-    """Non-vacuity: removing one route's mention must turn the check red."""
+@pytest.mark.parametrize(
+    "dropped",
+    ["/llm/profiles", "/health", "/ready", "/agents"],
+    ids=["plain", "masked-by-healthz", "masked-by-readyz", "masked-by-agents-subpaths"],
+)
+def test_route_coverage_catches_a_dropped_route(dropped: str) -> None:
+    """Non-vacuity: dropping one route must turn the check red, even when a
+    longer route that contains it as a prefix is still documented."""
     text = (_ARCH_DIR / "c3-component.md").read_text(encoding="utf-8")
-    assert _routes_missing_from(text.replace("/llm/profiles", "/llm/elided")) == ["/llm/profiles"]
+    assert _route_token(dropped).search(text), f"{dropped} not documented to begin with"
+    assert _routes_missing_from(_route_token(dropped).sub("/elided", text)) == [dropped]
 
 
 def test_c4_code_names_the_dispatch_surface() -> None:

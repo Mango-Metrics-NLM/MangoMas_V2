@@ -253,10 +253,18 @@ async def _preflight(client: httpx.AsyncClient, origin: str) -> httpx.Response:
 
 
 async def journey_cors(ctx: JourneyContext) -> None:
-    """The browser plane: the Studio origin is allowed, any other is refused."""
+    """The browser plane: the Studio origin is allowed, any other is refused.
+
+    Starlette echoes an allowed origin even on a preflight it refuses for the
+    requested method, so "allowed" needs the 200 as well as the header.
+    """
     listed = await _preflight(ctx.client, STUDIO_ORIGIN)
     allowed = listed.headers.get("access-control-allow-origin")
-    ctx.rec.expect("listed origin allowed", allowed == STUDIO_ORIGIN, str(allowed))
+    ctx.rec.expect(
+        "listed origin allowed",
+        listed.status_code == httpx.codes.OK and allowed == STUDIO_ORIGIN,
+        f"{listed.status_code} {allowed}",
+    )
     unlisted = await _preflight(ctx.client, UNLISTED_ORIGIN)
     echoed = unlisted.headers.get("access-control-allow-origin")
     ctx.rec.expect(

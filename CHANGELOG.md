@@ -47,6 +47,20 @@ Versioning: [Semantic Versioning](https://semver.org/).
   the real-binary planted-secret test still passes.
 - `docs/testing/regression.md` lists all 14 LM Studio suites with the
   env vars each needs. The old table stopped at v0.3.1's seven.
+- PR #107 review fixes, each with a test that failed against the previous code:
+  - The CORS journey requires a 200 preflight as well as the echoed origin.
+    Starlette echoes an allowed origin on a preflight it refuses for the
+    method.
+  - Live mode sets `NO_PROXY=*` for the run, so an `HTTP(S)_PROXY` or
+    Windows-registry proxy cannot reach a peer the host audit never records.
+  - A malformed `--base-url` authority or port is a config error (exit 2), not
+    a traceback.
+  - C3 route coverage matches whole route tokens, so `/healthz` no longer
+    masks a missing `/health` (nor `/readyz` `/ready`, nor the invoke and
+    stream paths `/agents`).
+  - `MUT-STUDIO-01`/`02` gate on per-journey mock tests
+    (`test_each_journey_passes_alone_in_mock_mode[invoke_stamp|run_timeline]`)
+    rather than one whole-run test.
 - Recorded, not built: D-11 (profile readiness), D-12 (streamed turns are
   stored without `llm_profile`; the probe pins it), D-13 (the stamp means
   "requested", not "served"), A5 (eval targets cannot select a profile).

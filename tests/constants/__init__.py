@@ -330,6 +330,7 @@ from tests.constants.fixtures import (
     WORKFLOW_SCHEMA_VERSION_CURRENT as WORKFLOW_SCHEMA_VERSION_CURRENT,
 )
 from tests.constants.fixtures import WORKFLOW_VALIDATE_ROUTE as WORKFLOW_VALIDATE_ROUTE
+from tests.constants.live import API_CORS_ALLOW_METHODS_ENV as API_CORS_ALLOW_METHODS_ENV
 from tests.constants.live import CHAT_MODEL_OVERRIDE_ENV as CHAT_MODEL_OVERRIDE_ENV
 from tests.constants.live import DB_URL_ENV as DB_URL_ENV
 from tests.constants.live import (
@@ -357,6 +358,7 @@ from tests.constants.live import GATED_RUNTIME_SKIP_REASON_RE as GATED_RUNTIME_S
 from tests.constants.live import GCP_SECRETS_LIVE_SKIP_REASONS as GCP_SECRETS_LIVE_SKIP_REASONS
 from tests.constants.live import HARDWARE_CONTRACT_SCOPE as HARDWARE_CONTRACT_SCOPE
 from tests.constants.live import HOSTED_RUNNER_INFEASIBLE as HOSTED_RUNNER_INFEASIBLE
+from tests.constants.live import HTTP_PROXY_ENV as HTTP_PROXY_ENV
 from tests.constants.live import (
     HTTPX_ERROR_PATH_TIMEOUT_SECONDS as HTTPX_ERROR_PATH_TIMEOUT_SECONDS,
 )
@@ -376,6 +378,7 @@ from tests.constants.live import LMSTUDIO_OVERRIDE_MODEL_ENV as LMSTUDIO_OVERRID
 from tests.constants.live import LOCAL_EMBEDDING_MODEL_ENV as LOCAL_EMBEDDING_MODEL_ENV
 from tests.constants.live import LOOP_MAX_STEPS_ENV as LOOP_MAX_STEPS_ENV
 from tests.constants.live import LOOP_STEP_TIMEOUT_ENV as LOOP_STEP_TIMEOUT_ENV
+from tests.constants.live import LOOPBACK_HOST as LOOPBACK_HOST
 from tests.constants.live import MIN_HARDWARE_CONTRACT_FILES as MIN_HARDWARE_CONTRACT_FILES
 from tests.constants.live import OVERRIDE_MODEL_ID as OVERRIDE_MODEL_ID
 from tests.constants.live import PLANNER_VALIDATE_OUTPUT_ENV as PLANNER_VALIDATE_OUTPUT_ENV
@@ -387,6 +390,8 @@ from tests.constants.live import RUN_GPU_ENV as RUN_GPU_ENV
 from tests.constants.live import SETTINGS_ENV_PREFIX as SETTINGS_ENV_PREFIX
 from tests.constants.live import SLOW_BOX_LIVE_TIMEOUT_SECONDS as SLOW_BOX_LIVE_TIMEOUT_SECONDS
 from tests.constants.live import STUB_VERTEX_REPLY as STUB_VERTEX_REPLY
+from tests.constants.live import STUDIO_PROBE_DEAD_PROXY_URL as STUDIO_PROBE_DEAD_PROXY_URL
+from tests.constants.live import STUDIO_PROBE_GET_ONLY_METHODS as STUDIO_PROBE_GET_ONLY_METHODS
 from tests.constants.live import STUDIO_PROBE_LIVE_BASE_URL as STUDIO_PROBE_LIVE_BASE_URL
 from tests.constants.live import STUDIO_PROBE_LIVE_HOST as STUDIO_PROBE_LIVE_HOST
 from tests.constants.live import STUDIO_PROBE_LIVE_MODEL as STUDIO_PROBE_LIVE_MODEL
@@ -446,6 +451,7 @@ __all__ = [
     "AGENT_TRIGGER_PHRASE_PATTERN",
     "ALLOWLISTED_MODEL",
     "ANCHORED_RULE_PATH_PREFIX",
+    "API_CORS_ALLOW_METHODS_ENV",
     "ASGI_TEST_BASE_URL",
     "AUTH_SECRET_REF_ENV",
     "AUTH_TOKEN",
@@ -568,6 +574,7 @@ __all__ = [
     "HARNESS_SKILL_SLUG",
     "HOSTED_RUNNER_INFEASIBLE",
     "HTTPX_ERROR_PATH_TIMEOUT_SECONDS",
+    "HTTP_PROXY_ENV",
     "HYPOTHESIS_PROFILE_CI",
     "HYPOTHESIS_PROFILE_DEV",
     "HYPOTHESIS_PROFILE_ENV",
@@ -598,6 +605,7 @@ __all__ = [
     "LMSTUDIO_MODEL_ENV",
     "LMSTUDIO_OVERRIDE_MODEL_ENV",
     "LOCAL_EMBEDDING_MODEL_ENV",
+    "LOOPBACK_HOST",
     "LOOP_MAX_STEPS_ENV",
     "LOOP_STEP_TIMEOUT_ENV",
     "MALFORMED_AGENT_FRONTMATTER_MISSING_TOOLS",
@@ -714,6 +722,8 @@ __all__ = [
     "SPELLED_NUMBERS",
     "STUB_REPLY",
     "STUB_VERTEX_REPLY",
+    "STUDIO_PROBE_DEAD_PROXY_URL",
+    "STUDIO_PROBE_GET_ONLY_METHODS",
     "STUDIO_PROBE_LIVE_BASE_URL",
     "STUDIO_PROBE_LIVE_HOST",
     "STUDIO_PROBE_LIVE_MODEL",

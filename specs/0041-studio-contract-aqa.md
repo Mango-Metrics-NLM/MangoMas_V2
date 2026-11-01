@@ -44,8 +44,11 @@ Every red found on the way gets a root cause.
   5. Unknown profile: a JSON 400 before any SSE header.
   6. Workflow: validate, then run a graph through a `concat` fan_out.
   7. Eval report viewer: `echo` target written to `json_file`.
-  8. CORS preflight: the listed origin is allowed, an unlisted one refused.
-  9. Allowed-hosts guard: only permitted hosts are contacted.
+  8. CORS preflight: the listed origin gets a 200 with the origin echoed, and
+     an unlisted one is refused.
+  9. Allowed-hosts guard: only permitted hosts are contacted. Live mode sets
+     `NO_PROXY=*` for the run, so the recorded host is the peer actually
+     contacted rather than a destination behind an environment proxy.
 - **R4 — Two modes.** `--mode mock` registers a scoped `lmstudio` factory
   whose client talks to `scripts/_openai_compat_stub.py` in-process. No
   port is opened, and the stub's reply names the serving model, so routing

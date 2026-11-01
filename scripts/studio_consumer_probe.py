@@ -59,7 +59,9 @@ from _studio_probe_model import (
     Recorder,
 )
 from _studio_probe_seams import (
+    BYPASS_ALL_PROXIES,
     CORS_ORIGINS_ENV,
+    NO_PROXY_ENVS,
     cors_allow_origin,
     provider_seam,
     record_network_hosts,
@@ -73,10 +75,12 @@ from mangomas.config.llm import DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL
 from mangomas.core import Orchestrator
 
 __all__ = [
+    "BYPASS_ALL_PROXIES",
     "CORS_ORIGINS_ENV",
     "JOURNEYS",
     "MODE_LIVE",
     "MODE_MOCK",
+    "NO_PROXY_ENVS",
     "STUDIO_ORIGIN",
     "Check",
     "ProbeConfig",
@@ -140,10 +144,20 @@ def _unserved_base_url(base_url: str) -> str:
 
 
 def _live_host(base_url: str) -> str:
-    """The host a live run may contact; raise ProbeConfigError if there is none."""
-    parts = urlsplit(base_url)
+    """The host a live run may contact; raise ProbeConfigError if there is none.
+
+    ``urlsplit`` raises on a malformed authority (``http://[::1/v1``) and
+    ``.port`` raises on a non-numeric or out-of-range port, so both are read
+    here, before any journey runs, and reported as config errors (exit 2).
+    """
+    error = f"--base-url must be an http(s) URL with a host and a valid port: {base_url!r}"
+    try:
+        parts = urlsplit(base_url)
+        _ = parts.port
+    except ValueError as exc:
+        raise ProbeConfigError(error) from exc
     if parts.scheme not in _LIVE_URL_SCHEMES or not parts.hostname:
-        raise ProbeConfigError(f"--base-url must be an http(s) URL with a host: {base_url!r}")
+        raise ProbeConfigError(error)
     return parts.hostname
 
 
