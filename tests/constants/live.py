@@ -13,6 +13,21 @@ LMSTUDIO_MODEL_ENV: str = "LMSTUDIO_MODEL"
 # ``set LMSTUDIO_OVERRIDE_MODEL to run ...`` reason (see
 # GATED_RUNTIME_SKIP_REASON_PREFIXES below).
 LMSTUDIO_OVERRIDE_MODEL_ENV: str = "LMSTUDIO_OVERRIDE_MODEL"
+# An API version prefix LM Studio does not serve. LM Studio answers an unknown
+# *model id* from whatever model is loaded (no 4xx), so a bad path is the only
+# live way to make one client fail while another on the same server succeeds.
+UNSERVED_API_VERSION_SUFFIX: str = "/v999"
+
+# ── Live LLM-profile scenario (spec-0040 / spec-0041) ─────────────────────────
+# ``draft`` runs the base model, ``review`` the second loaded model, ``broken``
+# the base model behind UNSERVED_API_VERSION_SUFFIX — its 502 is the oracle that
+# the *profile* client made the call, because the response stamp alone is
+# written whichever client answered. ``cloud`` is the vertex profile a local-only
+# PROVIDER_ALLOWLIST must refuse at parse.
+LIVE_DRAFT_PROFILE: str = "draft"
+LIVE_REVIEW_PROFILE: str = "review"
+LIVE_BROKEN_PROFILE: str = "broken"
+LIVE_CLOUD_PROFILE: str = "cloud"
 
 # ── Vertex AI E2E env-var names (single source of truth) ──────────────────────
 VERTEX_PROJECT_ENV: str = "VERTEX_PROJECT_ID"
@@ -324,7 +339,11 @@ __all__ = [
     "HOSTED_RUNNER_INFEASIBLE",
     "HTTPX_ERROR_PATH_TIMEOUT_SECONDS",
     "IN_MEMORY_SQLITE_URL",
+    "LIVE_BROKEN_PROFILE",
     "LIVE_CLIENT_TIMEOUT_HEADROOM_SECONDS",
+    "LIVE_CLOUD_PROFILE",
+    "LIVE_DRAFT_PROFILE",
+    "LIVE_REVIEW_PROFILE",
     "LIVE_STEP_TIMEOUT_SECONDS",
     "LMSTUDIO_BASE_URL_ENV",
     "LMSTUDIO_E2E_TIMEOUT_ENV",
@@ -346,6 +365,7 @@ __all__ = [
     "STUB_VERTEX_REPLY",
     "TENANCY_ENABLED_ENV",
     "TORCH_DEVICE_NAMES",
+    "UNSERVED_API_VERSION_SUFFIX",
     "VECTOR_ENABLED_ENV",
     "VECTOR_PERSIST_DIR_ENV",
     "VERTEX_CREDENTIALS_PATH_ENV",

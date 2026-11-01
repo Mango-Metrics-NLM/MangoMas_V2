@@ -29,7 +29,7 @@ Helpers (importable)
 ``parse_sse_data(line)``
     Decode a ``data: {...}`` SSE line into a dict (returns ``None`` for
     non-data frames).
-``make_lmstudio_settings(base_url, model, *, timeout_seconds=..., loop=...)``
+``make_lmstudio_settings(base_url, model, *, timeout_seconds=..., loop=..., profiles=...)``
     Build a fresh :class:`~mangomas.config.Settings` instance pointed at
     LM Studio with an in-memory SQLite repo — for scenarios that need to
     construct an orchestrator outside the standard fixture (e.g. to swap
@@ -74,6 +74,7 @@ from mangomas.config import (
     DEFAULT_LLM_TEMPERATURE,
     AgentSettings,
     DBSettings,
+    LLMProfileSettings,
     LLMSettings,
     LoopSettings,
     Settings,
@@ -118,6 +119,7 @@ def make_lmstudio_settings(
     timeout_seconds: float | None = None,
     loop: LoopSettings | None = None,
     agents: dict[str, AgentSettings] | None = None,
+    profiles: dict[str, LLMProfileSettings] | None = None,
 ) -> Settings:
     """Construct a fresh :class:`Settings` pointed at LM Studio + in-memory SQLite.
 
@@ -159,6 +161,7 @@ def make_lmstudio_settings(
         db=DBSettings(provider="sqlite", url=_E2E_DB_URL),
         loop=loop,
         agents=agents if agents is not None else {},
+        llm_profiles=profiles if profiles is not None else {},
     )
 
 
