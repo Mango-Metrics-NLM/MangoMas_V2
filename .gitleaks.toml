@@ -73,4 +73,8 @@ paths = [
   # source held, so a finding here is always a duplicate of a source finding.
   # `dir` walks the filesystem, gitignore and all.
   '''(^|/)__pycache__/''',
+  # The in-repo virtualenv the README's install step creates (gitignored,
+  # `dir`-scan only). Third-party packages ship test keys (testcontainers,
+  # pywin32), so without this the local dir pass is red on every machine.
+  '''^\.venv/''',
 ]

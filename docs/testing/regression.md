@@ -135,25 +135,40 @@ python -m pytest tests/integration --no-cov -q
 
 ---
 
-## LM Studio E2E (7 scenarios)
+## LM Studio E2E (14 suites)
 
-Gated on `RUN_LMSTUDIO=1`. All 7 scenarios pass as of v0.3.1:
+Gated on `RUN_LMSTUDIO=1`. Last full run 2026-11-01 (spec-0041): 25/25
+passed with `nvidia/nemotron-3-nano-omni` (base), `liquid/lfm2-24b-a2b`
+(override/review) and `text-embedding-nomic-embed-text-v1.5`.
 
-| Scenario | Test file | Status |
-|---|---|---|
-| Ping (smoke) | `tests/lmstudio/test_smoke.py` | ✅ |
-| Chat invoke | `tests/lmstudio/test_chat_invoke.py` | ✅ |
-| Chat stream SSE | `tests/lmstudio/test_chat_stream.py` | ✅ |
-| Stream fallback | `tests/lmstudio/test_stream_fallback.py` | ✅ |
-| Summarize invoke | `tests/lmstudio/test_summarize_invoke.py` | ✅ |
-| Unknown model 502 | `tests/lmstudio/test_unknown_model.py` | ✅ |
-| API flow (integration) | `tests/integration/test_api_flow.py` | ✅ |
+| Scenario | Test file |
+|---|---|
+| Ping (smoke) | `tests/lmstudio/test_smoke.py` |
+| Chat invoke | `tests/lmstudio/test_chat_invoke.py` |
+| Chat stream SSE | `tests/lmstudio/test_chat_stream.py` |
+| Stream fallback | `tests/lmstudio/test_stream_fallback.py` |
+| Streamed turn persists | `tests/lmstudio/test_stream_persists.py` |
+| Summarize invoke | `tests/lmstudio/test_summarize_invoke.py` |
+| Unknown model 502 | `tests/lmstudio/test_unknown_model.py` |
+| Per-step timeout | `tests/lmstudio/test_step_timeout.py` |
+| Embeddings batch | `tests/lmstudio/test_embeddings.py` |
+| Per-agent `MODEL_OVERRIDE` (spec-0028) | `tests/lmstudio/test_model_override.py` |
+| Pipeline acceptance loop (spec-0027) | `tests/lmstudio/test_pipeline_acceptance.py` |
+| Plan → execute → review graph | `tests/lmstudio/test_plan_execute_review.py` |
+| Workflow run over HTTP | `tests/lmstudio/test_workflow_run.py` |
+| Named LLM profiles + routing oracle (spec-0040/0041) | `tests/lmstudio/test_llm_profiles.py` |
 
 ```powershell
 $env:RUN_LMSTUDIO = '1'
-$env:LMSTUDIO_MODEL = 'google/gemma-4-e4b'   # or your loaded model
+$env:LMSTUDIO_MODEL = 'nvidia/nemotron-3-nano-omni'          # your loaded chat model
+$env:LMSTUDIO_OVERRIDE_MODEL = 'liquid/lfm2-24b-a2b'         # second model; unset skips those scenarios
+$env:LMSTUDIO_EMBEDDING_MODEL = 'text-embedding-nomic-embed-text-v1.5'  # unset fails with HTTP 400
 python -m pytest tests/lmstudio --no-cov -q
 ```
+
+The Studio consumer contract runs against the same server with
+`make studio-probe`. Live mode reports the four model-naming checks as
+`SKIP` (26 passed, 4 skipped); `make studio-probe-mock` asserts all 30.
 
 ---
 
@@ -264,6 +279,12 @@ allowlist validators, the stream pre-check, mixin order, and stamp-before-persis
 `resolve_llm` calls. Their gate is the Studio consumer probe's mock run
 (spec-0041), whose stub reply names the serving model. Live LM Studio never
 does, so the stream-path regression is invisible to `make lmstudio`.
+`MUT-STUDIO-03` turns the live routing `SKIP` back into a `PASS`, and its gate
+must go red. A check that cannot fail must not count as passed.
+
+Gates run with `PYTHONDONTWRITEBYTECODE=1`. `MUT-PROF-07` swaps two
+equal-length names, and a restore inside the same mtime second was otherwise
+served from the mutated `.pyc` (`test_gates_never_cache_bytecode_of_the_mutated_module`).
 Each gate is a single test node id, so a mutation that broke collection would show
 up as an error rather than a pass.
 

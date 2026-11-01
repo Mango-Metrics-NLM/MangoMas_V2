@@ -15,7 +15,8 @@ C4Component
     Component(error_handler, "MangomasError handler", "FastAPI exception handler", "Walks the exception MRO to select the most specific HTTP status code and returns a structured JSON envelope.")
     Component(health_routes, "Health routes", "FastAPI routes", "GET /healthz (+ /health alias) → liveness. GET /readyz (+ /ready alias) → ReadinessReport from check_ready(). Never authenticated.")
     Component(agent_routes, "Agent + history routes", "FastAPI routes", "GET /agents; POST /agents/{name}/invoke (emits invocation/error/duration metrics); POST /agents/{name}/stream; GET /history (bounded limit). Delegates to Orchestrator.")
-    Component(workflow_routes, "Workflow routes (opt-in)", "FastAPI routes", "POST /workflows/run|validate. Resolve the graph source via the shared resolve_workflow_source, then load_workflow + execute_workflow. Reuse the MangomasError envelope (ConfigError 400 / AgentNotFound 404 / MaxStepsExceeded 422).")
+    Component(llm_routes, "LLM profile routes", "FastAPI routes", "GET /llm/profiles (build_llm_router) → LLMProfilesResponse: name, provider and model per MANGOMAS_LLM_PROFILES__* entry. Never a URL, key or secret ref (spec-0040).")
+    Component(workflow_routes, "Workflow routes (opt-in)", "FastAPI routes", "POST /workflows/run and POST /workflows/validate. Resolve the graph source via the shared resolve_workflow_source, then load_workflow + execute_workflow. Reuse the MangomasError envelope (ConfigError 400 / AgentNotFound 404 / MaxStepsExceeded 422).")
     Component(backpressure_mw, "Backpressure + CORS + auth (opt-in)", "Middleware / dependency", "Default-OFF: MaxBodySizeMiddleware (413), ConcurrencyLimitMiddleware (503, reject-don't-queue), env-driven CORSMiddleware, and require_auth (bearer / X-API-Key via SecretsProvider, fail-closed). Backpressure sits inner of log/trace so rejections are still logged.")
     Component(tenancy_mw, "TenancyMiddleware (opt-in)", "Starlette middleware", "ADR-0017. Reads MANGOMAS_TENANCY__HEADER (default X-Tenant-ID) into the tenancy ContextVar; the storage adapters filter rows on it, so no route signature changes. Not installed when MANGOMAS_TENANCY__ENABLED=false, in which case every row uses the implicit 'default' tenant. Header values pass through the shared sanitize_header_token, the same log-injection / SQL-parameter defence the correlation header uses.")
   }
@@ -49,6 +50,7 @@ C4Component
   Container_Boundary(core_boundary, "Core (src/mangomas/core/)") {
     Component(orchestrator, "Orchestrator", "Domain service", "dispatch() and stream_dispatch() look up agents in a Registry[Agent], invoke handle() or stream(), and persist turns. Lazy OTel tracer.")
     Component(harness_orch, "_HarnessOrchestrator (opt-in)", "Orchestrator subclass", "Engaged only when MANGOMAS_HARNESS__ENABLED=true. Wraps dispatch + stream_dispatch in a harness.agent_invoke parent span carrying agent.name, harness.topology, messages.count attributes. Delegates the actual work to Orchestrator via super(). dispatch_pipeline / dispatch_fan_out inherit the wrap because they delegate through dispatch.")
+    Component(profile_mixin, "_LLMProfileDispatchMixin", "composition/llm.py — first base of both composition orchestrators", "Resolves AgentRequest.metadata['llm_profile'] against ctx.extras['llm_profiles'] (built by build_llm_profiles). An unknown profile raises ConfigError (400) before any agent runs or a turn is recorded; the served profile is stamped on response.metadata before persistence. Precedence: profile > MODEL_OVERRIDE > shared client (spec-0040 / ADR-0038).")
     Component(registry, "Registry[T]", "Generic registry", "Thread-safe name → factory/instance store. Used for agents, LLM providers, and storage providers.")
     Component(health_svc, "check_ready()", "Health service", "Pings LLM via PingableLLMClient.ping() and checks DB connectivity. Returns ReadinessReport.")
   }
@@ -92,6 +94,9 @@ C4Component
   Rel(app_factory, error_handler, "registers exception handler")
   Rel(app_factory, health_routes, "mounts routes")
   Rel(app_factory, agent_routes, "mounts routes")
+  Rel(app_factory, llm_routes, "mounts routes")
+  Rel(agent_routes, profile_mixin, "metadata.llm_profile validated and stamped on dispatch")
+  Rel(profile_mixin, llm_client, "selects the profile's LLMClient for the run")
   Rel(app_factory, workflow_routes, "mounts routes (opt-in)")
   Rel(app_factory, tenancy_mw, "adds middleware (opt-in, ADR-0017)")
   Rel(app_factory, telemetry_bootstrap, "lifespan calls configure_telemetry() with the configured exporter + log format")

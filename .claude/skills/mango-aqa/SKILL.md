@@ -45,6 +45,13 @@ Record every lane as one of `PASS`, `FAIL`, `NOT-RUN`, or `FAIL(GATE)`.
    served a reply. Prove routing live with a bad API-version path. Prove
    which model answered in `make studio-probe-mock`, whose stub names the
    serving model.
+8. A check the environment cannot make fail is a skip, not a pass. Record it
+   with `Recorder.skip(name, reason)`, state the reason, and pin the skip with a
+   `guard_probe_manifest.json` entry (`MUT-STUDIO-03`). A `SKIP` exits 0, so it
+   never masks a real `FAIL`.
+9. A `guard_probe` gate runs with `PYTHONDONTWRITEBYTECODE=1`. A same-length
+   mutation restored within one second would otherwise be served from its
+   stale `.pyc`.
 
 ## Commands
 

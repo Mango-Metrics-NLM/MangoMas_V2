@@ -33,6 +33,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
   errors (exit 2), adds `--log-level`, and returns exit 1 on an unwritable
   report instead of a traceback. The stub answers a non-object JSON body with
   400.
+- C4 C1/C2 name MangoMas Studio as the API's external consumer. C3 gains
+  the `GET /llm/profiles` route and `_LLMProfileDispatchMixin` (spec-0040),
+  and spells out `POST /workflows/validate`.
+  `tests/tooling/test_architecture_docs.py` now requires every route in the
+  OpenAPI snapshot to appear in a C3 diagram, with a non-vacuity twin test.
+- `.gitleaks.toml` exempts the gitignored in-repo `.venv/`. Third-party test
+  keys (testcontainers, pywin32) made the local `dir` pass red on every
+  machine. The exact-set pin in `test_gitleaks_config.py` moves with it, and
+  the real-binary planted-secret test still passes.
+- `docs/testing/regression.md` lists all 14 LM Studio suites with the
+  env vars each needs. The old table stopped at v0.3.1's seven.
 - `scripts/guard_probe.py` runs gates with `PYTHONDONTWRITEBYTECODE=1`. A
   same-length mutation (`MUT-PROF-07`) restored within one mtime second was
   served from the mutated `.pyc`, so CI reported "gate stayed red after

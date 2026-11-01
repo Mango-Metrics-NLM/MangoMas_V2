@@ -8,6 +8,7 @@ C4Container
   title Mango-Mas V2 — Containers
 
   Person(developer, "Developer / User")
+  System_Ext(studio, "MangoMas Studio", "Browser UI (separate repo, ADR-0038)")
 
   Container_Boundary(mangomas_boundary, "Mango-Mas V2") {
     Container(api, "FastAPI Application", "Python / FastAPI", "Exposes REST endpoints. Factory: create_app(). Middleware: AccessLogMiddleware, TraceMiddleware. Manages lifespan: startup wires adapters, shutdown closes clients.")
@@ -36,6 +37,7 @@ C4Container
 
   Rel(developer, api, "POST /agents/{name}/invoke, stream; GET /healthz, /readyz, /agents", "HTTP")
   Rel(developer, cli, "mangomas chat / history / eval", "shell")
+  Rel(studio, api, "GET /llm/profiles; invoke + stream with metadata.llm_profile; GET /history; /workflows/*", "HTTP + SSE (CORS)")
   Rel(api, composition, "calls build_orchestrator() at lifespan startup")
   Rel(cli, composition, "calls build_orchestrator() at CLI startup")
   Rel(eval_harness, composition, "constructs EvalRunner around the orchestrator")
@@ -116,6 +118,14 @@ C4Container
   record — never a command, write, capability grant, completion, or release.
   Command/patch execution remains blocked until the harness isolation
   backend exists.
+- **Validation tooling is not a runtime container.** The Studio contract is
+  pinned by `scripts/studio_consumer_probe.py` (spec-0041), which drives the
+  real `api` in-process through `httpx.ASGITransport`. `--mode mock` swaps
+  the `lmstudio` registry entry for `scripts/_openai_compat_stub.py` and
+  fails if any socket opens; `--mode live` talks to LM Studio and reports
+  checks it cannot observe as `SKIP`. `scripts/guard_probe.py` proves the
+  probe's guards fire. All of these are excluded from the image
+  (`.dockerignore`).
 - `memory/`, `eval-output/`, and harness scratch state
   (`.claude/cache/`, `.claude/state/`, `.claude/logs/`,
   `.claude/settings.local.json`) are excluded from git and Docker

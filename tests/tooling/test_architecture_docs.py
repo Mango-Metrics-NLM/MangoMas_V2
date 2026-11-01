@@ -20,6 +20,7 @@ reader relies on and can be verified mechanically:
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -28,6 +29,7 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ARCH_DIR = _REPO_ROOT / "docs" / "architecture"
 _SRC_ROOT = _REPO_ROOT / "src" / "mangomas"
+_OPENAPI_SNAPSHOT = _REPO_ROOT / "tests" / "snapshots" / "openapi.json"
 
 # The C4 levels that must between them account for the whole package tree.
 # `cloud-providers.md` and `observability.md` are topic notes, not levels, so
@@ -161,6 +163,30 @@ def test_model_does_not_describe_landed_work_as_future() -> None:
         assert offending == [], (
             f"{label} has shipped ({artefact.name}) but C1 still says: {offending}"
         )
+
+
+def _routes_missing_from(c3_text: str) -> list[str]:
+    snapshot = json.loads(_OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
+    model = "\n".join(_mermaid_blocks(c3_text))
+    return sorted(path for path in snapshot["paths"] if path not in model)
+
+
+def test_every_http_route_appears_in_the_c3_model() -> None:
+    """`GET /llm/profiles` (spec-0040) shipped with no C3 box for a release.
+
+    The package-coverage test above cannot see it: `api/` was already named.
+    The route list is read from the OpenAPI snapshot `test_openapi_snapshot`
+    keeps in lockstep with the app, so a new endpoint fails here in the same
+    PR that regenerates the snapshot.
+    """
+    missing = _routes_missing_from((_ARCH_DIR / "c3-component.md").read_text(encoding="utf-8"))
+    assert missing == [], f"route(s) absent from every C3 diagram: {missing}"
+
+
+def test_route_coverage_catches_a_dropped_route() -> None:
+    """Non-vacuity: removing one route's mention must turn the check red."""
+    text = (_ARCH_DIR / "c3-component.md").read_text(encoding="utf-8")
+    assert _routes_missing_from(text.replace("/llm/profiles", "/llm/elided")) == ["/llm/profiles"]
 
 
 def test_c4_code_names_the_dispatch_surface() -> None:
