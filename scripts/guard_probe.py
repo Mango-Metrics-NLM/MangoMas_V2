@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -139,19 +141,45 @@ def run_gate(gate: tuple[str, ...], cwd: Path) -> int:
     return proc.returncode
 
 
+def drop_bytecode(target: Path) -> None:
+    """Evict *target*'s cached bytecode so the next gate compiles the bytes on disk.
+
+    CPython validates a ``.pyc`` by the source's mtime in whole seconds and its
+    size. A mutation that keeps the byte count (moving a line, swapping two
+    tokens of equal length) that is written, gated and restored inside one
+    second leaves the cache compiled from the *mutated* source valid for the
+    restored file, so the post-restore gate imports the defect and the probe
+    reports "stayed red after restore" on a correct tree. Seen in CI for
+    ``MUT-0040-M06``; harmless locally only because the gate happened to cross
+    a second boundary. Non-Python targets have no cache to evict.
+    """
+    if target.suffix != ".py":
+        return
+    Path(importlib.util.cache_from_source(str(target))).unlink(missing_ok=True)
+
+
 def probe_entry(root: Path, entry: ProbeEntry) -> None:
-    """Mutate, require red, restore, require green. Restore runs on every exit."""
+    """Mutate, require red, restore, require green. Restore runs on every exit.
+
+    The restore puts back the original bytes **and** the original mtime, and the
+    target's bytecode cache is dropped before each gate, so neither gate can
+    run against stale compiled code (see :func:`drop_bytecode`).
+    """
     target = root / entry.path
     original = target.read_bytes()
+    original_stat = target.stat()
     digest = content_sha256(original)
     logger.info("probing %s", entry.entry_id, extra={"event": "guard_probe_entry"})
     try:
         mutated = apply_once(original.decode("utf-8"), entry.fixed, entry.defect)
         target.write_bytes(mutated.encode("utf-8"))
+        drop_bytecode(target)
         if run_gate(entry.gate, root) == 0:
             raise ProbeError(f"{entry.entry_id}: gate stayed green under the mutation")
     finally:
         target.write_bytes(original)
+        os.utime(target, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+        drop_bytecode(target)
     restored = target.read_bytes()
     if restored != original or content_sha256(restored) != digest:
         raise ProbeError(f"{entry.entry_id}: restore did not match the original bytes")

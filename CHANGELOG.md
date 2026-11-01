@@ -67,7 +67,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   falsifiability probe. Each entry mutates one guard, requires that guard to
   fail, restores the original bytes, and requires the guard to pass. It
   refuses a dirty tree unless `--allow-dirty` is passed, and it is not part
-  of `make gate`.
+  of `make gate`. The manifest also carries the fourteen spec-0040 LLM-profile
+  proofs (`MUT-0040-M01` … `M14`, numbered as in PR #104), so those guards are
+  re-proven on every PR rather than once in a PR body.
 - `mangomas.utils.regex_flags`: the shared `ignorecase` / `multiline` /
   `dotall` resolver used by the eval `regex_match` scorer and workflow
   predicates.

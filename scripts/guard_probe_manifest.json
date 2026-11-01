@@ -69,6 +69,104 @@
       "fixed": "            if exc.title != Settings.__name__:\n                raise\n",
       "defect": "",
       "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d6_a_non_settings", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M01",
+      "path": "src/mangomas/agents/_prompt.py",
+      "fixed": "        return profiles[profile]\n",
+      "defect": "        return overrides.get(agent_name, profiles[profile])\n",
+      "gate": ["{python}", "-m", "pytest", "tests/agents/test_prompt.py", "-k", "test_resolve_llm_profile_beats_agent_override", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M02",
+      "path": "src/mangomas/config/llm.py",
+      "fixed": "        if self.provider_allowlist and self.provider not in self.provider_allowlist:\n",
+      "defect": "        if False:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_config.py", "-k", "test_provider_allowlist_must_include_base_provider", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M03",
+      "path": "src/mangomas/config/_root.py",
+      "fixed": "            if self.llm.provider_allowlist and profile.provider not in self.llm.provider_allowlist:\n",
+      "defect": "            if False:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_config.py", "-k", "test_profile_provider_outside_allowlist_is_refused_naming_the_profile", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M04",
+      "path": "src/mangomas/config/_root.py",
+      "fixed": "            if self.llm.allowed_models and profile.model not in self.llm.allowed_models:\n",
+      "defect": "            if False:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_config.py", "-k", "test_profile_model_outside_allowed_models_is_refused_naming_the_profile", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M05",
+      "path": "src/mangomas/api/routes/agents.py",
+      "fixed": "        profile = select_llm_profile(orch.context.extras, request.metadata)\n        # stream_dispatch validates",
+      "defect": "        profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        # stream_dispatch validates",
+      "gate": ["{python}", "-m", "pytest", "tests/test_streaming.py", "-k", "test_stream_unknown_profile_is_400_before_sse_headers", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M06",
+      "path": "src/mangomas/composition/llm.py",
+      "fixed": "        select_llm_profile(self.context.extras, request.metadata)\n        response: AgentResponse = await super().dispatch(  # type: ignore[misc]\n            agent_name,\n            request,\n            acceptance_fn=acceptance_fn,\n            max_steps=max_steps,\n        )\n",
+      "defect": "        response: AgentResponse = await super().dispatch(  # type: ignore[misc]\n            agent_name,\n            request,\n            acceptance_fn=acceptance_fn,\n            max_steps=max_steps,\n        )\n        select_llm_profile(self.context.extras, request.metadata)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_unknown_profile_raises_before_any_agent_call_and_records_no_row", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M07",
+      "path": "src/mangomas/composition/builder.py",
+      "fixed": "class _Orchestrator(\n    _LLMProfileDispatchMixin, _FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator\n):",
+      "defect": "class _Orchestrator(\n    _FailureRecordingMixin, _LLMProfileDispatchMixin, _AgentLLMOverrideCloseMixin, Orchestrator\n):",
+      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_both_composition_orchestrators_carry_the_profile_mixin_first", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M08",
+      "path": "src/mangomas/composition/llm.py",
+      "fixed": "            if hasattr(client, \"aclose\"):\n                hooks.append((f\"LLM profile ({profile_name})\", client.aclose))\n",
+      "defect": "            pass\n",
+      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_aclose_closes_profile_clients", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M09",
+      "path": "src/mangomas/composition/harness.py",
+      "fixed": "    if isinstance(profile, str):\n        span.set_attribute(\"llm.profile\", profile)\n",
+      "defect": "    if isinstance(profile, str):\n        pass\n",
+      "gate": ["{python}", "-m", "pytest", "tests/composition/test_harness.py", "-k", "test_harness_dispatch_span_carries_llm_profile_when_selected or test_harness_stream_span_carries_llm_profile_when_selected", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M10",
+      "path": "AGENTS.md",
+      "fixed": "| `MANGOMAS_LLM_PROFILES__<NAME>__TEMPERATURE` | _(none)_ | Inherits `MANGOMAS_LLM__TEMPERATURE` when unset |\n",
+      "defect": "",
+      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_env_example_contract.py", "-k", "test_instruction_docs_document_every_settings_field", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M11",
+      "path": "src/mangomas/api/routes/llm.py",
+      "fixed": "        return LLMProfilesResponse(\n            profiles=[\n                LLMProfileSummary(name=name, provider=entry[\"provider\"], model=entry[\"model\"])\n                for name, entry in sorted(info.items())\n            ]\n        )\n",
+      "defect": "        from fastapi.responses import JSONResponse  # noqa: PLC0415\n\n        return JSONResponse(  # type: ignore[return-value]\n            {\"profiles\": [{\"name\": n, **e} for n, e in sorted(info.items())]}\n        )\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_llm_profiles_api.py", "-k", "test_get_llm_profiles_body_never_contains_secrets", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M12",
+      "path": "src/mangomas/composition/llm.py",
+      "fixed": "        return response\n\n    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:\n        \"\"\"Run the step, then stamp the selected profile onto its response.\n\n        ``step_request.metadata`` is ``request.metadata`` verbatim (the\n        orchestrator rebuilds only ``messages`` per step), so the name here is\n        the one :meth:`dispatch` already validated. The result flows into the\n        loop-telemetry re-wrap and then into ``save_turn``, which is the point.\n        \"\"\"\n        response: AgentResponse = await super()._handle_step(agent, step_request)  # type: ignore[misc]\n        profile = step_request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n        return response.model_copy(\n            update={\"metadata\": {**response.metadata, LLM_PROFILE_METADATA_KEY: profile}}\n        )\n",
+      "defect": "        profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n        return response.model_copy(\n            update={\"metadata\": {**response.metadata, LLM_PROFILE_METADATA_KEY: profile}}\n        )\n\n    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:\n        return await super()._handle_step(agent, step_request)  # type: ignore[misc]\n",
+      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_persists_the_stamped_response", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M13",
+      "path": "src/mangomas/workflow/nodes/fan_out.py",
+      "fixed": "                    metadata=_carry_run_scope(request),\n",
+      "defect": "                    metadata={},\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_workflow_executor.py", "-k", "test_concat_fan_out_followed_by_agent_keeps_the_profile", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-0040-M14",
+      "path": "src/mangomas/composition/llm.py",
+      "fixed": "        return response\n\n    async def _handle_step(",
+      "defect": "        return response.model_copy(update={\"metadata\": {\"loop\": response.metadata.get(\"loop\")}})\n\n    async def _handle_step(",
+      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_without_profile_leaves_metadata_unchanged", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }
