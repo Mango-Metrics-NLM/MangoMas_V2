@@ -256,6 +256,13 @@ each mutation, requires the named guard to exit non-zero, restores the
 original bytes, and requires the guard to exit zero. It refuses a dirty tree
 unless `--allow-dirty` is passed. It is not a dependency of `make gate`.
 
+The manifest holds two families. `MUT-AQA-*` covers the spec-0039 defects.
+`MUT-PROF-01`..`MUT-PROF-14` replay the fourteen provider-profile mutations
+recorded on PR #104 (spec-0040). Those include the precedence swap, both
+allowlist validators, the stream pre-check, mixin order, and stamp-before-persist.
+Each gate is a single test node id, so a mutation that broke collection would show
+up as an error rather than a pass.
+
 ```powershell
 python scripts/guard_probe.py --allow-dirty   # this checkout is dirty
 make guard-probe                               # clean tree

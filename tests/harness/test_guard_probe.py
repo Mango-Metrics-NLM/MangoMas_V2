@@ -211,7 +211,9 @@ def test_an_empty_gate_command_is_rejected(tmp_path: Path) -> None:
 def test_shipped_manifest_snippets_each_occur_once() -> None:
     """The real manifest must still match the tree, or the probe cannot run."""
     entries = probe.load_manifest(probe._default_manifest())
-    assert len(entries) == 10
+    # 10 MUT-AQA-* (spec-0039) + 14 MUT-PROF-* (spec-0040 / spec-0041).
+    assert len(entries) == 24
+    assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
     for entry in entries:
         text = (probe._repo_root() / entry.path).read_text(encoding="utf-8")
         assert probe._to_lf(text).count(probe._to_lf(entry.fixed)) == 1, entry.entry_id
