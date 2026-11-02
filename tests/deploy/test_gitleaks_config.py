@@ -158,6 +158,7 @@ _EXPECTED_ALLOWLIST_PATHS: frozenset[str] = frozenset(
         r"^\.hypothesis/",
         r"^gitleaks$",
         r"(^|/)__pycache__/",
+        r"^\.venv/",
     }
 )
 
@@ -165,7 +166,7 @@ _EXPECTED_ALLOWLIST_PATHS: frozenset[str] = frozenset(
 def test_global_allowlist_stays_narrow() -> None:
     """No path may be exempted from the scan without review.
 
-    All three entries are generated or downloaded artefacts that git never
+    Every entry is a generated or downloaded artefact that git never
     tracks, so nothing a human wrote can hide behind them. Note what is *not*
     here: `tests/` is fully scanned, including this file — its fixtures are
     assembled at runtime precisely so no exemption is needed.

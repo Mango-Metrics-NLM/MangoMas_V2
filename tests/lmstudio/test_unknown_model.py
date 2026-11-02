@@ -22,12 +22,14 @@ import pytest
 
 from mangomas.api.app import create_app
 from mangomas.composition import build_orchestrator
-from tests.constants import ASGI_TEST_BASE_URL, HTTPX_ERROR_PATH_TIMEOUT_SECONDS
+from tests.constants import (
+    ASGI_TEST_BASE_URL,
+    HTTPX_ERROR_PATH_TIMEOUT_SECONDS,
+    UNSERVED_API_VERSION_SUFFIX,
+)
 from tests.lmstudio.conftest import make_lmstudio_settings, orchestrator_cleanup
 
 logger = logging.getLogger(__name__)
-
-_BAD_API_VERSION_SUFFIX = "/v999"
 
 
 @pytest.mark.lmstudio
@@ -38,7 +40,7 @@ async def test_bad_api_path_returns_502_envelope(
 ) -> None:
     # Strip the /v1 suffix (if any) and append a path LM Studio doesn't serve.
     base_without_version = lmstudio_base_url.rsplit("/v", 1)[0]
-    bad_base_url = f"{base_without_version}{_BAD_API_VERSION_SUFFIX}"
+    bad_base_url = f"{base_without_version}{UNSERVED_API_VERSION_SUFFIX}"
 
     settings = make_lmstudio_settings(bad_base_url, lmstudio_model)
     orch = build_orchestrator(settings)

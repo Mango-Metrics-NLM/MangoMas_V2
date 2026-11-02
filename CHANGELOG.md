@@ -9,6 +9,63 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Studio-contract AQA lane (spec-0041)
+
+- `scripts/studio_consumer_probe.py` drives the HTTP contract MangoMas Studio
+  consumes (ADR-0038) through the real app. Journeys: profile picker, invoke
+  stamp, routing oracle, stream timeline plus `GET /history`, unknown-profile
+  400 before any SSE header, workflow validate/run through a `concat`
+  fan_out, the eval report viewer, CORS preflight and an allowed-hosts network
+  guard. `make studio-probe-mock` runs it against the in-process
+  `scripts/_openai_compat_stub.py` (no port, no network) and is a step of
+  CI's `test` job. `make studio-probe` is the opt-in run against LM Studio.
+- Live Scenario 13 (`tests/lmstudio/test_llm_profiles.py`) runs `draft`,
+  `review` and `broken` profiles on one LM Studio server. The routing oracle
+  is an unserved API version, because LM Studio answers an unknown model id
+  from the loaded model.
+- `make guard-probe` adds three probe mutations (`MUT-STUDIO-01..03`) to the
+  spec-0040 replays (`MUT-0040-M01..M14`). The stream-path entry closes a gap
+  the live suite cannot see. This branch had its own `MUT-PROF-*` copy of
+  those fourteen, with different ids and snippet wording; it was dropped at
+  merge. `test_shipped_manifest_snippets_each_occur_once` now rejects two
+  entries that prove the same guard: same file, same selected test.
+- The probe reports `SKIP` for a check live mode cannot observe (no live
+  reply names its model) rather than a pass that could not fail; skips exit 0.
+  It is split into `_studio_probe_model` / `_seams` / `_journeys` behind the
+  entry point, validates `--timeout-seconds` and a live `--base-url` as config
+  errors (exit 2), adds `--log-level`, and returns exit 1 on an unwritable
+  report instead of a traceback. The stub answers a non-object JSON body with
+  400.
+- C4 C1/C2 name MangoMas Studio as the API's external consumer. C3 gains
+  the `GET /llm/profiles` route and `_LLMProfileDispatchMixin` (spec-0040),
+  and spells out `POST /workflows/validate`.
+  `tests/tooling/test_architecture_docs.py` now requires every route in the
+  OpenAPI snapshot to appear in a C3 diagram, with a non-vacuity twin test.
+- `.gitleaks.toml` exempts the gitignored in-repo `.venv/`. Third-party test
+  keys (testcontainers, pywin32) made the local `dir` pass red on every
+  machine. The exact-set pin in `test_gitleaks_config.py` moves with it, and
+  the real-binary planted-secret test still passes.
+- `docs/testing/regression.md` lists all 14 LM Studio suites with the
+  env vars each needs. The old table stopped at v0.3.1's seven.
+- PR #107 review fixes, each with a test that failed against the previous code:
+  - The CORS journey requires a 200 preflight as well as the echoed origin.
+    Starlette echoes an allowed origin on a preflight it refuses for the
+    method.
+  - Live mode sets `NO_PROXY=*` for the run, so an `HTTP(S)_PROXY` or
+    Windows-registry proxy cannot reach a peer the host audit never records.
+  - A malformed `--base-url` authority or port is a config error (exit 2), not
+    a traceback.
+  - C3 route coverage matches whole route tokens, so `/healthz` no longer
+    masks a missing `/health` (nor `/readyz` `/ready`, nor the invoke and
+    stream paths `/agents`).
+  - `MUT-STUDIO-01`/`02` gate on per-journey mock tests
+    (`test_each_journey_passes_alone_in_mock_mode[invoke_stamp|run_timeline]`)
+    rather than one whole-run test.
+- Recorded, not built: D-11 (profile readiness), D-12 (streamed turns are
+  stored without `llm_profile`; the probe pins it), D-13 (the stamp means
+  "requested", not "served"), A5 (eval targets cannot select a profile).
+  No runtime code changed.
+
 ### Added — LLM provider profiles (spec-0040 / ADR-0038)
 
 - Named LLM provider profiles, built once at startup in the composition root

@@ -18,7 +18,7 @@ shipped `plan-execute-review` graph with validation, per-agent
 | `LMSTUDIO_MODEL` | `DEFAULT_LLM_MODEL` (`local-model`) | Model id as shown in LM Studio, e.g. `google/gemma-4-e4b` |
 | `LMSTUDIO_EMBEDDING_MODEL` | `DEFAULT_EMBEDDINGS_MODEL` | Loaded embedding model id (embedding smoke test) |
 | `LMSTUDIO_E2E_TIMEOUT_SECONDS` | `240` | **Adapter** budget per live call. The httpx **client** budget is derived from it (`client_timeout_for`), never below it |
-| `LMSTUDIO_OVERRIDE_MODEL` | _(unset → scenario 11 skips)_ | A **second** loaded model id, for the `MODEL_OVERRIDE` scenario |
+| `LMSTUDIO_OVERRIDE_MODEL` | _(unset → scenario 11 and the `review` half of scenario 13 skip)_ | A **second** loaded model id, for the `MODEL_OVERRIDE` scenario and the `review` profile |
 
 ## The hardware contract (spec-0029 R2)
 
@@ -247,6 +247,37 @@ time, so a server that serialises the branches still passes.
 
 Supersedes `scripts/run_workflow_e2e.py` as the test of this path; that script
 remains the readable demo.
+
+---
+
+### Scenario 13 — Named LLM provider profiles ✅ Implemented
+
+**File:** `tests/lmstudio/test_llm_profiles.py` (spec-0040 / spec-0041; Studio
+gate G2)
+
+Three profiles on one server: `draft` (the base model), `review`
+(`LMSTUDIO_OVERRIDE_MODEL`; those scenarios skip with the sanctioned
+`set LMSTUDIO_OVERRIDE_MODEL to run ...` reason when it is unset) and `broken`
+(the base model behind the unserved `/v999` path). Covers the profile picker
+(`GET /llm/profiles`, no secret or URL on the wire), the stamp on the invoke
+response **and** on the stored turn read back through `GET /history`, the SSE
+`metadata` frame, the unknown-profile JSON 400 before any stream header, a
+`chat → summarize` pipeline carrying the profile, and the local-only
+`PROVIDER_ALLOWLIST` refusing a cloud profile at parse (no network).
+
+Why `broken` exists: the response stamp is written by the composition mixin
+whichever client answered, and LM Studio serves an unknown *model id* from the
+loaded model, so neither proves routing. With routing disabled in `ChatAgent`
+the stamp test stays green and only the `broken` test goes red (recorded in
+spec-0041).
+
+The `broken` oracle covers invoke only. A stream-path routing regression
+stays green here, because no live reply names its model. The Studio consumer
+probe catches it: `make studio-probe-mock` runs the same journeys against an
+in-process stub that names the serving model (`MUT-STUDIO-02`).
+`make studio-probe` runs those journeys against this server and reports
+those four model-naming checks as `SKIP`, not `PASS`: a skip exits 0, and
+only a `FAIL` exits 1 (`MUT-STUDIO-03`).
 
 ---
 

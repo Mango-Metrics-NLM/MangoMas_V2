@@ -21,6 +21,9 @@ requirements.lock.compiled
 requirements.lock.new
 scripts/guard_probe.py
 scripts/guard_probe_manifest.json
+scripts/studio_consumer_probe.py
+scripts/_studio_probe_*.py
+scripts/_openai_compat_stub.py
 scripts/_stdio.py
 data/
 memory/

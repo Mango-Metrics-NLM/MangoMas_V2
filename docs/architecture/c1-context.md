@@ -9,6 +9,8 @@ C4Context
 
   Person(developer, "Developer / User", "Runs queries via the REST API, the chat CLI, or the eval CLI.")
 
+  System_Ext(studio, "MangoMas Studio", "Browser UI (separate repo, dev origin http://localhost:5173). Profile picker, run timeline, workflow and eval viewers over the REST API (ADR-0038). Its contract is pinned in-repo by scripts/studio_consumer_probe.py (spec-0041).")
+
   System(mangomas, "Mango-Mas V2", "Local-first modular agent platform. Orchestrates LLM agents, persists conversation turns, exposes a FastAPI service, and runs offline evaluation through a JSONL dataset harness.")
 
   System_Ext(lmstudio, "LM Studio", "Local LLM server exposing an OpenAI-compatible API on :1234. Default provider for development.")
@@ -30,6 +32,8 @@ C4Context
   System_Ext(cognitive_signals, "Cognitive signal log (opt-in)", "./data/cognitive-signals — JSONL envelopes written when MANGOMAS_SIGNAL__ENABLED=true. Covered by the data/ gitignore entry.")
 
   Rel(developer, mangomas, "Invokes agents / queries health / runs eval", "HTTP REST or CLI")
+  Rel(developer, studio, "Picks a provider profile, runs and inspects agents")
+  Rel(studio, mangomas, "GET /llm/profiles, invoke, SSE stream, GET /history, /workflows, eval report (CORS allow-listed)", "HTTP REST + SSE")
   Rel(mangomas, lmstudio, "Sends chat completion requests", "HTTP (OpenAI-compat /v1/chat/completions)")
   Rel(mangomas, vertex, "Sends generate_content requests (when provider=vertex)", "Vertex SDK / HTTPS")
   Rel(mangomas, sqlite, "Reads and writes conversation turns (default)", "SQLite driver")

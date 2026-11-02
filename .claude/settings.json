@@ -11,6 +11,7 @@
       "Bash(python scripts/harness_config_audit.py)",
       "Bash(python scripts/harness_session_start.py)",
       "Bash(python scripts/lint_agent_frontmatter.py:*)",
+      "Bash(python scripts/studio_consumer_probe.py:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",

@@ -8,6 +8,35 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: Studio-contract E2E and AQA (2026-11-01)
+
+`spec-0041` ran every lane against the spec-0040 delta and found no runtime
+defect:
+
+- `make studio-probe-mock` (CI) and `make studio-probe` (LM Studio) drive the
+  Studio consumer contract. Scenario 13 proves two live profiles and a broken
+  one on a single server.
+- `make guard-probe` now has 27 entries: `MUT-AQA` (10), `MUT-0040` (14) and
+  `MUT-STUDIO` (3). `MUT-STUDIO-03` pins live routing checks as `SKIP`
+  rather than an unfalsifiable `PASS`.
+- Follow-ups from the pre-PR review:
+  - Decompose `scripts/deploy_environment.py` (909 lines) and
+    `scripts/lint_agent_frontmatter.py` (886), and, behind a `BREAKING-CHANGE`
+    trailer, `core/orchestrator/_client.py` (721). Use the `mango-decompose`
+    skill.
+  - Lift `scripts/_openai_compat_stub.py` into a shared test fixture so other
+    suites stop hand-rolling OpenAI-compatible fakes.
+  - Reconcile legacy `main` per ADR-0036. Its 11 unmerged commits are
+    superseded by ADR-0023, so promote from `dev`; do not merge `main` back.
+- Open decisions for the Studio v1 milestone:
+  - D-11: should `/readyz` cover the profile clients?
+  - D-12: stamp streamed turns. This needs a protected `core/orchestrator/`
+    edit.
+  - A5: let eval targets select a profile, the prerequisite for a
+    local-vs-cloud eval baseline.
+
+---
+
 ## Overlay: origin-delta AQA and guard probe (2026-10-29)
 
 `spec-0039` closed the live and CUDA gaps found against

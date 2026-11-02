@@ -26,7 +26,8 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
                  tests/test_run_workflow_e2e.py tests/deploy/test_ci_make_parity.py \
                  tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
                  tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
-                 tests/test_deploy_environment.py tests/harness
+                 tests/test_deploy_environment.py tests/harness \
+                 tests/test_studio_consumer_probe.py
 # Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
 # was the gate's own blind spot — 24%, imported only for its FLOORS/
 # GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect
@@ -112,7 +113,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
 
 .DEFAULT_GOAL := help
 .PHONY: help install validate-config lint format format-check typecheck lint-imports frontmatter \
-        protected-paths test test-xml guard-probe \
+        protected-paths test test-xml guard-probe studio-probe-mock studio-probe \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local gpu secret-scan pip-audit sbom-scan \
@@ -231,6 +232,15 @@ scripts-coverage: ## scripts/ isolated coverage gate (measured floor — see SCR
 # working tree, and `gate` must stay safe to run on a dirty checkout.
 guard-probe: ## Prove each manifest mutation turns its guard red, then restore
 	$(PYTHON) scripts/guard_probe.py
+
+# The Studio consumer contract (spec-0041). Mock mode is hermetic — an
+# in-process stub, no port — so CI's test job runs it; live mode needs LM
+# Studio plus LMSTUDIO_MODEL / LMSTUDIO_OVERRIDE_MODEL and stays opt-in.
+studio-probe-mock: ## Studio consumer contract against an in-process LLM stub (no network)
+	$(PYTHON) scripts/studio_consumer_probe.py --mode mock
+
+studio-probe: ## Studio consumer contract against LM Studio (needs LMSTUDIO_OVERRIDE_MODEL)
+	$(PYTHON) scripts/studio_consumer_probe.py --mode live
 
 gate: validate-config lint format-check typecheck lint-imports frontmatter protected-paths test coverage bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
 

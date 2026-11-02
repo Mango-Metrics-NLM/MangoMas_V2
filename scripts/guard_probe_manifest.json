@@ -167,6 +167,27 @@
       "fixed": "        return response\n\n    async def _handle_step(",
       "defect": "        return response.model_copy(update={\"metadata\": {\"loop\": response.metadata.get(\"loop\")}})\n\n    async def _handle_step(",
       "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_without_profile_leaves_metadata_unchanged", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-STUDIO-01",
+      "path": "src/mangomas/agents/chat.py",
+      "fixed": "        logger.debug(\"ChatAgent dispatching %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name, request)\n",
+      "defect": "        logger.debug(\"ChatAgent dispatching %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_each_journey_passes_alone_in_mock_mode[invoke_stamp]", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-STUDIO-02",
+      "path": "src/mangomas/agents/chat.py",
+      "fixed": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name, request)\n",
+      "defect": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_each_journey_passes_alone_in_mock_mode[run_timeline]", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-STUDIO-03",
+      "path": "scripts/_studio_probe_journeys.py",
+      "fixed": "        ctx.rec.skip(name, LIVE_ROUTING_SKIP_REASON)\n",
+      "defect": "        ctx.rec.expect(name, True, LIVE_ROUTING_SKIP_REASON)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_routing_is_skipped_where_no_reply_names_its_model", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }

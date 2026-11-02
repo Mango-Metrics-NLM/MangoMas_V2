@@ -32,7 +32,7 @@ so it must stay fast, hermetic and green. Flows live in
 `test_model_override_flow.py` and `test_tenancy_stream_flow.py`, over the
 `compose_app` fixture in `tests/integration/conftest.py`.
 
-`tests/lmstudio/` is tier 2 — twelve scenarios against a live model (see
+`tests/lmstudio/` is tier 2 — thirteen scenarios against a live model (see
 `tests/lmstudio/conftest.py` for shared fixtures and
 `docs/testing/lmstudio-e2e.md` for the catalogue):
 
@@ -49,6 +49,18 @@ so it must stay fast, hermetic and green. Flows live in
 - `test_plan_execute_review.py` — shipped graph, validated (model-capability dependent)
 - `test_model_override.py` — per-agent `MODEL_OVERRIDE` (spec-0028)
 - `test_workflow_run.py` — composite `branch` + `fan_out` over HTTP
+- `test_llm_profiles.py` — named LLM profiles with a routing oracle (spec-0040)
+
+`scripts/studio_consumer_probe.py` and its in-process stub
+`scripts/_openai_compat_stub.py` drive the Studio consumer contract
+(spec-0041). The entry point stays thin: types live in
+`_studio_probe_model.py`, test seams in `_studio_probe_seams.py`, and the
+journeys in `_studio_probe_journeys.py`. A new journey goes into `JOURNEYS`
+there. `make studio-probe-mock` runs in CI with no network and fails if
+the app opens a real socket. `make studio-probe` is the opt-in run against
+LM Studio. It reports a check the server cannot observe as `SKIP`, never
+`PASS`. Only `FAIL` exits 1. The probe pins the D-12 limitation (a streamed turn is stored
+without `llm_profile`), so closing D-12 turns it red on purpose.
 
 ## Constraints
 

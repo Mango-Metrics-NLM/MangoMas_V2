@@ -271,10 +271,35 @@ def test_restore_keeps_the_original_mtime_and_round_trips_a_same_size_mutation(
     assert target.read_bytes() == b"prefix FIXED suffix\n"
 
 
+def _gate_test(gate: tuple[str, ...]) -> str:
+    """The test a gate selects, as ``file::name`` whether written as a node id or ``-k``.
+
+    Two branches once replayed the same fourteen spec-0040 mutations under
+    different ids *and* different snippet wording, so ``(path, fixed, defect)``
+    matched only three of them. The mutated file plus the test that proves it
+    matched all fourteen.
+    """
+    target = next(part for part in gate if part.startswith("tests/"))
+    if "-k" in gate:
+        return f"{target}::{gate[gate.index('-k') + 1]}"
+    return target
+
+
+def test_gate_test_identity_is_spelling_independent() -> None:
+    node_id = ("{python}", "-m", "pytest", "tests/test_x.py::test_y", "-q")
+    keyword = ("{python}", "-m", "pytest", "tests/test_x.py", "-k", "test_y", "-q")
+    assert _gate_test(node_id) == _gate_test(keyword) == "tests/test_x.py::test_y"
+
+
 def test_shipped_manifest_snippets_each_occur_once() -> None:
     """The real manifest must still match the tree, or the probe cannot run."""
     entries = probe.load_manifest(probe._default_manifest())
-    assert len(entries) == 24
+    # 10 MUT-AQA-* (spec-0039) + 14 MUT-0040-M* (spec-0040) + 3 MUT-STUDIO-* (spec-0041).
+    assert len(entries) == 27
+    assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
+    proofs = [(entry.path, _gate_test(entry.gate)) for entry in entries]
+    duplicated = sorted({proof for proof in proofs if proofs.count(proof) > 1})
+    assert duplicated == [], f"the same guard is proven twice under different ids: {duplicated}"
     for entry in entries:
         text = (probe._repo_root() / entry.path).read_text(encoding="utf-8")
         assert probe._to_lf(text).count(probe._to_lf(entry.fixed)) == 1, entry.entry_id
