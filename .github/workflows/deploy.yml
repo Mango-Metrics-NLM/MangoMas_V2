@@ -43,9 +43,19 @@ on:
 permissions:
   contents: read
 
+# One run per ref at a time, and NEVER cancelled: a deploy that has started
+# must run to completion, so a second push queues behind it instead. The
+# deploy job below adds a per-environment group on top of this one.
+# tests/deploy/test_workflow_hardening.py pins this as the one workflow whose
+# runs are not disposable.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   plan:
     name: Plan deploy environment
+    timeout-minutes: 10
     # Branch pushes deploy only once the per-environment GCP resources exist.
     # Until an admin sets the MULTI_ENV_DEPLOY_ENABLED repository variable, a
     # push to dev/qa skips cleanly instead of failing red on every merge.
@@ -94,6 +104,7 @@ jobs:
     # (tests/deploy/test_ci_make_parity.py's one-place rule).
     name: Verify before deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: plan
     steps:
       - uses: actions/checkout@v7
@@ -119,6 +130,7 @@ jobs:
   deploy:
     name: Build, push & deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [plan, verify]
     # The GitHub Environment carries this environment's deploy identity and
     # protection rules (prod: tag v* only + required reviewer).

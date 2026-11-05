@@ -9,6 +9,29 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — CI/CD hygiene (engineering-health reflection, PR 1)
+
+- `ci.yml`'s `push` trigger names the trunk branches only, the same
+  registry-derived list as its `pull_request` trigger, so a commit on a PR
+  branch runs the pipeline once instead of twice (push + pull_request).
+  `tests/deploy/test_ci_make_parity.py::test_push_trigger_targets_the_same_environment_branches`
+  pins the two lists equal.
+- Every workflow declares a `concurrency` group keyed on `github.ref` with
+  `cancel-in-progress: true`, except `deploy.yml`, which queues rather than
+  cancels (a half-applied deploy must finish). Every job declares a bounded
+  `timeout-minutes` (18 of 20 inherited GitHub's 360-minute default).
+  `tests/deploy/test_workflow_hardening.py` asserts presence, the 60-minute
+  ceiling, and that `deploy.yml` is the one exception; `make guard-probe`
+  replays all three as `MUT-CI-01..03`.
+- `.github/dependabot.yml` groups minor/patch bumps per ecosystem (one PR a
+  month each instead of one per package); majors stay ungrouped. The
+  lock-stepped pairs (`ruff`/`mypy` ↔ pre-commit revs, `coverage` ↔
+  `pytest-cov`) are recorded beside the config. First-party pins bumped in
+  the same PR: `actions/cache@v6`, `actions/upload-artifact@v7`.
+- `CONTRIBUTING.md` records the action-pin policy (third-party by SHA,
+  first-party `actions/*` by tag) that `test_workflow_hardening.py` was
+  already enforcing.
+
 ### Added — Studio-contract AQA lane (spec-0041)
 
 - `scripts/studio_consumer_probe.py` drives the HTTP contract MangoMas Studio

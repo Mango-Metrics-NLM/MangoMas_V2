@@ -184,6 +184,21 @@ def test_pull_request_trigger_targets_the_environment_branches() -> None:
     assert triggers["pull_request"]["branches"] == list(_PR_TRIGGER_BRANCHES)
 
 
+def test_push_trigger_targets_the_same_environment_branches() -> None:
+    """CI's push trigger names the trunks only, so a PR branch runs CI once.
+
+    With `push: branches: ["**"]` every commit to a PR branch ran the whole
+    pipeline twice — once for the push event, once for the `pull_request`
+    event the same commit raises — and both runs reported on the PR. The
+    push trigger is therefore narrowed to the branches that *receive* merges:
+    the same registry-derived list the PR trigger uses, so a trunk merge is
+    still gated by a push run (it has no PR of its own) and the two triggers
+    cannot drift apart.
+    """
+    triggers = _workflows.triggers(_CI_WORKFLOW.name)
+    assert triggers["push"]["branches"] == list(_PR_TRIGGER_BRANCHES)
+
+
 def test_scripts_coverage_job_delegates_to_make() -> None:
     """scripts/ sits outside `--cov=mangomas`'s reach (ADR-0021 / spec-0017
     A7), so it gets the same isolated-job treatment as bridge-coverage."""

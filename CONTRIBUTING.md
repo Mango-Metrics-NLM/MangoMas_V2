@@ -139,6 +139,9 @@ so the failure message makes sense when it arrives.
 | No module-level `mangomas.telemetry.get_tracer` | `tests/test_telemetry.py` AST scan over `src/` |
 | Every source package has a write-capable owning agent | `tests/tooling/test_corpus_contract.py` |
 | Docs' corpus counts, C4 model and coverage-floor table match reality | `tests/tooling/`, `tests/test_check_coverage.py` |
+| Third-party GitHub Actions are pinned to a full commit SHA (`# vX.Y.Z` trail comment); first-party `actions/*` may stay tag-pinned | `tests/deploy/test_workflow_hardening.py` |
+| Every CI job declares a bounded `timeout-minutes`; every workflow declares a `concurrency` group, and only `deploy.yml` refuses `cancel-in-progress` | `tests/deploy/test_workflow_hardening.py` |
+| CI's `push` and `pull_request` triggers name the same trunk branches, so a PR branch runs the pipeline once | `tests/deploy/test_ci_make_parity.py` |
 
 The full design-rule table, with the mechanism that catches each violation
 (and an honest "code review (prose-only)" where none exists), is in

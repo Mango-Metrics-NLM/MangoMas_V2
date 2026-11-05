@@ -188,6 +188,27 @@
       "fixed": "        ctx.rec.skip(name, LIVE_ROUTING_SKIP_REASON)\n",
       "defect": "        ctx.rec.expect(name, True, LIVE_ROUTING_SKIP_REASON)\n",
       "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_routing_is_skipped_where_no_reply_names_its_model", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-CI-01",
+      "path": ".github/workflows/ci.yml",
+      "fixed": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\n",
+      "defect": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: false\n",
+      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_workflow_hardening.py", "-k", "test_only_the_deploy_workflow_refuses_to_cancel_in_progress", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-CI-02",
+      "path": ".github/workflows/ci.yml",
+      "fixed": "    timeout-minutes: 10\n    env:\n",
+      "defect": "    env:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_workflow_hardening.py", "-k", "test_every_job_declares_a_bounded_timeout", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-CI-03",
+      "path": ".github/workflows/ci.yml",
+      "fixed": "  push:\n    branches: [\"feat/initial-release\", \"dev\", \"qa\", \"main\"]\n  pull_request:\n",
+      "defect": "  push:\n    branches: [\"**\"]\n  pull_request:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_ci_make_parity.py", "-k", "test_push_trigger_targets_the_same_environment_branches", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }

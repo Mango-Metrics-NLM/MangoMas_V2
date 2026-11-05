@@ -294,8 +294,9 @@ def test_gate_test_identity_is_spelling_independent() -> None:
 def test_shipped_manifest_snippets_each_occur_once() -> None:
     """The real manifest must still match the tree, or the probe cannot run."""
     entries = probe.load_manifest(probe._default_manifest())
-    # 10 MUT-AQA-* (spec-0039) + 14 MUT-0040-M* (spec-0040) + 3 MUT-STUDIO-* (spec-0041).
-    assert len(entries) == 27
+    # 10 MUT-AQA-* (spec-0039) + 14 MUT-0040-M* (spec-0040) + 3 MUT-STUDIO-* (spec-0041)
+    # + 3 MUT-CI-* (workflow hygiene).
+    assert len(entries) == 30
     assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
     proofs = [(entry.path, _gate_test(entry.gate)) for entry in entries]
     duplicated = sorted({proof for proof in proofs if proofs.count(proof) > 1})

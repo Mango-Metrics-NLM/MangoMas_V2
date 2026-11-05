@@ -1,12 +1,21 @@
 # Keeps the SHA-pinned third-party actions fresh (spec-0022 R5). First-party
 # actions/* stay tag-pinned by policy — tests/deploy/test_workflow_hardening.py
 # encodes that split, so a Dependabot PR that flips it will fail CI visibly.
+#
+# Grouping: minor and patch bumps arrive as one PR per ecosystem per month
+# instead of one PR per package (fifteen were open at once before this). A
+# major bump is never grouped — it is a reviewed event, and for the exact-
+# pinned toolchain pairs below it needs a companion edit in the other file.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   # Python dependencies (supply-chain baseline, roadmap item 0.3): covers
   # pyproject.toml's version ranges.
   #
@@ -20,16 +29,31 @@ updates:
   # dependency the lock does not pin, and `make pip-audit`'s second pass scans
   # the lock for CVEs. Renaming the file so Dependabot parses it is an open
   # decision (D13 in docs/analysis/20260919-council-rejection-and-replan.md).
+  #
+  # Lock-stepped pins (a Dependabot PR for one half needs the other edited in
+  # the same commit; tests/tooling/test_toolchain_pin_parity.py and
+  # tests/deploy/test_ci_make_parity.py fail CI otherwise):
+  #   ruff        ↔ .pre-commit-config.yaml ruff-pre-commit rev
+  #   mypy        ↔ .pre-commit-config.yaml mirrors-mypy rev
+  #   coverage    ↔ pytest-cov (measurement semantics are the gate's denominator)
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: monthly
+    groups:
+      pip-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   # Sibling envelope package (pydantic>=2.7 today). Separate from the root
   # pip ecosystem so a contracts-only bump is its own PR.
   - package-ecosystem: pip
     directory: /mango-integration-contracts
     schedule:
       interval: monthly
+    groups:
+      contracts-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Pre-commit hook revs. `ruff` and `mypy` are exact-pinned in BOTH
   # pyproject.toml's dev extra and .pre-commit-config.yaml, and
@@ -45,6 +69,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    groups:
+      pre-commit-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Base-image digests. The Dockerfile pins python:3.11-slim by digest in both
   # stages (supply-chain baseline); without this entry those digests were only
