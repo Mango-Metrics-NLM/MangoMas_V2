@@ -58,7 +58,7 @@ class DatasetRow:
 
 def _parse_row(raw: dict[str, Any], *, index: int, source: str) -> DatasetRow:
     """Convert a parsed JSON object into a :class:`DatasetRow`."""
-    if not isinstance(raw, dict):  # pragma: no cover - defensive
+    if not isinstance(raw, dict):
         raise DatasetError(f"{source} row {index}: expected JSON object, got {type(raw).__name__}")
     raw_messages = raw.get("messages")
     if not isinstance(raw_messages, list) or not raw_messages:

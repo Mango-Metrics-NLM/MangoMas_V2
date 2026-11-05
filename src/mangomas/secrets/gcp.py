@@ -74,7 +74,8 @@ def _short_name(name: str) -> str:
     try:
         idx = parts.index("secrets")
         return parts[idx + 1]
-    except (ValueError, IndexError):  # pragma: no cover  -- malformed
+    except (ValueError, IndexError):
+        # ``projects/<p>/secrets`` with nothing after it: nothing to shorten to.
         return name
 
 
@@ -138,7 +139,7 @@ class GCPSecretManagerProvider:
         # ``gcp`` extra is installed; unit tests always inject ``client``
         # via the constructor seam, so the import + instantiation paths
         # are excluded from coverage.
-        if self._client is None:  # pragma: no cover
+        if self._client is None:  # pragma: no cover - requires gcp extra
             try:
                 from google.cloud import secretmanager  # noqa: PLC0415
             except ImportError as exc:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import pathlib
+from collections.abc import Callable
 
 import pytest
 
@@ -140,3 +142,41 @@ async def test_file_memory_use_after_close_raises(tmp_path: object) -> None:
         await repo.read_index()
     with pytest.raises(PersistenceError):
         await repo.append_index("after close")
+
+
+async def test_file_memory_write_episodic_does_not_double_a_trailing_newline(
+    tmp_path: object,
+) -> None:
+    path = await FileMemoryRepository(_settings(tmp_path)).write_episodic("already terminated\n")
+    assert pathlib.Path(path).read_text() == "already terminated\n"
+
+
+async def test_file_memory_append_index_does_not_double_a_trailing_newline(
+    tmp_path: object,
+) -> None:
+    repo = FileMemoryRepository(_settings(tmp_path))
+    await repo.append_index("- entry\n")
+    assert await repo.read_index() == "- entry\n"
+
+
+@pytest.mark.parametrize("operation", ["write_episodic", "read_index", "append_index"])
+async def test_file_memory_close_racing_the_thread_body_raises(
+    tmp_path: object, operation: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The in-thread closed check is a second gate, not a copy of the first.
+
+    ``_ensure_open`` runs on the event loop; the file write runs later on a
+    worker thread. A ``close()`` that lands between the two must still be
+    honoured, which is why each thread body re-checks under the lock. The
+    race is reproduced by closing the repository at the hand-off point.
+    """
+    repo = FileMemoryRepository(_settings(tmp_path))
+
+    async def _close_then_run(fn: Callable[[], object]) -> object:
+        repo.close()
+        return fn()
+
+    monkeypatch.setattr(asyncio, "to_thread", _close_then_run)
+    call = getattr(repo, operation)
+    with pytest.raises(PersistenceError, match="closed"):
+        await (call("x") if operation != "read_index" else call())

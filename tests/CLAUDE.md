@@ -49,7 +49,7 @@ tests/
 
 Test counts and coverage percentages are **not** recorded here — they went
 stale every release. `scripts/check_coverage.py` is the authoritative gate
-(global 95% plus per-package floors); run `make gate` for the live numbers.
+(global 98% plus per-package floors); run `make gate` for the live numbers.
 
 ## Constants contract
 
@@ -81,7 +81,7 @@ asyncio_mode = "auto"   ← async tests work without @pytest.mark.asyncio
 ## Run Commands
 
 ```powershell
-# All unit tests + coverage gate (95 % minimum)
+# All unit tests + coverage gate (98 % minimum)
 python -m pytest --tb=short -q
 
 # Single test file

@@ -60,5 +60,5 @@ async def _aiter(stream_result: Any) -> AsyncIterable[Any]:
         async for item in stream_result:
             yield item
         return
-    for item in stream_result:  # pragma: no cover - sync-iterable fallback
+    for item in stream_result:
         yield item

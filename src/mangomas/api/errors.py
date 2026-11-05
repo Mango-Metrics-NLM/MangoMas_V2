@@ -68,7 +68,10 @@ def _error_status(exc: MangomasError) -> int:
     for cls in type(exc).__mro__:
         if cls in _ERROR_STATUS:
             return int(_ERROR_STATUS[cls])
-    return HTTPStatus.INTERNAL_SERVER_ERROR  # pragma: no cover  -- MangomasError always in MRO
+    # Every MangomasError resolves above (the base class is in the table);
+    # this is the generic answer for a foreign exception that reaches the
+    # handler anyway, so the error handler itself can never raise.
+    return HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 def error_envelope(code: str, message: str, detail: str = "") -> dict[str, str]:

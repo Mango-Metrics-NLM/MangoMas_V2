@@ -12,6 +12,7 @@ modules.
 from __future__ import annotations
 
 from http import HTTPStatus
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from mangomas.api.app import create_app
 from mangomas.api.errors import error_envelope
 from mangomas.api.middleware import ConcurrencyLimitMiddleware, MaxBodySizeMiddleware
 from mangomas.core import Orchestrator
+from mangomas.errors import MangomasError
 from tests.constants import BACKPRESSURE_MAX_BODY_BYTES
 
 # The two-key envelope produced by the middleware rejections and by any
@@ -148,6 +150,19 @@ def test_app_facade_reexports_error_surface() -> None:
     assert app_module._ERROR_STATUS is api_errors._ERROR_STATUS
     assert app_module._error_status is api_errors._error_status
     assert app_module.error_envelope is api_errors.error_envelope
+
+
+def test_error_status_falls_back_to_500_for_an_exception_outside_the_table() -> None:
+    """The MRO walk's fallback is real behaviour, not dead code.
+
+    Every ``MangomasError`` resolves through the table because the base class
+    is in it; the fallback exists for an exception that bypasses the type
+    annotation (a handler registered more widely, a stray ``raise`` of a
+    foreign type) and must be the generic 500 rather than an ``IndexError``
+    from inside the error handler itself.
+    """
+    foreign = cast("MangomasError", RuntimeError("not ours"))
+    assert api_errors._error_status(foreign) == HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 def test_app_facade_reexports_workflow_models() -> None:

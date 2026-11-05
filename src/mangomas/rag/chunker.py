@@ -35,7 +35,11 @@ def chunk_text(text: str, *, size: int, overlap: int) -> list[str]:
     step = size - overlap
     chunks: list[str] = []
     start = 0
-    while start < n:
+    # The loop always leaves through the ``break``: ``n >= 1`` here, and when
+    # ``end < n`` then ``start + step <= end < n``, so the next window is
+    # non-empty. A ``while start < n`` guard would be a branch no input can
+    # falsify, which coverage would (correctly) report as never taken.
+    while True:
         end = min(start + size, n)
         chunks.append(" ".join(words[start:end]))
         if end == n:

@@ -154,7 +154,7 @@ The full design-rule table, with the mechanism that catches each violation
 `docs/testing/regression.md` is the reference. The short version:
 
 ```bash
-make test              # unit suite + the global 95% floor
+make test              # unit suite + the global 98% floor
 make coverage          # per-package floors — the authoritative gate
 make gate              # everything CI runs, in CI's order
 ```

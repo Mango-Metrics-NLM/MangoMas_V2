@@ -43,7 +43,7 @@ rather than skips, when no CUDA device is visible.
 
 ## Constraints
 
-- DO NOT lower the `rag` (95 %) or `adapters` (85 %) floor in
+- DO NOT lower the `rag` (98 %) or `adapters` (98 %) floor in
   `scripts/check_coverage.py` to land a change.
 - DO NOT import `chromadb`, `sentence_transformers` or `vertexai` at module
   scope — each is an optional extra and the module must import without it.

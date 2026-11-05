@@ -542,9 +542,9 @@ Neither is `make gate`; run `make gate` before opening a PR.
 
 Per-package floors (`scripts/check_coverage.py` — the authoritative gate):
 `errors`, `registry`, `core`, `secrets`, `correlation`, `tenancy`, `_headers`,
-`utils`, `_entry_points` at **100 %**; `composition`, `agents`, `api`, `cli`,
-`config`, `telemetry`, `metrics`, `eval`, `rag`, `workflow`, `cognitive`,
-`harness` at **95 %**; `adapters` at **85 %**; global at **95 %**. Scripts are
+`utils`, `_entry_points`, `composition`, `cli`, `config`, `telemetry`,
+`metrics`, `eval`, `workflow`, `harness` at **100 %**; `agents`, `api`,
+`adapters`, `rag`, `cognitive` at **98 %**; global at **98 %**. Scripts are
 a separate measured floor (`SCRIPTS_FLOOR` = 94 %). `make gpu` (`RUN_GPU=1`)
 fails when no CUDA device is visible. `make guard-probe` is the falsifiability
 probe and is not part of `make gate`. The

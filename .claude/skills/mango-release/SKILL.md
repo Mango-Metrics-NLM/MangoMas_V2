@@ -40,7 +40,7 @@ pre-commit run --all-files  # ruff + ruff-format + mypy(src) + file hygiene
 python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 python -m ruff format --check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 python -m mypy --strict src tests scripts eval_harness_bridge/src mango-integration-contracts/src
-python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=95
+python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=98
 python scripts/check_coverage.py
 python scripts/lint_agent_frontmatter.py
 ```
@@ -50,7 +50,7 @@ pre-commit run --all-files  # ruff + ruff-format + mypy(src) + file hygiene
 python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 python -m ruff format --check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 python -m mypy --strict src tests scripts eval_harness_bridge/src mango-integration-contracts/src
-python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=95
+python -m pytest -q  # addopts supply --cov + the global --cov-fail-under=98
 python scripts/check_coverage.py
 python scripts/lint_agent_frontmatter.py
 ```
@@ -67,7 +67,7 @@ python scripts/lint_agent_frontmatter.py
 | ADR for architecture | Any change that introduces a new boundary, swaps a provider, or alters the composition root needs an ADR in `docs/adr/`. |
 | Pre-commit parity | `pre-commit run --all-files` is the cheapest way to reproduce CI's lint/format/type gates locally. `ruff` and `mypy` are **exact-pinned** in `pyproject.toml`'s dev extra in lockstep with the hook `rev:`s in `.pre-commit-config.yaml` — bump both together, or the hook and CI disagree. The mypy hook is scoped to `src/`; CI type-checks `src tests scripts eval_harness_bridge/src mango-integration-contracts/src`. |
 | Lint/type surface | CI runs ruff and mypy over `src tests scripts eval_harness_bridge/src mango-integration-contracts/src`. Omitting `eval_harness_bridge/src` or `mango-integration-contracts/src` locally is the usual "green locally, red in CI" cause. |
-| Coverage gate | `scripts/check_coverage.py` is the single source of truth: global 95 % plus per-package floors ranging from 85 % (adapters) to 100 % (`errors.py`, `registry.py`, `core/*`). The pytest `--cov-fail-under=95` addopt in `pyproject.toml` mirrors the global floor. |
+| Coverage gate | `scripts/check_coverage.py` is the single source of truth: global 98 % plus per-package floors set at the measured value — 98 % (`agents`, `api`, `adapters`, `rag`, `cognitive`) or 100 % (everything else, incl. `errors.py`, `registry.py`, `core/*`). The pytest `--cov-fail-under=98` addopt in `pyproject.toml` mirrors the global floor. |
 | Frontmatter lint | `scripts/lint_agent_frontmatter.py` validates every `.claude/agents/mango-*.md` and `.claude/skills/*/SKILL.md` (and gates protected-core paths on a `BREAKING-CHANGE` marker). Run before pushing. |
 | Agent review checkboxes | The PR template lists the four routers (`mango-architect`, `mango-backend`, `mango-test-engineer`, `mango-api-dev`); tick the ones whose domain you touched. |
 
@@ -84,7 +84,7 @@ python scripts/lint_agent_frontmatter.py
 | `.github/PULL_REQUEST_TEMPLATE.md` | PR description skeleton |
 | `docs/adr/_template.md` | ADR skeleton |
 | `docs/adr/0001-cloud-targets.md` | Reference ADR — current cloud-target matrix |
-| `scripts/check_coverage.py` | Per-package coverage floors (errors/registry/core 100%, agents 95%, etc.) |
+| `scripts/check_coverage.py` | Per-package coverage floors (errors/registry/core 100%, agents 98%, etc.) |
 
 ---
 

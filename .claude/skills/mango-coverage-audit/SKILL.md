@@ -38,7 +38,7 @@ Four instances in this repo, all real:
 | Glob stops matching | `api/*.py` stayed flat when `api/` grew `routes/` |
 | Glob never recursed | `cli` floor, ahead of the `cli/main.py` split |
 | Exclusion over-matches | unanchored `"\.\.\."` matched `typer.Argument(...)` |
-| Floor never written | a new package inherits only the 95% global average |
+| Floor never written | a new package inherits only the 98% global average |
 
 ## The Core Technique
 

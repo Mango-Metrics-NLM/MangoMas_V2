@@ -150,4 +150,4 @@ After: `ruff check --fix`, `mypy --strict`, `pytest --tb=short -q`, then update 
 1. `AgentNotFound` → factory not registered or registered under a different slug than the request's `agent` field.
 2. mypy `Argument 1 to "register" has incompatible type` → factory signature must be `Callable[[AgentSettings | None], Agent]`.
 3. Test assertion `assert isinstance(agent, Agent)` fails → check method signatures match `core/agent.py` exactly (including `async`, return type, parameter names).
-4. Coverage gate fails for `agents/<name>.py` (95% floor) → add tests for the unhappy path (LLM raises, empty request, structured output validation error).
+4. Coverage gate fails for `agents/<name>.py` (98% floor) → add tests for the unhappy path (LLM raises, empty request, structured output validation error).

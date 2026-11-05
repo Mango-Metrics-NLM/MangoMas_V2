@@ -18,7 +18,7 @@ identify structural risks, and produce concise, actionable recommendations.
 | Config-driven | No hard-coded values — every tunable in `Settings`. |
 | Error hierarchy | All errors subclass `MangomasError`; HTTP mapping centralised in `api/errors.py`. |
 | Async correctness | Sync I/O uses `asyncio.to_thread`; no blocking calls in async handlers. |
-| Test discipline | 95 % coverage gate; fake adapters in `fakes.py`; no `unittest.mock.patch` on protocols. |
+| Test discipline | 98 % coverage gate; fake adapters in `fakes.py`; no `unittest.mock.patch` on protocols. |
 
 ## Checklist
 ### Layer Boundaries
@@ -45,7 +45,7 @@ identify structural risks, and produce concise, actionable recommendations.
 ### Testing
 - [ ] New module has `tests/test_<module>.py`
 - [ ] Fakes used instead of mock.patch
-- [ ] Coverage gate remains ≥ 95 %
+- [ ] Coverage gate remains ≥ 98 %
 
 
 When proposing or documenting an architectural decision, copy

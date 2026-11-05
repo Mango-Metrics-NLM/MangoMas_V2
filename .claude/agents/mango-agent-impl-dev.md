@@ -60,7 +60,7 @@ editing it here.
 
 ## Constraints
 
-- DO NOT let `src/mangomas/agents/*.py` fall below its 95 % floor.
+- DO NOT let `src/mangomas/agents/*.py` fall below its 98 % floor.
 - DO NOT edit `core/agent.py`, `ExecutionPlan`, `ReviewResult` or
   `_streaming.py` — each has a named owner.
 - DO NOT register an agent anywhere but `composition.agent_registry`.

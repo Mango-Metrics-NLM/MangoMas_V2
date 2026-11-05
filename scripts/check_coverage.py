@@ -42,29 +42,38 @@ class Floor(NamedTuple):
 # measuring it, and ``cli/`` is next — spec-0015 decomposes ``cli/main.py``
 # into a command package. ``tests/test_check_coverage.py`` pins the rule so a
 # flat glob cannot be reintroduced by hand.
+#
+# Ratchet (2026-11-05, engineering-health reflection PR 2). A full
+# `--cov-branch` run measured every package at 100% except four in the high
+# 99s, against floors of 85-95 — ten to fifteen points of slack in which a
+# regression could hide behind a green gate. Each floor now sits at the
+# measured value: 100 where the package measures 100, 98 (measured minus a
+# two-point margin) where branch arcs in optional-SDK adapters and agent
+# fallbacks make a stray partial branch plausible. `docs/testing/regression.md`
+# mirrors this table and `tests/test_check_coverage.py` fails when it drifts.
 FLOORS: list[Floor] = [
     Floor("src/mangomas/errors.py", 100, "errors"),
     Floor("src/mangomas/registry.py", 100, "registry"),
     Floor("src/mangomas/core/**/*.py", 100, "core"),
-    Floor("src/mangomas/composition/**/*.py", 95, "composition"),
-    Floor("src/mangomas/agents/**/*.py", 95, "agents"),
-    Floor("src/mangomas/api/**/*.py", 95, "api"),
-    Floor("src/mangomas/cli/**/*.py", 95, "cli"),
-    Floor("src/mangomas/adapters/**/*.py", 85, "adapters"),
+    Floor("src/mangomas/composition/**/*.py", 100, "composition"),
+    Floor("src/mangomas/agents/**/*.py", 98, "agents"),
+    Floor("src/mangomas/api/**/*.py", 98, "api"),
+    Floor("src/mangomas/cli/**/*.py", 100, "cli"),
+    Floor("src/mangomas/adapters/**/*.py", 98, "adapters"),
     Floor("src/mangomas/secrets/**/*.py", 100, "secrets"),
     Floor("src/mangomas/correlation.py", 100, "correlation"),
     Floor("src/mangomas/tenancy.py", 100, "tenancy"),
     Floor("src/mangomas/_headers.py", 100, "headers"),
-    Floor("src/mangomas/config/**/*.py", 95, "config"),
-    Floor("src/mangomas/telemetry/**/*.py", 95, "telemetry"),
-    Floor("src/mangomas/metrics.py", 95, "metrics"),
-    Floor("src/mangomas/eval/**/*.py", 95, "eval"),
-    Floor("src/mangomas/rag/**/*.py", 95, "rag"),
-    Floor("src/mangomas/workflow/**/*.py", 95, "workflow"),
-    Floor("src/mangomas/cognitive/**/*.py", 95, "cognitive"),
+    Floor("src/mangomas/config/**/*.py", 100, "config"),
+    Floor("src/mangomas/telemetry/**/*.py", 100, "telemetry"),
+    Floor("src/mangomas/metrics.py", 100, "metrics"),
+    Floor("src/mangomas/eval/**/*.py", 100, "eval"),
+    Floor("src/mangomas/rag/**/*.py", 98, "rag"),
+    Floor("src/mangomas/workflow/**/*.py", 100, "workflow"),
+    Floor("src/mangomas/cognitive/**/*.py", 98, "cognitive"),
     # ADR-0021 / spec-0017: PROTECTED_PATHS/marker-alias governance +
-    # ConfigChange decision logic. New package; 95% matches its siblings.
-    Floor("src/mangomas/harness/**/*.py", 95, "harness"),
+    # ConfigChange decision logic.
+    Floor("src/mangomas/harness/**/*.py", 100, "harness"),
     Floor("src/mangomas/utils/**/*.py", 100, "utils"),
     # spec-0020 R1: the one top-level module that had no floor. Shared
     # entry-point iteration for the two discovery modules; already at 100%,
@@ -72,7 +81,7 @@ FLOORS: list[Floor] = [
     Floor("src/mangomas/_entry_points.py", 100, "entry_points"),
 ]
 
-GLOBAL_FLOOR = Floor("src/mangomas/**/*.py", 95, "global")
+GLOBAL_FLOOR = Floor("src/mangomas/**/*.py", 98, "global")
 
 
 def _check(floor: Floor) -> bool:

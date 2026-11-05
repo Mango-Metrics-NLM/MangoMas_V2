@@ -49,7 +49,7 @@ they enter through the registries above. Adding one is the skill's recipe.
 
 ## Constraints
 
-- DO NOT lower the `eval` 95 % floor in `scripts/check_coverage.py`.
+- DO NOT lower the `eval` 100 % floor in `scripts/check_coverage.py`.
 - DO NOT raise a gate verdict before the sinks have run.
 - DO NOT call `dataclasses.asdict(report)` in a sink — go through
   `report_payload`, or the baseline loader stops round-tripping it.

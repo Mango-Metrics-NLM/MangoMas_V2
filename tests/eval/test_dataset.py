@@ -37,6 +37,14 @@ async def test_load_jsonl_malformed_json_raises(tmp_path: Path) -> None:
         await load_jsonl(target)
 
 
+async def test_load_jsonl_non_object_row_raises(tmp_path: Path) -> None:
+    """Valid JSON that is not an object (a list) is a typed row error, not a crash."""
+    target = tmp_path / "bad.jsonl"
+    target.write_text("[1, 2]\n", encoding="utf-8")
+    with pytest.raises(DatasetError, match="expected JSON object, got list"):
+        await load_jsonl(target)
+
+
 async def test_load_jsonl_missing_messages_raises(tmp_path: Path) -> None:
     target = tmp_path / "bad.jsonl"
     target.write_text('{"expected": "x"}\n', encoding="utf-8")
