@@ -68,6 +68,19 @@ def default_ca_bundle_path(env: Mapping[str, str] | None = None) -> Path:
     return base / DEFAULT_CA_RELATIVE_PATH
 
 
+def is_trusted_for_server_auth(trust: object) -> bool:
+    """True when a Windows store entry is trusted for TLS server authentication.
+
+    ``ssl.enum_certificates`` reports ``True`` for unrestricted trust, or a set
+    of purpose OIDs. A PEM bundle cannot carry those restrictions, so an entry
+    restricted to other purposes (code signing, e-mail) must be left out rather
+    than silently promoted to a TLS trust anchor.
+    """
+    if trust is True:
+        return True
+    return isinstance(trust, (set, frozenset)) and ssl.Purpose.SERVER_AUTH.oid in trust
+
+
 def export_windows_ca_bundle(
     output_path: Path,
     *,
@@ -86,11 +99,30 @@ def export_windows_ca_bundle(
         logger.debug("ssl.enum_certificates unavailable; skipping Windows CA export")
         return 0
     pem_blocks: list[str] = []
+    skipped_untrusted = 0
     for store_name in stores:
-        for cert_bytes, encoding, _trust in enumerator(store_name):
-            if encoding == X509_ASN_ENCODING:
-                pem_blocks.append(ssl.DER_cert_to_PEM_cert(cert_bytes))
+        for cert_bytes, encoding, trust in enumerator(store_name):
+            if encoding != X509_ASN_ENCODING:
+                continue
+            if not is_trusted_for_server_auth(trust):
+                skipped_untrusted += 1
+                continue
+            pem_blocks.append(ssl.DER_cert_to_PEM_cert(cert_bytes))
+    if skipped_untrusted:
+        logger.info(
+            "Skipped %d certificates not trusted for TLS server authentication",
+            skipped_untrusted,
+            extra={"event": "gpu_bootstrap_ca_skipped", "count": skipped_untrusted},
+        )
     unique_blocks = list(dict.fromkeys(pem_blocks))
+    if not unique_blocks:
+        # An empty PEM wired into SSL_CERT_FILE would make every TLS handshake fail.
+        logger.warning(
+            "No server-auth CA certificates found; leaving %s untouched",
+            output_path,
+            extra={"event": "gpu_bootstrap_ca_export_empty"},
+        )
+        return 0
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("".join(unique_blocks), encoding="utf-8")
     logger.info(
@@ -201,12 +233,22 @@ def run_bootstrap(
             print(shlex.join(cmd))
         return EXIT_OK
 
-    export_windows_ca_bundle(resolved_ca, cert_enumerator=cert_enumerator)
+    exported = export_windows_ca_bundle(resolved_ca, cert_enumerator=cert_enumerator)
     if export_ca_only:
-        print(f"Exported CA bundle: {resolved_ca}")
+        if exported == 0:
+            logger.error(
+                "No server-auth CA certificates were exported to %s "
+                "(ssl.enum_certificates unavailable or the stores are empty)",
+                resolved_ca,
+                extra={"event": "gpu_bootstrap_ca_export_empty"},
+            )
+            return EXIT_ERROR
+        print(f"Exported {exported} CA certificates: {resolved_ca}")
         return EXIT_OK
 
-    env = build_subproc_env(resolved_ca)
+    # Only a bundle written by this run is wired in; a stale file from an
+    # earlier run may predate a rotated inspection-proxy root.
+    env = build_subproc_env(resolved_ca if exported else None)
     for step_index, cmd in enumerate(plan, start=1):
         logger.info("Step %d/%d: %s", step_index, len(plan), shlex.join(cmd))
         completed = runner(cmd, env)

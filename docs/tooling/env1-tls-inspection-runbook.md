@@ -52,9 +52,14 @@ $env:SSLKEYLOGFILE
 `scripts/bootstrap_gpu_env.py` handles both `ENV-1` failure modes
 deterministically:
 
-1. Exports all X.509 certificates from the Windows `ROOT` and `CA` stores into
-   a deduplicated PEM bundle at `%LOCALAPPDATA%\mangomas\ca-bundle.pem`
-   (outside the repository tree so it survives re-clones and is never committed).
+1. Exports the X.509 certificates from the Windows `ROOT` and `CA` stores that
+   Windows trusts for TLS server authentication (unrestricted trust, or a trust
+   set containing `ssl.Purpose.SERVER_AUTH.oid`) into a deduplicated PEM bundle
+   at `%LOCALAPPDATA%\mangomas\ca-bundle.pem` (outside the repository tree so it
+   survives re-clones and is never committed). A PEM file cannot carry Windows
+   purpose restrictions, so roots restricted to other purposes (code signing,
+   e-mail) are skipped rather than promoted to TLS trust anchors. If nothing
+   qualifies, no file is written and `--export-ca-only` exits `1`.
 2. Creates `.venv-gpu`, upgrades `pip` with `--use-feature=truststore` and the
    exported CA bundle wired into `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and
    `PIP_CERT`.
