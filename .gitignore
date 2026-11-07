@@ -21,6 +21,10 @@ coverage.xml
 .mypy_cache/
 .ruff_cache/
 .import_linter_cache/
+# Second CUDA-capable interpreter (torch + embeddings-local + rag); created by
+# pip install -e ".[dev,embeddings-local,rag]" + cu130 wheel (ENV-1 in
+# docs/testing/rca-20261029.md).
+.venv-gpu/
 
 # Secret scanning — downloaded release binary + archive (make secret-scan).
 # CI downloads fresh into an ephemeral runner and discards it; a local run

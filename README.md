@@ -439,6 +439,17 @@ Two separate things share the word "harness":
   existing `orchestrator.*` spans. Otherwise, the wrapper is bypassed and
   no extra spans, logs, or hooks are emitted by the runtime process.
 
+- **Runtime tool-execution and repair-loop policy (ADR-0039)** — fail-closed
+  code-level guards in `src/mangomas/harness/` that keep an LLM or automated
+  coding workflow from damaging the host PC:
+  - `tool_policy.py` enforces `ToolEffects` (`READ_ONLY` required by default)
+    and validates tool-call arguments against `ToolSpec.parameters_schema`
+    before `ToolAgent` executes any tool.
+  - `repair_sandbox.py` enforces loopback-only LLM URLs, canonical relative
+    staging paths without `..`/symlinks/NTFS ADS/DOS devices/null bytes,
+    per-run allowlisted non-protected promotion targets, a scrubbed oracle
+    subprocess, and SHA-256 staged-mutation detection before promotion.
+
 - **Contributor tooling** — the Claude Code agent and skill corpus under
   `.claude/`, its hooks, the frontmatter linter and the `.mcp.json` servers.
   It is always in the tree, has no effect on the running service, and is

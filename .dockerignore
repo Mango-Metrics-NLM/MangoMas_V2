@@ -73,3 +73,10 @@ sbom.cdx.json
 
 # Dev-only pytest environment guard — not part of the runtime image
 sitecustomize.py
+
+# Runtime tool-execution and repair-loop policy is part of the runtime image;
+# its tests and fixtures are not
+tests/harness/test_tool_policy.py
+tests/harness/test_repair_sandbox.py
+tests/tooling/test_claude_code_settings.py
+tests/tooling/test_corpus_contract.py

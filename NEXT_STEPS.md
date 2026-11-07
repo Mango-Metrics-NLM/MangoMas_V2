@@ -8,6 +8,51 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: Origin-delta AQA and harness sandbox hardening (2026-11-06)
+
+Two sequential origin-delta deliveries validated and hardened the tree against
+`origin/feat/initial-release@6fbf689`:
+
+- **spec-0042 (origin-delta AQA)** ran every lane against the `eb0a086..6fbf689`
+  delta (PR #111 + PR #115) and fixed two boundary-translation defects (`D-1`,
+  `D-2`): `SQLiteRepository.__init__` and `SqliteResultsSink.__init__` now
+  translate `ValueError` from `path_from_sqlite_url` into `ConfigError`, so
+  `MANGOMAS_DB__URL=sqlite:///` and
+  `MANGOMAS_EVAL__SINK_OPTIONS='{"sqlite_results":{"db_path":"sqlite:///"}}'`
+  exit `2` (`EXIT_CONFIG_ERROR`) without a traceback instead of `1`.
+  `docs/testing/rca-20261106.md` records the full baseline/after-fix lane matrix
+  (P1 `.venv`, P2 CUDA `.venvs/mangomas_v2_p2` with 2× RTX 5060, Postgres
+  testcontainers, live LM Studio E2E, and a 15-scenario no-mock TCP + CLI E2E
+  driver).
+- **spec-0043 / ADR-0039 (harness tool-execution, repair-loop sandbox, and
+  destructive-Bash gate)** hardened all three execution rings:
+  - **Ring 1**: `mangomas.harness.tool_policy` enforces `ToolEffects`
+    fail-closed (`READ_ONLY` by default) and validates arguments against
+    `ToolSpec.parameters_schema`; `tests/test_execution_bypass_inventory.py`
+    now scans `agents`, `core`, `cognitive`, `rag`, `workflow`, and `eval` for
+    `subprocess`, `asyncio` subprocesses, `os.startfile`, `shutil.rmtree`,
+    `Path.unlink`, `ctypes`, and `winreg`.
+  - **Ring 2**: `mangomas.harness.repair_sandbox` enforces loopback-only LLM
+    URLs, canonical staging path containment (no `..`, drive/UNC, symlinks,
+    NTFS ADS, DOS devices, null bytes), allowlisted non-protected promotion
+    targets, a scrubbed oracle subprocess, and SHA-256 staged-mutation
+    detection.
+  - **Ring 3**: `scripts/lint_agent_frontmatter.py --hook pre-tool-use` emits
+    `permissionDecision: "deny"` on host-destructive `Bash` commands (`rm
+    -rf`/`-fr`, `Remove-Item -Recurse`, `del /s`, `git reset --hard`, `git
+    clean -f`, `git push --force`, `git diff/log/show --output=`,
+    `guard_probe.py --manifest=`) while keeping protected-path mentions on
+    `"ask"`; `EXPECTED_ALLOW_RULES` and `BASH_CAPABLE_AGENT_SLUGS` are pinned
+    by set equality; `.claude/skills/mango-sandbox/SKILL.md` documents the
+    three rings.
+- **Peer-review hardening follow-ups** (`f4f2350`): the repair-loop sandbox
+  now strips all `MANGOMAS_` keys except an explicit allowlist plus credential
+  suffixes (`_API_KEY`/`_TOKEN`/`_SECRET`/`_PASSWORD`/`_PRIVATE_KEY`), rejects
+  `NaN`/`inf` timeouts, rejects NTFS ADS/DOS devices/`.ENV` case variants/null
+  bytes, detects staged candidate mutation via SHA-256, and adds audit
+  logging. `make guard-probe` now has 44 entries (36 → 44 with
+  `MUT-SBX-06..10`).
+
 ## Overlay: Studio-contract E2E and AQA (2026-11-01)
 
 `spec-0041` ran every lane against the spec-0040 delta and found no runtime

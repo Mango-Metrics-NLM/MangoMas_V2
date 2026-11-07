@@ -9,6 +9,20 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Enterprise documentation and architecture updates for the harness sandbox (spec-0043)
+
+- `docs/architecture/c3-component.md`: added `tool_policy.py` (Ring 1) and
+  `repair_sandbox.py` (Ring 2) components to the C4 diagram, and updated
+  `lint_agent_frontmatter.py` to note the destructive-`Bash` hard-`deny` branch.
+- `docs/architecture/c4-code.md`: added §6.3 documenting the runtime
+  `ToolEffects` fail-closed policy and repair-loop staging/promotion
+  containment contract.
+- `README.md`: added a "Runtime tool-execution and repair-loop policy"
+  paragraph describing Ring 1 and Ring 2.
+- `NEXT_STEPS.md`: added an "Origin-delta AQA and harness sandbox hardening
+  (2026-11-06)" overlay summarising spec-0042, spec-0043 / ADR-0039, and the
+  peer-review hardening follow-ups.
+
 ### Fixed — Peer-review hardening follow-ups to the harness sandbox (spec-0043)
 
 - `mangomas.harness.repair_sandbox`:
