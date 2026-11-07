@@ -65,6 +65,8 @@ def test_stage_candidate_file_writes_inside_staging_root(tmp_path: Path) -> None
         ("\\\\server\\share\\file.py", "refusing absolute/drive/UNC"),
         ("//server/share/file.py", "refusing absolute/drive/UNC"),
         ("C:\\Windows\\System32\\cmd.exe", "refusing absolute/drive/UNC"),
+        ("C:/Windows/System32/cmd.exe", "refusing absolute/drive/UNC"),
+        ("C:relative.py", "refusing absolute/drive/UNC"),
         ("/etc/passwd", "refusing absolute/drive/UNC"),
         ("../outside.py", "without '\\.\\.' traversal"),
         ("sub/../../outside.py", "without '\\.\\.' traversal"),
