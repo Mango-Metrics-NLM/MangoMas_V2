@@ -21,9 +21,10 @@ Two sequential origin-delta deliveries validated and hardened the tree against
   `MANGOMAS_EVAL__SINK_OPTIONS='{"sqlite_results":{"db_path":"sqlite:///"}}'`
   exit `2` (`EXIT_CONFIG_ERROR`) without a traceback instead of `1`.
   `docs/testing/rca-20261106.md` records the full baseline/after-fix lane matrix
-  (P1 `.venv`, P2 CUDA `.venvs/mangomas_v2_p2` with 2× RTX 5060, Postgres
+  (P1 `.venv`, P2 CUDA `.venv-gpu` / `.venvs/mangomas_v2_p2` with 2× RTX 5060
+  built via `make venv-gpu` / `scripts/bootstrap_gpu_env.py`, Postgres
   testcontainers, live LM Studio E2E, and a 15-scenario no-mock TCP + CLI E2E
-  driver).
+  driver; see `docs/tooling/env1-tls-inspection-runbook.md`).
 - **spec-0043 / ADR-0039 (harness tool-execution, repair-loop sandbox, and
   destructive-Bash gate)** hardened all three execution rings:
   - **Ring 1**: `mangomas.harness.tool_policy` enforces `ToolEffects`
