@@ -31,7 +31,12 @@ DEFAULT_MAX_STRING_ARGUMENT_CHARS: Final[int] = 16_384
 
 
 def _matches_json_type(value: object, expected_type: str) -> bool:
-    """Return whether *value* satisfies the JSON-Schema *expected_type*."""
+    """Return whether *value* satisfies the JSON-Schema *expected_type*.
+
+    ``bool`` subclasses ``int`` in Python, so ``integer`` and ``number`` must
+    exclude ``bool`` explicitly; ``null`` maps to ``NoneType``; unrecognised
+    types pass through so a future ``ToolSpec`` is not silently rejected.
+    """
     if expected_type in {"integer", "number"} and isinstance(value, bool):
         return False
     type_map: dict[str, type | tuple[type, ...]] = {
@@ -41,9 +46,26 @@ def _matches_json_type(value: object, expected_type: str) -> bool:
         "number": (int, float),
         "array": list,
         "object": Mapping,
+        "null": type(None),
     }
     target = type_map.get(expected_type)
     return True if target is None else isinstance(value, target)
+
+
+def _enforce_max_string_length(value: Any, max_chars: int, path: str) -> None:
+    """Recursively enforce *max_chars* on every string in a JSON-shaped *value*."""
+    if isinstance(value, str):
+        if len(value) > max_chars:
+            raise ToolExecutionError(
+                f"argument {path} exceeds maximum length of {max_chars} characters",
+                tool_name="policy_argument_validator",
+            )
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            _enforce_max_string_length(item, max_chars, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _enforce_max_string_length(item, max_chars, f"{path}[{index}]")
 
 
 def validate_tool_arguments(
@@ -62,12 +84,7 @@ def validate_tool_arguments(
         )
 
     for key, val in arguments.items():
-        if isinstance(val, str) and len(val) > max_string_chars:
-            raise ToolExecutionError(
-                f"Tool {spec.name!r} argument {key!r} exceeds maximum length "
-                f"of {max_string_chars} characters",
-                tool_name=spec.name,
-            )
+        _enforce_max_string_length(val, max_string_chars, repr(key))
 
     schema = spec.parameters_schema
     if not schema:

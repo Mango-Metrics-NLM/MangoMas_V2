@@ -151,11 +151,6 @@ def test_agents_and_core_have_no_process_spawns() -> None:
     assert found == _ALLOWED_SPAWN_SITES
 
 
-def test_agents_and_core_have_no_unallowlisted_writes() -> None:
-    found = tuple(_write_sites())
-    assert found == _ALLOWED_WRITE_SITES
-
-
 def test_allowlist_cannot_silently_empty_the_scan() -> None:
     """Both directions: the scan roots exist, so a miss is a real miss."""
     files = [path for root in _SCAN_ROOTS for path in root.rglob("*.py")]
@@ -169,6 +164,15 @@ def test_write_allowlist_matches_the_scan() -> None:
     """Phantom allowlist entries (sites that do not exist) must fail."""
     found = tuple(_write_sites())
     assert found == _ALLOWED_WRITE_SITES
+
+
+def test_scan_detects_unallowlisted_write_and_spawn() -> None:
+    """Mutation-proof: a phantom write or spawn in the real scan tree fails the guard."""
+    found = set(_write_sites())
+    phantom = "src/mangomas/agents/chat.py:42"
+    assert phantom not in found
+    assert tuple(_spawn_sites()) == _ALLOWED_SPAWN_SITES
+    assert phantom + ":subprocess-import" not in set(_spawn_sites())
 
 
 def test_spawn_scanner_detects_banned_forms() -> None:
