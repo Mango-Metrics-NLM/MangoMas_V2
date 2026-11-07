@@ -23,7 +23,7 @@ from mangomas.adapters.storage._schema import (
 )
 from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE, DEFAULT_STORAGE_LIST_TURNS_LIMIT
-from mangomas.errors import PersistenceError
+from mangomas.errors import ConfigError, PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
 from mangomas.utils import clock
 from mangomas.utils.exc import truncated_exc_detail
@@ -55,7 +55,13 @@ class SQLiteRepository:
     """
 
     def __init__(self, url: str) -> None:
-        self._path = _path_from_url(url)
+        try:
+            self._path = _path_from_url(url)
+        except ValueError as exc:
+            raise ConfigError(
+                "Invalid SQLite database URL",
+                detail=truncated_exc_detail(exc),
+            ) from exc
         if self._path != ":memory:":
             Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._path, check_same_thread=False)

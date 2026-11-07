@@ -81,6 +81,7 @@ thinking tool, not a gate.
 | [0039](0039-origin-delta-aqa.md) | Origin-delta AQA and the CUDA placement gate |
 | [0040](0040-llm-provider-profiles.md) | LLM provider profiles and the Studio boundary (`MANGOMAS_LLM_PROFILES__*`, `PROVIDER_ALLOWLIST`, `GET /llm/profiles`) |
 | [0041](0041-studio-contract-aqa.md) | Studio-contract E2E and AQA: live two-profile scenario, `MUT-STUDIO` replays, consumer probe (`make studio-probe-mock`) |
+| [0042](0042-origin-delta-aqa-20261106.md) | Origin-delta AQA for PR #111 + PR #115: dual-population, CUDA, Postgres, live LM Studio, and `ConfigError` translation on invalid SQLite URLs |
 | [0043](0043-harness-tool-and-coding-sandbox.md) | MangoMas harness tool-execution policy, repair-loop staging sandbox, and destructive-`Bash` hook gate (ADR-0039; 0042 is allocated to the origin-delta AQA PR) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies

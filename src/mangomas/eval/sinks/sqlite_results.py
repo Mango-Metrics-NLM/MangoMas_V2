@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mangomas.adapters.storage._url import path_from_sqlite_url
-from mangomas.errors import PersistenceError
+from mangomas.errors import ConfigError, PersistenceError
 from mangomas.eval._options import require_str
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
@@ -74,7 +74,13 @@ class SqliteResultsSink:
         # does, so a value copied from ``MANGOMAS_DB__URL`` or a baseline's
         # ``db_path`` option resolves to the intended file instead of
         # creating a literal ``sqlite:`` directory (see ``adapters.storage._url``).
-        self._path = path_from_sqlite_url(db_path)
+        try:
+            self._path = path_from_sqlite_url(db_path)
+        except ValueError as exc:
+            raise ConfigError(
+                "sqlite_results sink option 'db_path' is not a valid SQLite URL or path",
+                detail=truncated_exc_detail(exc),
+            ) from exc
 
     async def emit(
         self,
