@@ -36,6 +36,7 @@ _CONFIG_SUBMODULES: tuple[str, ...] = (
     "secrets",
     "evaluation",
     "harness",
+    "repair",
     "workflow",
     "signal",
     "_root",
@@ -429,3 +430,51 @@ def test_profile_model_inside_allowed_models_passes() -> None:
         },
     )
     assert s.llm_profiles[TEST_LLM_PROFILE_NAME].model == TEST_LLM_PROFILE_MODEL
+
+
+def test_repair_settings_defaults_match_constants() -> None:
+    s = config_module.RepairSettings()
+    assert s.oracle_isolation == config_module.DEFAULT_REPAIR_ORACLE_ISOLATION
+    assert s.oracle_backend == config_module.DEFAULT_REPAIR_ORACLE_BACKEND
+    assert s.oracle_image == config_module.DEFAULT_REPAIR_ORACLE_IMAGE
+    assert s.oracle_timeout_seconds == config_module.DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS
+    assert s.oracle_memory_limit == config_module.DEFAULT_REPAIR_ORACLE_MEMORY_LIMIT
+    assert s.oracle_pids_limit == config_module.DEFAULT_REPAIR_ORACLE_PIDS_LIMIT
+    assert (
+        s.oracle_probe_timeout_seconds == config_module.DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS
+    )
+    assert s.wsl_distro == config_module.DEFAULT_REPAIR_WSL_DISTRO
+    assert s.wsl_python == config_module.DEFAULT_REPAIR_WSL_PYTHON
+
+
+def test_repair_settings_env_overrides_and_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_REPAIR__ORACLE_ISOLATION", "required")
+    monkeypatch.setenv("MANGOMAS_REPAIR__ORACLE_BACKEND", "docker")
+    monkeypatch.setenv("MANGOMAS_REPAIR__ORACLE_PIDS_LIMIT", "64")
+    s = config_module.Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.repair.oracle_isolation == "required"
+    assert s.repair.oracle_backend == "docker"
+    assert s.repair.oracle_pids_limit == 64
+
+    with pytest.raises(ValidationError):
+        config_module.RepairSettings(oracle_timeout_seconds=0.0)
+    with pytest.raises(ValidationError):
+        config_module.RepairSettings(oracle_pids_limit=1)
+    with pytest.raises(ValidationError):
+        config_module.RepairSettings(oracle_image="")
+
+
+@pytest.mark.parametrize("field", ["oracle_timeout_seconds", "oracle_probe_timeout_seconds"])
+@pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+def test_repair_settings_reject_non_finite_timeouts(field: str, bad: float) -> None:
+    """An infinite budget reaches subprocess.run unchecked; NaN defeats every comparison."""
+    with pytest.raises(ValidationError):
+        config_module.RepairSettings.model_validate({field: bad})
+
+
+def test_repair_settings_reject_non_finite_timeout_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MANGOMAS_REPAIR__ORACLE_PROBE_TIMEOUT_SECONDS", "inf")
+    with pytest.raises(ValidationError):
+        config_module.Settings(_env_file=None)  # type: ignore[call-arg]

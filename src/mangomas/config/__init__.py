@@ -314,6 +314,39 @@ from mangomas.config.rag import (
 from mangomas.config.rag import (
     VectorSettings as VectorSettings,
 )
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_ORACLE_BACKEND as DEFAULT_REPAIR_ORACLE_BACKEND,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_ORACLE_IMAGE as DEFAULT_REPAIR_ORACLE_IMAGE,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_ORACLE_ISOLATION as DEFAULT_REPAIR_ORACLE_ISOLATION,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_ORACLE_MEMORY_LIMIT as DEFAULT_REPAIR_ORACLE_MEMORY_LIMIT,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_ORACLE_PIDS_LIMIT as DEFAULT_REPAIR_ORACLE_PIDS_LIMIT,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS as DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS as DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_WSL_DISTRO as DEFAULT_REPAIR_WSL_DISTRO,
+)
+from mangomas.config.repair import (
+    DEFAULT_REPAIR_WSL_PYTHON as DEFAULT_REPAIR_WSL_PYTHON,
+)
+from mangomas.config.repair import (
+    MIN_REPAIR_ORACLE_PIDS_LIMIT as MIN_REPAIR_ORACLE_PIDS_LIMIT,
+)
+from mangomas.config.repair import (
+    RepairSettings as RepairSettings,
+)
 from mangomas.config.secrets import (
     DEFAULT_GCP_SECRET_VERSION as DEFAULT_GCP_SECRET_VERSION,
 )
@@ -503,6 +536,15 @@ __all__ = [
     "DEFAULT_MEMORY_PROVIDER",
     "DEFAULT_RAG_CHUNK_OVERLAP",
     "DEFAULT_RAG_CHUNK_WORDS",
+    "DEFAULT_REPAIR_ORACLE_BACKEND",
+    "DEFAULT_REPAIR_ORACLE_IMAGE",
+    "DEFAULT_REPAIR_ORACLE_ISOLATION",
+    "DEFAULT_REPAIR_ORACLE_MEMORY_LIMIT",
+    "DEFAULT_REPAIR_ORACLE_PIDS_LIMIT",
+    "DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS",
+    "DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS",
+    "DEFAULT_REPAIR_WSL_DISTRO",
+    "DEFAULT_REPAIR_WSL_PYTHON",
     "DEFAULT_SECRETS_PROVIDER",
     "DEFAULT_SECRETS_STRICT",
     "DEFAULT_SIGNAL_DIR",
@@ -540,6 +582,7 @@ __all__ = [
     "EVAL_COST_USD_METADATA_KEY",
     "LLM_PROFILE_METADATA_KEY",
     "MAX_SIGNAL_TTL_SECONDS",
+    "MIN_REPAIR_ORACLE_PIDS_LIMIT",
     "APISettings",
     "AgentSettings",
     "AuthSettings",
@@ -553,6 +596,7 @@ __all__ = [
     "LoopSettings",
     "MemorySettings",
     "RagSettings",
+    "RepairSettings",
     "SecretsSettings",
     "Settings",
     "SignalSettings",

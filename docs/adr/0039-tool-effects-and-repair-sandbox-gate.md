@@ -98,9 +98,11 @@ coding agent invokes tools or generates code on an operator workstation:
   `socat`, and `@anthropic-ai/sandbox-runtime`, as documented in the
   `mango-sandbox` skill and `docs/analysis/20261107-sandbox-hardening.md`.
 - The repair-loop oracle executes the LLM-generated candidate with the
-  caller's filesystem and network privileges: `cwd`, environment scrubbing and
+  caller's filesystem and network privileges when `MANGOMAS_REPAIR__ORACLE_ISOLATION=none`
+  (the backwards-compatible default): `cwd`, environment scrubbing and
   `shell=False` bound what it *inherits*, not what it can *reach*. Post-oracle
   re-validation and `O_NOFOLLOW` stop a link-swap from redirecting promotion,
-  but a candidate can still read or modify files the caller can. OS-enforced
-  isolation (a restricted backend that fails closed when unavailable) is an
-  open decision, not part of this ADR.
+  and [ADR-0040](0040-oracle-isolation-backend.md) (spec-0044) adds pluggable
+  OS-enforced isolation backends (`DockerIsolationBackend`,
+  `WslBwrapIsolationBackend`) that fail closed when
+  `MANGOMAS_REPAIR__ORACLE_ISOLATION=required`.

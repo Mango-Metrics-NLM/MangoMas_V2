@@ -76,9 +76,32 @@ def pytest_configure(config: pytest.Config) -> None:
     plugin = config.pluginmanager.get_plugin("randomly")
     if plugin is not None:
         config.pluginmanager.unregister(plugin)
+    config.addinivalue_line(
+        "markers",
+        "docker_isolation: live Docker oracle-isolation containment suite (RUN_DOCKER_ISOLATION=1)",
+    )
 
 
 # ── Collection gates ────────────────────────────────────────────────────────
+
+
+_KEYWORD_GATES: tuple[tuple[str, str], ...] = (
+    ("lmstudio", "RUN_LMSTUDIO"),
+    ("vertex", "RUN_VERTEX"),
+    ("gcp_secrets", "RUN_GCP_SECRETS"),
+    ("gcp_trace", "RUN_GCP_TRACE"),
+    ("embeddings_local", "RUN_EMBEDDINGS_LOCAL"),
+    ("langfuse", "RUN_LANGFUSE"),
+    ("gitleaks", "RUN_GITLEAKS"),
+)
+
+# Gate on explicit markers only — directory names (such as ``tests/rag/``)
+# would otherwise leak into ``keywords`` and wrongly skip pure unit tests.
+_MARKER_GATES: tuple[tuple[str, str], ...] = (
+    ("rag", "RUN_RAG"),
+    ("gpu", "RUN_GPU"),
+    ("docker_isolation", "RUN_DOCKER_ISOLATION"),
+)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -95,31 +118,16 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         path_parts = set(Path(str(item.fspath)).parts)
         if "integration" in path_parts and not enabled["RUN_INTEGRATION"]:
             item.add_marker(skip["RUN_INTEGRATION"])
-        if "lmstudio" in item.keywords and not enabled["RUN_LMSTUDIO"]:
-            item.add_marker(skip["RUN_LMSTUDIO"])
         if ("postgres" in path_parts or "postgres" in item.keywords) and not enabled[
             "RUN_POSTGRES"
         ]:
             item.add_marker(skip["RUN_POSTGRES"])
-        if "vertex" in item.keywords and not enabled["RUN_VERTEX"]:
-            item.add_marker(skip["RUN_VERTEX"])
-        if "gcp_secrets" in item.keywords and not enabled["RUN_GCP_SECRETS"]:
-            item.add_marker(skip["RUN_GCP_SECRETS"])
-        if "gcp_trace" in item.keywords and not enabled["RUN_GCP_TRACE"]:
-            item.add_marker(skip["RUN_GCP_TRACE"])
-        if "embeddings_local" in item.keywords and not enabled["RUN_EMBEDDINGS_LOCAL"]:
-            item.add_marker(skip["RUN_EMBEDDINGS_LOCAL"])
-        # Gate on the explicit ``@pytest.mark.rag`` marker only — the
-        # ``tests/rag/`` directory name would otherwise leak into ``keywords``
-        # and wrongly skip the pure-domain chunker/models unit tests.
-        if item.get_closest_marker("rag") is not None and not enabled["RUN_RAG"]:
-            item.add_marker(skip["RUN_RAG"])
-        if "langfuse" in item.keywords and not enabled["RUN_LANGFUSE"]:
-            item.add_marker(skip["RUN_LANGFUSE"])
-        if "gitleaks" in item.keywords and not enabled["RUN_GITLEAKS"]:
-            item.add_marker(skip["RUN_GITLEAKS"])
-        if item.get_closest_marker("gpu") is not None and not enabled["RUN_GPU"]:
-            item.add_marker(skip["RUN_GPU"])
+        for keyword, env_name in _KEYWORD_GATES:
+            if keyword in item.keywords and not enabled[env_name]:
+                item.add_marker(skip[env_name])
+        for marker_name, env_name in _MARKER_GATES:
+            if item.get_closest_marker(marker_name) is not None and not enabled[env_name]:
+                item.add_marker(skip[env_name])
 
 
 # ── Zero-skip session guard (spec-0022 R8) ────────────────────────────────────

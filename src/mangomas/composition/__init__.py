@@ -139,6 +139,17 @@ from mangomas.composition.rag import (
     _build_rag_tools as _build_rag_tools,
 )
 
+# Repair-loop oracle isolation factory (spec-0044 / ADR-0040)
+from mangomas.composition.repair import (
+    AUTO_ORACLE_BACKENDS as AUTO_ORACLE_BACKENDS,
+)
+from mangomas.composition.repair import (
+    build_oracle_isolation as build_oracle_isolation,
+)
+from mangomas.composition.repair import (
+    run_repair_oracle as run_repair_oracle,
+)
+
 # Secrets resolution (used by builder and tests)
 from mangomas.composition.secrets import (
     _build_gcp_secrets_provider as _build_gcp_secrets_provider,
@@ -168,6 +179,7 @@ from mangomas.composition.vector import (
 from mangomas.secrets import secrets_registry as secrets_registry
 
 __all__ = [
+    "AUTO_ORACLE_BACKENDS",
     "DEFAULT_AGENTS",
     "LLM_PROFILES_EXTRAS_KEY",
     "LLM_PROFILE_INFO_EXTRAS_KEY",
@@ -199,12 +211,14 @@ __all__ = [
     "agent_registry",
     "build_agent_llm_overrides",
     "build_llm_profiles",
+    "build_oracle_isolation",
     "build_orchestrator",
     "describe_schema",
     "embedding_registry",
     "ensure_agent_plugins",
     "ensure_secrets_provider",
     "llm_registry",
+    "run_repair_oracle",
     "secrets_registry",
     "select_llm_profile",
     "structured_agent_schemas",

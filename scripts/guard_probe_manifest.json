@@ -321,6 +321,34 @@
       "fixed": "    after_hash = hashlib.sha256(staged_bytes).hexdigest()\n    if after_hash != staged_hash:\n        raise ToolExecutionError(\n            \"Oracle subprocess modified the staged candidate file before promotion\",\n            tool_name=\"repair_sandbox\",\n        )\n",
       "defect": "    after_hash = staged_hash\n",
       "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_run_oracle_and_promote_detects_staged_mutation", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-ISO-01",
+      "path": "src/mangomas/composition/repair.py",
+      "fixed": "    raise ConfigError(\n        \"Repair-loop oracle isolation is 'required' but no isolating backend is available\",\n        detail=\", \".join(probed),\n    )\n",
+      "defect": "    return isolation_registry.get(\"none\")(settings)\n",
+      "gate": ["{python}", "-m", "pytest", "tests/composition/test_repair.py", "-k", "test_build_oracle_isolation_required_auto_falls_through_and_fails_closed", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-ISO-02",
+      "path": "src/mangomas/harness/isolation/docker.py",
+      "fixed": "            \"--network\",\n            \"none\",\n",
+      "defect": "            \"--network\",\n            \"bridge\",\n",
+      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_docker_isolation_run_shapes_hardened_argv", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-ISO-03",
+      "path": "src/mangomas/harness/isolation/docker.py",
+      "fixed": "        mount_spec = f\"type=bind,src={cwd.resolve()},dst={DOCKER_WORK_DIR},readonly\"\n",
+      "defect": "        mount_spec = f\"type=bind,src={cwd.resolve()},dst={DOCKER_WORK_DIR}\"\n",
+      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_docker_isolation_mounts_staging_read_only", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-ISO-04",
+      "path": "src/mangomas/harness/isolation/none.py",
+      "fixed": "        logger.warning(\n            \"Repair-sandbox oracle running WITHOUT OS-enforced isolation (backend='none')\",\n            extra={\"event\": \"repair_oracle_unisolated\", \"backend\": self.name},\n        )\n",
+      "defect": "        pass\n",
+      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_no_isolation_backend_logs_warning_and_runs_subprocess", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }

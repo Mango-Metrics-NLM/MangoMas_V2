@@ -9,6 +9,37 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Pluggable repair-loop oracle isolation backends and `MANGOMAS_REPAIR__*` settings (spec-0044 / ADR-0040)
+
+- `src/mangomas/config/repair.py` (`Settings.repair`, `MANGOMAS_REPAIR__*`):
+  `oracle_isolation` (`none` \| `required`), `oracle_backend` (`auto` \|
+  `docker` \| `wsl`), `oracle_image` (`mangomas:oracle`),
+  `oracle_timeout_seconds` (`60.0`), `oracle_memory_limit` (`512m`),
+  `oracle_pids_limit` (`128`), `oracle_probe_timeout_seconds` (`5.0`),
+  `wsl_distro` (`Ubuntu`), and `wsl_python` (`/usr/bin/python3`).
+- `src/mangomas/harness/isolation/` + `src/mangomas/composition/repair.py`:
+  `@runtime_checkable OracleIsolationBackend` protocol, `isolation_registry`,
+  `NoIsolationBackend` (default, logs `repair_oracle_unisolated` at `WARNING`),
+  `DockerIsolationBackend` (`--network none`, `--read-only`, read-only `/work`
+  staging bind, `--tmpfs /tmp:rw,noexec,nosuid,size=64m`, `--cap-drop ALL`,
+  `--security-opt no-new-privileges`, `--pids-limit`, `--memory`, and
+  container kill-on-timeout), and `build_oracle_isolation`, which fails closed
+  with `ConfigError` when `oracle_isolation="required"` and no isolating
+  backend is available.
+- `Makefile`: `ORACLE_IMAGE ?= mangomas:oracle`, `make oracle-image`
+  (`docker build --build-arg MANGOMAS_EXTRAS=dev`), and
+  `make oracle-isolation-docker` (`RUN_DOCKER_ISOLATION=1`).
+- `scripts/guard_probe_manifest.json`: adds `MUT-ISO-01..04` (50 manifest
+  entries total).
+- PR #121 review follow-ups: `build_oracle_isolation()` with no argument reads
+  `get_settings().repair` (it previously ignored `MANGOMAS_REPAIR__*`); new
+  `run_repair_oracle` applies `ORACLE_TIMEOUT_SECONDS` together with the backend
+  (the setting was previously never consumed); both timeout fields reject
+  `inf`/`NaN`; isolating backends set a sandbox-local `PYTHONPATH`
+  (`/work/src:/work`) instead of dropping it; and a timed-out container is
+  reported killed only after `docker ps` confirms it is gone (bounded retries,
+  `repair_oracle_timeout_kill_failed` otherwise).
+
 ### Added — Reproducible `.venv-gpu` bootstrap and Windows TLS inspection runbook (ENV-1)
 
 - `scripts/bootstrap_gpu_env.py` (`make venv-gpu`, `PYTHON_GPU ?= .venv-gpu/Scripts/python.exe`):
@@ -23,6 +54,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
   machine-wide remediation (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`,
   `NODE_EXTRA_CA_CERTS` for Context7/MCP, `CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE`
   for `gcloud`) and closes `ENV-1` in `docs/testing/rca-20261106.md`.
+- The exporter keeps only roots Windows trusts for TLS server authentication
+  (PEM cannot carry purpose restrictions), writes no empty bundle, and
+  `--export-ca-only` exits `1` when nothing was exported (PR #120 review).
 
 ### Fixed — PR #119 review and CI follow-ups to the harness sandbox (spec-0043)
 

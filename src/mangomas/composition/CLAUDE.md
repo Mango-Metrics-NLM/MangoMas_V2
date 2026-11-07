@@ -36,6 +36,7 @@ flowchart LR
 | `embeddings.py`, `vector.py`, `rag.py` | `mango-rag-dev` | `mango-rag` |
 | `secrets.py` | `mango-secrets-dev` | `mango-adapter` |
 | `harness.py` span routing | `mango-telemetry-exporter-dev` | `mango-observability` |
+| `repair.py` oracle isolation factory | `mango-harness-dev` | `mango-sandbox` |
 
 ## Invariants
 

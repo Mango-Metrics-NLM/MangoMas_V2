@@ -18,6 +18,7 @@ from mangomas.config.harness import HarnessSettings
 from mangomas.config.llm import LLMProfileSettings, LLMSettings
 from mangomas.config.observability import LogSettings, TelemetrySettings
 from mangomas.config.rag import EmbeddingSettings, RagSettings, VectorSettings
+from mangomas.config.repair import RepairSettings
 from mangomas.config.secrets import SecretsSettings
 from mangomas.config.signal import SignalSettings
 from mangomas.config.storage import DBSettings, MemorySettings
@@ -60,6 +61,7 @@ class Settings(BaseSettings):
     rag: RagSettings = Field(default_factory=RagSettings)
     secrets: SecretsSettings = Field(default_factory=SecretsSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
+    repair: RepairSettings = Field(default_factory=RepairSettings)
     eval: EvalSettings = Field(default_factory=EvalSettings)
     workflow: WorkflowSettings = Field(default_factory=WorkflowSettings)
     signal: SignalSettings = Field(default_factory=SignalSettings)

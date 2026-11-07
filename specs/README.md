@@ -83,6 +83,7 @@ thinking tool, not a gate.
 | [0041](0041-studio-contract-aqa.md) | Studio-contract E2E and AQA: live two-profile scenario, `MUT-STUDIO` replays, consumer probe (`make studio-probe-mock`) |
 | [0042](0042-origin-delta-aqa-20261106.md) | Origin-delta AQA for PR #111 + PR #115: dual-population, CUDA, Postgres, live LM Studio, and `ConfigError` translation on invalid SQLite URLs |
 | [0043](0043-harness-tool-and-coding-sandbox.md) | MangoMas harness tool-execution policy, repair-loop staging sandbox, and destructive-`Bash` hook gate (ADR-0039; 0042 is allocated to the origin-delta AQA PR) |
+| [0044](0044-oracle-isolation-backend.md) | Pluggable repair-loop oracle isolation backends (`docker`, `wsl`/`bubblewrap`, `none`) and `MANGOMAS_REPAIR__*` settings (ADR-0040) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -93,4 +94,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0044** (0036 is reserved); next free ADR: **0040**.
+than reused. Next free spec on this branch: **0045** (0036 is reserved); next free ADR: **0041**.

@@ -66,6 +66,7 @@ _OPT_IN_TARGETS = (
     "gcp-secrets",
     "gcp-trace",
     "langfuse",
+    "oracle-isolation-docker",
 )
 
 

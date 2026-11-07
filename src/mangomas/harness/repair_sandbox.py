@@ -21,14 +21,16 @@ import hashlib
 import logging
 import math
 import os
-import subprocess
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse
 
+from mangomas.config.repair import DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS
 from mangomas.errors import ConfigError, ToolExecutionError
 from mangomas.harness.governance import GOVERNANCE_SURFACE, PROTECTED_PATHS, normalize_path
+from mangomas.harness.isolation.base import OracleIsolationBackend
+from mangomas.harness.isolation.none import NoIsolationBackend
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +134,9 @@ _ORACLE_MANGOMAS_ENV_ALLOWLIST: frozenset[str] = frozenset(
 )
 
 _SAFE_ORACLE_ADDOPTS: str = "-p no:cacheprovider -o addopts="
-DEFAULT_ORACLE_TIMEOUT_SECONDS: float = 60.0
+# Aliases the settings default so `run_oracle_and_promote` and
+# MANGOMAS_REPAIR__ORACLE_TIMEOUT_SECONDS cannot drift apart.
+DEFAULT_ORACLE_TIMEOUT_SECONDS: float = DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -362,8 +366,9 @@ def run_oracle_and_promote(
     oracle_argv: Sequence[str],
     timeout_seconds: float = DEFAULT_ORACLE_TIMEOUT_SECONDS,
     base_env: Mapping[str, str] | None = None,
+    isolation: OracleIsolationBackend | None = None,
 ) -> PromotionOutcome:
-    """Run *oracle_argv* in a scrubbed subprocess and promote the staged file iff it exits 0."""
+    """Run *oracle_argv* in *isolation* (or host subprocess) and promote iff it exits 0."""
     if not oracle_argv or any(not isinstance(arg, str) or not arg for arg in oracle_argv):
         raise ToolExecutionError(
             "Oracle command must be a non-empty sequence of non-empty argument strings",
@@ -387,28 +392,13 @@ def run_oracle_and_promote(
     )
     env = build_scrubbed_oracle_env(base_env)
     staged_hash = hashlib.sha256(staged_file.read_bytes()).hexdigest()
-    try:
-        completed = subprocess.run(  # noqa: S603 — argv sequence, shell=False, scrubbed env
-            list(oracle_argv),
-            cwd=staging_root.resolve(),
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ToolExecutionError(
-            f"Oracle subprocess exceeded timeout of {timeout_seconds}s",
-            tool_name="repair_sandbox",
-        ) from exc
-    except OSError as exc:
-        raise ToolExecutionError(
-            f"Oracle subprocess failed to start: {exc}",
-            tool_name="repair_sandbox",
-        ) from exc
+    backend: OracleIsolationBackend = NoIsolationBackend() if isolation is None else isolation
+    completed = backend.run(
+        oracle_argv,
+        cwd=staging_root.resolve(),
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
 
     if completed.returncode != 0:
         return PromotionOutcome(

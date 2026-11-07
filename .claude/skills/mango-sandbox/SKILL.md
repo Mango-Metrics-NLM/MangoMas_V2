@@ -32,7 +32,7 @@ use `mango-harness`.
 | Ring | Surface | Enforcing mechanism | Test suite |
 |---|---|---|---|
 | **Ring 1 — In-product LLM tool use** | `ToolAgent` -> `enforce_tool_invocation_policy` | Refuses any tool with `ToolSpec.effects != ToolEffects.READ_ONLY` unless explicitly granted in `allowed_mutating_tools`; validates argument count, string length, required keys, and JSON-Schema primitive types before `Tool.execute` | `tests/harness/test_tool_policy.py`, `tests/test_execution_bypass_inventory.py` |
-| **Ring 2 — Automated LLM coding** | `mangomas.harness.repair_sandbox` | Loopback-only LLM URL check (`localhost`, `127.0.0.1`, `::1`); canonical staging path containment (`is_relative_to`, no `..`, no drive/UNC, no symlinks, no NTFS ADS, no DOS devices in any component, no null bytes); promotion target must be allowlisted and never in `PROTECTED_PATHS` / `GOVERNANCE_SURFACE` / a `.git` / `.claude` / `.venv` component (bare `.git` pointer files included) / `.env*`; scrubbed, timeout-bounded oracle subprocess with SHA-256 staged-mutation detection; staged path and target re-validated after the oracle and written with `O_NOFOLLOW` where available. The oracle itself is **not** OS-isolated — it runs with the caller's filesystem and network privileges | `tests/harness/test_repair_sandbox.py` |
+| **Ring 2 — Automated LLM coding** | `mangomas.harness.repair_sandbox` + `mangomas.harness.isolation` + `composition.repair` | Loopback-only LLM URL check (`localhost`, `127.0.0.1`, `::1`); canonical staging path containment (`is_relative_to`, no `..`, no drive/UNC, no symlinks, no NTFS ADS, no DOS devices in any component, no null bytes); promotion target must be allowlisted and never in `PROTECTED_PATHS` / `GOVERNANCE_SURFACE` / a `.git` / `.claude` / `.venv` component (bare `.git` pointer files included) / `.env*`; scrubbed, timeout-bounded oracle with SHA-256 staged-mutation detection; staged path and target re-validated after the oracle and written with `O_NOFOLLOW` where available; pluggable `OracleIsolationBackend` (`DockerIsolationBackend`, `WslBwrapIsolationBackend`, `NoIsolationBackend`) resolved via `composition.repair.build_oracle_isolation` — fails closed when `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` (ADR-0040) | `tests/harness/test_repair_sandbox.py`, `tests/harness/test_isolation.py`, `tests/composition/test_repair.py` |
 | **Ring 3 — Coding-agent & hook harness** | `.claude/settings.json` + `scripts/lint_agent_frontmatter.py` | `EXPECTED_ALLOW_RULES` and `EXPECTED_DENY_RULES` set equality; `BASH_CAPABLE_AGENT_SLUGS` set equality; `PreToolUse` emits `permissionDecision: "deny"` on destructive `Bash` commands (`rm -rf`/`-fr`, `Remove-Item -Recurse`, `del /s`, `git reset --hard`, `git clean -f`, force-push incl. `+refspec`, `git diff --output=`, `guard_probe.py --manifest`), matched by `scripts/_destructive_bash.py` on tokens — position-independent options, Git global options (`git -C repo`), wrappers (`sudo`/`env`/`xargs`), and nested `bash -c` / `pwsh -Command` / `cmd /c` | `tests/tooling/test_claude_code_settings.py`, `tests/tooling/test_corpus_contract.py`, `tests/test_lint_agent_frontmatter.py`, `tests/test_destructive_bash.py` |
 
 ---
@@ -65,11 +65,23 @@ Route every candidate edit through `mangomas.harness.repair_sandbox`:
 2. Write the model's candidate to a throwaway staging directory via
    `stage_candidate_file(staging_root, relative_path, content)`.
 3. Run the deterministic verification oracle and promote only on exit 0 via
-   `run_oracle_and_promote(...)`, passing an explicit per-run `allowed_paths`
-   set and `oracle_argv` sequence (`shell=False`).
+   `mangomas.composition.run_repair_oracle(staging_root=..., repo_root=...,
+   relative_path=..., allowed_paths=..., oracle_argv=["{python}", ...])`. It
+   reads `MANGOMAS_REPAIR__*` once and applies both the isolation backend
+   (`build_oracle_isolation`; set `MANGOMAS_REPAIR__ORACLE_ISOLATION=required`
+   in governed environments so it fails closed unless `DockerIsolationBackend`
+   or `WslBwrapIsolationBackend` is ready) and `ORACLE_TIMEOUT_SECONDS`.
+   Calling `run_oracle_and_promote` directly bypasses both settings.
+4. Inside an isolating backend the oracle sees only staging at `/work`, with
+   `PYTHONPATH=/work/src:/work`. Stage the candidate as a self-contained module,
+   or a complete package: a *partial* package under `src/` is shadowed by the
+   regular package installed in the sandbox image. Make the oracle assert the
+   module under test came from staging (`module.__file__.startswith("/work/")`).
 
 ```powershell
-python -m pytest tests/harness/test_repair_sandbox.py -q
+python -m pytest tests/harness/test_repair_sandbox.py tests/harness/test_isolation.py tests/composition/test_repair.py -q
+make oracle-image
+make oracle-isolation-docker
 ```
 
 ---

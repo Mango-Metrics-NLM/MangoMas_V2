@@ -37,7 +37,13 @@ Two sequential origin-delta deliveries validated and hardened the tree against
     URLs, canonical staging path containment (no `..`, drive/UNC, symlinks,
     NTFS ADS, DOS devices, null bytes), allowlisted non-protected promotion
     targets, a scrubbed oracle subprocess, and SHA-256 staged-mutation
-    detection.
+    detection. **spec-0044 / ADR-0040** adds `RepairSettings`
+    (`MANGOMAS_REPAIR__*`), the `@runtime_checkable OracleIsolationBackend`
+    protocol and `isolation_registry` (`mangomas.harness.isolation`),
+    `DockerIsolationBackend` (`make oracle-image`, `--network none`,
+    `--read-only`, read-only staging mount), `WslBwrapIsolationBackend`
+    (`bwrap --unshare-all`), and `composition.repair.build_oracle_isolation`
+    which fails closed when `MANGOMAS_REPAIR__ORACLE_ISOLATION=required`.
   - **Ring 3**: `scripts/lint_agent_frontmatter.py --hook pre-tool-use` emits
     `permissionDecision: "deny"` on host-destructive `Bash` commands (`rm
     -rf`/`-fr`, `Remove-Item -Recurse`, `del /s`, `git reset --hard`, `git
