@@ -1,4 +1,4 @@
-﻿"""Unit tests for ``mangomas.harness.repair_sandbox`` (Ring 2 automated LLM coding)."""
+"""Unit tests for ``mangomas.harness.repair_sandbox`` (Ring 2 automated LLM coding)."""
 
 from __future__ import annotations
 
@@ -294,10 +294,7 @@ def test_run_oracle_and_promote_detects_staged_mutation(tmp_path: Path) -> None:
     repo.mkdir()
     rel = "src/mangomas/agents/chat.py"
     staged = stage_candidate_file(staging, rel, "VALUE = 1\n")
-    oracle_cmd = (
-        "from pathlib import Path; "
-        f"Path(r'{staged}').write_text('VALUE = 999\\n')"
-    )
+    oracle_cmd = f"from pathlib import Path; Path(r'{staged}').write_text('VALUE = 999\\n')"
     with pytest.raises(ToolExecutionError, match="modified the staged candidate file"):
         run_oracle_and_promote(
             staging_root=staging,
