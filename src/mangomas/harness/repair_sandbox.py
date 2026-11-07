@@ -1,0 +1,292 @@
+"""Deterministic staging and promotion containment for automated LLM coding (Ring 2).
+
+Implements the security invariants described by the ``mango-repair-loop`` skill
+so a local LLM proposing edits can never:
+
+1. Exfiltrate source code or prompts to a non-loopback endpoint
+   (:func:`validate_loopback_llm_url`).
+2. Write candidate drafts outside a dedicated staging directory, traverse ``..``,
+   or follow a symlink/junction to overwrite files on the host PC
+   (:func:`stage_candidate_file`).
+3. Promote a candidate onto a protected core contract, a governance-surface
+   file, ``.git/``, ``.claude/``, ``*.env*``, or any path outside the caller's
+   explicit per-run allowlist (:func:`validate_promotion_target`).
+4. Execute an unbounded or credential-leaking oracle subprocess, or promote a
+   candidate when the oracle fails (:func:`run_oracle_and_promote`).
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
+
+from mangomas.errors import ConfigError, ToolExecutionError
+from mangomas.harness.governance import GOVERNANCE_SURFACE, PROTECTED_PATHS, normalize_path
+
+LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
+
+FORBIDDEN_PROMOTION_PREFIXES: tuple[str, ...] = (
+    ".git/",
+    ".claude/",
+    ".venv/",
+    "venv/",
+)
+
+FORBIDDEN_PROMOTION_FILENAMES: frozenset[str] = frozenset(
+    {
+        ".env",
+        ".mcp.json",
+        "sitecustomize.py",
+        "pyproject.toml",
+    }
+)
+
+# Environment variable prefixes stripped before an oracle subprocess runs on
+# untrusted LLM-generated code.
+_SCRUBBED_ENV_PREFIXES: tuple[str, ...] = (
+    "RUN_",
+    "MANGOMAS_LLM__API_KEY",
+    "MANGOMAS_SECRETS__",
+    "MANGOMAS_AUTH__",
+    "GITHUB_",
+    "GOOGLE_",
+    "OPENAI_",
+    "ANTHROPIC_",
+    "LANGFUSE_",
+    "AWS_",
+    "AZURE_",
+)
+
+_SAFE_ORACLE_ADDOPTS: str = "-p no:cacheprovider -o addopts="
+DEFAULT_ORACLE_TIMEOUT_SECONDS: float = 60.0
+
+
+@dataclass(frozen=True)
+class PromotionOutcome:
+    """Result of running the deterministic oracle and promoting a staged file."""
+
+    promoted: bool
+    returncode: int
+    stdout: str
+    stderr: str
+    target_path: Path | None = None
+
+
+def validate_loopback_llm_url(url: str) -> str:
+    """Ensure *url* targets a loopback HTTP(S) endpoint, or raise ``ConfigError``."""
+    try:
+        parsed = urlparse(url)
+    except ValueError as exc:
+        raise ConfigError(
+            "Repair-loop LLM URL could not be parsed",
+            detail=str(exc),
+        ) from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ConfigError(
+            "Repair-loop LLM URL must be an http(s) URL with an explicit host",
+            detail=url,
+        )
+    if parsed.hostname.lower() not in LOOPBACK_HOSTS:
+        raise ConfigError(
+            f"Repair-loop LLM URL host {parsed.hostname!r} is not a loopback address "
+            f"(allowed: {sorted(LOOPBACK_HOSTS)})",
+            detail=url,
+        )
+    return url
+
+
+def _reject_symlink_chain(path: Path, stop_at: Path) -> None:
+    """Raise ``ToolExecutionError`` if *path* or any parent up to *stop_at* is a symlink."""
+    current = path
+    stop_resolved = stop_at.resolve()
+    while True:
+        if current.is_symlink():
+            raise ToolExecutionError(
+                f"Sandbox refused symlink or junction in path: {current}",
+                tool_name="repair_sandbox",
+            )
+        if current == stop_at or current.resolve() == stop_resolved or current.parent == current:
+            break
+        current = current.parent
+
+
+def _resolve_contained_path(root: Path, relative_path: str | Path, *, label: str) -> Path:
+    """Resolve *relative_path* inside *root*, rejecting traversal, UNC, and symlinks."""
+    raw = str(relative_path).strip()
+    if not raw:
+        raise ToolExecutionError(
+            f"Sandbox {label} path must not be empty",
+            tool_name="repair_sandbox",
+        )
+    if raw.startswith(("/", "\\")) or ":" in Path(raw).drive:
+        raise ToolExecutionError(
+            f"Sandbox {label} path must be relative (refusing absolute/drive/UNC path {raw!r})",
+            tool_name="repair_sandbox",
+        )
+    candidate_rel = Path(raw)
+    if ".." in candidate_rel.parts:
+        raise ToolExecutionError(
+            f"Sandbox {label} path must be a relative path without '..' traversal: {raw!r}",
+            tool_name="repair_sandbox",
+        )
+    root_resolved = root.resolve()
+    if root.is_symlink():
+        raise ToolExecutionError(
+            f"Sandbox {label} root must not be a symlink: {root}",
+            tool_name="repair_sandbox",
+        )
+    joined = root / candidate_rel
+    _reject_symlink_chain(joined, root)
+    resolved = joined.resolve()
+    if not resolved.is_relative_to(root_resolved):
+        raise ToolExecutionError(
+            f"Sandbox {label} path {raw!r} escapes root {root_resolved}",
+            tool_name="repair_sandbox",
+        )
+    return resolved
+
+
+def stage_candidate_file(
+    staging_root: Path,
+    relative_path: str | Path,
+    content: str,
+) -> Path:
+    """Write *content* to *relative_path* inside *staging_root* after containment checks."""
+    target = _resolve_contained_path(staging_root, relative_path, label="staging")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
+def validate_promotion_target(
+    repo_root: Path,
+    relative_path: str | Path,
+    *,
+    allowed_Paths: Collection[str],
+    protected_paths: Collection[str] = PROTECTED_PATHS,
+    governance_surface: Collection[str] = GOVERNANCE_SURFACE,
+) -> Path:
+    """Validate that *relative_path* is an allowlisted, non-protected file inside *repo_root*."""
+    resolved = _resolve_contained_path(repo_root, relative_path, label="promotion")
+    norm = normalize_path(resolved.relative_to(repo_root.resolve()).as_posix())
+    normalized_allowlist = {normalize_path(p) for p in allowed_Paths}
+    if norm not in normalized_allowlist:
+        raise ToolExecutionError(
+            f"Promotion target {norm!r} is not in the repair allowlist "
+            f"{sorted(normalized_allowlist)}",
+            tool_name="repair_sandbox",
+        )
+    protected_norm = {normalize_path(p) for p in protected_paths} | {
+        normalize_path(p) for p in governance_surface
+    }
+    if norm in protected_norm:
+        raise ToolExecutionError(
+            f"Promotion target {norm!r} is a protected or governance-surface path",
+            tool_name="repair_sandbox",
+        )
+    if any(norm.startswith(prefix) for prefix in FORBIDDEN_PROMOTION_PREFIXES):
+        raise ToolExecutionError(
+            f"Promotion target {norm!r} is inside a forbidden directory",
+            tool_name="repair_sandbox",
+        )
+    filename = Path(norm).name
+    if filename in FORBIDDEN_PROMOTION_FILENAMES or filename.startswith(".env"):
+        raise ToolExecutionError(
+            f"Promotion target {norm!r} names a forbidden configuration/secret file",
+            tool_name="repair_sandbox",
+        )
+    return resolved
+
+
+def build_scrubbed_oracle_env(base_env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return an environment dict with live-gate flags and credentials stripped."""
+    source = os.environ if base_env is None else base_env
+    scrubbed = {
+        k: v
+        for k, v in source.items()
+        if not any(k.startswith(prefix) for prefix in _SCRUBBED_ENV_PREFIXES)
+    }
+    scrubbed["PYTEST_ADDOPTS"] = _SAFE_ORACLE_ADDOPTS
+    scrubbed["PYTHONIOENCODING"] = "utf-8"
+    return scrubbed
+
+
+def run_oracle_and_promote(
+    *,
+    staging_root: Path,
+    repo_root: Path,
+    relative_path: str | Path,
+    allowed_paths: Collection[str],
+    oracle_argv: Sequence[str],
+    timeout_seconds: float = DEFAULT_ORACLE_TIMEOUT_SECONDS,
+    base_env: Mapping[str, str] | None = None,
+) -> PromotionOutcome:
+    """Run *oracle_argv* in a scrubbed subprocess and promote the staged file iff it exits 0."""
+    if not oracle_argv or any(not isinstance(arg, str) or not arg for arg in oracle_argv):
+        raise ToolExecutionError(
+            "Oracle command must be a non-empty sequence of non-empty argument strings",
+            tool_name="repair_sandbox",
+        )
+    if timeout_seconds <= 0:
+        raise ToolExecutionError(
+            "Oracle timeout_seconds must be positive",
+            tool_name="repair_sandbox",
+        )
+    staged_file = _resolve_contained_path(staging_root, relative_path, label="staging")
+    if not staged_file.is_file():
+        raise ToolExecutionError(
+            f"Staged candidate file does not exist: {staged_file}",
+            tool_name="repair_sandbox",
+        )
+    target_file = validate_promotion_target(
+        repo_root,
+        relative_path,
+        allowed_Paths=allowed_paths,
+    )
+    env = build_scrubbed_oracle_env(base_env)
+    try:
+        completed = subprocess.run(  # noqa: S603 — argv sequence, shell=False, scrubbed env
+            list(oracle_argv),
+            cwd=staging_root.resolve(),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ToolExecutionError(
+            f"Oracle subprocess exceeded timeout of {timeout_seconds}s",
+            tool_name="repair_sandbox",
+        ) from exc
+    except OSError as exc:
+        raise ToolExecutionError(
+            f"Oracle subprocess failed to start: {exc}",
+            tool_name="repair_sandbox",
+        ) from exc
+
+    if completed.returncode != 0:
+        return PromotionOutcome(
+            promoted=False,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            target_path=None,
+        )
+
+    content = staged_file.read_text(encoding="utf-8")
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(content, encoding="utf-8")
+    return PromotionOutcome(
+        promoted=True,
+        returncode=0,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+        target_path=target_file,
+    )

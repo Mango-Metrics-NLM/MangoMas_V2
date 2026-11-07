@@ -81,6 +81,7 @@ thinking tool, not a gate.
 | [0039](0039-origin-delta-aqa.md) | Origin-delta AQA and the CUDA placement gate |
 | [0040](0040-llm-provider-profiles.md) | LLM provider profiles and the Studio boundary (`MANGOMAS_LLM_PROFILES__*`, `PROVIDER_ALLOWLIST`, `GET /llm/profiles`) |
 | [0041](0041-studio-contract-aqa.md) | Studio-contract E2E and AQA: live two-profile scenario, `MUT-STUDIO` replays, consumer probe (`make studio-probe-mock`) |
+| [0043](0043-harness-tool-and-coding-sandbox.md) | MangoMas harness tool-execution policy, repair-loop staging sandbox, and destructive-`Bash` hook gate (ADR-0039; 0042 is allocated to the origin-delta AQA PR) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -91,4 +92,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0042** (0036 is reserved); next free ADR: **0039**.
+than reused. Next free spec on this branch: **0044** (0036 is reserved); next free ADR: **0040**.

@@ -83,6 +83,7 @@ from tests.constants.corpus import AGENT_SLUG_PREFIX as AGENT_SLUG_PREFIX
 from tests.constants.corpus import AGENT_TRIGGER_PHRASE_PATTERN as AGENT_TRIGGER_PHRASE_PATTERN
 from tests.constants.corpus import ALLOWLISTED_MODEL as ALLOWLISTED_MODEL
 from tests.constants.corpus import ANCHORED_RULE_PATH_PREFIX as ANCHORED_RULE_PATH_PREFIX
+from tests.constants.corpus import BASH_CAPABLE_AGENT_SLUGS as BASH_CAPABLE_AGENT_SLUGS
 from tests.constants.corpus import BASH_RULE_PREFIX as BASH_RULE_PREFIX
 from tests.constants.corpus import BASH_RULE_WILDCARD_SUFFIX as BASH_RULE_WILDCARD_SUFFIX
 from tests.constants.corpus import CLAUDE_AGENTS_DIR_RELPATH as CLAUDE_AGENTS_DIR_RELPATH
@@ -101,6 +102,7 @@ from tests.constants.corpus import ENV_FLAG_OFF as ENV_FLAG_OFF
 from tests.constants.corpus import ENV_FLAG_ON as ENV_FLAG_ON
 from tests.constants.corpus import ENV_INTERPOLATION_PREFIX as ENV_INTERPOLATION_PREFIX
 from tests.constants.corpus import EXPECTED_AGENT_SLUGS as EXPECTED_AGENT_SLUGS
+from tests.constants.corpus import EXPECTED_ALLOW_RULES as EXPECTED_ALLOW_RULES
 from tests.constants.corpus import EXPECTED_DENY_RULES as EXPECTED_DENY_RULES
 from tests.constants.corpus import EXPECTED_SKILL_SLUGS as EXPECTED_SKILL_SLUGS
 from tests.constants.corpus import HARNESS_CONFIG_AUDIT_MODE_ENV as HARNESS_CONFIG_AUDIT_MODE_ENV
@@ -457,6 +459,7 @@ __all__ = [
     "AUTH_TOKEN",
     "BACKPRESSURE_MAX_BODY_BYTES",
     "BACKPRESSURE_MAX_CONCURRENT",
+    "BASH_CAPABLE_AGENT_SLUGS",
     "BASH_RULE_PREFIX",
     "BASH_RULE_WILDCARD_SUFFIX",
     "CHAT_MODEL_OVERRIDE_ENV",
@@ -552,6 +555,7 @@ __all__ = [
     "EXIT_CONFIG_ERROR",
     "EXIT_RUNTIME_ERROR",
     "EXPECTED_AGENT_SLUGS",
+    "EXPECTED_ALLOW_RULES",
     "EXPECTED_CLI_COMMANDS",
     "EXPECTED_CLI_HELP_ORDER",
     "EXPECTED_CLI_PARAMS",

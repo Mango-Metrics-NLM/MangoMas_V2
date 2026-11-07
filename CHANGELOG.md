@@ -9,6 +9,37 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Harness tool-execution policy, repair-loop sandbox, and destructive-Bash gate (spec-0043 / ADR-0039)
+
+- **Ring 1 — In-product LLM tool policy (`src/mangomas/harness/tool_policy.py`)**:
+  `ToolAgent._dispatch_tool` now enforces `enforce_tool_invocation_policy`,
+  refusing any tool whose `ToolSpec.effects` is not `ToolEffects.READ_ONLY`
+  unless explicitly granted in `ToolAgent(allowed_mutating_tools=...)`, and
+  validating `tool_call.arguments` against `ToolSpec.parameters_schema`
+  (argument count, string length, required keys, `additionalProperties: False`,
+  and JSON-Schema primitive types) before `tool.execute` runs.
+  `tests/test_execution_bypass_inventory.py` now scans `agents`, `core`,
+  `cognitive`, `rag`, `workflow`, and `eval` for `subprocess`, `asyncio`
+  subprocesses, `os.startfile`, `shutil.rmtree`, `Path.unlink`, `ctypes`, and
+  `winreg`.
+- **Ring 2 — Automated LLM coding sandbox (`src/mangomas/harness/repair_sandbox.py`)**:
+  `validate_loopback_llm_url`, `stage_candidate_file`,
+  `validate_promotion_target`, `build_scrubbed_oracle_env`, and
+  `run_oracle_and_promote` enforce loopback-only LLM endpoints, canonical
+  relative staging paths without `..` or symlinks, allowlisted non-protected
+  promotion targets, and timeout-bounded scrubbed oracle execution before a
+  candidate file is promoted.
+- **Ring 3 — Coding-agent & hook harness (`.claude/settings.json`, `scripts/lint_agent_frontmatter.py`)**:
+  `PreToolUse` now emits `permissionDecision: "deny"` on host-destructive
+  `Bash` commands (`rm -rf`/`-fr`, `Remove-Item -Recurse`, `del /s`,
+  `git reset --hard`, `git clean -f`, `git push --force`,
+  `git diff/log/show --output=`, `guard_probe.py --manifest=`) while keeping
+  protected-path mentions on `"ask"`. `EXPECTED_ALLOW_RULES` and
+  `BASH_CAPABLE_AGENT_SLUGS` are pinned by set equality, corpus markdown is
+  scanned against rogue bypass instructions, and `.claude/skills/mango-sandbox/SKILL.md`
+  documents the three rings. `make guard-probe` replays all five guards as
+  `MUT-SBX-01..05` (39 manifest entries).
+
 ### Fixed — review follow-ups to the reflection PRs (#111)
 
 - `path_from_sqlite_url("sqlite:///")` now raises the documented

@@ -10,13 +10,20 @@ Your single job is to keep the governance layer honest: the gate that actually
 enforces, the hook that only advises, and the difference between them.
 
 Use the `mango-harness` skill for the `BREAKING-CHANGE` trailer contract and the
-advisory-vs-authoritative split — do not restate either here. The Invariants
-below are what that skill does not cover: the shape of this code.
+advisory-vs-authoritative split, and `mango-sandbox` for runtime `ToolAgent`
+effect policy (`src/mangomas/harness/tool_policy.py`), automated repair-loop
+containment (`src/mangomas/harness/repair_sandbox.py`), and destructive-`Bash`
+blocking — do not restate either here. The Invariants below are what those
+skills do not cover: the shape of this code.
 
 ## Surface You Own
 
 - `src/mangomas/harness/governance.py` — `PROTECTED_PATHS` and the marker
   aliases, read from `pyproject.toml`'s `[tool.mangomas.governance]`
+- `src/mangomas/harness/tool_policy.py` — fail-closed `ToolEffects` and
+  `parameters_schema` argument validation for `ToolAgent`
+- `src/mangomas/harness/repair_sandbox.py` — loopback LLM URL guard, staging
+  directory containment, and oracle-gated file promotion
 - `pyproject.toml`'s `[tool.mangomas.governance]` table itself — the
   protected-path *definition* (decision D3b, settling the ownership question
   that deferred spec-0015 R4). Membership changes land with the fallback sets

@@ -28,6 +28,7 @@ from tests.constants import (
     AGENT_SKILL_OWNERS,
     AGENT_SLUG_PREFIX,
     AGENT_TRIGGER_PHRASE_PATTERN,
+    BASH_CAPABLE_AGENT_SLUGS,
     CLAUDE_SKILLS_DIR_RELPATH,
     CORPUS_DOC_RELPATHS,
     EXPECTED_AGENT_SLUGS,
@@ -268,6 +269,57 @@ def test_write_capable_agents_match_the_reviewed_set() -> None:
         f"gained write access: {sorted(write_capable - set(WRITE_CAPABLE_AGENT_SLUGS))}; "
         f"lost it: {sorted(set(WRITE_CAPABLE_AGENT_SLUGS) - write_capable)}"
     )
+
+
+def test_bash_capable_agents_match_the_reviewed_set() -> None:
+    """Pin agents holding ``Bash`` by set equality (spec-0043).
+
+    On native Windows, Claude Code runs ``Bash`` commands unsandboxed, and
+    ``Bash`` can write any file or invoke subprocesses outside the
+    ``Edit|Write|NotebookEdit`` matcher. Granting ``Bash`` to an agent
+    must be an explicit reviewed change to :data:`BASH_CAPABLE_AGENT_SLUGS`.
+    """
+    bash_capable = {slug for slug, fm in _agents().items() if "Bash" in set(_tool_tokens(fm))}
+    assert bash_capable == set(BASH_CAPABLE_AGENT_SLUGS), (
+        f"gained Bash access: {sorted(bash_capable - set(BASH_CAPABLE_AGENT_SLUGS))}; "
+        f"lost it: {sorted(set(BASH_CAPABLE_AGENT_SLUGS) - bash_capable)}"
+    )
+
+
+_FORBIDDEN_CORPUS_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"\bdangerouslyDisableSandbox\b"),
+        "must not instruct agents to set dangerouslyDisableSandbox",
+    ),
+    (
+        re.compile(r"\bgit\s+commit\b[^\n]*--no-verify\b"),
+        "must not instruct agents to bypass pre-commit hooks with --no-verify",
+    ),
+    (
+        re.compile(r"\b(?:curl|wget)\b[^\n|]*\|\s*(?:sh|bash|pwsh|powershell)\b", re.IGNORECASE),
+        "must not instruct agents to pipe remote scripts into a shell",
+    ),
+    (
+        re.compile(r"\bInvoke-Expression\b", re.IGNORECASE),
+        "must not instruct agents to run Invoke-Expression on untrusted input",
+    ),
+)
+
+
+def test_corpus_contains_no_rogue_bypass_instructions() -> None:
+    """Agent and skill markdown must never instruct a model to disable sandboxes or hooks."""
+    offenders: list[str] = []
+    corpus_files = [
+        *_agent_paths(),
+        *(d / _SKILL_FILENAME for d in _skill_dirs() if (d / _SKILL_FILENAME).exists()),
+    ]
+    for path in corpus_files:
+        rel = path.relative_to(_REPO_ROOT).as_posix()
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            for pattern, reason in _FORBIDDEN_CORPUS_PATTERNS:
+                if pattern.search(line):
+                    offenders.append(f"{rel}:{lineno} ({reason})")
+    assert offenders == [], f"rogue instruction pattern(s) in corpus: {offenders}"
 
 
 @pytest.mark.parametrize("slug", sorted(ROUTER_AGENT_SLUGS))

@@ -237,6 +237,41 @@
       "fixed": "        if self._client is None:  # pragma: no cover - requires gcp extra\n",
       "defect": "        if self._client is None:  # pragma: no cover\n",
       "gate": ["{python}", "-m", "pytest", "tests/test_check_coverage.py", "-k", "test_every_non_type_checking_pragma_states_its_reason", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-SBX-01",
+      "path": ".claude/settings.json",
+      "fixed": "      \"Bash(python scripts/guard_probe.py)\",\n",
+      "defect": "      \"Bash(python scripts/guard_probe.py:*)\",\n",
+      "gate": ["{python}", "-m", "pytest", "tests/tooling/test_claude_code_settings.py", "-k", "test_allow_rules_match_the_expected_set", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-SBX-02",
+      "path": "src/mangomas/harness/tool_policy.py",
+      "fixed": "    if spec.effects is not ToolEffects.READ_ONLY and spec.name not in allowed_mutating_tools:\n",
+      "defect": "    if False and spec.effects is not ToolEffects.READ_ONLY and spec.name not in allowed_mutating_tools:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/harness/test_tool_policy.py", "-k", "test_non_read_only_tool_is_blocked_by_default", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-SBX-03",
+      "path": "scripts/lint_agent_frontmatter.py",
+      "fixed": "    destructive_reason = _destructive_bash_reason(command)\n    if destructive_reason is not None:\n        _emit_deny(destructive_reason)\n        return EXIT_OK\n",
+      "defect": "    destructive_reason = _destructive_bash_reason(command)\n    if False and destructive_reason is not None:\n        _emit_deny(destructive_reason)\n        return EXIT_OK\n",
+      "gate": ["{python}", "-m", "pytest", "tests/test_lint_agent_frontmatter.py", "-k", "test_pre_tool_use_bash_destructive_commands_emit_deny", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-SBX-04",
+      "path": "src/mangomas/harness/repair_sandbox.py",
+      "fixed": "    if \"..\" in candidate_rel.parts:\n",
+      "defect": "    if False and \"..\" in candidate_rel.parts:\n",
+      "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_stage_candidate_file_rejects_traversal_and_non_relative_paths", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-SBX-05",
+      "path": ".claude/agents/mango-architect.md",
+      "fixed": "tools: Read, Grep, Glob, Skill\n",
+      "defect": "tools: Read, Grep, Glob, Skill, Bash\n",
+      "gate": ["{python}", "-m", "pytest", "tests/tooling/test_corpus_contract.py", "-k", "test_bash_capable_agents_match_the_reviewed_set", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }

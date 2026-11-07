@@ -205,6 +205,7 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-rag",
         "mango-release",
         "mango-repair-loop",
+        "mango-sandbox",
         "mango-testing",
         "mango-topology",
         "mango-workflow",
@@ -572,6 +573,32 @@ WRITE_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
         "mango-workflow-graph-dev",
     }
 )
+# Agents holding `Bash` (spec-0043). Pinned by set equality alongside
+# WRITE_CAPABLE_AGENT_SLUGS because `Bash` is write-capable and executes
+# host commands unsandboxed on native Windows.
+BASH_CAPABLE_AGENT_SLUGS: frozenset[str] = frozenset(
+    {
+        "mango-agent-impl-dev",
+        "mango-api-impl-dev",
+        "mango-ci-dev",
+        "mango-cli-dev",
+        "mango-error-taxonomy-dev",
+        "mango-eval-dev",
+        "mango-fake-builder",
+        "mango-harness-dev",
+        "mango-hypothesis-fuzz",
+        "mango-integration-runner",
+        "mango-llm-adapter-dev",
+        "mango-orchestrator-dev",
+        "mango-rag-dev",
+        "mango-schema-evolution",
+        "mango-secrets-dev",
+        "mango-sse-streamer",
+        "mango-storage-adapter-dev",
+        "mango-telemetry-exporter-dev",
+        "mango-workflow-graph-dev",
+    }
+)
 # Agents whose declared surface includes a protected core contract. Each must
 # say so, because the CI trailer gate will otherwise fail their first commit.
 PROTECTED_PATH_OWNER_SLUGS: frozenset[str] = frozenset(
@@ -623,7 +650,7 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-error-taxonomy-dev": ("mango-error",),
     "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
-    "mango-harness-dev": ("mango-harness",),
+    "mango-harness-dev": ("mango-harness", "mango-sandbox"),
     "mango-hypothesis-fuzz": ("mango-testing",),
     "mango-integration-runner": ("mango-aqa", "mango-testing"),
     "mango-llm-adapter-dev": ("mango-adapter",),
@@ -788,11 +815,37 @@ RETIRED_CHANGELOG_HEADING: str = "### Breaking Changes"
 # Claude Code permission rules in `.claude/settings.json`. Pinned by set
 # equality: nothing else in the suite asserted anything about `permissions`, so
 # a rule could be dropped, or added unreviewed, in total silence.
+EXPECTED_ALLOW_RULES: frozenset[str] = frozenset(
+    {
+        "Bash(python -m pytest:*)",
+        "Bash(python -m ruff:*)",
+        "Bash(python -m mypy:*)",
+        "Bash(python scripts/check_coverage.py)",
+        "Bash(python scripts/check_protected_paths.py:*)",
+        "Bash(python scripts/guard_probe.py)",
+        "Bash(python scripts/harness_config_audit.py)",
+        "Bash(python scripts/harness_session_start.py)",
+        "Bash(python scripts/lint_agent_frontmatter.py:*)",
+        "Bash(python scripts/studio_consumer_probe.py:*)",
+        "Bash(git status:*)",
+        "Bash(git diff:*)",
+        "Bash(git log:*)",
+        "Bash(git show:*)",
+        "Bash(git branch:*)",
+        "Bash(gh pr view:*)",
+        "Bash(gh pr list:*)",
+        "Bash(gh pr checks:*)",
+    }
+)
 EXPECTED_DENY_RULES: frozenset[str] = frozenset(
     {
         "Bash(rm -rf:*)",
+        "Bash(rm -fr:*)",
+        "Bash(Remove-Item -Recurse:*)",
         "Bash(git push --force:*)",
         "Bash(git push -f:*)",
+        "Bash(git reset --hard:*)",
+        "Bash(git clean -f:*)",
         # The two settings files, not `.claude/**`. The rationale for denying
         # anything here is that nothing legitimately needs Claude Code to
         # rewrite its own permissions mid-session — and that argues for these
@@ -803,6 +856,9 @@ EXPECTED_DENY_RULES: frozenset[str] = frozenset(
         # Gitignored, still loaded, and able to add `permissions.allow` entries
         # — so it is the more useful of the two to deny.
         "Edit(/.claude/settings.local.json)",
+        # Governance-surface files that auto-execute or load MCP servers.
+        "Edit(/sitecustomize.py)",
+        "Edit(/.mcp.json)",
         # spec-0022 R4: MCP filesystem-write and git-mutation tools bypass both
         # the `Edit|Write|NotebookEdit` PreToolUse matcher and the `Edit(...)`
         # deny rules — the MCP half of the gap ADR-0021 explicitly concedes.
@@ -881,6 +937,7 @@ __all__ = [
     "AGENT_SLUG_PREFIX",
     "AGENT_TRIGGER_PHRASE_PATTERN",
     "ANCHORED_RULE_PATH_PREFIX",
+    "BASH_CAPABLE_AGENT_SLUGS",
     "BASH_RULE_PREFIX",
     "BASH_RULE_WILDCARD_SUFFIX",
     "CLAUDE_AGENTS_DIR_RELPATH",
@@ -893,6 +950,7 @@ __all__ = [
     "ENV_FLAG_ON",
     "ENV_INTERPOLATION_PREFIX",
     "EXPECTED_AGENT_SLUGS",
+    "EXPECTED_ALLOW_RULES",
     "EXPECTED_DENY_RULES",
     "EXPECTED_SKILL_SLUGS",
     "HARNESS_CONFIG_AUDIT_MODE_ENV",

@@ -202,6 +202,7 @@ tree serves both.
 | `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
 | `mango-repair-loop` | Governed local-LLM repair: stage, oracle, then promote |
+| `mango-sandbox` | Runtime `ToolEffects` policy, repair-loop staging containment, destructive-`Bash` blocks, WSL2 sandbox setup |
 | `mango-promote` | dev → qa → main promotion, release tags, hotfix + back-merge (ADR-0036) |
 | `mango-mutation-proof` | Proving a guard fails when the thing it guards breaks |
 | `mango-coverage-audit` | Checking a coverage number is measured over the right denominator |

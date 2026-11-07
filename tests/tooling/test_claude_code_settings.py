@@ -29,6 +29,7 @@ from tests.constants import (
     CREDENTIALED_MCP_SERVERS,
     ENV_FLAG_ON,
     ENV_INTERPOLATION_PREFIX,
+    EXPECTED_ALLOW_RULES,
     EXPECTED_DENY_RULES,
     HARNESS_CONFIG_AUDIT_MODE_ENV,
     INERT_FILE_RULE_PREFIXES,
@@ -221,6 +222,17 @@ def test_settings_local_example_is_valid_json_with_the_documented_opt_outs() -> 
 
 def _permission_rules(section: str) -> list[str]:
     return list(_settings()["permissions"][section])
+
+
+def test_allow_rules_match_the_expected_set() -> None:
+    """Pin ``permissions.allow`` by set equality (spec-0043).
+
+    Before this, ``permissions.deny`` was pinned by equality while
+    ``permissions.allow`` had no roster test at all — so a blanket
+    ``Bash(*)`` or an unscoped ``Bash(python scripts/guard_probe.py:*)``
+    could be added without failing CI.
+    """
+    assert set(_permission_rules("allow")) == set(EXPECTED_ALLOW_RULES)
 
 
 def test_deny_rules_match_the_expected_set() -> None:
