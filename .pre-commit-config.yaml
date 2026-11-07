@@ -20,7 +20,7 @@ repos:
   # without widening this hook's `files:` glob.
   # Keep the rev in lockstep with the `mypy==` pin in pyproject's dev extra.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
       - id: mypy
         args: [--strict]
