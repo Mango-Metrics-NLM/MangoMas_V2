@@ -349,6 +349,13 @@
       "fixed": "        logger.warning(\n            \"Repair-sandbox oracle running WITHOUT OS-enforced isolation (backend='none')\",\n            extra={\"event\": \"repair_oracle_unisolated\", \"backend\": self.name},\n        )\n",
       "defect": "        pass\n",
       "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_no_isolation_backend_logs_warning_and_runs_subprocess", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-ISO-05",
+      "path": "src/mangomas/harness/isolation/wsl.py",
+      "fixed": "            \"bwrap\",\n            \"--unshare-all\",\n            \"--die-with-parent\",\n",
+      "defect": "            \"bwrap\",\n            \"--die-with-parent\",\n",
+      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_wsl_isolation_run_shapes_bwrap_unshare_all_argv_and_translates_errors", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }
   ]
 }

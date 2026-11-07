@@ -82,6 +82,7 @@ Route every candidate edit through `mangomas.harness.repair_sandbox`:
 python -m pytest tests/harness/test_repair_sandbox.py tests/harness/test_isolation.py tests/composition/test_repair.py -q
 make oracle-image
 make oracle-isolation-docker
+make oracle-isolation-wsl
 ```
 
 ---

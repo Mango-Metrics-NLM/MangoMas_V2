@@ -9,6 +9,7 @@ from mangomas.config.repair import RepairSettings
 from mangomas.harness.isolation.base import OracleIsolationBackend
 from mangomas.harness.isolation.docker import DockerIsolationBackend
 from mangomas.harness.isolation.none import NoIsolationBackend
+from mangomas.harness.isolation.wsl import WslBwrapIsolationBackend
 from mangomas.registry import Registry
 
 OracleIsolationFactory: TypeAlias = Callable[[RepairSettings], OracleIsolationBackend]
@@ -29,8 +30,17 @@ def _build_docker_backend(cfg: RepairSettings) -> OracleIsolationBackend:
     )
 
 
+def _build_wsl_backend(cfg: RepairSettings) -> OracleIsolationBackend:
+    return WslBwrapIsolationBackend(
+        distro=cfg.wsl_distro,
+        python_executable=cfg.wsl_python,
+        probe_timeout_seconds=cfg.oracle_probe_timeout_seconds,
+    )
+
+
 isolation_registry.register("none", _build_none_backend)
 isolation_registry.register("docker", _build_docker_backend)
+isolation_registry.register("wsl", _build_wsl_backend)
 
 __all__ = [
     "OracleIsolationFactory",

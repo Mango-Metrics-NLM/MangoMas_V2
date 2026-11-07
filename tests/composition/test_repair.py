@@ -15,6 +15,7 @@ from mangomas.harness.isolation import (
     IsolationResult,
     NoIsolationBackend,
     OracleIsolationBackend,
+    WslBwrapIsolationBackend,
     isolation_registry,
 )
 from mangomas.harness.repair_sandbox import stage_candidate_file
@@ -143,13 +144,45 @@ def test_build_oracle_isolation_required_auto_falls_through_and_fails_closed() -
             "docker",
             lambda _cfg: _StubBackend("docker", available=False),
         ),
+        isolation_registry.scoped(
+            "wsl",
+            lambda _cfg: _StubBackend("wsl", available=False),
+        ),
         pytest.raises(ConfigError, match="no isolating backend is available") as exc_info,
     ):
         build_oracle_isolation(RepairSettings(oracle_isolation="required", oracle_backend="auto"))
     assert "docker=unavailable" in (exc_info.value.detail or "")
+    assert "wsl=unavailable" in (exc_info.value.detail or "")
 
 
-def test_build_oracle_isolation_registry_builds_real_docker_backend() -> None:
-    factory = isolation_registry.get("docker")
-    backend = factory(RepairSettings(oracle_image="mangomas:oracle"))
-    assert isinstance(backend, DockerIsolationBackend)
+def test_build_oracle_isolation_auto_falls_back_to_wsl_and_handles_unregistered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with (
+        isolation_registry.scoped(
+            "docker",
+            lambda _cfg: _StubBackend("docker", available=False),
+        ),
+        isolation_registry.scoped(
+            "wsl",
+            lambda _cfg: _StubBackend("wsl", available=True),
+        ),
+    ):
+        backend = build_oracle_isolation(
+            RepairSettings(oracle_isolation="required", oracle_backend="auto")
+        )
+    assert backend.name == "wsl"
+
+    monkeypatch.setattr(isolation_registry, "available", lambda: ["none"])
+    with pytest.raises(ConfigError, match="no isolating backend is available") as exc_info:
+        build_oracle_isolation(RepairSettings(oracle_isolation="required", oracle_backend="auto"))
+    assert "docker=unregistered" in (exc_info.value.detail or "")
+
+
+def test_build_oracle_isolation_registry_builds_real_docker_and_wsl_backends() -> None:
+    docker_backend = isolation_registry.get("docker")(
+        RepairSettings(oracle_image="mangomas:oracle")
+    )
+    wsl_backend = isolation_registry.get("wsl")(RepairSettings(wsl_distro="Ubuntu"))
+    assert isinstance(docker_backend, DockerIsolationBackend)
+    assert isinstance(wsl_backend, WslBwrapIsolationBackend)

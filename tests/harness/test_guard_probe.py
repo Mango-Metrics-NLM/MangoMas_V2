@@ -297,8 +297,8 @@ def test_shipped_manifest_snippets_each_occur_once() -> None:
     # 10 MUT-AQA-* (spec-0039) + 14 MUT-0040-M* (spec-0040) + 3 MUT-STUDIO-* (spec-0041)
     # + 4 MUT-CI-* (workflow hygiene) + 3 MUT-COV-* (coverage floors and pragma reasons)
     # + 10 MUT-SBX-* (spec-0043) + 2 MUT-AQA-1106-* (spec-0042)
-    # + 4 MUT-ISO-* (spec-0044 Phase A1).
-    assert len(entries) == 50
+    # + 5 MUT-ISO-* (spec-0044 Phases A1 + A2).
+    assert len(entries) == 51
     assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
     proofs = [(entry.path, _gate_test(entry.gate)) for entry in entries]
     duplicated = sorted({proof for proof in proofs if proofs.count(proof) > 1})

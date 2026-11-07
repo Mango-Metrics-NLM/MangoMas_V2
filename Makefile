@@ -126,7 +126,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         protected-paths test test-xml guard-probe studio-probe-mock studio-probe \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        gated-suites embeddings-local gpu oracle-isolation-docker secret-scan pip-audit sbom-scan \
+        gated-suites embeddings-local gpu oracle-isolation-docker oracle-isolation-wsl secret-scan pip-audit sbom-scan \
         install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply \
         lock lock-upgrade docker-build docker-smoke oracle-image \
         nightly-scan-refs
@@ -305,6 +305,9 @@ gitleaks-selftest: ## Prove `secret-scan` can still fail (needs the binary `secr
 
 oracle-isolation-docker: ## Live Docker oracle-isolation containment suite (needs Docker + mangomas:oracle)
 	RUN_DOCKER_ISOLATION=1 $(PYTHON) -m pytest tests/harness/test_isolation.py -m docker_isolation --no-cov $(PYTEST_FLAGS)
+
+oracle-isolation-wsl: ## Live WSL2 + bubblewrap oracle-isolation containment suite (needs WSL2 + bwrap)
+	RUN_WSL_ISOLATION=1 $(PYTHON) -m pytest tests/harness/test_isolation.py -m wsl_isolation --no-cov $(PYTEST_FLAGS)
 
 # ── Opt-in tooling (off by default; needs the network) ───────────────────────
 #

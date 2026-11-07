@@ -23,13 +23,16 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `DockerIsolationBackend` (`--network none`, `--read-only`, read-only `/work`
   staging bind, `--tmpfs /tmp:rw,noexec,nosuid,size=64m`, `--cap-drop ALL`,
   `--security-opt no-new-privileges`, `--pids-limit`, `--memory`, and
-  container kill-on-timeout), and `build_oracle_isolation`, which fails closed
-  with `ConfigError` when `oracle_isolation="required"` and no isolating
-  backend is available.
+  container kill-on-timeout), `WslBwrapIsolationBackend` (`wsl -d <distro> --
+  bwrap --unshare-all --die-with-parent`, read-only system binds, `--tmpfs /tmp`,
+  read-only `/work` staging bind, `--clearenv`), and `build_oracle_isolation`,
+  which fails closed with `ConfigError` when `oracle_isolation="required"` and
+  no isolating backend is available.
 - `Makefile`: `ORACLE_IMAGE ?= mangomas:oracle`, `make oracle-image`
-  (`docker build --build-arg MANGOMAS_EXTRAS=dev`), and
-  `make oracle-isolation-docker` (`RUN_DOCKER_ISOLATION=1`).
-- `scripts/guard_probe_manifest.json`: adds `MUT-ISO-01..04` (50 manifest
+  (`docker build --build-arg MANGOMAS_EXTRAS=dev`),
+  `make oracle-isolation-docker` (`RUN_DOCKER_ISOLATION=1`), and
+  `make oracle-isolation-wsl` (`RUN_WSL_ISOLATION=1`).
+- `scripts/guard_probe_manifest.json`: adds `MUT-ISO-01..05` (51 manifest
   entries total).
 - PR #121 review follow-ups: `build_oracle_isolation()` with no argument reads
   `get_settings().repair` (it previously ignored `MANGOMAS_REPAIR__*`); new
