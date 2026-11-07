@@ -99,9 +99,10 @@ def validate_tool_arguments(
                 tool_name=spec.name,
             )
 
-    properties = schema.get("properties")
-    if not isinstance(properties, Mapping):
-        return
+    # An omitted (or malformed) `properties` declares no properties; it must
+    # not disable `additionalProperties: false` for a zero-argument tool.
+    raw_properties = schema.get("properties")
+    properties: Mapping[str, Any] = raw_properties if isinstance(raw_properties, Mapping) else {}
 
     if schema.get("additionalProperties") is False:
         unknown = sorted(key for key in arguments if key not in properties)

@@ -202,6 +202,28 @@ def test_validate_tool_arguments_returns_when_properties_absent() -> None:
     validate_tool_arguments(spec, {"query": "mango"})
 
 
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "object", "additionalProperties": False},
+        {"type": "object", "properties": "malformed", "additionalProperties": False},
+    ],
+)
+def test_validate_tool_arguments_zero_argument_schema_rejects_any_argument(
+    schema: dict[str, object],
+) -> None:
+    """Omitted/non-mapping `properties` declares none, so `additionalProperties: false` holds."""
+    spec = ToolSpec(
+        name="retrieve",
+        description="Search",
+        effects=ToolEffects.READ_ONLY,
+        parameters_schema=schema,
+    )
+    validate_tool_arguments(spec, {})
+    with pytest.raises(ToolExecutionError, match="unexpected argument"):
+        validate_tool_arguments(spec, {"rogue": 1})
+
+
 async def test_tool_agent_blocks_undeclared_tool_by_default() -> None:
     tool_json = json.dumps({"tool": DEFAULT_TOOL_NAME, "arguments": {}})
     llm = FakeLLM(reply=f"```json\n{tool_json}\n```")
