@@ -36,6 +36,12 @@ updates:
   #   ruff        ↔ .pre-commit-config.yaml ruff-pre-commit rev
   #   mypy        ↔ .pre-commit-config.yaml mirrors-mypy rev
   #   coverage    ↔ pytest-cov (measurement semantics are the gate's denominator)
+  #
+  # ruff and mypy are excluded from the groups here and in the pre-commit entry:
+  # their other half lives in a different ecosystem, so a grouped bump always
+  # fails the parity test and would hold every other package's bump hostage.
+  # Ungrouped, each arrives as its own PR to pair with its pre-commit twin.
+  # coverage and pytest-cov share this ecosystem and stay grouped together.
   - package-ecosystem: pip
     directory: /
     schedule:
@@ -43,6 +49,7 @@ updates:
     groups:
       pip-minor-patch:
         patterns: ["*"]
+        exclude-patterns: ["ruff", "mypy"]
         update-types: ["minor", "patch"]
   # Sibling envelope package (pydantic>=2.7 today). Separate from the root
   # pip ecosystem so a contracts-only bump is its own PR.
@@ -72,6 +79,7 @@ updates:
     groups:
       pre-commit-minor-patch:
         patterns: ["*"]
+        exclude-patterns: ["*ruff-pre-commit*", "*mirrors-mypy*"]
         update-types: ["minor", "patch"]
 
   # Base-image digests. The Dockerfile pins python:3.11-slim by digest in both

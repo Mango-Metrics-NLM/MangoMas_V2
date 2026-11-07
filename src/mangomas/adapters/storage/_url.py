@@ -39,25 +39,25 @@ def path_from_sqlite_url(url: str) -> str:
     ``:memory:`` / ``file::memory:...`` -> ``:memory:``.
     Anything else is treated as a bare filesystem path.
     Query parameters (e.g. ?check_same_thread=false) are stripped.
+
+    Raises:
+        ValueError: the URL names no file (``sqlite://``, ``sqlite:///``), or
+            ``urlparse`` rejects its netloc.
     """
     if url == ":memory:" or url.startswith("file::memory:"):
         return ":memory:"
     if url.startswith("sqlite:///"):
         # Extract path component, stripping query params but preserving path
-        # structure. ``urlparse`` always yields at least ``"/"`` here (the
-        # third slash *is* the path), so ``path`` is never empty: a bare
-        # ``sqlite:///`` resolves to ``""`` and fails later at open time.
-        parsed = urlparse(url)
-        path = parsed.path
-        # For relative paths (sqlite:///rel.db -> path="/rel.db"),
-        # strip leading /; for absolute paths (sqlite:////abs/db -> path="//abs/db"),
-        # preserve one leading / (the second one in the original URL).
-        if path.startswith("//"):
-            # Absolute path: //abs/db -> /abs/db
-            return path[1:]
-        else:
-            # Relative path: /rel/db -> rel/db
-            return path.lstrip("/")
+        # structure. For relative paths (sqlite:///rel.db -> path="/rel.db"),
+        # strip leading /; for absolute paths (sqlite:////abs/db ->
+        # path="//abs/db"), preserve one leading / (the second one in the URL).
+        path = urlparse(url).path
+        resolved = path[1:] if path.startswith("//") else path.lstrip("/")
+        # A bare ``sqlite:///`` strips to "": ``sqlite3.connect("")`` would
+        # open a private temporary database and silently discard every write.
+        if not resolved:
+            raise ValueError(f"Empty sqlite URL path: {url!r}")
+        return resolved
     if url.startswith("sqlite://"):
         parsed = urlparse(url)
         # netloc carries the path when only two slashes are present.

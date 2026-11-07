@@ -9,6 +9,27 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — review follow-ups to the reflection PRs (#111)
+
+- `path_from_sqlite_url("sqlite:///")` now raises the documented
+  `ValueError` (`Empty sqlite URL path`) instead of returning `""`.
+  `sqlite3.connect("")` does not fail — it opens a private temporary
+  database discarded on close — so a misconfigured `MANGOMAS_DB__URL`
+  silently lost every turn. The check moved to after the leading slash is
+  stripped, where the emptiness actually appears.
+- `ci.yml` cancels superseded runs for `pull_request` events only
+  (`cancel-in-progress: ${{ github.event_name == 'pull_request' }}`); two
+  quick trunk merges no longer cancel the first merge commit's run and the
+  Codecov base report with it.
+  `test_a_push_triggered_workflow_never_cancels_a_push_run` pins it;
+  `make guard-probe` replays it as `MUT-CI-04`.
+- `dependabot.yml` excludes `ruff`/`mypy` (pip) and their pre-commit hook
+  revs from the minor/patch groups: their other half lives in another
+  ecosystem, so a grouped bump always failed pin parity and blocked every
+  other package in the group.
+- `deploy.yml`'s concurrency comment no longer claims every push queues: a
+  running deploy is never cancelled, but a newer push replaces a waiting one.
+
 ### Changed — CI/CD hygiene (engineering-health reflection, PR 1)
 
 - `ci.yml`'s `push` trigger names the trunk branches only, the same

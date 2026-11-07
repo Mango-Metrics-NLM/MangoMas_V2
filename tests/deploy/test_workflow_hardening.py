@@ -214,6 +214,30 @@ def test_dependabot_watches_integration_contracts() -> None:
     assert "/mango-integration-contracts" in pip_dirs
 
 
+# The lock-stepped toolchain pins (ruff, mypy) have one half in `pip` and the
+# other in `pre-commit`. Groups cannot span ecosystems, so a grouped bump of
+# either always fails tests/tooling/test_toolchain_pin_parity.py — and takes
+# every other package in its monthly group down with it.
+_LOCKSTEPPED_EXCLUDES = {
+    ("pip", "/"): {"ruff", "mypy"},
+    ("pre-commit", "/"): {"*ruff-pre-commit*", "*mirrors-mypy*"},
+}
+
+
+def test_dependabot_groups_exclude_the_lockstepped_toolchain() -> None:
+    doc = yaml.safe_load(_DEPENDABOT.read_text(encoding="utf-8"))
+    entries = {(e["package-ecosystem"], e["directory"]): e for e in doc["updates"]}
+    for key, expected in _LOCKSTEPPED_EXCLUDES.items():
+        groups = entries[key].get("groups") or {}
+        assert groups, f"{key}: no groups — this guard is moot, delete it with the groups"
+        for name, group in groups.items():
+            excluded = set(group.get("exclude-patterns") or [])
+            assert expected <= excluded, (
+                f"{key} group {name!r} must exclude {sorted(expected - excluded)}: a "
+                "grouped toolchain bump fails pin parity and blocks the whole group"
+            )
+
+
 # A job that reports a scheduled run's failure somewhere a human will see.
 # Recognised by its `if:` guard rather than its name, so renaming the job is
 # fine and deleting the guard is not.
@@ -341,8 +365,15 @@ def test_history_scanning_jobs_check_out_full_history() -> None:
 # deploy workflow is the one exception — a half-applied deploy must finish,
 # never be cancelled — and that exception is pinned here so a copy-paste of
 # the CI block into deploy.yml fails loudly.
+#
+# Cancelling is for PR churn, not for trunk history. A workflow that runs on
+# `push` (to the trunks) may cancel only its `pull_request` runs: an
+# unconditional `true` lets the second of two quick merges cancel the first
+# merge commit's run, leaving it with no completed result.
 _MAX_JOB_TIMEOUT_MINUTES = 60
 _DEPLOY_WORKFLOW = "deploy.yml"
+_CANCEL_PULL_REQUESTS_ONLY = "${{ github.event_name == 'pull_request' }}"
+_CANCELS_SUPERSEDED_RUNS: tuple[object, ...] = (True, _CANCEL_PULL_REQUESTS_ONLY)
 
 
 def _all_jobs() -> list[tuple[str, str, dict[str, Any]]]:
@@ -381,8 +412,10 @@ def test_every_workflow_declares_a_concurrency_group() -> None:
             f"{name}: the concurrency group must be keyed on github.ref so runs for "
             f"different branches never cancel each other (got {group!r})"
         )
-        assert isinstance(concurrency.get("cancel-in-progress"), bool), (
-            f"{name}: cancel-in-progress must be stated explicitly, true or false"
+        cancel = concurrency.get("cancel-in-progress")
+        assert isinstance(cancel, bool) or cancel == _CANCEL_PULL_REQUESTS_ONLY, (
+            f"{name}: cancel-in-progress must be stated explicitly — true, false, or "
+            f"{_CANCEL_PULL_REQUESTS_ONLY} (got {cancel!r})"
         )
 
 
@@ -392,5 +425,19 @@ def test_only_the_deploy_workflow_refuses_to_cancel_in_progress() -> None:
     assert _DEPLOY_WORKFLOW in docs
     cancels = {name: doc["concurrency"]["cancel-in-progress"] for name, doc in docs.items()}
     assert cancels[_DEPLOY_WORKFLOW] is False, "a deploy must never be cancelled mid-apply"
-    cancelling = {name for name, cancel in cancels.items() if cancel is True}
+    cancelling = {name for name, cancel in cancels.items() if cancel in _CANCELS_SUPERSEDED_RUNS}
     assert cancelling == set(docs) - {_DEPLOY_WORKFLOW}, cancels
+
+
+def test_a_push_triggered_workflow_never_cancels_a_push_run() -> None:
+    """A trunk merge keeps a completed run; only PR runs are disposable."""
+    docs = _workflows.workflow_docs()
+    push_triggered = [name for name in docs if "push" in _workflows.triggers(name)]
+    assert push_triggered, "no push-triggered workflow — has ci.yml lost its trunk trigger?"
+    unconditional = [
+        name for name in push_triggered if docs[name]["concurrency"]["cancel-in-progress"] is True
+    ]
+    assert unconditional == [], (
+        f"{unconditional}: `cancel-in-progress: true` also cancels trunk push runs; "
+        f"use {_CANCEL_PULL_REQUESTS_ONLY} (or false, for a deploy)"
+    )
