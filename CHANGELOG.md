@@ -34,6 +34,14 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `make oracle-isolation-wsl` (`RUN_WSL_ISOLATION=1`).
 - `scripts/guard_probe_manifest.json`: adds `MUT-ISO-01..05` (51 manifest
   entries total).
+- PR #121 review follow-ups: `build_oracle_isolation()` with no argument reads
+  `get_settings().repair` (it previously ignored `MANGOMAS_REPAIR__*`); new
+  `run_repair_oracle` applies `ORACLE_TIMEOUT_SECONDS` together with the backend
+  (the setting was previously never consumed); both timeout fields reject
+  `inf`/`NaN`; isolating backends set a sandbox-local `PYTHONPATH`
+  (`/work/src:/work`) instead of dropping it; and a timed-out container is
+  reported killed only after `docker ps` confirms it is gone (bounded retries,
+  `repair_oracle_timeout_kill_failed` otherwise).
 
 ### Fixed — PR #119 review and CI follow-ups to the harness sandbox (spec-0043)
 

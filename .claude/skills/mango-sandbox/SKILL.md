@@ -64,14 +64,19 @@ Route every candidate edit through `mangomas.harness.repair_sandbox`:
    never leaves the workstation.
 2. Write the model's candidate to a throwaway staging directory via
    `stage_candidate_file(staging_root, relative_path, content)`.
-3. Resolve the isolation backend via
-   `isolation = build_oracle_isolation(settings.repair)` (set
-   `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` in governed environments so it
-   fails closed unless `DockerIsolationBackend` or `WslBwrapIsolationBackend` is
-   ready), then run the deterministic verification oracle and promote only on
-   exit 0 via `run_oracle_and_promote(..., isolation=isolation)`, passing an
-   explicit per-run `allowed_paths` set and `oracle_argv` sequence starting with
-   `"{python}"` (`shell=False`).
+3. Run the deterministic verification oracle and promote only on exit 0 via
+   `mangomas.composition.run_repair_oracle(staging_root=..., repo_root=...,
+   relative_path=..., allowed_paths=..., oracle_argv=["{python}", ...])`. It
+   reads `MANGOMAS_REPAIR__*` once and applies both the isolation backend
+   (`build_oracle_isolation`; set `MANGOMAS_REPAIR__ORACLE_ISOLATION=required`
+   in governed environments so it fails closed unless `DockerIsolationBackend`
+   or `WslBwrapIsolationBackend` is ready) and `ORACLE_TIMEOUT_SECONDS`.
+   Calling `run_oracle_and_promote` directly bypasses both settings.
+4. Inside an isolating backend the oracle sees only staging at `/work`, with
+   `PYTHONPATH=/work/src:/work`. Stage the candidate as a self-contained module,
+   or a complete package: a *partial* package under `src/` is shadowed by the
+   regular package installed in the sandbox image. Make the oracle assert the
+   module under test came from staging (`module.__file__.startswith("/work/")`).
 
 ```powershell
 python -m pytest tests/harness/test_repair_sandbox.py tests/harness/test_isolation.py tests/composition/test_repair.py -q

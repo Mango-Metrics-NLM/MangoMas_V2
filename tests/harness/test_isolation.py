@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from mangomas.harness.isolation import (
     OracleIsolationBackend,
     WslBwrapIsolationBackend,
     resolve_sandbox_argv,
+    sandbox_pythonpath,
     select_sandbox_env,
     windows_to_wsl_path,
 )
@@ -171,6 +173,7 @@ def test_docker_isolation_run_shapes_hardened_argv(tmp_path: Path) -> None:
     assert "-w" in argv and argv[argv.index("-w") + 1] == DOCKER_WORK_DIR
     assert not any(token.startswith("PATH=") for token in argv)
     assert "PYTHONDONTWRITEBYTECODE=1" in argv
+    assert f"PYTHONPATH={sandbox_pythonpath(DOCKER_WORK_DIR)}" in argv
     assert argv[-4:] == ["mangomas:oracle", DOCKER_CONTAINER_PYTHON, "-m", "pytest"] or argv[
         -5:
     ] == [
@@ -214,8 +217,11 @@ def test_docker_isolation_kills_container_on_timeout_and_translates_oserror(
     ):
         backend.run(["{python}", "-c", "pass"], cwd=tmp_path, env={}, timeout_seconds=2.0)
 
-    assert len(calls) == 2
-    assert calls[1][:2] == ["docker", "kill"]
+    assert [call[:2] for call in calls] == [
+        ["docker", "run"],
+        ["docker", "kill"],
+        ["docker", "ps"],
+    ]
     assert any(
         getattr(rec, "event", None) == "repair_oracle_timeout_killed" for rec in caplog.records
     )
@@ -226,6 +232,65 @@ def test_docker_isolation_kills_container_on_timeout_and_translates_oserror(
     backend_err = DockerIsolationBackend(runner=_oserror_runner)
     with pytest.raises(ToolExecutionError, match="failed to start"):
         backend_err.run(["{python}", "-c", "pass"], cwd=tmp_path, env={}, timeout_seconds=2.0)
+
+
+@pytest.mark.parametrize(
+    ("ps_returncode", "ps_stdout"),
+    [
+        (0, "abc123\n"),  # daemon says the container is still running
+        (1, ""),  # daemon cannot say: termination is unconfirmed, not assumed
+    ],
+)
+def test_docker_isolation_reports_unconfirmed_kill_without_claiming_success(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    ps_returncode: int,
+    ps_stdout: str,
+) -> None:
+    calls: list[list[str]] = []
+    sleeps: list[float] = []
+
+    def _runner(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(list(cmd))
+        if cmd[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=1.0)
+        if cmd[:2] == ["docker", "ps"]:
+            return subprocess.CompletedProcess(cmd, ps_returncode, ps_stdout, "")
+        return subprocess.CompletedProcess(cmd, 1, "", "kill failed")
+
+    backend = DockerIsolationBackend(
+        runner=_runner,
+        name_factory=lambda: "mangomas-oracle-stuck",
+        kill_verify_attempts=3,
+        kill_verify_interval_seconds=0.25,
+        sleep=sleeps.append,
+    )
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(ToolExecutionError, match="may still be running"),
+    ):
+        backend.run(["{python}", "-c", "pass"], cwd=tmp_path, env={}, timeout_seconds=1.0)
+
+    assert sum(1 for call in calls if call[:2] == ["docker", "kill"]) == 3
+    assert sleeps == [0.25, 0.25]
+    events = {getattr(rec, "event", None) for rec in caplog.records}
+    assert "repair_oracle_timeout_kill_failed" in events
+    assert "repair_oracle_timeout_killed" not in events
+
+
+def test_docker_isolation_treats_unrunnable_cli_as_unconfirmed_kill(tmp_path: Path) -> None:
+    def _runner(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if cmd[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=1.0)
+        raise OSError("docker CLI vanished")
+
+    backend = DockerIsolationBackend(runner=_runner, kill_verify_attempts=1, sleep=lambda _s: None)
+    with pytest.raises(ToolExecutionError, match="may still be running"):
+        backend.run(["{python}", "-c", "pass"], cwd=tmp_path, env={}, timeout_seconds=1.0)
+
+
+def test_sandbox_pythonpath_lists_staged_src_then_staging_root() -> None:
+    assert sandbox_pythonpath("/work") == "/work/src:/work"
 
 
 def test_run_oracle_and_promote_delegates_to_injected_isolation_backend(tmp_path: Path) -> None:
@@ -251,6 +316,35 @@ def test_run_oracle_and_promote_delegates_to_injected_isolation_backend(tmp_path
     assert (repo / rel).read_text(encoding="utf-8") == "VALUE = 7\n"
 
 
+_LIVE_HANG_SECONDS = 60
+_LIVE_TIMEOUT_SECONDS = 3.0
+
+
+@pytest.mark.docker_isolation
+def test_live_docker_isolation_kills_a_timed_out_container(tmp_path: Path) -> None:
+    """A hung oracle must be confirmed gone after the timeout, not merely reported killed."""
+    container_name = "mangomas-oracle-live-timeout-probe"
+    backend = DockerIsolationBackend(name_factory=lambda: container_name)
+    assert backend.is_available() is True, "Docker daemon or mangomas:oracle image is not ready"
+    with pytest.raises(ToolExecutionError, match="exceeded timeout") as exc_info:
+        backend.run(
+            ["{python}", "-c", f"import time; time.sleep({_LIVE_HANG_SECONDS})"],
+            cwd=tmp_path,
+            env={},
+            timeout_seconds=_LIVE_TIMEOUT_SECONDS,
+        )
+    assert "may still be running" not in str(exc_info.value)
+    docker_bin = shutil.which("docker")
+    assert docker_bin is not None
+    listed = subprocess.run(  # noqa: S603 -- fixed argv, independent of the backend under test
+        [docker_bin, "ps", "-aq", "--filter", f"name=^/{container_name}$"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert listed.stdout.strip() == "", "timed-out oracle container survived the kill"
+
+
 @pytest.mark.docker_isolation
 def test_live_docker_isolation_enforces_filesystem_and_network_containment(
     tmp_path: Path,
@@ -268,9 +362,14 @@ def test_live_docker_isolation_enforces_filesystem_and_network_containment(
 
     rel = "src/mangomas/agents/chat.py"
     stage_candidate_file(staging, rel, "VALUE = 101\n")
+    stage_candidate_file(staging, "src/oracle_probe_module.py", "MARKER = 'staged'\n")
 
     probe_code = (
         "import pathlib, pytest, socket, sys\n"
+        "# 0. A staged src/ module imports from the sandbox, never a host path.\n"
+        "import oracle_probe_module\n"
+        "assert oracle_probe_module.MARKER == 'staged'\n"
+        "assert oracle_probe_module.__file__.startswith('/work/'), oracle_probe_module.__file__\n"
         "# 1. Outside-staging host file must not exist inside the container.\n"
         "assert not pathlib.Path('../host_secret.txt').exists()\n"
         f"assert not pathlib.Path({host_secret.as_posix()!r}).exists()\n"

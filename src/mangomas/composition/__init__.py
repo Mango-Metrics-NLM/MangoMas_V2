@@ -146,6 +146,9 @@ from mangomas.composition.repair import (
 from mangomas.composition.repair import (
     build_oracle_isolation as build_oracle_isolation,
 )
+from mangomas.composition.repair import (
+    run_repair_oracle as run_repair_oracle,
+)
 
 # Secrets resolution (used by builder and tests)
 from mangomas.composition.secrets import (
@@ -215,6 +218,7 @@ __all__ = [
     "ensure_agent_plugins",
     "ensure_secrets_provider",
     "llm_registry",
+    "run_repair_oracle",
     "secrets_registry",
     "select_llm_profile",
     "structured_agent_schemas",
