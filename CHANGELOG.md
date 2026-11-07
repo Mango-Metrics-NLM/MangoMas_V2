@@ -9,6 +9,34 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — PR #119 review and CI follow-ups to the harness sandbox (spec-0043)
+
+- `mangomas.harness.repair_sandbox`:
+  - Windows drive paths (`C:\…`, `C:/…`, drive-relative `C:file`) are refused
+    as absolute on every host OS (`PureWindowsPath`), fixing the Linux CI
+    failure where they fell through to the traversal branch.
+  - Reserved DOS device names are refused in every path component
+    (`drafts/NUL`, `src/CON.txt`, `com1 .py`), not only the first.
+  - Promotion refuses any `.git` / `.claude` / `.venv` / `venv` component,
+    including a bare `.git` gitdir-pointer file and nested submodule `.git`.
+  - After the oracle exits 0 the staged path and the promotion target are
+    re-validated (links planted by the oracle are refused), the exact hashed
+    bytes are promoted, and the target is opened with `O_NOFOLLOW` where the
+    OS provides it. Windows junctions are refused on Python 3.12+.
+- `mangomas.harness.tool_policy.validate_tool_arguments`: a schema with
+  `additionalProperties: false` and no `properties` now rejects every argument
+  instead of skipping validation.
+- `PreToolUse` destructive-`Bash` gate: matching moved to the stdlib-only
+  `scripts/_destructive_bash.py`, which tokenizes the command and inspects
+  options position-independently, so reordered flags (`rm build -rf`,
+  `git push origin main --force`, `git reset HEAD --hard`), Git global options
+  (`git -C repo reset --hard`), `+refspec` force-pushes, wrappers, and nested
+  `bash -c` / `pwsh -Command` / `cmd /c` payloads are denied.
+- `tests/test_execution_bypass_inventory.py`: detects `Path.open("a")`
+  (mode-first) and directly imported `rmtree`/`remove`/`system` aliases;
+  allowlists the cognitive JSONL sink append; the mutation test now scans an
+  injected temporary tree instead of asserting an absent site stays absent.
+
 ### Added — Enterprise documentation and architecture updates for the harness sandbox (spec-0043)
 
 - `docs/architecture/c3-component.md`: added `tool_policy.py` (Ring 1) and

@@ -11,6 +11,8 @@ that is not on the explicit allowlist.
 from __future__ import annotations
 
 import ast
+import re
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -26,9 +28,13 @@ _SCAN_ROOTS = (
 # An empty tuple is the point: none of these six packages may spawn processes.
 _ALLOWED_SPAWN_SITES: tuple[str, ...] = ()
 # Write/delete opens under the scanned planes must be explicitly allowlisted.
-# Today only the JSON-file eval sink uses write_text directly; agents, core,
-# cognitive, rag, and workflow have zero write sites.
-_ALLOWED_WRITE_SITES: tuple[str, ...] = ("src/mangomas/eval/sinks/json_file.py:53",)
+# The cognitive JSONL sink appends signal envelopes (default-off, ADR-0029) and
+# the JSON-file eval sink writes its report; agents, core, rag, and workflow
+# have zero write sites.
+_ALLOWED_WRITE_SITES: tuple[str, ...] = (
+    "src/mangomas/cognitive/sink.py:210",
+    "src/mangomas/eval/sinks/json_file.py:53",
+)
 
 _SPAWN_ATTRS: frozenset[str] = frozenset(
     {
@@ -79,10 +85,29 @@ _WRITE_OR_DELETE_ATTRS: frozenset[str] = frozenset(
 )
 
 
-def _is_spawn_func(node: ast.AST) -> bool:
+# Modules whose functions are write/delete or spawn primitives when imported
+# by name (`from shutil import rmtree as nuke; nuke(p)` is an `ast.Name` call).
+_PRIMITIVE_MODULES: frozenset[str] = frozenset({"os", "shutil", "pathlib", "asyncio"})
+_OPEN_MODE_RE = re.compile(r"[rwxabt+]+")
+
+
+def _imported_aliases(tree: ast.AST, names: frozenset[str]) -> frozenset[str]:
+    """Local names bound by `from <primitive module> import <name> [as alias]`."""
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] in (
+            _PRIMITIVE_MODULES
+        ):
+            aliases.update(
+                alias.asname or alias.name for alias in node.names if alias.name in names
+            )
+    return frozenset(aliases)
+
+
+def _is_spawn_func(node: ast.AST, aliases: frozenset[str] = frozenset()) -> bool:
     if isinstance(node, ast.Attribute) and node.attr in _SPAWN_ATTRS:
         return True
-    return isinstance(node, ast.Name) and node.id in _SPAWN_ATTRS
+    return isinstance(node, ast.Name) and (node.id in _SPAWN_ATTRS or node.id in aliases)
 
 
 def _shell_true(call: ast.Call) -> bool:
@@ -101,48 +126,63 @@ def _is_banned_import(node: ast.AST) -> bool:
     return False
 
 
-def _spawn_sites() -> list[str]:
-    found: list[str] = []
-    for root in _SCAN_ROOTS:
+def _parsed_files(roots: Sequence[Path], repo_root: Path) -> Iterator[tuple[str, ast.Module]]:
+    for root in roots:
         for path in sorted(root.rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            rel = path.relative_to(_REPO_ROOT).as_posix()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call) and (_is_spawn_func(node.func) or _shell_true(node)):
-                    found.append(f"{rel}:{node.lineno}")
-                elif isinstance(node, (ast.Import, ast.ImportFrom)) and _is_banned_import(node):
-                    found.append(f"{rel}:{node.lineno}:subprocess-import")
+            yield path.relative_to(repo_root).as_posix(), tree
+
+
+def _spawn_sites(roots: Sequence[Path] = _SCAN_ROOTS, repo_root: Path = _REPO_ROOT) -> list[str]:
+    found: list[str] = []
+    for rel, tree in _parsed_files(roots, repo_root):
+        aliases = _imported_aliases(tree, _SPAWN_ATTRS)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and (
+                _is_spawn_func(node.func, aliases) or _shell_true(node)
+            ):
+                found.append(f"{rel}:{node.lineno}")
+            elif isinstance(node, (ast.Import, ast.ImportFrom)) and _is_banned_import(node):
+                found.append(f"{rel}:{node.lineno}:subprocess-import")
     return sorted(found)
 
 
-def _is_write_open(call: ast.Call) -> bool:
-    """True for open(..., "w"/"a"/"x") or Path/os/shutil write/delete helpers."""
+def _is_write_mode(node: ast.expr) -> bool:
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and _OPEN_MODE_RE.fullmatch(node.value) is not None
+        and any(flag in node.value for flag in "wax")
+    )
+
+
+def _is_write_open(call: ast.Call, aliases: frozenset[str] = frozenset()) -> bool:
+    """True for a writing ``open``/``Path.open`` or an os/shutil/Path write/delete helper.
+
+    ``open(path, "w")`` carries the mode second; ``Path(p).open("a")`` carries
+    it first, so an attribute ``.open`` checks both leading positions.
+    """
     if isinstance(call.func, ast.Attribute) and call.func.attr in _WRITE_OR_DELETE_ATTRS:
         return True
-    if not (
-        (isinstance(call.func, ast.Name) and call.func.id == "open")
-        or (isinstance(call.func, ast.Attribute) and call.func.attr == "open")
-    ):
+    if isinstance(call.func, ast.Name) and call.func.id in aliases:
+        return True
+    if isinstance(call.func, ast.Name) and call.func.id == "open":
+        positional = call.args[1:2]
+    elif isinstance(call.func, ast.Attribute) and call.func.attr == "open":
+        positional = call.args[:2]
+    else:
         return False
-    if len(call.args) >= 2 and isinstance(call.args[1], ast.Constant):
-        mode = call.args[1].value
-        return isinstance(mode, str) and any(flag in mode for flag in "wax")
-    for kw in call.keywords:
-        if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
-            mode = kw.value.value
-            return isinstance(mode, str) and any(flag in mode for flag in "wax")
-    return False
+    keyword_modes = [kw.value for kw in call.keywords if kw.arg == "mode"]
+    return any(_is_write_mode(node) for node in [*positional, *keyword_modes])
 
 
-def _write_sites() -> list[str]:
+def _write_sites(roots: Sequence[Path] = _SCAN_ROOTS, repo_root: Path = _REPO_ROOT) -> list[str]:
     found: list[str] = []
-    for root in _SCAN_ROOTS:
-        for path in sorted(root.rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            rel = path.relative_to(_REPO_ROOT).as_posix()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call) and _is_write_open(node):
-                    found.append(f"{rel}:{node.lineno}")
+    for rel, tree in _parsed_files(roots, repo_root):
+        aliases = _imported_aliases(tree, _WRITE_OR_DELETE_ATTRS)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _is_write_open(node, aliases):
+                found.append(f"{rel}:{node.lineno}")
     return sorted(found)
 
 
@@ -166,13 +206,27 @@ def test_write_allowlist_matches_the_scan() -> None:
     assert found == _ALLOWED_WRITE_SITES
 
 
-def test_scan_detects_unallowlisted_write_and_spawn() -> None:
-    """Mutation-proof: a phantom write or spawn in the real scan tree fails the guard."""
-    found = set(_write_sites())
-    phantom = "src/mangomas/agents/chat.py:42"
-    assert phantom not in found
-    assert tuple(_spawn_sites()) == _ALLOWED_SPAWN_SITES
-    assert phantom + ":subprocess-import" not in set(_spawn_sites())
+def test_scan_detects_unallowlisted_write_and_spawn(tmp_path: Path) -> None:
+    """Mutation-proof: injected write/spawn sites in a scanned tree are found and rejected."""
+    agents = tmp_path / "src" / "mangomas" / "agents"
+    agents.mkdir(parents=True)
+    (agents / "rogue.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "from shutil import rmtree as nuke\n"
+        "from os import system as run_shell\n"
+        "Path('x').open('a')\n"
+        "nuke('x')\n"
+        "run_shell('true')\n"
+        "os.system('true')\n",
+        encoding="utf-8",
+    )
+    writes = tuple(_write_sites((agents,), tmp_path))
+    spawns = tuple(_spawn_sites((agents,), tmp_path))
+    assert writes == ("src/mangomas/agents/rogue.py:5", "src/mangomas/agents/rogue.py:6")
+    assert spawns == ("src/mangomas/agents/rogue.py:7", "src/mangomas/agents/rogue.py:8")
+    assert writes != _ALLOWED_WRITE_SITES
+    assert spawns != _ALLOWED_SPAWN_SITES
 
 
 def test_spawn_scanner_detects_banned_forms() -> None:
@@ -214,13 +268,19 @@ def test_write_scanner_detects_write_open_and_path_write() -> None:
         "Path('x').unlink()\n"
         "shutil.rmtree('x')\n"
         "os.remove('x')\n"
+        "Path('x').open('a', encoding='utf-8')\n"
+        "Path('x').open('rb')\n"
+        "archive.open('member.txt')\n"
+        "from os import remove\n"
+        "remove('x')\n"
     )
+    aliases = _imported_aliases(tree, _WRITE_OR_DELETE_ATTRS)
     hits = sorted(
         getattr(node, "lineno", 0)
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and _is_write_open(node)
+        if isinstance(node, ast.Call) and _is_write_open(node, aliases)
     )
-    assert hits == [3, 4, 5, 6, 7, 8, 9]
+    assert hits == [3, 4, 5, 6, 7, 8, 9, 10, 14]
 
 
 def test_phantom_spawn_allowlist_entry_is_not_in_the_scan() -> None:
