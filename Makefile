@@ -6,6 +6,10 @@
 # on the command line, e.g. `make test PYTEST_FLAGS=-x`.
 
 PYTHON      ?= python
+# Second CUDA-capable interpreter built by `make venv-gpu` (ENV-1 in
+# docs/testing/rca-20261029.md and docs/testing/rca-20261106.md). Pass
+# `PYTHON=$(PYTHON_GPU)` to `make gpu` or `make embeddings-local`.
+PYTHON_GPU  ?= .venv-gpu/Scripts/python.exe
 # Lint/type-check surface — matches ci.yml's `lint` job exactly.
 CODE_PATHS  ?= src tests scripts eval_harness_bridge/src mango-integration-contracts/src
 BRIDGE_SRC  ?= eval_harness_bridge/src
@@ -27,7 +31,8 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
                  tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
                  tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
                  tests/test_deploy_environment.py tests/harness \
-                 tests/test_studio_consumer_probe.py tests/test_destructive_bash.py
+                 tests/test_studio_consumer_probe.py tests/test_destructive_bash.py \
+                 tests/test_bootstrap_gpu_env.py
 # Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
 # was the gate's own blind spot — 24%, imported only for its FLOORS/
 # GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect
@@ -112,7 +117,7 @@ TRIVY_VERSION ?= 0.74.0
 TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
 
 .DEFAULT_GOAL := help
-.PHONY: help install validate-config lint format format-check typecheck lint-imports frontmatter \
+.PHONY: help install venv-gpu validate-config lint format format-check typecheck lint-imports frontmatter \
         protected-paths test test-xml guard-probe studio-probe-mock studio-probe \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
@@ -128,6 +133,9 @@ help: ## Show this help
 install: ## Install mangomas[dev] and sibling mango-integration-contracts
 	$(PYTHON) -m pip install -e ".[dev]"
 	$(PYTHON) -m pip install -e ./mango-integration-contracts
+
+venv-gpu: ## Export Windows ROOT/CA bundle and build the CUDA .venv-gpu environment (ENV-1)
+	$(PYTHON) scripts/bootstrap_gpu_env.py
 
 install-deploy-tools: ## Install only what deploy-plan/deploy-render need (PyYAML, lockfile-pinned)
 	$(PYTHON) -m pip install -c $(RUNTIME_LOCKFILE) pyyaml
@@ -271,7 +279,7 @@ embeddings-local: ## Local sentence-transformers suite (needs the embeddings-loc
 
 # Separate from embeddings-local on purpose: RUN_GPU=1 asserts a CUDA device is
 # visible and FAILS without one, so it must never ride the nightly CPU job.
-gpu: ## CUDA placement + CPU ranking parity on every visible GPU (needs CUDA + embeddings-local)
+gpu: ## CUDA placement + CPU ranking parity on every visible GPU (run with PYTHON=$(PYTHON_GPU))
 	RUN_GPU=1 RUN_EMBEDDINGS_LOCAL=1 RUN_RAG=1 $(PYTHON) -m pytest -m gpu tests/rag --no-cov $(PYTEST_FLAGS)
 
 # The next three suites are gated by marker (not directory — the tests live

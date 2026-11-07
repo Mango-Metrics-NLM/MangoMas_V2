@@ -24,6 +24,9 @@ them here.
   environment registry `environments.yaml` (ADR-0036)
 - `scripts/deploy_environment.py` — the registry's only reader (`plan` /
   `render` / `validate`), with its unit suite `tests/test_deploy_environment.py`
+- `scripts/bootstrap_gpu_env.py` — the Windows ROOT/CA PEM exporter and
+  `.venv-gpu` CUDA bootstrap behind `make venv-gpu`, with its unit suite
+  `tests/test_bootstrap_gpu_env.py`
 - `tests/deploy/` — `_workflows.py`, `_makefile.py`, `_manifest.py` (the shared
   readers), `test_ci_make_parity.py`, `test_workflow_hardening.py`,
   `test_deploy_contract.py`, `test_deploy_environments.py`,

@@ -293,6 +293,20 @@ stubbed `embedding` scorer operational and gives agents a `retrieve` tool.
 pip install -e ".[dev,embeddings-local,rag]"
 ```
 
+For a dedicated CUDA-capable second interpreter (`.venv-gpu`, installing
+`torch==2.14.1+cu130` last so `[dev]` does not replace the CUDA wheel with CPU
+`torch`, and exporting the Windows OS root store when behind a TLS inspection
+proxy), run:
+
+```powershell
+make venv-gpu   # or: python scripts/bootstrap_gpu_env.py
+make gpu PYTHON=.venv-gpu/Scripts/python.exe
+```
+
+See [`docs/tooling/env1-tls-inspection-runbook.md`](docs/tooling/env1-tls-inspection-runbook.md)
+for the machine-wide CA bundle setup (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`,
+`CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE`).
+
 ```env
 MANGOMAS_EMBEDDINGS__ENABLED=true
 MANGOMAS_EMBEDDINGS__PROVIDER=sentence_transformers
