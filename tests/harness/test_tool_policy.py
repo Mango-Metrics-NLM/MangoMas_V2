@@ -84,6 +84,48 @@ def test_validate_tool_arguments_rejects_oversized_string() -> None:
         validate_tool_arguments(spec, huge)
 
 
+def test_validate_tool_arguments_rejects_nested_oversized_string() -> None:
+    spec = ToolSpec(
+        name="retrieve",
+        description="Search",
+        effects=ToolEffects.READ_ONLY,
+        parameters_schema={
+            "type": "object",
+            "properties": {"filters": {"type": "object"}},
+        },
+    )
+    nested = {"filters": {"k": "x" * (DEFAULT_MAX_STRING_ARGUMENT_CHARS + 1)}}
+    with pytest.raises(ToolExecutionError, match="exceeds maximum length"):
+        validate_tool_arguments(spec, nested)
+
+
+def test_validate_tool_arguments_rejects_null_when_type_is_not_null() -> None:
+    spec = ToolSpec(
+        name="retrieve",
+        description="Search",
+        effects=ToolEffects.READ_ONLY,
+        parameters_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+        },
+    )
+    with pytest.raises(ToolExecutionError, match="must be of type 'string'"):
+        validate_tool_arguments(spec, {"query": None})
+
+
+def test_validate_tool_arguments_accepts_null_when_type_is_null() -> None:
+    spec = ToolSpec(
+        name="retrieve",
+        description="Search",
+        effects=ToolEffects.READ_ONLY,
+        parameters_schema={
+            "type": "object",
+            "properties": {"maybe": {"type": "null"}},
+        },
+    )
+    validate_tool_arguments(spec, {"maybe": None})
+
+
 def test_validate_tool_arguments_rejects_missing_required_key() -> None:
     spec = ToolSpec(
         name="retrieve",

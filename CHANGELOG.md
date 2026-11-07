@@ -9,6 +9,34 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — Peer-review hardening follow-ups to the harness sandbox (spec-0043)
+
+- `mangomas.harness.repair_sandbox`:
+  - Oracle env scrub now strips all `MANGOMAS_` keys except an explicit
+    allowlist, plus any key ending in `_API_KEY` / `_TOKEN` / `_SECRET` /
+    `_PASSWORD` / `_PRIVATE_KEY` (case-insensitive on Windows).
+  - `timeout_seconds` must be positive *and* finite (`math.isfinite`), blocking
+    `NaN` and `inf` from bypassing the timeout bound.
+  - Rejects NTFS alternate data streams (`file.py:stream`), DOS device names
+    (`NUL`, `CON`, `COM1`, `LPT1`), case-insensitive forbidden filenames
+    (`.ENV.production`), and null bytes in staging/promotion paths.
+  - Detects a staged candidate file modified by the oracle subprocess before
+    promotion via SHA-256 pre/post hash.
+  - Adds audit `logger.info` on promotion and `logger.debug` on env scrub.
+  - Renames `validate_promotion_target(allowed_Paths=...)` to
+    `allowed_paths` (PEP 8 `N803`).
+- `mangomas.harness.tool_policy`: argument string-length validation now
+  recurses into nested mappings and lists, and `null` is an explicit
+  JSON-Schema type.
+- `tests/test_execution_bypass_inventory.py`: removed the vacuous duplicate
+  `test_agents_and_core_have_no_unallowlisted_writes`; added a mutation-proof
+  `test_scan_detects_unallowlisted_write_and_spawn`.
+- `.claude/skills/mango-harness/SKILL.md`: scoped the "never `deny`" rule to
+  protected-path advisories (destructive-`Bash` hard-deny is owned by
+  `mango-sandbox` Ring 3).
+- `make guard-probe` replays all 44 entries (39 → 44) with
+  `MUT-SBX-06..10`.
+
 ### Added — Harness tool-execution policy, repair-loop sandbox, and destructive-Bash gate (spec-0043 / ADR-0039)
 
 - **Ring 1 — In-product LLM tool policy (`src/mangomas/harness/tool_policy.py`)**:

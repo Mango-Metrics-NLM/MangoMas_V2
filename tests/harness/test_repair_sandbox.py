@@ -1,4 +1,4 @@
-"""Unit tests for ``mangomas.harness.repair_sandbox`` (Ring 2 automated LLM coding)."""
+﻿"""Unit tests for ``mangomas.harness.repair_sandbox`` (Ring 2 automated LLM coding)."""
 
 from __future__ import annotations
 
@@ -68,6 +68,12 @@ def test_stage_candidate_file_writes_inside_staging_root(tmp_path: Path) -> None
         ("/etc/passwd", "refusing absolute/drive/UNC"),
         ("../outside.py", "without '\\.\\.' traversal"),
         ("sub/../../outside.py", "without '\\.\\.' traversal"),
+        ("file.py:stream", "without '\\.\\.' traversal"),
+        ("NUL", "reserved Windows device name"),
+        ("con", "reserved Windows device name"),
+        ("com1", "reserved Windows device name"),
+        ("lpt1", "reserved Windows device name"),
+        ("nul.txt", "reserved Windows device name"),
     ],
 )
 def test_stage_candidate_file_rejects_traversal_and_non_relative_paths(
@@ -129,7 +135,7 @@ def test_validate_promotion_target_accepts_allowlisted_unprotected_file(
     target = validate_promotion_target(
         tmp_path,
         "src/mangomas/agents/chat.py",
-        allowed_Paths={"src/mangomas/agents/chat.py"},
+        allowed_paths={"src/mangomas/agents/chat.py"},
     )
     assert target == (tmp_path / "src" / "mangomas" / "agents" / "chat.py").resolve()
 
@@ -172,6 +178,11 @@ def test_validate_promotion_target_accepts_allowlisted_unprotected_file(
             {"config/.env"},
             "forbidden configuration/secret file",
         ),
+        (
+            ".ENV.production",
+            {".ENV.production"},
+            "forbidden configuration/secret file",
+        ),
     ],
 )
 def test_validate_promotion_target_rejects_forbidden_targets(
@@ -181,7 +192,7 @@ def test_validate_promotion_target_rejects_forbidden_targets(
     expected_match: str,
 ) -> None:
     with pytest.raises(ToolExecutionError, match=expected_match):
-        validate_promotion_target(tmp_path, rel_path, allowed_Paths=allowlist)
+        validate_promotion_target(tmp_path, rel_path, allowed_paths=allowlist)
 
 
 def test_build_scrubbed_oracle_env_strips_live_gates_and_secrets() -> None:
@@ -209,6 +220,91 @@ def test_build_scrubbed_oracle_env_strips_live_gates_and_secrets() -> None:
         "OPENAI_API_KEY",
     ):
         assert dropped not in scrubbed
+
+
+def test_build_scrubbed_oracle_env_strips_profile_and_db_credentials() -> None:
+    raw = {
+        "MANGOMAS_LLM_PROFILES__REVIEW__API_KEY": "sk-review",
+        "MANGOMAS_LLM_PROFILES__DRAFT__SECRET_REF": "sm://draft",
+        "MANGOMAS_DB__URL": "postgresql://u:p@host/db",
+        "MANGOMAS_EVAL__SINK_OPTIONS": '{"webhook":{"url":"https://exfil.example"}}',
+        "LANGFUSE_SECRET_KEY": "lf-xxx",
+        "MANGOMAS_ENV": "local",
+        "SAFE_VAR": "keep",
+    }
+    scrubbed = build_scrubbed_oracle_env(raw)
+    assert scrubbed["SAFE_VAR"] == "keep"
+    assert scrubbed["MANGOMAS_ENV"] == "local"
+    for dropped in (
+        "MANGOMAS_LLM_PROFILES__REVIEW__API_KEY",
+        "MANGOMAS_LLM_PROFILES__DRAFT__SECRET_REF",
+        "MANGOMAS_DB__URL",
+        "MANGOMAS_EVAL__SINK_OPTIONS",
+        "LANGFUSE_SECRET_KEY",
+    ):
+        assert dropped not in scrubbed
+
+
+def test_build_scrubbed_oracle_env_is_case_insensitive_on_windows() -> None:
+    raw = {
+        "openai_api_key": "sk-lower",
+        "OPENAI_API_KEY": "sk-upper",
+        "github_token": "ghp-lower",
+        "MANGOMAS_LLM_PROFILES__BROKEN__API_KEY": "sk-prof",
+        "SAFE_VAR": "keep",
+    }
+    scrubbed = build_scrubbed_oracle_env(raw)
+    assert scrubbed["SAFE_VAR"] == "keep"
+    for dropped in (
+        "openai_api_key",
+        "OPENAI_API_KEY",
+        "github_token",
+        "MANGOMAS_LLM_PROFILES__BROKEN__API_KEY",
+    ):
+        assert dropped not in scrubbed
+
+
+@pytest.mark.parametrize("bad_timeout", [float("nan"), float("inf"), -1.0])
+def test_run_oracle_and_promote_rejects_non_finite_timeout(
+    tmp_path: Path,
+    bad_timeout: float,
+) -> None:
+    staging = tmp_path / "staging"
+    repo = tmp_path / "repo"
+    staging.mkdir()
+    repo.mkdir()
+    rel = "src/mangomas/agents/chat.py"
+    stage_candidate_file(staging, rel, "VALUE = 1\n")
+    with pytest.raises(ToolExecutionError, match="positive and finite"):
+        run_oracle_and_promote(
+            staging_root=staging,
+            repo_root=repo,
+            relative_path=rel,
+            allowed_paths={rel},
+            oracle_argv=[sys.executable, "-c", "pass"],
+            timeout_seconds=bad_timeout,
+        )
+
+
+def test_run_oracle_and_promote_detects_staged_mutation(tmp_path: Path) -> None:
+    staging = tmp_path / "staging"
+    repo = tmp_path / "repo"
+    staging.mkdir()
+    repo.mkdir()
+    rel = "src/mangomas/agents/chat.py"
+    staged = stage_candidate_file(staging, rel, "VALUE = 1\n")
+    oracle_cmd = (
+        "from pathlib import Path; "
+        f"Path(r'{staged}').write_text('VALUE = 999\\n')"
+    )
+    with pytest.raises(ToolExecutionError, match="modified the staged candidate file"):
+        run_oracle_and_promote(
+            staging_root=staging,
+            repo_root=repo,
+            relative_path=rel,
+            allowed_paths={rel},
+            oracle_argv=[sys.executable, "-c", oracle_cmd],
+        )
 
 
 def test_run_oracle_and_promote_promotes_only_when_oracle_exits_zero(

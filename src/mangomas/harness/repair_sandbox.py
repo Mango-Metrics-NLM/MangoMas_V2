@@ -17,6 +17,9 @@ so a local LLM proposing edits can never:
 
 from __future__ import annotations
 
+import hashlib
+import logging
+import math
 import os
 import subprocess
 from collections.abc import Collection, Mapping, Sequence
@@ -26,6 +29,8 @@ from urllib.parse import urlparse
 
 from mangomas.errors import ConfigError, ToolExecutionError
 from mangomas.harness.governance import GOVERNANCE_SURFACE, PROTECTED_PATHS, normalize_path
+
+logger = logging.getLogger(__name__)
 
 LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -45,13 +50,39 @@ FORBIDDEN_PROMOTION_FILENAMES: frozenset[str] = frozenset(
     }
 )
 
+# DOS device names and Windows reserved filename patterns rejected anywhere in
+# a staging or promotion path (Windows-specific host-protection).
+_WINDOWS_RESERVED_NAMES: frozenset[str] = frozenset(
+    {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        "com1",
+        "com2",
+        "com3",
+        "com4",
+        "com5",
+        "com6",
+        "com7",
+        "com8",
+        "com9",
+        "lpt1",
+        "lpt2",
+        "lpt3",
+        "lpt4",
+        "lpt5",
+        "lpt6",
+        "lpt7",
+        "lpt8",
+        "lpt9",
+    }
+)
+
 # Environment variable prefixes stripped before an oracle subprocess runs on
-# untrusted LLM-generated code.
+# untrusted LLM-generated code (case-insensitive on Windows).
 _SCRUBBED_ENV_PREFIXES: tuple[str, ...] = (
     "RUN_",
-    "MANGOMAS_LLM__API_KEY",
-    "MANGOMAS_SECRETS__",
-    "MANGOMAS_AUTH__",
     "GITHUB_",
     "GOOGLE_",
     "OPENAI_",
@@ -59,6 +90,28 @@ _SCRUBBED_ENV_PREFIXES: tuple[str, ...] = (
     "LANGFUSE_",
     "AWS_",
     "AZURE_",
+)
+
+# Environment variable suffixes stripped unconditionally (case-insensitive).
+_SCRUBBED_ENV_SUFFIXES: tuple[str, ...] = (
+    "_API_KEY",
+    "_TOKEN",
+    "_SECRET",
+    "_PASSWORD",
+    "_PRIVATE_KEY",
+)
+
+# Only these `MANGOMAS_` environment variables survive into an oracle subprocess.
+_ORACLE_MANGOMAS_ENV_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "MANGOMAS_ENV",
+        "MANGOMAS_LOG_LEVEL",
+        "MANGOMAS_LOG__FORMAT",
+        "MANGOMAS_TELEMETRY__EXPORTER",
+        "MANGOMAS_TELEMETRY__METRICS_ENABLED",
+        "MANGOMAS_DISABLE_RTK_HOOK",
+        "RTK_TELEMETRY_DISABLED",
+    }
 )
 
 _SAFE_ORACLE_ADDOPTS: str = "-p no:cacheprovider -o addopts="
@@ -122,15 +175,26 @@ def _resolve_contained_path(root: Path, relative_path: str | Path, *, label: str
             f"Sandbox {label} path must not be empty",
             tool_name="repair_sandbox",
         )
+    if "\0" in raw:
+        raise ToolExecutionError(
+            f"Sandbox {label} path contains a null byte",
+            tool_name="repair_sandbox",
+        )
     if raw.startswith(("/", "\\")) or ":" in Path(raw).drive:
         raise ToolExecutionError(
             f"Sandbox {label} path must be relative (refusing absolute/drive/UNC path {raw!r})",
             tool_name="repair_sandbox",
         )
     candidate_rel = Path(raw)
-    if ".." in candidate_rel.parts:
+    if ":" in raw or ".." in candidate_rel.parts:
         raise ToolExecutionError(
             f"Sandbox {label} path must be a relative path without '..' traversal: {raw!r}",
+            tool_name="repair_sandbox",
+        )
+    first_part_stem = candidate_rel.parts[0].split(".", 1)[0].lower() if candidate_rel.parts else ""
+    if first_part_stem in _WINDOWS_RESERVED_NAMES:
+        raise ToolExecutionError(
+            f"Sandbox {label} path uses a reserved Windows device name: {raw!r}",
             tool_name="repair_sandbox",
         )
     root_resolved = root.resolve()
@@ -166,14 +230,14 @@ def validate_promotion_target(
     repo_root: Path,
     relative_path: str | Path,
     *,
-    allowed_Paths: Collection[str],
+    allowed_paths: Collection[str],
     protected_paths: Collection[str] = PROTECTED_PATHS,
     governance_surface: Collection[str] = GOVERNANCE_SURFACE,
 ) -> Path:
     """Validate that *relative_path* is an allowlisted, non-protected file inside *repo_root*."""
     resolved = _resolve_contained_path(repo_root, relative_path, label="promotion")
     norm = normalize_path(resolved.relative_to(repo_root.resolve()).as_posix())
-    normalized_allowlist = {normalize_path(p) for p in allowed_Paths}
+    normalized_allowlist = {normalize_path(p) for p in allowed_paths}
     if norm not in normalized_allowlist:
         raise ToolExecutionError(
             f"Promotion target {norm!r} is not in the repair allowlist "
@@ -188,13 +252,15 @@ def validate_promotion_target(
             f"Promotion target {norm!r} is a protected or governance-surface path",
             tool_name="repair_sandbox",
         )
-    if any(norm.startswith(prefix) for prefix in FORBIDDEN_PROMOTION_PREFIXES):
+    norm_lower = norm.lower()
+    if any(norm_lower.startswith(prefix.lower()) for prefix in FORBIDDEN_PROMOTION_PREFIXES):
         raise ToolExecutionError(
             f"Promotion target {norm!r} is inside a forbidden directory",
             tool_name="repair_sandbox",
         )
-    filename = Path(norm).name
-    if filename in FORBIDDEN_PROMOTION_FILENAMES or filename.startswith(".env"):
+    filename_lower = Path(norm).name.lower()
+    forbidden_lower = {f.lower() for f in FORBIDDEN_PROMOTION_FILENAMES}
+    if filename_lower in forbidden_lower or filename_lower.startswith(".env"):
         raise ToolExecutionError(
             f"Promotion target {norm!r} names a forbidden configuration/secret file",
             tool_name="repair_sandbox",
@@ -203,13 +269,31 @@ def validate_promotion_target(
 
 
 def build_scrubbed_oracle_env(base_env: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Return an environment dict with live-gate flags and credentials stripped."""
+    """Return an environment dict with live-gate flags and credentials stripped.
+
+    All ``MANGOMAS_`` keys are dropped except an explicit allowlist, any key
+    ending in a credential suffix is dropped, and comparisons are
+    case-insensitive so ``openai_api_key`` is stripped on Windows the same as
+    ``OPENAI_API_KEY``.
+    """
     source = os.environ if base_env is None else base_env
-    scrubbed = {
-        k: v
-        for k, v in source.items()
-        if not any(k.startswith(prefix) for prefix in _SCRUBBED_ENV_PREFIXES)
-    }
+    scrubbed: dict[str, str] = {}
+    stripped_keys: list[str] = []
+    for key, value in source.items():
+        key_upper = key.upper()
+        if (
+            key_upper.startswith(_SCRUBBED_ENV_PREFIXES)
+            or key_upper.endswith(_SCRUBBED_ENV_SUFFIXES)
+            or (key_upper.startswith("MANGOMAS_") and key not in _ORACLE_MANGOMAS_ENV_ALLOWLIST)
+        ):
+            stripped_keys.append(key)
+            continue
+        scrubbed[key] = value
+    if stripped_keys:
+        logger.debug(
+            "Repair-sandbox oracle env scrubbed credential/gate keys",
+            extra={"event": "repair_sandbox_env_scrubbed", "stripped_keys": sorted(stripped_keys)},
+        )
     scrubbed["PYTEST_ADDOPTS"] = _SAFE_ORACLE_ADDOPTS
     scrubbed["PYTHONIOENCODING"] = "utf-8"
     return scrubbed
@@ -231,9 +315,9 @@ def run_oracle_and_promote(
             "Oracle command must be a non-empty sequence of non-empty argument strings",
             tool_name="repair_sandbox",
         )
-    if timeout_seconds <= 0:
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ToolExecutionError(
-            "Oracle timeout_seconds must be positive",
+            "Oracle timeout_seconds must be positive and finite",
             tool_name="repair_sandbox",
         )
     staged_file = _resolve_contained_path(staging_root, relative_path, label="staging")
@@ -245,9 +329,10 @@ def run_oracle_and_promote(
     target_file = validate_promotion_target(
         repo_root,
         relative_path,
-        allowed_Paths=allowed_paths,
+        allowed_paths=allowed_paths,
     )
     env = build_scrubbed_oracle_env(base_env)
+    staged_hash = hashlib.sha256(staged_file.read_bytes()).hexdigest()
     try:
         completed = subprocess.run(  # noqa: S603 — argv sequence, shell=False, scrubbed env
             list(oracle_argv),
@@ -280,9 +365,25 @@ def run_oracle_and_promote(
             target_path=None,
         )
 
+    after_hash = hashlib.sha256(staged_file.read_bytes()).hexdigest()
+    if after_hash != staged_hash:
+        raise ToolExecutionError(
+            "Oracle subprocess modified the staged candidate file before promotion",
+            tool_name="repair_sandbox",
+        )
+
     content = staged_file.read_text(encoding="utf-8")
     target_file.parent.mkdir(parents=True, exist_ok=True)
     target_file.write_text(content, encoding="utf-8")
+    logger.info(
+        "Repair-sandbox candidate promoted",
+        extra={
+            "event": "repair_sandbox_promotion",
+            "relative_path": str(relative_path),
+            "target_path": str(target_file),
+            "returncode": completed.returncode,
+        },
+    )
     return PromotionOutcome(
         promoted=True,
         returncode=0,
