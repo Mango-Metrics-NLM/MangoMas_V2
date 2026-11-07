@@ -33,10 +33,15 @@ exits zero. The model never receives a write tool aimed at the live tree.
 3. Give the model line-numbered source, not a bare file path.
 4. Dispatch one step when the request already contains an assistant prefill.
    A multi-step loop re-sends the prefill and the model rewrites it.
-5. Run the deterministic oracle in a subprocess. On failure, feed the oracle
-   output back as the next user message. Cap the attempts.
-6. Allow outbound calls only to the loopback LM Studio port. Reject any path
-   outside the staging directory and the live file being repaired.
+5. Run the deterministic oracle through
+   `mangomas.harness.repair_sandbox.run_oracle_and_promote` (a `shell=False`,
+   timeout-bounded subprocess with `RUN_*` gates and credentials stripped, and
+   SHA-256 staged-mutation detection). On failure, feed the oracle output back
+   as the next user message. Cap the attempts.
+6. Allow outbound calls only to the loopback LM Studio port
+   (`mangomas.harness.repair_sandbox.validate_loopback_llm_url`). Reject any
+   path outside the staging directory and the live file being repaired
+   (`stage_candidate_file` / `validate_promotion_target`).
 
 ## Constraints
 

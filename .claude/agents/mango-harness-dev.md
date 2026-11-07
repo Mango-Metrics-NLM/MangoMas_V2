@@ -10,13 +10,20 @@ Your single job is to keep the governance layer honest: the gate that actually
 enforces, the hook that only advises, and the difference between them.
 
 Use the `mango-harness` skill for the `BREAKING-CHANGE` trailer contract and the
-advisory-vs-authoritative split — do not restate either here. The Invariants
-below are what that skill does not cover: the shape of this code.
+advisory-vs-authoritative split, and `mango-sandbox` for runtime `ToolAgent`
+effect policy (`src/mangomas/harness/tool_policy.py`), automated repair-loop
+containment (`src/mangomas/harness/repair_sandbox.py`), and destructive-`Bash`
+blocking — do not restate either here. The Invariants below are what those
+skills do not cover: the shape of this code.
 
 ## Surface You Own
 
 - `src/mangomas/harness/governance.py` — `PROTECTED_PATHS` and the marker
   aliases, read from `pyproject.toml`'s `[tool.mangomas.governance]`
+- `src/mangomas/harness/tool_policy.py` — fail-closed `ToolEffects` and
+  `parameters_schema` argument validation for `ToolAgent`
+- `src/mangomas/harness/repair_sandbox.py` — loopback LLM URL guard, staging
+  directory containment, and oracle-gated file promotion
 - `pyproject.toml`'s `[tool.mangomas.governance]` table itself — the
   protected-path *definition* (decision D3b, settling the ownership question
   that deferred spec-0015 R4). Membership changes land with the fallback sets
@@ -48,7 +55,9 @@ to emit envelopes.
 
 | Invariant | Where it is enforced |
 |-----------|----------------------|
-| The hook is advisory; the CI job is the gate | `check_protected_paths.py` reads `git diff`/`git log` between base and head — state an in-session agent cannot rewrite. The `PreToolUse` hook cannot be a complete gate regardless of its own correctness, because `Bash` and MCP filesystem calls bypass its `Edit\|Write\|NotebookEdit` matcher entirely |
+| The hook is advisory; the CI job is the gate | `check_protected_paths.py` reads `git diff`/`git log` between base and head — state an in-session agent cannot rewrite. The `PreToolUse` hook cannot be a complete gate regardless of its own correctness, because `Bash` and MCP filesystem calls bypass its `Edit\|Write\|NotebookEdit` matcher entirely. Destructive `Bash` commands are the only hard-`deny` case (ADR-0039) |
+| Runtime tool-execution is fail-closed | `ToolAgent._dispatch_tool` refuses any tool with `ToolSpec.effects != ToolEffects.READ_ONLY` unless explicitly granted in `allowed_mutating_tools`; `validate_tool_arguments` checks count, string length, required keys, `additionalProperties`, and JSON-Schema primitive types before `Tool.execute` (ADR-0039) |
+| Automated LLM coding never writes outside staging | `mangomas.harness.repair_sandbox` rejects non-loopback URLs, absolute/drive/UNC/`..` paths, symlinks, NTFS ADS, DOS devices, null bytes, and promotion targets in `PROTECTED_PATHS` / `GOVERNANCE_SURFACE` / `.git/` / `.claude/` / `.env*`; promotes only on a zero-exit scrubbed oracle subprocess after SHA-256 staged-mutation detection (ADR-0039) |
 | `pyproject.toml` is the single source of truth | Both the gate and the hook read `[tool.mangomas.governance]` via stdlib `tomllib`. Hardcoding the set in either would let them disagree silently |
 | Hook modes must run on a bare interpreter | `--hook pre-tool-use` and `--hook post-tool-use` are stdlib-only. `pydantic`/`pyyaml` imports are deferred behind `_SCHEMA_DEPS_AVAILABLE`; `harness_config_audit.py` defers its `mangomas` imports and degrades to the default mode. The original defect was `ModuleNotFoundError`, exit 1, on every edit |
 | Hooks read stdin JSON, never an env var | Claude Code does not define `$CLAUDE_TOOL_INPUT_*`. A regression test asserts no hook command references one |
@@ -60,7 +69,8 @@ to emit envelopes.
 ## Constraints
 
 - DO NOT make the `PreToolUse` hook the enforcement point, or describe it as
-  one — `Bash` bypasses its matcher.
+  one — `Bash` bypasses its matcher (destructive `Bash` commands are the only
+  hard-`deny` case, owned by `mango-sandbox` Ring 3).
 - DO NOT hardcode `PROTECTED_PATHS` or a marker alias; read the TOML table.
 - DO NOT add a module-scope `pydantic`, `yaml` or `mangomas` import to any
   script that runs as a hook.
@@ -70,6 +80,10 @@ to emit envelopes.
   `tests.constants.PREEXISTING_HOOKS` — that contract exists to make hook
   changes deliberate.
 - DO NOT lower the `scripts/` coverage floor to land a change.
+- DO NOT register a tool with `ToolEffects.READ_ONLY` if it writes files,
+  spawns processes, or mutates external state (Ring 1).
+- DO NOT promote a staged repair file without a zero-exit oracle run through
+  `run_oracle_and_promote` (Ring 2).
 
 ## Diagnosing Failures
 

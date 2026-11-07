@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from mangomas.adapters.storage._schema import TURN_SCHEMA_VERSION, TurnStatus
 from mangomas.adapters.vector.base import VectorMatch
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
-from mangomas.core.tools import ToolSpec
+from mangomas.core.tools import ToolEffects, ToolSpec
 from tests.constants import (
     DEFAULT_TOOL_NAME,
     DEFAULT_TOOL_RESULT,
@@ -220,11 +220,18 @@ class FakeTool:
 
     name: str = DEFAULT_TOOL_NAME
     result: str = DEFAULT_TOOL_RESULT
+    effects: ToolEffects = ToolEffects.READ_ONLY
+    parameters_schema: dict[str, Any] = field(default_factory=dict)
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def spec(self) -> ToolSpec:
-        return ToolSpec(name=self.name, description=f"Fake tool: {self.name}")
+        return ToolSpec(
+            name=self.name,
+            description=f"Fake tool: {self.name}",
+            effects=self.effects,
+            parameters_schema=dict(self.parameters_schema),
+        )
 
     async def execute(self, arguments: dict[str, Any]) -> str:
         self.calls.append(dict(arguments))

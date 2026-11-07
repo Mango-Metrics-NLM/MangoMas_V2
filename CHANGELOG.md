@@ -9,6 +9,107 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — PR #119 review and CI follow-ups to the harness sandbox (spec-0043)
+
+- `mangomas.harness.repair_sandbox`:
+  - Windows drive paths (`C:\…`, `C:/…`, drive-relative `C:file`) are refused
+    as absolute on every host OS (`PureWindowsPath`), fixing the Linux CI
+    failure where they fell through to the traversal branch.
+  - Reserved DOS device names are refused in every path component
+    (`drafts/NUL`, `src/CON.txt`, `com1 .py`), not only the first.
+  - Promotion refuses any `.git` / `.claude` / `.venv` / `venv` component,
+    including a bare `.git` gitdir-pointer file and nested submodule `.git`.
+  - After the oracle exits 0 the staged path and the promotion target are
+    re-validated (links planted by the oracle are refused), the exact hashed
+    bytes are promoted, and the target is opened with `O_NOFOLLOW` where the
+    OS provides it. Windows junctions are refused on Python 3.12+.
+- `mangomas.harness.tool_policy.validate_tool_arguments`: a schema with
+  `additionalProperties: false` and no `properties` now rejects every argument
+  instead of skipping validation.
+- `PreToolUse` destructive-`Bash` gate: matching moved to the stdlib-only
+  `scripts/_destructive_bash.py`, which tokenizes the command and inspects
+  options position-independently, so reordered flags (`rm build -rf`,
+  `git push origin main --force`, `git reset HEAD --hard`), Git global options
+  (`git -C repo reset --hard`), `+refspec` force-pushes, wrappers, and nested
+  `bash -c` / `pwsh -Command` / `cmd /c` payloads are denied.
+- `tests/test_execution_bypass_inventory.py`: detects `Path.open("a")`
+  (mode-first) and directly imported `rmtree`/`remove`/`system` aliases;
+  allowlists the cognitive JSONL sink append; the mutation test now scans an
+  injected temporary tree instead of asserting an absent site stays absent.
+
+### Added — Enterprise documentation and architecture updates for the harness sandbox (spec-0043)
+
+- `docs/architecture/c3-component.md`: added `tool_policy.py` (Ring 1) and
+  `repair_sandbox.py` (Ring 2) components to the C4 diagram, and updated
+  `lint_agent_frontmatter.py` to note the destructive-`Bash` hard-`deny` branch.
+- `docs/architecture/c4-code.md`: added §6.3 documenting the runtime
+  `ToolEffects` fail-closed policy and repair-loop staging/promotion
+  containment contract.
+- `README.md`: added a "Runtime tool-execution and repair-loop policy"
+  paragraph describing Ring 1 and Ring 2.
+- `NEXT_STEPS.md`: added an "Origin-delta AQA and harness sandbox hardening
+  (2026-11-06)" overlay summarising spec-0042, spec-0043 / ADR-0039, and the
+  peer-review hardening follow-ups.
+
+### Fixed — Peer-review hardening follow-ups to the harness sandbox (spec-0043)
+
+- `mangomas.harness.repair_sandbox`:
+  - Oracle env scrub now strips all `MANGOMAS_` keys except an explicit
+    allowlist, plus any key ending in `_API_KEY` / `_TOKEN` / `_SECRET` /
+    `_PASSWORD` / `_PRIVATE_KEY` (case-insensitive on Windows).
+  - `timeout_seconds` must be positive *and* finite (`math.isfinite`), blocking
+    `NaN` and `inf` from bypassing the timeout bound.
+  - Rejects NTFS alternate data streams (`file.py:stream`), DOS device names
+    (`NUL`, `CON`, `COM1`, `LPT1`), case-insensitive forbidden filenames
+    (`.ENV.production`), and null bytes in staging/promotion paths.
+  - Detects a staged candidate file modified by the oracle subprocess before
+    promotion via SHA-256 pre/post hash.
+  - Adds audit `logger.info` on promotion and `logger.debug` on env scrub.
+  - Renames `validate_promotion_target(allowed_Paths=...)` to
+    `allowed_paths` (PEP 8 `N803`).
+- `mangomas.harness.tool_policy`: argument string-length validation now
+  recurses into nested mappings and lists, and `null` is an explicit
+  JSON-Schema type.
+- `tests/test_execution_bypass_inventory.py`: removed the vacuous duplicate
+  `test_agents_and_core_have_no_unallowlisted_writes`; added a mutation-proof
+  `test_scan_detects_unallowlisted_write_and_spawn`.
+- `.claude/skills/mango-harness/SKILL.md`: scoped the "never `deny`" rule to
+  protected-path advisories (destructive-`Bash` hard-deny is owned by
+  `mango-sandbox` Ring 3).
+- `make guard-probe` replays all 44 entries (39 → 44) with
+  `MUT-SBX-06..10`.
+
+### Added — Harness tool-execution policy, repair-loop sandbox, and destructive-Bash gate (spec-0043 / ADR-0039)
+
+- **Ring 1 — In-product LLM tool policy (`src/mangomas/harness/tool_policy.py`)**:
+  `ToolAgent._dispatch_tool` now enforces `enforce_tool_invocation_policy`,
+  refusing any tool whose `ToolSpec.effects` is not `ToolEffects.READ_ONLY`
+  unless explicitly granted in `ToolAgent(allowed_mutating_tools=...)`, and
+  validating `tool_call.arguments` against `ToolSpec.parameters_schema`
+  (argument count, string length, required keys, `additionalProperties: False`,
+  and JSON-Schema primitive types) before `tool.execute` runs.
+  `tests/test_execution_bypass_inventory.py` now scans `agents`, `core`,
+  `cognitive`, `rag`, `workflow`, and `eval` for `subprocess`, `asyncio`
+  subprocesses, `os.startfile`, `shutil.rmtree`, `Path.unlink`, `ctypes`, and
+  `winreg`.
+- **Ring 2 — Automated LLM coding sandbox (`src/mangomas/harness/repair_sandbox.py`)**:
+  `validate_loopback_llm_url`, `stage_candidate_file`,
+  `validate_promotion_target`, `build_scrubbed_oracle_env`, and
+  `run_oracle_and_promote` enforce loopback-only LLM endpoints, canonical
+  relative staging paths without `..` or symlinks, allowlisted non-protected
+  promotion targets, and timeout-bounded scrubbed oracle execution before a
+  candidate file is promoted.
+- **Ring 3 — Coding-agent & hook harness (`.claude/settings.json`, `scripts/lint_agent_frontmatter.py`)**:
+  `PreToolUse` now emits `permissionDecision: "deny"` on host-destructive
+  `Bash` commands (`rm -rf`/`-fr`, `Remove-Item -Recurse`, `del /s`,
+  `git reset --hard`, `git clean -f`, `git push --force`,
+  `git diff/log/show --output=`, `guard_probe.py --manifest=`) while keeping
+  protected-path mentions on `"ask"`. `EXPECTED_ALLOW_RULES` and
+  `BASH_CAPABLE_AGENT_SLUGS` are pinned by set equality, corpus markdown is
+  scanned against rogue bypass instructions, and `.claude/skills/mango-sandbox/SKILL.md`
+  documents the three rings. `make guard-probe` replays all five guards as
+  `MUT-SBX-01..05` (39 manifest entries).
+
 ### Fixed — review follow-ups to the reflection PRs (#111)
 
 - `path_from_sqlite_url("sqlite:///")` now raises the documented

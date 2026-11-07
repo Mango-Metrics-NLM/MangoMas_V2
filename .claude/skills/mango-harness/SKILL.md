@@ -91,7 +91,8 @@ produces false confidence.
 |---|---|---|
 | Script | `scripts/lint_agent_frontmatter.py --hook pre-tool-use` | `scripts/check_protected_paths.py` |
 | Reads | one tool call's JSON on stdin | `git diff` / `git log` between PR base and head |
-| Emits | `permissionDecision: "ask"` — **never `"deny"`** | exit 1 on a missing marker |
+| Emits (protected paths) | `permissionDecision: "ask"` | exit 1 on a missing marker |
+| Emits (destructive `Bash`) | `permissionDecision: "deny"` — see `mango-sandbox` Ring 3 | exit 1 on a missing marker |
 | Authority | **advisory only** | **authoritative** |
 
 The hook matches `Edit|Write|NotebookEdit`. It therefore **cannot see a `Bash`
@@ -184,7 +185,7 @@ unless a contributor opts in.
 - DO NOT treat a green session as evidence — the hook is advisory and blind to
   `Bash`.
 - DO NOT hardcode the protected-path set; read it from `pyproject.toml`.
-- DO NOT make the hook emit `"deny"`, or return a non-zero exit from a hook mode.
+- DO NOT make the protected-path advisory hook emit `"deny"` for a protected-path edit (destructive-`Bash` commands are the only hard-deny case, owned by `mango-sandbox` Ring 3).
 
 ---
 
