@@ -20,6 +20,7 @@ C4Container
     Container(composition, "Composition Root", "Python package", "composition/ — wires LLM, storage, secrets, embeddings, vector, agent, and harness registries at startup, and attaches extras['cognitive_sink'] when signal.enabled. Returns _HarnessOrchestrator when MANGOMAS_HARNESS__ENABLED=true; otherwise a plain Orchestrator. No hardcoded provider classes.")
     Container(harness, "Claude Code Harness (opt-in)", "Project-scoped harness config", "scripts/lint_agent_frontmatter.py (CI + pre-commit gate over .claude/agents and .claude/skills; PreToolUse emits 'ask' on protected paths and 'deny' on destructive Bash per ADR-0039), scripts/harness_session_start.py (SessionStart probe — venv + LM Studio reachability), .claude/settings.json (Allow/Deny perms, Stop/PostToolUse hooks). Dormant when harness.enabled=False.")
     Container(sandbox_policy, "Runtime tool-execution and repair-loop policy", "src/mangomas/harness/", "tool_policy.py (fail-closed ToolEffects + argument schema for ToolAgent) and repair_sandbox.py (loopback-only LLM URL, staging-path containment, oracle-gated promotion for automated LLM coding). Active whenever ToolAgent dispatches a tool or the repair-loop API is called; default-OFF via ToolAgent.allowed_mutating_tools = frozenset() (ADR-0039).")
+    Container(repair_loop, "Automated LLM repair loop (consumer)", "Skill-driven workflow", "mango-repair-loop skill workflow: planner proposes a change, chat agent drafts it into a staging directory via repair_sandbox, reviewer checks it, and a deterministic oracle promotes the file only on exit 0.")
     Container(integration_contracts, "Integration contracts", "Python package (mango-integration-contracts 1.1.0)", "Strict CognitiveSignal / ProposedAction envelope (extra=forbid, frozen). Imported at runtime only by mangomas.cognitive when MANGOMAS_SIGNAL__ENABLED. INV-16: never an authorization input.")
   }
 
@@ -60,7 +61,6 @@ C4Container
   Rel(eval_harness, eval_output, "writes JSON report when --output-json is set", "filesystem")
   Rel(api, otel_out, "TraceMiddleware emits spans; structured logs via logging", "OTLP / stdout")
   Rel(composition, harness, "Engages _HarnessOrchestrator wrapper + emits harness.agent_invoke spans (when harness.enabled=true)")
-  Rel(sandbox_policy, tool_agent, "enforce_tool_invocation_policy before Tool.execute (Ring 1)")
   Rel(repair_loop, sandbox_policy, "validate_loopback_llm_url, stage_candidate_file, run_oracle_and_promote (Ring 2)")
   Rel(composition, cognitive, "Attaches extras['cognitive_sink'] when signal.enabled=true")
   Rel(cognitive, integration_contracts, "builds CognitiveSignal 1.1.0 (observation only)", "in-process")
