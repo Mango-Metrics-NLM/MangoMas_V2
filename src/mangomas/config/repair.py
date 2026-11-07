@@ -31,7 +31,13 @@ class RepairSettings(BaseModel):
     oracle_isolation: Literal["none", "required"] = DEFAULT_REPAIR_ORACLE_ISOLATION
     oracle_backend: Literal["auto", "docker", "wsl"] = DEFAULT_REPAIR_ORACLE_BACKEND
     oracle_image: str = Field(default=DEFAULT_REPAIR_ORACLE_IMAGE, min_length=1)
-    oracle_timeout_seconds: float = Field(default=DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS, gt=0.0)
+    # allow_inf_nan=False: an infinite budget reaches subprocess.run unchecked
+    # and either hangs the probe or raises an untranslated OverflowError.
+    oracle_timeout_seconds: float = Field(
+        default=DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS,
+        gt=0.0,
+        allow_inf_nan=False,
+    )
     oracle_memory_limit: str = Field(default=DEFAULT_REPAIR_ORACLE_MEMORY_LIMIT, min_length=1)
     oracle_pids_limit: int = Field(
         default=DEFAULT_REPAIR_ORACLE_PIDS_LIMIT,
@@ -40,6 +46,7 @@ class RepairSettings(BaseModel):
     oracle_probe_timeout_seconds: float = Field(
         default=DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS,
         gt=0.0,
+        allow_inf_nan=False,
     )
     wsl_distro: str = Field(default=DEFAULT_REPAIR_WSL_DISTRO, min_length=1)
     wsl_python: str = Field(default=DEFAULT_REPAIR_WSL_PYTHON, min_length=1)

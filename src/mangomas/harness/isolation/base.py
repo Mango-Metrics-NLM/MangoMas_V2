@@ -82,6 +82,20 @@ def resolve_sandbox_argv(
     return list(argv)
 
 
+SANDBOX_IMPORT_SUBDIRS: Final[tuple[str, ...]] = ("src", "")
+
+
+def sandbox_pythonpath(work_dir: str) -> str:
+    """Return sandbox-local import roots: the staged ``src/`` tree first, then staging.
+
+    The host ``PYTHONPATH`` is never forwarded (it names host paths), so an
+    isolating backend sets this instead; otherwise a staged candidate could be
+    shadowed by the copy installed in the sandbox image and promoted untested.
+    """
+    roots = (f"{work_dir}/{sub}".rstrip("/") for sub in SANDBOX_IMPORT_SUBDIRS)
+    return ":".join(roots)
+
+
 def select_sandbox_env(env: Mapping[str, str]) -> dict[str, str]:
     """Filter *env* down to the explicit sandbox allowlist and disable bytecode writes."""
     selected = {key: val for key, val in env.items() if key in SANDBOX_ENV_KEYS}

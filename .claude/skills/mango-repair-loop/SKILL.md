@@ -33,16 +33,16 @@ exits zero. The model never receives a write tool aimed at the live tree.
 3. Give the model line-numbered source, not a bare file path.
 4. Dispatch one step when the request already contains an assistant prefill.
    A multi-step loop re-sends the prefill and the model rewrites it.
-5. Resolve the oracle isolation backend via
-   `mangomas.composition.build_oracle_isolation` (`settings.repair`, set
-   `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` to fail closed unless an
-   OS-enforced sandbox backend is ready) and run the deterministic oracle
-   through `mangomas.harness.repair_sandbox.run_oracle_and_promote(..., isolation=build_oracle_isolation(settings.repair))`
-   with `oracle_argv` starting with `"{python}"` (a `shell=False`,
-   timeout-bounded execution with `RUN_*` gates and credentials stripped, a
-   read-only staging mount inside isolating backends, and SHA-256
-   staged-mutation detection). On failure, feed the oracle output back
-   as the next user message. Cap the attempts.
+5. Run the deterministic oracle through `mangomas.composition.run_repair_oracle`
+   with `oracle_argv` starting with `"{python}"`. It resolves the backend via
+   `build_oracle_isolation` and the timeout from the same `settings.repair`
+   (set `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` to fail closed unless an
+   OS-enforced sandbox backend is ready; `ORACLE_TIMEOUT_SECONDS` bounds the
+   run). Execution is `shell=False`, with `RUN_*` gates and credentials
+   stripped, a read-only staging mount inside isolating backends, and SHA-256
+   staged-mutation detection. The oracle should assert the module under test
+   imported from staging (`__file__` under `/work/`). On failure, feed the
+   oracle output back as the next user message. Cap the attempts.
 6. Allow outbound calls only to the loopback LM Studio port
    (`mangomas.harness.repair_sandbox.validate_loopback_llm_url`). Reject any
    path outside the staging directory and the live file being repaired

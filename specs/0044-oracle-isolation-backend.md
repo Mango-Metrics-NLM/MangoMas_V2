@@ -83,6 +83,21 @@ that any isolation design must satisfy:
   configured backend from `RepairSettings`. When `oracle_isolation="required"`
   and the requested backend (or all candidates under `"auto"`: `docker`, then
   `wsl`) is unavailable, raise `ConfigError` naming every probed backend.
+  With no explicit settings it reads `get_settings().repair`, so the
+  environment is honoured.
+- **FR-0044-07 (`composition.repair.run_repair_oracle`)** — The documented
+  repair-loop entry point: resolves the backend *and* passes
+  `oracle_timeout_seconds` to `run_oracle_and_promote`, so neither setting can
+  be honoured while the other is left at a module default. Both timeout
+  fields reject `inf`/`NaN`.
+- **FR-0044-08 (sandbox imports and timeout cleanup)** — Isolating backends set
+  a sandbox-local `PYTHONPATH` (`/work/src:/work`) and never forward the host
+  value. A partial package staged under `src/` is still shadowed by the regular
+  package installed in the image, so oracles must assert the module under test
+  imported from `/work/`. On timeout the Docker backend re-issues `docker kill`
+  and polls `docker ps` (bounded), logging `repair_oracle_timeout_killed` only
+  when termination is confirmed and `repair_oracle_timeout_kill_failed`
+  otherwise.
 
 ## Scenarios (WHEN/THEN)
 
@@ -121,8 +136,8 @@ that any isolation design must satisfy:
   in `mangomas.harness.isolation` (re-exported on `mangomas.harness`).
 - Additive keyword-only `isolation: OracleIsolationBackend | None = None` on
   `run_oracle_and_promote`.
-- Additive `build_oracle_isolation` in `mangomas.composition.repair`
-  (re-exported on `mangomas.composition`).
+- Additive `build_oracle_isolation` and `run_repair_oracle` in
+  `mangomas.composition.repair` (re-exported on `mangomas.composition`).
 
 ## Backwards-compatibility
 

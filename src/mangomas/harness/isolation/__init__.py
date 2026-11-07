@@ -9,9 +9,12 @@ from mangomas.harness.isolation.base import (
     OracleIsolationBackend,
     SubprocessRunner,
     resolve_sandbox_argv,
+    sandbox_pythonpath,
     select_sandbox_env,
 )
 from mangomas.harness.isolation.docker import (
+    DEFAULT_DOCKER_KILL_VERIFY_ATTEMPTS,
+    DEFAULT_DOCKER_KILL_VERIFY_INTERVAL_SECONDS,
     DOCKER_CONTAINER_PYTHON,
     DOCKER_TMPFS_SPEC,
     DOCKER_WORK_DIR,
@@ -21,6 +24,8 @@ from mangomas.harness.isolation.none import NoIsolationBackend
 from mangomas.harness.isolation.registry import OracleIsolationFactory, isolation_registry
 
 __all__ = [
+    "DEFAULT_DOCKER_KILL_VERIFY_ATTEMPTS",
+    "DEFAULT_DOCKER_KILL_VERIFY_INTERVAL_SECONDS",
     "DOCKER_CONTAINER_PYTHON",
     "DOCKER_TMPFS_SPEC",
     "DOCKER_WORK_DIR",
@@ -34,5 +39,6 @@ __all__ = [
     "SubprocessRunner",
     "isolation_registry",
     "resolve_sandbox_argv",
+    "sandbox_pythonpath",
     "select_sandbox_env",
 ]

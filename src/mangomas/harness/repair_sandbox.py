@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse
 
+from mangomas.config.repair import DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS
 from mangomas.errors import ConfigError, ToolExecutionError
 from mangomas.harness.governance import GOVERNANCE_SURFACE, PROTECTED_PATHS, normalize_path
 from mangomas.harness.isolation.base import OracleIsolationBackend
@@ -133,7 +134,9 @@ _ORACLE_MANGOMAS_ENV_ALLOWLIST: frozenset[str] = frozenset(
 )
 
 _SAFE_ORACLE_ADDOPTS: str = "-p no:cacheprovider -o addopts="
-DEFAULT_ORACLE_TIMEOUT_SECONDS: float = 60.0
+# Aliases the settings default so `run_oracle_and_promote` and
+# MANGOMAS_REPAIR__ORACLE_TIMEOUT_SECONDS cannot drift apart.
+DEFAULT_ORACLE_TIMEOUT_SECONDS: float = DEFAULT_REPAIR_ORACLE_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)

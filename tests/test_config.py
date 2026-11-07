@@ -462,3 +462,19 @@ def test_repair_settings_env_overrides_and_bounds(monkeypatch: pytest.MonkeyPatc
         config_module.RepairSettings(oracle_pids_limit=1)
     with pytest.raises(ValidationError):
         config_module.RepairSettings(oracle_image="")
+
+
+@pytest.mark.parametrize("field", ["oracle_timeout_seconds", "oracle_probe_timeout_seconds"])
+@pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+def test_repair_settings_reject_non_finite_timeouts(field: str, bad: float) -> None:
+    """An infinite budget reaches subprocess.run unchecked; NaN defeats every comparison."""
+    with pytest.raises(ValidationError):
+        config_module.RepairSettings.model_validate({field: bad})
+
+
+def test_repair_settings_reject_non_finite_timeout_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MANGOMAS_REPAIR__ORACLE_PROBE_TIMEOUT_SECONDS", "inf")
+    with pytest.raises(ValidationError):
+        config_module.Settings(_env_file=None)  # type: ignore[call-arg]

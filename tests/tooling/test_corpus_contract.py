@@ -779,3 +779,5 @@ def test_repair_loop_skill_wires_build_oracle_isolation() -> None:
     text = skill_path.read_text(encoding="utf-8")
     assert "build_oracle_isolation" in text
     assert "MANGOMAS_REPAIR__ORACLE_ISOLATION" in text
+    # The entry point that applies the configured timeout as well as the backend.
+    assert "run_repair_oracle" in text
