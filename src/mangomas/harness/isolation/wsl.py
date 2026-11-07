@@ -18,6 +18,7 @@ from mangomas.harness.isolation.base import (
     IsolationResult,
     SubprocessRunner,
     resolve_sandbox_argv,
+    sandbox_pythonpath,
     select_sandbox_env,
 )
 
@@ -138,7 +139,9 @@ class WslBwrapIsolationBackend:
                 WSL_SAFE_PATH,
             ]
         )
-        for key, val in sorted(select_sandbox_env(env).items()):
+        sandbox_env = select_sandbox_env(env)
+        sandbox_env["PYTHONPATH"] = sandbox_pythonpath(WSL_WORK_DIR)
+        for key, val in sorted(sandbox_env.items()):
             cmd.extend(["--setenv", key, val])
         cmd.append("--")
         cmd.extend(inner_argv)

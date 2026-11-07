@@ -478,6 +478,9 @@ def test_wsl_isolation_run_shapes_bwrap_unshare_all_argv_and_translates_errors(
     assert WSL_WORK_DIR in argv
     assert windows_to_wsl_path(tmp_path.resolve()) in argv
     assert "C:\\Host\\Path" not in argv
+    pythonpath_at = argv.index("PYTHONPATH")
+    assert argv[pythonpath_at - 1] == "--setenv"
+    assert argv[pythonpath_at + 1] == sandbox_pythonpath(WSL_WORK_DIR)
     assert argv[-4:] == ["/usr/bin/python3", "-m", "pytest", "-q"]
 
     def _timeout_runner(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -521,9 +524,13 @@ def test_live_wsl_isolation_enforces_filesystem_and_network_containment(
 
     rel = "src/mangomas/agents/chat.py"
     stage_candidate_file(staging, rel, "VALUE = 202\n")
+    stage_candidate_file(staging, "src/oracle_probe_module.py", "MARKER = 'staged'\n")
 
     probe_code = (
         "import pathlib, pytest, socket\n"
+        "import oracle_probe_module\n"
+        "assert oracle_probe_module.MARKER == 'staged'\n"
+        "assert oracle_probe_module.__file__.startswith('/work/'), oracle_probe_module.__file__\n"
         "assert not pathlib.Path('../host_secret.txt').exists()\n"
         f"assert not pathlib.Path({wsl_secret!r}).exists()\n"
         "try:\n"
