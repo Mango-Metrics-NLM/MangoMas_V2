@@ -24,7 +24,7 @@ import os
 import subprocess
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse
 
 from mangomas.errors import ConfigError, ToolExecutionError
@@ -180,7 +180,9 @@ def _resolve_contained_path(root: Path, relative_path: str | Path, *, label: str
             f"Sandbox {label} path contains a null byte",
             tool_name="repair_sandbox",
         )
-    if raw.startswith(("/", "\\")) or ":" in Path(raw).drive:
+    # PureWindowsPath, not Path: the host interpreter parses with POSIX
+    # semantics on Linux CI, where a Windows drive/UNC prefix must still refuse.
+    if raw.startswith(("/", "\\")) or ":" in PureWindowsPath(raw).drive:
         raise ToolExecutionError(
             f"Sandbox {label} path must be relative (refusing absolute/drive/UNC path {raw!r})",
             tool_name="repair_sandbox",
