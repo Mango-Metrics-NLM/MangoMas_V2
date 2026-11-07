@@ -445,10 +445,14 @@ Two separate things share the word "harness":
   - `tool_policy.py` enforces `ToolEffects` (`READ_ONLY` required by default)
     and validates tool-call arguments against `ToolSpec.parameters_schema`
     before `ToolAgent` executes any tool.
-  - `repair_sandbox.py` enforces loopback-only LLM URLs, canonical relative
-    staging paths without `..`/symlinks/NTFS ADS/DOS devices/null bytes,
-    per-run allowlisted non-protected promotion targets, a scrubbed oracle
-    subprocess, and SHA-256 staged-mutation detection before promotion.
+  - `repair_sandbox.py` and `isolation/` enforce loopback-only LLM URLs,
+    canonical relative staging paths without `..`/symlinks/NTFS ADS/DOS
+    devices/null bytes, per-run allowlisted non-protected promotion targets, a
+    scrubbed oracle subprocess, SHA-256 staged-mutation detection, and pluggable
+    OS-isolation backends (`DockerIsolationBackend`, `WslBwrapIsolationBackend`,
+    `NoIsolationBackend`) resolved via `composition.repair.build_oracle_isolation`
+    that fail closed when `MANGOMAS_REPAIR__ORACLE_ISOLATION=required`
+    (ADR-0039, ADR-0040).
 
 - **Contributor tooling** — the Claude Code agent and skill corpus under
   `.claude/`, its hooks, the frontmatter linter and the `.mcp.json` servers.

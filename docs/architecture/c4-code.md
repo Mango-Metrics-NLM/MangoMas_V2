@@ -201,7 +201,7 @@ ADR-0039 introduces two fail-closed, code-level governance modules that keep an 
    - `validate_loopback_llm_url` ensures prompts and code never leave a loopback HTTP(S) endpoint (`localhost`, `127.0.0.1`, `::1`).
    - `stage_candidate_file` enforces a canonical relative path inside a non-symlink staging root, rejecting `..`, absolute/drive/UNC paths, NTFS alternate data streams (`file.py:stream`), DOS device names (`NUL`, `CON`, `COM1`, `LPT1`), and null bytes.
    - `validate_promotion_target` requires an explicit per-run allowlist and refuses to overwrite `PROTECTED_PATHS`, `GOVERNANCE_SURFACE`, `.git/`, `.claude/`, or `.env*` (case-insensitive).
-   - `run_oracle_and_promote` runs the deterministic verification oracle with `shell=False`, a positive finite timeout, and a scrubbed environment (`MANGOMAS_` allowlist plus credential suffixes stripped, `PYTEST_ADDOPTS="-p no:cacheprovider -o addopts="`), verifies the staged file's SHA-256 before and after the oracle, and promotes only on exit `0`.
+   - `run_oracle_and_promote` runs the deterministic verification oracle via an `OracleIsolationBackend` (`mangomas.harness.isolation`, resolved by `composition.repair.build_oracle_isolation(settings.repair)` per ADR-0040; fails closed when `MANGOMAS_REPAIR__ORACLE_ISOLATION=required`) with `shell=False`, a positive finite timeout, and a scrubbed environment (`MANGOMAS_` allowlist plus credential suffixes stripped, `PYTEST_ADDOPTS="-p no:cacheprovider -o addopts="`), verifies the staged file's SHA-256 before and after the oracle, and promotes only on exit `0`.
 
 ---
 

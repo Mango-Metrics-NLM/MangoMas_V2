@@ -277,6 +277,15 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba717580bca4de7ad91980a40635159aa8adcebf62822ba11e4a8084349` | Default `sha256:` digest of `policy_id:policy_version`; rebinds when only id/version change. **Provenance label, not attestation** — a checksum of two env vars, not of a policy document (ADR-0033) |
 | `MANGOMAS_SIGNAL__HTTP_URL` | _(none)_ | Optional harness ingest URL; JSONL is always written when enabled |
 | `MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS` | `5.0` | Timeout for the optional HTTP sink |
+| `MANGOMAS_REPAIR__ORACLE_ISOLATION` | `none` | Repair-loop oracle isolation policy (`none` \| `required`; `required` fails closed in `composition.repair.build_oracle_isolation` when no sandbox backend is available; spec-0044 / ADR-0040) |
+| `MANGOMAS_REPAIR__ORACLE_BACKEND` | `auto` | Oracle isolation backend (`auto` \| `docker` \| `wsl`; `auto` probes `docker` then `wsl`) |
+| `MANGOMAS_REPAIR__ORACLE_IMAGE` | `mangomas:oracle` | Docker image for `DockerIsolationBackend` (`make oracle-image`, built with the `dev` extra) |
+| `MANGOMAS_REPAIR__ORACLE_TIMEOUT_SECONDS` | `60.0` | Per-run timeout for the repair-loop oracle subprocess |
+| `MANGOMAS_REPAIR__ORACLE_MEMORY_LIMIT` | `512m` | Memory ceiling passed to `docker run --memory` |
+| `MANGOMAS_REPAIR__ORACLE_PIDS_LIMIT` | `128` | Process ceiling passed to `docker run --pids-limit` (`>= 16`) |
+| `MANGOMAS_REPAIR__ORACLE_PROBE_TIMEOUT_SECONDS` | `5.0` | Timeout budget for `OracleIsolationBackend.is_available()` probes |
+| `MANGOMAS_REPAIR__WSL_DISTRO` | `Ubuntu` | WSL2 distribution name for `WslBwrapIsolationBackend` |
+| `MANGOMAS_REPAIR__WSL_PYTHON` | `/usr/bin/python3` | Python interpreter path inside the WSL2 distribution |
 | `MANGOMAS_AGENTS__<NAME>__SYSTEM_PROMPT` | _(none)_ | Per-agent system-prompt override (`AgentSettings.system_prompt`) |
 | `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |

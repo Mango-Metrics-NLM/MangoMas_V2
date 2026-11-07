@@ -771,3 +771,11 @@ def test_no_stray_agent_md_files_remain() -> None:
         if ".git/" not in p.as_posix()
     ]
     assert strays == []
+
+
+def test_repair_loop_skill_wires_build_oracle_isolation() -> None:
+    """`mango-repair-loop` must route the oracle through `build_oracle_isolation`."""
+    skill_path = _REPO_ROOT / ".claude" / "skills" / "mango-repair-loop" / "SKILL.md"
+    text = skill_path.read_text(encoding="utf-8")
+    assert "build_oracle_isolation" in text
+    assert "MANGOMAS_REPAIR__ORACLE_ISOLATION" in text

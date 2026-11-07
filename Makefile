@@ -105,6 +105,11 @@ DEPLOY_RENDER_ENV_VARS ?= PROJECT_ID LLM_MODEL
 # tests/deploy/test_manifest_provider_contract.py. cloud_monitoring is absent
 # on purpose: metrics stay off in the manifest and that exporter is alpha-only.
 DOCKER_IMAGE ?= mangomas:ci
+# Repair-loop oracle sandbox image (spec-0044 / ADR-0040): built from the same
+# Dockerfile with `MANGOMAS_EXTRAS=dev` so `pytest` is installed inside the
+# non-root container. Tied to `DEFAULT_REPAIR_ORACLE_IMAGE` by
+# `tests/deploy/test_oracle_image_contract.py`.
+ORACLE_IMAGE ?= mangomas:oracle
 IMAGE_SMOKE_IMPORTS ?= vertexai, asyncpg, google.cloud.secretmanager, opentelemetry.exporter.cloud_trace, mango_contracts
 # SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
@@ -116,9 +121,9 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         protected-paths test test-xml guard-probe studio-probe-mock studio-probe \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
-        gated-suites embeddings-local gpu secret-scan pip-audit sbom-scan \
+        gated-suites embeddings-local gpu oracle-isolation-docker secret-scan pip-audit sbom-scan \
         install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply \
-        lock lock-upgrade docker-build docker-smoke \
+        lock lock-upgrade docker-build docker-smoke oracle-image \
         nightly-scan-refs
 
 help: ## Show this help
@@ -290,6 +295,9 @@ langfuse: ## Langfuse sink/source suite (needs the langfuse extra installed)
 gitleaks-selftest: ## Prove `secret-scan` can still fail (needs the binary `secret-scan` downloads)
 	RUN_GITLEAKS=1 $(PYTHON) -m pytest tests/deploy/test_gitleaks_config.py --no-cov $(PYTEST_FLAGS)
 
+oracle-isolation-docker: ## Live Docker oracle-isolation containment suite (needs Docker + mangomas:oracle)
+	RUN_DOCKER_ISOLATION=1 $(PYTHON) -m pytest tests/harness/test_isolation.py -m docker_isolation --no-cov $(PYTEST_FLAGS)
+
 # ── Opt-in tooling (off by default; needs the network) ───────────────────────
 #
 # Not part of `gate`: every step in that chain runs fully offline today, and
@@ -341,6 +349,9 @@ docker-build: ## Build the production image as DOCKER_IMAGE (the Dockerfile's de
 
 docker-smoke: docker-build ## Build the image, then import every selected provider's SDK + create_app inside it
 	docker run --rm "$(DOCKER_IMAGE)" python -c "import $(IMAGE_SMOKE_IMPORTS); from mangomas.api.app import create_app; print('image smoke OK')"
+
+oracle-image: ## Build the repair-loop oracle image as ORACLE_IMAGE (Dockerfile with MANGOMAS_EXTRAS=dev)
+	docker build --build-arg MANGOMAS_EXTRAS=dev -t "$(ORACLE_IMAGE)" .
 
 # ── Lockfile ─────────────────────────────────────────────────────────────────
 # Both targets write $(RUNTIME_LOCKFILE) as $(LOCKFILE_HEADER) + pip-compile's

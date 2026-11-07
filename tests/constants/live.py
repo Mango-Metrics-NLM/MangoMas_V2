@@ -188,6 +188,7 @@ ENV_GATE_SUITES: dict[str, str] = {
     # a FAILURE, not a skip — a GPU box whose torch silently became a CPU
     # wheel must go red (spec-0039, tests/rag/test_device_resolution_gpu.py).
     RUN_GPU_ENV: "CUDA device tests",
+    "RUN_DOCKER_ISOLATION": "Docker oracle-isolation containment tests",
 }
 
 
@@ -292,6 +293,10 @@ HOSTED_RUNNER_INFEASIBLE: dict[str, str] = {
     RUN_GPU_ENV: (
         "needs a CUDA device plus the embeddings-local extra; hosted runners have "
         "no GPU and no self-hosted GPU runner is provisioned"
+    ),
+    "RUN_DOCKER_ISOLATION": (
+        "needs a local Docker daemon with the mangomas:oracle dev image built "
+        "via make oracle-image; the unit Test jobs do not build that image"
     ),
 }
 

@@ -78,6 +78,7 @@ configuration table; this is the deploy-time contract by settings group.
 | `MANGOMAS_VECTOR__` | Vector store (RAG, opt-in) |
 | `MANGOMAS_RAG__` | Chunking parameters (RAG, opt-in) |
 | `MANGOMAS_WORKFLOW__` | Declarative workflow-graph dispatch (opt-in) |
+| `MANGOMAS_REPAIR__` | Repair-loop oracle isolation policy and backend (workstation / CI only; default `none`) |
 
 Recommended production baseline: `MANGOMAS_ENV=prod`,
 `MANGOMAS_LOG__FORMAT=json`, `MANGOMAS_TELEMETRY__EXPORTER=gcp`,

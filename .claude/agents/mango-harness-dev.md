@@ -24,6 +24,11 @@ skills do not cover: the shape of this code.
   `parameters_schema` argument validation for `ToolAgent`
 - `src/mangomas/harness/repair_sandbox.py` — loopback LLM URL guard, staging
   directory containment, and oracle-gated file promotion
+- `src/mangomas/harness/isolation/` and `src/mangomas/composition/repair.py` —
+  the `OracleIsolationBackend` protocol, `isolation_registry`,
+  `NoIsolationBackend`, `DockerIsolationBackend`, `WslBwrapIsolationBackend`,
+  and `build_oracle_isolation` (`RepairSettings` in `mangomas.config.repair`,
+  ADR-0040)
 - `pyproject.toml`'s `[tool.mangomas.governance]` table itself — the
   protected-path *definition* (decision D3b, settling the ownership question
   that deferred spec-0015 R4). Membership changes land with the fallback sets
@@ -57,7 +62,7 @@ to emit envelopes.
 |-----------|----------------------|
 | The hook is advisory; the CI job is the gate | `check_protected_paths.py` reads `git diff`/`git log` between base and head — state an in-session agent cannot rewrite. The `PreToolUse` hook cannot be a complete gate regardless of its own correctness, because `Bash` and MCP filesystem calls bypass its `Edit\|Write\|NotebookEdit` matcher entirely. Destructive `Bash` commands are the only hard-`deny` case (ADR-0039) |
 | Runtime tool-execution is fail-closed | `ToolAgent._dispatch_tool` refuses any tool with `ToolSpec.effects != ToolEffects.READ_ONLY` unless explicitly granted in `allowed_mutating_tools`; `validate_tool_arguments` checks count, string length, required keys, `additionalProperties`, and JSON-Schema primitive types before `Tool.execute` (ADR-0039) |
-| Automated LLM coding never writes outside staging | `mangomas.harness.repair_sandbox` rejects non-loopback URLs, absolute/drive/UNC/`..` paths, symlinks, NTFS ADS, DOS devices, null bytes, and promotion targets in `PROTECTED_PATHS` / `GOVERNANCE_SURFACE` / `.git/` / `.claude/` / `.env*`; promotes only on a zero-exit scrubbed oracle subprocess after SHA-256 staged-mutation detection (ADR-0039) |
+| Automated LLM coding never writes outside staging | `mangomas.harness.repair_sandbox` rejects non-loopback URLs, absolute/drive/UNC/`..` paths, symlinks, NTFS ADS, DOS devices, null bytes, and promotion targets in `PROTECTED_PATHS` / `GOVERNANCE_SURFACE` / `.git/` / `.claude/` / `.env*`; promotes only on a zero-exit scrubbed oracle subprocess after SHA-256 staged-mutation detection (ADR-0039). `composition.repair.build_oracle_isolation` resolves `OracleIsolationBackend` (`mangomas.harness.isolation`) and fails closed when `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` (ADR-0040) |
 | `pyproject.toml` is the single source of truth | Both the gate and the hook read `[tool.mangomas.governance]` via stdlib `tomllib`. Hardcoding the set in either would let them disagree silently |
 | Hook modes must run on a bare interpreter | `--hook pre-tool-use` and `--hook post-tool-use` are stdlib-only. `pydantic`/`pyyaml` imports are deferred behind `_SCHEMA_DEPS_AVAILABLE`; `harness_config_audit.py` defers its `mangomas` imports and degrades to the default mode. The original defect was `ModuleNotFoundError`, exit 1, on every edit |
 | Hooks read stdin JSON, never an env var | Claude Code does not define `$CLAUDE_TOOL_INPUT_*`. A regression test asserts no hook command references one |

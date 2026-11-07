@@ -33,10 +33,15 @@ exits zero. The model never receives a write tool aimed at the live tree.
 3. Give the model line-numbered source, not a bare file path.
 4. Dispatch one step when the request already contains an assistant prefill.
    A multi-step loop re-sends the prefill and the model rewrites it.
-5. Run the deterministic oracle through
-   `mangomas.harness.repair_sandbox.run_oracle_and_promote` (a `shell=False`,
-   timeout-bounded subprocess with `RUN_*` gates and credentials stripped, and
-   SHA-256 staged-mutation detection). On failure, feed the oracle output back
+5. Resolve the oracle isolation backend via
+   `mangomas.composition.build_oracle_isolation` (`settings.repair`, set
+   `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` to fail closed unless an
+   OS-enforced sandbox backend is ready) and run the deterministic oracle
+   through `mangomas.harness.repair_sandbox.run_oracle_and_promote(..., isolation=build_oracle_isolation(settings.repair))`
+   with `oracle_argv` starting with `"{python}"` (a `shell=False`,
+   timeout-bounded execution with `RUN_*` gates and credentials stripped, a
+   read-only staging mount inside isolating backends, and SHA-256
+   staged-mutation detection). On failure, feed the oracle output back
    as the next user message. Cap the attempts.
 6. Allow outbound calls only to the loopback LM Studio port
    (`mangomas.harness.repair_sandbox.validate_loopback_llm_url`). Reject any
