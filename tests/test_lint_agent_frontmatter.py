@@ -610,10 +610,46 @@ def test_pre_tool_use_bash_unprotected_command_emits_nothing(
 
 
 def test_pre_tool_use_bash_never_returns_deny(capsys: pytest.CaptureFixture[str]) -> None:
-    """The Bash branch is advisory only, exactly like the file-path branch."""
+    """Ordinary and protected-path Bash mentions stay on `ask` or silent, never `deny`."""
     for payload in (_BASH_PROTECTED_PAYLOAD, _BASH_UNPROTECTED_PAYLOAD):
         assert linter._pre_tool_use_hook(StringIO(payload)) == linter.EXIT_OK
     assert '"deny"' not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_fragment"),
+    [
+        ("rm -rf /tmp/build", "recursive or forced `rm`"),
+        ("rm -fr build", "recursive or forced `rm`"),
+        ("rm --recursive scratch", "recursive or forced `rm`"),
+        ("Remove-Item -Path foo -Recurse", "Remove-Item"),
+        ("del /s /q build", "Windows shell deletion"),
+        ("git reset --hard HEAD~1", "git reset --hard"),
+        ("git clean -fd", "git clean -f"),
+        ("git push --force origin main", "force-pushing"),
+        ("git diff --output=src/mangomas/errors.py", "git diff/log/show --output"),
+        ("python scripts/guard_probe.py --manifest=/tmp/evil.json", "guard_probe.py --manifest"),
+        ("rm build -rf", "recursive or forced `rm`"),
+        ("del /q /s build", "Windows shell deletion"),
+        ("git reset HEAD --hard", "git reset --hard"),
+        ("git clean -d -f", "git clean -f"),
+        ("git push origin main --force", "force-pushing"),
+        ("git -C repo reset --hard", "git reset --hard"),
+    ],
+)
+def test_pre_tool_use_bash_destructive_commands_emit_deny(
+    command: str,
+    expected_fragment: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Host-destructive or allow-escape Bash commands are hard-denied (`deny`, spec-0043)."""
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    result = linter._pre_tool_use_hook(StringIO(payload))
+    assert result == linter.EXIT_OK
+    decision = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert decision["hookEventName"] == "PreToolUse"
+    assert decision["permissionDecision"] == "deny"
+    assert expected_fragment in decision["permissionDecisionReason"]
 
 
 @pytest.mark.parametrize("stdin_json", ["[1, 2, 3]", '"just a string"', "42", "null"])

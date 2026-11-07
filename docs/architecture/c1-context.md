@@ -75,3 +75,10 @@ C4Context
   not this repo's Claude Code harness (`MANGOMAS_HARNESS__*`). Emission is
   opt-in via `MANGOMAS_SIGNAL__*` (default-OFF). A `CognitiveSignal` is
   advisory JSON; it never grants tools, models, or timeouts.
+- The **runtime tool-execution and repair-loop policy** (`mangomas.harness.tool_policy`
+  / `repair_sandbox`, ADR-0039) is a code-level governance layer inside the
+  FastAPI application, not an external system: it enforces `ToolEffects`
+  fail-closed before `ToolAgent` executes any registered tool, and it
+  enforces loopback-only LLM URLs, staging-path containment, and oracle-gated
+  promotion before an automated LLM coding workflow may write to the repo
+  tree.

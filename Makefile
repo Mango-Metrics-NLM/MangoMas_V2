@@ -27,7 +27,7 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
                  tests/test_check_protected_paths.py tests/test_harness_config_audit.py \
                  tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
                  tests/test_deploy_environment.py tests/harness \
-                 tests/test_studio_consumer_probe.py
+                 tests/test_studio_consumer_probe.py tests/test_destructive_bash.py
 # Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
 # was the gate's own blind spot — 24%, imported only for its FLOORS/
 # GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect

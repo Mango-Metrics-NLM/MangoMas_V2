@@ -60,6 +60,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Final
 
+import _destructive_bash
 import _governance
 import _stdin_json
 
@@ -356,9 +357,17 @@ def _invalid_agent_fields(fm: dict[str, object]) -> list[str]:
     return errors
 
 
-# PreToolUse advisory-decision constants (ADR-0021).
+# PreToolUse decision constants (ADR-0021 + spec-0043).
 _HOOK_EVENT_NAME: Final[str] = "PreToolUse"
 _HOOK_PERMISSION_ASK: Final[str] = "ask"
+_HOOK_PERMISSION_DENY: Final[str] = "deny"
+
+# Destructive Bash commands are hard-denied (`permissionDecision: "deny"`) on
+# every session — especially on native Windows (`win32`), where Claude Code
+# runs Bash commands unsandboxed. Protected-path edits remain `"ask"` per
+# ADR-0021; only host-destructive / allow-rule-escape commands are denied here.
+# Matching is token-based and position-independent (see `_destructive_bash`).
+_DESTRUCTIVE_BASH_RULES: Final = _destructive_bash.DESTRUCTIVE_BASH_RULES
 
 
 # ── Pydantic v2 schemas (schema-lint mode only — see module docstring) ────────
@@ -600,31 +609,47 @@ def _protected_paths_in_command(command: str) -> list[str]:
     return sorted(path for path in PROTECTED_PATHS if path in normalised)
 
 
-def _emit_ask(reason: str) -> None:
-    """Print a ``permissionDecision: "ask"`` envelope (never ``deny``)."""
+def _destructive_bash_reason(command: str) -> str | None:
+    """Return the block reason if *command* is host-destructive, else ``None``."""
+    return _destructive_bash.destructive_bash_reason(command)
+
+
+def _emit_decision(decision_value: str, reason: str) -> None:
+    """Print a ``PreToolUse`` ``hookSpecificOutput`` JSON decision envelope."""
     decision = {
         "hookSpecificOutput": {
             "hookEventName": _HOOK_EVENT_NAME,
-            "permissionDecision": _HOOK_PERMISSION_ASK,
+            "permissionDecision": decision_value,
             "permissionDecisionReason": reason,
         }
     }
     print(json.dumps(decision))
 
 
+def _emit_ask(reason: str) -> None:
+    """Print a ``permissionDecision: "ask"`` envelope."""
+    _emit_decision(_HOOK_PERMISSION_ASK, reason)
+
+
+def _emit_deny(reason: str) -> None:
+    """Print a ``permissionDecision: "deny"`` envelope for destructive Bash calls."""
+    _emit_decision(_HOOK_PERMISSION_DENY, reason)
+
+
 def _pre_tool_use_hook(stream: IO[str]) -> int:
-    """Advisory protected-path check. Always returns ``EXIT_OK``.
+    """Protected-path advisory (`ask`) + destructive-Bash gate (`deny`). Always exits 0.
 
     For an edit to a protected core contract — a ``file_path``/
     ``notebook_path`` payload from ``Edit``/``Write``/``NotebookEdit``, or a
-    ``Bash`` payload whose ``command`` merely *mentions* a protected path —
-    prints a ``permissionDecision: "ask"`` JSON response (Claude Code
-    processes hook JSON only on exit 0) so the human approving the tool call
-    sees a heads-up naming the path and the trailer requirement the CI gate
-    enforces. The Bash branch narrows the gap ADR-0021 concedes (shell
-    writes bypass the Edit-matcher hook entirely) without reversing its
-    recorded rejection of a hard block: always ``ask``, never ``deny``,
-    never a non-zero exit.
+    ``Bash`` payload whose ``command`` mentions a protected path — prints a
+    ``permissionDecision: "ask"`` JSON response so the human approving the
+    tool call sees a heads-up naming the path and the trailer requirement the
+    CI gate enforces (ADR-0021).
+
+    For a ``Bash`` payload that matches :data:`_DESTRUCTIVE_BASH_RULES`
+    (recursive deletes, ``git reset --hard``, ``git clean -f``, force-push,
+    ``git diff/log/show --output=`` file overwrite, or ``guard_probe.py
+    --manifest`` override), prints ``permissionDecision: "deny"`` (spec-0043).
     """
     payload = _read_hook_payload(stream)
     path = _extract_tool_path(payload)
@@ -642,6 +667,10 @@ def _pre_tool_use_hook(stream: IO[str]) -> int:
 
     command = _extract_bash_command(payload)
     if command is None:
+        return EXIT_OK
+    destructive_reason = _destructive_bash_reason(command)
+    if destructive_reason is not None:
+        _emit_deny(destructive_reason)
         return EXIT_OK
     mentioned = _protected_paths_in_command(command)
     if not mentioned:

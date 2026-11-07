@@ -16,6 +16,7 @@ from mangomas.config import DEFAULT_TOOL_MAX_STEPS
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolCall, ToolCallParser, build_tool_system_prompt
 from mangomas.errors import LLMBadResponse, ToolExecutionError, ToolNotFound, UnknownProvider
+from mangomas.harness.tool_policy import enforce_tool_invocation_policy
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import AgentSettings
@@ -40,6 +41,8 @@ class ToolAgent:
         system_prompt: str | None = None,
         max_tool_steps: int | None = None,
         settings: AgentSettings | None = None,
+        *,
+        allowed_mutating_tools: frozenset[str] = frozenset(),
     ) -> None:
         resolved_prompt = resolve_system_prompt(system_prompt, settings)
         # Blank/whitespace-only prompts are treated as unset: resolve_system_prompt
@@ -58,6 +61,7 @@ class ToolAgent:
         else:
             self._max_tool_steps = DEFAULT_TOOL_MAX_STEPS
         self._parser = ToolCallParser()
+        self._allowed_mutating_tools: frozenset[str] = frozenset(allowed_mutating_tools)
 
     def _build_tool_messages(self, request: AgentRequest, ctx: AgentContext) -> list[Message]:
         """System prompt plus history, with the tool contract appended when tools exist."""
@@ -115,6 +119,11 @@ class ToolAgent:
             )
             raise ToolNotFound(tool_call.tool, ctx.tools.available()) from None
         try:
+            enforce_tool_invocation_policy(
+                tool.spec,
+                tool_call.arguments,
+                allowed_mutating_tools=self._allowed_mutating_tools,
+            )
             return await tool.execute(tool_call.arguments)
         except ToolExecutionError:
             logger.exception("Tool raised ToolExecutionError", extra={"tool_name": tool_call.tool})

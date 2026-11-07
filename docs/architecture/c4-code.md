@@ -190,6 +190,21 @@ The workflow engine executes a bounded workflow tree defined as inline JSON or a
 - Interoperates with `mango-integration-contracts` to emit machine-readable telemetry on agent performance, risk, and PII detection.
 - **Non-Interference Invariants**: Enforces strict policy decoupling; cognitive signals are observational artifacts and cannot alter deterministic policy input shapes or authorization paths.
 
+### 6.3 Runtime Tool-Execution and Repair-Loop Policy (`mangomas.harness.tool_policy`, `mangomas.harness.repair_sandbox`)
+
+ADR-0039 introduces two fail-closed, code-level governance modules that keep an LLM or automated coding workflow from damaging the host PC:
+
+1. **Fail-Closed Tool Invocation Policy (`tool_policy.py`)**:
+   - `enforce_tool_invocation_policy(spec, arguments, *, allowed_mutating_tools)` refuses any `ToolSpec` whose `effects` is not `ToolEffects.READ_ONLY` unless explicitly granted.
+   - `validate_tool_arguments` enforces maximum argument count (`32`), maximum string length (`16_384`), required keys, `additionalProperties: False`, and JSON-Schema primitive types (with `bool` excluded from `integer`/`number` and `null` mapped to `NoneType`) before `Tool.execute` runs.
+2. **Automated LLM Coding Staging and Promotion Containment (`repair_sandbox.py`)**:
+   - `validate_loopback_llm_url` ensures prompts and code never leave a loopback HTTP(S) endpoint (`localhost`, `127.0.0.1`, `::1`).
+   - `stage_candidate_file` enforces a canonical relative path inside a non-symlink staging root, rejecting `..`, absolute/drive/UNC paths, NTFS alternate data streams (`file.py:stream`), DOS device names (`NUL`, `CON`, `COM1`, `LPT1`), and null bytes.
+   - `validate_promotion_target` requires an explicit per-run allowlist and refuses to overwrite `PROTECTED_PATHS`, `GOVERNANCE_SURFACE`, `.git/`, `.claude/`, or `.env*` (case-insensitive).
+   - `run_oracle_and_promote` runs the deterministic verification oracle with `shell=False`, a positive finite timeout, and a scrubbed environment (`MANGOMAS_` allowlist plus credential suffixes stripped, `PYTEST_ADDOPTS="-p no:cacheprovider -o addopts="`), verifies the staged file's SHA-256 before and after the oracle, and promotes only on exit `0`.
+
+---
+
 ### 6.2 Governance & Protected Core Paths
 
 `scripts/check_protected_paths.py` enforces commit-level governance:
