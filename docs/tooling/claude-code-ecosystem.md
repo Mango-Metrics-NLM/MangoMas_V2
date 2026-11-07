@@ -21,8 +21,13 @@ decision record.
 
 ## Prerequisites
 
-- **Node.js 20+ (LTS)** — the MCP servers and `repomix` are `npx`-invoked;
-  nothing is vendored into this repo (no `package.json`, no lockfile).
+- **Prerequisites:**
+  - **Node.js 20+ (LTS)** — the MCP servers and `repomix` are `npx`-invoked;
+  nothing is vendored into this repo (no `package.json`, no lockfile). On
+  Windows workstations behind a local TLS inspection proxy (`ENV-1`), export the
+  OS root store with `python scripts/bootstrap_gpu_env.py --export-ca-only` and
+  set `NODE_EXTRA_CA_CERTS` as documented in
+  [`docs/tooling/env1-tls-inspection-runbook.md`](env1-tls-inspection-runbook.md).
 - **`uv`** (for `uvx`) — the `git` and `fetch` MCP servers are Python-based
   reference implementations, run via `uvx` rather than a local install.
 - Python/pip prerequisites are unchanged from the main [README](../../README.md).
