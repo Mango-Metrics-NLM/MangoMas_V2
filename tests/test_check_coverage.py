@@ -199,20 +199,28 @@ def test_protocol_stub_bodies_are_still_excluded(line: str) -> None:
 
 _SRC_ROOT = _REPO_ROOT / "src" / "mangomas"
 _PRAGMA = "pragma: no cover"
-_TYPE_CHECKING_GUARD = "TYPE_CHECKING"
-# `# pragma: no cover - reason`, `-- reason`, `— reason` or `: reason`.
-_PRAGMA_WITH_REASON_RE = re.compile(r"pragma: no cover\s*(?:-+|—|:)\s*\S")
+# Only the guard statement itself is exempt; a `TYPE_CHECKING` that appears in
+# a string, a comment or an expression must not waive the reason.
+_TYPE_CHECKING_GUARD_RE = re.compile(r"\s*if\s+TYPE_CHECKING\s*:")
+# `# pragma: no cover - reason`, `-- reason`, `— reason` or `: reason`. The
+# reason must open on a non-separator character: a bare `\S` let `-+` backtrack
+# and accept `--` / `---` as their own reason.
+_PRAGMA_WITH_REASON_RE = re.compile(r"pragma: no cover\s*(?:-+|—|:)\s*[^\s—:\-]")
+
+
+def _is_bare_pragma(line: str) -> bool:
+    if _PRAGMA not in line or _TYPE_CHECKING_GUARD_RE.match(line):
+        return False
+    return _PRAGMA_WITH_REASON_RE.search(line) is None
 
 
 def _bare_pragma_sites() -> list[str]:
-    sites: list[str] = []
-    for path in sorted(_SRC_ROOT.rglob("*.py")):
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if _PRAGMA not in line or _TYPE_CHECKING_GUARD in line:
-                continue
-            if not _PRAGMA_WITH_REASON_RE.search(line):
-                sites.append(f"{path.relative_to(_REPO_ROOT)}:{number}")
-    return sites
+    return [
+        f"{path.relative_to(_REPO_ROOT)}:{number}"
+        for path in sorted(_SRC_ROOT.rglob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if _is_bare_pragma(line)
+    ]
 
 
 def test_pragma_sites_exist() -> None:
@@ -235,6 +243,40 @@ def test_pragma_reason_pattern_rejects_a_bare_pragma() -> None:
     assert _PRAGMA_WITH_REASON_RE.search("x = 1  # pragma: no cover -") is None
     assert _PRAGMA_WITH_REASON_RE.search("x = 1  # pragma: no cover - requires gcp extra")
     assert _PRAGMA_WITH_REASON_RE.search("x = 1  # pragma: no cover — platform-gated")
+
+
+@pytest.mark.parametrize(
+    "separator_only",
+    ["--", "---", "- -", "—", ":", "-:", "— --"],
+)
+def test_pragma_reason_pattern_rejects_a_separator_only_reason(separator_only: str) -> None:
+    """A run of separators is not a reason, however many dashes it has."""
+    line = f"x = 1  # pragma: no cover {separator_only}"
+    assert _PRAGMA_WITH_REASON_RE.search(line) is None, line
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "if TYPE_CHECKING:  # pragma: no cover",
+        "    if TYPE_CHECKING:  # pragma: no cover",
+    ],
+)
+def test_a_type_checking_guard_needs_no_reason(line: str) -> None:
+    assert not _is_bare_pragma(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'raise RuntimeError("TYPE_CHECKING")  # pragma: no cover',
+        "x = 1  # pragma: no cover  (see TYPE_CHECKING above)",
+        "if not TYPE_CHECKING:  # pragma: no cover",
+    ],
+)
+def test_mentioning_type_checking_does_not_waive_the_reason(line: str) -> None:
+    """Only the guard statement is exempt — not any line that names it."""
+    assert _is_bare_pragma(line)
 
 
 # ── Floor completeness (spec-0020 R1) ─────────────────────────────────────────
