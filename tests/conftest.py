@@ -80,6 +80,10 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "docker_isolation: live Docker oracle-isolation containment suite (RUN_DOCKER_ISOLATION=1)",
     )
+    config.addinivalue_line(
+        "markers",
+        "wsl_isolation: live WSL2 bubblewrap isolation suite (RUN_WSL_ISOLATION=1)",
+    )
 
 
 # ── Collection gates ────────────────────────────────────────────────────────
@@ -101,6 +105,7 @@ _MARKER_GATES: tuple[tuple[str, str], ...] = (
     ("rag", "RUN_RAG"),
     ("gpu", "RUN_GPU"),
     ("docker_isolation", "RUN_DOCKER_ISOLATION"),
+    ("wsl_isolation", "RUN_WSL_ISOLATION"),
 )
 
 

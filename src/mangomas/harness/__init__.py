@@ -33,9 +33,11 @@ from mangomas.harness.isolation import (
     NoIsolationBackend,
     OracleIsolationBackend,
     OracleIsolationFactory,
+    WslBwrapIsolationBackend,
     isolation_registry,
     resolve_sandbox_argv,
     select_sandbox_env,
+    windows_to_wsl_path,
 )
 from mangomas.harness.repair_sandbox import (
     DEFAULT_ORACLE_TIMEOUT_SECONDS,
@@ -76,6 +78,7 @@ __all__ = [
     "OracleIsolationBackend",
     "OracleIsolationFactory",
     "PromotionOutcome",
+    "WslBwrapIsolationBackend",
     "build_scrubbed_oracle_env",
     "enforce_tool_invocation_policy",
     "evaluate_config_change",
@@ -92,4 +95,5 @@ __all__ = [
     "validate_loopback_llm_url",
     "validate_promotion_target",
     "validate_tool_arguments",
+    "windows_to_wsl_path",
 ]

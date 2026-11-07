@@ -19,6 +19,11 @@ from mangomas.harness.isolation.docker import (
 )
 from mangomas.harness.isolation.none import NoIsolationBackend
 from mangomas.harness.isolation.registry import OracleIsolationFactory, isolation_registry
+from mangomas.harness.isolation.wsl import (
+    WSL_WORK_DIR,
+    WslBwrapIsolationBackend,
+    windows_to_wsl_path,
+)
 
 __all__ = [
     "DOCKER_CONTAINER_PYTHON",
@@ -26,13 +31,16 @@ __all__ = [
     "DOCKER_WORK_DIR",
     "PYTHON_ARGV_TOKENS",
     "SANDBOX_ENV_KEYS",
+    "WSL_WORK_DIR",
     "DockerIsolationBackend",
     "IsolationResult",
     "NoIsolationBackend",
     "OracleIsolationBackend",
     "OracleIsolationFactory",
     "SubprocessRunner",
+    "WslBwrapIsolationBackend",
     "isolation_registry",
     "resolve_sandbox_argv",
     "select_sandbox_env",
+    "windows_to_wsl_path",
 ]

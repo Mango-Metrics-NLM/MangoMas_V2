@@ -189,6 +189,7 @@ ENV_GATE_SUITES: dict[str, str] = {
     # wheel must go red (spec-0039, tests/rag/test_device_resolution_gpu.py).
     RUN_GPU_ENV: "CUDA device tests",
     "RUN_DOCKER_ISOLATION": "Docker oracle-isolation containment tests",
+    "RUN_WSL_ISOLATION": "WSL2 bubblewrap oracle-isolation containment tests",
 }
 
 
@@ -297,6 +298,10 @@ HOSTED_RUNNER_INFEASIBLE: dict[str, str] = {
     "RUN_DOCKER_ISOLATION": (
         "needs a local Docker daemon with the mangomas:oracle dev image built "
         "via make oracle-image; the unit Test jobs do not build that image"
+    ),
+    "RUN_WSL_ISOLATION": (
+        "needs a Windows host with WSL2 Ubuntu and bubblewrap installed; "
+        "hosted Linux runners do not have wsl.exe"
     ),
 }
 
