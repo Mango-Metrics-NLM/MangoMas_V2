@@ -192,9 +192,16 @@
     {
       "id": "MUT-CI-01",
       "path": ".github/workflows/ci.yml",
-      "fixed": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\n",
+      "fixed": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n",
       "defect": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: false\n",
       "gate": ["{python}", "-m", "pytest", "tests/deploy/test_workflow_hardening.py", "-k", "test_only_the_deploy_workflow_refuses_to_cancel_in_progress", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+    },
+    {
+      "id": "MUT-CI-04",
+      "path": ".github/workflows/ci.yml",
+      "fixed": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n",
+      "defect": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\n",
+      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_workflow_hardening.py", "-k", "test_a_push_triggered_workflow_never_cancels_a_push_run", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     },
     {
       "id": "MUT-CI-02",

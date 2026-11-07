@@ -17,12 +17,14 @@ on:
   pull_request:
     branches: ["feat/initial-release", "dev", "qa", "main"]
 
-# A newer commit on the same ref supersedes the run in flight: cancel it
-# rather than queue behind it. Keyed on the ref so branches never cancel each
-# other (tests/deploy/test_workflow_hardening.py).
+# A newer commit on the same PR supersedes the run in flight: cancel it rather
+# than queue behind it. Keyed on the ref so branches never cancel each other.
+# Trunk pushes are never cancelled: two quick merges would otherwise leave the
+# first merge commit without a completed run, and Codecov without the base
+# report it diffs the next PR against (tests/deploy/test_workflow_hardening.py).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least-privilege token: CI only needs to read the repo. codecov upload uses its
 # own token, not GITHUB_TOKEN.

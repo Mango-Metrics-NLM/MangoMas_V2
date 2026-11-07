@@ -43,9 +43,11 @@ on:
 permissions:
   contents: read
 
-# One run per ref at a time, and NEVER cancelled: a deploy that has started
-# must run to completion, so a second push queues behind it instead. The
-# deploy job below adds a per-environment group on top of this one.
+# One run per ref at a time, and a running deploy is NEVER cancelled: it must
+# run to completion. GitHub holds at most one *pending* run per group, though,
+# so a third push replaces the waiting second one — the latest commit deploys
+# and an intermediate one may never deploy at all. The deploy job below adds a
+# per-environment group on top of this one.
 # tests/deploy/test_workflow_hardening.py pins this as the one workflow whose
 # runs are not disposable.
 concurrency:

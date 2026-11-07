@@ -70,16 +70,23 @@ def test_normalisation_is_idempotent(path: str) -> None:
     assert path_from_sqlite_url(once) == once
 
 
-def test_a_bare_three_slash_url_resolves_to_an_empty_path() -> None:
-    """Documents current behaviour: ``sqlite:///`` names no file and yields ``""``.
+@pytest.mark.parametrize("url", ["sqlite:///", "sqlite:///?mode=ro", "sqlite://"])
+def test_a_url_that_names_no_file_is_rejected(url: str) -> None:
+    """An empty path is refused here, not passed on to ``sqlite3.connect``.
 
-    ``urlparse`` reads the third slash as the path, so the path is never
-    empty at parse time and the function has no "empty path" error of its
-    own; the empty string fails later, at open time, where the adapter
-    reports it. The documented ``ValueError`` comes from ``urlparse`` itself
-    on a malformed netloc (next test).
+    ``sqlite3.connect("")`` does not fail: it opens a private temporary
+    database that is discarded on close, so every turn written to it would
+    vanish without an error. ``urlparse`` reads the third slash of
+    ``sqlite:///`` as the path, so the emptiness only appears after the
+    leading slash is stripped — which is where the check has to sit.
     """
-    assert path_from_sqlite_url("sqlite:///") == ""
+    with pytest.raises(ValueError, match="Empty sqlite URL path"):
+        path_from_sqlite_url(url)
+
+
+def test_the_root_directory_is_not_an_empty_path() -> None:
+    """``sqlite:////`` keeps its one leading slash, so the guard must not fire."""
+    assert path_from_sqlite_url("sqlite:////") == "/"
 
 
 def test_the_documented_value_error_comes_from_an_unparseable_netloc() -> None:
