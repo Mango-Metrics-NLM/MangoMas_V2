@@ -629,6 +629,12 @@ def test_pre_tool_use_bash_never_returns_deny(capsys: pytest.CaptureFixture[str]
         ("git push --force origin main", "force-pushing"),
         ("git diff --output=src/mangomas/errors.py", "git diff/log/show --output"),
         ("python scripts/guard_probe.py --manifest=/tmp/evil.json", "guard_probe.py --manifest"),
+        ("rm build -rf", "recursive or forced `rm`"),
+        ("del /q /s build", "Windows shell deletion"),
+        ("git reset HEAD --hard", "git reset --hard"),
+        ("git clean -d -f", "git clean -f"),
+        ("git push origin main --force", "force-pushing"),
+        ("git -C repo reset --hard", "git reset --hard"),
     ],
 )
 def test_pre_tool_use_bash_destructive_commands_emit_deny(

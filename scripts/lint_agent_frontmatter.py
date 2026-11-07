@@ -60,6 +60,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Final
 
+import _destructive_bash
 import _governance
 import _stdin_json
 
@@ -361,47 +362,12 @@ _HOOK_EVENT_NAME: Final[str] = "PreToolUse"
 _HOOK_PERMISSION_ASK: Final[str] = "ask"
 _HOOK_PERMISSION_DENY: Final[str] = "deny"
 
-# Destructive Bash patterns that are hard-denied (`permissionDecision: "deny"`)
-# on every session — especially on native Windows (`win32`), where Claude Code
+# Destructive Bash commands are hard-denied (`permissionDecision: "deny"`) on
+# every session — especially on native Windows (`win32`), where Claude Code
 # runs Bash commands unsandboxed. Protected-path edits remain `"ask"` per
 # ADR-0021; only host-destructive / allow-rule-escape commands are denied here.
-_DESTRUCTIVE_BASH_RULES: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
-    (
-        re.compile(r"\brm\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*|--recursive|--force)(?:\b|$)"),
-        "recursive or forced `rm` deletion is blocked by the harness",
-    ),
-    (
-        re.compile(
-            r"\bRemove-Item\b[^\n;|&]*\s-(?:Recurse|Force)\b",
-            re.IGNORECASE,
-        ),
-        "recursive or forced `Remove-Item` deletion is blocked by the harness",
-    ),
-    (
-        re.compile(r"\b(?:del|erase|rd|rmdir)\s+/s\b", re.IGNORECASE),
-        "recursive Windows shell deletion (`/s`) is blocked by the harness",
-    ),
-    (
-        re.compile(r"\bgit\s+reset\s+--hard\b"),
-        "`git reset --hard` is blocked by the harness to prevent worktree data loss",
-    ),
-    (
-        re.compile(r"\bgit\s+clean\s+(?:-[a-zA-Z]*f[a-zA-Z]*|--force)(?:\b|$)"),
-        "`git clean -f` is blocked by the harness to prevent untracked file loss",
-    ),
-    (
-        re.compile(r"\bgit\s+push\s+(?:--force(?:-with-lease)?|-f)(?:\b|$)"),
-        "force-pushing is blocked by the harness",
-    ),
-    (
-        re.compile(r"\bgit\s+(?:diff|log|show)\b[^\n;|&]*--output(?:=|\s+)\S+"),
-        "`git diff/log/show --output` arbitrary file overwrite is blocked by the harness",
-    ),
-    (
-        re.compile(r"guard_probe\.py[^\n;|&]*--manifest(?:=|\s+)\S+"),
-        "overriding `guard_probe.py --manifest` is blocked by the harness",
-    ),
-)
+# Matching is token-based and position-independent (see `_destructive_bash`).
+_DESTRUCTIVE_BASH_RULES: Final = _destructive_bash.DESTRUCTIVE_BASH_RULES
 
 
 # ── Pydantic v2 schemas (schema-lint mode only — see module docstring) ────────
@@ -644,11 +610,8 @@ def _protected_paths_in_command(command: str) -> list[str]:
 
 
 def _destructive_bash_reason(command: str) -> str | None:
-    """Return the block reason if *command* matches a host-destructive pattern."""
-    for pattern, reason in _DESTRUCTIVE_BASH_RULES:
-        if pattern.search(command):
-            return reason
-    return None
+    """Return the block reason if *command* is host-destructive, else ``None``."""
+    return _destructive_bash.destructive_bash_reason(command)
 
 
 def _emit_decision(decision_value: str, reason: str) -> None:
