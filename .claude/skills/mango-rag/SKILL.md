@@ -114,7 +114,7 @@ Both exit `2` with a clear message when RAG is disabled
 ruff check --fix src tests ; ruff format src tests
 mypy
 python -m pytest --tb=short -q
-python scripts/check_coverage.py     # adapters >= 85%, rag >= 95%
+python scripts/check_coverage.py     # adapters >= 98%, rag >= 98%
 
 # CUDA placement: RUN_GPU=1 fails when torch sees no CUDA device.
 # Resolve the cu130 wheel for the embeddings-local extra; do not let a
@@ -130,7 +130,7 @@ $env:RUN_EMBEDDINGS_LOCAL='1' ; $env:RUN_RAG='1' ; python -m pytest tests -q
 
 ## Constraints
 
-- DO NOT lower the `rag` (95%) or `adapters` (85%) coverage floor to land a change.
+- DO NOT lower the `rag` (98%) or `adapters` (98%) coverage floor to land a change.
 - DO NOT import `rag/` from `adapters/vector/` or `adapters/embeddings/`.
 - DO NOT ship `1 - distance` scoring or skip the `delete_by_source` re-ingest step.
 - DO NOT add the heavy extras to the default install — they stay optional + lazy.

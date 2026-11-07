@@ -110,6 +110,18 @@ def test_format_turns_missing_user_message() -> None:
     assert "[chat] Assistant: response" in text
 
 
+def test_format_turns_skips_empty_message_and_reply_content() -> None:
+    """Blank content renders nothing: no dangling ``[chat] User:`` label."""
+    turns = [
+        {
+            "agent": "chat",
+            "request": {"messages": [{"role": "user", "content": ""}]},
+            "response": {"content": ""},
+        }
+    ]
+    assert _format_turns(turns) == ""
+
+
 # ── handle() behaviour ────────────────────────────────────────────────────────
 
 

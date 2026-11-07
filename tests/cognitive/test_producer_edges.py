@@ -55,6 +55,17 @@ def _init_exporter() -> None:
 _init_exporter()
 
 
+def test_field_max_length_refuses_a_field_without_the_constraint() -> None:
+    """Producer truncation is derived from the envelope; a field without a
+    ``max_length`` would make it silently unbounded, so the read fails loud."""
+
+    class _Unbounded(BaseModel):
+        summary: str
+
+    with pytest.raises(RuntimeError, match="missing max_length"):
+        producer_mod._field_max_length(_Unbounded, "summary")
+
+
 def _request() -> AgentRequest:
     return AgentRequest(messages=[Message(role="user", content="go")])
 

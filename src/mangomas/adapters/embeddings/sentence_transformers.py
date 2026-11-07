@@ -23,7 +23,9 @@ _SDK_INSTALL_HINT = (
 )
 
 
-def _lazy_load_model(model_name: str, device: str | None = None) -> Any:  # pragma: no cover
+def _lazy_load_model(  # pragma: no cover - requires embeddings-local extra
+    model_name: str, device: str | None = None
+) -> Any:
     """Load a ``SentenceTransformer`` lazily, optionally pinned to *device*.
 
     Excluded from coverage because the success path requires the optional

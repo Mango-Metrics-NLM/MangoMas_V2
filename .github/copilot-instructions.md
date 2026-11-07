@@ -47,7 +47,7 @@ Architecture is protocol-based with a composition root; all adapters satisfy `@r
 
 ## Testing Rules
 
-- Coverage gate: **95 % global minimum**, plus per-package floors — the
+- Coverage gate: **98 % global minimum**, plus per-package floors — the
   authoritative source is `scripts/check_coverage.py`, which pytest's
   `--cov-fail-under` mirrors
 - Every new module gets a `tests/test_<module>.py`

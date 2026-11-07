@@ -133,6 +133,33 @@ def test_ensure_agent_plugins_runs_once_when_enabled(monkeypatch: pytest.MonkeyP
     assert calls == [discovery.AGENT_ENTRY_POINT_GROUP]
 
 
+def test_ensure_agent_plugins_rechecks_under_the_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two builds racing for the lock must scan exactly once.
+
+    The first membership test runs unlocked; the loser of the race reaches
+    the lock after the winner has recorded the registry. The race is
+    reproduced with a lock whose ``__enter__`` records the registry — what
+    the winner does just before releasing — so the loser's second check must
+    be what stops the scan.
+    """
+    discovered: set[int] = set()
+    monkeypatch.setattr(discovery, "_discovered_registries", discovered)
+    calls: list[str] = []
+    monkeypatch.setattr(discovery, "entry_points", _recording_entry_points(calls))
+    registry: Registry[Any] = Registry("agent-test")
+
+    class _WinnerFinishedFirst:
+        def __enter__(self) -> None:
+            discovered.add(id(registry))
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    monkeypatch.setattr(discovery, "_discovery_lock", _WinnerFinishedFirst())
+    discovery.ensure_agent_plugins(Settings(discovery_enabled=True), registry)
+    assert calls == []  # the loser never scanned
+
+
 def test_discover_agents_skips_non_callable_factory(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

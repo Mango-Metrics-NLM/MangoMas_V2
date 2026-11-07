@@ -324,3 +324,73 @@ def test_history_scanning_jobs_check_out_full_history() -> None:
         "history-scanning job(s) use a shallow checkout, so the gitleaks `git` "
         f"pass would scan one commit and pass vacuously: {shallow}"
     )
+
+
+# ── Runner hygiene: bounded jobs, superseded runs cancelled ──────────────────
+#
+# GitHub's default job timeout is 360 minutes. Two jobs set their own bound
+# (docker-smoke, guard-probe) and recorded why: a hung registry or a hung gate
+# must not hold a runner for six hours. The other eighteen inherited the
+# default, so the same hang anywhere else was six hours of queue for every PR
+# behind it. The bound is asserted as a *ceiling* too: `timeout-minutes: 360`
+# would satisfy a presence check while bounding nothing.
+#
+# Without a `concurrency` group, every push to a PR branch queued a fresh run
+# behind the previous one instead of replacing it, so a three-push review
+# round paid for three full pipelines and the reviewer read the stalest. The
+# deploy workflow is the one exception — a half-applied deploy must finish,
+# never be cancelled — and that exception is pinned here so a copy-paste of
+# the CI block into deploy.yml fails loudly.
+_MAX_JOB_TIMEOUT_MINUTES = 60
+_DEPLOY_WORKFLOW = "deploy.yml"
+
+
+def _all_jobs() -> list[tuple[str, str, dict[str, Any]]]:
+    return [
+        (workflow, name, spec)
+        for workflow, doc in _workflows.workflow_docs().items()
+        for name, spec in (doc.get("jobs") or {}).items()
+    ]
+
+
+def test_every_job_declares_a_bounded_timeout() -> None:
+    """Each job carries `timeout-minutes` in (0, 60]: present, and a real bound."""
+    jobs = _all_jobs()
+    assert jobs, "no jobs discovered — has the workflows directory moved?"
+    unbounded = [
+        f"{workflow}:{name} (timeout-minutes={spec.get('timeout-minutes')!r})"
+        for workflow, name, spec in jobs
+        if not isinstance(spec.get("timeout-minutes"), int)
+        or not 0 < spec["timeout-minutes"] <= _MAX_JOB_TIMEOUT_MINUTES
+    ]
+    assert unbounded == [], (
+        "job(s) without a bounded `timeout-minutes` inherit GitHub's 360-minute "
+        f"default and hold a runner for six hours on a hang: {unbounded}"
+    )
+
+
+def test_every_workflow_declares_a_concurrency_group() -> None:
+    """A superseded run is cancelled rather than queued (except a deploy)."""
+    docs = _workflows.workflow_docs()
+    assert docs, "no workflows discovered"
+    for name, doc in docs.items():
+        concurrency = doc.get("concurrency")
+        assert isinstance(concurrency, dict), f"{name} declares no workflow-level concurrency"
+        group = concurrency.get("group")
+        assert isinstance(group, str) and "github.ref" in group, (
+            f"{name}: the concurrency group must be keyed on github.ref so runs for "
+            f"different branches never cancel each other (got {group!r})"
+        )
+        assert isinstance(concurrency.get("cancel-in-progress"), bool), (
+            f"{name}: cancel-in-progress must be stated explicitly, true or false"
+        )
+
+
+def test_only_the_deploy_workflow_refuses_to_cancel_in_progress() -> None:
+    """CI runs are disposable; a deploy that has started must run to completion."""
+    docs = _workflows.workflow_docs()
+    assert _DEPLOY_WORKFLOW in docs
+    cancels = {name: doc["concurrency"]["cancel-in-progress"] for name, doc in docs.items()}
+    assert cancels[_DEPLOY_WORKFLOW] is False, "a deploy must never be cancelled mid-apply"
+    cancelling = {name for name, cancel in cancels.items() if cancel is True}
+    assert cancelling == set(docs) - {_DEPLOY_WORKFLOW}, cancels

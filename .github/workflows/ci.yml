@@ -1,24 +1,42 @@
 name: CI
 
 on:
+  # Both triggers name the same branches — the ones that *receive* merges
+  # (ADR-0036): `dev` is the integration trunk, `qa` the release candidate,
+  # `main` production. `feat/initial-release` is the pre-rename name of `dev`,
+  # kept only until the rename lands so no PR loses CI in between.
+  #
+  # `push` was `["**"]`, so every commit on a PR branch ran this pipeline
+  # twice: once for the push, once for the `pull_request` event the same
+  # commit raises. A PR branch now runs once (pull_request); a trunk merge,
+  # which has no PR of its own, still runs once (push).
+  # tests/deploy/test_ci_make_parity.py derives both lists from the deploy
+  # registry and fails if either drifts.
   push:
-    branches: ["**"]
-  pull_request:
-    # The environment branches (ADR-0036): `dev` is the integration trunk,
-    # `qa` the release candidate, `main` production. `feat/initial-release`
-    # is the pre-rename name of `dev`, kept only until the rename lands so no
-    # PR loses CI in between.
     branches: ["feat/initial-release", "dev", "qa", "main"]
+  pull_request:
+    branches: ["feat/initial-release", "dev", "qa", "main"]
+
+# A newer commit on the same ref supersedes the run in flight: cancel it
+# rather than queue behind it. Keyed on the ref so branches never cancel each
+# other (tests/deploy/test_workflow_hardening.py).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Least-privilege token: CI only needs to read the repo. codecov upload uses its
 # own token, not GITHUB_TOKEN.
 permissions:
   contents: read
 
+# Every job carries `timeout-minutes`: GitHub's default is 360, and a hung
+# step anywhere held a runner (and every PR queued behind it) for six hours.
+# Each bound is a few multiples of the job's measured duration.
 jobs:
   lint:
     name: Lint & type-check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -52,6 +70,7 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +123,7 @@ jobs:
   protected-paths:
     name: Protected-path governance gate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       # Single source of truth for this job — referenced by both steps below
       # so the two can't independently drift to different trunks. A PR is
@@ -139,6 +159,7 @@ jobs:
   bridge-coverage:
     name: Bridge coverage gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -163,6 +184,7 @@ jobs:
   contracts-coverage:
     name: Contracts coverage gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -184,6 +206,7 @@ jobs:
   scripts-coverage:
     name: Scripts coverage gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -249,6 +272,7 @@ jobs:
   pip-audit:
     name: Dependency vulnerability audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -271,6 +295,7 @@ jobs:
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:

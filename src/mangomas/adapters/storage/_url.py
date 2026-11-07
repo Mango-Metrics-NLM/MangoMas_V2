@@ -25,7 +25,9 @@ def dsn_host(url: str) -> str | None:
     """
     try:
         return urlparse(url).hostname
-    except (ValueError, AttributeError):  # pragma: no cover  -- urlparse is very lenient
+    except ValueError:
+        # urlparse is lenient but not total: an unterminated IPv6 literal
+        # (``postgresql://[::1``) raises. A log field must never raise.
         return None
 
 
@@ -41,11 +43,12 @@ def path_from_sqlite_url(url: str) -> str:
     if url == ":memory:" or url.startswith("file::memory:"):
         return ":memory:"
     if url.startswith("sqlite:///"):
-        # Extract path component, stripping query params but preserving path structure
+        # Extract path component, stripping query params but preserving path
+        # structure. ``urlparse`` always yields at least ``"/"`` here (the
+        # third slash *is* the path), so ``path`` is never empty: a bare
+        # ``sqlite:///`` resolves to ``""`` and fails later at open time.
         parsed = urlparse(url)
         path = parsed.path
-        if not path:
-            raise ValueError(f"Empty sqlite URL path: {url!r}")
         # For relative paths (sqlite:///rel.db -> path="/rel.db"),
         # strip leading /; for absolute paths (sqlite:////abs/db -> path="//abs/db"),
         # preserve one leading / (the second one in the original URL).

@@ -22,6 +22,7 @@ from mangomas.adapters.llm.vertex import (
     VertexError,
 )
 from mangomas.adapters.llm.vertex._client import _translate_vertex_error
+from mangomas.adapters.llm.vertex._messages import _aiter, _extract_text
 from mangomas.config import DEFAULT_VERTEX_LOCATION
 from mangomas.core.agent import Message
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
@@ -390,6 +391,63 @@ async def test_aclose_with_owned_client_calls_close_if_present() -> None:
     client._owns_client = True
     await client.aclose()
     assert fake.closed is True
+
+
+async def test_constructor_owns_the_client_it_builds_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No injected client → the adapter builds one and owns its lifecycle.
+
+    The SDK-backed builder is replaced at the class seam so the ownership
+    flag — the only thing this test is about — is observed on the real
+    constructor path rather than flipped by hand.
+    """
+    fake = FakeVertexGenerativeModel()
+
+    def _build(self: VertexClient, **_: Any) -> FakeVertexGenerativeModel:  # noqa: ARG001
+        return fake
+
+    monkeypatch.setattr(VertexClient, "_init_real_client", _build)
+    client = VertexClient(
+        project_id=_TEST_PROJECT, location=DEFAULT_VERTEX_LOCATION, model=_TEST_MODEL
+    )
+    assert client._client is fake
+    assert client._owns_client is True
+    await client.aclose()
+    assert fake.closed is True
+
+
+async def test_aclose_on_an_owned_client_without_a_close_hook_is_a_no_op() -> None:
+    """A real ``GenerativeModel`` exposes neither ``aclose`` nor ``close``."""
+    client, _ = _make_client()
+    client._owns_client = True
+    client._client = object()
+    await client.aclose()  # nothing to call, nothing to raise
+
+
+async def test_aclose_calls_a_synchronous_close_without_awaiting_it() -> None:
+    """A plain ``close()`` (no awaitable result) is called once and not awaited."""
+    calls: list[str] = []
+
+    class _SyncClosable:
+        def close(self) -> None:
+            calls.append("close")
+
+    client, _ = _make_client()
+    client._owns_client = True
+    client._client = _SyncClosable()
+    await client.aclose()
+    assert calls == ["close"]
+
+
+def test_extract_text_maps_a_missing_text_attribute_to_empty() -> None:
+    """``.text`` absent (not raising) reads as an empty reply, not ``"None"``."""
+    assert _extract_text(object()) == ""
+
+
+async def test_aiter_normalises_a_plain_iterable() -> None:
+    """A fake that streams a list is drained like the SDK's async iterator."""
+    assert [item async for item in _aiter(["a", "b"])] == ["a", "b"]
 
 
 # ── Lazy import behaviour ───────────────────────────────────────────────────

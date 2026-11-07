@@ -183,6 +183,11 @@ def test_short_name_for_full_path() -> None:
     assert _short_name("projects/p/secrets/k/versions/3") == "k"
 
 
+def test_short_name_for_a_truncated_full_path_falls_back_to_the_input() -> None:
+    """A ``projects/…/secrets`` path with no id after it has nothing to shorten to."""
+    assert _short_name("projects/p/secrets") == "projects/p/secrets"
+
+
 def test_build_resource_path_with_empty_short_name_produces_malformed_path() -> None:
     """Document current behaviour: empty short ids produce a malformed path.
 

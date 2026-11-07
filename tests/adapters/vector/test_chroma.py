@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from mangomas.adapters.vector import chroma as chroma_module
 from mangomas.adapters.vector.chroma import ChromaVectorStore, _similarity_from_distance
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.errors import PersistenceError
@@ -55,6 +56,34 @@ def _store(collection: _FakeCollection) -> ChromaVectorStore:
         collection_name=TEST_VECTOR_COLLECTION,
         collection=collection,
     )
+
+
+def test_constructor_builds_the_collection_lazily_when_none_is_injected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an injected collection the adapter asks the lazy builder for one.
+
+    The builder itself needs the ``rag`` extra and is excluded from
+    measurement; this pins the *call* — with the configured directory and
+    collection name — through a stand-in, so a renamed keyword would fail
+    here rather than on the first real ingest.
+    """
+    built = _FakeCollection()
+    seen: dict[str, str] = {}
+
+    def _fake_lazy(*, persist_dir: str, collection_name: str) -> _FakeCollection:
+        seen.update(persist_dir=persist_dir, collection_name=collection_name)
+        return built
+
+    monkeypatch.setattr(chroma_module, "_lazy_collection", _fake_lazy)
+    store = ChromaVectorStore(
+        persist_dir=TEST_VECTOR_PERSIST_DIR, collection_name=TEST_VECTOR_COLLECTION
+    )
+    assert store._collection is built
+    assert seen == {
+        "persist_dir": TEST_VECTOR_PERSIST_DIR,
+        "collection_name": TEST_VECTOR_COLLECTION,
+    }
 
 
 async def test_upsert_forwards_all_lists() -> None:

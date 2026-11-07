@@ -544,6 +544,51 @@ def test_close_idempotent_after_terminate() -> None:
     assert repo._pool is None
 
 
+def test_terminate_quietly_logs_a_raising_terminate_and_never_propagates(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A pool whose ``terminate()`` raises is logged by exception *type* only.
+
+    This runs from ``close()`` at process exit and from the bootstrap failure
+    path, both of which are already unwinding; a second exception there would
+    mask the first. The DSN never reaches the record — only ``dsn_host``.
+    """
+    repo = PostgresRepository(_make_cfg())
+
+    class _ExplodingPool:
+        def terminate(self) -> None:
+            raise RuntimeError("socket already gone")
+
+    with caplog.at_level(logging.WARNING, logger=postgres_module.__name__):
+        repo._terminate_quietly(_ExplodingPool())
+    record = next(r for r in caplog.records if "terminate raised" in r.getMessage())
+    assert getattr(record, "error", None) == "RuntimeError"
+    assert "socket already gone" not in caplog.text
+
+
+async def test_ensure_pool_returns_the_pool_another_waiter_published() -> None:
+    """The second check under the lock is a real gate, not a copy of the first.
+
+    Two concurrent first calls both pass the unlocked ``_pool is None`` test;
+    the one that acquires the lock second must find the winner's pool and
+    return it instead of building (and leaking) a duplicate. The race is
+    reproduced with a lock whose acquisition publishes a pool — what the
+    winner does just before releasing.
+    """
+    repo = PostgresRepository(_make_cfg())
+    published = FakePool()
+
+    class _WinnerFinishedFirst:
+        async def __aenter__(self) -> None:
+            repo._pool = published  # FakePool duck-types asyncpg.Pool
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+    repo._init_lock = _WinnerFinishedFirst()  # type: ignore[assignment]
+    assert await repo._ensure_pool() is published
+
+
 # ── jsonb row-shape parity with SQLite (regression) ───────────────────────────
 
 

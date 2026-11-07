@@ -9,6 +9,59 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — CI/CD hygiene (engineering-health reflection, PR 1)
+
+- `ci.yml`'s `push` trigger names the trunk branches only, the same
+  registry-derived list as its `pull_request` trigger, so a commit on a PR
+  branch runs the pipeline once instead of twice (push + pull_request).
+  `tests/deploy/test_ci_make_parity.py::test_push_trigger_targets_the_same_environment_branches`
+  pins the two lists equal.
+- Every workflow declares a `concurrency` group keyed on `github.ref` with
+  `cancel-in-progress: true`, except `deploy.yml`, which queues rather than
+  cancels (a half-applied deploy must finish). Every job declares a bounded
+  `timeout-minutes` (18 of 20 inherited GitHub's 360-minute default).
+  `tests/deploy/test_workflow_hardening.py` asserts presence, the 60-minute
+  ceiling, and that `deploy.yml` is the one exception; `make guard-probe`
+  replays all three as `MUT-CI-01..03`.
+- `.github/dependabot.yml` groups minor/patch bumps per ecosystem (one PR a
+  month each instead of one per package); majors stay ungrouped. The
+  lock-stepped pairs (`ruff`/`mypy` ↔ pre-commit revs, `coverage` ↔
+  `pytest-cov`) are recorded beside the config. First-party pins bumped in
+  the same PR: `actions/cache@v6`, `actions/upload-artifact@v7`.
+- `CONTRIBUTING.md` records the action-pin policy (third-party by SHA,
+  first-party `actions/*` by tag) that `test_workflow_hardening.py` was
+  already enforcing.
+
+### Changed — Coverage honesty: close the gap, ratchet the floors (engineering-health reflection, PR 2)
+
+- A full `--cov-branch` run measured 99.66 % against a 95 % global floor and
+  `adapters` at 98.28 % against 85 %. The 9 missed statements and 16 partial
+  branches are now covered by tests (`tests/test_vertex_unit.py`,
+  `tests/test_memory.py`, `tests/adapters/vector/test_chroma.py`,
+  `tests/agents/test_discovery.py`, `tests/test_summarize.py`,
+  `tests/test_middleware.py`, `tests/cognitive/test_producer_edges.py`,
+  `tests/test_storage_url_properties.py`); the one provably unreachable
+  branch (`rag/chunker.py`'s `while start < n` guard, always exited by the
+  `break`) is removed rather than excused, as is the unreachable
+  `Empty sqlite URL path` guard in `adapters/storage/_url.py` (`urlparse`
+  always yields at least `/`; `sqlite:///` resolves to `""`, documented).
+- The eight `# pragma: no cover` sites marked "defensive"/"race" were all
+  reachable and now have tests: the Postgres double-checked pool publish and
+  raising `terminate()`, `_short_name` on a truncated path, a non-object
+  JSONL row, an unparseable DSN host, the Vertex sync-iterable fallback, and
+  `_error_status`'s foreign-exception fallback. New rule, enforced by
+  `tests/test_check_coverage.py::test_every_non_type_checking_pragma_states_its_reason`:
+  a pragma outside a `TYPE_CHECKING` guard must state its reason on the
+  same line (`- requires <extra>`, `— platform-gated`).
+- Floors ratcheted to the measured value in `scripts/check_coverage.py` and
+  `pyproject.toml` addopts: global 95 → 98; `adapters` 85 → 98; `agents`,
+  `api`, `rag`, `cognitive` 95 → 98; `composition`, `cli`, `config`,
+  `telemetry`, `metrics`, `eval`, `workflow`, `harness` 95 → 100.
+  `docs/testing/regression.md` mirrors the table
+  (`test_regression_doc_floor_table_matches_the_script`); `make guard-probe`
+  replays the global-floor ↔ addopts parity, the doc ↔ script parity and the
+  pragma rule as `MUT-COV-01..03`.
+
 ### Added — Studio-contract AQA lane (spec-0041)
 
 - `scripts/studio_consumer_probe.py` drives the HTTP contract MangoMas Studio

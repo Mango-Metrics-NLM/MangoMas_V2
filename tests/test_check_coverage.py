@@ -187,6 +187,98 @@ def test_protocol_stub_bodies_are_still_excluded(line: str) -> None:
     )
 
 
+# ── Pragmas must say why ──────────────────────────────────────────────────────
+#
+# A bare `# pragma: no cover` is the smallest fail-open in this file's class: it
+# removes a line from the denominator and leaves no trace of whether the line
+# was unreachable, untestable, or merely untested. Eight such sites were found
+# marked "defensive" or "race"; every one turned out to be reachable with a
+# crafted input, and each now has a test instead. The rule going forward: a
+# pragma outside a `TYPE_CHECKING` guard must carry a reason on the same line,
+# so a reviewer can tell an optional-SDK import from an untested branch.
+
+_SRC_ROOT = _REPO_ROOT / "src" / "mangomas"
+_PRAGMA = "pragma: no cover"
+# Only the guard statement itself is exempt; a `TYPE_CHECKING` that appears in
+# a string, a comment or an expression must not waive the reason.
+_TYPE_CHECKING_GUARD_RE = re.compile(r"\s*if\s+TYPE_CHECKING\s*:")
+# `# pragma: no cover - reason`, `-- reason`, `— reason` or `: reason`. The
+# reason must open on a non-separator character: a bare `\S` let `-+` backtrack
+# and accept `--` / `---` as their own reason.
+_PRAGMA_WITH_REASON_RE = re.compile(r"pragma: no cover\s*(?:-+|—|:)\s*[^\s—:\-]")
+
+
+def _is_bare_pragma(line: str) -> bool:
+    if _PRAGMA not in line or _TYPE_CHECKING_GUARD_RE.match(line):
+        return False
+    return _PRAGMA_WITH_REASON_RE.search(line) is None
+
+
+def _bare_pragma_sites() -> list[str]:
+    return [
+        f"{path.relative_to(_REPO_ROOT)}:{number}"
+        for path in sorted(_SRC_ROOT.rglob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if _is_bare_pragma(line)
+    ]
+
+
+def test_pragma_sites_exist() -> None:
+    """Self-guard: the reason rule is only meaningful if `src/` still has pragmas."""
+    text = "\n".join(p.read_text(encoding="utf-8") for p in _SRC_ROOT.rglob("*.py"))
+    assert _PRAGMA in text
+
+
+def test_every_non_type_checking_pragma_states_its_reason() -> None:
+    assert _bare_pragma_sites() == [], (
+        "`# pragma: no cover` without a reason on the same line (e.g. "
+        "`# pragma: no cover - requires vertex extra`). A bare pragma hides whether "
+        "the line is unreachable or merely untested; say which, or write the test."
+    )
+
+
+def test_pragma_reason_pattern_rejects_a_bare_pragma() -> None:
+    """The regex itself must discriminate, or the guard above is vacuous."""
+    assert _PRAGMA_WITH_REASON_RE.search("x = 1  # pragma: no cover") is None
+    assert _PRAGMA_WITH_REASON_RE.search("x = 1  # pragma: no cover -") is None
+    assert _PRAGMA_WITH_REASON_RE.search("x = 1  # pragma: no cover - requires gcp extra")
+    assert _PRAGMA_WITH_REASON_RE.search("x = 1  # pragma: no cover — platform-gated")
+
+
+@pytest.mark.parametrize(
+    "separator_only",
+    ["--", "---", "- -", "—", ":", "-:", "— --"],
+)
+def test_pragma_reason_pattern_rejects_a_separator_only_reason(separator_only: str) -> None:
+    """A run of separators is not a reason, however many dashes it has."""
+    line = f"x = 1  # pragma: no cover {separator_only}"
+    assert _PRAGMA_WITH_REASON_RE.search(line) is None, line
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "if TYPE_CHECKING:  # pragma: no cover",
+        "    if TYPE_CHECKING:  # pragma: no cover",
+    ],
+)
+def test_a_type_checking_guard_needs_no_reason(line: str) -> None:
+    assert not _is_bare_pragma(line)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'raise RuntimeError("TYPE_CHECKING")  # pragma: no cover',
+        "x = 1  # pragma: no cover  (see TYPE_CHECKING above)",
+        "if not TYPE_CHECKING:  # pragma: no cover",
+    ],
+)
+def test_mentioning_type_checking_does_not_waive_the_reason(line: str) -> None:
+    """Only the guard statement is exempt — not any line that names it."""
+    assert _is_bare_pragma(line)
+
+
 # ── Floor completeness (spec-0020 R1) ─────────────────────────────────────────
 #
 # The fourth instance of the class named in this module's docstring, and the one

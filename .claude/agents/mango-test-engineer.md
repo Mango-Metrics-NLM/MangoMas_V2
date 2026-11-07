@@ -11,7 +11,7 @@ without coupling to implementation details.
 
 ## Surface You Own
 - **pytest-asyncio `asyncio_mode="auto"`** — `async def` test functions only; NO `@pytest.mark.asyncio`.
-- **Coverage gate**: 95 % minimum; run `python -m pytest --tb=short -q` to verify.
+- **Coverage gate**: 98 % minimum; run `python -m pytest --tb=short -q` to verify.
 - **Fake adapters**: always use `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository` from `tests/fakes.py`. Never `unittest.mock.patch` on internal protocols.
 - **Constants**: magic strings/numbers go in `tests.constants`. Two kinds, two rules:
   a default that mirrors `mangomas.config` is **re-exported**, never restated —
@@ -48,7 +48,7 @@ tests/
    `mangomas.config` if it mirrors a config default, otherwise define it locally.
 4. Write the test file mirroring the source module structure.
 5. Run `python -m pytest tests/test_<module>.py -v` to verify all pass.
-6. Run the full suite to confirm 95 % gate is maintained.
+6. Run the full suite to confirm 98 % gate is maintained.
 
 ## Constraints
 

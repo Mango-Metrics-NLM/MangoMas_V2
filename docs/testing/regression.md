@@ -90,20 +90,26 @@ Enforced by `scripts/check_coverage.py` in CI and locally:
 | `utils` | 100% |
 | `headers` | 100% |
 | `entry_points` | 100% |
-| `composition` | 95% |
-| `agents` | 95% |
-| `api` | 95% |
-| `cli` | 95% |
-| `config` | 95% |
-| `telemetry` | 95% |
-| `metrics` | 95% |
-| `eval` | 95% |
-| `rag` | 95% |
-| `workflow` | 95% |
-| `cognitive` | 95% |
-| `harness` | 95% |
-| `adapters` | 85% (varies per module; embeddings/vector adapters covered via injected fakes, lazy SDK paths `# pragma: no cover`) |
-| **Global** | **95%** |
+| `composition` | 100% |
+| `cli` | 100% |
+| `config` | 100% |
+| `telemetry` | 100% |
+| `metrics` | 100% |
+| `eval` | 100% |
+| `workflow` | 100% |
+| `harness` | 100% |
+| `agents` | 98% |
+| `api` | 98% |
+| `rag` | 98% |
+| `cognitive` | 98% |
+| `adapters` | 98% (embeddings/vector adapters covered via injected fakes; the optional-SDK import paths carry a reasoned `# pragma: no cover - requires <extra>`) |
+| **Global** | **98%** |
+
+Floors are set at the measured value (branch coverage, 2026-11-05): 100% where
+the package measures 100%, 98% where a stray partial branch is plausible. A
+`# pragma: no cover` outside a `TYPE_CHECKING` guard must state its reason on
+the same line (`tests/test_check_coverage.py`); the eight "defensive" pragmas
+that used to exist were all reachable and now have tests.
 
 Three floors sit outside `FLOORS` because they measure a different tree:
 `eval_harness_bridge` (100%, `make bridge-coverage`),

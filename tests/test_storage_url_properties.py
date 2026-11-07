@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import string
 
+import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
-from mangomas.adapters.storage._url import path_from_sqlite_url
+from mangomas.adapters.storage._url import dsn_host, path_from_sqlite_url
 
 _PATH_CHARS = string.ascii_letters + string.digits + "/._-"
 _bare_paths = st.text(alphabet=_PATH_CHARS, min_size=1, max_size=64).filter(
@@ -67,3 +68,30 @@ def test_the_only_exception_is_the_documented_value_error(url: str) -> None:
 def test_normalisation_is_idempotent(path: str) -> None:
     once = path_from_sqlite_url(path)
     assert path_from_sqlite_url(once) == once
+
+
+def test_a_bare_three_slash_url_resolves_to_an_empty_path() -> None:
+    """Documents current behaviour: ``sqlite:///`` names no file and yields ``""``.
+
+    ``urlparse`` reads the third slash as the path, so the path is never
+    empty at parse time and the function has no "empty path" error of its
+    own; the empty string fails later, at open time, where the adapter
+    reports it. The documented ``ValueError`` comes from ``urlparse`` itself
+    on a malformed netloc (next test).
+    """
+    assert path_from_sqlite_url("sqlite:///") == ""
+
+
+def test_the_documented_value_error_comes_from_an_unparseable_netloc() -> None:
+    with pytest.raises(ValueError, match="Invalid IPv6 URL"):
+        path_from_sqlite_url("sqlite://[::1")
+
+
+def test_dsn_host_returns_none_for_a_url_urlparse_rejects() -> None:
+    """An unterminated IPv6 literal makes ``urlparse`` raise; the log field is ``None``.
+
+    ``dsn_host`` is the only DSN-derived value that may reach a log record,
+    so it must never raise from inside a logging call — a malformed URL
+    degrades to an absent field rather than a second exception.
+    """
+    assert dsn_host("postgresql://[::1") is None

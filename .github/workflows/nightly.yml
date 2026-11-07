@@ -33,6 +33,14 @@ on:
 permissions:
   contents: read
 
+# A manual dispatch that overlaps the scheduled run supersedes it
+# (tests/deploy/test_workflow_hardening.py).
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every job is bounded (GitHub's default is 360 minutes); the embeddings leg
+# gets the widest bound because it downloads CPU torch and a model.
 jobs:
   # Which branches the security scans below check out (ADR-0036). Scheduled
   # workflows run on the default branch only, so without this the code in
@@ -44,6 +52,7 @@ jobs:
   scan-refs:
     name: Resolve branches to scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       refs: ${{ steps.refs.outputs.refs }}
     steps:
@@ -69,6 +78,7 @@ jobs:
   postgres:
     name: Postgres suite (testcontainers)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -87,6 +97,7 @@ jobs:
   embeddings-local:
     name: Local embeddings + RAG suite (CPU)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -111,7 +122,7 @@ jobs:
       # Keyed on the model id so a model change invalidates the cache rather
       # than silently testing against the previous one.
       - name: Cache the sentence-transformers model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/huggingface
           key: hf-all-MiniLM-L6-v2
@@ -127,6 +138,7 @@ jobs:
   secret-scan:
     name: Secret scan (working tree + history) — ${{ matrix.ref || 'default branch' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: scan-refs
     strategy:
       fail-fast: false
@@ -164,6 +176,7 @@ jobs:
   sbom-scan:
     name: SBOM / Trivy (baseline, non-blocking) — ${{ matrix.ref || 'default branch' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     continue-on-error: true
     needs: scan-refs
     strategy:
@@ -194,6 +207,7 @@ jobs:
   notify:
     name: File a tracking issue on failure
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [scan-refs, postgres, embeddings-local, secret-scan, sbom-scan]
     if: failure()
     permissions:

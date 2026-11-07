@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from mangomas.api.app import create_app
+from mangomas.api.middleware.access_log import _emit_access_log
 from mangomas.core import Orchestrator
 
 
@@ -103,3 +106,24 @@ def test_middleware_latency_is_non_negative(
     latency = getattr(info_records[0], "latency_ms", -1)
     assert isinstance(latency, float)
     assert latency >= 0
+
+
+def test_emit_access_log_without_a_response_still_records_the_request(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unhandled exception leaves no response to stamp, but the line is still logged.
+
+    ``_emit_access_log`` runs from the middleware's ``finally``; when the
+    inner app raised, there is no response object to carry ``X-Request-ID``,
+    and the record must still be emitted with the fallback status so the
+    failure is visible in the access log.
+    """
+    request = Request({"type": "http", "method": "GET", "path": "/boom", "headers": []})
+    with caplog.at_level(logging.INFO, logger="mangomas.api.middleware"):
+        _emit_access_log(request, None, 500, "abc12345", time.perf_counter())
+    record = next(r for r in caplog.records if r.levelno == logging.INFO)
+    fields = {name: getattr(record, name, None) for name in ("method", "path", "status_code")}
+    assert fields == {"method": "GET", "path": "/boom", "status_code": 500}
+    # `correlation_id` is rewritten by the CorrelationFilter from the ContextVar
+    # (unset here); `request_id` carries the value the caller passed.
+    assert getattr(record, "request_id", None) == "abc12345"

@@ -190,7 +190,9 @@ class PostgresRepository:
         if self._pool is not None:
             return self._pool
         async with self._init_lock:
-            if self._pool is not None:  # pragma: no cover  -- race coverage
+            if self._pool is not None:
+                # Lost the race: another waiter published the pool while we
+                # queued for the lock. Reuse it rather than build a second.
                 return self._pool
             import asyncpg  # noqa: PLC0415
 
@@ -435,7 +437,7 @@ class PostgresRepository:
         """
         try:
             pool.terminate()
-        except Exception as exc:  # pragma: no cover  -- defensive
+        except Exception as exc:
             logger.warning(
                 "Postgres pool terminate raised",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},

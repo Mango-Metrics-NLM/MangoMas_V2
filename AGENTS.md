@@ -400,14 +400,18 @@ HTTP status mapping is centralised in `api/errors.py::_ERROR_STATUS`.
 
 - **Framework**: `pytest` with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
 - **Coverage gate**: `scripts/check_coverage.py` is the single source of truth —
-  95 % global minimum plus per-package floors
+  98 % global minimum plus per-package floors set at the measured value
   (`errors`/`registry`/`core`/`secrets`/`correlation`/`tenancy`/`_headers`/
-  `utils`/`_entry_points` = 100 %, `adapters` = 85 %, `cognitive`/`eval`/`rag`/
-  `workflow`/`harness` and the rest = 95 %). Scripts are measured separately
+  `utils`/`_entry_points`/`composition`/`cli`/`config`/`telemetry`/`metrics`/
+  `eval`/`workflow`/`harness` = 100 %; `agents`/`api`/`adapters`/`rag`/
+  `cognitive` = 98 %). Scripts are measured separately
   (`SCRIPTS_FLOOR` = 94 %). `make gpu` (`RUN_GPU=1`) is fail-not-skip CUDA
   placement. `make guard-probe` proves guards still fire and is not part of
-  `make gate`. The pytest `--cov-fail-under=95` addopt in
-  `pyproject.toml` mirrors the global floor.
+  `make gate`. The pytest `--cov-fail-under=98` addopt in
+  `pyproject.toml` mirrors the global floor. A `# pragma: no cover` outside
+  a `TYPE_CHECKING` guard must state its reason on the same line
+  (`tests/test_check_coverage.py`); "defensive" is not a reason — write the
+  test or delete the branch.
 - **Fake adapters**: `tests/fakes.py` — `FakeLLM`, `FakeRepository`, `FakeTool`, `FakeMemoryRepository`, `FakeCognitiveSink`
 - **Constants**: `tests.constants` — no magic **domain** values in tests
   (URLs, model ids, env-var names, limits, rosters). Universal literals with

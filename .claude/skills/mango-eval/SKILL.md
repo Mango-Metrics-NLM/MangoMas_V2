@@ -117,7 +117,7 @@ real is D15, not a present capability.
 ruff check --fix src tests ; ruff format src tests
 mypy
 python -m pytest tests/eval -q
-python scripts/check_coverage.py      # eval floor >= 95%
+python scripts/check_coverage.py      # eval floor >= 100%
 
 # Optional Langfuse sink/source (extra + env/ADC)
 pip install -e ".[dev,langfuse]"
@@ -131,7 +131,7 @@ indirection), and ADR-0005 (regression/baseline gating).
 
 ## Constraints
 
-- DO NOT lower the `eval` (95%) coverage floor to land a change.
+- DO NOT lower the `eval` (100%) coverage floor to land a change.
 - DO NOT hard-code thresholds/paths — route them through `EvalSettings`.
 - DO NOT let a gate raise before sinks emit; the report must always be recorded.
 - DO NOT import optional-extra SDKs at module top-level — lazy-import them.
