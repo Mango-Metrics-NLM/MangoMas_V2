@@ -267,6 +267,15 @@ def test_build_scrubbed_oracle_env_is_case_insensitive_on_windows() -> None:
         assert dropped not in scrubbed
 
 
+def test_build_scrubbed_oracle_env_strips_nothing_when_no_credentials() -> None:
+    raw = {"SAFE_VAR": "keep", "MANGOMAS_ENV": "local"}
+    scrubbed = build_scrubbed_oracle_env(raw)
+    assert scrubbed["SAFE_VAR"] == "keep"
+    assert scrubbed["MANGOMAS_ENV"] == "local"
+    assert scrubbed["PYTEST_ADDOPTS"] == "-p no:cacheprovider -o addopts="
+    assert scrubbed["PYTHONIOENCODING"] == "utf-8"
+
+
 @pytest.mark.parametrize("bad_timeout", [float("nan"), float("inf"), -1.0])
 def test_run_oracle_and_promote_rejects_non_finite_timeout(
     tmp_path: Path,
