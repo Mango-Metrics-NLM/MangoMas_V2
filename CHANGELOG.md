@@ -40,6 +40,24 @@ Versioning: [Semantic Versioning](https://semver.org/).
   reported killed only after `docker ps` confirms it is gone (bounded retries,
   `repair_oracle_timeout_kill_failed` otherwise).
 
+### Added — Reproducible `.venv-gpu` bootstrap and Windows TLS inspection runbook (ENV-1)
+
+- `scripts/bootstrap_gpu_env.py` (`make venv-gpu`, `PYTHON_GPU ?= .venv-gpu/Scripts/python.exe`):
+  exports Windows `ROOT` and `CA` X.509 certificates to a deduplicated PEM
+  bundle (`%LOCALAPPDATA%\mangomas\ca-bundle.pem`), wires `SSL_CERT_FILE`,
+  `REQUESTS_CA_BUNDLE`, `PIP_CERT`, and `--use-feature=truststore` into every
+  bootstrap `pip` step, installs `-e ".[dev,embeddings-local,rag]"` and
+  `-e ./mango-integration-contracts`, and installs `torch==2.14.1+cu130` last
+  followed by `pip check` and a CUDA device-count check. Tested at 100 %
+  coverage by `tests/test_bootstrap_gpu_env.py` (added to `SCRIPTS_TESTS`).
+- `docs/tooling/env1-tls-inspection-runbook.md`: documents diagnosis and
+  machine-wide remediation (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`,
+  `NODE_EXTRA_CA_CERTS` for Context7/MCP, `CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE`
+  for `gcloud`) and closes `ENV-1` in `docs/testing/rca-20261106.md`.
+- The exporter keeps only roots Windows trusts for TLS server authentication
+  (PEM cannot carry purpose restrictions), writes no empty bundle, and
+  `--export-ca-only` exits `1` when nothing was exported (PR #120 review).
+
 ### Fixed — PR #119 review and CI follow-ups to the harness sandbox (spec-0043)
 
 - `mangomas.harness.repair_sandbox`:
