@@ -9,6 +9,23 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — Origin-delta AQA for #111 + #115 (spec-0042)
+
+- `SQLiteRepository.__init__` (`src/mangomas/adapters/storage/sqlite.py`) and
+  `SqliteResultsSink.__init__` (`src/mangomas/eval/sinks/sqlite_results.py`)
+  now translate `ValueError` from `path_from_sqlite_url` (including #115's
+  `sqlite:///` empty-path rejection and malformed IPv6 netlocs) into
+  `ConfigError` with a truncated detail (`D-1`, `D-2` in
+  `docs/testing/rca-20261106.md`). Previously, setting
+  `MANGOMAS_DB__URL=sqlite:///` or
+  `MANGOMAS_EVAL__SINK_OPTIONS='{"sqlite_results":{"db_path":"sqlite:///"}}'`
+  escaped `build_or_exit` / `_build_sinks` as an unhandled `ValueError`
+  traceback (exit 1) instead of `EXIT_CONFIG_ERROR` (exit 2).
+- `tests/regression/test_aqa_20261106_defects.py` adds 17 hermetic regression
+  guards (16 red on the pre-fix tree, 17 green after fix); `make guard-probe`
+  replays both fixes as `MUT-AQA-1106-01` and `MUT-AQA-1106-02` (36 manifest
+  entries total).
+
 ### Fixed — review follow-ups to the reflection PRs (#111)
 
 - `path_from_sqlite_url("sqlite:///")` now raises the documented
