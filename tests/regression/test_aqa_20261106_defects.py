@@ -21,6 +21,7 @@ causes and the mutation proof for each guard, is ``docs/testing/rca-20261106.md`
 from __future__ import annotations
 
 import json
+
 import pytest
 from typer.testing import CliRunner
 
