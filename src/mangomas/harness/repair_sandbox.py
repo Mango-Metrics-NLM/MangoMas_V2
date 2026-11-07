@@ -41,6 +41,23 @@ FORBIDDEN_PROMOTION_PREFIXES: tuple[str, ...] = (
     "venv/",
 )
 
+# Component form of the prefixes: a bare `.git` (a gitdir-pointer *file* in a
+# worktree or submodule) and a nested `sub/.git/` are refused as well.
+_FORBIDDEN_PROMOTION_DIR_NAMES: frozenset[str] = frozenset(
+    prefix.rstrip("/").lower() for prefix in FORBIDDEN_PROMOTION_PREFIXES
+)
+
+# Write flags for promotion: never follow a final-component link where the OS
+# supports it (POSIX `O_NOFOLLOW`); binary mode so the hashed bytes land as-is.
+_PROMOTION_WRITE_FLAGS: int = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_TRUNC
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_BINARY", 0)
+)
+_PROMOTION_FILE_MODE: int = 0o644
+
 FORBIDDEN_PROMOTION_FILENAMES: frozenset[str] = frozenset(
     {
         ".env",
@@ -152,12 +169,18 @@ def validate_loopback_llm_url(url: str) -> str:
     return url
 
 
+def _is_link(path: Path) -> bool:
+    """True for a symlink, or a Windows junction where ``Path.is_junction`` exists (3.12+)."""
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or (is_junction is not None and bool(is_junction()))
+
+
 def _reject_symlink_chain(path: Path, stop_at: Path) -> None:
-    """Raise ``ToolExecutionError`` if *path* or any parent up to *stop_at* is a symlink."""
+    """Raise ``ToolExecutionError`` if *path* or any parent up to *stop_at* is a link."""
     current = path
     stop_resolved = stop_at.resolve()
     while True:
-        if current.is_symlink():
+        if _is_link(current):
             raise ToolExecutionError(
                 f"Sandbox refused symlink or junction in path: {current}",
                 tool_name="repair_sandbox",
@@ -193,8 +216,10 @@ def _resolve_contained_path(root: Path, relative_path: str | Path, *, label: str
             f"Sandbox {label} path must be a relative path without '..' traversal: {raw!r}",
             tool_name="repair_sandbox",
         )
-    first_part_stem = candidate_rel.parts[0].split(".", 1)[0].lower() if candidate_rel.parts else ""
-    if first_part_stem in _WINDOWS_RESERVED_NAMES:
+    # Device names are reserved in every directory, with any extension and
+    # trailing spaces; PureWindowsPath splits on both separators on any host.
+    stems = (part.split(".", 1)[0].rstrip(" ").lower() for part in PureWindowsPath(raw).parts)
+    if any(stem in _WINDOWS_RESERVED_NAMES for stem in stems):
         raise ToolExecutionError(
             f"Sandbox {label} path uses a reserved Windows device name: {raw!r}",
             tool_name="repair_sandbox",
@@ -254,10 +279,9 @@ def validate_promotion_target(
             f"Promotion target {norm!r} is a protected or governance-surface path",
             tool_name="repair_sandbox",
         )
-    norm_lower = norm.lower()
-    if any(norm_lower.startswith(prefix.lower()) for prefix in FORBIDDEN_PROMOTION_PREFIXES):
+    if any(part.lower() in _FORBIDDEN_PROMOTION_DIR_NAMES for part in Path(norm).parts):
         raise ToolExecutionError(
-            f"Promotion target {norm!r} is inside a forbidden directory",
+            f"Promotion target {norm!r} is (or is inside) a forbidden directory",
             tool_name="repair_sandbox",
         )
     filename_lower = Path(norm).name.lower()
@@ -299,6 +323,34 @@ def build_scrubbed_oracle_env(base_env: Mapping[str, str] | None = None) -> dict
     scrubbed["PYTEST_ADDOPTS"] = _SAFE_ORACLE_ADDOPTS
     scrubbed["PYTHONIOENCODING"] = "utf-8"
     return scrubbed
+
+
+def _write_promotion_target(
+    repo_root: Path,
+    relative_path: str | Path,
+    allowed_paths: Collection[str],
+    payload: bytes,
+) -> Path:
+    """Re-validate the target after the oracle ran, then write without following links.
+
+    The oracle may have replaced the target (or an ancestor) with a link to a
+    file outside the repo; validation runs again after ``mkdir`` so a link
+    created in between is refused, and ``O_NOFOLLOW`` closes the final hop
+    on POSIX.
+    """
+    target = validate_promotion_target(repo_root, relative_path, allowed_paths=allowed_paths)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target = validate_promotion_target(repo_root, relative_path, allowed_paths=allowed_paths)
+    try:
+        fd = os.open(target, _PROMOTION_WRITE_FLAGS, _PROMOTION_FILE_MODE)
+    except OSError as exc:
+        raise ToolExecutionError(
+            f"Promotion target could not be opened without following links: {exc}",
+            tool_name="repair_sandbox",
+        ) from exc
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(payload)
+    return target
 
 
 def run_oracle_and_promote(
@@ -367,16 +419,18 @@ def run_oracle_and_promote(
             target_path=None,
         )
 
-    after_hash = hashlib.sha256(staged_file.read_bytes()).hexdigest()
+    # The oracle ran untrusted code: re-check the staged path for a swapped-in
+    # link, then hash and promote the *same* bytes (no read-after-check gap).
+    staged_file = _resolve_contained_path(staging_root, relative_path, label="staging")
+    staged_bytes = staged_file.read_bytes()
+    after_hash = hashlib.sha256(staged_bytes).hexdigest()
     if after_hash != staged_hash:
         raise ToolExecutionError(
             "Oracle subprocess modified the staged candidate file before promotion",
             tool_name="repair_sandbox",
         )
 
-    content = staged_file.read_text(encoding="utf-8")
-    target_file.parent.mkdir(parents=True, exist_ok=True)
-    target_file.write_text(content, encoding="utf-8")
+    target_file = _write_promotion_target(repo_root, relative_path, allowed_paths, staged_bytes)
     logger.info(
         "Repair-sandbox candidate promoted",
         extra={

@@ -304,7 +304,7 @@
     {
       "id": "MUT-SBX-10",
       "path": "src/mangomas/harness/repair_sandbox.py",
-      "fixed": "    after_hash = hashlib.sha256(staged_file.read_bytes()).hexdigest()\n    if after_hash != staged_hash:\n        raise ToolExecutionError(\n            \"Oracle subprocess modified the staged candidate file before promotion\",\n            tool_name=\"repair_sandbox\",\n        )\n",
+      "fixed": "    after_hash = hashlib.sha256(staged_bytes).hexdigest()\n    if after_hash != staged_hash:\n        raise ToolExecutionError(\n            \"Oracle subprocess modified the staged candidate file before promotion\",\n            tool_name=\"repair_sandbox\",\n        )\n",
       "defect": "    after_hash = staged_hash\n",
       "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_run_oracle_and_promote_detects_staged_mutation", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
     }

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +78,10 @@ def test_stage_candidate_file_writes_inside_staging_root(tmp_path: Path) -> None
         ("com1", "reserved Windows device name"),
         ("lpt1", "reserved Windows device name"),
         ("nul.txt", "reserved Windows device name"),
+        ("drafts/NUL", "reserved Windows device name"),
+        ("src/CON.txt", "reserved Windows device name"),
+        ("drafts\\aux.py", "reserved Windows device name"),
+        ("src/com1 .py", "reserved Windows device name"),
         ("evil.py\0hidden", "contains a null byte"),
     ],
 )
@@ -169,6 +175,21 @@ def test_validate_promotion_target_accepts_allowlisted_unprotected_file(
         (
             ".git/config",
             {".git/config"},
+            "forbidden directory",
+        ),
+        (
+            ".git",
+            {".git"},
+            "forbidden directory",
+        ),
+        (
+            "vendor/lib/.GIT",
+            {"vendor/lib/.GIT"},
+            "forbidden directory",
+        ),
+        (
+            "tools/.claude/settings.json",
+            {"tools/.claude/settings.json"},
             "forbidden directory",
         ),
         (
@@ -313,6 +334,73 @@ def test_run_oracle_and_promote_detects_staged_mutation(tmp_path: Path) -> None:
             relative_path=rel,
             allowed_paths={rel},
             oracle_argv=[sys.executable, "-c", oracle_cmd],
+        )
+
+
+def test_resolve_contained_path_rejects_junction_where_supported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    junction = staging / "sub"
+    monkeypatch.setattr(Path, "is_junction", lambda self: self == junction, raising=False)
+    with pytest.raises(ToolExecutionError, match="refused symlink or junction"):
+        stage_candidate_file(staging, "sub/a.py", "x = 1\n")
+
+
+def test_run_oracle_and_promote_revalidates_target_swapped_by_oracle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A link the oracle plants at the target after the pre-check is refused at promotion."""
+    staging = tmp_path / "staging"
+    repo = tmp_path / "repo"
+    staging.mkdir()
+    repo.mkdir()
+    rel = "src/mangomas/agents/chat.py"
+    stage_candidate_file(staging, rel, "VALUE = 1\n")
+    marker = tmp_path / "oracle-ran"
+    target = repo / rel
+    monkeypatch.setattr(Path, "is_symlink", lambda self: self == target and marker.exists())
+    oracle_cmd = f"from pathlib import Path; Path(r'{marker}').touch()"
+    with pytest.raises(ToolExecutionError, match="refused symlink or junction"):
+        run_oracle_and_promote(
+            staging_root=staging,
+            repo_root=repo,
+            relative_path=rel,
+            allowed_paths={rel},
+            oracle_argv=[sys.executable, "-c", oracle_cmd],
+        )
+    assert not target.exists()
+
+
+def test_run_oracle_and_promote_translates_no_follow_open_refusal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staging = tmp_path / "staging"
+    repo = tmp_path / "repo"
+    staging.mkdir()
+    repo.mkdir()
+    rel = "src/mangomas/agents/chat.py"
+    stage_candidate_file(staging, rel, "VALUE = 1\n")
+    target = (repo / rel).resolve()
+    real_open = os.open
+
+    def _refuse_target(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
+        if Path(path) == target:
+            raise OSError(errno.ELOOP, "Too many levels of symbolic links", str(path))
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", _refuse_target)
+    with pytest.raises(ToolExecutionError, match="without following links"):
+        run_oracle_and_promote(
+            staging_root=staging,
+            repo_root=repo,
+            relative_path=rel,
+            allowed_paths={rel},
+            oracle_argv=[sys.executable, "-c", "pass"],
         )
 
 
