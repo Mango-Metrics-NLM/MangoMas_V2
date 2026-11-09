@@ -203,14 +203,18 @@ parallel against B2's seam but land in that order.
 
 ### Milestone B7 — deterministic agent lane
 
-- **Failing test first:** `MUT-EVAL-03` — change a planner fixture reply so
-  `steps` is empty → `make eval-lanes` red. This is the reliability plan's
-  headline acceptance (C3), deterministic form.
+- **Failing test first:** `MUT-EVAL-03` — change a planner fixture reply in
+  `evals/datasets/planner_v1.jsonl` so `steps` is empty → `make eval-lanes` red.
 - **Depends on:** B6.
-- `tests/evals/test_dataset_lanes.py` runs `EvalRunner` with scripted
-  `FakeLLM` orchestrators over the committed datasets and asserts
-  `diff_reports(baseline, current).regressed_rows == []`; `make eval-lanes` in
-  `gate` + CI. Routing `mango-test-engineer` → `mango-eval-dev`.
+- `tests/evals/test_dataset_lanes.py` replays each committed row through the
+  real agent with its scripted `FakeLLM` transcript, scores it and asserts
+  `diff_reports(baseline, current).regressed_rows == []` and that every row
+  passes by construction; `make eval-lanes` in `gate` + CI. Honest scope
+  (Copilot review): it proves agent post-processing, policy refusals, the
+  scorer contract and that each agent still emits its schema / tool roster
+  (outgoing-prompt assertions); it cannot see a prompt *quality* regression —
+  that is the stubbed-LLM / live lane (Tier 2, reliability C3). Routing
+  `mango-test-engineer` → `mango-eval-dev`.
 
 ### Milestone B8 — flip and document
 

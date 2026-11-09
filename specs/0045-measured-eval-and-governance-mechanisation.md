@@ -131,12 +131,19 @@ Every requirement is additive and default-OFF unless marked **mechanism**
   proves exit codes and baseline diffing and says exactly that in
   `evals/README.md` — not model quality (ADR-0033; plan A7).
 - **R12 — `make eval-lanes` (mechanism).** `tests/evals/test_dataset_lanes.py`
-  runs `EvalRunner` with scripted `FakeLLM` orchestrators over the committed
-  datasets and asserts `diff_reports(baseline, current).regressed_rows == []`.
-  This is the reliability plan's headline acceptance ("a regressed agent prompt
-  must fail the gate") in deterministic form; the model-backed lane stays
-  manual (`make eval-live`, Tier 2). `tests/cognitive/test_adversarial_emit.py`
-  pins the INV-16 refusal path under adversarial transcripts.
+  replays every committed dataset row through the real agent with the
+  scripted `FakeLLM` transcript the row carries (`metadata.fixture`), scores it
+  with the dataset's scorer and asserts `diff_reports(baseline,
+  current).regressed_rows == []` plus "every row passes by construction".
+  **What it proves:** planner / reviewer parse-and-validate, `ToolAgent`
+  policy refusals and trace, the scorer contract, the baseline mechanics, and
+  — by asserting on the *outgoing* system prompt (`FakeLLM.calls[0]`) — that
+  each agent still sends its schema (planner/reviewer) or tool roster (tool
+  agent) to the model. **What it cannot prove:** a prompt *quality* regression,
+  because `FakeLLM` picks replies by call index, not by prompt content. That
+  claim belongs to the stubbed-LLM CLI lane and the live lane (Tier 2,
+  reliability plan C3). `tests/cognitive/test_adversarial_emit.py` pins the
+  INV-16 refusal path under adversarial transcripts.
 - **R13 — Governance probes (mechanism).** `MUT-GOV-01..03` in the guard-probe
   manifest target ADR-0030's named weaknesses: dropping the `protected-paths`
   CI job, silencing the base-ref fallback `WARNING`
@@ -176,12 +183,15 @@ green result from being vacuous.
   `--no-allow-new-failures` THEN `tests/deploy/test_ci_make_parity.py` fails
   (replaces v1's `MUT-EVAL-02`, which would have made the gate *greener* and so
   cannot be a red-first probe). WHEN the flag is present THEN it passes.
-- **Agent lanes.** WHEN the planner fixture reply in
-  `tests/evals/test_dataset_lanes.py` is edited so `steps` is empty THEN
-  `make eval-lanes` is red with `planner_v1` rows in `regressed_rows`
-  (`MUT-EVAL-03`). WHEN the fixtures match the committed baselines THEN it is
-  green with `regressed_rows == []` **and** at least one row per dataset
-  executed (a zero-row run fails, never passes).
+- **Agent lanes.** WHEN a planner fixture reply in
+  `evals/datasets/planner_v1.jsonl` is edited so `steps` is empty THEN
+  `make eval-lanes` is red (`MUT-EVAL-03`: the row fails `json_field
+  min_length` and so both the by-construction check and the baseline diff).
+  WHEN an agent's system prompt no longer carries its schema / tool roster THEN
+  the lane is red even though the scripted replies are unchanged. WHEN the
+  fixtures match the committed baselines THEN it is green with
+  `regressed_rows == []` **and** at least one row per dataset executed (a
+  zero-row run fails, never passes).
 - **MUT-GOV-01.** WHEN the `protected-paths` job is deleted from
   `.github/workflows/ci.yml` THEN
   `tests/deploy/test_ci_make_parity.py::test_protected_paths_job_delegates_to_make`

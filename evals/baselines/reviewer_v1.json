@@ -1,0 +1,355 @@
+{
+  "scorer": "composite",
+  "agent_name": "reviewer",
+  "dataset_size": 6,
+  "passed": 6,
+  "failed": 0,
+  "errored": 0,
+  "mean_score": 1.0,
+  "duration_ms": 0.8558819999961997,
+  "rows": [
+    {
+      "row_id": "reviewer-01-approve",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.12263200000006691,
+      "prediction": "{\"passed\": true, \"score\": 0.95, \"feedback\": \"Correct and minimal.\", \"suggestions\": []}",
+      "expected": "{\"passed\": true, \"score\": 0.0, \"feedback\": \"\", \"suggestions\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "passed",
+                "score",
+                "feedback",
+                "suggestions"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "passed",
+              "comparison": "equals",
+              "operand": true,
+              "found": true
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "82a09faa",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "reviewer-02-reject",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.12095799999656265,
+      "prediction": "{\"passed\": false, \"score\": 0.2, \"feedback\": \"No zero-division guard.\", \"suggestions\": [\"Guard b == 0\"]}",
+      "expected": "{\"passed\": true, \"score\": 0.0, \"feedback\": \"\", \"suggestions\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "passed",
+                "score",
+                "feedback",
+                "suggestions"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "passed",
+              "comparison": "equals",
+              "operand": false,
+              "found": false
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "57cfc2b0",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "reviewer-03-high-score",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.1539570000090862,
+      "prediction": "{\"passed\": true, \"score\": 0.9, \"feedback\": \"Covered by tests.\", \"suggestions\": []}",
+      "expected": "{\"passed\": true, \"score\": 0.0, \"feedback\": \"\", \"suggestions\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "passed",
+                "score",
+                "feedback",
+                "suggestions"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "score",
+              "comparison": "at_least",
+              "operand": 0.8,
+              "found": 0.9
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "1ded7006",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "reviewer-04-low-score",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.11597200000323937,
+      "prediction": "{\"passed\": false, \"score\": 0.3, \"feedback\": \"No tests.\", \"suggestions\": [\"Add tests\"]}",
+      "expected": "{\"passed\": true, \"score\": 0.0, \"feedback\": \"\", \"suggestions\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "passed",
+                "score",
+                "feedback",
+                "suggestions"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "score",
+              "comparison": "at_most",
+              "operand": 0.5,
+              "found": 0.3
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "3222af40",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "reviewer-05-suggestions",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.13011299998311188,
+      "prediction": "{\"passed\": false, \"score\": 0.4, \"feedback\": \"Too long.\", \"suggestions\": [\"Split it\", \"Name the branches\"]}",
+      "expected": "{\"passed\": true, \"score\": 0.0, \"feedback\": \"\", \"suggestions\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "passed",
+                "score",
+                "feedback",
+                "suggestions"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "suggestions",
+              "comparison": "min_length",
+              "operand": 2,
+              "found": [
+                "Split it",
+                "Name the branches"
+              ]
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "6624222b",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "reviewer-06-no-suggestions",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.11164399998619956,
+      "prediction": "{\"passed\": true, \"score\": 0.85, \"feedback\": \"Fine.\", \"suggestions\": []}",
+      "expected": "{\"passed\": true, \"score\": 0.0, \"feedback\": \"\", \"suggestions\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "passed",
+                "score",
+                "feedback",
+                "suggestions"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "feedback",
+              "comparison": "equals",
+              "operand": "Fine.",
+              "found": "Fine."
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "64b9c3d8",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    }
+  ],
+  "target_name": "reviewer",
+  "mean_cost_usd": null,
+  "run": {
+    "run_id": "90b079227a1b40e9a65778c5f003d5ca",
+    "started_at": "2026-11-09T03:29:05.909034+00:00",
+    "dataset_sha256": "sha256:a17ca9989786c030d17f5a5d0eaf18125b7947c343f750cf1c93d073c733fbe2",
+    "scorer": "composite",
+    "target": "reviewer",
+    "mangomas_version": "0.4.0",
+    "schema_version": 2,
+    "git_sha": "57704d059f9f08d308e2c7b74f617290686f501f",
+    "labels": {
+      "lane": "reviewer_v1"
+    }
+  },
+  "slices": {}
+}

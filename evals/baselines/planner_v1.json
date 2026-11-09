@@ -1,0 +1,388 @@
+{
+  "scorer": "composite",
+  "agent_name": "planner",
+  "dataset_size": 6,
+  "passed": 6,
+  "failed": 0,
+  "errored": 0,
+  "mean_score": 1.0,
+  "duration_ms": 1.4147489999913887,
+  "rows": [
+    {
+      "row_id": "planner-01-two-step",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.4242169999884027,
+      "prediction": "{\"goal\": \"Add a healthcheck endpoint\", \"steps\": [{\"step\": 1, \"description\": \"Add GET /healthz route\"}, {\"step\": 2, \"description\": \"Write a test for it\"}]}",
+      "expected": "{\"goal\": \"\", \"steps\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "goal",
+                "steps"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "steps",
+              "comparison": "min_length",
+              "operand": 2,
+              "found": [
+                {
+                  "step": 1,
+                  "description": "Add GET /healthz route"
+                },
+                {
+                  "step": 2,
+                  "description": "Write a test for it"
+                }
+              ]
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "ec1b47be",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "planner-02-single-step",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.22867600000608945,
+      "prediction": "{\"goal\": \"Bump the version\", \"steps\": [{\"step\": 1, \"description\": \"Edit pyproject.toml version\"}]}",
+      "expected": "{\"goal\": \"\", \"steps\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "goal",
+                "steps"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "steps",
+              "comparison": "min_length",
+              "operand": 1,
+              "found": [
+                {
+                  "step": 1,
+                  "description": "Edit pyproject.toml version"
+                }
+              ]
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "1106cab5",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "planner-03-goal-echo",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.17496799998184542,
+      "prediction": "{\"goal\": \"Rotate the API key\", \"steps\": [{\"step\": 1, \"description\": \"Create a new secret version\"}, {\"step\": 2, \"description\": \"Point the service at it\"}, {\"step\": 3, \"description\": \"Disable the old version\"}]}",
+      "expected": "{\"goal\": \"\", \"steps\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "goal",
+                "steps"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "goal",
+              "comparison": "equals",
+              "operand": "Rotate the API key",
+              "found": "Rotate the API key"
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "2cbe9a81",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "planner-04-long-plan",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.13917999999080166,
+      "prediction": "{\"goal\": \"Migrate storage to Postgres\", \"steps\": [{\"step\": 1, \"description\": \"Add asyncpg adapter\"}, {\"step\": 2, \"description\": \"Write schema migration\"}, {\"step\": 3, \"description\": \"Dual-write behind a flag\"}, {\"step\": 4, \"description\": \"Backfill\"}, {\"step\": 5, \"description\": \"Cut over\"}, {\"step\": 6, \"description\": \"Remove sqlite path\"}]}",
+      "expected": "{\"goal\": \"\", \"steps\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "goal",
+                "steps"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "steps",
+              "comparison": "min_length",
+              "operand": 5,
+              "found": [
+                {
+                  "step": 1,
+                  "description": "Add asyncpg adapter"
+                },
+                {
+                  "step": 2,
+                  "description": "Write schema migration"
+                },
+                {
+                  "step": 3,
+                  "description": "Dual-write behind a flag"
+                },
+                {
+                  "step": 4,
+                  "description": "Backfill"
+                },
+                {
+                  "step": 5,
+                  "description": "Cut over"
+                },
+                {
+                  "step": 6,
+                  "description": "Remove sqlite path"
+                }
+              ]
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "2893ded4",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "planner-05-unicode-goal",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.13228399998865825,
+      "prediction": "{\"goal\": \"Documenter l'API en fran\\u00e7ais\", \"steps\": [{\"step\": 1, \"description\": \"Traduire README\"}, {\"step\": 2, \"description\": \"Relire\"}]}",
+      "expected": "{\"goal\": \"\", \"steps\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "goal",
+                "steps"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "steps",
+              "comparison": "min_length",
+              "operand": 2,
+              "found": [
+                {
+                  "step": 1,
+                  "description": "Traduire README"
+                },
+                {
+                  "step": 2,
+                  "description": "Relire"
+                }
+              ]
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "463509d1",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    },
+    {
+      "row_id": "planner-06-steps-with-agents",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.13000300000953757,
+      "prediction": "{\"goal\": \"Add retries to the LLM client\", \"steps\": [{\"step\": 1, \"description\": \"Wrap complete() in a retry\", \"agent\": \"tool\"}, {\"step\": 2, \"description\": \"Review the change\", \"agent\": \"reviewer\"}]}",
+      "expected": "{\"goal\": \"\", \"steps\": []}",
+      "metadata": {
+        "scorer": "composite",
+        "scores": {
+          "json_keys": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_keys",
+              "required": [
+                "goal",
+                "steps"
+              ],
+              "missing": [],
+              "extra": [],
+              "strict": false
+            }
+          },
+          "json_field": {
+            "score": 1.0,
+            "passed": true,
+            "metadata": {
+              "scorer": "json_field",
+              "path": "goal",
+              "comparison": "equals",
+              "operand": "Add retries to the LLM client",
+              "found": "Add retries to the LLM client"
+            }
+          }
+        },
+        "failed": []
+      },
+      "error": null,
+      "correlation_id": "5458b98a",
+      "response_metadata": {
+        "loop": {
+          "steps_taken": 1,
+          "accepted": false
+        },
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "llm_calls": 1
+        }
+      }
+    }
+  ],
+  "target_name": "planner",
+  "mean_cost_usd": null,
+  "run": {
+    "run_id": "af4b4f1b43e84356897eba932f77a220",
+    "started_at": "2026-11-09T03:29:05.895024+00:00",
+    "dataset_sha256": "sha256:f4b7a614f3642aea9ac5fe5e1287377321a4b6b423b5053a9984ba69f57339cd",
+    "scorer": "composite",
+    "target": "planner",
+    "mangomas_version": "0.4.0",
+    "schema_version": 2,
+    "git_sha": "57704d059f9f08d308e2c7b74f617290686f501f",
+    "labels": {
+      "lane": "planner_v1"
+    }
+  },
+  "slices": {}
+}
