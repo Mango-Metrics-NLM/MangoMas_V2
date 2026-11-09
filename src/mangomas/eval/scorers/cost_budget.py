@@ -53,9 +53,12 @@ def measured_usage(response_metadata: dict[str, Any] | None) -> dict[str, Any] |
     """The adapter-reported usage block, or ``None`` when no LLM call was counted.
 
     Only ``response_metadata[EVAL_USAGE_METADATA_KEY]`` with a positive
-    ``llm_calls`` counts as measured. A target that *declares* ``cost_usd`` or
-    token keys in its own response metadata is not an adapter report and is
-    ignored here — the dataset's declaration keeps its tier for that.
+    ``llm_calls`` **and** a positive token count counts as measured. A call
+    the provider answered without a usage block leaves both counts at zero;
+    treating that as "measured: $0" would let silence read as free, so it
+    falls through to the declared tiers instead. A target that *declares*
+    ``cost_usd`` or token keys in its own response metadata is not an adapter
+    report and is ignored here — the dataset's declaration keeps its tier.
     """
     if not response_metadata:
         return None
@@ -63,7 +66,9 @@ def measured_usage(response_metadata: dict[str, Any] | None) -> dict[str, Any] |
     if not isinstance(usage, dict):
         return None
     calls = _metadata_non_negative_float(usage, EVAL_USAGE_LLM_CALLS_KEY)
-    if not calls:
+    in_tok = _metadata_non_negative_float(usage, EVAL_COST_INPUT_TOKENS_METADATA_KEY) or 0.0
+    out_tok = _metadata_non_negative_float(usage, EVAL_COST_OUTPUT_TOKENS_METADATA_KEY) or 0.0
+    if not calls or not (in_tok or out_tok):
         return None
     return usage
 

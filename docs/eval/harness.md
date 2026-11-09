@@ -191,7 +191,7 @@ Consequences, all pinned by `tests/eval/test_cost_measurement_basis.py`:
 - With a **silent adapter and no declared counts**, cost is `len(prediction)` ×
   a rate: a gate fires when the model becomes **wordier** and is blind to a
   costlier model via `MODEL_OVERRIDE`, a price change per token, or extra tool
-  steps. The LM Studio adapter reports usage (`adapters/llm/_usage.py`); Vertex
+  steps. The LM Studio adapter reports usage (`utils/llm_usage.py`); Vertex
   does not yet.
 - With **declared counts** — as in `tests/eval/fixtures/cost_controlled_v1.jsonl`
   — and a silent adapter, the figure is a **fixed budget cohort** for comparing

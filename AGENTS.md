@@ -139,7 +139,7 @@ src/mangomas/
 ├── telemetry/      OpenTelemetry, one module per dependency layer behind a
 │                   permanent facade: _state, logs, exporters (console|gcp),
 │                   tracing, meters, scoped
-├── utils/          Shared helpers: clock seam, exception text, regex flags
+├── utils/          Shared helpers: clock seam, exception text, regex flags, LLM usage scope
 ├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
 ├── _entry_points.py Shared entry-point iteration for eval plugin discovery
 └── metrics.py      Instrumentation registry (singleton, double-checked lock)

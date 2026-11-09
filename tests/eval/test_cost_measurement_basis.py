@@ -212,20 +212,24 @@ async def test_response_metadata_reaches_the_scorer_but_only_measured_usage_is_t
     assert measured.rows[0].metadata["source"] == "measured_tokens"
 
 
-def test_a_usage_block_with_no_counted_calls_is_not_a_measurement() -> None:
-    """An adapter that never reported leaves ``llm_calls`` at 0 — that is silence, not zero cost."""
+@pytest.mark.parametrize(
+    "usage",
+    [
+        {EVAL_USAGE_LLM_CALLS_KEY: 0, EVAL_COST_INPUT_TOKENS_METADATA_KEY: 5},
+        {EVAL_USAGE_LLM_CALLS_KEY: 2, EVAL_COST_INPUT_TOKENS_METADATA_KEY: 0},
+        {EVAL_USAGE_LLM_CALLS_KEY: 2},
+    ],
+    ids=["no-calls", "calls-but-zero-tokens", "calls-but-no-counts"],
+)
+def test_a_usage_block_without_a_real_count_is_not_a_measurement(usage: dict[str, int]) -> None:
+    """Silence is not zero cost: no calls, or calls the provider never priced, fall through."""
     cost, source = estimate_cost_usd(
         _SHORT_REPLY,
         metadata={},
         usd_per_1k_input_tokens=DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
         usd_per_1k_output_tokens=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
         usd_per_1k_output_chars=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
-        response_metadata={
-            EVAL_USAGE_METADATA_KEY: {
-                EVAL_USAGE_LLM_CALLS_KEY: 0,
-                EVAL_COST_INPUT_TOKENS_METADATA_KEY: 5,
-            }
-        },
+        response_metadata={EVAL_USAGE_METADATA_KEY: usage},
     )
     assert source == "output_chars"
     assert cost == pytest.approx(

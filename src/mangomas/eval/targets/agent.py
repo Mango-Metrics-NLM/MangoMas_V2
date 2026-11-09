@@ -12,8 +12,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from mangomas.eval._options import require_str
-from mangomas.eval.target import Target, TargetOutcome
+from mangomas.eval.target import Target, TargetOutcome, with_usage
 from mangomas.eval.target_registry import target_registry
+from mangomas.utils.llm_usage import usage_scope
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
@@ -27,8 +28,11 @@ class AgentTarget:
         self.name = agent
 
     async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
-        response = await orch.dispatch(self._agent, request)
-        return TargetOutcome(content=response.content, metadata=dict(response.metadata))
+        with usage_scope() as totals:
+            response = await orch.dispatch(self._agent, request)
+        return TargetOutcome(
+            content=response.content, metadata=with_usage(response.metadata, totals)
+        )
 
 
 def _agent_target_factory(options: dict[str, Any]) -> Target:

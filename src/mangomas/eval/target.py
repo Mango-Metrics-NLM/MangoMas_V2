@@ -25,11 +25,20 @@ WARNING, and ``EvalSettings.schema_version`` moved ``1 → 2`` to mark the chang
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from mangomas.config import (
+    EVAL_COST_INPUT_TOKENS_METADATA_KEY,
+    EVAL_COST_OUTPUT_TOKENS_METADATA_KEY,
+    EVAL_USAGE_LLM_CALLS_KEY,
+    EVAL_USAGE_METADATA_KEY,
+)
+
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
+    from mangomas.utils.llm_usage import UsageTotals
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +60,23 @@ class Target(Protocol):
     async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
         """Produce the graded content and response metadata for *request* using *orch*."""
         ...
+
+
+def with_usage(metadata: Mapping[str, Any], totals: UsageTotals) -> dict[str, Any]:
+    """Copy *metadata* and attach the measured usage block (spec-0045 B3).
+
+    Written even when ``llm_calls`` is ``0``: a deterministic target and a
+    silent provider look different to a reader only if the count is there.
+    ``cost_budget`` treats a zero count as "not measured" (see
+    :func:`~mangomas.eval.scorers.cost_budget.measured_usage`).
+    """
+    merged = dict(metadata)
+    merged[EVAL_USAGE_METADATA_KEY] = totals.as_metadata(
+        input_key=EVAL_COST_INPUT_TOKENS_METADATA_KEY,
+        output_key=EVAL_COST_OUTPUT_TOKENS_METADATA_KEY,
+        calls_key=EVAL_USAGE_LLM_CALLS_KEY,
+    )
+    return merged
 
 
 def coerce_outcome(value: object, *, target_name: str) -> TargetOutcome:
