@@ -61,30 +61,45 @@ Every requirement is additive and default-OFF unless marked **mechanism**
   `llm_calls > 0`. Outside `usage_scope()` the ContextVar is unset and
   `record_usage` is a no-op — adapters behave as today. Vertex usage is Tier 2.
 - **R3 — Tool trace.** `ToolAgent` records
-  `metadata["tool_calls"] = [{tool, arguments, ok}]` under a per-agent mode
-  `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS = none|keys|full`, default
-  `keys` (argument **names** plus `sha256` of each value — truncation bounds
-  size, not secrecy). Because the pipeline forwarding site is protected
-  (`src/mangomas/core/orchestrator/_client.py:497-500`), `AgentTarget` strips
-  `tool_calls` from the outcome metadata forwarded to reports when the mode is
-  `full`; the in-pipeline forward into the next stage's `request.metadata` is
-  recorded as Tier 2. `tool_steps` is unchanged.
-- **R4 — `tool_trajectory` scorer.** Emits `recall`, `extra_tools`,
-  `missing_tools`, `policy_violations` (count of `ok=False` from
-  `harness.tool_policy`), `steps`; `passed = recall == 1.0 and not extra_tools
-  and not policy_violations`; option `allow_extra`. No set-similarity score:
-  argument checks belong to `json_field` predicates over the recorded trace.
+  `metadata["tool_calls"] = [{tool, arguments?}]` (completed calls, in order)
+  under a per-agent mode `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS =
+  none|keys|full`, default `keys` (argument **names** plus a `sha256:` digest of
+  each JSON-encoded value — the value itself never leaves the process;
+  truncation would bound size, not secrecy). `full` is an explicit per-agent
+  opt-in and is carried as-is: nothing downstream strips it, so the row states
+  the risk. A refused call raises out of `handle` and so never appears in the
+  trace (R5 records it as the row's outcome). The pipeline forwarding site is
+  protected (`src/mangomas/core/orchestrator/_client.py:497-500`); with the
+  `keys` default only digests are forwarded, and stripping in-pipeline is
+  Tier 2. `tool_steps` is unchanged.
+- **R4 — `tool_trajectory` scorer.** Emits `recall`, `missing_tools`,
+  `extra_tools`, `steps` (with an optional `max_steps` budget);
+  `passed = recall == 1.0 and (allow_extra or not extra_tools) and within
+  budget`; `score = recall` when passed-shape holds, else `0.0`. No
+  set-similarity score and no violation count: a policy refusal is an
+  `expected_error` row (R5), not a scorer metric. **Arguments are not graded
+  in Tier 1.** `tool_calls` is a list and the `json_field` path walks mappings
+  only (R6), so an argument-level check needs either list indexing in a later
+  `json_field` revision or a dedicated `tool_trajectory` option — Tier 2;
+  with the `keys` default such a check would compare digests, which is a
+  recognisable-but-not-recoverable equality, by design.
 - **R5 — `expected_error` on `DatasetRow`.** A row may name an error type
   (e.g. `ToolExecutionError`). The runner counts a matching raise as a
   *pass* instead of an errored row (`runner.py:168-188` today). Absent → today's
   behaviour.
-- **R6 — Structured scoring.** `scorers/json_field.py` ports the ADR-0034
-  semantics from `workflow/predicate/_json_field.py` verbatim: dotted path,
-  exactly one of `equals`/`at_least`/`at_most`, strict whole-text parse via
-  `core.structured.parse_llm_json_object`, booleans excluded from numeric
-  comparison, unparseable → `score 0.0`, never raises. `composite` scorer with
+- **R6 — Structured scoring.** `scorers/json_field.py` re-implements the
+  ADR-0034 semantics of `workflow/predicate/_json_field.py` (the two packages
+  are kept independent by import-linter): dotted path over **mappings only**
+  (a list index is not a segment), exactly one of `equals`/`at_least`/
+  `at_most` plus one additive `min_length` for lists and strings, strict
+  whole-text parse via `core.structured.parse_llm_json_object`, booleans
+  excluded from numeric comparison, unparseable or unresolvable → `score 0.0`,
+  never raises. The check comes from scorer options or per row from
+  `metadata["json_field"]` (row wins). It grades the **prediction text**
+  (planner / reviewer JSON), not the tool trace. `composite` scorer with
   `aggregate: min` and `pass: all` **only**; children recorded first-class under
-  `metadata["scores"]`. `-s/--scorer` becomes repeatable (one value = today).
+  `metadata["scores"]`. `-s/--scorer` becomes repeatable (one value = today;
+  several build a `composite` whose children take `SCORER_OPTIONS[<name>]`).
 - **R7 — Judge boundary.** The only `llm_judge` change: a `WARNING` when
   `context.llm is` the agent's client (self-grading). Rubric, `include_input`,
   samples, profile and lenient parse wait for the C2 calibration record.
@@ -188,10 +203,13 @@ green result from being vacuous.
   through THEN the guard fails.
 - **Expected error.** WHEN a `safety_toolagent_v1` row declares
   `expected_error: ToolExecutionError` and the ungranted mutating tool is
-  refused THEN the row passes. WHEN the tool is *executed* THEN the row fails
-  with `policy_violations >= 1`.
-- **Judge boundary.** WHEN `llm_judge` scores with `context.llm` identical to
-  the agent client THEN one `WARNING` (`event="eval_judge_is_agent"`) is logged
+  refused THEN the row passes (`metadata.refused == true`, no scorer consulted).
+  WHEN the tool is *executed* and the agent answers THEN the row fails
+  (`metadata.refused == false`) without consulting the scorer. WHEN a different
+  error is raised THEN the row is still an *errored* row.
+- **Judge boundary.** WHEN `llm_judge` scores (it always grades with
+  `context.llm`, the system-under-test client) THEN one `WARNING` per scorer
+  instance (`event="eval_llm_judge_self_grading"`) is logged
   and the score is still reported. WHEN the clients differ THEN no warning.
 - **Deploy verify.** WHEN `deploy.yml verify` omits any of
   `make lint`, `format-check`, `typecheck`, `lint-imports`, `frontmatter` THEN
@@ -223,7 +241,7 @@ green result from being vacuous.
 
 | Env var (`MANGOMAS_*`) | Default | Purpose |
 |------------------------|---------|---------|
-| `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS` | `keys` | `ToolAgent` trace mode for `metadata["tool_calls"]`: `none` (no trace), `keys` (argument names + `sha256` of each value), `full` (verbatim; stripped by `AgentTarget` before reporting) |
+| `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS` | `keys` | `ToolAgent` trace mode for `metadata["tool_calls"]`: `none` (no trace), `keys` (argument names + `sha256` of each value), `full` (verbatim; an explicit opt-in that nothing downstream strips) |
 | `MANGOMAS_EVAL__SLICE_KEY` | `category` | `DatasetRow.metadata` key used to group `EvalReport.slices` (reporting only, never gated) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `2` (was `1`) | `DEFAULT_EVAL_SCHEMA_VERSION` bump marking the `TargetOutcome` seam; `1` still parses |
 

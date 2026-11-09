@@ -814,3 +814,37 @@ def test_eval_cli_rejects_out_of_range_regression_drop(
     )
     assert result.exit_code == 2, result.stdout + result.stderr
     assert "max-mean-score-drop" in result.stdout + result.stderr
+
+
+# ── repeatable -s (spec-0045 B5) ──────────────────────────────────────────────
+
+
+def test_eval_cli_repeated_scorer_builds_a_composite(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "eval",
+            "--dataset",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "-s",
+            "exact_match",
+            "-s",
+            "contains",
+            "--agent",
+            "chat",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "scorer=composite" in result.stdout
+    assert "passed=2" in result.stdout
+
+
+def test_eval_cli_single_scorer_is_unchanged(fixtures_dir: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["eval", "--dataset", str(fixtures_dir / "all_pass.jsonl"), "-s", "contains", "-a", "chat"],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "scorer=contains" in result.stdout

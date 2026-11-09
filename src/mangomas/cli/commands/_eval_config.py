@@ -17,14 +17,14 @@ import typer
 
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.errors import ConfigError
-from mangomas.eval import dataset_source_registry, sink_registry, target_registry
+from mangomas.eval import dataset_source_registry, scorer_registry, sink_registry, target_registry
 from mangomas.eval._options import require_non_negative_float, require_unit_float
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import EvalSettings
-    from mangomas.eval import DatasetSource, Sink, Target
+    from mangomas.eval import DatasetSource, Scorer, Sink, Target
 
 
 def _build_sinks(
@@ -52,6 +52,28 @@ def _build_sinks(
         options.setdefault("json_file", dict(sink_options.get("json_file", {})))
         options["json_file"]["path"] = output_json
     return [sink_registry.get(name)(options.get(name, {})) for name in names]
+
+
+_COMPOSITE_SCORER = "composite"
+
+
+def _build_scorer(names: list[str], scorer_options: dict[str, object]) -> Scorer:
+    """One name → that scorer with the flat options; several → a ``composite``.
+
+    With one scorer ``MANGOMAS_EVAL__SCORER_OPTIONS`` is handed to it whole
+    (today's contract). With several (`-s a -s b`, spec-0045 B5) each child
+    takes the sub-mapping under its own name, so one env var still configures
+    every child, and the row records each child's result separately.
+    """
+    if len(names) == 1:
+        return scorer_registry.get(names[0])(dict(scorer_options))
+    children: list[dict[str, object]] = []
+    for name in names:
+        options = scorer_options.get(name)
+        children.append(
+            {"name": name, "options": dict(options) if isinstance(options, dict) else {}}
+        )
+    return scorer_registry.get(_COMPOSITE_SCORER)({"scorers": children})
 
 
 def _build_target(

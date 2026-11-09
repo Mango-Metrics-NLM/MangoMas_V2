@@ -23,7 +23,9 @@ import mangomas.eval.sources
 import mangomas.eval.targets  # noqa: F401 — registers built-in targets
 from mangomas.cli import _runtime
 from mangomas.cli.commands._eval_config import (
+    _COMPOSITE_SCORER,
     _build_dataset_source,
+    _build_scorer,
     _build_sinks,
     _build_target,
     _resolve_gating,
@@ -41,7 +43,6 @@ from mangomas.eval import (
     evaluate_regression_gate,
     load_baseline,
     merge_gate_results,
-    scorer_registry,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -138,7 +139,7 @@ def _run_eval_pipeline(
     *,
     dataset_path: str | None,
     dataset_source: str | None,
-    scorer: str | None,
+    scorer: list[str] | None,
     agent: str | None,
     target: str | None,
     parallelism: int | None,
@@ -158,7 +159,8 @@ def _run_eval_pipeline(
     settings = get_settings()
     cfg = settings.eval
     ensure_eval_plugins(settings)
-    scorer_name = scorer or cfg.scorer
+    scorer_names = list(scorer) if scorer else [cfg.scorer]
+    scorer_name = scorer_names[0] if len(scorer_names) == 1 else _COMPOSITE_SCORER
     target_name = target or cfg.target
     source_name = dataset_source or cfg.dataset_source
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
@@ -185,8 +187,7 @@ def _run_eval_pipeline(
         cfg=cfg,
     )
     try:
-        scorer_factory = scorer_registry.get(scorer_name)
-        scorer_instance = scorer_factory(dict(cfg.scorer_options))
+        scorer_instance = _build_scorer(scorer_names, cfg.scorer_options)
         sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
         target_instance = _build_target(target_name, cfg.target_options, agent, cfg.agent)
         source_instance = _build_dataset_source(
@@ -247,11 +248,14 @@ def eval_cmd(
         "--dataset-source",
         help="Dataset source: jsonl|inline|langfuse (default from MANGOMAS_EVAL__DATASET_SOURCE).",
     ),
-    scorer: str | None = typer.Option(
+    scorer: list[str] | None = typer.Option(  # noqa: B008 — Typer repeatable option; a list is the only multi-value shape it accepts
         None,
         "--scorer",
         "-s",
-        help="Scorer name (default from MANGOMAS_EVAL__SCORER).",
+        help=(
+            "Scorer name (default from MANGOMAS_EVAL__SCORER). Repeat to grade every row "
+            "with several scorers, recorded separately (spec-0045 `composite`)."
+        ),
     ),
     agent: str | None = typer.Option(
         None,
