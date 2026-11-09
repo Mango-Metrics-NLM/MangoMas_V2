@@ -510,3 +510,27 @@ def test_security_scanning_workflows_declare_minimal_write_permissions() -> None
         if _permission_grants(doc.get("permissions")).get(_FORBIDDEN_TOKEN_GRANT[0]) == _WRITE
     ]
     assert offenders == [], f"`contents: write` is granted by {offenders}; no workflow needs it"
+
+
+# `workflow_dispatch` lets a person pick any branch; the pinned Scorecard
+# action validates the ref before producing SARIF and fails on a non-default
+# one, which would turn an unsupported dispatch into a `notify` issue
+# (Copilot review on PR #123). The analysis job therefore gates itself.
+_SCORECARD_WORKFLOW = "scorecard.yml"
+_DEFAULT_BRANCH_EXPR = "github.event.repository.default_branch"
+
+
+def test_scorecard_skips_manual_dispatches_off_the_default_branch() -> None:
+    jobs = _workflows.jobs(_SCORECARD_WORKFLOW)
+    uploading = [
+        job
+        for job, spec in jobs.items()
+        if _permission_grants(spec.get("permissions")).get(_SARIF_UPLOAD_SCOPE) == _WRITE
+    ]
+    assert uploading, "no Scorecard job uploads SARIF — has the analysis job been renamed?"
+    for job in uploading:
+        guard = str(jobs[job].get("if", ""))
+        assert "workflow_dispatch" in guard and _DEFAULT_BRANCH_EXPR in guard, (
+            f"{_SCORECARD_WORKFLOW}:{job} runs manual dispatches on any branch; the pinned "
+            "action fails off the default branch and the failure reporter files an issue"
+        )

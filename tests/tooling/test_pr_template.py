@@ -16,7 +16,11 @@ from pathlib import Path
 _TEMPLATE = Path(__file__).resolve().parents[2] / ".github" / "PULL_REQUEST_TEMPLATE.md"
 # A marker line as the gate would see it: line start, optional indent, the
 # marker, a colon, then a first token that is not a path.
-_PLACEHOLDER_MARKER_RE = re.compile(r"^[ \t]*BREAKING-CHANGE:[ \t]*(none|n/a|-)\b", re.MULTILINE)
+# `(?=\s|$)` rather than `\b`: a word boundary never follows a bare `-`, so the
+# first version let `BREAKING-CHANGE: -` through (Copilot review, PR #123).
+_PLACEHOLDER_MARKER_RE = re.compile(
+    r"^[ \t]*BREAKING-CHANGE:[ \t]*(?:none|n/a|-)(?=\s|$)", re.MULTILINE
+)
 
 
 def _text() -> str:
@@ -41,4 +45,8 @@ def test_the_placeholder_pattern_catches_the_historical_form() -> None:
     """Mutation proof for the guard: the exact text seen in commits 7cbc010 / ffc3072."""
     assert _PLACEHOLDER_MARKER_RE.search("BREAKING-CHANGE: none\n") is not None
     assert _PLACEHOLDER_MARKER_RE.search("  BREAKING-CHANGE: n/a") is not None
+    assert _PLACEHOLDER_MARKER_RE.search("BREAKING-CHANGE: -\n") is not None
+    assert _PLACEHOLDER_MARKER_RE.search("BREAKING-CHANGE: -") is not None
+    # A path that merely *starts* like a placeholder is not one.
+    assert _PLACEHOLDER_MARKER_RE.search("BREAKING-CHANGE: none-of-these/file.py — why") is None
     assert _PLACEHOLDER_MARKER_RE.search("BREAKING-CHANGE: src/mangomas/errors.py — why") is None
