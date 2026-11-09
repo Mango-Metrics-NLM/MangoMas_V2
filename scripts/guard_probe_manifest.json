@@ -5,357 +5,1074 @@
       "path": "tests/constants/live.py",
       "fixed": "    if raw is None or not raw.strip():\n        return adapter_timeout_seconds\n",
       "defect": "    if raw is None or not raw.strip():\n        return 30.0\n",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d1", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d1",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D2",
       "path": "src/mangomas/agents/tool_agent.py",
       "fixed": "            logger.debug(\n                \"ToolAgent: no tool registry; treating JSON block as content\",\n                extra={\"event\": \"tool_agent_no_registry_json\", \"step\": step},\n            )\n            return None\n",
       "defect": "            raise\n            logger.debug(\n                \"ToolAgent: no tool registry; treating JSON block as content\",\n                extra={\"event\": \"tool_agent_no_registry_json\", \"step\": step},\n            )\n            return None\n",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d2_no_registry", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d2_no_registry",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D2-boundary",
       "path": "src/mangomas/agents/tool_agent.py",
       "fixed": "                extra={\"event\": \"tool_agent_bad_tool_call\", \"step\": step},\n                )\n                raise\n",
       "defect": "                extra={\"event\": \"tool_agent_bad_tool_call\", \"step\": step},\n                )\n                return None\n",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d2_a_configured", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d2_a_configured",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D3",
       "path": "tests/test_auth.py",
       "fixed": "headers={b\"X-API-Key\": _NON_ASCII_WIRE}",
       "defect": "headers={\"X-API-Key\": _NON_ASCII_WIRE}",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d3_auth", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d3_auth",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D4-llm",
       "path": "src/mangomas/adapters/llm/lmstudio.py",
       "fixed": "        except (KeyError, IndexError, TypeError, ValueError, RecursionError) as exc:\n            raise self._malformed_response(",
       "defect": "        except (KeyError, IndexError, TypeError, ValueError) as exc:\n            raise self._malformed_response(",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d4_chat", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d4_chat",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D4-embeddings",
       "path": "src/mangomas/adapters/embeddings/lmstudio.py",
       "fixed": "ValueError, RecursionError) as exc:",
       "defect": "ValueError) as exc:",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d4_embeddings", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d4_embeddings",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D5-delta",
       "path": "src/mangomas/adapters/llm/lmstudio.py",
       "fixed": "        if not isinstance(delta, dict):\n",
       "defect": "        if False:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d5 and (null or string or survives)", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d5 and (null or string or survives)",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D5-nested",
       "path": "src/mangomas/adapters/llm/lmstudio.py",
       "fixed": "json.JSONDecodeError, RecursionError) as exc:",
       "defect": "json.JSONDecodeError) as exc:",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d5 and nested", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d5 and nested",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D6",
       "path": "src/mangomas/cli/_app.py",
       "fixed": "no_args_is_help=True, cls=SettingsErrorGroup)",
       "defect": "no_args_is_help=True)",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d6_invalid_settings", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d6_invalid_settings",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-D6-scope",
       "path": "src/mangomas/cli/_app.py",
       "fixed": "            if exc.title != Settings.__name__:\n                raise\n",
       "defect": "",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261029_defects.py", "-k", "d6_a_non_settings", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261029_defects.py",
+        "-k",
+        "d6_a_non_settings",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M01",
       "path": "src/mangomas/agents/_prompt.py",
       "fixed": "        return profiles[profile]\n",
       "defect": "        return overrides.get(agent_name, profiles[profile])\n",
-      "gate": ["{python}", "-m", "pytest", "tests/agents/test_prompt.py", "-k", "test_resolve_llm_profile_beats_agent_override", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/agents/test_prompt.py",
+        "-k",
+        "test_resolve_llm_profile_beats_agent_override",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M02",
       "path": "src/mangomas/config/llm.py",
       "fixed": "        if self.provider_allowlist and self.provider not in self.provider_allowlist:\n",
       "defect": "        if False:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_config.py", "-k", "test_provider_allowlist_must_include_base_provider", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_config.py",
+        "-k",
+        "test_provider_allowlist_must_include_base_provider",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M03",
       "path": "src/mangomas/config/_root.py",
       "fixed": "            if self.llm.provider_allowlist and profile.provider not in self.llm.provider_allowlist:\n",
       "defect": "            if False:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_config.py", "-k", "test_profile_provider_outside_allowlist_is_refused_naming_the_profile", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_config.py",
+        "-k",
+        "test_profile_provider_outside_allowlist_is_refused_naming_the_profile",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M04",
       "path": "src/mangomas/config/_root.py",
       "fixed": "            if self.llm.allowed_models and profile.model not in self.llm.allowed_models:\n",
       "defect": "            if False:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_config.py", "-k", "test_profile_model_outside_allowed_models_is_refused_naming_the_profile", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_config.py",
+        "-k",
+        "test_profile_model_outside_allowed_models_is_refused_naming_the_profile",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M05",
       "path": "src/mangomas/api/routes/agents.py",
       "fixed": "        profile = select_llm_profile(orch.context.extras, request.metadata)\n        # stream_dispatch validates",
       "defect": "        profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        # stream_dispatch validates",
-      "gate": ["{python}", "-m", "pytest", "tests/test_streaming.py", "-k", "test_stream_unknown_profile_is_400_before_sse_headers", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_streaming.py",
+        "-k",
+        "test_stream_unknown_profile_is_400_before_sse_headers",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M06",
       "path": "src/mangomas/composition/llm.py",
       "fixed": "        select_llm_profile(self.context.extras, request.metadata)\n        response: AgentResponse = await super().dispatch(  # type: ignore[misc]\n            agent_name,\n            request,\n            acceptance_fn=acceptance_fn,\n            max_steps=max_steps,\n        )\n",
       "defect": "        response: AgentResponse = await super().dispatch(  # type: ignore[misc]\n            agent_name,\n            request,\n            acceptance_fn=acceptance_fn,\n            max_steps=max_steps,\n        )\n        select_llm_profile(self.context.extras, request.metadata)\n",
-      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_unknown_profile_raises_before_any_agent_call_and_records_no_row", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/composition/test_llm_profiles.py",
+        "-k",
+        "test_dispatch_unknown_profile_raises_before_any_agent_call_and_records_no_row",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M07",
       "path": "src/mangomas/composition/builder.py",
       "fixed": "class _Orchestrator(\n    _LLMProfileDispatchMixin, _FailureRecordingMixin, _AgentLLMOverrideCloseMixin, Orchestrator\n):",
       "defect": "class _Orchestrator(\n    _FailureRecordingMixin, _LLMProfileDispatchMixin, _AgentLLMOverrideCloseMixin, Orchestrator\n):",
-      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_both_composition_orchestrators_carry_the_profile_mixin_first", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/composition/test_llm_profiles.py",
+        "-k",
+        "test_both_composition_orchestrators_carry_the_profile_mixin_first",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M08",
       "path": "src/mangomas/composition/llm.py",
       "fixed": "            if hasattr(client, \"aclose\"):\n                hooks.append((f\"LLM profile ({profile_name})\", client.aclose))\n",
       "defect": "            pass\n",
-      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_aclose_closes_profile_clients", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/composition/test_llm_profiles.py",
+        "-k",
+        "test_aclose_closes_profile_clients",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M09",
       "path": "src/mangomas/composition/harness.py",
       "fixed": "    if isinstance(profile, str):\n        span.set_attribute(\"llm.profile\", profile)\n",
       "defect": "    if isinstance(profile, str):\n        pass\n",
-      "gate": ["{python}", "-m", "pytest", "tests/composition/test_harness.py", "-k", "test_harness_dispatch_span_carries_llm_profile_when_selected or test_harness_stream_span_carries_llm_profile_when_selected", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/composition/test_harness.py",
+        "-k",
+        "test_harness_dispatch_span_carries_llm_profile_when_selected or test_harness_stream_span_carries_llm_profile_when_selected",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M10",
       "path": "AGENTS.md",
       "fixed": "| `MANGOMAS_LLM_PROFILES__<NAME>__TEMPERATURE` | _(none)_ | Inherits `MANGOMAS_LLM__TEMPERATURE` when unset |\n",
       "defect": "",
-      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_env_example_contract.py", "-k", "test_instruction_docs_document_every_settings_field", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/deploy/test_env_example_contract.py",
+        "-k",
+        "test_instruction_docs_document_every_settings_field",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M11",
       "path": "src/mangomas/api/routes/llm.py",
       "fixed": "        return LLMProfilesResponse(\n            profiles=[\n                LLMProfileSummary(name=name, provider=entry[\"provider\"], model=entry[\"model\"])\n                for name, entry in sorted(info.items())\n            ]\n        )\n",
       "defect": "        from fastapi.responses import JSONResponse  # noqa: PLC0415\n\n        return JSONResponse(  # type: ignore[return-value]\n            {\"profiles\": [{\"name\": n, **e} for n, e in sorted(info.items())]}\n        )\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_llm_profiles_api.py", "-k", "test_get_llm_profiles_body_never_contains_secrets", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_llm_profiles_api.py",
+        "-k",
+        "test_get_llm_profiles_body_never_contains_secrets",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M12",
       "path": "src/mangomas/composition/llm.py",
       "fixed": "        return response\n\n    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:\n        \"\"\"Run the step, then stamp the selected profile onto its response.\n\n        ``step_request.metadata`` is ``request.metadata`` verbatim (the\n        orchestrator rebuilds only ``messages`` per step), so the name here is\n        the one :meth:`dispatch` already validated. The result flows into the\n        loop-telemetry re-wrap and then into ``save_turn``, which is the point.\n        \"\"\"\n        response: AgentResponse = await super()._handle_step(agent, step_request)  # type: ignore[misc]\n        profile = step_request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n        return response.model_copy(\n            update={\"metadata\": {**response.metadata, LLM_PROFILE_METADATA_KEY: profile}}\n        )\n",
       "defect": "        profile = request.metadata.get(LLM_PROFILE_METADATA_KEY)\n        if not isinstance(profile, str):\n            return response\n        return response.model_copy(\n            update={\"metadata\": {**response.metadata, LLM_PROFILE_METADATA_KEY: profile}}\n        )\n\n    async def _handle_step(self, agent: Agent, step_request: AgentRequest) -> AgentResponse:\n        return await super()._handle_step(agent, step_request)  # type: ignore[misc]\n",
-      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_persists_the_stamped_response", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/composition/test_llm_profiles.py",
+        "-k",
+        "test_dispatch_persists_the_stamped_response",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M13",
       "path": "src/mangomas/workflow/nodes/fan_out.py",
       "fixed": "                    metadata=_carry_run_scope(request),\n",
       "defect": "                    metadata={},\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_workflow_executor.py", "-k", "test_concat_fan_out_followed_by_agent_keeps_the_profile", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_workflow_executor.py",
+        "-k",
+        "test_concat_fan_out_followed_by_agent_keeps_the_profile",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-0040-M14",
       "path": "src/mangomas/composition/llm.py",
       "fixed": "        return response\n\n    async def _handle_step(",
       "defect": "        return response.model_copy(update={\"metadata\": {\"loop\": response.metadata.get(\"loop\")}})\n\n    async def _handle_step(",
-      "gate": ["{python}", "-m", "pytest", "tests/composition/test_llm_profiles.py", "-k", "test_dispatch_without_profile_leaves_metadata_unchanged", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/composition/test_llm_profiles.py",
+        "-k",
+        "test_dispatch_without_profile_leaves_metadata_unchanged",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-STUDIO-01",
       "path": "src/mangomas/agents/chat.py",
       "fixed": "        logger.debug(\"ChatAgent dispatching %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name, request)\n",
       "defect": "        logger.debug(\"ChatAgent dispatching %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name)\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_each_journey_passes_alone_in_mock_mode[invoke_stamp]", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_studio_consumer_probe.py::test_each_journey_passes_alone_in_mock_mode[invoke_stamp]",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-STUDIO-02",
       "path": "src/mangomas/agents/chat.py",
       "fixed": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name, request)\n",
       "defect": "        logger.debug(\"ChatAgent streaming %d messages\", len(messages))\n        llm = resolve_llm(ctx, self.name)\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_each_journey_passes_alone_in_mock_mode[run_timeline]", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_studio_consumer_probe.py::test_each_journey_passes_alone_in_mock_mode[run_timeline]",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-STUDIO-03",
       "path": "scripts/_studio_probe_journeys.py",
       "fixed": "        ctx.rec.skip(name, LIVE_ROUTING_SKIP_REASON)\n",
       "defect": "        ctx.rec.expect(name, True, LIVE_ROUTING_SKIP_REASON)\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_studio_consumer_probe.py::test_routing_is_skipped_where_no_reply_names_its_model", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_studio_consumer_probe.py::test_routing_is_skipped_where_no_reply_names_its_model",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-CI-01",
       "path": ".github/workflows/ci.yml",
       "fixed": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n",
       "defect": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: false\n",
-      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_workflow_hardening.py", "-k", "test_only_the_deploy_workflow_refuses_to_cancel_in_progress", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/deploy/test_workflow_hardening.py",
+        "-k",
+        "test_only_the_deploy_workflow_refuses_to_cancel_in_progress",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-CI-04",
       "path": ".github/workflows/ci.yml",
       "fixed": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n",
       "defect": "  group: ci-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\n",
-      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_workflow_hardening.py", "-k", "test_a_push_triggered_workflow_never_cancels_a_push_run", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/deploy/test_workflow_hardening.py",
+        "-k",
+        "test_a_push_triggered_workflow_never_cancels_a_push_run",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-CI-02",
       "path": ".github/workflows/ci.yml",
       "fixed": "    timeout-minutes: 10\n    env:\n",
       "defect": "    env:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_workflow_hardening.py", "-k", "test_every_job_declares_a_bounded_timeout", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/deploy/test_workflow_hardening.py",
+        "-k",
+        "test_every_job_declares_a_bounded_timeout",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-CI-03",
       "path": ".github/workflows/ci.yml",
       "fixed": "  push:\n    branches: [\"feat/initial-release\", \"dev\", \"qa\", \"main\"]\n  pull_request:\n",
       "defect": "  push:\n    branches: [\"**\"]\n  pull_request:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_ci_make_parity.py", "-k", "test_push_trigger_targets_the_same_environment_branches", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/deploy/test_ci_make_parity.py",
+        "-k",
+        "test_push_trigger_targets_the_same_environment_branches",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-COV-01",
       "path": "scripts/check_coverage.py",
       "fixed": "GLOBAL_FLOOR = Floor(\"src/mangomas/**/*.py\", 98, \"global\")\n",
       "defect": "GLOBAL_FLOOR = Floor(\"src/mangomas/**/*.py\", 95, \"global\")\n",
-      "gate": ["{python}", "-m", "pytest", "tests/deploy/test_ci_make_parity.py", "-k", "test_global_coverage_floor_matches_pytest_addopts", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/deploy/test_ci_make_parity.py",
+        "-k",
+        "test_global_coverage_floor_matches_pytest_addopts",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-COV-02",
       "path": "scripts/check_coverage.py",
       "fixed": "    Floor(\"src/mangomas/adapters/**/*.py\", 98, \"adapters\"),\n",
       "defect": "    Floor(\"src/mangomas/adapters/**/*.py\", 85, \"adapters\"),\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_check_coverage.py", "-k", "test_regression_doc_floor_table_matches_the_script", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_coverage.py",
+        "-k",
+        "test_regression_doc_floor_table_matches_the_script",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-COV-03",
       "path": "src/mangomas/secrets/gcp.py",
       "fixed": "        if self._client is None:  # pragma: no cover - requires gcp extra\n",
       "defect": "        if self._client is None:  # pragma: no cover\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_check_coverage.py", "-k", "test_every_non_type_checking_pragma_states_its_reason", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_coverage.py",
+        "-k",
+        "test_every_non_type_checking_pragma_states_its_reason",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-1106-01",
       "path": "src/mangomas/adapters/storage/sqlite.py",
       "fixed": "        try:\n            self._path = _path_from_url(url)\n        except ValueError as exc:\n            raise ConfigError(\n                \"Invalid SQLite database URL\",\n                detail=truncated_exc_detail(exc),\n            ) from exc\n",
       "defect": "        self._path = _path_from_url(url)\n",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261106_defects.py", "-k", "test_d1_sqlite_repository_translates_invalid_url_to_config_error", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261106_defects.py",
+        "-k",
+        "test_d1_sqlite_repository_translates_invalid_url_to_config_error",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-AQA-1106-02",
       "path": "src/mangomas/eval/sinks/sqlite_results.py",
       "fixed": "        try:\n            self._path = path_from_sqlite_url(db_path)\n        except ValueError as exc:\n            raise ConfigError(\n                \"sqlite_results sink option 'db_path' is not a valid SQLite URL or path\",\n                detail=truncated_exc_detail(exc),\n            ) from exc\n",
       "defect": "        self._path = path_from_sqlite_url(db_path)\n",
-      "gate": ["{python}", "-m", "pytest", "tests/regression/test_aqa_20261106_defects.py", "-k", "test_d2_sqlite_results_sink_translates_invalid_db_path_to_config_error", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261106_defects.py",
+        "-k",
+        "test_d2_sqlite_results_sink_translates_invalid_db_path_to_config_error",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-01",
       "path": ".claude/settings.json",
       "fixed": "      \"Bash(python scripts/guard_probe.py)\",\n",
       "defect": "      \"Bash(python scripts/guard_probe.py:*)\",\n",
-      "gate": ["{python}", "-m", "pytest", "tests/tooling/test_claude_code_settings.py", "-k", "test_allow_rules_match_the_expected_set", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/tooling/test_claude_code_settings.py",
+        "-k",
+        "test_allow_rules_match_the_expected_set",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-02",
       "path": "src/mangomas/harness/tool_policy.py",
       "fixed": "    if spec.effects is not ToolEffects.READ_ONLY and spec.name not in allowed_mutating_tools:\n",
       "defect": "    if False and spec.effects is not ToolEffects.READ_ONLY and spec.name not in allowed_mutating_tools:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_tool_policy.py", "-k", "test_non_read_only_tool_is_blocked_by_default", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_tool_policy.py",
+        "-k",
+        "test_non_read_only_tool_is_blocked_by_default",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-03",
       "path": "scripts/lint_agent_frontmatter.py",
       "fixed": "    destructive_reason = _destructive_bash_reason(command)\n    if destructive_reason is not None:\n        _emit_deny(destructive_reason)\n        return EXIT_OK\n",
       "defect": "    destructive_reason = _destructive_bash_reason(command)\n    if False and destructive_reason is not None:\n        _emit_deny(destructive_reason)\n        return EXIT_OK\n",
-      "gate": ["{python}", "-m", "pytest", "tests/test_lint_agent_frontmatter.py", "-k", "test_pre_tool_use_bash_destructive_commands_emit_deny", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_lint_agent_frontmatter.py",
+        "-k",
+        "test_pre_tool_use_bash_destructive_commands_emit_deny",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-04",
       "path": "src/mangomas/harness/repair_sandbox.py",
       "fixed": "    if \":\" in raw or \"..\" in candidate_rel.parts:\n",
       "defect": "    if \"..\" in candidate_rel.parts:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_stage_candidate_file_rejects_traversal_and_non_relative_paths", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_repair_sandbox.py",
+        "-k",
+        "test_stage_candidate_file_rejects_traversal_and_non_relative_paths",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-05",
       "path": ".claude/agents/mango-architect.md",
       "fixed": "tools: Read, Grep, Glob, Skill\n",
       "defect": "tools: Read, Grep, Glob, Skill, Bash\n",
-      "gate": ["{python}", "-m", "pytest", "tests/tooling/test_corpus_contract.py", "-k", "test_bash_capable_agents_match_the_reviewed_set", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/tooling/test_corpus_contract.py",
+        "-k",
+        "test_bash_capable_agents_match_the_reviewed_set",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-06",
       "path": "src/mangomas/harness/repair_sandbox.py",
       "fixed": "        if (\n            key_upper.startswith(_SCRUBBED_ENV_PREFIXES)\n            or key_upper.endswith(_SCRUBBED_ENV_SUFFIXES)\n            or (key_upper.startswith(\"MANGOMAS_\") and key not in _ORACLE_MANGOMAS_ENV_ALLOWLIST)\n        ):\n",
       "defect": "        if key_upper.startswith(_SCRUBBED_ENV_PREFIXES):\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_build_scrubbed_oracle_env_strips_profile_and_db_credentials", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_repair_sandbox.py",
+        "-k",
+        "test_build_scrubbed_oracle_env_strips_profile_and_db_credentials",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-07",
       "path": "src/mangomas/harness/repair_sandbox.py",
       "fixed": "    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:\n",
       "defect": "    if timeout_seconds <= 0:\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_run_oracle_and_promote_rejects_non_finite_timeout", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_repair_sandbox.py",
+        "-k",
+        "test_run_oracle_and_promote_rejects_non_finite_timeout",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-08",
       "path": "src/mangomas/harness/tool_policy.py",
       "fixed": "    for key, val in arguments.items():\n        _enforce_max_string_length(val, max_string_chars, repr(key))\n",
       "defect": "    for key, val in arguments.items():\n        if isinstance(val, str) and len(val) > max_string_chars:\n            raise ToolExecutionError(\n                f\"Tool {spec.name!r} argument {key!r} exceeds maximum length \"\n                f\"of {max_string_chars} characters\",\n                tool_name=spec.name,\n            )\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_tool_policy.py", "-k", "test_validate_tool_arguments_rejects_nested_oversized_string", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_tool_policy.py",
+        "-k",
+        "test_validate_tool_arguments_rejects_nested_oversized_string",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-09",
       "path": "src/mangomas/harness/repair_sandbox.py",
       "fixed": "    filename_lower = Path(norm).name.lower()\n",
       "defect": "    filename_lower = Path(norm).name\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_validate_promotion_target_rejects_forbidden_targets", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_repair_sandbox.py",
+        "-k",
+        "test_validate_promotion_target_rejects_forbidden_targets",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-SBX-10",
       "path": "src/mangomas/harness/repair_sandbox.py",
       "fixed": "    after_hash = hashlib.sha256(staged_bytes).hexdigest()\n    if after_hash != staged_hash:\n        raise ToolExecutionError(\n            \"Oracle subprocess modified the staged candidate file before promotion\",\n            tool_name=\"repair_sandbox\",\n        )\n",
       "defect": "    after_hash = staged_hash\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_repair_sandbox.py", "-k", "test_run_oracle_and_promote_detects_staged_mutation", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_repair_sandbox.py",
+        "-k",
+        "test_run_oracle_and_promote_detects_staged_mutation",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-ISO-01",
       "path": "src/mangomas/composition/repair.py",
       "fixed": "    raise ConfigError(\n        \"Repair-loop oracle isolation is 'required' but no isolating backend is available\",\n        detail=\", \".join(probed),\n    )\n",
       "defect": "    return isolation_registry.get(\"none\")(settings)\n",
-      "gate": ["{python}", "-m", "pytest", "tests/composition/test_repair.py", "-k", "test_build_oracle_isolation_required_auto_falls_through_and_fails_closed", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/composition/test_repair.py",
+        "-k",
+        "test_build_oracle_isolation_required_auto_falls_through_and_fails_closed",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-ISO-02",
       "path": "src/mangomas/harness/isolation/docker.py",
       "fixed": "            \"--network\",\n            \"none\",\n",
       "defect": "            \"--network\",\n            \"bridge\",\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_docker_isolation_run_shapes_hardened_argv", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_isolation.py",
+        "-k",
+        "test_docker_isolation_run_shapes_hardened_argv",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-ISO-03",
       "path": "src/mangomas/harness/isolation/docker.py",
       "fixed": "        mount_spec = f\"type=bind,src={cwd.resolve()},dst={DOCKER_WORK_DIR},readonly\"\n",
       "defect": "        mount_spec = f\"type=bind,src={cwd.resolve()},dst={DOCKER_WORK_DIR}\"\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_docker_isolation_mounts_staging_read_only", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_isolation.py",
+        "-k",
+        "test_docker_isolation_mounts_staging_read_only",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-ISO-04",
       "path": "src/mangomas/harness/isolation/none.py",
       "fixed": "        logger.warning(\n            \"Repair-sandbox oracle running WITHOUT OS-enforced isolation (backend='none')\",\n            extra={\"event\": \"repair_oracle_unisolated\", \"backend\": self.name},\n        )\n",
       "defect": "        pass\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_no_isolation_backend_logs_warning_and_runs_subprocess", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_isolation.py",
+        "-k",
+        "test_no_isolation_backend_logs_warning_and_runs_subprocess",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     },
     {
       "id": "MUT-ISO-05",
       "path": "src/mangomas/harness/isolation/wsl.py",
       "fixed": "            \"bwrap\",\n            \"--unshare-all\",\n            \"--die-with-parent\",\n",
       "defect": "            \"bwrap\",\n            \"--die-with-parent\",\n",
-      "gate": ["{python}", "-m", "pytest", "tests/harness/test_isolation.py", "-k", "test_wsl_isolation_run_shapes_bwrap_unshare_all_argv_and_translates_errors", "-q", "--tb=no", "-p", "no:cacheprovider", "-o", "addopts="]
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_isolation.py",
+        "-k",
+        "test_wsl_isolation_run_shapes_bwrap_unshare_all_argv_and_translates_errors",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-GOV-01",
+      "path": ".github/workflows/ci.yml",
+      "fixed": "        run: make protected-paths BASE_REF=\"origin/$BASE_BRANCH\"\n",
+      "defect": "        run: echo \"protected-paths skipped\"\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/deploy/test_ci_make_parity.py",
+        "-k",
+        "protected_paths_job_delegates_to_make",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-GOV-02",
+      "path": "scripts/check_protected_paths.py",
+      "fixed": "    print(\n        f\"WARNING: {reason}; falling back to the working tree's {pyproject_path}. \"\n        \"The gate cannot guarantee this branch did not widen its own exemptions.\",\n        file=sys.stderr,\n    )\n",
+      "defect": "    del reason\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_protected_paths.py",
+        "-k",
+        "falls_back_loudly",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-GOV-03",
+      "path": "scripts/_governance.py",
+      "fixed": "            if candidate in known_paths:\n                scoped.add(candidate)\n",
+      "defect": "            if candidate:\n                scoped.add(candidate)\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_protected_paths.py",
+        "-k",
+        "reads_as_unscoped",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     }
   ]
 }

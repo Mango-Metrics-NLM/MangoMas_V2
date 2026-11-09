@@ -279,12 +279,11 @@ adapter log line carries the row's id.
 
 ## Known gaps
 
-- **`EmbeddingScorer`** raises `NotImplementedError` against every
-  provider shipped today. None of the LLM adapters (LM Studio, Vertex)
-  expose an `embed()` method yet. The scorer registers itself so external
-  callers can monkeypatch their own embeddable client onto `AgentContext`,
-  and a future adapter that lands an `embed()` method will activate the
-  scorer with no harness changes.
+- **`EmbeddingScorer`** needs an embedding provider: it uses
+  `ScorerContext.embeddings` (attached by composition when
+  `MANGOMAS_EMBEDDINGS__ENABLED=true`), else an LLM client exposing `embed()`,
+  and raises `NotImplementedError` only when neither is present. No LLM
+  adapter shipped today exposes `embed()`, so enable the embeddings seam.
 - **`LLMJudgeScorer`** trusts the model to return strict JSON. Sloppy
   responses raise `LLMBadResponse`; consider lowering temperature
   (`MANGOMAS_LLM__TEMPERATURE`) when running the judge against a less

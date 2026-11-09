@@ -532,5 +532,9 @@ response = await execute_workflow(graph, request, orch=orchestrator)
 | `src/mangomas/cognitive/` | CognitiveSignal producer — default-OFF; must not import harness broker internals |
 | `tests/fakes.py` | Shared test doubles — keep minimal and protocol-accurate |
 
-Paths marked _(protected path)_ are gated by the `lint_agent_frontmatter.py`
-hook: a staged edit requires a `BREAKING-CHANGE` marker in the diff.
+Paths marked _(protected path)_ are gated in CI by
+`scripts/check_protected_paths.py` (`make protected-paths`, ADR-0021/0030): a
+commit range that touches one must carry a `BREAKING-CHANGE: <path> — <why>`
+trailer. The `PreToolUse` hook only *asks* before such an edit; it is advisory.
+Never write `BREAKING-CHANGE: none` — a first token that is not a protected
+path makes the marker *unscoped*, approving every protected path in the range.

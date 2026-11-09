@@ -92,7 +92,7 @@ jobs:
 
       - name: Run pytest with coverage
         # pyproject addopts supplies --cov=mangomas, term-missing, and the
-        # global --cov-fail-under=95 (mirroring scripts/check_coverage.py,
+        # global --cov-fail-under=98 (mirroring scripts/check_coverage.py,
         # the authoritative gate run in the next step); `make test-xml` adds
         # only the coverage.xml report needed for the codecov upload below.
         run: make test-xml
@@ -232,8 +232,9 @@ jobs:
   guard-probe:
     name: Guard falsifiability probe
     runs-on: ubuntu-latest
-    # 27 entries x 2 gate runs is about a minute locally; a bound keeps a hung
-    # gate from holding the runner for the 360-minute default.
+    # Every manifest entry runs its gate twice (red, then green); the whole
+    # manifest takes a few minutes locally. A bound keeps a hung gate from
+    # holding the runner for the 360-minute default.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
