@@ -249,13 +249,31 @@ guard-probe: ## Prove each manifest mutation turns its guard red, then restore
 # The Studio consumer contract (spec-0041). Mock mode is hermetic — an
 # in-process stub, no port — so CI's test job runs it; live mode needs LM
 # Studio plus LMSTUDIO_MODEL / LMSTUDIO_OVERRIDE_MODEL and stays opt-in.
+# ── Eval harness self-check (spec-0045 B1) ───────────────────────────────────
+# The `echo` target needs no LLM, so this proves the harness's own machinery —
+# exit code 3 on a failed threshold, the baseline regression diff and the
+# `--no-allow-new-failures` path — on every runner. It is a self-test, not a
+# quality gate: see evals/README.md. MUT-EVAL-01 corrupts a row and requires
+# this target to go red; tests/deploy/test_eval_selfcheck_contract.py pins the
+# flags below so a quieter invocation cannot creep in.
+EVAL_SELFCHECK_DATASET  ?= evals/datasets/selfcheck_echo_v1.jsonl
+EVAL_SELFCHECK_BASELINE ?= evals/baselines/selfcheck_echo_v1.json
+EVAL_SELFCHECK_ARGS = -d $(EVAL_SELFCHECK_DATASET) -s exact_match -t echo --min-pass-rate 1.0 --fail-on-error
+
+eval-selfcheck: ## Prove the eval harness exit codes + baseline diff still fire (echo target, no LLM)
+	$(PYTHON) -m mangomas.cli.main eval $(EVAL_SELFCHECK_ARGS) \
+	  --baseline $(EVAL_SELFCHECK_BASELINE) --no-allow-new-failures
+
+eval-selfcheck-baseline: ## Regenerate the self-check baseline report (review the diff before committing)
+	$(PYTHON) -m mangomas.cli.main eval $(EVAL_SELFCHECK_ARGS) -o $(EVAL_SELFCHECK_BASELINE)
+
 studio-probe-mock: ## Studio consumer contract against an in-process LLM stub (no network)
 	$(PYTHON) scripts/studio_consumer_probe.py --mode mock
 
 studio-probe: ## Studio consumer contract against LM Studio (needs LMSTUDIO_OVERRIDE_MODEL)
 	$(PYTHON) scripts/studio_consumer_probe.py --mode live
 
-gate: validate-config lint format-check typecheck lint-imports frontmatter protected-paths test coverage bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
+gate: validate-config lint format-check typecheck lint-imports frontmatter protected-paths test coverage eval-selfcheck bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
 
 precommit: ## Run every pre-commit hook over the whole tree
 	pre-commit run --all-files

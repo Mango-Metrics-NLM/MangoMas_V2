@@ -113,6 +113,12 @@ jobs:
       - name: Studio consumer probe (mock)
         run: make studio-probe-mock
 
+      # Harness self-test with the `echo` target (no LLM on this runner): exit
+      # codes, threshold gate and baseline regression diff must still fire.
+      # Not a quality gate — evals/README.md says what it can and cannot prove.
+      - name: Eval harness self-check
+        run: make eval-selfcheck
+
       - name: Upload coverage report
         # Third-party action pinned to a full commit SHA (supply-chain
         # hardening — codecov's 2021 uploader compromise is the case study);

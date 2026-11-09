@@ -1,0 +1,139 @@
+{
+  "scorer": "exact_match",
+  "agent_name": "echo",
+  "dataset_size": 8,
+  "passed": 8,
+  "failed": 0,
+  "errored": 0,
+  "mean_score": 1.0,
+  "duration_ms": 0.21090300003834273,
+  "rows": [
+    {
+      "row_id": "echo-01",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.06157399991479906,
+      "prediction": "ok",
+      "expected": "ok",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    },
+    {
+      "row_id": "echo-02",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.012406999985614675,
+      "prediction": "hello, harness",
+      "expected": "hello, harness",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    },
+    {
+      "row_id": "echo-03",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.016121000044222455,
+      "prediction": "héllo wörld — ünïcode",
+      "expected": "héllo wörld — ünïcode",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    },
+    {
+      "row_id": "echo-04",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.009490000024925394,
+      "prediction": "  spaced   out  ",
+      "expected": "  spaced   out  ",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    },
+    {
+      "row_id": "echo-05",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.005899000029785384,
+      "prediction": "MiXeD CaSe",
+      "expected": "MiXeD CaSe",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    },
+    {
+      "row_id": "echo-06",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.007610000011482043,
+      "prediction": "{\"goal\": \"echo\", \"steps\": [{\"description\": \"return input\"}]}",
+      "expected": "{\"goal\": \"echo\", \"steps\": [{\"description\": \"return input\"}]}",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    },
+    {
+      "row_id": "echo-07",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.006525999992845755,
+      "prediction": "line one\nline two",
+      "expected": "line one\nline two",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    },
+    {
+      "row_id": "echo-08",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.00597499990817596,
+      "prediction": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "metadata": {
+        "scorer": "exact_match",
+        "case_sensitive": false,
+        "strip_whitespace": true
+      },
+      "error": null
+    }
+  ],
+  "target_name": "echo",
+  "mean_cost_usd": null,
+  "gate": {
+    "passed": true,
+    "actual_mean_score": 1.0,
+    "actual_pass_rate": 1.0,
+    "min_mean_score": null,
+    "min_pass_rate": 1.0,
+    "fail_on_error": true,
+    "errored": 0,
+    "reasons": [],
+    "kind": "threshold",
+    "actual_mean_cost_usd": null,
+    "max_mean_cost_usd": null
+  }
+}

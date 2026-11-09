@@ -1073,6 +1073,26 @@
         "-o",
         "addopts="
       ]
+    },
+    {
+      "id": "MUT-EVAL-01",
+      "path": "evals/datasets/selfcheck_echo_v1.jsonl",
+      "fixed": "\"expected\": \"ok\", \"metadata\": {\"category\": \"smoke\"}}",
+      "defect": "\"expected\": \"not ok\", \"metadata\": {\"category\": \"smoke\"}}",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/evals/test_selfcheck_lane.py",
+        "-k",
+        "selfcheck_passes_on_the_committed_dataset",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     }
   ]
 }

@@ -130,6 +130,7 @@ def test_test_job_delegates_to_make() -> None:
         "make coverage",
         "make gated-suites",
         "make studio-probe-mock",
+        "make eval-selfcheck",
     ]
 
 
