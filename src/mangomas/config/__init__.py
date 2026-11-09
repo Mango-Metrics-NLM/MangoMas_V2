@@ -186,6 +186,12 @@ from mangomas.config.evaluation import (
     EVAL_COST_USD_METADATA_KEY as EVAL_COST_USD_METADATA_KEY,
 )
 from mangomas.config.evaluation import (
+    EVAL_USAGE_LLM_CALLS_KEY as EVAL_USAGE_LLM_CALLS_KEY,
+)
+from mangomas.config.evaluation import (
+    EVAL_USAGE_METADATA_KEY as EVAL_USAGE_METADATA_KEY,
+)
+from mangomas.config.evaluation import (
     EvalSettings as EvalSettings,
 )
 from mangomas.config.harness import (
@@ -580,6 +586,8 @@ __all__ = [
     "EVAL_COST_INPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_OUTPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_USD_METADATA_KEY",
+    "EVAL_USAGE_LLM_CALLS_KEY",
+    "EVAL_USAGE_METADATA_KEY",
     "LLM_PROFILE_METADATA_KEY",
     "MAX_SIGNAL_TTL_SECONDS",
     "MIN_REPAIR_ORACLE_PIDS_LIMIT",

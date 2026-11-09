@@ -23,6 +23,8 @@ from mangomas.config import (
     EVAL_COST_INPUT_TOKENS_METADATA_KEY,
     EVAL_COST_OUTPUT_TOKENS_METADATA_KEY,
     EVAL_COST_USD_METADATA_KEY,
+    EVAL_USAGE_LLM_CALLS_KEY,
+    EVAL_USAGE_METADATA_KEY,
 )
 from mangomas.eval._options import require_non_negative_float
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
@@ -30,6 +32,7 @@ from mangomas.eval.registry import scorer_registry
 
 logger = logging.getLogger(__name__)
 
+_COST_SOURCE_MEASURED: str = "measured_tokens"
 _COST_SOURCE_EXPLICIT: str = "explicit"
 _COST_SOURCE_TOKENS: str = "tokens"
 _COST_SOURCE_OUTPUT_CHARS: str = "output_chars"
@@ -46,6 +49,25 @@ def _metadata_non_negative_float(metadata: dict[str, Any], key: str) -> float | 
     return number
 
 
+def measured_usage(response_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The adapter-reported usage block, or ``None`` when no LLM call was counted.
+
+    Only ``response_metadata[EVAL_USAGE_METADATA_KEY]`` with a positive
+    ``llm_calls`` counts as measured. A target that *declares* ``cost_usd`` or
+    token keys in its own response metadata is not an adapter report and is
+    ignored here — the dataset's declaration keeps its tier for that.
+    """
+    if not response_metadata:
+        return None
+    usage = response_metadata.get(EVAL_USAGE_METADATA_KEY)
+    if not isinstance(usage, dict):
+        return None
+    calls = _metadata_non_negative_float(usage, EVAL_USAGE_LLM_CALLS_KEY)
+    if not calls:
+        return None
+    return usage
+
+
 def estimate_cost_usd(
     prediction: str,
     *,
@@ -53,11 +75,23 @@ def estimate_cost_usd(
     usd_per_1k_input_tokens: float,
     usd_per_1k_output_tokens: float,
     usd_per_1k_output_chars: float,
+    response_metadata: dict[str, Any] | None = None,
 ) -> tuple[float, str]:
     """Return ``(cost_usd, source)`` for *prediction* given *metadata*.
 
-    Precedence: explicit ``cost_usd`` > token counts > output-character rate.
+    Precedence: measured adapter usage (spec-0045) > explicit ``cost_usd`` >
+    declared token counts > output-character rate. The first tier is the only
+    one that describes the *run*; the rest describe the dataset.
     """
+    usage = measured_usage(response_metadata)
+    if usage is not None:
+        in_tok = _metadata_non_negative_float(usage, EVAL_COST_INPUT_TOKENS_METADATA_KEY) or 0.0
+        out_tok = _metadata_non_negative_float(usage, EVAL_COST_OUTPUT_TOKENS_METADATA_KEY) or 0.0
+        cost = (
+            in_tok / _TOKENS_PER_THOUSAND * usd_per_1k_input_tokens
+            + out_tok / _TOKENS_PER_THOUSAND * usd_per_1k_output_tokens
+        )
+        return cost, _COST_SOURCE_MEASURED
     explicit = _metadata_non_negative_float(metadata, EVAL_COST_USD_METADATA_KEY)
     if explicit is not None:
         return explicit, _COST_SOURCE_EXPLICIT
@@ -117,12 +151,14 @@ class CostBudgetScorer:
         context: ScorerContext | None = None,
     ) -> ScoreResult:
         metadata = dict(context.row_metadata) if context is not None else {}
+        response_metadata = dict(context.response_metadata) if context is not None else {}
         cost_usd, source = estimate_cost_usd(
             prediction,
             metadata=metadata,
             usd_per_1k_input_tokens=self._usd_per_1k_input_tokens,
             usd_per_1k_output_tokens=self._usd_per_1k_output_tokens,
             usd_per_1k_output_chars=self._usd_per_1k_output_chars,
+            response_metadata=response_metadata,
         )
         within_budget = self._max_cost_usd is None or cost_usd <= self._max_cost_usd
         logger.debug(

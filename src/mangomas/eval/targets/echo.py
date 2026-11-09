@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from mangomas.eval.target import Target
+from mangomas.eval.target import Target, TargetOutcome
 from mangomas.eval.target_registry import target_registry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -31,13 +31,13 @@ class EchoTarget:
         request: AgentRequest,
         *,
         orch: Orchestrator,  # noqa: ARG002 — deterministic; no dispatch
-    ) -> str:
+    ) -> TargetOutcome:
         if self._text is not None:
-            return self._text
+            return TargetOutcome(content=self._text)
         for message in reversed(request.messages):
             if message.role == "user":
-                return message.content
-        return ""
+                return TargetOutcome(content=message.content)
+        return TargetOutcome(content="")
 
 
 def _echo_target_factory(options: dict[str, Any]) -> Target:

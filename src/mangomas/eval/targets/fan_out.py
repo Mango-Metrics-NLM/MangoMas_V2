@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from mangomas.errors import ConfigError
 from mangomas.eval._options import require_list
-from mangomas.eval.target import Target
+from mangomas.eval.target import Target, TargetOutcome
 from mangomas.eval.target_registry import target_registry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -38,7 +38,7 @@ class FanOutTarget:
         self._agents = agents
         self._join = join
 
-    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> str:
+    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
         # The orchestrator's own "Fan-out complete" debug log has no visibility
         # into the *join* strategy — that's this target's own configuration —
         # so it is worth a dedicated line here rather than assumed from context.
@@ -51,9 +51,15 @@ class FanOutTarget:
             },
         )
         responses = await orch.dispatch_fan_out(self._agents, request)
+        # Every branch's metadata is kept, keyed by position, so a scorer can
+        # see each agent's usage / tool trace even when only one branch's
+        # content is graded.
+        metadata: dict[str, Any] = {
+            "fan_out": [{"agent": r.agent, "metadata": dict(r.metadata)} for r in responses]
+        }
         if self._join == "concat":
-            return "\n".join(r.content for r in responses)
-        return responses[0].content
+            return TargetOutcome("\n".join(r.content for r in responses), metadata)
+        return TargetOutcome(responses[0].content, metadata)
 
 
 def _fan_out_target_factory(options: dict[str, Any]) -> Target:

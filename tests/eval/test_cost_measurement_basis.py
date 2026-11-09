@@ -1,33 +1,30 @@
 """What ``mean_cost_usd`` actually measures — pinned before anything gates on it.
 
-``MANGOMAS_EVAL__MAX_MEAN_COST_USD``, ``EvalReport.mean_cost_usd`` and the
-``cost_budget`` scorer all exist and are tested. None of them observes what a run
-actually consumed, and nothing said so.
+Until spec-0045 the answer was "what the dataset declared": ``Target.run``
+returned a bare ``str``, so the ``AgentResponse`` and its ``metadata`` were
+discarded at the seam, and ``cost_budget`` resolved explicit ``cost_usd`` →
+declared token counts → output-character rate against the JSONL row alone. A
+cost gate therefore fired on verbosity and was blind to a costlier model, a
+price change or extra tool steps (D15 in
+``docs/analysis/20260919-council-rejection-and-replan.md``).
 
-The chain, verified here rather than asserted in prose:
+The chain now, verified here rather than asserted in prose:
 
-1. ``Target.run(request, *, orch) -> str`` (``eval/target.py``) returns a
-   **string**. ``AgentTarget.run`` awaits ``orch.dispatch`` and returns
-   ``response.content``, so the ``AgentResponse`` — and every field on it,
-   ``metadata`` included — is discarded at that boundary.
-2. ``EvalRunner._score_row`` builds ``ScorerContext(row_metadata=dict(row.metadata))``:
-   the **dataset row's** metadata, i.e. what the JSONL file declared.
-3. ``CostBudgetScorer`` reads that mapping, so its precedence — explicit
-   ``cost_usd`` → token counts → output-character rate — resolves against
-   declared inputs, never measured ones.
+1. ``Target.run(request, *, orch) -> TargetOutcome`` carries the response
+   metadata alongside the graded text (``eval/target.py``).
+2. ``EvalRunner._score_row`` hands the scorer **both** mappings:
+   ``ScorerContext.row_metadata`` (declared) and
+   ``ScorerContext.response_metadata`` (produced by the run).
+3. ``CostBudgetScorer`` trusts exactly one thing in the response metadata: the
+   adapter-written ``usage`` block, and only when it counted at least one LLM
+   call. That tier wins over every declared tier and is labelled
+   ``measured_tokens``. A target that merely *writes* ``cost_usd`` or token keys
+   into its own response metadata is not an adapter report and changes nothing.
 
-The consequence, and the reason this module exists: **a cost gate fires on
-verbosity.** It cannot see a switch to a costlier model via ``MODEL_OVERRIDE``, a
-price change per token, or extra tool steps. That is a real limit of a real
-design — ``tests/eval/fixtures/cost_controlled_v1.jsonl`` hand-declares token
-counts on purpose, giving a fixed-budget cohort for comparing targets — but it
-was undocumented and unpinned, so a threshold could be published over a number
-that does not mean what its name says.
-
-D15 in ``docs/analysis/20260919-council-rejection-and-replan.md`` decides whether
-to keep declared cost or measure it. These tests are what make that decision
-informed; they assert the *current* contract and must be updated deliberately if
-it changes, not quietly.
+So the figure is **measured when an adapter reports usage, declared otherwise**,
+and the row's ``source`` says which. With a silent adapter the old limits still
+hold: cost tracks reply length and is blind to the model the run used. These
+tests pin both halves and must be updated deliberately if either changes.
 """
 
 from __future__ import annotations
@@ -42,8 +39,8 @@ from mangomas.core import AgentContext, Orchestrator
 from mangomas.core.agent import Message
 from mangomas.eval import EvalRunner
 from mangomas.eval.dataset import DatasetRow
-from mangomas.eval.scorers.cost_budget import CostBudgetScorer, estimate_cost_usd
-from mangomas.eval.target import Target
+from mangomas.eval.scorers.cost_budget import CostBudgetScorer, estimate_cost_usd, measured_usage
+from mangomas.eval.target import Target, TargetOutcome
 from tests.constants import (
     DEFAULT_AGENT_NAME,
     DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
@@ -52,6 +49,8 @@ from tests.constants import (
     EVAL_COST_INPUT_TOKENS_METADATA_KEY,
     EVAL_COST_OUTPUT_TOKENS_METADATA_KEY,
     EVAL_COST_USD_METADATA_KEY,
+    EVAL_USAGE_LLM_CALLS_KEY,
+    EVAL_USAGE_METADATA_KEY,
 )
 from tests.fakes import FakeLLM, FakeRepository
 
@@ -61,6 +60,9 @@ if TYPE_CHECKING:  # pragma: no cover
 #: A cost no character-rate estimate could coincidentally produce, so its absence
 #: from the report is proof the response metadata was not read.
 _SENTINEL_COST_USD = 12_345.6789
+#: An adapter-shaped usage report; the only response metadata the scorer trusts.
+_MEASURED_INPUT_TOKENS = 1_200
+_MEASURED_OUTPUT_TOKENS = 340
 
 #: Two replies of deliberately different length, and nothing else different.
 _SHORT_REPLY = "ok"
@@ -154,43 +156,83 @@ async def test_cost_is_blind_to_the_model_the_run_used() -> None:
     assert baseline == overridden
 
 
-async def test_response_metadata_never_reaches_the_scorer() -> None:
-    """The structural cause: ``Target.run`` returns ``str``, discarding the response.
+async def test_response_metadata_reaches_the_scorer_but_only_measured_usage_is_trusted() -> None:
+    """spec-0045 closed D15(b): the seam carries response metadata — narrowly.
 
-    A target that attaches token counts to its ``AgentResponse`` still cannot get
-    them to the scorer — the signature has no channel for them. If this test ever
-    fails, the ``Target`` seam grew one (D15 option b), and the module docstring
-    plus ``docs/eval/harness.md`` must be updated with it.
+    A target that writes an explicit ``cost_usd`` and token keys into its own
+    response metadata is still not heard: those keys describe a *claim*, not an
+    adapter report. Only the ``usage`` block an LLM adapter accumulates (with a
+    positive ``llm_calls``) is the measured tier.
     """
 
-    class _MetadataAttachingTarget:
-        """A target that really does report usage, and is still not heard."""
+    class _ClaimingTarget:
+        """Writes cost keys into the response — the shape a careless target might use."""
 
         name = DEFAULT_AGENT_NAME
 
-        async def run(self, request: AgentRequest, *, orch: Orchestrator) -> str:
+        async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
             response = await orch.dispatch(DEFAULT_AGENT_NAME, request)
-            # A real adapter would write usage here, so write it: an explicit
-            # cost_usd (the scorer's *highest*-precedence tier) plus token counts.
-            # If any of this reached the scorer the cost would be _SENTINEL_COST_USD.
             response.metadata[EVAL_COST_USD_METADATA_KEY] = _SENTINEL_COST_USD
             response.metadata[EVAL_COST_INPUT_TOKENS_METADATA_KEY] = 999_999
             response.metadata[EVAL_COST_OUTPUT_TOKENS_METADATA_KEY] = 999_999
-            return response.content
+            return TargetOutcome(content=response.content, metadata=dict(response.metadata))
 
-    target = _MetadataAttachingTarget()
-    assert isinstance(target, Target)
+    class _MeasuringTarget(_ClaimingTarget):
+        """Carries the adapter-shaped usage block as well — this one is heard."""
 
-    orch = _orchestrator(_SHORT_REPLY)
-    report = await EvalRunner(orch, CostBudgetScorer()).run([_row("r1")], target=target)
+        async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
+            outcome = await super().run(request, orch=orch)
+            outcome.metadata[EVAL_USAGE_METADATA_KEY] = {
+                EVAL_USAGE_LLM_CALLS_KEY: 1,
+                EVAL_COST_INPUT_TOKENS_METADATA_KEY: _MEASURED_INPUT_TOKENS,
+                EVAL_COST_OUTPUT_TOKENS_METADATA_KEY: _MEASURED_OUTPUT_TOKENS,
+            }
+            return outcome
+
+    claiming = _ClaimingTarget()
+    assert isinstance(claiming, Target)
+    report = await EvalRunner(_orchestrator(_SHORT_REPLY), CostBudgetScorer()).run(
+        [_row("r1")], target=claiming
+    )
     assert report.mean_cost_usd is not None
-
-    # The sentinel is nowhere: had the response metadata reached the scorer, its
-    # explicit-cost tier would have won outright.
     assert report.mean_cost_usd != pytest.approx(_SENTINEL_COST_USD)
-    # And the figure is identical to a plain agent target's — the attempt to
-    # report usage changed nothing at all.
     assert report.mean_cost_usd == await _mean_cost(_orchestrator(_SHORT_REPLY), [_row("r1")])
+    assert report.rows[0].metadata["source"] == "output_chars"
+    # The metadata did arrive — it is on the row — it just carried no measurement.
+    assert EVAL_COST_USD_METADATA_KEY in report.rows[0].response_metadata
+
+    measured = await EvalRunner(_orchestrator(_SHORT_REPLY), CostBudgetScorer()).run(
+        [_row("r1")], target=_MeasuringTarget()
+    )
+    expected = (
+        _MEASURED_INPUT_TOKENS / 1000 * DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS
+        + _MEASURED_OUTPUT_TOKENS / 1000 * DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS
+    )
+    assert measured.mean_cost_usd == pytest.approx(expected)
+    assert measured.rows[0].metadata["source"] == "measured_tokens"
+
+
+def test_a_usage_block_with_no_counted_calls_is_not_a_measurement() -> None:
+    """An adapter that never reported leaves ``llm_calls`` at 0 — that is silence, not zero cost."""
+    cost, source = estimate_cost_usd(
+        _SHORT_REPLY,
+        metadata={},
+        usd_per_1k_input_tokens=DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
+        usd_per_1k_output_tokens=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
+        usd_per_1k_output_chars=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
+        response_metadata={
+            EVAL_USAGE_METADATA_KEY: {
+                EVAL_USAGE_LLM_CALLS_KEY: 0,
+                EVAL_COST_INPUT_TOKENS_METADATA_KEY: 5,
+            }
+        },
+    )
+    assert source == "output_chars"
+    assert cost == pytest.approx(
+        len(_SHORT_REPLY) / 1000 * DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS
+    )
+    assert measured_usage({EVAL_USAGE_METADATA_KEY: "not a mapping"}) is None
+    assert measured_usage(None) is None
 
 
 async def test_declared_token_counts_do_move_the_cost() -> None:

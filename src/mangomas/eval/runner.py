@@ -21,6 +21,7 @@ from mangomas.correlation import (
     set_correlation_id,
 )
 from mangomas.eval.protocol import ScorerContext
+from mangomas.eval.target import coerce_outcome
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -86,6 +87,12 @@ class EvalRowResult:
     expected: str
     metadata: dict[str, object] = field(default_factory=dict)
     error: str | None = None
+    # spec-0045: the per-row correlation id the runner set (so a row joins to
+    # its orchestrator / adapter log lines) and the response metadata the
+    # target produced. Both default to "absent" so a baseline written before
+    # this field existed still loads.
+    correlation_id: str | None = None
+    response_metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -157,12 +164,18 @@ class EvalRunner:
                 messages=list(row.messages),
                 metadata=dict(row.metadata),
             )
-            prediction = await target.run(request, orch=self._orch)
+            outcome = coerce_outcome(
+                await target.run(request, orch=self._orch), target_name=target.name
+            )
+            prediction = outcome.content
+            response_metadata = dict(outcome.metadata)
             ctx = ScorerContext(
                 llm=self._orch.context.llm,
                 embeddings=self._orch.context.embeddings,
                 row_metadata=dict(row.metadata),
                 correlation_id=correlation_id,
+                response_metadata=dict(response_metadata),
+                messages=list(row.messages),
             )
             result = await self._scorer.score(prediction, row.expected, context=ctx)
         except Exception as exc:
@@ -185,6 +198,7 @@ class EvalRunner:
                 expected=row.expected,
                 metadata={"error_type": type(exc).__name__},
                 error=str(exc)[:_ROW_ERROR_TRUNCATE],
+                correlation_id=correlation_id,
             )
         duration_ms = (time.monotonic() - started) * 1000
         logger.debug(
@@ -206,6 +220,8 @@ class EvalRunner:
             prediction=prediction,
             expected=row.expected,
             metadata=dict(result.metadata),
+            correlation_id=correlation_id,
+            response_metadata=response_metadata,
         )
 
     async def run(

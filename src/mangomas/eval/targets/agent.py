@@ -1,7 +1,8 @@
 """Agent target — dispatch a registered agent (the default eval target).
 
 Preserves today's behaviour exactly: :meth:`run` calls
-``orch.dispatch(agent, request)`` and returns ``response.content``. ``name`` is
+``orch.dispatch(agent, request)`` and returns ``response.content`` as the graded
+text, with ``response.metadata`` carried alongside (spec-0045). ``name`` is
 the agent name, so an :class:`~mangomas.eval.runner.EvalReport`'s ``agent_name``
 field stays byte-identical to pre-target-indirection runs.
 """
@@ -11,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from mangomas.eval._options import require_str
-from mangomas.eval.target import Target
+from mangomas.eval.target import Target, TargetOutcome
 from mangomas.eval.target_registry import target_registry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -25,9 +26,9 @@ class AgentTarget:
         self._agent = agent
         self.name = agent
 
-    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> str:
+    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
         response = await orch.dispatch(self._agent, request)
-        return response.content
+        return TargetOutcome(content=response.content, metadata=dict(response.metadata))
 
 
 def _agent_target_factory(options: dict[str, Any]) -> Target:
