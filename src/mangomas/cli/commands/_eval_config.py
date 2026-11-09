@@ -19,11 +19,12 @@ from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.errors import ConfigError
 from mangomas.eval import dataset_source_registry, scorer_registry, sink_registry, target_registry
 from mangomas.eval._options import require_non_negative_float, require_unit_float
+from mangomas.eval.provenance import digest_of
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
-    from mangomas.config import EvalSettings
+    from mangomas.config import EvalSettings, Settings
     from mangomas.eval import DatasetSource, Scorer, Sink, Target
 
 
@@ -55,6 +56,28 @@ def _build_sinks(
 
 
 _COMPOSITE_SCORER = "composite"
+
+
+def _provenance_labels(
+    settings: Settings, target_name: str, scorer_names: list[str]
+) -> dict[str, object]:
+    """Caller-side provenance the runner cannot see (spec-0045 B6).
+
+    Provider and model come from the live settings; the profile is the one
+    the ``agent`` target will stamp on every row, if any; option mappings are
+    digested rather than copied so a secret-shaped option never lands in a
+    report.
+    """
+    agent_options = settings.eval.target_options.get("agent", {})
+    profile = agent_options.get("llm_profile") if isinstance(agent_options, dict) else None
+    return {
+        "llm_provider": settings.llm.provider,
+        "llm_model": settings.llm.model,
+        "llm_profile": profile if isinstance(profile, str) else None,
+        "scorers": list(scorer_names),
+        "scorer_options_sha256": digest_of(settings.eval.scorer_options),
+        "target_options_sha256": digest_of(settings.eval.target_options.get(target_name, {})),
+    }
 
 
 def _build_scorer(names: list[str], scorer_options: dict[str, object]) -> Scorer:

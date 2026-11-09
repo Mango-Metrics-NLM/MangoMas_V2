@@ -28,6 +28,7 @@ from mangomas.cli.commands._eval_config import (
     _build_scorer,
     _build_sinks,
     _build_target,
+    _provenance_labels,
     _resolve_gating,
     _resolve_regression,
 )
@@ -207,6 +208,8 @@ def _run_eval_pipeline(
         scorer_instance,
         parallelism=effective_parallelism,
         fail_fast=effective_fail_fast,
+        slice_key=cfg.slice_key,
+        provenance_labels=_provenance_labels(settings, target_name, scorer_names),
     )
 
     async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:

@@ -848,3 +848,28 @@ def test_eval_cli_single_scorer_is_unchanged(fixtures_dir: Path) -> None:
     )
     assert result.exit_code == 0, result.stdout
     assert "scorer=contains" in result.stdout
+
+
+def test_eval_cli_report_carries_provenance_labels(fixtures_dir: Path, tmp_path: Path) -> None:
+    """The CLI adds what the runner cannot see: provider, model, option digests (spec-0045 B6)."""
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval",
+            "-d",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "-s",
+            "exact_match",
+            "-a",
+            "chat",
+            "-o",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    run = json.loads(out.read_text(encoding="utf-8"))["run"]
+    assert run["labels"]["llm_provider"] and run["labels"]["llm_model"]
+    assert run["labels"]["scorers"] == ["exact_match"]
+    assert run["labels"]["scorer_options_sha256"].startswith("sha256:")
+    assert run["dataset_sha256"].startswith("sha256:")

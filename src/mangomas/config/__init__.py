@@ -177,6 +177,9 @@ from mangomas.config.evaluation import (
     DEFAULT_EVAL_SINKS as DEFAULT_EVAL_SINKS,
 )
 from mangomas.config.evaluation import (
+    DEFAULT_EVAL_SLICE_KEY as DEFAULT_EVAL_SLICE_KEY,
+)
+from mangomas.config.evaluation import (
     DEFAULT_EVAL_TARGET as DEFAULT_EVAL_TARGET,
 )
 from mangomas.config.evaluation import (
@@ -521,6 +524,7 @@ __all__ = [
     "DEFAULT_EVAL_SCHEMA_VERSION",
     "DEFAULT_EVAL_SCORER",
     "DEFAULT_EVAL_SINKS",
+    "DEFAULT_EVAL_SLICE_KEY",
     "DEFAULT_EVAL_TARGET",
     "DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS",
     "DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS",

@@ -14,21 +14,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from opentelemetry import trace
 
 from mangomas.errors import ConfigError
-from mangomas.eval.runner import EvalReport, EvalRowResult
-
-if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Mapping
+from mangomas.eval.provenance import RunProvenance
+from mangomas.eval.runner import EvalReport, EvalRowResult, SliceStats
 
 logger = logging.getLogger(__name__)
 
 _ROW_FIELDS = {f.name for f in fields(EvalRowResult)}
+_RUN_FIELDS = {f.name for f in fields(RunProvenance)}
+_SLICE_FIELDS = {f.name for f in fields(SliceStats)}
 
 
 def _pass_rate(report: EvalReport) -> float:
@@ -147,11 +148,23 @@ def _report_from_dict(data: Mapping[str, Any]) -> EvalReport:
             rows=rows,
             target_name=data.get("target_name", ""),
             mean_cost_usd=data.get("mean_cost_usd"),
+            run=_run_from_dict(data.get("run")),
+            slices={
+                name: SliceStats(**{k: v for k, v in raw.items() if k in _SLICE_FIELDS})
+                for name, raw in (data.get("slices") or {}).items()
+            },
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         # ``AttributeError``: a row that is not an object (``.items`` on a list /
         # str); ``ValueError``: a scalar where the dataclass expects a type.
         raise ConfigError(f"Invalid baseline report structure: {exc}") from exc
+
+
+def _run_from_dict(raw: Any) -> RunProvenance | None:
+    """Provenance is a label block: absent in older baselines, tolerant of new keys."""
+    if not isinstance(raw, Mapping):
+        return None
+    return RunProvenance(**{k: v for k, v in raw.items() if k in _RUN_FIELDS})
 
 
 def _row_from_dict(raw: Mapping[str, Any]) -> EvalRowResult:

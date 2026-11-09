@@ -49,6 +49,7 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | When `false`, fail on rows that passed in baseline but fail now |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Ordered list of result sinks |
 | `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__SLICE_KEY` | `category` | Row-metadata key for `EvalReport.slices` (reporting only) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `2` | Forward-compatible config version marker |
 
 ## Dataset format

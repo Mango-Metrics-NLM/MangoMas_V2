@@ -11,16 +11,22 @@ import asyncio
 import logging
 import math
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from mangomas.config import DEFAULT_EVAL_PARALLELISM, EVAL_COST_USD_METADATA_KEY
+from mangomas.config import (
+    DEFAULT_EVAL_PARALLELISM,
+    DEFAULT_EVAL_SLICE_KEY,
+    EVAL_COST_USD_METADATA_KEY,
+)
 from mangomas.core import AgentRequest
 from mangomas.correlation import (
     generate_correlation_id,
     set_correlation_id,
 )
 from mangomas.eval.protocol import ScorerContext
+from mangomas.eval.provenance import RunProvenance, build_provenance
 from mangomas.eval.target import coerce_outcome
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -52,6 +58,38 @@ def _matches_expected_error(exc: BaseException, expected: str) -> bool:
         return True
     code = getattr(exc, "code", None)
     return isinstance(code, str) and code == expected
+
+
+def slice_stats(
+    dataset: list[DatasetRow], rows: list[EvalRowResult], *, slice_key: str
+) -> dict[str, SliceStats]:
+    """Per-slice aggregates: rows grouped by ``metadata[slice_key]`` (a string).
+
+    Rows whose metadata lacks the key, or holds a non-string, are unsliced;
+    a dataset with no sliced rows yields ``{}``. ``mean_score`` follows the
+    report's rule and excludes errored rows.
+    """
+    by_id = {row.id: row for row in dataset}
+    groups: dict[str, list[EvalRowResult]] = {}
+    for result in rows:
+        source = by_id.get(result.row_id)
+        value = source.metadata.get(slice_key) if source is not None else None
+        if isinstance(value, str) and value:
+            groups.setdefault(value, []).append(result)
+    stats: dict[str, SliceStats] = {}
+    for name in sorted(groups):
+        members = groups[name]
+        passed = sum(1 for r in members if r.passed and r.error is None)
+        errored = sum(1 for r in members if r.error is not None)
+        scored = [r.score for r in members if r.error is None]
+        stats[name] = SliceStats(
+            size=len(members),
+            passed=passed,
+            failed=len(members) - passed - errored,
+            errored=errored,
+            mean_score=sum(scored) / len(scored) if scored else 0.0,
+        )
+    return stats
 
 
 def _skipped_row(row: DatasetRow) -> EvalRowResult:
@@ -109,6 +147,17 @@ class EvalRowResult:
 
 
 @dataclass(frozen=True)
+class SliceStats:
+    """Aggregate for the rows sharing one value of the slice key (spec-0045 B6)."""
+
+    size: int
+    passed: int
+    failed: int
+    errored: int
+    mean_score: float
+
+
+@dataclass(frozen=True)
 class EvalReport:
     """Aggregate report for an entire dataset run."""
 
@@ -129,6 +178,11 @@ class EvalReport:
     # a numeric cost. ``None`` when no row reported a cost (every historical
     # scorer, and any run that is not cost-aware).
     mean_cost_usd: float | None = None
+    # spec-0045 B6: what produced this report, and per-slice aggregates keyed
+    # by the rows' ``metadata[slice_key]``. Both default to "absent" so a
+    # baseline written before them still loads; ``diff_reports`` ignores both.
+    run: RunProvenance | None = None
+    slices: dict[str, SliceStats] = field(default_factory=dict)
 
 
 class EvalRunner:
@@ -155,6 +209,8 @@ class EvalRunner:
         *,
         parallelism: int = DEFAULT_EVAL_PARALLELISM,
         fail_fast: bool = False,
+        slice_key: str = DEFAULT_EVAL_SLICE_KEY,
+        provenance_labels: Mapping[str, Any] | None = None,
     ) -> None:
         if parallelism < 1:
             raise ValueError(f"parallelism must be >= 1; got {parallelism}")
@@ -162,6 +218,8 @@ class EvalRunner:
         self._scorer = scorer
         self._parallelism = parallelism
         self._fail_fast = fail_fast
+        self._slice_key = slice_key
+        self._provenance_labels = dict(provenance_labels or {})
 
     async def _score_row(
         self,
@@ -297,6 +355,12 @@ class EvalRunner:
         """
         eff_target = self._resolve_target(agent_name, target)
         label = eff_target.name
+        run = await build_provenance(
+            rows=dataset,
+            scorer=self._scorer.name,
+            target=label,
+            labels=self._provenance_labels,
+        )
         if not dataset:
             return EvalReport(
                 scorer=self._scorer.name,
@@ -310,6 +374,7 @@ class EvalRunner:
                 rows=[],
                 target_name=label,
                 mean_cost_usd=None,
+                run=run,
             )
         logger.info(
             "Eval run starting",
@@ -344,6 +409,8 @@ class EvalRunner:
             rows=rows,
             target_name=label,
             mean_cost_usd=mean_cost_usd,
+            run=run,
+            slices=slice_stats(dataset, rows, slice_key=self._slice_key),
         )
         logger.info(
             "Eval run complete",

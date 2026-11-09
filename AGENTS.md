@@ -258,6 +258,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
 | `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__SLICE_KEY` | `category` | Row-metadata key the report's per-slice aggregates (`EvalReport.slices`) group by; reporting only, never gated (spec-0045) |
 | `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Directory for `json_file`/`sqlite_results` artefacts |
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Concurrent eval rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Stop the run on the first errored row |

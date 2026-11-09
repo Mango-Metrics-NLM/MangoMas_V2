@@ -64,6 +64,15 @@ CREATE TABLE IF NOT EXISTS eval_rows (
 """
 
 
+# Columns added after the first schema shipped (spec-0045 B6). ``CREATE TABLE IF
+# NOT EXISTS`` cannot widen an existing table, so ``_migrate`` adds each one
+# that is missing. ``mean_cost_usd`` was on the report but never stored.
+_ADDITIVE_REPORT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("mean_cost_usd", "REAL"),
+    ("run_json", "TEXT"),
+)
+
+
 class SqliteResultsSink:
     """Append the report + its rows to two tables in a SQLite database."""
 
@@ -115,13 +124,23 @@ class SqliteResultsSink:
             ) from exc
 
     @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add the spec-0045 columns to a database created before them (additive, idempotent)."""
+        present = {row[1] for row in conn.execute("PRAGMA table_info(eval_reports)")}
+        for column, decl in _ADDITIVE_REPORT_COLUMNS:
+            if column not in present:
+                conn.execute(f"ALTER TABLE eval_reports ADD COLUMN {column} {decl}")
+
+    @staticmethod
     def _insert(conn: sqlite3.Connection, report: EvalReport, gate_json: str | None) -> None:
         conn.executescript(_SCHEMA)
+        SqliteResultsSink._migrate(conn)
+        run_json = json.dumps(dataclasses.asdict(report.run)) if report.run is not None else None
         cur = conn.execute(
             "INSERT INTO eval_reports "
             "(ts, scorer, agent_name, target_name, dataset_size, passed, failed, "
-            "errored, mean_score, duration_ms, gate_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "errored, mean_score, duration_ms, gate_json, mean_cost_usd, run_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 clock.now().isoformat(),
                 report.scorer,
@@ -134,6 +153,8 @@ class SqliteResultsSink:
                 report.mean_score,
                 report.duration_ms,
                 gate_json,
+                report.mean_cost_usd,
+                run_json,
             ),
         )
         report_id = int(cur.lastrowid or 0)

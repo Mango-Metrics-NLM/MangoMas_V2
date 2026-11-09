@@ -82,7 +82,10 @@ async def test_sqlite_results_sink_writes_report_and_rows(tmp_path: Path) -> Non
     assert rows[1][3] == "boom"
 
 
-async def test_sqlite_results_sink_stores_cost_usd_in_metadata_json(tmp_path: Path) -> None:
+async def test_sqlite_results_sink_stores_cost_usd_in_metadata_json_and_a_column(
+    tmp_path: Path,
+) -> None:
+    """Per-row cost stays in ``metadata_json``; the report mean now has a column (spec-0045 B6)."""
     report = EvalReport(
         scorer="cost_budget",
         agent_name="chat",
@@ -112,10 +115,37 @@ async def test_sqlite_results_sink_stores_cost_usd_in_metadata_json(tmp_path: Pa
     try:
         metadata_json = conn.execute("SELECT metadata_json FROM eval_rows").fetchone()[0]
         columns = {row[1] for row in conn.execute("PRAGMA table_info(eval_reports)").fetchall()}
+        mean_cost = conn.execute("SELECT mean_cost_usd FROM eval_reports").fetchone()[0]
     finally:
         conn.close()
     assert json.loads(metadata_json)[EVAL_COST_USD_METADATA_KEY] == 0.05
-    assert "mean_cost_usd" not in columns
+    assert {"mean_cost_usd", "run_json"} <= columns
+    assert mean_cost == 0.05
+
+
+async def test_sqlite_results_sink_adds_the_new_columns_to_an_older_database(
+    tmp_path: Path,
+) -> None:
+    """A database created before spec-0045 gains the columns in place; its rows survive."""
+    db = tmp_path / "legacy.db"
+    legacy_schema = """
+    CREATE TABLE eval_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, scorer TEXT NOT NULL,
+        agent_name TEXT NOT NULL, target_name TEXT NOT NULL, dataset_size INTEGER NOT NULL,
+        passed INTEGER NOT NULL, failed INTEGER NOT NULL, errored INTEGER NOT NULL,
+        mean_score REAL NOT NULL, duration_ms REAL NOT NULL, gate_json TEXT
+    );
+    INSERT INTO eval_reports (ts, scorer, agent_name, target_name, dataset_size, passed,
+        failed, errored, mean_score, duration_ms, gate_json)
+    VALUES ('t', 'exact_match', 'chat', 'chat', 1, 1, 0, 0, 1.0, 1.0, NULL);
+    """
+    with sqlite3.connect(db) as conn:
+        conn.executescript(legacy_schema)
+    await SqliteResultsSink(db_path=str(db)).emit(_report())
+    with sqlite3.connect(db) as conn:
+        rows = conn.execute("SELECT scorer, mean_cost_usd, run_json FROM eval_reports").fetchall()
+    assert len(rows) == 2, "the legacy row is kept and the new one appended"
+    assert rows[0][1] is None and rows[0][2] is None
 
 
 async def test_sqlite_results_sink_appends(tmp_path: Path) -> None:
