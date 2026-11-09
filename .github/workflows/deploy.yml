@@ -120,6 +120,28 @@ jobs:
       - name: Install dependencies
         run: make install
 
+      # The offline half of ci.yml's `lint` job, in the same order, so a tag or
+      # a manual dispatch cannot ship a tree CI never linted or type-checked
+      # (spec-0045 A3). `protected-paths` is deliberately absent: it needs a
+      # base ref to diff against and a release has none.
+      - name: Validate config
+        run: make validate-config
+
+      - name: Lint
+        run: make lint
+
+      - name: Format check
+        run: make format-check
+
+      - name: Frontmatter lint
+        run: make frontmatter
+
+      - name: Type-check
+        run: make typecheck
+
+      - name: Import-layering contracts
+        run: make lint-imports
+
       - name: Run pytest with coverage
         run: make test
 

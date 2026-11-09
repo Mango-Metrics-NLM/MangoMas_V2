@@ -203,7 +203,20 @@ def test_deploy_job_is_gated_by_the_verify_job() -> None:
         and str(step["run"]).strip() not in {'pip install -e ".[dev]"', "make install"}
         and not str(step["run"]).startswith("pip install")
     ]
-    assert verify_commands == ["make test", "make coverage", "make contracts-coverage"]
+    # The offline half of ci.yml's `lint` job precedes the test gate (same
+    # order as test_ci_make_parity.py pins for CI); `protected-paths` is out of
+    # scope here because a release has no base ref to diff against.
+    assert verify_commands == [
+        "make validate-config",
+        "make lint",
+        "make format-check",
+        "make frontmatter",
+        "make typecheck",
+        "make lint-imports",
+        "make test",
+        "make coverage",
+        "make contracts-coverage",
+    ]
 
 
 def test_deploy_workflow_uses_workload_identity_federation() -> None:

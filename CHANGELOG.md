@@ -9,6 +9,42 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Governance mechanisation and supply-chain scanning (spec-0045 PR-A / ADR-0041)
+
+- `scripts/guard_probe_manifest.json`: `MUT-GOV-01..03` mutation-prove the
+  protected-path gate itself at ADR-0030's three named weaknesses — deleting
+  the `protected-paths` CI job, silencing the base-ref fallback warning, and
+  treating a non-path marker token as scoped
+  (`tests/harness/test_guard_probe.py::test_shipped_manifest_snippets_each_occur_once`
+  pins the count at 54; `make guard-probe` proves red → green).
+- `.github/workflows/scorecard.yml`, `.github/workflows/codeql.yml`,
+  `SECURITY.md`; `nightly.yml` uploads the CycloneDX SBOM as an artifact.
+  Both new workflows grant `security-events: write` at job level only
+  (`tests/deploy/test_workflow_hardening.py::test_security_scanning_workflows_declare_minimal_write_permissions`);
+  every third-party action is SHA-pinned and listed in the reviewed set.
+- `deploy.yml` `verify` runs the offline half of CI's `lint` job
+  (`validate-config`, `lint`, `format-check`, `frontmatter`, `typecheck`,
+  `lint-imports`) before the test gate, so a tag or manual dispatch cannot ship
+  a tree CI never linted (`tests/deploy/test_deploy_contract.py::test_deploy_job_is_gated_by_the_verify_job`).
+- `deploy/service.yaml` + `deploy/environments.yaml`: hardened posture as a
+  manifest contract — `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION=false`
+  (`dev` alone keeps `true`), `MANGOMAS_REPAIR__ORACLE_ISOLATION=required`,
+  non-empty `MANGOMAS_LLM__ALLOWED_MODELS` / `PROVIDER_ALLOWLIST`
+  (`tests/deploy/test_env_profiles_hardened.py`). Library defaults are
+  unchanged (ADR-0033).
+- `.github/PULL_REQUEST_TEMPLATE.md` gains a "Protected paths" section: the
+  scoped trailer form, merge-commit rule, and why a bare `BREAKING-CHANGE:
+  none` is an *unscoped* blanket approval (`tests/tooling/test_pr_template.py`).
+
+### Changed — Stale "Enforced by" prose made true (ADR-0033)
+
+- `AGENTS.md` File Ownership footnote now names the CI gate
+  (`scripts/check_protected_paths.py`) as the enforcement and the PreToolUse
+  hook as advisory; `ci.yml` comments say the 98 % floor and no longer count
+  probe entries; `docs/eval/harness.md` describes `EmbeddingScorer`'s real
+  provider resolution; `docs/tooling/claude-code-ecosystem.md` lists
+  `claude-mem` as per-contributor only.
+
 ### Added — Pluggable repair-loop oracle isolation backends and `MANGOMAS_REPAIR__*` settings (spec-0044 / ADR-0040)
 
 - `src/mangomas/config/repair.py` (`Settings.repair`, `MANGOMAS_REPAIR__*`):
