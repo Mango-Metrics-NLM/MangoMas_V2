@@ -1,0 +1,93 @@
+name: CodeQL
+
+# Static analysis of the Python sources, reported to the Security tab as
+# SARIF. CodeQL needs no build step for Python and does not need the project
+# installed, so there is no `make` target to delegate to.
+#
+# NOTE: code scanning is only available on a public repository or one with
+# GitHub Advanced Security enabled; on a plain private repository the
+# `analyze` step fails at upload (README.md still describes this repository
+# as private — resolve that before expecting a green run here).
+
+on:
+  # The same branch roster as ci.yml (ADR-0036): the trunks that receive
+  # merges. `feat/initial-release` is the pre-rename name of `dev`.
+  push:
+    branches: ["feat/initial-release", "dev", "qa", "main"]
+  pull_request:
+    branches: ["feat/initial-release", "dev", "qa", "main"]
+  schedule:
+    # Weekly, Tuesday 05:41 UTC — off the hour and on a different day from
+    # Scorecard, so the two weekly scans never contend for the same window.
+    # The scheduled run catches query-pack updates that find new issues in
+    # code nobody has touched since.
+    - cron: "41 5 * * 2"
+
+# Read-only at the workflow level; the SARIF upload scope is granted to the
+# analysis job alone (tests/deploy/test_workflow_hardening.py).
+permissions:
+  contents: read
+
+# A newer commit on the same PR supersedes the run in flight. Trunk pushes
+# are never cancelled, so every merge commit keeps a completed analysis.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze (python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Upload the SARIF to the code-scanning dashboard.
+      security-events: write
+      # A job-level block replaces the workflow-level one entirely, so the
+      # read scopes the checkout and the private-repository path need are
+      # restated here.
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: python
+          # Python is extracted directly from source; no build is needed.
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: "/language:python"
+
+  # Same pattern as nightly.yml's `notify`. A PR run's failure is visible on
+  # the PR itself, so only unattended runs (schedule, trunk push) file an
+  # issue — and a fork's read-only token could not open one anyway.
+  notify:
+    name: File a tracking issue on failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [analyze]
+    if: failure() && github.event_name != 'pull_request'
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TITLE: "CodeQL workflow is failing"
+    steps:
+      - name: Open or update the tracking issue
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$REPO" --state open \
+            --search "$TITLE in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty")"
+          body="The CodeQL workflow failed: $RUN_URL"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$body"
+          fi

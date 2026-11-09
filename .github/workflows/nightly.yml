@@ -194,6 +194,20 @@ jobs:
       - name: CycloneDX SBOM and Trivy filesystem scan
         run: make sbom-scan
 
+      # `make sbom-scan` writes `sbom.cdx.json` (Makefile); without this it
+      # dies with the runner and the scan leaves no record to compare the
+      # next one against. Named by matrix index rather than by `matrix.ref`
+      # because a branch name may contain `/`, which an artifact name cannot;
+      # the job title above says which branch each index is.
+      - name: Upload CycloneDX SBOM
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-cdx-${{ strategy.job-index }}
+          path: sbom.cdx.json
+          if-no-files-found: warn
+          retention-days: 30
+
   # A scheduled run nobody watches is a gate that reports to no one. GitHub
   # emails only the account that last touched the cron, and only for the
   # *first* failure in a run of consecutive ones, so a suite that breaks and
