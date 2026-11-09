@@ -266,6 +266,9 @@ _EFFECTIVE_NOT_FIELD_DEFAULT: frozenset[str] = frozenset(
     {
         f"{_PREFIX}{_AGENTS_GROUP}{_NESTED_DELIMITER}MAX_TOOL_STEPS",
         f"{_PREFIX}{_AGENTS_GROUP}{_NESTED_DELIMITER}HISTORY_LIMIT",
+        # spec-0045 B4: `AgentSettings.tool_trace_arguments` is None; ToolAgent
+        # supplies DEFAULT_TOOL_TRACE_ARGUMENTS ("keys").
+        f"{_PREFIX}{_AGENTS_GROUP}{_NESTED_DELIMITER}TOOL_TRACE_ARGUMENTS",
     }
 )
 # Fields with a real default that legitimately have no table row of their own.

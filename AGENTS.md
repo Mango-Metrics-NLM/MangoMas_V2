@@ -290,6 +290,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` | `5` (`DEFAULT_TOOL_MAX_STEPS`) | `ToolAgent`-only: cap on total LLM calls per request |
+| `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS` | `keys` (`DEFAULT_TOOL_TRACE_ARGUMENTS`) | `ToolAgent`-only: what of each tool call's arguments lands in `response.metadata["tool_calls"]` — `none` \| `keys` (names + `sha256:` digests) \| `full` (verbatim; unsafe for secrets). The trace is persisted with the turn and read by the `tool_trajectory` eval scorer (spec-0045) |
 | `MANGOMAS_AGENTS__<NAME>__HISTORY_LIMIT` | `10` (`DEFAULT_SUMMARIZE_HISTORY_LIMIT`) | `SummarizeAgent`-only: persisted turns loaded into the summary context |
 | `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT` | false (`DEFAULT_VALIDATE_OUTPUT`) | Structured-output agents (`planner`/`reviewer`) only: validate the JSON reply against the agent's schema after `handle`; `LLMBadResponse` on mismatch. Streaming is untouched |
 | `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Per-agent model, same provider as `MANGOMAS_LLM__PROVIDER`. Resolved via a dedicated `LLMClient` in `ctx.extras["agent_llm_overrides"]`, built by `composition/llm.py::build_agent_llm_overrides` (spec-0028 / ADR-0028) |

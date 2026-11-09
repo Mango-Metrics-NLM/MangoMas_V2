@@ -300,8 +300,9 @@ def test_shipped_manifest_snippets_each_occur_once() -> None:
     # + 5 MUT-ISO-* (spec-0044 Phases A1 + A2)
     # + 3 MUT-GOV-* (spec-0045 A1: the governance gate itself, at ADR-0030's
     #   three named weaknesses — the CI job, the silent fallback, marker scope)
-    # + 1 MUT-EVAL-* (spec-0045 B1: a corrupted self-check row must exit 3).
-    assert len(entries) == 55
+    # + 1 MUT-EVAL-* (spec-0045 B1: a corrupted self-check row must exit 3)
+    # + 1 MUT-SEC-* (spec-0045 B4: a tool argument must never persist verbatim).
+    assert len(entries) == 56
     assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
     proofs = [(entry.path, _gate_test(entry.gate)) for entry in entries]
     duplicated = sorted({proof for proof in proofs if proofs.count(proof) > 1})

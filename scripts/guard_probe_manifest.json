@@ -1093,6 +1093,26 @@
         "-o",
         "addopts="
       ]
+    },
+    {
+      "id": "MUT-SEC-01",
+      "path": "src/mangomas/agents/tool_agent.py",
+      "fixed": "    if mode == \"full\":\n        return dict(arguments)\n",
+      "defect": "    if mode in (\"full\", \"keys\"):\n        return dict(arguments)\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_tool_agent.py",
+        "-k",
+        "secret_argument_never_persisted",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     }
   ]
 }

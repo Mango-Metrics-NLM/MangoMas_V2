@@ -45,7 +45,13 @@ from mangomas.config.agents import (
     DEFAULT_TOOL_MAX_STEPS as DEFAULT_TOOL_MAX_STEPS,
 )
 from mangomas.config.agents import (
+    DEFAULT_TOOL_TRACE_ARGUMENTS as DEFAULT_TOOL_TRACE_ARGUMENTS,
+)
+from mangomas.config.agents import (
     DEFAULT_VALIDATE_OUTPUT as DEFAULT_VALIDATE_OUTPUT,
+)
+from mangomas.config.agents import (
+    TOOL_TRACE_ARGUMENT_MODES as TOOL_TRACE_ARGUMENT_MODES,
 )
 from mangomas.config.agents import (
     AgentSettings as AgentSettings,
@@ -570,6 +576,7 @@ __all__ = [
     "DEFAULT_TENANCY_ENABLED",
     "DEFAULT_TENANCY_HEADER",
     "DEFAULT_TOOL_MAX_STEPS",
+    "DEFAULT_TOOL_TRACE_ARGUMENTS",
     "DEFAULT_VALIDATE_OUTPUT",
     "DEFAULT_VECTOR_COLLECTION",
     "DEFAULT_VECTOR_ENABLED",
@@ -591,6 +598,7 @@ __all__ = [
     "LLM_PROFILE_METADATA_KEY",
     "MAX_SIGNAL_TTL_SECONDS",
     "MIN_REPAIR_ORACLE_PIDS_LIMIT",
+    "TOOL_TRACE_ARGUMENT_MODES",
     "APISettings",
     "AgentSettings",
     "AuthSettings",
