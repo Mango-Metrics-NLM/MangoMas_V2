@@ -12,6 +12,7 @@ import httpx
 from mangomas.adapters._openai_client import OpenAICompatHTTPClient
 from mangomas.config import DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_TIMEOUT_SECONDS
 from mangomas.errors import LLMBadResponse
+from mangomas.utils.llm_usage import record_call
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core.agent import Message
@@ -82,6 +83,11 @@ class LMStudioClient(OpenAICompatHTTPClient):
             raise self._malformed_response(
                 f"content is {type(content).__name__}, not str", body=body
             )
+        # Report the completion to whatever usage scope the caller opened
+        # (spec-0045 B3). LM Studio sends an OpenAI-shaped ``usage`` block;
+        # a missing or malformed one still counts the call, never the tokens.
+        usage = body.get("usage") if isinstance(body, dict) else None
+        record_call(usage if isinstance(usage, dict) else None)
         return content
 
     def _payload(
@@ -144,6 +150,9 @@ class LMStudioClient(OpenAICompatHTTPClient):
                     if yield_value is None:
                         continue
                     if yield_value == "":  # sentinel for [DONE]
+                        # A completed stream is one call; LM Studio sends no
+                        # usage block on this path, so only the call is counted.
+                        record_call(None)
                         return
                     yield yield_value
         except httpx.HTTPError as exc:

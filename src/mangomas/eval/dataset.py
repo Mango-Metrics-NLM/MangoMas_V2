@@ -54,6 +54,11 @@ class DatasetRow:
     messages: list[Message]
     expected: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    # spec-0045 B4: a row that *must refuse*. Names the exception class (or
+    # the ``MangomasError.code``) the target is expected to raise; the runner
+    # then passes the row on that error and fails it on any answer. ``None``
+    # (the default) is the ordinary "score the answer" row.
+    expected_error: str | None = None
 
 
 def _parse_row(raw: dict[str, Any], *, index: int, source: str) -> DatasetRow:
@@ -85,12 +90,19 @@ def _parse_row(raw: dict[str, Any], *, index: int, source: str) -> DatasetRow:
             f"{source} row {index}: 'metadata' must be an object",
             detail=f"got {type(metadata).__name__}",
         )
+    expected_error = raw.get("expected_error")
+    if expected_error is not None and (not isinstance(expected_error, str) or not expected_error):
+        raise DatasetError(
+            f"{source} row {index}: 'expected_error' must be a non-empty string when present",
+            detail=f"got {expected_error!r}",
+        )
     row_id = raw.get("id") or f"row-{index}"
     return DatasetRow(
         id=str(row_id),
         messages=messages,
         expected=expected,
         metadata=metadata,
+        expected_error=expected_error,
     )
 
 

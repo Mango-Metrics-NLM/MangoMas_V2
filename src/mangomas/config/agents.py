@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 # ToolAgent: cap on the total number of LLM calls per request. Overridable
@@ -23,6 +25,17 @@ DEFAULT_SUMMARIZE_HISTORY_LIMIT: int = 10
 # no behaviour change. Overridable per agent via
 # ``MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT`` (AgentSettings).
 DEFAULT_VALIDATE_OUTPUT: bool = False
+
+# ToolAgent only (spec-0045 B4): how much of each tool call's *arguments* the
+# agent records into ``AgentResponse.metadata["tool_calls"]``. That metadata is
+# persisted with the turn, served by ``GET /history`` and shipped by eval
+# sinks, so the default keeps argument *names* and a short digest of each
+# value — enough for trajectory scoring, never the value itself.
+#   none  — record tool names only
+#   keys  — argument names → "sha256:<12 hex>" of the JSON-encoded value
+#   full  — the arguments verbatim (unsafe for secrets; opt in per agent)
+TOOL_TRACE_ARGUMENT_MODES: tuple[str, ...] = ("none", "keys", "full")
+DEFAULT_TOOL_TRACE_ARGUMENTS: str = "keys"
 
 
 class AgentSettings(BaseModel):
@@ -53,6 +66,9 @@ class AgentSettings(BaseModel):
     # to ``DEFAULT_VALIDATE_OUTPUT`` (off), preserving the raw pass-through
     # contract for existing environments.
     validate_output: bool = DEFAULT_VALIDATE_OUTPUT
+    # ToolAgent only: argument recording mode for ``metadata["tool_calls"]``.
+    # ``None`` (the default) falls back to ``DEFAULT_TOOL_TRACE_ARGUMENTS``.
+    tool_trace_arguments: Literal["none", "keys", "full"] | None = None
 
 
 DEFAULT_LOOP_MAX_STEPS: int = 1

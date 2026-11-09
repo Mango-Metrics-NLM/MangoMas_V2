@@ -46,6 +46,19 @@ n/a
 - [ ] test-engineer — fakes / hypothesis / integration
 - [ ] api-dev — HTTP surface / streaming / schema
 
+## Protected paths
+
+<!-- If this PR touches a path in pyproject.toml [tool.mangomas.governance]
+     protected_paths, the trailer `BREAKING-CHANGE: <path> — <rationale>` must
+     be in a commit message AND copied here, and the PR merges as a merge
+     commit (a squash drops the trailer out of the range the gate walks).
+     The <path> must be the bare protected path as the first token. Do not
+     write a placeholder such as a bare "none": a first token that is not a
+     protected path is an *unscoped* marker and approves every protected path.
+     Write "n/a" below when no protected path is touched. -->
+
+n/a
+
 ## Notes
 
 <!-- Anything reviewers should know: known risks, follow-ups, deferred items. -->

@@ -92,7 +92,7 @@ jobs:
 
       - name: Run pytest with coverage
         # pyproject addopts supplies --cov=mangomas, term-missing, and the
-        # global --cov-fail-under=95 (mirroring scripts/check_coverage.py,
+        # global --cov-fail-under=98 (mirroring scripts/check_coverage.py,
         # the authoritative gate run in the next step); `make test-xml` adds
         # only the coverage.xml report needed for the codecov upload below.
         run: make test-xml
@@ -112,6 +112,12 @@ jobs:
       # stub: hermetic, and any real socket the app opens fails the run.
       - name: Studio consumer probe (mock)
         run: make studio-probe-mock
+
+      # Harness self-test with the `echo` target (no LLM on this runner): exit
+      # codes, threshold gate and baseline regression diff must still fire.
+      # Not a quality gate — evals/README.md says what it can and cannot prove.
+      - name: Eval harness self-check
+        run: make eval-selfcheck
 
       - name: Upload coverage report
         # Third-party action pinned to a full commit SHA (supply-chain
@@ -232,8 +238,9 @@ jobs:
   guard-probe:
     name: Guard falsifiability probe
     runs-on: ubuntu-latest
-    # 27 entries x 2 gate runs is about a minute locally; a bound keeps a hung
-    # gate from holding the runner for the 360-minute default.
+    # Every manifest entry runs its gate twice (red, then green); the whole
+    # manifest takes a few minutes locally. A bound keeps a hung gate from
+    # holding the runner for the 360-minute default.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

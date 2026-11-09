@@ -49,7 +49,7 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | When `false`, fail on rows that passed in baseline but fail now |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Ordered list of result sinks |
 | `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
-| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible config version marker |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `2` | Forward-compatible config version marker |
 
 ## Dataset format
 
@@ -168,34 +168,39 @@ pass. The quality gate stays default-off.
 
 #### What the cost threshold measures — and what it cannot
 
-`mean_cost_usd` is **declared, not measured**. `Target.run` returns a `str`
-(`eval/target.py`), so the `AgentResponse` and its `metadata` are discarded at
-that boundary, and `ScorerContext.row_metadata` carries the **dataset row's**
-metadata instead. `cost_budget` therefore resolves its precedence — explicit
-`cost_usd` → token counts → output-character rate — against what the JSONL file
-declared, never against what the run consumed. No LLM adapter emits token usage
-at all today.
+`mean_cost_usd` is **measured when an adapter reports usage, declared otherwise**
+(spec-0045, closing D15(b) in
+`docs/analysis/20260919-council-rejection-and-replan.md`). `Target.run` returns a
+`TargetOutcome` whose `metadata` is the `AgentResponse.metadata` the dispatch
+produced, and the runner hands the scorer both mappings:
+`ScorerContext.row_metadata` (what the JSONL row declared) and
+`ScorerContext.response_metadata` (what the run produced). `cost_budget` then
+resolves, in order: the adapter-written `usage` block (`input_tokens`,
+`output_tokens`, `llm_calls`) when `llm_calls > 0` → explicit `cost_usd` →
+declared token counts → output-character rate. The tier used is written to the
+row as `source` (`measured_tokens` / `explicit` / `tokens` / `output_chars`).
 
-Two consequences, both pinned by
-`tests/eval/test_cost_measurement_basis.py`:
+Only the `usage` block counts as a measurement. A target that writes `cost_usd`
+or token keys into its own response metadata is making a claim, not reporting
+usage, and is ignored — the dataset's declaration keeps its tier for that. An
+adapter that reports nothing leaves `llm_calls` at `0`, which reads as *silence*,
+never as a free run.
 
-- With **no** declared counts, cost is `len(prediction)` × a rate. A
-  `mean_cost_usd` gate then fires when the model becomes **wordier**, and is
-  blind to a costlier model via `MODEL_OVERRIDE`, a price change per token, or
-  extra tool steps.
-- With declared counts — as in `tests/eval/fixtures/cost_controlled_v1.jsonl` —
-  the figure is a **fixed budget cohort**, which is what makes it useful for
-  comparing targets (`echo` / `agent` / `pipeline`) at equal declared cost. It is
-  still a property of the dataset, not of the run.
+Consequences, all pinned by `tests/eval/test_cost_measurement_basis.py`:
 
-So gate `mean_cost_usd` only over a declared-cost dataset, and say so wherever
-the threshold is published. Making cost *measured* requires a channel for
-response metadata through the `Target` seam plus adapter token telemetry; that is
-an open decision (D15 in
-`docs/analysis/20260919-council-rejection-and-replan.md`), not a present
-capability. `estimate_cost_usd` already returns which tier it used (`explicit` /
-`tokens` / `output_chars`) in the scorer's row metadata — read it when a figure
-needs interpreting.
+- With a **silent adapter and no declared counts**, cost is `len(prediction)` ×
+  a rate: a gate fires when the model becomes **wordier** and is blind to a
+  costlier model via `MODEL_OVERRIDE`, a price change per token, or extra tool
+  steps. The LM Studio adapter reports usage (`utils/llm_usage.py`); Vertex
+  does not yet.
+- With **declared counts** — as in `tests/eval/fixtures/cost_controlled_v1.jsonl`
+  — and a silent adapter, the figure is a **fixed budget cohort** for comparing
+  targets at equal declared cost. It is a property of the dataset.
+- With a **reporting adapter**, the figure is the run's, and a `MODEL_OVERRIDE`
+  or extra tool step moves it.
+
+So read `source` before publishing a threshold, and gate `mean_cost_usd` only over
+rows whose tier you mean.
 
 ### Regression gating (baseline diff)
 
@@ -279,12 +284,11 @@ adapter log line carries the row's id.
 
 ## Known gaps
 
-- **`EmbeddingScorer`** raises `NotImplementedError` against every
-  provider shipped today. None of the LLM adapters (LM Studio, Vertex)
-  expose an `embed()` method yet. The scorer registers itself so external
-  callers can monkeypatch their own embeddable client onto `AgentContext`,
-  and a future adapter that lands an `embed()` method will activate the
-  scorer with no harness changes.
+- **`EmbeddingScorer`** needs an embedding provider: it uses
+  `ScorerContext.embeddings` (attached by composition when
+  `MANGOMAS_EMBEDDINGS__ENABLED=true`), else an LLM client exposing `embed()`,
+  and raises `NotImplementedError` only when neither is present. No LLM
+  adapter shipped today exposes `embed()`, so enable the embeddings seam.
 - **`LLMJudgeScorer`** trusts the model to return strict JSON. Sloppy
   responses raise `LLMBadResponse`; consider lowering temperature
   (`MANGOMAS_LLM__TEMPERATURE`) when running the judge against a less

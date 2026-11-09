@@ -12,6 +12,7 @@ from mangomas.adapters.llm.lmstudio import LMStudioClient, LMStudioError
 from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
 from mangomas.core import Message
 from mangomas.errors import LLMTimeout, LLMUnavailable
+from mangomas.utils.llm_usage import UsageTotals, usage_scope
 from tests.constants import (
     LARGE_UPSTREAM_BODY_CHARS,
     TEST_LMSTUDIO_MOCK_BASE_URL,
@@ -420,3 +421,63 @@ async def test_stream_and_complete_send_the_same_payload_apart_from_stream_flag(
     assert second.pop("stream") is True
     assert "stream" not in first
     assert first == second
+
+
+# ── usage reporting (spec-0045 B3) ───────────────────────────────────────────
+
+
+@respx.mock
+async def test_complete_reports_usage_into_the_open_scope() -> None:
+    respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "hello!"}}],
+                "usage": {"prompt_tokens": 21, "completion_tokens": 4, "total_tokens": 25},
+            },
+        )
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        with usage_scope() as totals:
+            await client.complete([Message(role="user", content="hi")])
+            await client.complete([Message(role="user", content="hi")])
+    finally:
+        await client.aclose()
+    assert totals == UsageTotals(input_tokens=42, output_tokens=8, llm_calls=2)
+
+
+@respx.mock
+@pytest.mark.parametrize("usage", [None, "not-a-mapping"], ids=["absent", "malformed"])
+async def test_complete_without_a_usage_block_counts_the_call_only(usage: object) -> None:
+    body: dict[str, object] = {"choices": [{"message": {"role": "assistant", "content": "x"}}]}
+    if usage is not None:
+        body["usage"] = usage
+    respx.post(_CHAT_COMPLETIONS_URL).mock(return_value=httpx.Response(200, json=body))
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        with usage_scope() as totals:
+            await client.complete([Message(role="user", content="hi")])
+    finally:
+        await client.aclose()
+    assert totals == UsageTotals(llm_calls=1)
+
+
+@respx.mock
+async def test_completed_stream_counts_one_call() -> None:
+    sse = (
+        'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"b"}}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    respx.post(_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(200, content=sse, headers={"content-type": "text/event-stream"})
+    )
+    client = LMStudioClient(base_url=TEST_LMSTUDIO_MOCK_BASE_URL, model=TEST_LMSTUDIO_MOCK_MODEL)
+    try:
+        with usage_scope() as totals:
+            chunks = [c async for c in await client.stream([Message(role="user", content="hi")])]
+    finally:
+        await client.aclose()
+    assert chunks == ["a", "b"]
+    assert totals == UsageTotals(llm_calls=1)

@@ -139,7 +139,7 @@ src/mangomas/
 ├── telemetry/      OpenTelemetry, one module per dependency layer behind a
 │                   permanent facade: _state, logs, exporters (console|gcp),
 │                   tracing, meters, scoped
-├── utils/          Shared helpers: clock seam, exception text, regex flags
+├── utils/          Shared helpers: clock seam, exception text, regex flags, LLM usage scope
 ├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
 ├── _entry_points.py Shared entry-point iteration for eval plugin discovery
 └── metrics.py      Instrumentation registry (singleton, double-checked lock)
@@ -261,7 +261,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Directory for `json_file`/`sqlite_results` artefacts |
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Concurrent eval rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Stop the run on the first errored row |
-| `MANGOMAS_EVAL__SCHEMA_VERSION` | `1` | Forward-compatible eval-config version marker |
+| `MANGOMAS_EVAL__SCHEMA_VERSION` | `2` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 | `MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE` | `false` | Let a discovered eval plugin replace a built-in of the same name; default refuses the collision (ADR-0030) |
 | `MANGOMAS_WORKFLOW__ENABLED` | `false` | Enable declarative workflow-graph dispatch |
@@ -290,6 +290,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_AGENTS__<NAME>__TEMPERATURE` | _(none)_ | Per-agent sampling override, forwarded to `LLMClient.complete`/`stream` |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOKENS` | _(none)_ | Per-agent completion cap, forwarded via the additive `max_tokens` keyword |
 | `MANGOMAS_AGENTS__<NAME>__MAX_TOOL_STEPS` | `5` (`DEFAULT_TOOL_MAX_STEPS`) | `ToolAgent`-only: cap on total LLM calls per request |
+| `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS` | `keys` (`DEFAULT_TOOL_TRACE_ARGUMENTS`) | `ToolAgent`-only: what of each tool call's arguments lands in `response.metadata["tool_calls"]` — `none` \| `keys` (names + `sha256:` digests) \| `full` (verbatim; unsafe for secrets). The trace is persisted with the turn and read by the `tool_trajectory` eval scorer (spec-0045) |
 | `MANGOMAS_AGENTS__<NAME>__HISTORY_LIMIT` | `10` (`DEFAULT_SUMMARIZE_HISTORY_LIMIT`) | `SummarizeAgent`-only: persisted turns loaded into the summary context |
 | `MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT` | false (`DEFAULT_VALIDATE_OUTPUT`) | Structured-output agents (`planner`/`reviewer`) only: validate the JSON reply against the agent's schema after `handle`; `LLMBadResponse` on mismatch. Streaming is untouched |
 | `MANGOMAS_AGENTS__<NAME>__MODEL_OVERRIDE` | _(none)_ | Per-agent model, same provider as `MANGOMAS_LLM__PROVIDER`. Resolved via a dedicated `LLMClient` in `ctx.extras["agent_llm_overrides"]`, built by `composition/llm.py::build_agent_llm_overrides` (spec-0028 / ADR-0028) |
@@ -532,5 +533,9 @@ response = await execute_workflow(graph, request, orch=orchestrator)
 | `src/mangomas/cognitive/` | CognitiveSignal producer — default-OFF; must not import harness broker internals |
 | `tests/fakes.py` | Shared test doubles — keep minimal and protocol-accurate |
 
-Paths marked _(protected path)_ are gated by the `lint_agent_frontmatter.py`
-hook: a staged edit requires a `BREAKING-CHANGE` marker in the diff.
+Paths marked _(protected path)_ are gated in CI by
+`scripts/check_protected_paths.py` (`make protected-paths`, ADR-0021/0030): a
+commit range that touches one must carry a `BREAKING-CHANGE: <path> — <why>`
+trailer. The `PreToolUse` hook only *asks* before such an edit; it is advisory.
+Never write `BREAKING-CHANGE: none` — a first token that is not a protected
+path makes the marker *unscoped*, approving every protected path in the range.

@@ -11,6 +11,7 @@ from mangomas.adapters.storage._schema import TURN_SCHEMA_VERSION, TurnStatus
 from mangomas.adapters.vector.base import VectorMatch
 from mangomas.core.agent import AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolEffects, ToolSpec
+from mangomas.utils.llm_usage import record_call
 from tests.constants import (
     DEFAULT_TOOL_NAME,
     DEFAULT_TOOL_RESULT,
@@ -60,6 +61,11 @@ class FakeLLM:
     # and a real LLM's latency is exactly what a hardware-agnostic test may not
     # depend on.
     delay_seconds: float = 0.0
+    # The provider usage block ``complete()`` reports into the caller's
+    # ``usage_scope`` (spec-0045 B3), in OpenAI field names
+    # (``prompt_tokens`` / ``completion_tokens``). ``None`` reports a call with
+    # no usage — the silent-provider case. With no scope open, a no-op.
+    usage: dict[str, int] | None = None
 
     async def _maybe_delay(self) -> None:
         """Await the configured delay, or nothing at all when it is zero."""
@@ -78,6 +84,7 @@ class FakeLLM:
         await self._maybe_delay()
         if self.raise_on_complete is not None:
             raise self.raise_on_complete
+        record_call(self.usage)
         idx = len(self.calls) - 1
         if self.replies and idx < len(self.replies):
             return self.replies[idx]

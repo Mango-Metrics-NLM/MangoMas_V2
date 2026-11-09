@@ -93,6 +93,8 @@ from tests.constants.config import (
     EVAL_COST_OUTPUT_TOKENS_METADATA_KEY as EVAL_COST_OUTPUT_TOKENS_METADATA_KEY,
 )
 from tests.constants.config import EVAL_COST_USD_METADATA_KEY as EVAL_COST_USD_METADATA_KEY
+from tests.constants.config import EVAL_USAGE_LLM_CALLS_KEY as EVAL_USAGE_LLM_CALLS_KEY
+from tests.constants.config import EVAL_USAGE_METADATA_KEY as EVAL_USAGE_METADATA_KEY
 from tests.constants.config import MAX_SIGNAL_TTL_SECONDS as MAX_SIGNAL_TTL_SECONDS
 from tests.constants.config import MIN_REPAIR_ORACLE_PIDS_LIMIT as MIN_REPAIR_ORACLE_PIDS_LIMIT
 from tests.constants.corpus import ADOPTED_MCP_SERVERS as ADOPTED_MCP_SERVERS
@@ -581,6 +583,8 @@ __all__ = [
     "EVAL_SQLITE_URL_PREFIX",
     "EVAL_THRESHOLD_LENIENT",
     "EVAL_THRESHOLD_STRICT",
+    "EVAL_USAGE_LLM_CALLS_KEY",
+    "EVAL_USAGE_METADATA_KEY",
     "EXIT_CONFIG_ERROR",
     "EXIT_RUNTIME_ERROR",
     "EXPECTED_AGENT_SLUGS",

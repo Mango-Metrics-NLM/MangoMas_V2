@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from mangomas.agents._prompt import (
     build_messages,
@@ -12,7 +13,11 @@ from mangomas.agents._prompt import (
     resolve_sampling,
     resolve_system_prompt,
 )
-from mangomas.config import DEFAULT_TOOL_MAX_STEPS
+from mangomas.config import (
+    DEFAULT_TOOL_MAX_STEPS,
+    DEFAULT_TOOL_TRACE_ARGUMENTS,
+    TOOL_TRACE_ARGUMENT_MODES,
+)
 from mangomas.core.agent import AgentContext, AgentRequest, AgentResponse, Message
 from mangomas.core.tools import ToolCall, ToolCallParser, build_tool_system_prompt
 from mangomas.errors import LLMBadResponse, ToolExecutionError, ToolNotFound, UnknownProvider
@@ -22,6 +27,28 @@ if TYPE_CHECKING:  # pragma: no cover
     from mangomas.config import AgentSettings
 
 logger = logging.getLogger(__name__)
+
+_DIGEST_HEX_CHARS = 12
+TOOL_CALLS_METADATA_KEY = "tool_calls"
+
+
+def trace_arguments(arguments: dict[str, Any], mode: str) -> dict[str, Any] | None:
+    """Reduce *arguments* to what the trace mode allows to leave the process.
+
+    ``keys`` keeps every argument *name* and replaces each value with a short
+    ``sha256:`` digest of its JSON encoding — two calls with the same
+    arguments are recognisable, the value itself is not recoverable. ``none``
+    records nothing about arguments; ``full`` keeps them verbatim.
+    """
+    if mode == "none":
+        return None
+    if mode == "full":
+        return dict(arguments)
+    digests: dict[str, Any] = {}
+    for name, value in arguments.items():
+        encoded = json.dumps(value, sort_keys=True, default=str).encode("utf-8")
+        digests[name] = f"sha256:{hashlib.sha256(encoded).hexdigest()[:_DIGEST_HEX_CHARS]}"
+    return digests
 
 
 class ToolAgent:
@@ -43,6 +70,7 @@ class ToolAgent:
         settings: AgentSettings | None = None,
         *,
         allowed_mutating_tools: frozenset[str] = frozenset(),
+        tool_trace_arguments: str | None = None,
     ) -> None:
         resolved_prompt = resolve_system_prompt(system_prompt, settings)
         # Blank/whitespace-only prompts are treated as unset: resolve_system_prompt
@@ -54,6 +82,16 @@ class ToolAgent:
             resolved_prompt.strip() or None if resolved_prompt is not None else None
         )
         self._temperature, self._max_tokens = resolve_sampling(settings)
+        mode = tool_trace_arguments
+        if mode is None and settings is not None:
+            mode = settings.tool_trace_arguments
+        if mode is None:
+            mode = DEFAULT_TOOL_TRACE_ARGUMENTS
+        if mode not in TOOL_TRACE_ARGUMENT_MODES:
+            raise ValueError(
+                f"tool_trace_arguments must be one of {TOOL_TRACE_ARGUMENT_MODES}; got {mode!r}"
+            )
+        self._tool_trace_arguments = mode
         if max_tool_steps is not None:
             self._max_tool_steps = max_tool_steps
         elif settings is not None and settings.max_tool_steps is not None:
@@ -148,6 +186,12 @@ class ToolAgent:
         llm = resolve_llm(ctx, self.name, request)
         content = ""
         steps = 0
+        # spec-0045 B4: which tools ran, in order, with arguments reduced by
+        # the trace mode. Lives on response metadata so the eval seam (and
+        # the persisted turn) can see the trajectory; a refused call raises
+        # out of ``handle`` and so never appears here — the eval row records
+        # that as its error instead.
+        trace: list[dict[str, Any]] = []
         while steps < self._max_tool_steps:
             steps += 1
             logger.debug("ToolAgent step %d/%d", steps, self._max_tool_steps)
@@ -168,6 +212,11 @@ class ToolAgent:
                 break
             logger.debug("ToolAgent: dispatching tool %r", tool_call.tool)
             result_output = await self._dispatch_tool(tool_call, ctx)
+            entry: dict[str, Any] = {"tool": tool_call.tool}
+            recorded = trace_arguments(tool_call.arguments, self._tool_trace_arguments)
+            if recorded is not None:
+                entry["arguments"] = recorded
+            trace.append(entry)
             messages = [
                 *messages,
                 Message(role="assistant", content=content),
@@ -179,5 +228,5 @@ class ToolAgent:
         return AgentResponse(
             content=content,
             agent=self.name,
-            metadata={"tool_steps": steps},
+            metadata={"tool_steps": steps, TOOL_CALLS_METADATA_KEY: trace},
         )

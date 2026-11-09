@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING, Any
 
 from mangomas.errors import ConfigError
 from mangomas.eval._options import require_list
-from mangomas.eval.target import Target
+from mangomas.eval.target import Target, TargetOutcome, with_usage
 from mangomas.eval.target_registry import target_registry
+from mangomas.utils.llm_usage import usage_scope
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
@@ -38,7 +39,7 @@ class FanOutTarget:
         self._agents = agents
         self._join = join
 
-    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> str:
+    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
         # The orchestrator's own "Fan-out complete" debug log has no visibility
         # into the *join* strategy — that's this target's own configuration —
         # so it is worth a dedicated line here rather than assumed from context.
@@ -50,10 +51,19 @@ class FanOutTarget:
                 "join": self._join,
             },
         )
-        responses = await orch.dispatch_fan_out(self._agents, request)
+        with usage_scope() as totals:
+            responses = await orch.dispatch_fan_out(self._agents, request)
+        # Every branch's metadata is kept, keyed by position, so a scorer can
+        # see each agent's tool trace even when only one branch's content is
+        # graded; usage is the scope's total across all branches (the gathered
+        # tasks share the scope's accumulator).
+        metadata: dict[str, Any] = with_usage(
+            {"fan_out": [{"agent": r.agent, "metadata": dict(r.metadata)} for r in responses]},
+            totals,
+        )
         if self._join == "concat":
-            return "\n".join(r.content for r in responses)
-        return responses[0].content
+            return TargetOutcome("\n".join(r.content for r in responses), metadata)
+        return TargetOutcome(responses[0].content, metadata)
 
 
 def _fan_out_target_factory(options: dict[str, Any]) -> Target:

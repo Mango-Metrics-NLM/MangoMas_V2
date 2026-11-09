@@ -8,8 +8,14 @@ from typing import Any, Literal
 
 import pytest
 
-from mangomas.agents.tool_agent import ToolAgent
-from mangomas.config import DEFAULT_TOOL_MAX_STEPS, AgentSettings, Settings
+from mangomas.agents.tool_agent import ToolAgent, trace_arguments
+from mangomas.config import (
+    DEFAULT_TOOL_MAX_STEPS,
+    DEFAULT_TOOL_TRACE_ARGUMENTS,
+    AgentSettings,
+    Settings,
+)
+from mangomas.core import Orchestrator
 from mangomas.core.agent import AgentContext, AgentRequest, Message
 from mangomas.core.tools import ToolRegistry, build_tool_system_prompt
 from mangomas.errors import ToolExecutionError, ToolNotFound
@@ -21,7 +27,7 @@ from tests.constants import (
     TEST_TOOL_SYSTEM_PROMPT,
     TOOL_MAX_STEPS_ENV,
 )
-from tests.fakes import FakeLLM, FakeTool
+from tests.fakes import FakeLLM, FakeRepository, FakeTool
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
 
@@ -383,3 +389,73 @@ def test_agent_settings_max_tool_steps_env_round_trip(
 
 def test_agent_settings_max_tool_steps_defaults_to_none() -> None:
     assert AgentSettings().max_tool_steps is None
+
+
+# ── Tool-call trace (spec-0045 B4) ────────────────────────────────────────────
+
+_SECRET_ARGUMENT = "ghp_" + "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+
+
+def _secret_tool_reply(tool_name: str = DEFAULT_TOOL_NAME) -> str:
+    tool_json = json.dumps({"tool": tool_name, "arguments": {"token": _SECRET_ARGUMENT, "n": 2}})
+    return f"```json\n{tool_json}\n```"
+
+
+async def test_tool_calls_are_recorded_with_argument_digests_by_default() -> None:
+    llm = FakeLLM(replies=[_secret_tool_reply(), "Done."])
+    reg = _tool_registry(FakeTool())
+    resp = await ToolAgent().handle(_req(("user", "go")), _ctx(llm=llm, tools=reg))
+    trace = resp.metadata["tool_calls"]
+    assert [entry["tool"] for entry in trace] == [DEFAULT_TOOL_NAME]
+    arguments = trace[0]["arguments"]
+    assert set(arguments) == {"token", "n"}, "argument *names* are kept"
+    assert all(str(v).startswith("sha256:") for v in arguments.values())
+    assert _SECRET_ARGUMENT not in json.dumps(resp.metadata)
+    assert resp.metadata["tool_steps"] == 2
+
+
+async def test_trace_mode_none_records_names_only_and_full_keeps_arguments() -> None:
+    reg = _tool_registry(FakeTool())
+    none_resp = await ToolAgent(tool_trace_arguments="none").handle(
+        _req(("user", "go")), _ctx(llm=FakeLLM(replies=[_secret_tool_reply(), "x"]), tools=reg)
+    )
+    assert none_resp.metadata["tool_calls"] == [{"tool": DEFAULT_TOOL_NAME}]
+    full_resp = await ToolAgent(tool_trace_arguments="full").handle(
+        _req(("user", "go")), _ctx(llm=FakeLLM(replies=[_secret_tool_reply(), "x"]), tools=reg)
+    )
+    assert full_resp.metadata["tool_calls"][0]["arguments"] == {"token": _SECRET_ARGUMENT, "n": 2}
+
+
+def test_trace_mode_comes_from_settings_and_rejects_unknown_values() -> None:
+    assert ToolAgent(settings=AgentSettings(tool_trace_arguments="none"))._tool_trace_arguments == (
+        "none"
+    )
+    assert ToolAgent()._tool_trace_arguments == DEFAULT_TOOL_TRACE_ARGUMENTS
+    with pytest.raises(ValueError, match="tool_trace_arguments"):
+        ToolAgent(tool_trace_arguments="verbose")
+
+
+def test_trace_arguments_digest_is_stable_and_value_blind() -> None:
+    first = trace_arguments({"a": {"k": [1, 2]}, "b": "x"}, "keys")
+    second = trace_arguments({"b": "x", "a": {"k": [1, 2]}}, "keys")
+    assert first == second, "the same value always digests the same, whatever the dict order"
+    assert first is not None and first["b"] != trace_arguments({"b": "y"}, "keys")["b"]  # type: ignore[index]
+    assert trace_arguments({"a": 1}, "none") is None
+
+
+async def test_secret_argument_never_persisted_or_returned() -> None:
+    """MUT-SEC-01: the trace's default mode must not let a tool argument leave the process.
+
+    A tool argument can be a credential. Response metadata is persisted with the
+    turn, served by GET /history, forwarded to the next pipeline stage and shipped
+    by eval sinks — so the probe mutates the digesting and requires this to go red.
+    """
+    repo = FakeRepository()
+    llm = FakeLLM(replies=[_secret_tool_reply(), "Done."])
+    ctx = AgentContext(llm=llm, repo=repo, tools=_tool_registry(FakeTool()))
+    orch = Orchestrator(ctx)
+    orch.register(ToolAgent())
+    response = await orch.dispatch("tool", _req(("user", "go")))
+    assert _SECRET_ARGUMENT not in json.dumps(response.metadata)
+    assert repo._turns, "the turn was persisted"
+    assert _SECRET_ARGUMENT not in json.dumps(repo._turns, default=str)

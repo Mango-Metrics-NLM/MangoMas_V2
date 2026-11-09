@@ -1,0 +1,125 @@
+name: Scorecard
+
+# OpenSSF Scorecard: an externally maintained audit of this repository's
+# supply-chain posture — branch protection, token permissions, pinned
+# dependencies, dangerous workflow patterns. Its `Branch-Protection` check is
+# the maintained version of the "report on branch rules" job this repo would
+# otherwise have to write and keep honest itself (plan A8). Results go to the
+# Security tab as SARIF and, with `publish_results`, to the public Scorecard
+# API so the badge and the dashboard reflect the default branch.
+#
+# Scorecard reads repository settings through the API; it does not need the
+# project installed, so there is no `make` target to delegate to.
+
+on:
+  schedule:
+    # Weekly, Monday 04:23 UTC — off the hour, so this does not pile onto
+    # the top-of-hour surge that GitHub's shared runners see.
+    - cron: "23 4 * * 1"
+  # Scorecard only publishes for the default branch; this is its current name
+  # (ADR-0036 renames it to `dev` — update the list in the same change).
+  push:
+    branches: ["feat/initial-release"]
+  # Re-evaluate when branch protection changes, so the Branch-Protection
+  # score reflects the rule that was just added or removed.
+  branch_protection_rule: {}
+  workflow_dispatch: {}
+
+# Read-only at the workflow level; the two write scopes Scorecard needs are
+# granted to its job alone (tests/deploy/test_workflow_hardening.py).
+permissions: read-all
+
+# A newer push supersedes a run in flight only for PR runs; this workflow has
+# none, but the form is the one every push-triggered workflow must use so a
+# trunk push never cancels another trunk push's run.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The pinned action refuses any ref but the default branch before it
+    # produces SARIF, so a manual dispatch from a feature branch would fail the
+    # job and have `notify` file an issue about nothing. Skip such dispatches
+    # instead; push / schedule / branch_protection_rule always run on the
+    # default branch (tests/deploy/test_workflow_hardening.py pins this guard).
+    if: >-
+      github.event_name != 'workflow_dispatch'
+      || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      # Upload the SARIF to the code-scanning dashboard.
+      security-events: write
+      # Publish results to the Scorecard API (OIDC-authenticated); needed by
+      # `publish_results: true` below.
+      id-token: write
+      # A job-level block replaces the workflow-level one entirely, so the
+      # read scopes the checkout and the private-repository path need are
+      # restated here.
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Scorecard's own Token-Permissions guidance: the checkout must not
+          # leave a credential in .git/config for later steps to read.
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publishing is what makes the score public and the badge live; it
+          # takes effect on the default branch of a public repository. On any
+          # other ref the action fails its own validation before producing
+          # SARIF — which is why the job-level `if:` above skips those runs.
+          publish_results: true
+
+      # The raw SARIF, kept briefly so a surprising score can be read without
+      # re-running: the code-scanning view summarises, this is the evidence.
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: results.sarif
+
+  # Same pattern as nightly.yml's `notify`: a scheduled run nobody watches is
+  # a gate that reports to no one. Deduped by title, so a persistent failure
+  # is one issue thread rather than one issue per week.
+  notify:
+    name: File a tracking issue on failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [analysis]
+    if: failure()
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TITLE: "Scorecard workflow is failing"
+    steps:
+      - name: Open or update the tracking issue
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$REPO" --state open \
+            --search "$TITLE in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty")"
+          body="The Scorecard workflow failed: $RUN_URL"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$body"
+          fi

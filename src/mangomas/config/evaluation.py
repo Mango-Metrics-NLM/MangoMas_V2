@@ -88,6 +88,19 @@ EVAL_COST_INPUT_TOKENS_METADATA_KEY: str = "input_tokens"
 EVAL_COST_OUTPUT_TOKENS_METADATA_KEY: str = "output_tokens"
 
 
+# Measured usage (spec-0045 B2/B3). An LLM adapter that reports token usage
+# accumulates it per eval row; the target copies the totals onto
+# ``TargetOutcome.metadata[EVAL_USAGE_METADATA_KEY]`` as a mapping of
+# ``input_tokens`` / ``output_tokens`` (the two cost keys above) plus
+# ``llm_calls``. ``cost_budget`` trusts this block — and only this block — over
+# anything the dataset declared, and only when at least one call was counted,
+# so "the adapter was silent" never reads as "the run was free".
+EVAL_USAGE_METADATA_KEY: str = "usage"
+
+
+EVAL_USAGE_LLM_CALLS_KEY: str = "llm_calls"
+
+
 # Regression / baseline gating — default OFF. A baseline is a prior json_file
 # report artifact; the gate fails (exit 3) when the current run drops below it
 # by more than the configured tolerance, or introduces new row failures.
@@ -117,7 +130,7 @@ DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS: float = 10.0
 # Forward-compatible config version marker. Bump when EvalSettings grows a
 # field that needs migration; a config declaring a *higher* version than the
 # code supports logs a warning rather than crashing.
-DEFAULT_EVAL_SCHEMA_VERSION: int = 1
+DEFAULT_EVAL_SCHEMA_VERSION: int = 2
 
 
 class EvalSettings(BaseModel):

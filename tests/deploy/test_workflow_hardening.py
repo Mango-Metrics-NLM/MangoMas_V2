@@ -24,7 +24,10 @@ attacker-influenced family, not just the one instance that was fixed.
 
 Discovery is guarded (file, run-body and uses counts) so a moved or renamed
 workflow directory degrades to a loud failure rather than a vacuously green
-pass — the same fail-open defect class ``test_env_example_contract.py``
+pass. The file count is exact — six: ci, deploy, eval-gate, nightly, plus the
+two security-scanning workflows (scorecard, codeql) — because a count that
+tolerated one fewer would let a deleted workflow go unnoticed by every rule
+that iterates them — the same fail-open defect class ``test_env_example_contract.py``
 documents. Parsing lives in ``tests/deploy/_workflows.py`` so this suite and
 ``test_ci_make_parity.py`` cannot drift apart in what they can see.
 """
@@ -38,7 +41,7 @@ import yaml
 
 from tests.deploy import _workflows
 
-_EXPECTED_WORKFLOW_COUNT = 4
+_EXPECTED_WORKFLOW_COUNT = 6
 # Vacuity floors: low enough that a legitimate change never trips them, high
 # enough that a glob matching nothing (or a workflow losing every step) fails
 # loudly. Deliberately not the exact counts — see the module docstring.
@@ -59,11 +62,19 @@ _FORBIDDEN_RUN_EXPRESSION_RE = re.compile(
 # The third-party actions this repo has reviewed and pinned. Asserted as a set
 # so *adding* one is the reviewed event, rather than a count that silently
 # tolerates a swap.
+#
+# `_action_name` keeps an action's sub-path (`owner/repo/sub`), so each CodeQL
+# entry point is listed on its own: the set then pins exactly which parts of
+# that repository CI runs, not merely that "some of codeql-action" does.
 _EXPECTED_THIRD_PARTY_ACTIONS = frozenset(
     {
         "codecov/codecov-action",
+        "github/codeql-action/analyze",
+        "github/codeql-action/init",
+        "github/codeql-action/upload-sarif",
         "google-github-actions/auth",
         "google-github-actions/setup-gcloud",
+        "ossf/scorecard-action",
     }
 )
 
@@ -441,3 +452,85 @@ def test_a_push_triggered_workflow_never_cancels_a_push_run() -> None:
         f"{unconditional}: `cancel-in-progress: true` also cancels trunk push runs; "
         f"use {_CANCEL_PULL_REQUESTS_ONLY} (or false, for a deploy)"
     )
+
+
+# ── Security-scanning workflows: least privilege, asserted ────────────────────
+#
+# Scorecard and CodeQL are the first workflows outside `deploy.yml` that need
+# a write-scoped token (`security-events: write` to upload SARIF; Scorecard's
+# `id-token: write` to publish results). The grants belong on the *job*, so a
+# compromised or misbehaving step in any other job of the same workflow never
+# inherits them, and the workflow-level block stays read-only. `contents:
+# write` is granted nowhere: no workflow in this repository pushes, tags or
+# releases through GITHUB_TOKEN, so any appearance of it is a mistake.
+_SECURITY_SCANNING_WORKFLOWS = ("scorecard.yml", "codeql.yml")
+_SARIF_UPLOAD_SCOPE = "security-events"
+_WRITE = "write"
+_FORBIDDEN_TOKEN_GRANT = ("contents", _WRITE)
+
+
+def _permission_grants(block: object) -> dict[str, str]:
+    """Normalise a `permissions:` block to `{scope: level}`.
+
+    GitHub accepts a mapping, or the shorthand strings `read-all` /
+    `write-all`. `write-all` is flattened to a single synthetic grant so the
+    forbidden-grant check below cannot be dodged by spelling the mapping as a
+    string.
+    """
+    if isinstance(block, dict):
+        return {str(scope): str(level) for scope, level in block.items()}
+    if block == "write-all":
+        return {_FORBIDDEN_TOKEN_GRANT[0]: _WRITE}
+    return {}
+
+
+def test_security_scanning_workflows_declare_minimal_write_permissions() -> None:
+    """`security-events: write` is job-scoped; nothing anywhere gets `contents: write`."""
+    docs = _workflows.workflow_docs()
+    for name in _SECURITY_SCANNING_WORKFLOWS:
+        assert name in docs, f"{name} is missing — the security-scanning workflow set has shrunk"
+        top = _permission_grants(docs[name].get("permissions"))
+        assert _WRITE not in top.values(), (
+            f"{name}: workflow-level permissions grant write ({top}); scope the grant to the job"
+        )
+        uploading = [
+            job
+            for job, spec in _workflows.jobs(name).items()
+            if _permission_grants(spec.get("permissions")).get(_SARIF_UPLOAD_SCOPE) == _WRITE
+        ]
+        assert uploading, f"{name}: no job grants `{_SARIF_UPLOAD_SCOPE}: {_WRITE}` to upload SARIF"
+
+    offenders = [
+        f"{workflow}:{job}"
+        for workflow, job, spec in _all_jobs()
+        if _permission_grants(spec.get("permissions")).get(_FORBIDDEN_TOKEN_GRANT[0]) == _WRITE
+    ] + [
+        f"{workflow} (workflow-level)"
+        for workflow, doc in docs.items()
+        if _permission_grants(doc.get("permissions")).get(_FORBIDDEN_TOKEN_GRANT[0]) == _WRITE
+    ]
+    assert offenders == [], f"`contents: write` is granted by {offenders}; no workflow needs it"
+
+
+# `workflow_dispatch` lets a person pick any branch; the pinned Scorecard
+# action validates the ref before producing SARIF and fails on a non-default
+# one, which would turn an unsupported dispatch into a `notify` issue
+# (Copilot review on PR #123). The analysis job therefore gates itself.
+_SCORECARD_WORKFLOW = "scorecard.yml"
+_DEFAULT_BRANCH_EXPR = "github.event.repository.default_branch"
+
+
+def test_scorecard_skips_manual_dispatches_off_the_default_branch() -> None:
+    jobs = _workflows.jobs(_SCORECARD_WORKFLOW)
+    uploading = [
+        job
+        for job, spec in jobs.items()
+        if _permission_grants(spec.get("permissions")).get(_SARIF_UPLOAD_SCOPE) == _WRITE
+    ]
+    assert uploading, "no Scorecard job uploads SARIF — has the analysis job been renamed?"
+    for job in uploading:
+        guard = str(jobs[job].get("if", ""))
+        assert "workflow_dispatch" in guard and _DEFAULT_BRANCH_EXPR in guard, (
+            f"{_SCORECARD_WORKFLOW}:{job} runs manual dispatches on any branch; the pinned "
+            "action fails off the default branch and the failure reporter files an issue"
+        )

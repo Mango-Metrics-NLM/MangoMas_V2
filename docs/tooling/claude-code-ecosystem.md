@@ -14,7 +14,7 @@ decision record.
 | `github/github-mcp-server` | Adopted, shared (`.mcp.json`), optional — needs docker + a PAT |
 | `yamadashy/repomix` | Adopted, shared (`.mcp.json`) |
 | `rtk-ai/rtk` | Adopted, shared (`.claude/settings.json` hook), opt-out available |
-| `thedotmack/claude-mem` | Adopted, shared (`.claude/settings.json` hooks), opt-out available — **pending** (see below) |
+| `thedotmack/claude-mem` | Per-contributor only — user-scoped plugin under `~/.claude/plugins/`; leaves `.claude/settings.json` byte-identical (see below) |
 | `jarrodwatts/claude-hud` | Per-contributor only — **pending confirmation** (see below) |
 | `zilliztech/claude-context` | Rejected — see [ADR-0020](../adr/0020-claude-code-ecosystem-tooling.md) |
 | `hesreallyhim/awesome-claude-code` | Reference/discovery source, not software |

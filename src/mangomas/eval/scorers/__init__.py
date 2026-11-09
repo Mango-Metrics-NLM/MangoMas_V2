@@ -13,6 +13,7 @@ from mangomas.eval.scorers.exact_match import ExactMatchScorer
 from mangomas.eval.scorers.json_keys import JsonKeysScorer
 from mangomas.eval.scorers.llm_judge import LLMJudgeScorer
 from mangomas.eval.scorers.regex_match import RegexMatchScorer
+from mangomas.eval.scorers.tool_trajectory import ToolTrajectoryScorer
 
 __all__ = [
     "ContainsScorer",
@@ -22,4 +23,5 @@ __all__ = [
     "JsonKeysScorer",
     "LLMJudgeScorer",
     "RegexMatchScorer",
+    "ToolTrajectoryScorer",
 ]

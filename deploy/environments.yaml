@@ -54,8 +54,12 @@ environments:
       env:
         MANGOMAS_ENV: dev
         MANGOMAS_LOG_LEVEL: DEBUG
+        # dev is the one environment where a caller-supplied graph is useful;
+        # qa and prod inherit the base manifest's "false" (spec-0045 A4).
+        MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION: "true"
         MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
         MANGOMAS_LLM__MODEL: ${LLM_MODEL}
+        MANGOMAS_LLM__ALLOWED_MODELS: '["${LLM_MODEL}"]'
         MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}
         # A Secret Manager secret *name* (resolved at runtime), not a value;
         # per environment so a dev token never opens production.
@@ -78,6 +82,7 @@ environments:
         MANGOMAS_ENV: qa
         MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
         MANGOMAS_LLM__MODEL: ${LLM_MODEL}
+        MANGOMAS_LLM__ALLOWED_MODELS: '["${LLM_MODEL}"]'
         MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}
         MANGOMAS_AUTH__SECRET_REF: mangomas-api-token-qa
       secrets:
@@ -105,4 +110,5 @@ environments:
         MANGOMAS_ENV: prod
         MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
         MANGOMAS_LLM__MODEL: ${LLM_MODEL}
+        MANGOMAS_LLM__ALLOWED_MODELS: '["${LLM_MODEL}"]'
         MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}

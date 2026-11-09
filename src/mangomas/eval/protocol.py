@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.llm.base import LLMClient
+    from mangomas.core.agent import Message
 
 
 @dataclass(frozen=True)
@@ -47,12 +48,21 @@ class ScorerContext:
     client. ``row_metadata`` mirrors the dataset row's metadata so scorers
     can branch on per-row hints. ``correlation_id`` propagates from the
     surrounding orchestrator dispatch so scorer logs are correlatable.
+    ``response_metadata`` and ``messages`` (spec-0045) carry what the run
+    produced and what it was asked; see the field comments.
     """
 
     llm: LLMClient | None = None
     embeddings: EmbeddingClient | None = None
     row_metadata: dict[str, Any] = field(default_factory=dict)
     correlation_id: str | None = None
+    # spec-0045: what the *run* produced, as opposed to what the dataset
+    # declared. ``response_metadata`` is ``TargetOutcome.metadata`` (loop
+    # counters, tool calls, measured usage); ``messages`` is the row's input, so
+    # a scorer can judge an answer against its question. Both default empty, so
+    # every pre-existing scorer and caller sees no change.
+    response_metadata: dict[str, Any] = field(default_factory=dict)
+    messages: list[Message] = field(default_factory=list)
 
 
 @runtime_checkable

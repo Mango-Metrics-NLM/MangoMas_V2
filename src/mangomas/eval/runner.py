@@ -21,6 +21,7 @@ from mangomas.correlation import (
     set_correlation_id,
 )
 from mangomas.eval.protocol import ScorerContext
+from mangomas.eval.target import coerce_outcome
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -38,6 +39,19 @@ _ROW_ERROR_TRUNCATE: int = 500
 # Part of the report artifact's observable shape — rewording it changes what
 # every downstream sink and baseline diff sees.
 _FAIL_FAST_ERROR: str = "cancelled by fail_fast"
+
+
+# Row metadata keys for the ``expected_error`` contract (spec-0045 B4).
+EXPECTED_ERROR_METADATA_KEY: str = "expected_error"
+REFUSED_METADATA_KEY: str = "refused"
+
+
+def _matches_expected_error(exc: BaseException, expected: str) -> bool:
+    """``expected_error`` names the exception class or a ``MangomasError.code``."""
+    if type(exc).__name__ == expected:
+        return True
+    code = getattr(exc, "code", None)
+    return isinstance(code, str) and code == expected
 
 
 def _skipped_row(row: DatasetRow) -> EvalRowResult:
@@ -86,6 +100,12 @@ class EvalRowResult:
     expected: str
     metadata: dict[str, object] = field(default_factory=dict)
     error: str | None = None
+    # spec-0045: the per-row correlation id the runner set (so a row joins to
+    # its orchestrator / adapter log lines) and the response metadata the
+    # target produced. Both default to "absent" so a baseline written before
+    # this field existed still loads.
+    correlation_id: str | None = None
+    response_metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -157,16 +177,66 @@ class EvalRunner:
                 messages=list(row.messages),
                 metadata=dict(row.metadata),
             )
-            prediction = await target.run(request, orch=self._orch)
+            outcome = coerce_outcome(
+                await target.run(request, orch=self._orch), target_name=target.name
+            )
+            prediction = outcome.content
+            response_metadata = dict(outcome.metadata)
+            if row.expected_error is not None:
+                # It answered when it should have refused: a failing row, and
+                # the scorer is not consulted — no grade of the answer can
+                # redeem a missing refusal.
+                duration_ms = (time.monotonic() - started) * 1000
+                return EvalRowResult(
+                    row_id=row.id,
+                    score=0.0,
+                    passed=False,
+                    duration_ms=duration_ms,
+                    prediction=prediction,
+                    expected=row.expected,
+                    metadata={
+                        EXPECTED_ERROR_METADATA_KEY: row.expected_error,
+                        REFUSED_METADATA_KEY: False,
+                    },
+                    correlation_id=correlation_id,
+                    response_metadata=response_metadata,
+                )
             ctx = ScorerContext(
                 llm=self._orch.context.llm,
                 embeddings=self._orch.context.embeddings,
                 row_metadata=dict(row.metadata),
                 correlation_id=correlation_id,
+                response_metadata=dict(response_metadata),
+                messages=list(row.messages),
             )
             result = await self._scorer.score(prediction, row.expected, context=ctx)
         except Exception as exc:
             duration_ms = (time.monotonic() - started) * 1000
+            if row.expected_error is not None and _matches_expected_error(exc, row.expected_error):
+                # The row asked for exactly this refusal: a pass, not an error.
+                logger.debug(
+                    "Eval row refused as expected",
+                    extra={
+                        "event": "eval_row_refused",
+                        "row_id": row.id,
+                        "error_type": type(exc).__name__,
+                        "duration_ms": duration_ms,
+                    },
+                )
+                return EvalRowResult(
+                    row_id=row.id,
+                    score=1.0,
+                    passed=True,
+                    duration_ms=duration_ms,
+                    prediction="",
+                    expected=row.expected,
+                    metadata={
+                        EXPECTED_ERROR_METADATA_KEY: row.expected_error,
+                        REFUSED_METADATA_KEY: True,
+                        "error_type": type(exc).__name__,
+                    },
+                    correlation_id=correlation_id,
+                )
             logger.error(
                 "Eval row errored",
                 extra={
@@ -185,6 +255,7 @@ class EvalRunner:
                 expected=row.expected,
                 metadata={"error_type": type(exc).__name__},
                 error=str(exc)[:_ROW_ERROR_TRUNCATE],
+                correlation_id=correlation_id,
             )
         duration_ms = (time.monotonic() - started) * 1000
         logger.debug(
@@ -206,6 +277,8 @@ class EvalRunner:
             prediction=prediction,
             expected=row.expected,
             metadata=dict(result.metadata),
+            correlation_id=correlation_id,
+            response_metadata=response_metadata,
         )
 
     async def run(

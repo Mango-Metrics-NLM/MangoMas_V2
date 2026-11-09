@@ -45,7 +45,13 @@ from mangomas.config.agents import (
     DEFAULT_TOOL_MAX_STEPS as DEFAULT_TOOL_MAX_STEPS,
 )
 from mangomas.config.agents import (
+    DEFAULT_TOOL_TRACE_ARGUMENTS as DEFAULT_TOOL_TRACE_ARGUMENTS,
+)
+from mangomas.config.agents import (
     DEFAULT_VALIDATE_OUTPUT as DEFAULT_VALIDATE_OUTPUT,
+)
+from mangomas.config.agents import (
+    TOOL_TRACE_ARGUMENT_MODES as TOOL_TRACE_ARGUMENT_MODES,
 )
 from mangomas.config.agents import (
     AgentSettings as AgentSettings,
@@ -184,6 +190,12 @@ from mangomas.config.evaluation import (
 )
 from mangomas.config.evaluation import (
     EVAL_COST_USD_METADATA_KEY as EVAL_COST_USD_METADATA_KEY,
+)
+from mangomas.config.evaluation import (
+    EVAL_USAGE_LLM_CALLS_KEY as EVAL_USAGE_LLM_CALLS_KEY,
+)
+from mangomas.config.evaluation import (
+    EVAL_USAGE_METADATA_KEY as EVAL_USAGE_METADATA_KEY,
 )
 from mangomas.config.evaluation import (
     EvalSettings as EvalSettings,
@@ -564,6 +576,7 @@ __all__ = [
     "DEFAULT_TENANCY_ENABLED",
     "DEFAULT_TENANCY_HEADER",
     "DEFAULT_TOOL_MAX_STEPS",
+    "DEFAULT_TOOL_TRACE_ARGUMENTS",
     "DEFAULT_VALIDATE_OUTPUT",
     "DEFAULT_VECTOR_COLLECTION",
     "DEFAULT_VECTOR_ENABLED",
@@ -580,9 +593,12 @@ __all__ = [
     "EVAL_COST_INPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_OUTPUT_TOKENS_METADATA_KEY",
     "EVAL_COST_USD_METADATA_KEY",
+    "EVAL_USAGE_LLM_CALLS_KEY",
+    "EVAL_USAGE_METADATA_KEY",
     "LLM_PROFILE_METADATA_KEY",
     "MAX_SIGNAL_TTL_SECONDS",
     "MIN_REPAIR_ORACLE_PIDS_LIMIT",
+    "TOOL_TRACE_ARGUMENT_MODES",
     "APISettings",
     "AgentSettings",
     "AuthSettings",

@@ -19,34 +19,43 @@ _REQUEST = AgentRequest(messages=[Message(role="user", content="hello")])
 async def test_agent_target_dispatches_agent(eval_orchestrator: Orchestrator) -> None:
     target = AgentTarget(agent="chat")
     assert target.name == "chat"
-    assert await target.run(_REQUEST, orch=eval_orchestrator) == STUB_REPLY
+    outcome = await target.run(_REQUEST, orch=eval_orchestrator)
+    assert outcome.content == STUB_REPLY
+    # spec-0045: the dispatch metadata travels with the graded text.
+    assert "loop" in outcome.metadata
 
 
 async def test_echo_target_echoes_last_user_message(eval_orchestrator: Orchestrator) -> None:
-    assert await EchoTarget().run(_REQUEST, orch=eval_orchestrator) == "hello"
+    assert (await EchoTarget().run(_REQUEST, orch=eval_orchestrator)).content == "hello"
 
 
 async def test_echo_target_fixed_text(eval_orchestrator: Orchestrator) -> None:
-    assert await EchoTarget(text="fixed").run(_REQUEST, orch=eval_orchestrator) == "fixed"
+    assert (await EchoTarget(text="fixed").run(_REQUEST, orch=eval_orchestrator)).content == "fixed"
 
 
 async def test_echo_target_no_user_message_returns_empty(eval_orchestrator: Orchestrator) -> None:
     req = AgentRequest(messages=[Message(role="system", content="s")])
-    assert await EchoTarget().run(req, orch=eval_orchestrator) == ""
+    assert (await EchoTarget().run(req, orch=eval_orchestrator)).content == ""
 
 
 async def test_pipeline_target_runs(eval_orchestrator: Orchestrator) -> None:
-    assert await PipelineTarget(agents=["chat"]).run(_REQUEST, orch=eval_orchestrator) == STUB_REPLY
+    outcome = await PipelineTarget(agents=["chat"]).run(_REQUEST, orch=eval_orchestrator)
+    assert outcome.content == STUB_REPLY
 
 
 async def test_fan_out_target_first(eval_orchestrator: Orchestrator) -> None:
     target = FanOutTarget(["chat"], join="first")
-    assert await target.run(_REQUEST, orch=eval_orchestrator) == STUB_REPLY
+    outcome = await target.run(_REQUEST, orch=eval_orchestrator)
+    assert outcome.content == STUB_REPLY
+    # Every branch's metadata is kept even though one branch's content is graded.
+    assert [branch["agent"] for branch in outcome.metadata["fan_out"]] == ["chat"]
 
 
 async def test_fan_out_target_concat(eval_orchestrator: Orchestrator) -> None:
     target = FanOutTarget(["chat", "chat"], join="concat")
-    assert await target.run(_REQUEST, orch=eval_orchestrator) == f"{STUB_REPLY}\n{STUB_REPLY}"
+    outcome = await target.run(_REQUEST, orch=eval_orchestrator)
+    assert outcome.content == f"{STUB_REPLY}\n{STUB_REPLY}"
+    assert len(outcome.metadata["fan_out"]) == 2
 
 
 # ── Registry + factories ──────────────────────────────────────────────────────

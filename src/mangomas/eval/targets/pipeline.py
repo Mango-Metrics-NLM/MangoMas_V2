@@ -11,8 +11,9 @@ from typing import TYPE_CHECKING, Any
 
 from mangomas.errors import ConfigError
 from mangomas.eval._options import require_list
-from mangomas.eval.target import Target
+from mangomas.eval.target import Target, TargetOutcome, with_usage
 from mangomas.eval.target_registry import target_registry
+from mangomas.utils.llm_usage import usage_scope
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import AgentRequest, Orchestrator
@@ -26,9 +27,12 @@ class PipelineTarget:
     def __init__(self, *, agents: list[str]) -> None:
         self._agents = agents
 
-    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> str:
-        response = await orch.dispatch_pipeline(self._agents, request)
-        return response.content
+    async def run(self, request: AgentRequest, *, orch: Orchestrator) -> TargetOutcome:
+        with usage_scope() as totals:
+            response = await orch.dispatch_pipeline(self._agents, request)
+        return TargetOutcome(
+            content=response.content, metadata=with_usage(response.metadata, totals)
+        )
 
 
 def _pipeline_target_factory(options: dict[str, Any]) -> Target:

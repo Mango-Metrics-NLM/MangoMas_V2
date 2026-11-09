@@ -74,6 +74,21 @@ spec:
               value: "1048576"
             - name: MANGOMAS_API__MAX_CONCURRENT_REQUESTS
               value: "80"
+            # Hardened posture (spec-0045 A4; ADR-0033 keeps the *library*
+            # defaults permissive, so the deploy manifest is where the service
+            # closes them): a caller may not supply its own workflow graph, the
+            # repair-loop oracle refuses to run unisolated, and only the base
+            # model and provider may be selected. ALLOWED_MODELS must contain
+            # MODEL (ADR-0033), hence the same placeholder — every overlay
+            # restates it like the other placeholders.
+            - name: MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION
+              value: "false"
+            - name: MANGOMAS_REPAIR__ORACLE_ISOLATION
+              value: "required"
+            - name: MANGOMAS_LLM__ALLOWED_MODELS
+              value: '["${LLM_MODEL}"]'
+            - name: MANGOMAS_LLM__PROVIDER_ALLOWLIST
+              value: '["vertex"]'
             # Secret material comes from Secret Manager, not literals. Prefer
             # LLMSettings.secret_ref resolved by the gcp secrets provider; this
             # secretKeyRef form is shown for parity with other MANGOMAS_* vars.
