@@ -9,6 +9,24 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — pass^k trials as the reliability metric of record (spec-0046 / reliability plan C1)
+
+- `MANGOMAS_EVAL__TRIALS` / `--trials` (`-k`): every row runs `k` times and
+  `collapse_trials` folds the attempts into one row that passes only when all
+  `k` passed (mean score, summed duration, first error, mean cost, attempt
+  details under `metadata.trials`); `EvalReport` gains `trials`, `pass_pow_k`
+  (= pass rate under trials) and `trial_pass_rate` (the pass@1 estimate).
+  `k=1` is byte-identical to before
+  (`tests/eval/test_runner_trials.py::test_pass_pow_k_falls_when_one_trial_of_k_fails`,
+  `::test_single_trial_is_the_attempt_itself`).
+- `MANGOMAS_EVAL__MIN_PASS_POW_K` / `--min-pass-pow-k`: reliability threshold
+  on the quality gate, composed through `merge_gate_results`; **fails closed**
+  when the run used `trials < 2` instead of skipping
+  (`tests/eval/test_gate.py::test_gate_min_pass_pow_k_fails_closed_on_a_single_trial`).
+  Console prints `trials=… pass_pow_k=…` for `k > 1`; `sqlite_results` adds
+  `trials` / `pass_pow_k` columns in place; baselines load the new fields with
+  defaults.
+
 ### Added — Measured evaluation: structured scoring, provenance, agent lanes (spec-0045 PR-B / ADR-0041)
 
 - `Target.run -> TargetOutcome` (`eval/target.py`): response metadata reaches

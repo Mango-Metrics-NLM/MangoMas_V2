@@ -279,8 +279,8 @@ Sequenced to the reliability plan
 (`docs/plans/20260916T214636Z-reliability-evidence-plan.md`). Re-opening any
 item revisits spec-0045 and ADR-0041.
 
-**Tier 2 (in order):** C1 pass^k (`MANGOMAS_EVAL__TRIALS`, `pass_pow_k`,
-`MIN_PASS_POW_K`) → C2 judge calibration record (`JUDGE_CALIBRATION_PATH`;
+**Tier 2 (in order):** ✅ C1 pass^k (`MANGOMAS_EVAL__TRIALS`, `pass_pow_k`,
+`MIN_PASS_POW_K` — spec-0046, landed after #124) → C2 judge calibration record (`JUDGE_CALIBRATION_PATH`;
 judge reported-not-gated; then `rubric`, `include_input` incl. system prompt,
 `judge_profile`, lenient parse via `core.structured.parse_llm_json_object`) →
 stubbed-LLM CLI lane using `scripts/_openai_compat_stub.py` so `mangomas eval`

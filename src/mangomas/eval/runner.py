@@ -13,11 +13,12 @@ import math
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from mangomas.config import (
     DEFAULT_EVAL_PARALLELISM,
     DEFAULT_EVAL_SLICE_KEY,
+    DEFAULT_EVAL_TRIALS,
     EVAL_COST_USD_METADATA_KEY,
 )
 from mangomas.core import AgentRequest
@@ -126,6 +127,78 @@ def _mean_cost_usd(rows: list[EvalRowResult]) -> float | None:
     return sum(present) / len(present)
 
 
+#: Row-metadata key under which a multi-trial row records its trials (spec-0046).
+EVAL_TRIALS_METADATA_KEY = "trials"
+
+
+def collapse_trials(trials: list[EvalRowResult]) -> EvalRowResult:
+    """Fold ``k`` attempts at one dataset row into the row's single result.
+
+    The verdict is the conjunction: the row passes only when **every** trial
+    was a clean pass, so ``passed / dataset_size`` over collapsed rows is
+    pass^k. ``score`` is the mean over non-errored trials (``0.0`` when every
+    trial errored), ``duration_ms`` the sum, ``error`` the first trial's error
+    when any trial errored (so ``fail_on_error`` sees an intermittent crash),
+    and ``cost_usd`` the mean over the trials that reported one. Prediction,
+    expected, response metadata and correlation id come from the first
+    trial; every trial's correlation id and score is kept under
+    ``metadata["trials"]`` so a flaky row can be traced attempt by attempt.
+    A single trial is returned unchanged — byte-identical to today.
+    """
+    if not trials:
+        raise ValueError("collapse_trials requires at least one trial")
+    if len(trials) == 1:
+        return trials[0]
+    first = trials[0]
+    clean = [t for t in trials if t.error is None]
+    passed_trials = [t for t in clean if t.passed]
+    errors = [t.error for t in trials if t.error is not None]
+    costs = [c for c in (_row_cost_usd(t) for t in clean) if c is not None]
+    metadata: dict[str, object] = dict(first.metadata)
+    metadata[EVAL_TRIALS_METADATA_KEY] = {
+        "count": len(trials),
+        "passed": len(passed_trials),
+        "errored": len(errors),
+        "scores": [t.score for t in trials],
+        "correlation_ids": [t.correlation_id for t in trials],
+    }
+    if costs:
+        metadata[EVAL_COST_USD_METADATA_KEY] = sum(costs) / len(costs)
+    return EvalRowResult(
+        row_id=first.row_id,
+        score=sum(t.score for t in clean) / len(clean) if clean else 0.0,
+        passed=len(passed_trials) == len(trials),
+        duration_ms=sum(t.duration_ms for t in trials),
+        prediction=first.prediction,
+        expected=first.expected,
+        metadata=metadata,
+        error=errors[0] if errors else None,
+        correlation_id=first.correlation_id,
+        response_metadata=dict(first.response_metadata),
+    )
+
+
+def _trial_pass_rate(rows: list[EvalRowResult], trials: int) -> float:
+    """Passed attempts over attempts actually made — the pass@1 estimate beside pass^k.
+
+    Only called with a non-empty ``rows`` (the empty-dataset report is built
+    before any row is dispatched). A row ``fail_fast`` skipped before dispatch
+    carries no ``trials`` block (nothing was attempted), so it is excluded
+    from this denominator; ``pass_pow_k`` still counts it as not passed.
+    """
+    if trials == 1:
+        return sum(1 for r in rows if r.passed and r.error is None) / len(rows)
+    blocks = [
+        cast("dict[str, Any]", block)
+        for block in (row.metadata.get(EVAL_TRIALS_METADATA_KEY) for row in rows)
+        if isinstance(block, dict)
+    ]
+    # ``fail_fast`` always dispatches the first row before it can trip, so a
+    # non-empty dataset always has at least one block to divide by.
+    attempted = sum(int(block["count"]) for block in blocks)
+    return sum(int(block["passed"]) for block in blocks) / attempted
+
+
 @dataclass(frozen=True)
 class EvalRowResult:
     """Per-row eval outcome."""
@@ -183,6 +256,14 @@ class EvalReport:
     # baseline written before them still loads; ``diff_reports`` ignores both.
     run: RunProvenance | None = None
     slices: dict[str, SliceStats] = field(default_factory=dict)
+    # spec-0046 (reliability plan C1): attempts per row, the fraction of rows
+    # whose every attempt passed (pass^k — equals ``passed / dataset_size``
+    # because a collapsed row passes only when all its trials did) and the
+    # per-trial pass fraction (the pass@1 estimate). ``None`` marks a report
+    # written before the field existed; the runner always sets both.
+    trials: int = DEFAULT_EVAL_TRIALS
+    pass_pow_k: float | None = None
+    trial_pass_rate: float | None = None
 
 
 class EvalRunner:
@@ -200,6 +281,11 @@ class EvalRunner:
     fail_fast:
         When ``True``, the first non-passing row cancels the remaining tasks.
         Useful for CI gates that want quick failure rather than full data.
+    trials:
+        Attempts per row (default ``1``). With ``k > 1`` every row runs ``k``
+        times and :func:`collapse_trials` folds the attempts into one result
+        whose verdict is the conjunction, so the report's pass rate is pass^k
+        (spec-0046 / reliability plan C1).
     """
 
     def __init__(
@@ -211,15 +297,24 @@ class EvalRunner:
         fail_fast: bool = False,
         slice_key: str = DEFAULT_EVAL_SLICE_KEY,
         provenance_labels: Mapping[str, Any] | None = None,
+        trials: int = DEFAULT_EVAL_TRIALS,
     ) -> None:
         if parallelism < 1:
             raise ValueError(f"parallelism must be >= 1; got {parallelism}")
+        if trials < 1:
+            raise ValueError(f"trials must be >= 1; got {trials}")
         self._orch = orch
         self._scorer = scorer
         self._parallelism = parallelism
         self._fail_fast = fail_fast
         self._slice_key = slice_key
         self._provenance_labels = dict(provenance_labels or {})
+        self._trials = trials
+
+    async def _score_row_trials(self, row: DatasetRow, *, target: Target) -> EvalRowResult:
+        """Run *row* ``trials`` times (sequentially, each its own correlation id)."""
+        attempts = [await self._score_row(row, target=target) for _ in range(self._trials)]
+        return collapse_trials(attempts)
 
     async def _score_row(
         self,
@@ -375,6 +470,9 @@ class EvalRunner:
                 target_name=label,
                 mean_cost_usd=None,
                 run=run,
+                trials=self._trials,
+                pass_pow_k=0.0,
+                trial_pass_rate=0.0,
             )
         logger.info(
             "Eval run starting",
@@ -386,6 +484,7 @@ class EvalRunner:
                 "target_name": label,
                 "parallelism": self._parallelism,
                 "fail_fast": self._fail_fast,
+                "trials": self._trials,
             },
         )
         started = time.monotonic()
@@ -411,6 +510,9 @@ class EvalRunner:
             mean_cost_usd=mean_cost_usd,
             run=run,
             slices=slice_stats(dataset, rows, slice_key=self._slice_key),
+            trials=self._trials,
+            pass_pow_k=passed / len(dataset),
+            trial_pass_rate=_trial_pass_rate(rows, self._trials),
         )
         logger.info(
             "Eval run complete",
@@ -424,6 +526,9 @@ class EvalRunner:
                 "mean_cost_usd": mean_cost_usd,
                 "duration_ms": duration_ms,
                 "target_name": label,
+                "trials": report.trials,
+                "pass_pow_k": report.pass_pow_k,
+                "trial_pass_rate": report.trial_pass_rate,
             },
         )
         return report
@@ -450,7 +555,7 @@ class EvalRunner:
     ) -> list[EvalRowResult]:
         """Execute rows respecting ``parallelism`` and ``fail_fast``."""
         if self._parallelism == 1 and not self._fail_fast:
-            return [await self._score_row(row, target=target) for row in dataset]
+            return [await self._score_row_trials(row, target=target) for row in dataset]
         return await self._dispatch_concurrent(dataset, target)
 
     async def _dispatch_concurrent(
@@ -487,7 +592,7 @@ class EvalRunner:
                 # an earlier row failed and set the event.
                 if stop_event.is_set():
                     return _skipped_row(row)
-                result = await self._score_row(row, target=target)
+                result = await self._score_row_trials(row, target=target)
             if self._fail_fast and not result.passed:
                 if not stop_event.is_set():
                     trigger_row_id = row.id

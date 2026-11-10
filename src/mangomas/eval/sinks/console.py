@@ -54,6 +54,13 @@ class ConsoleSink:
                 f"pass_rate={report.passed / report.dataset_size:.3f} "
                 f"(95% Wilson {low:.3f}-{high:.3f}, informational; n={report.dataset_size})"
             )
+        if report.trials > 1 and report.pass_pow_k is not None:
+            per_trial = (
+                f" trial_pass_rate={report.trial_pass_rate:.3f}"
+                if report.trial_pass_rate is not None
+                else ""
+            )
+            self._write(f"trials={report.trials} pass_pow_k={report.pass_pow_k:.3f}{per_trial}")
         for name, stats in report.slices.items():
             self._write(
                 f"  slice={name} size={stats.size} passed={stats.passed} "

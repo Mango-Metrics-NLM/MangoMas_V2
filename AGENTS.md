@@ -253,6 +253,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | _(none)_ | Gate threshold on `passed/size` `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
 | `MANGOMAS_EVAL__MAX_MEAN_COST_USD` | _(none)_ | Gate threshold on `mean_cost_usd` in USD (not `[0,1]`; off when unset) |
+| `MANGOMAS_EVAL__MIN_PASS_POW_K` | _(none)_ | Reliability gate threshold on `EvalReport.pass_pow_k` `[0,1]`; **fails closed** when the run has `TRIALS < 2` (spec-0046) |
 | `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -263,6 +264,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Directory for `json_file`/`sqlite_results` artefacts |
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Concurrent eval rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Stop the run on the first errored row |
+| `MANGOMAS_EVAL__TRIALS` | `1` | Attempts per row (`-k` on the CLI). With `k > 1` a row passes only when **all** `k` attempts pass, so `passed/size` is pass^k; `trial_pass_rate` reports the per-attempt fraction (spec-0046 / reliability plan C1) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `2` | Forward-compatible eval-config version marker |
 | `MANGOMAS_DISCOVERY_ENABLED` | `false` | Enable entry-point discovery of eval scorer/sink/target/source plugins |
 | `MANGOMAS_DISCOVERY_ALLOW_BUILTIN_OVERRIDE` | `false` | Let a discovered eval plugin replace a built-in of the same name; default refuses the collision (ADR-0030) |

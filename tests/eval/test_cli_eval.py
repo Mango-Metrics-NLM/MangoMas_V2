@@ -40,7 +40,9 @@ from tests.constants import (
     EVAL_SINK_JSON_FILE,
     EVAL_THRESHOLD_LENIENT,
     EVAL_THRESHOLD_STRICT,
+    EXIT_CONFIG_ERROR,
     EXIT_RUNTIME_ERROR,
+    STUB_REPLY,
 )
 from tests.fakes import FakeLLM, FakeRepository, FakeSink
 
@@ -952,3 +954,135 @@ def test_provenance_labels_fall_back_to_the_shared_client() -> None:
     unknown = _settings_with(eval=EvalSettings(target_options={"agent": {"llm_profile": "nope"}}))
     assert _provenance_labels(unknown, "agent", ["exact_match"])["llm_profile"] is None
     assert _provenance_labels(unknown, "agent", ["exact_match"])["llm_model"] == unknown.llm.model
+
+
+# --- --trials / --min-pass-pow-k (spec-0046) --------------------------------
+
+_FLAKY_K = 2
+
+
+def _flaky_orchestrator() -> Orchestrator:
+    """Row p1 passes then fails; p2 passes twice → pass_pow_k 0.5, trial_pass_rate 0.75."""
+    orch = Orchestrator(
+        AgentContext(llm=FakeLLM(replies=[STUB_REPLY, "wrong"]), repo=FakeRepository())
+    )
+    orch.register(ChatAgent())
+    return orch
+
+
+def test_eval_cli_trials_collapse_rows_and_report_pass_pow_k(
+    fixtures_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli_runtime, "_build", _flaky_orchestrator)
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval",
+            "-d",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "-s",
+            "exact_match",
+            "-a",
+            "chat",
+            "--trials",
+            str(_FLAKY_K),
+            "-o",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert f"trials={_FLAKY_K} pass_pow_k=0.500 trial_pass_rate=0.750" in result.stdout
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert (payload["trials"], payload["pass_pow_k"], payload["trial_pass_rate"]) == (
+        _FLAKY_K,
+        0.5,
+        0.75,
+    )
+    assert payload["rows"][0]["metadata"]["trials"]["count"] == _FLAKY_K
+
+
+def test_eval_cli_min_pass_pow_k_gates_a_multi_trial_run(
+    fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli_runtime, "_build", _flaky_orchestrator)
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval",
+            "-d",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "-s",
+            "exact_match",
+            "-a",
+            "chat",
+            "-k",
+            str(_FLAKY_K),
+            "--min-pass-pow-k",
+            "0.9",
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE
+    assert "pass_pow_k 0.500 < min_pass_pow_k 0.900" in result.stdout
+
+
+def test_eval_cli_min_pass_pow_k_fails_closed_without_trials(fixtures_dir: Path) -> None:
+    """A perfect single-trial run cannot satisfy a reliability threshold."""
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval",
+            "-d",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "-s",
+            "exact_match",
+            "-a",
+            "chat",
+            "--min-pass-pow-k",
+            "0.5",
+        ],
+    )
+    assert result.exit_code == EVAL_GATE_EXIT_CODE
+    assert "requires trials >= 2" in result.stdout
+
+
+def test_eval_cli_trials_env_and_threshold_validation(
+    fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MANGOMAS_EVAL__TRIALS", str(_FLAKY_K))
+    monkeypatch.setenv("MANGOMAS_EVAL__MIN_PASS_POW_K", "1.0")
+    ok = CliRunner().invoke(
+        app, ["eval", "-d", str(fixtures_dir / "all_pass.jsonl"), "-s", "exact_match", "-a", "chat"]
+    )
+    assert ok.exit_code == 0, ok.stdout
+    assert f"trials={_FLAKY_K} pass_pow_k=1.000" in ok.stdout and "gate=PASS" in ok.stdout
+    bad_k = CliRunner().invoke(
+        app,
+        [
+            "eval",
+            "-d",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "-s",
+            "exact_match",
+            "-a",
+            "chat",
+            "--trials",
+            "0",
+        ],
+    )
+    assert bad_k.exit_code == EXIT_CONFIG_ERROR and "trials must be >= 1" in bad_k.output
+    bad_threshold = CliRunner().invoke(
+        app,
+        [
+            "eval",
+            "-d",
+            str(fixtures_dir / "all_pass.jsonl"),
+            "-s",
+            "exact_match",
+            "-a",
+            "chat",
+            "--min-pass-pow-k",
+            "1.5",
+        ],
+    )
+    assert bad_threshold.exit_code == EXIT_CONFIG_ERROR and "min-pass-pow-k" in bad_threshold.output
