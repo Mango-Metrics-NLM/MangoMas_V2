@@ -179,16 +179,24 @@ def collapse_trials(trials: list[EvalRowResult]) -> EvalRowResult:
 
 
 def _trial_pass_rate(rows: list[EvalRowResult], trials: int) -> float:
-    """Passed trials over attempted trials — the pass@1 estimate beside pass^k.
+    """Passed attempts over attempts actually made — the pass@1 estimate beside pass^k.
 
     Only called with a non-empty ``rows`` (the empty-dataset report is built
-    before any row is dispatched).
+    before any row is dispatched). A row ``fail_fast`` skipped before dispatch
+    carries no ``trials`` block (nothing was attempted), so it is excluded
+    from this denominator; ``pass_pow_k`` still counts it as not passed.
     """
     if trials == 1:
         return sum(1 for r in rows if r.passed and r.error is None) / len(rows)
-    # ``collapse_trials`` writes the block on every row when ``trials > 1``.
-    details = [cast("dict[str, Any]", row.metadata[EVAL_TRIALS_METADATA_KEY]) for row in rows]
-    return sum(int(detail["passed"]) for detail in details) / (len(rows) * trials)
+    blocks = [
+        cast("dict[str, Any]", block)
+        for block in (row.metadata.get(EVAL_TRIALS_METADATA_KEY) for row in rows)
+        if isinstance(block, dict)
+    ]
+    # ``fail_fast`` always dispatches the first row before it can trip, so a
+    # non-empty dataset always has at least one block to divide by.
+    attempted = sum(int(block["count"]) for block in blocks)
+    return sum(int(block["passed"]) for block in blocks) / attempted
 
 
 @dataclass(frozen=True)

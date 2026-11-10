@@ -22,7 +22,12 @@ from mangomas.core import AgentContext, Message, Orchestrator
 from mangomas.eval import EvalRunner, load_baseline
 from mangomas.eval.dataset import DatasetRow
 from mangomas.eval.protocol import ScorerContext, ScoreResult
-from mangomas.eval.runner import EVAL_TRIALS_METADATA_KEY, EvalRowResult, collapse_trials
+from mangomas.eval.runner import (
+    _FAIL_FAST_ERROR,
+    EVAL_TRIALS_METADATA_KEY,
+    EvalRowResult,
+    collapse_trials,
+)
 from mangomas.eval.scorers.exact_match import ExactMatchScorer
 from mangomas.eval.sinks.json_file import JsonFileSink
 from mangomas.eval.targets import AgentTarget
@@ -185,6 +190,28 @@ async def test_concurrent_dispatch_collapses_trials_too() -> None:
     assert len(llm.calls) == 4
     assert report.trials == 2 and report.pass_pow_k == 1.0  # type: ignore[attr-defined]
     assert all(_detail(r)["count"] == 2 for r in report.rows)  # type: ignore[attr-defined]
+
+
+async def test_fail_fast_with_trials_skips_rows_without_crashing() -> None:
+    """Copilot review on PR #125: a fail-fast placeholder carries no trials block.
+
+    Row r1 attempts pass then fail, so fail_fast trips and r2 / r3 are never
+    dispatched. The run must still produce a report; the per-attempt rate is
+    over the attempts actually made (1 of 2), not over rows times k.
+    """
+    report, llm = await _run(
+        FakeLLM(replies=[STUB_REPLY, _WRONG]),
+        [_row(), _row("r2"), _row("r3")],
+        trials=2,
+        fail_fast=True,
+    )
+    assert len(llm.calls) == 2, "only r1's two attempts reached the model"
+    skipped = [r for r in report.rows if r.error == _FAIL_FAST_ERROR]  # type: ignore[attr-defined]
+    assert [r.row_id for r in skipped] == ["r2", "r3"]
+    assert all(EVAL_TRIALS_METADATA_KEY not in r.metadata for r in skipped)
+    assert (report.passed, report.failed, report.errored) == (0, 1, 2)  # type: ignore[attr-defined]
+    assert (report.trials, report.pass_pow_k) == (2, 0.0)  # type: ignore[attr-defined]
+    assert report.trial_pass_rate == 0.5  # type: ignore[attr-defined]
 
 
 async def test_empty_dataset_reports_zero_pass_pow_k() -> None:

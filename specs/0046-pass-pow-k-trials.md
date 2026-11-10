@@ -55,8 +55,11 @@ dispatch. Nothing in `EvalReport` today distinguishes "passed once" from
   attempt. A single attempt is returned **unchanged**.
 - R3 `EvalReport.trials` (default `1`), `pass_pow_k` (= `passed /
   dataset_size`; `0.0` for an empty dataset), `trial_pass_rate` (passed
-  attempts / all attempts). Both floats default to `None` on the dataclass so
-  a baseline written before them loads; the runner always sets them.
+  attempts / attempts actually made — a row `fail_fast` skipped before
+  dispatch made none and is excluded from that denominator, while
+  `pass_pow_k` still counts it as not passed). Both floats default to `None`
+  on the dataclass so a baseline written before them loads; the runner always
+  sets them.
 - R4 `MANGOMAS_EVAL__MIN_PASS_POW_K` (`[0, 1]`, default unset), CLI
   `--min-pass-pow-k`; engages the gate like every other threshold and is
   composed through `merge_gate_results`. `GateResult.min_pass_pow_k` /
@@ -91,6 +94,10 @@ dispatch. Nothing in `EvalReport` today distinguishes "passed once" from
 - WHEN a `cost_budget` row reports a cost on each attempt THEN the collapsed
   row's `cost_usd` is their mean and `mean_cost_usd` still gates.
 - WHEN the CLI is given `--trials 0` THEN exit 2.
+- WHEN `trials=2` and `fail_fast=True` and the first row's attempts are pass,
+  fail THEN the remaining rows are skipped placeholders, the run still
+  produces a report, `pass_pow_k == 0.0` and `trial_pass_rate == 0.5`
+  (`test_fail_fast_with_trials_skips_rows_without_crashing`).
 
 ## Config / env additions
 

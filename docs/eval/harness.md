@@ -267,7 +267,9 @@ result:
 Because the collapsed row is a conjunction, `passed / dataset_size` **is**
 pass^k, and the report says so explicitly: `EvalReport.trials`,
 `EvalReport.pass_pow_k` (that fraction) and `EvalReport.trial_pass_rate` (passed
-attempts over all attempts — the pass@1 estimate). At `k=8` a 90 %-per-attempt
+attempts over the attempts actually made — the pass@1 estimate; a row that
+`fail_fast` skipped before dispatch made none and is left out of that
+denominator, though `pass_pow_k` still counts it as not passed). At `k=8` a 90 %-per-attempt
 agent reports `pass_pow_k ≈ 0.43`; `trial_pass_rate` still shows the 0.9.
 `k=1` is byte-identical to a run before this field existed.
 
