@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed; accepted on merge of spec-0045 PR-B.
+Accepted on merge of spec-0045 PR-B (#124); the governance half landed in #123.
 
 ## Context
 

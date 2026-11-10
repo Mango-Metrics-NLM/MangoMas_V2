@@ -11,7 +11,7 @@ as a runtime dependency. See `docs/eval/harness.md` for the harness itself and
 | Lane | Command | Proves | Cannot prove |
 |---|---|---|---|
 | **Self-check** | `make eval-selfcheck` | The harness's exit codes (0 / 3), threshold gate, baseline regression diff and `--no-allow-new-failures` path still fire, using the `echo` target (no LLM). `MUT-EVAL-01` in `scripts/guard_probe_manifest.json` corrupts one row and requires exit 3. | Anything about an agent or a model. It is a harness self-test, named so it cannot be mistaken for a quality gate (ADR-0033). |
-| **Agent lanes** | `make eval-lanes` (spec-0045 B7) | Planner / reviewer parse-and-validate paths, `tool_agent` policy and trajectory, INV-16 refusal, scored over the committed datasets with a scripted `FakeLLM`; `diff_reports` against the committed baseline must show no regressed row. | Model quality: the LLM replies are fixtures. |
+| **Agent lanes** | `make eval-lanes` | Planner / reviewer parse-and-validate paths, `tool_agent` policy and trajectory, INV-16 refusal, scored over the committed datasets with a scripted `FakeLLM`; `diff_reports` against the committed baseline must show no regressed row. | Model quality: the LLM replies are fixtures. |
 | **Live** | `make eval-live PROFILE=<name>` (Tier 2) | A real model through `mangomas eval` with provenance (model, profile, dataset hash) so two runs are comparable. | Nothing in CI: GitHub-hosted runners have no LLM. Run it on an operator's LM Studio box and commit the report as the next baseline candidate. |
 
 ## Layout
@@ -31,7 +31,26 @@ rows change meaning; append rows freely within a version.
 
 ```bash
 make eval-selfcheck-baseline     # rewrites evals/baselines/selfcheck_echo_v1.json
+make eval-lanes-baseline         # rewrites evals/baselines/{planner,reviewer,safety_toolagent}_v1.json
 ```
+
+## Fixture rows
+
+A lane row carries its own scripted transcript so it needs no model:
+
+```json
+{"id": "planner-02-single-step", "messages": [...], "expected": "{\"goal\": \"\", \"steps\": []}",
+ "metadata": {"category": "simple",
+              "json_field": {"path": "steps", "min_length": 1},
+              "fixture": {"agent": "planner", "llm_replies": ["{\"goal\": ..., \"steps\": [...]}"]}}}
+```
+
+`fixture.agent` names the agent to replay through; `fixture.llm_replies` are
+the model's replies in call order; `fixture.tools` (tool-agent rows) lists the
+tools to register (`name`, `effects`, `result`, `parameters_schema`). Safety
+rows add a top-level `expected_error` and an `attribution` (OWASP / garak
+category) — open-source probe families adopted as **data**, never as a
+dependency (ADR-0041).
 
 Review the diff before committing: a baseline is a claim about expected
 behaviour, and `git diff` on it is the review.

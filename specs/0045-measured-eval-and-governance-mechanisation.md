@@ -1,6 +1,6 @@
 # Spec-0045: Measured evaluation and governance mechanisation
 
-- **Status:** Draft
+- **Status:** Implemented (PR-A in #123; PR-B / PR-C in #124)
 - **Linked ADR:** [ADR-0041](../docs/adr/0041-open-source-eval-pattern-adoption.md)
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added — measured eval outcomes, deterministic eval lanes, governance probes (spec-0045 / ADR-0041)`
 - **Delivery plan:** [`docs/plans/20261109T000000Z-measured-eval-and-governance-plan.md`](../docs/plans/20261109T000000Z-measured-eval-and-governance-plan.md)
@@ -330,14 +330,14 @@ and re-exported in `tests.constants`.
 
 Persona outcomes, copied from the plan's Verification section:
 
-- [ ] A planner fixture whose reply loses `steps` turns CI red (`make eval-lanes`, `MUT-EVAL-03`).
-- [ ] A developer copies `evals/datasets/chat_v1.jsonl` and runs `make eval-lanes` in under ten minutes.
-- [ ] The `json_file` report shows run id, model, profile, per-slice pass rate and *measured* cost.
-- [ ] `deploy.yml verify` runs the same offline checks CI does.
+- [x] A planner fixture whose reply loses `steps` turns CI red (`make eval-lanes`, `MUT-EVAL-03`).
+- [x] A developer copies a row from `evals/datasets/planner_v1.jsonl` (the fixture convention is in `evals/README.md`) and runs `make eval-lanes` in under ten minutes.
+- [x] The `json_file` report shows run id, model, profile, per-slice pass rate and *measured* cost (`tests/eval/test_provenance_slices.py`, `test_usage_capture.py`).
+- [x] `deploy.yml verify` runs the same offline checks CI does (`tests/deploy/test_deploy_contract.py`).
 
 Mechanical:
 
-- [ ] Feature off by default → no behaviour change (`test_cost_measurement_basis.py`, `test_tool_trace.py` prove it).
-- [ ] `make gate` + `make guard-probe` green locally and in CI.
-- [ ] `test_env_example_contract.py` and `test_ci_make_parity.py` pass.
-- [ ] CHANGELOG block names the locking test for each guard; ADR-0041 Accepted on merge of PR-B; this spec flipped to Implemented in PR-B's last commit.
+- [x] Feature off by default → no behaviour change (`test_cost_measurement_basis.py`, `tests/test_tool_agent.py` trace tests prove it).
+- [x] `make gate` + `make guard-probe` green locally and in CI.
+- [x] `test_env_example_contract.py` and `test_ci_make_parity.py` pass.
+- [x] CHANGELOG block names the locking test for each guard; ADR-0041 Accepted on merge of PR-B; this spec flipped to Implemented in PR-B's last commit.

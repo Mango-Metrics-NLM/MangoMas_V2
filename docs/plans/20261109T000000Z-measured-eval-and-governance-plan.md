@@ -3,7 +3,7 @@
 - **Branch:** `claude/elegant-sagan-doxg0j`
 - **Date:** 2026-11-09
 - **Target release:** rolling
-- **Status:** In progress
+- **Status:** Done — PR-A merged in #123 (at B4); PR-B B5–B8 and PR-C in #124
 - **Specs:** spec-0045
 - **ADRs:** ADR-0041
 
@@ -39,7 +39,7 @@ resolves to "strip in `AgentTarget`; pipeline leak is Tier 2").
 Owner: `mango-ci-dev`; `mango-harness-dev` for the probes. Zero protected paths.
 A0 first; A1–A6 are independent of each other.
 
-### Milestone A0 — repo visibility and README
+### Milestone A0 — repo visibility and README ✅
 
 - **Failing test first:** none — this is a fact check. `gh api
   repos/Mango-Metrics-NLM/MangoMas_V2 --jq .private` is search-only in this
@@ -48,7 +48,7 @@ A0 first; A1–A6 are independent of each other.
 - Fix `README.md:9-10` ("This is a private repository") to match reality. The
   CodeQL workflow in A2 is skipped while private, so this answer gates A2.
 
-### Milestone A1 — `MUT-GOV-01..03`
+### Milestone A1 — `MUT-GOV-01..03` ✅
 
 - **Failing test first:** `make guard-probe` red→green per entry.
 - **Depends on:** A0.
@@ -64,7 +64,7 @@ A0 first; A1–A6 are independent of each other.
   `tests/test_check_protected_paths.py::test_a_marker_naming_a_path_the_base_does_not_protect_reads_as_unscoped`.
 - Fix the `ci.yml:235` count (27 → actual).
 
-### Milestone A2 — Scorecard, CodeQL, SBOM artifact, SECURITY.md
+### Milestone A2 — Scorecard, CodeQL, SBOM artifact, SECURITY.md ✅
 
 - **Failing test first:** `tests/deploy/test_workflow_hardening.py` fails on
   `_EXPECTED_WORKFLOW_COUNT` (4→6) and `permissions:` before the YAML lands.
@@ -75,7 +75,7 @@ A0 first; A1–A6 are independent of each other.
   artifact upload in `nightly.yml`, `SECURITY.md`. Update
   `_EXPECTED_THIRD_PARTY_ACTIONS`, failure reporter, concurrency, timeouts.
 
-### Milestone A3 — offline `deploy.yml verify`
+### Milestone A3 — offline `deploy.yml verify` ✅
 
 - **Failing test first:** `tests/deploy/test_deploy_contract.py:206` pins the
   verify command list to `["make test", "make coverage", "make contracts-coverage"]`
@@ -84,7 +84,7 @@ A0 first; A1–A6 are independent of each other.
 - Add `make lint format-check typecheck lint-imports frontmatter` to `verify`.
   State in the job that `protected-paths` is out of scope (no base ref).
 
-### Milestone A4 — hardened `qa`/`prod` env pins
+### Milestone A4 — hardened `qa`/`prod` env pins ✅
 
 - **Failing test first:** `tests/deploy/test_env_profiles_hardened.py` red on
   the current `deploy/environments.yaml`.
@@ -93,7 +93,7 @@ A0 first; A1–A6 are independent of each other.
   `MANGOMAS_WORKFLOW__ALLOW_INLINE_DEFINITION=false`, non-empty
   `MANGOMAS_LLM__ALLOWED_MODELS` / `PROVIDER_ALLOWLIST`. `local`/`dev` unchanged.
 
-### Milestone A5 — prose honesty and the blanket-marker test
+### Milestone A5 — prose honesty and the blanket-marker test ✅
 
 - **Failing test first:** the `tests/tooling` test forbidding a bare
   `BREAKING-CHANGE: none` is red against the current PR template.
@@ -103,7 +103,7 @@ A0 first; A1–A6 are independent of each other.
   PR-template note on scoped trailers; keep the file name and headings
   (`tests/constants/corpus.py:228` lists it in the corpus roster).
 
-### Milestone A6 — CHANGELOG and human actions
+### Milestone A6 — CHANGELOG and human actions ✅
 
 - **Failing test first:** none.
 - **Depends on:** A1–A5.
@@ -117,7 +117,7 @@ Integrator: `mango-eval-dev`. Walking-skeleton order; each unit leaves
 `make gate` green. B0→B1→B2→B3→B4→B5→B6→B7→B8; B3/B4/B5 may be developed in
 parallel against B2's seam but land in that order.
 
-### Milestone B0 — spec, ADR, plan
+### Milestone B0 — spec, ADR, plan ✅
 
 - **Failing test first:** `tests/tooling/test_decision_record_numbering.py`
   and `tests/tooling/test_doc_links.py` pass with the three new records.
@@ -126,7 +126,7 @@ parallel against B2's seam but land in that order.
   `docs/adr/0041-open-source-eval-pattern-adoption.md` (alternatives written
   as thesis/counter/rebuttal per project), this plan. Owner `mango-adr-author`.
 
-### Milestone B1 — `make eval-selfcheck`
+### Milestone B1 — `make eval-selfcheck` ✅
 
 - **Failing test first:** `MUT-EVAL-01` — corrupt one row of
   `evals/datasets/selfcheck_echo_v1.jsonl` → exit `3`. The `test` job's command
@@ -140,7 +140,7 @@ parallel against B2's seam but land in that order.
   requires red) — replace with a parity test that the Makefile target carries
   `--no-allow-new-failures`. Owners `mango-ci-dev` + `mango-eval-dev`.
 
-### Milestone B2 — measured outcome seam
+### Milestone B2 — measured outcome seam ✅
 
 - **Failing test first:** `tests/eval/test_target_outcome.py` — a target
   returning `TargetOutcome` has its metadata visible in `ScorerContext`;
@@ -152,7 +152,7 @@ parallel against B2's seam but land in that order.
   `DEFAULT_EVAL_SCHEMA_VERSION=2`; `_report_from_dict` `.get` for new fields.
   Owner `mango-eval-dev`.
 
-### Milestone B3 — usage capture
+### Milestone B3 — usage capture ✅
 
 - **Failing test first:** `tests/adapters/llm/test_usage.py` — a `complete`
   inside `usage_scope()` increments `llm_calls` and records `body["usage"]`.
@@ -163,7 +163,7 @@ parallel against B2's seam but land in that order.
   `tests/lmstudio/test_usage_emitted.py` (`RUN_LMSTUDIO=1`). Owners
   `mango-llm-adapter-dev` (adapters only), `mango-fake-builder`, `mango-eval-dev`.
 
-### Milestone B4 — tool trace, trajectory scorer, safety data
+### Milestone B4 — tool trace, trajectory scorer, safety data ✅
 
 - **Failing test first:** `MUT-SEC-01` — a `FakeTool` call carrying
   `{"token": "ghp_…"}` must not appear in persisted turns or the serialised
@@ -176,7 +176,7 @@ parallel against B2's seam but land in that order.
   `tests/cognitive/test_adversarial_emit.py`. Owners `mango-agent-impl-dev`,
   `mango-eval-dev`, `mango-harness-dev` (probe).
 
-### Milestone B5 — structured scoring
+### Milestone B5 — structured scoring ✅
 
 - **Failing test first:** `tests/eval/test_json_field_scorer.py` — the same
   spec that ADR-0034's predicate accepts/rejects, the scorer passes/fails;
@@ -188,7 +188,7 @@ parallel against B2's seam but land in that order.
   `ReviewResult` expectations (`agents/planner.py:23`, `reviewer.py:15`);
   judge-is-agent `WARNING`. Owners `mango-eval-dev`, `mango-cli-dev`.
 
-### Milestone B6 — provenance, slices, profile
+### Milestone B6 — provenance, slices, profile ✅
 
 - **Failing test first:** `tests/eval/test_provenance.py` — two reports over
   different dataset bytes carry different `dataset_sha256`; a v1 baseline
@@ -201,7 +201,7 @@ parallel against B2's seam but land in that order.
   (`NEXT_STEPS.md:87` A5); `MANGOMAS_EVAL__SLICE_KEY` (default `category`);
   regenerate `evals/baselines/*`. Owner `mango-eval-dev`.
 
-### Milestone B7 — deterministic agent lane
+### Milestone B7 — deterministic agent lane ✅
 
 - **Failing test first:** `MUT-EVAL-03` — change a planner fixture reply in
   `evals/datasets/planner_v1.jsonl` so `steps` is empty → `make eval-lanes` red.
@@ -216,7 +216,7 @@ parallel against B2's seam but land in that order.
   that is the stubbed-LLM / live lane (Tier 2, reliability C3). Routing
   `mango-test-engineer` → `mango-eval-dev`.
 
-### Milestone B8 — flip and document
+### Milestone B8 — flip and document ✅
 
 - **Failing test first:** none.
 - **Depends on:** B7.
@@ -227,7 +227,7 @@ parallel against B2's seam but land in that order.
 
 Owner: `mango-harness-dev`. Independent of PR-A and PR-B.
 
-### Milestone C0 — the one protected docstring
+### Milestone C0 — the one protected docstring ✅
 
 - **Failing test first:** none — prose only. `make protected-paths` must be
   red without the trailer and green with it.

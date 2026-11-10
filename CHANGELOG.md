@@ -9,6 +9,55 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Measured evaluation: structured scoring, provenance, agent lanes (spec-0045 PR-B / ADR-0041)
+
+- `Target.run -> TargetOutcome` (`eval/target.py`): response metadata reaches
+  the scorer (`ScorerContext.response_metadata`, `messages`) and the row
+  (`EvalRowResult.response_metadata`, `correlation_id`); `str`-returning
+  third-party targets are shimmed with a WARNING; `MANGOMAS_EVAL__SCHEMA_VERSION`
+  default 1 → 2 (`tests/eval/test_target_outcome.py`).
+- Measured token usage (`utils/llm_usage.py`): the LM Studio adapter reports
+  every completion into the caller's `usage_scope`; eval targets open one
+  around the dispatch and close it before scoring; `cost_budget` gains a
+  `measured_tokens` tier that requires a counted call *and* a positive token
+  count, so a silent provider never reads as free
+  (`tests/eval/test_cost_measurement_basis.py`, `test_usage_capture.py`,
+  `tests/lmstudio/test_usage_emitted.py` under `RUN_LMSTUDIO=1`).
+- `ToolAgent` records `metadata.tool_calls` under
+  `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS` (`none` \| `keys` \| `full`,
+  default `keys` = names + `sha256:` digests); `MUT-SEC-01` proves a tool
+  argument never persists verbatim
+  (`tests/test_tool_agent.py::test_secret_argument_never_persisted_or_returned`).
+- `DatasetRow.expected_error`: a must-refuse row passes on the named error,
+  fails on an answer without consulting the scorer
+  (`tests/eval/test_expected_error.py`).
+- Scorers `tool_trajectory` (recall / missing / extra / step budget, reported
+  apart), `json_field` (ADR-0034 semantics; mappings-only path; additive
+  `min_length`), `composite` (min / all, children under `metadata.scores`);
+  `-s` repeatable on the CLI; `llm_judge` logs one self-grading WARNING per
+  instance (`tests/eval/test_tool_trajectory.py`, `test_json_field_scorer.py`,
+  `test_composite.py`, `test_cli_eval.py`).
+- `EvalReport.run: RunProvenance` (run id, start, dataset digest, git SHA read
+  from `.git` files, package/schema versions, CLI labels) and `slices`
+  (`MANGOMAS_EVAL__SLICE_KEY`, default `category`); console sink prints an
+  informational Wilson 95 % interval; sqlite sink gains `mean_cost_usd` and
+  `run_json` with in-place migration; `target_options.agent.llm_profile`
+  (NEXT_STEPS A5) (`tests/eval/test_provenance_slices.py`, `test_stats.py`).
+- `evals/`: `selfcheck_echo_v1`, `planner_v1`, `reviewer_v1`,
+  `safety_toolagent_v1` datasets with committed baselines; `make eval-selfcheck`
+  (CLI, echo target) and `make eval-lanes` (`tests/evals/test_dataset_lanes.py`,
+  scripted agents, outgoing-prompt assertions) in `gate` and CI; `MUT-EVAL-01`
+  and `MUT-EVAL-03` in the guard-probe manifest (now 57 entries);
+  `tests/cognitive/test_adversarial_emit.py` pins INV-16 under a planner reply
+  that smuggles every forbidden authority key.
+
+### Changed — `ToolEffects` docstring states the enforcement that exists (ADR-0039)
+
+- `src/mangomas/core/tools.py`: the enum's docstring said "advisory metadata,
+  not enforcement"; `harness.tool_policy` has refused undeclared and mutating
+  tools since ADR-0039 and `MUT-SBX-02` proves it. Protected path; the commit
+  carries the scoped `BREAKING-CHANGE` trailer.
+
 ### Added — Governance mechanisation and supply-chain scanning (spec-0045 PR-A / ADR-0041)
 
 - `scripts/guard_probe_manifest.json`: `MUT-GOV-01..03` mutation-prove the
