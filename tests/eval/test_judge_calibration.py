@@ -22,11 +22,14 @@ from mangomas.eval.judge_calibration import (
     JudgeStatus,
     assess_calibration,
     load_calibration_record,
+    short_digest,
     status_summary_fields,
 )
 from mangomas.utils import clock
 
 _MODEL = "judge-model-v1"
+_PROMPT = "sha256:" + "a" * 64
+_OTHER_PROMPT = "sha256:" + "b" * 64
 _NOW = datetime(2026, 11, 10, tzinfo=UTC)
 _POLICY = CalibrationPolicy(min_sample_size=200, min_kappa=0.8, min_rho=0.85, max_age_days=180)
 
@@ -39,13 +42,19 @@ def _record(**overrides: object) -> JudgeCalibrationRecord:
         "cohens_kappa": 0.86,
         "spearman_rho": None,
         "self_preference": "not_measured",
+        "prompt_sha256": _PROMPT,
     }
     base.update(overrides)
     return JudgeCalibrationRecord.model_validate(base)
 
 
 def _assess(record: JudgeCalibrationRecord | None, **kwargs: object) -> JudgeStatus:
-    params: dict[str, object] = {"judge_model": _MODEL, "policy": _POLICY, "now": _NOW}
+    params: dict[str, object] = {
+        "judge_model": _MODEL,
+        "policy": _POLICY,
+        "now": _NOW,
+        "prompt_sha256": _PROMPT,
+    }
     params.update(kwargs)
     return assess_calibration(record, **params)  # type: ignore[arg-type]
 
@@ -111,8 +120,14 @@ def test_boundaries_are_inclusive_and_the_clock_seam_is_used(
     assert _assess(at_age_limit).calibrated is True
     assert _assess(_record(sample_size=200, cohens_kappa=0.8)).calibrated is True
     monkeypatch.setattr(clock, "now", lambda: _NOW)
-    assert assess_calibration(_record(), judge_model=_MODEL, policy=_POLICY).calibrated is True
-    assert assess_calibration(_record(), judge_model=_MODEL).calibrated is True, "default policy"
+    assert (
+        assess_calibration(
+            _record(), judge_model=_MODEL, policy=_POLICY, prompt_sha256=_PROMPT
+        ).calibrated
+        is True
+    )
+    default_policy = assess_calibration(_record(), judge_model=_MODEL, prompt_sha256=_PROMPT)
+    assert default_policy.calibrated is True, "default policy"
 
 
 def test_record_schema_rejects_bad_shapes() -> None:
@@ -152,3 +167,35 @@ def test_status_is_json_safe_and_relabels_as_a_child() -> None:
     child = status.as_child_of("composite")
     assert child.scorer == "llm_judge (child of composite)" and child.calibrated is True
     assert status_summary_fields(child)["judge_calibrated"] is True
+
+
+# --- calibration pinned to the judge prompt (spec-0048) ----------------------
+
+
+def test_a_record_for_another_prompt_does_not_calibrate() -> None:
+    """A record measured under one prompt says nothing about another."""
+    status = _assess(_record(), prompt_sha256=_OTHER_PROMPT)
+    assert status.calibrated is False
+    assert "record is for judge prompt sha256:aaaaaaaaaaaa" in status.reason
+    assert "the judge runs sha256:bbbbbbbbbbbb" in status.reason
+    assert status.prompt_sha256 == _OTHER_PROMPT, "the status carries the current digest"
+
+
+def test_a_record_that_does_not_pin_a_prompt_does_not_calibrate() -> None:
+    status = _assess(_record(prompt_sha256=None))
+    assert status.calibrated is False
+    assert status.reason == "record does not pin the judge prompt (prompt_sha256)"
+    with pytest.raises(ValueError, match="prompt_sha256"):
+        _record(prompt_sha256="md5:abc")
+
+
+def test_the_summary_names_the_profile_and_the_short_prompt_digest() -> None:
+    status = _assess(_record(), judge_profile="cloud")
+    assert status.calibrated is True and status.judge_profile == "cloud"
+    summary = status.summary()
+    assert summary.startswith("llm_judge via profile cloud calibrated (")
+    assert "prompt sha256:aaaaaaaaaaaa" in summary
+    missing = _assess(None, judge_profile="cloud")
+    assert missing.summary().startswith("llm_judge via profile cloud uncalibrated (")
+    assert short_digest(None) == "unknown"
+    assert short_digest("opaque-digest-value") == "opaque-diges"

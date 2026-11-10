@@ -20,6 +20,7 @@ from mangomas.config import (
     DEFAULT_EVAL_SLICE_KEY,
     DEFAULT_EVAL_TRIALS,
     EVAL_COST_USD_METADATA_KEY,
+    LLM_PROFILES_EXTRAS_KEY,
 )
 from mangomas.core import AgentRequest
 from mangomas.correlation import (
@@ -369,6 +370,7 @@ class EvalRunner:
                 correlation_id=correlation_id,
                 response_metadata=dict(response_metadata),
                 messages=list(row.messages),
+                llm_profiles=dict(self._orch.context.extras.get(LLM_PROFILES_EXTRAS_KEY) or {}),
             )
             result = await self._scorer.score(prediction, row.expected, context=ctx)
         except Exception as exc:

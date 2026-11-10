@@ -29,6 +29,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
   a **passing** verdict (`gate=PASS (note: …)`) — the cost-unavailable note was
   silent before; `sqlite_results` gains `judge_json`; the CLI seeds the judge's
   options from settings (`_seed_judge_options`; `tests/eval/test_cli_eval.py`).
+- Judge prompt controls (spec-0048): `llm_judge` options `rubric`,
+  `include_input` (row input incl. system prompt) and `judge_profile` /
+  `MANGOMAS_EVAL__JUDGE_PROFILE` (grade through a named LLM profile, logged at
+  INFO instead of the self-grading WARNING); a reply wrapped in prose or a fence
+  is recovered and the row records `parse`. The calibration record pins the
+  judge prompt by `prompt_sha256` and the judging model follows the profile, so
+  a record never vouches for a prompt or model it did not measure
+  (`tests/eval/test_judge_calibration.py::test_a_record_for_another_prompt_does_not_calibrate`).
+  `LLM_PROFILES_EXTRAS_KEY` now lives in `config/llm.py` (re-exported where it was).
 
 ### Added — pass^k trials as the reliability metric of record (spec-0046 / reliability plan C1)
 

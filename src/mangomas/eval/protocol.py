@@ -9,6 +9,7 @@ broadening the surface.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -64,6 +65,10 @@ class ScorerContext:
     # every pre-existing scorer and caller sees no change.
     response_metadata: dict[str, Any] = field(default_factory=dict)
     messages: list[Message] = field(default_factory=list)
+    # spec-0048: the orchestrator's named provider-profile clients, so a
+    # judge can grade through a model other than the system under test's
+    # (``llm_judge`` option ``judge_profile``). Empty when none are built.
+    llm_profiles: Mapping[str, LLMClient] = field(default_factory=dict)
 
 
 @runtime_checkable

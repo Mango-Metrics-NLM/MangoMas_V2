@@ -86,6 +86,11 @@ DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS: int = 180
 DEFAULT_EVAL_JUDGE_MIN_KAPPA: float = 0.8
 DEFAULT_EVAL_JUDGE_MIN_RHO: float = 0.85
 DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE: int = 200
+# Named LLM profile the judge grades through (spec-0048). ``None`` keeps the
+# shared client — the system under test's own model, i.e. self-grading. Must
+# name a ``MANGOMAS_LLM_PROFILES__<NAME>`` profile; its model is what a
+# calibration record has to cover.
+DEFAULT_EVAL_JUDGE_PROFILE: str | None = None
 
 # Cost dimension (Kapoor 2024 / analysis §9.B) — default OFF. USD is not a
 # unit score, so these are unbounded-above non-negative floats. The per-row
@@ -224,6 +229,8 @@ class EvalSettings(BaseModel):
     judge_min_kappa: float = DEFAULT_EVAL_JUDGE_MIN_KAPPA
     judge_min_rho: float = DEFAULT_EVAL_JUDGE_MIN_RHO
     judge_min_sample_size: int = DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE
+    # Profile the judge grades through (spec-0048); None = the shared client.
+    judge_profile: str | None = DEFAULT_EVAL_JUDGE_PROFILE
 
     # ── Regression / baseline gating (CI) — default OFF ───────────────────────
     baseline_path: str | None = DEFAULT_EVAL_BASELINE_PATH

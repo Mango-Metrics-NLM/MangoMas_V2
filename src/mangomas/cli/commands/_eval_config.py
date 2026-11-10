@@ -11,6 +11,7 @@ Every one of them resolves precedence and validates; none of them execute.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import typer
@@ -64,39 +65,50 @@ def _seed_judge_options(
     scorer_options: dict[str, object],
     *,
     cfg: EvalSettings,
-    judge_model: str,
+    base_model: str,
+    profile_models: Mapping[str, str],
 ) -> dict[str, object]:
-    """Hand the ``llm_judge`` factory its calibration inputs (spec-0047).
+    """Hand the ``llm_judge`` factory its calibration inputs (spec-0047 / spec-0048).
 
     The factory stays Settings-free, so the CLI — the one place that holds
-    both — seeds ``calibration_path``, ``judge_model`` and the policy floors
-    from ``MANGOMAS_EVAL__JUDGE_*`` and ``MANGOMAS_LLM__MODEL`` into the
-    judge's options: the flat mapping for a single scorer, the sub-mapping
-    under ``"llm_judge"`` for a composite child. ``setdefault`` only, so an
-    explicit option wins. The judge always grades through the shared client
-    (``ScorerContext.llm``), so the shared model id is the right key even
-    when the agent target runs a profile or a ``MODEL_OVERRIDE``.
+    both — seeds ``calibration_path``, ``judge_profile`` and the policy floors
+    from ``MANGOMAS_EVAL__JUDGE_*`` into the judge's options: the flat mapping
+    for a single scorer, the sub-mapping under ``"llm_judge"`` for a composite
+    child. ``setdefault`` only, so an explicit option wins. ``judge_model`` is
+    the model that actually grades: the effective ``judge_profile``'s model
+    when one is set (unknown profile → :class:`ConfigError`, exit 2), else the
+    shared ``MANGOMAS_LLM__MODEL`` — an agent-level profile or
+    ``MODEL_OVERRIDE`` never changes which model judges.
     """
     if _JUDGE_SCORER not in scorer_names:
         return dict(scorer_options)
+    options = dict(scorer_options)
+    if len(scorer_names) == 1:
+        target = options
+    else:
+        nested = options.get(_JUDGE_SCORER)
+        target = dict(nested) if isinstance(nested, dict) else {}
+        options[_JUDGE_SCORER] = target
     seeds: dict[str, object] = {
         "calibration_path": cfg.judge_calibration_path,
-        "judge_model": judge_model,
+        "judge_profile": cfg.judge_profile,
         "min_sample_size": cfg.judge_min_sample_size,
         "min_kappa": cfg.judge_min_kappa,
         "min_rho": cfg.judge_min_rho,
         "max_age_days": cfg.judge_calibration_max_age_days,
     }
-    options = dict(scorer_options)
-    if len(scorer_names) == 1:
-        for key, value in seeds.items():
-            options.setdefault(key, value)
-        return options
-    nested = options.get(_JUDGE_SCORER)
-    child: dict[str, object] = dict(nested) if isinstance(nested, dict) else {}
     for key, value in seeds.items():
-        child.setdefault(key, value)
-    options[_JUDGE_SCORER] = child
+        target.setdefault(key, value)
+    profile = target.get("judge_profile")
+    if profile is None:
+        target.setdefault("judge_model", base_model)
+    elif isinstance(profile, str) and profile in profile_models:
+        target.setdefault("judge_model", profile_models[profile])
+    else:
+        raise ConfigError(
+            f"judge_profile {profile!r} is not a configured LLM profile "
+            f"(MANGOMAS_LLM_PROFILES__<NAME>); available: {sorted(profile_models)}"
+        )
     return options
 
 

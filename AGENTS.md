@@ -259,6 +259,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__JUDGE_MIN_KAPPA` | `0.8` | Calibration floor on Cohen's κ `[0,1]`; κ **or** ρ at its floor suffices |
 | `MANGOMAS_EVAL__JUDGE_MIN_RHO` | `0.85` | Calibration floor on Spearman ρ `[0,1]` |
 | `MANGOMAS_EVAL__JUDGE_MIN_SAMPLE_SIZE` | `200` | Minimum labelled rows behind a record (`>= 1`) |
+| `MANGOMAS_EVAL__JUDGE_PROFILE` | _(none)_ | Named `MANGOMAS_LLM_PROFILES__*` profile `llm_judge` grades through instead of the shared client (the system under test); the record must then name that profile's model. Unknown profile → exit 2 (spec-0048) |
 | `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -359,7 +360,9 @@ gates the run for CI. Everything is additive and default-OFF. See
   repeatable), `llm_judge` (self-grading; **reported, not gated** unless a
   `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` record covers the judge's model —
   `EvalReport.judge` carries the status, `GateResult.judge_excluded` says when
-  score thresholds were demoted to a note; spec-0047), `embedding`,
+  score thresholds were demoted to a note; spec-0047; options `rubric`,
+  `include_input`, `judge_profile`, fenced replies recovered, and the record
+  pinned to the prompt by `prompt_sha256`; spec-0048), `embedding`,
   `cost_budget` (measured tier when the adapter reports usage). Spec-0045: `Target.run -> TargetOutcome` carries response
   metadata to scorers; `EvalReport.run` is provenance, `slices` per-category
   aggregates; `DatasetRow.expected_error` expresses a must-refuse row.

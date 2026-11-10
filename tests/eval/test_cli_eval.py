@@ -18,6 +18,7 @@ from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli.commands._eval_config import _provenance_labels, _seed_judge_options
 from mangomas.cli.main import app
 from mangomas.config import (
+    LLM_PROFILES_EXTRAS_KEY,
     AgentSettings,
     EvalSettings,
     LLMProfileSettings,
@@ -25,8 +26,10 @@ from mangomas.config import (
     get_settings,
 )
 from mangomas.core import AgentContext, Orchestrator
+from mangomas.errors import ConfigError
 from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
+from mangomas.eval.scorers.llm_judge import judge_prompt_sha256
 from mangomas.utils import clock as cli_main_clock
 from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import (
@@ -1109,6 +1112,7 @@ def _write_calibration(path: Path, model: str, **overrides: object) -> Path:
         "sample_size": 300,
         "cohens_kappa": 0.9,
         "self_preference": "measured_unbiased",
+        "prompt_sha256": judge_prompt_sha256(),
     }
     record.update(overrides)
     path.write_text(json.dumps(record), encoding="utf-8")
@@ -1208,23 +1212,94 @@ def test_eval_cli_composite_with_a_judge_child_is_demoted(
 def test_seed_judge_options_only_fills_gaps() -> None:
     cfg = EvalSettings(judge_calibration_path="cal.json", judge_min_sample_size=50)
     flat = _seed_judge_options(
-        ["llm_judge"], {"threshold": 0.5, "min_kappa": 0.7}, cfg=cfg, judge_model="m"
+        ["llm_judge"],
+        {"threshold": 0.5, "min_kappa": 0.7},
+        cfg=cfg,
+        base_model="m",
+        profile_models={},
     )
     assert flat["threshold"] == 0.5 and flat["min_kappa"] == 0.7, "explicit options win"
     assert flat["calibration_path"] == "cal.json"
     assert (flat["judge_model"], flat["min_sample_size"]) == ("m", 50)
+    assert flat["judge_profile"] is None
     nested = _seed_judge_options(
         ["contains", "llm_judge"],
         {"llm_judge": {"threshold": 0.6}, "contains": {}},
         cfg=cfg,
-        judge_model="m",
+        base_model="m",
+        profile_models={},
     )
     child = nested["llm_judge"]
     assert isinstance(child, dict) and child["threshold"] == 0.6 and child["judge_model"] == "m"
     assert nested["contains"] == {}
-    untouched = _seed_judge_options(["exact_match"], {"x": 1}, cfg=cfg, judge_model="m")
+    untouched = _seed_judge_options(
+        ["exact_match"], {"x": 1}, cfg=cfg, base_model="m", profile_models={}
+    )
     assert untouched == {"x": 1}
     replaced = _seed_judge_options(
-        ["contains", "llm_judge"], {"llm_judge": "bad"}, cfg=cfg, judge_model="m"
+        ["contains", "llm_judge"], {"llm_judge": "bad"}, cfg=cfg, base_model="m", profile_models={}
     )
     assert isinstance(replaced["llm_judge"], dict)
+
+
+def test_seed_judge_options_resolves_the_judging_model_from_the_profile() -> None:
+    """spec-0048: with a judge profile the record must cover the profile's model."""
+    via_settings = _seed_judge_options(
+        ["llm_judge"],
+        {},
+        cfg=EvalSettings(judge_profile="cloud"),
+        base_model="local",
+        profile_models={"cloud": "cloud-model"},
+    )
+    assert (via_settings["judge_profile"], via_settings["judge_model"]) == ("cloud", "cloud-model")
+    explicit = _seed_judge_options(
+        ["llm_judge"],
+        {"judge_profile": "cloud"},
+        cfg=EvalSettings(),
+        base_model="local",
+        profile_models={"cloud": "cloud-model"},
+    )
+    assert explicit["judge_model"] == "cloud-model"
+    with pytest.raises(ConfigError, match="judge_profile 'nope' is not a configured LLM profile"):
+        _seed_judge_options(
+            ["llm_judge"],
+            {},
+            cfg=EvalSettings(judge_profile="nope"),
+            base_model="local",
+            profile_models={"cloud": "cloud-model"},
+        )
+
+
+def test_eval_cli_judge_profile_grades_through_the_profile_and_its_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    profile_llm = FakeLLM(reply='{"score": 0.95, "rationale": "solid"}')
+    shared_llm = FakeLLM(reply=_JUDGE_REPLY)
+
+    def _build() -> Orchestrator:
+        orch = Orchestrator(AgentContext(llm=shared_llm, repo=FakeRepository()))
+        orch.register(ChatAgent())
+        orch.context.extras[LLM_PROFILES_EXTRAS_KEY] = {"cloud": profile_llm}
+        return orch
+
+    monkeypatch.setattr(cli_runtime, "_build", _build)
+    monkeypatch.setenv("MANGOMAS_LLM_PROFILES__CLOUD__PROVIDER", "lmstudio")
+    monkeypatch.setenv("MANGOMAS_LLM_PROFILES__CLOUD__MODEL", "cloud-judge")
+    monkeypatch.setenv("MANGOMAS_EVAL__JUDGE_PROFILE", "cloud")
+    record = _write_calibration(tmp_path / "cal.json", "cloud-judge")
+    monkeypatch.setenv(_JUDGE_RECORD_ENV, str(record))
+    frozen = __import__("datetime").datetime(2026, 11, 10, tzinfo=__import__("datetime").UTC)
+    monkeypatch.setattr(cli_main_clock, "now", lambda: frozen)
+    result = CliRunner().invoke(app, _judge_eval("--min-mean-score", "0.9"))
+    assert result.exit_code == 0, result.stdout
+    assert "judge=llm_judge via profile cloud calibrated (kappa=0.90" in result.stdout
+    assert "gate=PASS" in result.stdout
+    assert profile_llm.calls, "the profile client judged"
+    assert len(shared_llm.calls) == 2, "the shared client only answered the agent rows"
+
+
+def test_eval_cli_unknown_judge_profile_is_a_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANGOMAS_EVAL__JUDGE_PROFILE", "nope")
+    result = CliRunner().invoke(app, _judge_eval())
+    assert result.exit_code == EXIT_CONFIG_ERROR
+    assert "judge_profile 'nope' is not a configured LLM profile" in result.output

@@ -50,6 +50,7 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__JUDGE_MIN_KAPPA` | `0.8` | Cohen's κ floor (κ or ρ suffices) |
 | `MANGOMAS_EVAL__JUDGE_MIN_RHO` | `0.85` | Spearman ρ floor |
 | `MANGOMAS_EVAL__JUDGE_MIN_SAMPLE_SIZE` | `200` | Minimum labelled rows behind a record |
+| `MANGOMAS_EVAL__JUDGE_PROFILE` | (unset) | LLM profile the judge grades through (unset = the shared client) |
 | `MANGOMAS_EVAL__BASELINE_PATH` | (unset) | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | (unset) | Max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | (unset) | Max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -255,6 +256,30 @@ against people. Spec-0047 (reliability plan C2) makes that explicit:
   every aggregate judge-tainted); run the judge as its own invocation when you
   want deterministic gating beside it.
 
+#### Judge options (spec-0048)
+
+Set through `MANGOMAS_EVAL__SCORER_OPTIONS` (flat for `-s llm_judge`, under
+`"llm_judge"` when it is one of several `-s`); all default off, and the
+default prompt is byte-identical to the historical one.
+
+| Option | Default | Effect |
+|---|---|---|
+| `threshold` | `0.7` | `passed = score >= threshold` |
+| `rubric` | (none) | A string or list of criteria rendered as a `RUBRIC` block before the output format |
+| `include_input` | `false` | The judge also sees the row's input messages, system prompt included, as `INPUT: [role] content` |
+| `judge_profile` | `MANGOMAS_EVAL__JUDGE_PROFILE` | Grade through that LLM profile's client instead of the shared one; logged at INFO, not as self-grading |
+
+A reply wrapped in a code fence or prose is recovered (`parse: "recovered"` in
+the row metadata; `"strict"` otherwise); recovery widens formatting tolerance
+only — a recovered score passes the same numeric / finite checks.
+
+`rubric` and `include_input` change what the judge is asked, so they change the
+**prompt digest** (`EvalReport.judge.prompt_sha256`, printed short in the
+console `judge=` line). A calibration record must name the same digest: one
+measured under another prompt, or one that pins none, does not calibrate.
+`judge_profile` changes *who* judges, so with a profile the record's
+`judge_model` must be that profile's model.
+
 The record is JSON at `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` (a set-but-missing
 or malformed path is exit 2, never "absent"):
 
@@ -266,13 +291,16 @@ or malformed path is exit 2, never "absent"):
   "cohens_kappa": 0.86,
   "spearman_rho": 0.91,
   "self_preference": "not_measured",
+  "prompt_sha256": "sha256:<64 hex — copy judge.prompt_sha256 from the JSON report>",
   "notes": "300 expert pass/fail labels over planner_v1 + reviewer_v1; rubric v3"
 }
 ```
 
-`judge_model` must equal `MANGOMAS_LLM__MODEL` exactly — the judge always grades
-through the shared client, so an agent-level `MODEL_OVERRIDE` or `llm_profile`
-does not change which model is judging. Acceptance: `sample_size >=
+`judge_model` must equal the model that judges: `MANGOMAS_LLM__MODEL` for the
+shared client, or the `MANGOMAS_EVAL__JUDGE_PROFILE` profile's model. An
+agent-level `MODEL_OVERRIDE` or `llm_profile` on the *target* does not change
+which model is judging. `prompt_sha256` must equal the run's
+`judge.prompt_sha256`. Acceptance: `sample_size >=
 JUDGE_MIN_SAMPLE_SIZE`, age `<= JUDGE_CALIBRATION_MAX_AGE_DAYS`, and κ `>=
 JUDGE_MIN_KAPPA` **or** ρ `>= JUDGE_MIN_RHO`. `self_preference` is one of
 `not_measured`, `measured_unbiased`, `measured_biased`: the first two both
@@ -445,10 +473,12 @@ adapter log line carries the row's id.
   `MANGOMAS_EMBEDDINGS__ENABLED=true`), else an LLM client exposing `embed()`,
   and raises `NotImplementedError` only when neither is present. No LLM
   adapter shipped today exposes `embed()`, so enable the embeddings seam.
-- **`LLMJudgeScorer`** trusts the model to return strict JSON. Sloppy
-  responses raise `LLMBadResponse`; consider lowering temperature
+- **`LLMJudgeScorer`** recovers a JSON object wrapped in prose or a code fence
+  (spec-0048) but still raises `LLMBadResponse` when no object with a numeric,
+  finite `score` can be found; consider lowering temperature
   (`MANGOMAS_LLM__TEMPERATURE`) when running the judge against a less
-  deterministic model.
+  deterministic model. A decomposed rubric still produces one overall score;
+  per-criterion scores are not recorded.
 
 ## Testing your own scorer
 

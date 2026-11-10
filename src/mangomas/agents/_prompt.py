@@ -24,6 +24,9 @@ from typing import TYPE_CHECKING, Any, Final
 from mangomas.config import (
     LLM_PROFILE_METADATA_KEY as LLM_PROFILE_METADATA_KEY,  # noqa: PLC0414 -- explicit re-export under mypy --strict
 )
+from mangomas.config import (
+    LLM_PROFILES_EXTRAS_KEY as LLM_PROFILES_EXTRAS_KEY,  # noqa: PLC0414 -- explicit re-export under mypy --strict
+)
 from mangomas.core.agent import AgentRequest, Message
 from mangomas.errors import ConfigError
 
@@ -42,11 +45,11 @@ logger = logging.getLogger(__name__)
 #: error anywhere.
 AGENT_LLM_OVERRIDES_EXTRAS_KEY: Final[str] = "agent_llm_overrides"
 
-#: ``AgentContext.extras`` key carrying the named provider-profile clients
-#: (spec-0040 / ADR-0038): ``dict[str, LLMClient]`` keyed by profile name, built
-#: once at startup by ``composition/llm.py::build_llm_profiles``. Same
-#: reader-beside-writer rationale as the override key above.
-LLM_PROFILES_EXTRAS_KEY: Final[str] = "llm_profiles"
+# ``LLM_PROFILES_EXTRAS_KEY`` (the named provider-profile clients, spec-0040)
+# now lives in ``mangomas.config.llm`` beside ``LLM_PROFILE_METADATA_KEY``:
+# ``eval/`` reads it too (spec-0048) and may not import this package. It is
+# re-exported above, so every existing ``from mangomas.agents._prompt import
+# LLM_PROFILES_EXTRAS_KEY`` keeps working.
 
 #: ``AgentContext.extras`` key carrying the **secret-free** profile summaries
 #: (``name -> {"provider", "model"}``) that ``GET /llm/profiles`` serialises.

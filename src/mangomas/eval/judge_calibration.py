@@ -49,6 +49,10 @@ class JudgeCalibrationRecord(BaseModel):
     cohens_kappa: float | None = Field(default=None, ge=-1.0, le=1.0, allow_inf_nan=False)
     spearman_rho: float | None = Field(default=None, ge=-1.0, le=1.0, allow_inf_nan=False)
     self_preference: SelfPreference = "not_measured"
+    # spec-0048: digest of the judge prompt the agreement was measured under
+    # (``JudgeStatus.prompt_sha256`` of the run that produced the labels). A
+    # record without it, or for another prompt, does not calibrate.
+    prompt_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     notes: str | None = None
 
     @model_validator(mode="after")
@@ -96,12 +100,20 @@ class JudgeStatus:
     cohens_kappa: float | None = None
     spearman_rho: float | None = None
     self_preference: str | None = None
+    # spec-0048: the *current* judge prompt's digest (copy it into a record) and
+    # the profile the judge grades through, if any.
+    prompt_sha256: str | None = None
+    judge_profile: str | None = None
 
     def summary(self) -> str:
         """One line for the gate note and the console: never drops the self-preference claim."""
         preference = self.self_preference or "not_measured"
+        who = (
+            f"{self.scorer} via profile {self.judge_profile}" if self.judge_profile else self.scorer
+        )
+        prompt = f"; prompt {short_digest(self.prompt_sha256)}" if self.prompt_sha256 else ""
         if not self.calibrated:
-            return f"{self.scorer} uncalibrated ({self.reason}; self-preference: {preference})"
+            return f"{who} uncalibrated ({self.reason}{prompt}; self-preference: {preference})"
         stats = [
             f"kappa={self.cohens_kappa:.2f}" if self.cohens_kappa is not None else None,
             f"rho={self.spearman_rho:.2f}" if self.spearman_rho is not None else None,
@@ -109,15 +121,39 @@ class JudgeStatus:
             f"measured {self.measured_at}" if self.measured_at else None,
         ]
         detail = ", ".join(s for s in stats if s)
-        return f"{self.scorer} calibrated ({detail}; self-preference: {preference})"
+        return f"{who} calibrated ({detail}{prompt}; self-preference: {preference})"
 
     def as_child_of(self, parent: str) -> JudgeStatus:
         """The same status, labelled as *parent*'s child (composite scoring)."""
         return replace(self, scorer=f"{self.scorer} (child of {parent})")
 
 
-def uncalibrated(reason: str, *, judge_model: str | None = None) -> JudgeStatus:
-    return JudgeStatus(calibrated=False, reason=reason, judge_model=judge_model)
+#: Characters of the hex digest shown in human-facing lines.
+_SHORT_DIGEST_HEX = 12
+
+
+def short_digest(digest: str | None) -> str:
+    """``sha256:`` + the first 12 hex characters; the JSON report keeps the full value."""
+    if not digest:
+        return "unknown"
+    prefix, _, hexpart = digest.partition(":")
+    return f"{prefix}:{hexpart[:_SHORT_DIGEST_HEX]}" if hexpart else digest[:_SHORT_DIGEST_HEX]
+
+
+def uncalibrated(
+    reason: str,
+    *,
+    judge_model: str | None = None,
+    prompt_sha256: str | None = None,
+    judge_profile: str | None = None,
+) -> JudgeStatus:
+    return JudgeStatus(
+        calibrated=False,
+        reason=reason,
+        judge_model=judge_model,
+        prompt_sha256=prompt_sha256,
+        judge_profile=judge_profile,
+    )
 
 
 def assess_calibration(
@@ -126,12 +162,26 @@ def assess_calibration(
     judge_model: str | None,
     policy: CalibrationPolicy | None = None,
     now: datetime | None = None,
+    prompt_sha256: str | None = None,
+    judge_profile: str | None = None,
 ) -> JudgeStatus:
-    """Pure: record + policy → status. The first failing rule names the reason."""
+    """Pure: record + policy → status. The first failing rule names the reason.
+
+    *prompt_sha256* is the digest of the judge prompt as configured now
+    (spec-0048); a record must name the same digest, because a record measured
+    under one prompt says nothing about another.
+    """
     rules = policy or CalibrationPolicy()
     if record is None:
-        return uncalibrated(NO_RECORD_REASON, judge_model=judge_model)
-    reason = _first_failing_rule(record, judge_model=judge_model, rules=rules, now=now)
+        return uncalibrated(
+            NO_RECORD_REASON,
+            judge_model=judge_model,
+            prompt_sha256=prompt_sha256,
+            judge_profile=judge_profile,
+        )
+    reason = _first_failing_rule(
+        record, judge_model=judge_model, prompt_sha256=prompt_sha256, rules=rules, now=now
+    )
     return JudgeStatus(
         calibrated=reason is None,
         reason=reason or "calibrated",
@@ -141,6 +191,8 @@ def assess_calibration(
         cohens_kappa=record.cohens_kappa,
         spearman_rho=record.spearman_rho,
         self_preference=record.self_preference,
+        prompt_sha256=prompt_sha256,
+        judge_profile=judge_profile,
     )
 
 
@@ -148,6 +200,7 @@ def _first_failing_rule(
     record: JudgeCalibrationRecord,
     *,
     judge_model: str | None,
+    prompt_sha256: str | None,
     rules: CalibrationPolicy,
     now: datetime | None,
 ) -> str | None:
@@ -161,6 +214,15 @@ def _first_failing_rule(
         (
             record.judge_model.strip() != model,
             f"record is for model {record.judge_model!r}, the judge runs {judge_model!r}",
+        ),
+        (
+            record.prompt_sha256 is None,
+            "record does not pin the judge prompt (prompt_sha256)",
+        ),
+        (
+            record.prompt_sha256 != prompt_sha256,
+            f"record is for judge prompt {short_digest(record.prompt_sha256)}, "
+            f"the judge runs {short_digest(prompt_sha256)}",
         ),
         (age_days < 0, f"measured_at {record.measured_at.isoformat()} is in the future"),
         (

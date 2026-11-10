@@ -209,7 +209,13 @@ def _run_eval_pipeline(
         scorer_instance = _build_scorer(
             scorer_names,
             _seed_judge_options(
-                scorer_names, cfg.scorer_options, cfg=cfg, judge_model=settings.llm.model
+                scorer_names,
+                cfg.scorer_options,
+                cfg=cfg,
+                base_model=settings.llm.model,
+                profile_models={
+                    name: profile.model for name, profile in settings.llm_profiles.items()
+                },
             ),
         )
         sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
