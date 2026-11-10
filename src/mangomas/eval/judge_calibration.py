@@ -185,7 +185,9 @@ def assess_calibration(
     return JudgeStatus(
         calibrated=reason is None,
         reason=reason or "calibrated",
-        judge_model=record.judge_model,
+        # The model that is judging now; on a mismatch the reason names the
+        # record's model (Copilot review on #126).
+        judge_model=judge_model,
         measured_at=record.measured_at.isoformat(),
         sample_size=record.sample_size,
         cohens_kappa=record.cohens_kappa,

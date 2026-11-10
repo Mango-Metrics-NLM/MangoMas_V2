@@ -38,6 +38,13 @@ Versioning: [Semantic Versioning](https://semver.org/).
   a record never vouches for a prompt or model it did not measure
   (`tests/eval/test_judge_calibration.py::test_a_record_for_another_prompt_does_not_calibrate`).
   `LLM_PROFILES_EXTRAS_KEY` now lives in `config/llm.py` (re-exported where it was).
+- Review follow-ups (Copilot on #126): the judge is stamped on a report only
+  when it graded a row, and refusal (`expected_error`) rows keep their score
+  thresholds under an uncalibrated judge; regression exclusion follows the
+  configured criteria rather than whether deltas failed, while a regressed
+  refusal row still fails; an explicit `-s composite` judge child is seeded
+  with the calibration settings; a status names the active judge model, not the
+  record's (`tests/eval/test_gate.py::test_refusal_rows_keep_their_thresholds_under_an_uncalibrated_judge`).
 
 ### Added — pass^k trials as the reliability metric of record (spec-0046 / reliability plan C1)
 

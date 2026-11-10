@@ -246,15 +246,21 @@ against people. Spec-0047 (reliability plan C2) makes that explicit:
   informational note — `gate=PASS (note: llm_judge uncalibrated (…) — score
   thresholds not applied; …)` — and sets `GateResult.judge_excluded = true`, so a
   downstream consumer can refuse a green that rests on an uncalibrated judge.
-  `--fail-on-error` and `--max-mean-cost-usd` still apply, and so does a
-  regression gate's verdict *unless* it too is judge-derived (then it is noted,
-  not failed). This is the `cost_budget` posture (skip, say so), chosen over
+  `--fail-on-error` and `--max-mean-cost-usd` still apply. **Refusal rows**
+  (`expected_error`) never reach the judge, so the score thresholds still apply
+  to that subset (`scorer-independent rows (n): …`), and a report whose rows were
+  all refusal checks carries no judge at all. A regression gate on a judge run
+  is demoted whenever a regression criterion is configured — `judge_excluded`
+  does not depend on whether the deltas happened to fail — except that a
+  regressed refusal row still fails under `--no-allow-new-failures`. This is the `cost_budget` posture (skip, say so), chosen over
   failing closed so a team can keep collecting judge scores while it produces
   the record; a future opt-in to fail closed is the right place for the
   stricter stance.
 - A **composite** with a judge child is demoted as a whole (`min` / `all` make
   every aggregate judge-tainted); run the judge as its own invocation when you
-  want deterministic gating beside it.
+  want deterministic gating beside it. The judge child is seeded with the
+  calibration settings whether it comes from repeated `-s` or from an explicit
+  `-s composite` (`{"scorers": ["contains", "llm_judge"]}`, bare name or object form).
 
 #### Judge options (spec-0048)
 

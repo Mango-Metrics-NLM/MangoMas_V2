@@ -10,9 +10,14 @@ import pytest
 
 from mangomas.eval import GateResult, evaluate_gate, evaluate_regression_gate, merge_gate_results
 from mangomas.eval.baseline import ReportDiff
-from mangomas.eval.gate import MIN_TRIALS_FOR_PASS_POW_K
+from mangomas.eval.gate import MIN_TRIALS_FOR_PASS_POW_K, scorer_independent_row_ids
 from mangomas.eval.judge_calibration import JudgeStatus
-from mangomas.eval.runner import EvalReport
+from mangomas.eval.runner import (
+    EXPECTED_ERROR_METADATA_KEY,
+    REFUSED_METADATA_KEY,
+    EvalReport,
+    EvalRowResult,
+)
 
 
 def _report(
@@ -373,3 +378,81 @@ def test_merge_carries_the_judge_fields_and_ors_exclusion() -> None:
     assert merged is not None and merged.passed is True
     assert merged.judge_excluded is True and merged.judge_note == threshold.judge_note
     assert len(merged.reasons) == 2
+
+
+# --- Copilot review on #126 ----------------------------------------------------
+
+
+def _refusal_row(row_id: str, *, refused: bool) -> EvalRowResult:
+    return EvalRowResult(
+        row_id=row_id,
+        score=1.0 if refused else 0.0,
+        passed=refused,
+        duration_ms=1.0,
+        prediction="" if refused else "an answer",
+        expected="",
+        metadata={EXPECTED_ERROR_METADATA_KEY: "LLMBadResponse", REFUSED_METADATA_KEY: refused},
+    )
+
+
+def _judged_row(row_id: str, *, passed: bool) -> EvalRowResult:
+    return EvalRowResult(
+        row_id=row_id,
+        score=0.9 if passed else 0.1,
+        passed=passed,
+        duration_ms=1.0,
+        prediction="p",
+        expected="e",
+    )
+
+
+def _mixed_report(rows: list[EvalRowResult]) -> EvalReport:
+    passed = sum(1 for r in rows if r.passed)
+    return dataclasses.replace(
+        _report(
+            dataset_size=len(rows), passed=passed, failed=len(rows) - passed, scorer="llm_judge"
+        ),
+        rows=rows,
+        judge=_UNCALIBRATED,
+    )
+
+
+def test_refusal_rows_keep_their_thresholds_under_an_uncalibrated_judge() -> None:
+    failing_refusals = _mixed_report(
+        [_refusal_row("r1", refused=False), _judged_row("j1", passed=True)]
+    )
+    result = evaluate_gate(failing_refusals, min_pass_rate=1.0)
+    assert result.passed is False and result.judge_excluded is True
+    assert any(r.startswith("scorer-independent rows (1): pass_rate") for r in result.reasons)
+    held = _mixed_report([_refusal_row("r1", refused=True), _judged_row("j1", passed=False)])
+    ok = evaluate_gate(held, min_pass_rate=1.0, min_mean_score=0.9)
+    assert ok.passed is True, "the judged row's failure stays demoted; the refusal held"
+    assert ok.reasons == [ok.judge_note]
+
+
+def test_regression_exclusion_follows_configured_criteria_not_luck() -> None:
+    clean = evaluate_regression_gate(
+        _diff(mean_delta=0.0), max_mean_score_drop=0.1, judge=_UNCALIBRATED
+    )
+    assert clean.passed is True and clean.judge_excluded is True
+    assert clean.reasons == [clean.judge_note], "the note is attached even when nothing dropped"
+    strict = evaluate_regression_gate(
+        _diff(mean_delta=0.0), allow_new_failures=False, judge=_UNCALIBRATED
+    )
+    assert strict.judge_excluded is True
+
+
+def test_a_regressed_refusal_row_still_fails_under_an_uncalibrated_judge() -> None:
+    result = evaluate_regression_gate(
+        _diff(regressed=["refusal-1", "judged-1"]),
+        allow_new_failures=False,
+        judge=_UNCALIBRATED,
+        scorer_independent_rows={"refusal-1"},
+    )
+    assert result.passed is False and result.judge_excluded is True
+    assert result.reasons[0] == result.judge_note
+    assert result.reasons[1] == "scorer-independent rows: 1 regression(s): refusal-1"
+    report = _mixed_report(
+        [_refusal_row("refusal-1", refused=False), _judged_row("j", passed=True)]
+    )
+    assert scorer_independent_row_ids(report) == frozenset({"refusal-1"})

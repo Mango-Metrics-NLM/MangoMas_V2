@@ -65,16 +65,23 @@ say "reported, not to be gated on until calibrated"; nothing mechanical made it 
   `MANGOMAS_LLM__MODEL` (`_seed_judge_options`; explicit options win; the judge
   always grades through the shared client, so the shared model id is the key
   even when the target runs a profile or `MODEL_OVERRIDE`).
-- R5 `EvalReport.judge: JudgeStatus | None` stamped by the runner (both
-  constructions); baselines load it with a field-filtered `_judge_from_dict`.
+- R5 `EvalReport.judge: JudgeStatus | None` stamped by the runner **only when
+  the judge graded at least one row** (`consulted_scorer`: not an
+  `expected_error` row, not a fail-fast placeholder); an empty or all-refusal
+  run carries `None`. `JudgeStatus.judge_model` is the model judging now, never
+  the record's. Baselines load it with a field-filtered `_judge_from_dict`.
 - R6 `evaluate_gate`: with an uncalibrated judge **and** any of
   `min_mean_score` / `min_pass_rate` / `min_pass_pow_k` configured, the score
   checks are replaced by one informational note and `judge_excluded=True`;
   without a configured score threshold the note exists but nothing is "not
-  applied"; `fail_on_error` and the cost ladder run regardless.
+  applied"; `fail_on_error` and the cost ladder run regardless, and the score
+  thresholds still apply to the scorer-independent (`expected_error`) rows.
   `GateResult.judge_note` is set in **both** states so the self-preference
-  claim is never dropped. `evaluate_regression_gate(..., judge=)`: an
-  uncalibrated judge collapses regression reasons into one note and passes.
+  claim is never dropped. `evaluate_regression_gate(..., judge=,
+  scorer_independent_rows=)`: an uncalibrated judge with any regression
+  criterion configured turns the verdict into one note with
+  `judge_excluded=True`, whether or not the deltas failed; a regressed refusal
+  row still fails under `allow_new_failures=False`.
   `merge_gate_results` ORs `judge_excluded` and carries the threshold note.
 - R7 Sinks: console prints `judge=<summary>` whenever the report has one, and
   prints informational notes on a **passing** verdict (`gate=PASS (note: …)`);
@@ -101,7 +108,11 @@ say "reported, not to be gated on until calibrated"; nothing mechanical made it 
   rule; WHEN κ alone or ρ alone clears its floor THEN calibrated.
 - WHEN `JUDGE_CALIBRATION_PATH` is set to a missing or malformed file THEN exit 2.
 - WHEN `-s contains -s llm_judge` THEN the composite is demoted and the console
-  names `llm_judge (child of composite)`.
+  names `llm_judge (child of composite)`; WHEN `-s composite` lists the judge as
+  a child THEN it is seeded the same way (a malformed record → exit 2).
+- WHEN every row is an `expected_error` refusal check THEN the report has no
+  judge and the thresholds apply; WHEN refusal rows fail beside judged rows THEN
+  `scorer-independent rows (n): …` fails the gate (Copilot review on #126).
 
 ## Config / env additions
 

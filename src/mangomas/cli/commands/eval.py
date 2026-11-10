@@ -46,6 +46,7 @@ from mangomas.eval import (
     load_baseline,
     merge_gate_results,
 )
+from mangomas.eval.gate import scorer_independent_row_ids
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval import GateResult, Sink
@@ -118,6 +119,7 @@ async def _evaluate_run_gates(
             max_pass_rate_drop=max_pass_rate_drop,
             allow_new_failures=allow_new_failures,
             judge=report.judge,
+            scorer_independent_rows=scorer_independent_row_ids(report),
         )
     return merge_gate_results([threshold_gate, regression_gate])
 

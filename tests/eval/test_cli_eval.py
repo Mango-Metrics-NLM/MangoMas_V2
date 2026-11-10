@@ -1303,3 +1303,53 @@ def test_eval_cli_unknown_judge_profile_is_a_config_error(monkeypatch: pytest.Mo
     result = CliRunner().invoke(app, _judge_eval())
     assert result.exit_code == EXIT_CONFIG_ERROR
     assert "judge_profile 'nope' is not a configured LLM profile" in result.output
+
+
+def test_seed_judge_options_reaches_an_explicit_composites_judge_child() -> None:
+    """Copilot review on #126: ``-s composite`` with a judge child gets seeded too."""
+    cfg = EvalSettings(judge_calibration_path="cal.json")
+    seeded = _seed_judge_options(
+        ["composite"],
+        {
+            "scorers": [
+                "contains",
+                "llm_judge",
+                {"name": "llm_judge", "options": {"threshold": 0.4, "judge_model": "pinned"}},
+                {"name": "llm_judge"},
+                {"name": "llm_judge", "options": "bad"},
+                {"name": "json_keys", "options": {"required_keys": ["a"]}},
+            ]
+        },
+        cfg=cfg,
+        base_model="m",
+        profile_models={},
+    )
+    children = seeded["scorers"]
+    assert isinstance(children, list)
+    assert children[0] == "contains"
+    assert children[1]["options"]["calibration_path"] == "cal.json"
+    assert children[1]["options"]["judge_model"] == "m"
+    assert children[2]["options"]["threshold"] == 0.4, "child overrides survive"
+    assert children[2]["options"]["judge_model"] == "pinned"
+    assert children[3]["options"]["calibration_path"] == "cal.json"
+    assert children[4] == {"name": "llm_judge", "options": "bad"}, "left for the factory to reject"
+    assert children[5] == {"name": "json_keys", "options": {"required_keys": ["a"]}}
+    assert _seed_judge_options(
+        ["composite"], {"scorers": "nope"}, cfg=cfg, base_model="m", profile_models={}
+    ) == {"scorers": "nope"}
+
+
+def test_eval_cli_explicit_composite_reads_the_calibration_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    broken = tmp_path / "cal.json"
+    broken.write_text("{nope", encoding="utf-8")
+    monkeypatch.setenv(_JUDGE_RECORD_ENV, str(broken))
+    monkeypatch.setenv(
+        "MANGOMAS_EVAL__SCORER_OPTIONS", json.dumps({"scorers": ["contains", "llm_judge"]})
+    )
+    result = CliRunner().invoke(
+        app, ["eval", "-d", "tests/eval/fixtures/all_pass.jsonl", "-s", "composite", "-a", "chat"]
+    )
+    assert result.exit_code == EXIT_CONFIG_ERROR, "the configured record was read, not ignored"
+    assert "calibration record" in result.output

@@ -285,4 +285,23 @@ async def test_the_report_carries_the_judge_status_and_round_trips(tmp_path: Pat
     plain, _ = await _run(FakeLLM(), [_row()])
     assert plain.judge is None  # type: ignore[attr-defined]
     empty = await runner.run([], target=AgentTarget(agent=DEFAULT_AGENT_NAME))
-    assert empty.judge is not None
+    assert empty.judge is None, "nothing was judged"
+
+
+async def test_a_judge_that_graded_no_row_is_not_stamped() -> None:
+    """Copilot review on #126: refusal rows never reach the scorer."""
+    from mangomas.eval.scorers.llm_judge import LLMJudgeScorer  # noqa: PLC0415 — scoped
+
+    refusal = DatasetRow(
+        id="must-refuse",
+        messages=[Message(role="user", content="hi")],
+        expected="",
+        expected_error="LLMBadResponse",
+    )
+    runner = EvalRunner(_orchestrator(FakeLLM()), LLMJudgeScorer())
+    only_refusals = await runner.run([refusal], target=AgentTarget(agent=DEFAULT_AGENT_NAME))
+    assert only_refusals.judge is None
+    judge_llm = FakeLLM(reply=json.dumps({"score": 0.9, "rationale": "ok"}))
+    mixed_runner = EvalRunner(_orchestrator(judge_llm), LLMJudgeScorer())
+    mixed = await mixed_runner.run([refusal, _row()], target=AgentTarget(agent=DEFAULT_AGENT_NAME))
+    assert mixed.judge is not None

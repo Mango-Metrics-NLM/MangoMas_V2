@@ -22,11 +22,13 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal
 
 from opentelemetry import trace
+
+from mangomas.eval.runner import EXPECTED_ERROR_METADATA_KEY
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.baseline import ReportDiff
@@ -46,6 +48,7 @@ _RELIABILITY_UNAVAILABLE_NOTE = "pass_pow_k unavailable — min_pass_pow_k not m
 MIN_TRIALS_FOR_PASS_POW_K = 2
 _JUDGE_THRESHOLDS_NOT_APPLIED = "score thresholds not applied"
 _JUDGE_REGRESSION_NOT_APPLIED = "regression thresholds not applied"
+_SCORER_INDEPENDENT = "scorer-independent rows"
 
 
 @dataclass(frozen=True)
@@ -137,6 +140,16 @@ def evaluate_gate(
     else:
         if judge_excluded and judge_note is not None:
             reasons.append(judge_note)
+            # Refusal rows never reached the judge, so its demotion does not
+            # cover them: the score thresholds still apply to that subset.
+            reasons.extend(
+                _scorer_independent_reasons(
+                    report,
+                    min_mean_score=min_mean_score,
+                    min_pass_rate=min_pass_rate,
+                    min_pass_pow_k=min_pass_pow_k,
+                )
+            )
         else:
             reasons.extend(
                 _score_reasons(
@@ -203,6 +216,48 @@ def _score_reasons(
     return reasons
 
 
+def scorer_independent_row_ids(report: EvalReport) -> frozenset[str]:
+    """Ids of rows judged without the scorer — ``expected_error`` refusal checks."""
+    return frozenset(r.row_id for r in report.rows if EXPECTED_ERROR_METADATA_KEY in r.metadata)
+
+
+def _scorer_independent_reasons(
+    report: EvalReport,
+    *,
+    min_mean_score: float | None,
+    min_pass_rate: float | None,
+    min_pass_pow_k: float | None,
+) -> list[str]:
+    """Score thresholds over the rows an uncalibrated judge never graded.
+
+    An ``expected_error`` row passes on the named refusal and fails on an
+    answer without consulting the scorer, so its verdict is deterministic and
+    an uncalibrated judge elsewhere in the run is no reason to waive it
+    (Copilot review on #126). The subset is gated like a report of its own.
+    """
+    rows = [r for r in report.rows if EXPECTED_ERROR_METADATA_KEY in r.metadata]
+    if not rows:
+        return []
+    passed = sum(1 for r in rows if r.passed and r.error is None)
+    scored = [r.score for r in rows if r.error is None]
+    subset = replace(
+        report,
+        dataset_size=len(rows),
+        passed=passed,
+        mean_score=sum(scored) / len(scored) if scored else 0.0,
+        pass_pow_k=passed / len(rows),
+        rows=rows,
+    )
+    found = _score_reasons(
+        subset,
+        passed / len(rows),
+        min_mean_score=min_mean_score,
+        min_pass_rate=min_pass_rate,
+        min_pass_pow_k=min_pass_pow_k,
+    )
+    return [f"{_SCORER_INDEPENDENT} ({len(rows)}): {reason}" for reason in found]
+
+
 def _judge_verdict(
     judge: JudgeStatus | None, *, thresholds_configured: bool
 ) -> tuple[bool, str | None]:
@@ -262,6 +317,7 @@ def evaluate_regression_gate(
     max_pass_rate_drop: float | None = None,
     allow_new_failures: bool = True,
     judge: JudgeStatus | None = None,
+    scorer_independent_rows: Collection[str] = (),
 ) -> GateResult:
     """Return a :class:`GateResult` for a baseline *diff* (regression gating).
 
@@ -269,9 +325,12 @@ def evaluate_regression_gate(
     ``actual_*`` fields carry the *current* run's metrics. A "drop" is
     ``baseline - current`` (positive = regression). A no-op gate
     (``max_*_drop=None`` and ``allow_new_failures=True``) always passes.
-    Score deltas from an uncalibrated *judge* are judge-derived too: with
-    such a ``judge`` the regression reasons collapse into one informational
-    note and the verdict passes (spec-0047).
+    Score deltas from an uncalibrated *judge* are judge-derived too: when any
+    regression criterion is configured, such a ``judge`` turns the verdict into
+    one informational note and ``judge_excluded=True`` — whether or not the
+    raw deltas would have failed, so the flag never depends on luck (spec-0047).
+    Rows in *scorer_independent_rows* (refusal checks) are exempt from that
+    demotion: with ``allow_new_failures=False`` a regressed refusal row still fails.
     """
     reasons: list[str] = []
     mean_drop = -diff.mean_score_delta
@@ -287,13 +346,23 @@ def evaluate_regression_gate(
     if not allow_new_failures and diff.regressed_rows:
         shown = ", ".join(diff.regressed_rows[:5])
         reasons.append(f"{len(diff.regressed_rows)} row regression(s): {shown}")
-    judge_excluded = judge is not None and not judge.calibrated and bool(reasons)
+    criteria_configured = (
+        max_mean_score_drop is not None or max_pass_rate_drop is not None or not allow_new_failures
+    )
+    judge_excluded = judge is not None and not judge.calibrated and criteria_configured
     judge_note = judge.summary() if judge is not None else None
+    failing = reasons
     if judge_excluded and judge_note is not None:
         judge_note = f"{judge_note} — {_JUDGE_REGRESSION_NOT_APPLIED}"
-        reasons = [judge_note]
+        independent = [r for r in diff.regressed_rows if r in set(scorer_independent_rows)]
+        failing = (
+            [f"{_SCORER_INDEPENDENT}: {len(independent)} regression(s): {', '.join(independent)}"]
+            if not allow_new_failures and independent
+            else []
+        )
+        reasons = [judge_note, *failing]
     result = GateResult(
-        passed=not reasons or judge_excluded,
+        passed=not failing,
         actual_mean_score=diff.current_mean_score,
         actual_pass_rate=diff.current_pass_rate,
         reasons=reasons,

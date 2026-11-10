@@ -199,3 +199,12 @@ def test_the_summary_names_the_profile_and_the_short_prompt_digest() -> None:
     assert missing.summary().startswith("llm_judge via profile cloud uncalibrated (")
     assert short_digest(None) == "unknown"
     assert short_digest("opaque-digest-value") == "opaque-diges"
+
+
+def test_a_model_mismatch_reports_the_active_judge_model() -> None:
+    """Copilot review on #126: the status names who judged, the reason names the record."""
+    status = _assess(_record(judge_model="recorded-model"), judge_model="active-model")
+    assert status.calibrated is False
+    assert status.judge_model == "active-model"
+    assert "record is for model 'recorded-model'" in status.reason
+    assert _assess(_record(), judge_model=None).judge_model is None

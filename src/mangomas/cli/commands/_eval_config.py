@@ -72,23 +72,15 @@ def _seed_judge_options(
 
     The factory stays Settings-free, so the CLI — the one place that holds
     both — seeds ``calibration_path``, ``judge_profile`` and the policy floors
-    from ``MANGOMAS_EVAL__JUDGE_*`` into the judge's options: the flat mapping
-    for a single scorer, the sub-mapping under ``"llm_judge"`` for a composite
-    child. ``setdefault`` only, so an explicit option wins. ``judge_model`` is
-    the model that actually grades: the effective ``judge_profile``'s model
-    when one is set (unknown profile → :class:`ConfigError`, exit 2), else the
-    shared ``MANGOMAS_LLM__MODEL`` — an agent-level profile or
-    ``MODEL_OVERRIDE`` never changes which model judges.
+    from ``MANGOMAS_EVAL__JUDGE_*`` into every judge it will build: the flat
+    mapping for ``-s llm_judge``, the sub-mapping under ``"llm_judge"`` for
+    ``-s a -s llm_judge``, and the child entry (bare name or object form) of an
+    explicit ``-s composite`` (Copilot review on #126). ``setdefault`` only, so
+    an explicit option wins. ``judge_model`` is the model that actually grades:
+    the effective ``judge_profile``'s model when one is set (unknown profile →
+    :class:`ConfigError`, exit 2), else the shared ``MANGOMAS_LLM__MODEL`` — an
+    agent-level profile or ``MODEL_OVERRIDE`` never changes which model judges.
     """
-    if _JUDGE_SCORER not in scorer_names:
-        return dict(scorer_options)
-    options = dict(scorer_options)
-    if len(scorer_names) == 1:
-        target = options
-    else:
-        nested = options.get(_JUDGE_SCORER)
-        target = dict(nested) if isinstance(nested, dict) else {}
-        options[_JUDGE_SCORER] = target
     seeds: dict[str, object] = {
         "calibration_path": cfg.judge_calibration_path,
         "judge_profile": cfg.judge_profile,
@@ -97,6 +89,53 @@ def _seed_judge_options(
         "min_rho": cfg.judge_min_rho,
         "max_age_days": cfg.judge_calibration_max_age_days,
     }
+    options = dict(scorer_options)
+    if scorer_names == [_JUDGE_SCORER]:
+        _seed_judge(options, seeds, base_model=base_model, profile_models=profile_models)
+    elif scorer_names == [_COMPOSITE_SCORER]:
+        children = options.get("scorers")
+        if isinstance(children, list):
+            options["scorers"] = [
+                _seed_child(child, seeds, base_model=base_model, profile_models=profile_models)
+                for child in children
+            ]
+    elif _JUDGE_SCORER in scorer_names:
+        nested = options.get(_JUDGE_SCORER)
+        child = dict(nested) if isinstance(nested, dict) else {}
+        _seed_judge(child, seeds, base_model=base_model, profile_models=profile_models)
+        options[_JUDGE_SCORER] = child
+    return options
+
+
+def _seed_child(
+    child: object,
+    seeds: Mapping[str, object],
+    *,
+    base_model: str,
+    profile_models: Mapping[str, str],
+) -> object:
+    """Seed one ``composite`` child when it is the judge; leave every other child as written."""
+    if child == _JUDGE_SCORER:
+        options: dict[str, object] = {}
+        _seed_judge(options, seeds, base_model=base_model, profile_models=profile_models)
+        return {"name": _JUDGE_SCORER, "options": options}
+    if isinstance(child, dict) and child.get("name") == _JUDGE_SCORER:
+        raw = child.get("options")
+        if raw is not None and not isinstance(raw, dict):
+            return child  # the composite factory reports the malformed options
+        options = dict(raw or {})
+        _seed_judge(options, seeds, base_model=base_model, profile_models=profile_models)
+        return {**child, "options": options}
+    return child
+
+
+def _seed_judge(
+    target: dict[str, object],
+    seeds: Mapping[str, object],
+    *,
+    base_model: str,
+    profile_models: Mapping[str, str],
+) -> None:
     for key, value in seeds.items():
         target.setdefault(key, value)
     profile = target.get("judge_profile")
@@ -109,7 +148,6 @@ def _seed_judge_options(
             f"judge_profile {profile!r} is not a configured LLM profile "
             f"(MANGOMAS_LLM_PROFILES__<NAME>); available: {sorted(profile_models)}"
         )
-    return options
 
 
 def _resolve_llm_labels(
