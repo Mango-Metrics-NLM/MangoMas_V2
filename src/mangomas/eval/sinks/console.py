@@ -16,6 +16,7 @@ import typer
 
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import sink_registry
+from mangomas.eval.stats import wilson_interval
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.gate import GateResult
@@ -47,9 +48,25 @@ class ConsoleSink:
                 else ""
             )
         )
+        if report.dataset_size:
+            low, high = wilson_interval(report.passed, report.dataset_size)
+            self._write(
+                f"pass_rate={report.passed / report.dataset_size:.3f} "
+                f"(95% Wilson {low:.3f}-{high:.3f}, informational; n={report.dataset_size})"
+            )
+        for name, stats in report.slices.items():
+            self._write(
+                f"  slice={name} size={stats.size} passed={stats.passed} "
+                f"failed={stats.failed} errored={stats.errored} mean_score={stats.mean_score:.3f}"
+            )
         for row in report.rows:
             flag = "PASS" if row.passed else "FAIL"
             self._write(f"  [{flag}] {row.row_id} score={row.score:.3f}")
+        if report.run is not None:
+            sha = report.run.git_sha or "unknown"
+            self._write(
+                f"run={report.run.run_id} dataset={report.run.dataset_sha256[:19]} git={sha[:12]}"
+            )
         if gate_result is not None:
             verdict = "PASS" if gate_result.passed else "FAIL"
             suffix = "" if gate_result.passed else f" ({'; '.join(gate_result.reasons)})"

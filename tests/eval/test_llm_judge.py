@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from mangomas.errors import ConfigError, LLMBadResponse
@@ -120,3 +122,18 @@ def test_llm_judge_factory_rejects_non_numeric_threshold() -> None:
     """A mistyped option is a config error (exit 2), not a bare ``ValueError``."""
     with pytest.raises(ConfigError, match="threshold"):
         scorer_registry.get("llm_judge")({"threshold": "high"})
+
+
+async def test_judge_warns_once_that_it_grades_with_the_system_under_test_client(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """spec-0045 R7: self-grading is reported, so a reader never mistakes it for calibration."""
+    scorer = LLMJudgeScorer()
+    ctx = ScorerContext(llm=FakeLLM(reply='{"score": 0.9, "rationale": "fine"}'))
+    with caplog.at_level(logging.WARNING, logger="mangomas.eval.scorers.llm_judge"):
+        await scorer.score("a", "b", context=ctx)
+        await scorer.score("a", "b", context=ctx)
+    warnings = [
+        r for r in caplog.records if r.__dict__.get("event") == "eval_llm_judge_self_grading"
+    ]
+    assert len(warnings) == 1

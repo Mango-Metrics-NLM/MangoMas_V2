@@ -119,6 +119,12 @@ jobs:
       - name: Eval harness self-check
         run: make eval-selfcheck
 
+      # Scripted agent lanes over the committed datasets (planner, reviewer,
+      # tool-agent safety rows); the baselines under evals/baselines/ are the
+      # oracle. Deterministic — no LLM on this runner.
+      - name: Eval agent lanes
+        run: make eval-lanes
+
       - name: Upload coverage report
         # Third-party action pinned to a full commit SHA (supply-chain
         # hardening — codecov's 2021 uploader compromise is the case study);

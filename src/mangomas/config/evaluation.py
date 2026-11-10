@@ -41,6 +41,12 @@ DEFAULT_EVAL_PARALLELISM: int = 1
 DEFAULT_EVAL_FAIL_FAST: bool = False
 
 
+# Per-slice aggregates (spec-0045 B6): rows are grouped by this key of their
+# ``metadata``; rows without it are simply unsliced. Reporting only — nothing
+# gates on a slice.
+DEFAULT_EVAL_SLICE_KEY: str = "category"
+
+
 # Quality-gate defaults — all OFF so existing runs keep exit code 0 on success.
 # ``min_mean_score`` / ``min_pass_rate`` stay ``None`` (no threshold). When a
 # threshold is set the CLI exits 3 if the report falls below it.
@@ -148,6 +154,8 @@ class EvalSettings(BaseModel):
     output_dir: str = DEFAULT_EVAL_OUTPUT_DIR
     parallelism: int = DEFAULT_EVAL_PARALLELISM
     fail_fast: bool = DEFAULT_EVAL_FAIL_FAST
+    # Row-metadata key the report's per-slice aggregates group by (spec-0045 B6).
+    slice_key: str = DEFAULT_EVAL_SLICE_KEY
     # Free-form per-scorer options (e.g. ``{"threshold": 0.8}``). Forwarded
     # verbatim to the scorer's factory.
     scorer_options: dict[str, object] = Field(default_factory=dict)

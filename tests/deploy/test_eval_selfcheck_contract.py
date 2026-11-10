@@ -84,6 +84,32 @@ def test_echo_rows_expect_their_own_last_user_message() -> None:
         assert row["expected"] == last_user, row["id"]
 
 
+_LANES_TARGET = "eval-lanes"
+_LANES_BASELINE_TARGET = "eval-lanes-baseline"
+_LANES_WRITE_ENV = "EVAL_LANES_WRITE_BASELINES=1"
+
+
+def test_lanes_target_runs_the_lane_suite_and_its_baseline_twin_sets_the_write_flag() -> None:
+    """spec-0045 B7: the lane and its baseline writer run the same tests; only the env differs."""
+    lane = _makefile.target_body(_LANES_TARGET)
+    rewrite = _makefile.target_body(_LANES_BASELINE_TARGET)
+    tests = _makefile.variable("EVAL_LANES_TESTS")
+    assert tests and (_REPO_ROOT / tests).is_file(), tests
+    assert "$(EVAL_LANES_TESTS)" in lane and "$(EVAL_LANES_TESTS)" in rewrite
+    assert _LANES_WRITE_ENV not in lane, "the gate lane must compare, never rewrite, baselines"
+    assert _LANES_WRITE_ENV in rewrite
+    gate_line = next(line for line in _makefile.text().splitlines() if line.startswith("gate:"))
+    assert f" {_LANES_TARGET} " in gate_line or gate_line.rstrip().endswith(f" {_LANES_TARGET}")
+    test_job = _workflows.jobs("ci.yml")["test"]
+    assert any(step.get("run") == f"make {_LANES_TARGET}" for step in test_job["steps"])
+
+
+def test_every_lane_dataset_has_a_committed_baseline() -> None:
+    datasets = {p.stem for p in (_REPO_ROOT / "evals" / "datasets").glob("*_v1.jsonl")}
+    baselines = {p.stem for p in (_REPO_ROOT / "evals" / "baselines").glob("*_v1.json")}
+    assert datasets == baselines, sorted(datasets ^ baselines)
+
+
 def test_selfcheck_runs_in_gate_and_in_the_ci_test_job() -> None:
     assert _TARGET in _makefile.target_body("gate").split() or _TARGET in _makefile.text(), (
         "eval-selfcheck must be a prerequisite of `make gate`"

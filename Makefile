@@ -267,13 +267,27 @@ eval-selfcheck: ## Prove the eval harness exit codes + baseline diff still fire 
 eval-selfcheck-baseline: ## Regenerate the self-check baseline report (review the diff before committing)
 	$(PYTHON) -m mangomas.cli.main eval $(EVAL_SELFCHECK_ARGS) -o $(EVAL_SELFCHECK_BASELINE)
 
+# ── Deterministic agent lanes (spec-0045 B7) ──────────────────────────────────
+# Replays evals/datasets/{planner,reviewer,safety_toolagent}_v1 through the real
+# agents with the scripted FakeLLM transcript each row carries, scores them,
+# and diffs against evals/baselines/*. No LLM, every runner. Proves agent
+# post-processing, policy refusals, the scorer contract and that each agent
+# still sends its schema / tool roster — not model quality (evals/README.md).
+EVAL_LANES_TESTS ?= tests/evals/test_dataset_lanes.py
+
+eval-lanes: ## Replay the committed agent datasets through scripted agents and diff against baselines
+	$(PYTHON) -m pytest $(EVAL_LANES_TESTS) -q --no-cov -p no:cacheprovider -o addopts="" $(PYTEST_FLAGS)
+
+eval-lanes-baseline: ## Rewrite evals/baselines/* from the current lanes (review the diff before committing)
+	EVAL_LANES_WRITE_BASELINES=1 $(PYTHON) -m pytest $(EVAL_LANES_TESTS) -q --no-cov -p no:cacheprovider -o addopts="" $(PYTEST_FLAGS)
+
 studio-probe-mock: ## Studio consumer contract against an in-process LLM stub (no network)
 	$(PYTHON) scripts/studio_consumer_probe.py --mode mock
 
 studio-probe: ## Studio consumer contract against LM Studio (needs LMSTUDIO_OVERRIDE_MODEL)
 	$(PYTHON) scripts/studio_consumer_probe.py --mode live
 
-gate: validate-config lint format-check typecheck lint-imports frontmatter protected-paths test coverage eval-selfcheck bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
+gate: validate-config lint format-check typecheck lint-imports frontmatter protected-paths test coverage eval-selfcheck eval-lanes bridge-coverage contracts-coverage scripts-coverage ## Run the full pre-PR gate
 
 precommit: ## Run every pre-commit hook over the whole tree
 	pre-commit run --all-files

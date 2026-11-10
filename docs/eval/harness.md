@@ -30,7 +30,7 @@ env-driven via `MANGOMAS_EVAL__*`:
 | Variable | Default | Purpose |
 |---|---|---|
 | `MANGOMAS_EVAL__DATASET_PATH` | (unset) | JSONL dataset path |
-| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name |
+| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`-s` may be repeated on the CLI to build a `composite`) |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent name (used by the `agent` target) |
 | `MANGOMAS_EVAL__TARGET` | `agent` | Target name (`agent`/`pipeline`/`fan_out`/`echo`) |
 | `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name |
@@ -49,6 +49,7 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | When `false`, fail on rows that passed in baseline but fail now |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Ordered list of result sinks |
 | `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__SLICE_KEY` | `category` | Row-metadata key for `EvalReport.slices` (reporting only) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `2` | Forward-compatible config version marker |
 
 ## Dataset format
@@ -68,6 +69,14 @@ JSONL — one record per line:
 - `expected` is a string used by every built-in scorer.
 - `id` is auto-assigned as `row-<index>` when absent.
 - `metadata` is optional and forwarded to the scorer through `ScorerContext.row_metadata`.
+  Conventions the built-in scorers and lanes read: `metadata.category` (the
+  default `MANGOMAS_EVAL__SLICE_KEY`), `metadata.expected_tools` (`tool_trajectory`),
+  `metadata.json_field` (`json_field`), and `metadata.fixture` (the scripted
+  transcript the deterministic lanes replay — see `evals/README.md`).
+- `expected_error` (optional, spec-0045) names the exception class or
+  `MangomasError.code` the target **must** raise. The runner passes the row on
+  that refusal (`metadata.refused: true`), fails it on any answer without
+  consulting the scorer, and keeps any other error an errored row.
 
 Empty lines are skipped; malformed JSON raises `DatasetError`.
 
@@ -103,6 +112,9 @@ thresholds without callers re-implementing the rule).
 | `RegexMatchScorer` | `regex_match` | `expected` is a **regex** (per row); pass iff it matches `prediction`. Options: `flags` (`ignorecase`/`multiline`/`dotall`), `fullmatch`. |
 | `ContainsScorer` | `contains` | `expected` is a **substring** (per row); pass iff contained in `prediction`. Option: `case_sensitive`. |
 | `JsonKeysScorer` | `json_keys` | Parses `prediction` as a JSON object and grades by required-key coverage (great for `planner`/`reviewer` structured output). Keys come from `required_keys` option, else from `expected` parsed as a JSON object. Option: `strict` (extra keys → score 0). Malformed prediction → failing row (`score=0`), not an error. |
+| `ToolTrajectoryScorer` | `tool_trajectory` | Grades **which tools ran** (`ToolAgent`'s `metadata.tool_calls`) against `metadata.expected_tools`: `recall`, `missing_tools`, `extra_tools`, `steps`, reported separately. `passed` needs full recall, no unexpected tool unless `allow_extra`, and `max_steps` when set; `score` is the recall when those hold, else `0.0`. Arguments are not graded (the trace carries `sha256:` digests by default). A refused call never reaches it — that is an `expected_error` row. |
+| `JsonFieldScorer` | `json_field` | ADR-0034's structured acceptance as a scorer: parse the whole prediction as a JSON object, walk a dotted path over **mappings only**, apply exactly one of `equals` / `at_least` / `at_most` / `min_length`. Check from scorer options or per row via `metadata.json_field` (row wins). Unparseable or unresolvable → failing row, never an error. Use it for `planner` / `reviewer` where no substring is right in both directions. |
+| `CompositeScorer` | `composite` | Several scorers per row, each recorded under `metadata.scores`; the row's verdict is `min` / `all`. Option `scorers: [name | {name, options}]`. `-s a -s b` on the CLI builds one, each child taking `SCORER_OPTIONS[<name>]`. No weights by design. |
 | `CostBudgetScorer` | `cost_budget` | Estimates USD per row (`metadata.cost_usd` explicit, else token counts, else `len(prediction)` × `usd_per_1k_output_chars`). Measure-only by default (`max_cost_usd` unset → always pass, `score=1.0`). The dollar figure is copied onto row metadata so `EvalReport.mean_cost_usd` can be gated via `MANGOMAS_EVAL__MAX_MEAN_COST_USD` (USD, default-off). |
 
 > Note: `regex_match` and `contains` reinterpret the per-row `expected` field
@@ -119,12 +131,18 @@ ADR-0004.
 
 | Target | Registry name | Behaviour |
 |---|---|---|
-| `AgentTarget` | `agent` | Dispatch one registered agent (default). The agent name comes from `--agent` / `MANGOMAS_EVAL__AGENT`, else `target_options["agent"]["agent"]`. Preserves pre-target-indirection behaviour. |
+| `AgentTarget` | `agent` | Dispatch one registered agent (default). The agent name comes from `--agent` / `MANGOMAS_EVAL__AGENT`, else `target_options["agent"]["agent"]`. Option `llm_profile` stamps a spec-0040 provider profile on every row's request, so one dataset can be run against a local and a cloud model and the two baselines compared. |
 | `PipelineTarget` | `pipeline` | Run a sequential pipeline (`orch.dispatch_pipeline`); grade the final agent's output. Option: `agents` (non-empty list). |
 | `FanOutTarget` | `fan_out` | Dispatch all agents in parallel (`orch.dispatch_fan_out`). Option: `agents` (list) and `join` (`first` → first agent's content, default; `concat` → newline-joined). |
 | `EchoTarget` | `echo` | Deterministic, no-LLM baseline. Returns a fixed `text` option if set, else the last user message. Useful for regression baselines and tests. |
 
-`EvalRunner.run(dataset, agent_name=...)` still works (the agent name is wrapped
+Every target returns a `TargetOutcome(content, metadata)` (spec-0045): the
+graded text plus the response metadata the dispatch produced (loop counters,
+`tool_calls`, measured `usage`). The runner stores it on
+`EvalRowResult.response_metadata` and hands it to scorers as
+`ScorerContext.response_metadata`, alongside the row's input `messages`. A
+third-party target still returning a bare `str` is wrapped with a one-time
+WARNING. `EvalRunner.run(dataset, agent_name=...)` still works (the agent name is wrapped
 in the `agent` target); pass `target=` to use any other target. The report's
 `agent_name` reflects the target name, and a new `target_name` field is added.
 Third-party targets register via the `mangomas.eval.targets` entry-point group
@@ -225,6 +243,37 @@ A drop is `baseline - current` (current run worse). A missing baseline file is
 exit 2 (config); a malformed one surfaces during the run as exit 1. Row
 regression keys on `row_id` stability — rows whose ids change show up as dropped
 + new rather than regressed.
+
+## Report provenance and slices
+
+Every `EvalReport` carries `run: RunProvenance` — `run_id`, `started_at`,
+`dataset_sha256` (a digest of the rows as parsed), scorer and target names,
+`mangomas_version`, `schema_version`, `git_sha` (`GITHUB_SHA`, else read from
+the repository's `.git` files, else `null`) and `labels` the CLI adds
+(`llm_provider`, `llm_model`, `llm_profile`, the scorer names, and digests of
+the option mappings). Sinks serialise it, `load_baseline` round-trips it, and
+`diff_reports` ignores it, so a regenerated baseline never drifts on a
+timestamp and two reports can be compared knowing what each ran.
+
+`slices` groups rows by `metadata[MANGOMAS_EVAL__SLICE_KEY]` (default
+`category`) into `size / passed / failed / errored / mean_score` — reporting
+only; nothing gates on a slice. The console sink also prints a Wilson 95 %
+interval on the pass rate, labelled *informational*: on eight to fifty rows the
+only honest regression signal is `regressed_rows`, and the interval exists so a
+reader does not mistake 7/8 for a regression against 8/8.
+
+## Deterministic lanes
+
+Two `make` targets run on every CI runner without an LLM and are part of
+`make gate` (spec-0045; see `evals/README.md` for what each can and cannot prove):
+
+| Target | What it runs | Proves |
+|---|---|---|
+| `make eval-selfcheck` | `mangomas eval` with the `echo` target over `evals/datasets/selfcheck_echo_v1.jsonl` against its committed baseline | The harness's own exit codes, threshold gate and baseline regression path. A harness self-test, not a quality gate. |
+| `make eval-lanes` | `tests/evals/test_dataset_lanes.py`: each row of `planner_v1`, `reviewer_v1` and `safety_toolagent_v1` replayed through the real agent with the scripted `FakeLLM` transcript in `metadata.fixture`, scored and diffed against `evals/baselines/` | Agent post-processing (planner / reviewer parse-and-validate), `ToolAgent` policy refusals and trace, the scorer contract, and — via outgoing-prompt assertions — that each agent still sends its schema / tool roster. **Not** prompt quality: replies are fixtures chosen by call index. |
+
+`make eval-selfcheck-baseline` and `make eval-lanes-baseline` rewrite the
+baselines; `git diff` on them is the review.
 
 ## Result sinks
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed; accepted on merge of spec-0045 PR-B.
+Accepted on merge of spec-0045 PR-B (#124); the governance half landed in #123.
 
 ## Context
 
@@ -68,11 +68,15 @@ Written per project as Thesis / Counter-argument / Rebuttal / Verdict.
 - **Ragas.** *Thesis:* `ToolCallAccuracy` and the RAG triad (faithfulness,
   context recall/precision). *Counter:* the triad's prompts were validated on
   GPT-4-class judges, not local 4B models; `ToolCallAccuracy` compares
-  names+args by exact match. *Rebuttal:* names+args exact-match is
-  deterministic and already expressible as `json_field` over the recorded
-  trace. *Verdict:* port the deterministic tool-call semantics; no
-  faithfulness/relevancy prompts without a calibration record; context recall
-  waits for a `Tool` metadata channel (Tier 2).
+  names+args by exact match. *Rebuttal:* names are deterministic and
+  graded now by `tool_trajectory` (recall / missing / extra / budget);
+  arguments are recorded as `sha256:` digests by default, and the recorded
+  trace is a *list*, which the `json_field` path (mappings only) cannot index.
+  *Verdict:* port the deterministic tool-*name* semantics in Tier 1;
+  argument-level exact-match is Tier 2 (list indexing or a dedicated
+  `tool_trajectory` option, comparing digests); no faithfulness/relevancy
+  prompts without a calibration record; context recall waits for a `Tool`
+  metadata channel (Tier 2).
 - **promptfoo.** *Thesis:* adopt its YAML assertion runner. *Counter:* a Node
   runtime and a second config language in a Python repo. *Rebuttal:* its
   `json-schema`, `contains`, `latency-under` assertions are one-liners over

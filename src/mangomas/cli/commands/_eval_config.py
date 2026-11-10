@@ -17,14 +17,15 @@ import typer
 
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.errors import ConfigError
-from mangomas.eval import dataset_source_registry, sink_registry, target_registry
+from mangomas.eval import dataset_source_registry, scorer_registry, sink_registry, target_registry
 from mangomas.eval._options import require_non_negative_float, require_unit_float
+from mangomas.eval.provenance import digest_of
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
-    from mangomas.config import EvalSettings
-    from mangomas.eval import DatasetSource, Sink, Target
+    from mangomas.config import EvalSettings, Settings
+    from mangomas.eval import DatasetSource, Scorer, Sink, Target
 
 
 def _build_sinks(
@@ -52,6 +53,83 @@ def _build_sinks(
         options.setdefault("json_file", dict(sink_options.get("json_file", {})))
         options["json_file"]["path"] = output_json
     return [sink_registry.get(name)(options.get(name, {})) for name in names]
+
+
+_COMPOSITE_SCORER = "composite"
+
+
+def _resolve_llm_labels(
+    settings: Settings, target_name: str, agent_flag: str | None
+) -> tuple[str, str, str | None]:
+    """``(provider, model, profile)`` the run will actually use (spec-0045 B6).
+
+    Mirrors the dispatch precedence (spec-0040 / ADR-0028): for the ``agent``
+    target a selected ``llm_profile`` names its own provider and model, else an
+    agent ``MODEL_OVERRIDE`` swaps the model on the base provider, else the
+    shared client. Other targets dispatch several agents, so only the shared
+    client is a truthful label for them and no profile is stamped.
+    """
+    base = (settings.llm.provider, settings.llm.model, None)
+    if target_name != "agent":
+        return base
+    # ``EvalSettings.target_options`` is typed ``dict[str, dict[str, object]]``,
+    # so the per-target block is always a mapping once settings have parsed.
+    agent_options = settings.eval.target_options.get("agent", {})
+    profile = agent_options.get("llm_profile")
+    if isinstance(profile, str) and profile in settings.llm_profiles:
+        selected = settings.llm_profiles[profile]
+        return selected.provider, selected.model, profile
+    agent_name = agent_flag or agent_options.get("agent") or settings.eval.agent
+    agent_settings = settings.agents.get(str(agent_name))
+    override = agent_settings.model_override if agent_settings is not None else None
+    if isinstance(override, str) and override.strip():
+        return settings.llm.provider, override.strip(), None
+    return base
+
+
+def _provenance_labels(
+    settings: Settings,
+    target_name: str,
+    scorer_names: list[str],
+    *,
+    agent_flag: str | None = None,
+) -> dict[str, object]:
+    """Caller-side provenance the runner cannot see (spec-0045 B6).
+
+    Provider and model follow the client the ``agent`` target will dispatch
+    through (profile, then per-agent model override, then the shared client);
+    the profile is the one it stamps on every row, if any. Option mappings are
+    digested rather than copied so a secret-shaped option never lands in a
+    report.
+    """
+    provider, model, profile = _resolve_llm_labels(settings, target_name, agent_flag)
+    return {
+        "llm_provider": provider,
+        "llm_model": model,
+        "llm_profile": profile,
+        "scorers": list(scorer_names),
+        "scorer_options_sha256": digest_of(settings.eval.scorer_options),
+        "target_options_sha256": digest_of(settings.eval.target_options.get(target_name, {})),
+    }
+
+
+def _build_scorer(names: list[str], scorer_options: dict[str, object]) -> Scorer:
+    """One name → that scorer with the flat options; several → a ``composite``.
+
+    With one scorer ``MANGOMAS_EVAL__SCORER_OPTIONS`` is handed to it whole
+    (today's contract). With several (`-s a -s b`, spec-0045 B5) each child
+    takes the sub-mapping under its own name, so one env var still configures
+    every child, and the row records each child's result separately.
+    """
+    if len(names) == 1:
+        return scorer_registry.get(names[0])(dict(scorer_options))
+    children: list[dict[str, object]] = []
+    for name in names:
+        options = scorer_options.get(name)
+        children.append(
+            {"name": name, "options": dict(options) if isinstance(options, dict) else {}}
+        )
+    return scorer_registry.get(_COMPOSITE_SCORER)({"scorers": children})
 
 
 def _build_target(

@@ -54,6 +54,7 @@ class LLMJudgeScorer:
 
     def __init__(self, *, threshold: float = DEFAULT_JUDGE_THRESHOLD) -> None:
         self._threshold = require_unit_float(threshold, owner=self.name)
+        self._warned_self_grading = False
 
     async def score(
         self,
@@ -66,6 +67,17 @@ class LLMJudgeScorer:
             raise LLMBadResponse(
                 f"{self.name} requires a ScorerContext with an LLM client; "
                 "the EvalRunner is expected to inject one from AgentContext."
+            )
+        if not self._warned_self_grading:
+            # ``ScorerContext.llm`` is the system under test's own client, so
+            # the judge grades its own provider with no calibration record —
+            # reported, and not to be gated on until the C2 calibration lands
+            # (spec-0045 R7; reliability plan C2).
+            self._warned_self_grading = True
+            logger.warning(
+                "llm_judge grades with the system-under-test's own LLM client (self-grading, "
+                "uncalibrated); treat its scores as informational",
+                extra={"event": "eval_llm_judge_self_grading", "scorer": self.name},
             )
         messages = _build_judge_messages(prediction, expected)
         logger.debug(

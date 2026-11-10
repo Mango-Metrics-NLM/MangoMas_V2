@@ -49,7 +49,8 @@ frontmatter,
 protected-paths, test, per-package coverage, bridge coverage, contracts
 coverage, scripts coverage)
 in `gate`'s own order — which is **not** CI's: the `lint` job runs `frontmatter`
-before `typecheck`/`lint-imports`, `gate` runs it after. Note `protected-paths`
+before `typecheck`/`lint-imports`, `gate` runs it after. `gate` also runs the two
+deterministic eval lanes, `eval-selfcheck` and `eval-lanes` (spec-0045). Note `protected-paths`
 runs locally too, not only in CI; `make help` lists the rest. Prefer it
 over retyping paths: CI's lint surface is
 `src tests scripts eval_harness_bridge/src mango-integration-contracts/src`, which is wider than the
@@ -241,7 +242,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_RAG__CHUNK_OVERLAP` | `120` | Overlap (words); validated `< chunk_words` |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent the default `agent` target dispatches |
 | `MANGOMAS_EVAL__DATASET_PATH` | _(none)_ | Default dataset path when `-d` is omitted |
-| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`llm_judge`/`embedding`/`cost_budget`) |
+| `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`exact_match`/`regex_match`/`contains`/`json_keys`/`json_field`/`tool_trajectory`/`composite`/`llm_judge`/`embedding`/`cost_budget`) |
 | `MANGOMAS_EVAL__SCORER_OPTIONS` | `{}` | Per-scorer options keyed by scorer name |
 | `MANGOMAS_EVAL__TARGET` | `agent` | Eval target (`agent`/`pipeline`/`fan_out`/`echo`) resolved via `target_registry` |
 | `MANGOMAS_EVAL__TARGET_OPTIONS` | `{}` | Per-target options keyed by target name (e.g. `{"pipeline": {"agents": [...]}}`) |
@@ -258,6 +259,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__ALLOW_NEW_FAILURES` | `true` | Regression gate: fail (exit 3) on rows that passed in baseline but fail now when `false` |
 | `MANGOMAS_EVAL__SINKS` | `["console"]` | Result sinks (`console`/`json_file`/`sqlite_results`/`webhook`/`langfuse`) |
 | `MANGOMAS_EVAL__SINK_OPTIONS` | `{}` | Per-sink options keyed by sink name |
+| `MANGOMAS_EVAL__SLICE_KEY` | `category` | Row-metadata key the report's per-slice aggregates (`EvalReport.slices`) group by; reporting only, never gated (spec-0045) |
 | `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Directory for `json_file`/`sqlite_results` artefacts |
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Concurrent eval rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Stop the run on the first errored row |
@@ -344,7 +346,14 @@ gates the run for CI. Everything is additive and default-OFF. See
 
 - **Scorers** (`eval/scorers/`, registered in `scorer_registry`): `exact_match`,
   `regex_match`, `contains`, `json_keys` (schema-conformance for `planner`/
-  `reviewer` JSON output), `llm_judge`, `embedding`, `cost_budget`.
+  `reviewer` JSON output), `json_field` (ADR-0034 structured acceptance as a
+  scorer), `tool_trajectory` (which tools `ToolAgent` ran, from its
+  `metadata.tool_calls` trace), `composite` (several per row, min/all; `-s`
+  repeatable), `llm_judge` (self-grading; reported, not to be gated on until
+  calibrated), `embedding`, `cost_budget` (measured tier when the adapter
+  reports usage). Spec-0045: `Target.run -> TargetOutcome` carries response
+  metadata to scorers; `EvalReport.run` is provenance, `slices` per-category
+  aggregates; `DatasetRow.expected_error` expresses a must-refuse row.
 - **Targets** (`eval/target.py` + `eval/targets/`, registered in `target_registry`):
   `agent` (default — dispatch one agent), `pipeline`, `fan_out`, and `echo`
   (deterministic baseline). `EvalRunner.run` takes an optional `target=`; the

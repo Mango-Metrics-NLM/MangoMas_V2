@@ -30,10 +30,12 @@ from mangomas.eval.protocol import (
     ScorerContext,
     ScoreResult,
 )
+from mangomas.eval.provenance import RunProvenance, build_provenance
 from mangomas.eval.registry import ScorerFactory, scorer_registry
-from mangomas.eval.runner import EvalReport, EvalRowResult, EvalRunner
+from mangomas.eval.runner import EvalReport, EvalRowResult, EvalRunner, SliceStats
 from mangomas.eval.sink import Sink
 from mangomas.eval.sink_registry import SinkFactory, sink_registry
+from mangomas.eval.stats import wilson_interval
 from mangomas.eval.target import Target
 from mangomas.eval.target_registry import TargetFactory, target_registry
 
@@ -46,14 +48,17 @@ __all__ = [
     "EvalRunner",
     "GateResult",
     "ReportDiff",
+    "RunProvenance",
     "ScoreResult",
     "Scorer",
     "ScorerContext",
     "ScorerFactory",
     "Sink",
     "SinkFactory",
+    "SliceStats",
     "Target",
     "TargetFactory",
+    "build_provenance",
     "dataset_source_registry",
     "diff_reports",
     "discover_dataset_sources",
@@ -69,4 +74,5 @@ __all__ = [
     "scorer_registry",
     "sink_registry",
     "target_registry",
+    "wilson_interval",
 ]

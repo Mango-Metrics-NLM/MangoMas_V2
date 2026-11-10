@@ -1,6 +1,6 @@
 # Spec-0045: Measured evaluation and governance mechanisation
 
-- **Status:** Draft
+- **Status:** Implemented (PR-A in #123; PR-B / PR-C in #124)
 - **Linked ADR:** [ADR-0041](../docs/adr/0041-open-source-eval-pattern-adoption.md)
 - **Linked CHANGELOG entry:** `[Unreleased]` › `Added — measured eval outcomes, deterministic eval lanes, governance probes (spec-0045 / ADR-0041)`
 - **Delivery plan:** [`docs/plans/20261109T000000Z-measured-eval-and-governance-plan.md`](../docs/plans/20261109T000000Z-measured-eval-and-governance-plan.md)
@@ -61,30 +61,45 @@ Every requirement is additive and default-OFF unless marked **mechanism**
   `llm_calls > 0`. Outside `usage_scope()` the ContextVar is unset and
   `record_usage` is a no-op — adapters behave as today. Vertex usage is Tier 2.
 - **R3 — Tool trace.** `ToolAgent` records
-  `metadata["tool_calls"] = [{tool, arguments, ok}]` under a per-agent mode
-  `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS = none|keys|full`, default
-  `keys` (argument **names** plus `sha256` of each value — truncation bounds
-  size, not secrecy). Because the pipeline forwarding site is protected
-  (`src/mangomas/core/orchestrator/_client.py:497-500`), `AgentTarget` strips
-  `tool_calls` from the outcome metadata forwarded to reports when the mode is
-  `full`; the in-pipeline forward into the next stage's `request.metadata` is
-  recorded as Tier 2. `tool_steps` is unchanged.
-- **R4 — `tool_trajectory` scorer.** Emits `recall`, `extra_tools`,
-  `missing_tools`, `policy_violations` (count of `ok=False` from
-  `harness.tool_policy`), `steps`; `passed = recall == 1.0 and not extra_tools
-  and not policy_violations`; option `allow_extra`. No set-similarity score:
-  argument checks belong to `json_field` predicates over the recorded trace.
+  `metadata["tool_calls"] = [{tool, arguments?}]` (completed calls, in order)
+  under a per-agent mode `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS =
+  none|keys|full`, default `keys` (argument **names** plus a `sha256:` digest of
+  each JSON-encoded value — the value itself never leaves the process;
+  truncation would bound size, not secrecy). `full` is an explicit per-agent
+  opt-in and is carried as-is: nothing downstream strips it, so the row states
+  the risk. A refused call raises out of `handle` and so never appears in the
+  trace (R5 records it as the row's outcome). The pipeline forwarding site is
+  protected (`src/mangomas/core/orchestrator/_client.py:497-500`); with the
+  `keys` default only digests are forwarded, and stripping in-pipeline is
+  Tier 2. `tool_steps` is unchanged.
+- **R4 — `tool_trajectory` scorer.** Emits `recall`, `missing_tools`,
+  `extra_tools`, `steps` (with an optional `max_steps` budget);
+  `passed = recall == 1.0 and (allow_extra or not extra_tools) and within
+  budget`; `score = recall` when passed-shape holds, else `0.0`. No
+  set-similarity score and no violation count: a policy refusal is an
+  `expected_error` row (R5), not a scorer metric. **Arguments are not graded
+  in Tier 1.** `tool_calls` is a list and the `json_field` path walks mappings
+  only (R6), so an argument-level check needs either list indexing in a later
+  `json_field` revision or a dedicated `tool_trajectory` option — Tier 2;
+  with the `keys` default such a check would compare digests, which is a
+  recognisable-but-not-recoverable equality, by design.
 - **R5 — `expected_error` on `DatasetRow`.** A row may name an error type
   (e.g. `ToolExecutionError`). The runner counts a matching raise as a
   *pass* instead of an errored row (`runner.py:168-188` today). Absent → today's
   behaviour.
-- **R6 — Structured scoring.** `scorers/json_field.py` ports the ADR-0034
-  semantics from `workflow/predicate/_json_field.py` verbatim: dotted path,
-  exactly one of `equals`/`at_least`/`at_most`, strict whole-text parse via
-  `core.structured.parse_llm_json_object`, booleans excluded from numeric
-  comparison, unparseable → `score 0.0`, never raises. `composite` scorer with
+- **R6 — Structured scoring.** `scorers/json_field.py` re-implements the
+  ADR-0034 semantics of `workflow/predicate/_json_field.py` (the two packages
+  are kept independent by import-linter): dotted path over **mappings only**
+  (a list index is not a segment), exactly one of `equals`/`at_least`/
+  `at_most` plus one additive `min_length` for lists and strings, strict
+  whole-text parse via `core.structured.parse_llm_json_object`, booleans
+  excluded from numeric comparison, unparseable or unresolvable → `score 0.0`,
+  never raises. The check comes from scorer options or per row from
+  `metadata["json_field"]` (row wins). It grades the **prediction text**
+  (planner / reviewer JSON), not the tool trace. `composite` scorer with
   `aggregate: min` and `pass: all` **only**; children recorded first-class under
-  `metadata["scores"]`. `-s/--scorer` becomes repeatable (one value = today).
+  `metadata["scores"]`. `-s/--scorer` becomes repeatable (one value = today;
+  several build a `composite` whose children take `SCORER_OPTIONS[<name>]`).
 - **R7 — Judge boundary.** The only `llm_judge` change: a `WARNING` when
   `context.llm is` the agent's client (self-grading). Rubric, `include_input`,
   samples, profile and lenient parse wait for the C2 calibration record.
@@ -116,12 +131,19 @@ Every requirement is additive and default-OFF unless marked **mechanism**
   proves exit codes and baseline diffing and says exactly that in
   `evals/README.md` — not model quality (ADR-0033; plan A7).
 - **R12 — `make eval-lanes` (mechanism).** `tests/evals/test_dataset_lanes.py`
-  runs `EvalRunner` with scripted `FakeLLM` orchestrators over the committed
-  datasets and asserts `diff_reports(baseline, current).regressed_rows == []`.
-  This is the reliability plan's headline acceptance ("a regressed agent prompt
-  must fail the gate") in deterministic form; the model-backed lane stays
-  manual (`make eval-live`, Tier 2). `tests/cognitive/test_adversarial_emit.py`
-  pins the INV-16 refusal path under adversarial transcripts.
+  replays every committed dataset row through the real agent with the
+  scripted `FakeLLM` transcript the row carries (`metadata.fixture`), scores it
+  with the dataset's scorer and asserts `diff_reports(baseline,
+  current).regressed_rows == []` plus "every row passes by construction".
+  **What it proves:** planner / reviewer parse-and-validate, `ToolAgent`
+  policy refusals and trace, the scorer contract, the baseline mechanics, and
+  — by asserting on the *outgoing* system prompt (`FakeLLM.calls[0]`) — that
+  each agent still sends its schema (planner/reviewer) or tool roster (tool
+  agent) to the model. **What it cannot prove:** a prompt *quality* regression,
+  because `FakeLLM` picks replies by call index, not by prompt content. That
+  claim belongs to the stubbed-LLM CLI lane and the live lane (Tier 2,
+  reliability plan C3). `tests/cognitive/test_adversarial_emit.py` pins the
+  INV-16 refusal path under adversarial transcripts.
 - **R13 — Governance probes (mechanism).** `MUT-GOV-01..03` in the guard-probe
   manifest target ADR-0030's named weaknesses: dropping the `protected-paths`
   CI job, silencing the base-ref fallback `WARNING`
@@ -161,12 +183,15 @@ green result from being vacuous.
   `--no-allow-new-failures` THEN `tests/deploy/test_ci_make_parity.py` fails
   (replaces v1's `MUT-EVAL-02`, which would have made the gate *greener* and so
   cannot be a red-first probe). WHEN the flag is present THEN it passes.
-- **Agent lanes.** WHEN the planner fixture reply in
-  `tests/evals/test_dataset_lanes.py` is edited so `steps` is empty THEN
-  `make eval-lanes` is red with `planner_v1` rows in `regressed_rows`
-  (`MUT-EVAL-03`). WHEN the fixtures match the committed baselines THEN it is
-  green with `regressed_rows == []` **and** at least one row per dataset
-  executed (a zero-row run fails, never passes).
+- **Agent lanes.** WHEN a planner fixture reply in
+  `evals/datasets/planner_v1.jsonl` is edited so `steps` is empty THEN
+  `make eval-lanes` is red (`MUT-EVAL-03`: the row fails `json_field
+  min_length` and so both the by-construction check and the baseline diff).
+  WHEN an agent's system prompt no longer carries its schema / tool roster THEN
+  the lane is red even though the scripted replies are unchanged. WHEN the
+  fixtures match the committed baselines THEN it is green with
+  `regressed_rows == []` **and** at least one row per dataset executed (a
+  zero-row run fails, never passes).
 - **MUT-GOV-01.** WHEN the `protected-paths` job is deleted from
   `.github/workflows/ci.yml` THEN
   `tests/deploy/test_ci_make_parity.py::test_protected_paths_job_delegates_to_make`
@@ -188,10 +213,13 @@ green result from being vacuous.
   through THEN the guard fails.
 - **Expected error.** WHEN a `safety_toolagent_v1` row declares
   `expected_error: ToolExecutionError` and the ungranted mutating tool is
-  refused THEN the row passes. WHEN the tool is *executed* THEN the row fails
-  with `policy_violations >= 1`.
-- **Judge boundary.** WHEN `llm_judge` scores with `context.llm` identical to
-  the agent client THEN one `WARNING` (`event="eval_judge_is_agent"`) is logged
+  refused THEN the row passes (`metadata.refused == true`, no scorer consulted).
+  WHEN the tool is *executed* and the agent answers THEN the row fails
+  (`metadata.refused == false`) without consulting the scorer. WHEN a different
+  error is raised THEN the row is still an *errored* row.
+- **Judge boundary.** WHEN `llm_judge` scores (it always grades with
+  `context.llm`, the system-under-test client) THEN one `WARNING` per scorer
+  instance (`event="eval_llm_judge_self_grading"`) is logged
   and the score is still reported. WHEN the clients differ THEN no warning.
 - **Deploy verify.** WHEN `deploy.yml verify` omits any of
   `make lint`, `format-check`, `typecheck`, `lint-imports`, `frontmatter` THEN
@@ -223,7 +251,7 @@ green result from being vacuous.
 
 | Env var (`MANGOMAS_*`) | Default | Purpose |
 |------------------------|---------|---------|
-| `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS` | `keys` | `ToolAgent` trace mode for `metadata["tool_calls"]`: `none` (no trace), `keys` (argument names + `sha256` of each value), `full` (verbatim; stripped by `AgentTarget` before reporting) |
+| `MANGOMAS_AGENTS__<NAME>__TOOL_TRACE_ARGUMENTS` | `keys` | `ToolAgent` trace mode for `metadata["tool_calls"]`: `none` (no trace), `keys` (argument names + `sha256` of each value), `full` (verbatim; an explicit opt-in that nothing downstream strips) |
 | `MANGOMAS_EVAL__SLICE_KEY` | `category` | `DatasetRow.metadata` key used to group `EvalReport.slices` (reporting only, never gated) |
 | `MANGOMAS_EVAL__SCHEMA_VERSION` | `2` (was `1`) | `DEFAULT_EVAL_SCHEMA_VERSION` bump marking the `TargetOutcome` seam; `1` still parses |
 
@@ -302,14 +330,14 @@ and re-exported in `tests.constants`.
 
 Persona outcomes, copied from the plan's Verification section:
 
-- [ ] A planner fixture whose reply loses `steps` turns CI red (`make eval-lanes`, `MUT-EVAL-03`).
-- [ ] A developer copies `evals/datasets/chat_v1.jsonl` and runs `make eval-lanes` in under ten minutes.
-- [ ] The `json_file` report shows run id, model, profile, per-slice pass rate and *measured* cost.
-- [ ] `deploy.yml verify` runs the same offline checks CI does.
+- [x] A planner fixture whose reply loses `steps` turns CI red (`make eval-lanes`, `MUT-EVAL-03`).
+- [x] A developer copies a row from `evals/datasets/planner_v1.jsonl` (the fixture convention is in `evals/README.md`) and runs `make eval-lanes` in under ten minutes.
+- [x] The `json_file` report shows run id, model, profile, per-slice pass rate and *measured* cost (`tests/eval/test_provenance_slices.py`, `test_usage_capture.py`).
+- [x] `deploy.yml verify` runs the same offline checks CI does (`tests/deploy/test_deploy_contract.py`).
 
 Mechanical:
 
-- [ ] Feature off by default → no behaviour change (`test_cost_measurement_basis.py`, `test_tool_trace.py` prove it).
-- [ ] `make gate` + `make guard-probe` green locally and in CI.
-- [ ] `test_env_example_contract.py` and `test_ci_make_parity.py` pass.
-- [ ] CHANGELOG block names the locking test for each guard; ADR-0041 Accepted on merge of PR-B; this spec flipped to Implemented in PR-B's last commit.
+- [x] Feature off by default → no behaviour change (`test_cost_measurement_basis.py`, `tests/test_tool_agent.py` trace tests prove it).
+- [x] `make gate` + `make guard-probe` green locally and in CI.
+- [x] `test_env_example_contract.py` and `test_ci_make_parity.py` pass.
+- [x] CHANGELOG block names the locking test for each guard; ADR-0041 Accepted on merge of PR-B; this spec flipped to Implemented in PR-B's last commit.
