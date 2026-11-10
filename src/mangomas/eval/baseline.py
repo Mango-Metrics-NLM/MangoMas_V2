@@ -21,6 +21,7 @@ from typing import Any
 
 from opentelemetry import trace
 
+from mangomas.config import DEFAULT_EVAL_TRIALS
 from mangomas.errors import ConfigError
 from mangomas.eval.provenance import RunProvenance
 from mangomas.eval.runner import EvalReport, EvalRowResult, SliceStats
@@ -153,6 +154,9 @@ def _report_from_dict(data: Mapping[str, Any]) -> EvalReport:
                 name: SliceStats(**{k: v for k, v in raw.items() if k in _SLICE_FIELDS})
                 for name, raw in (data.get("slices") or {}).items()
             },
+            trials=data.get("trials", DEFAULT_EVAL_TRIALS),
+            pass_pow_k=data.get("pass_pow_k"),
+            trial_pass_rate=data.get("trial_pass_rate"),
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         # ``AttributeError``: a row that is not an object (``.items`` on a list /

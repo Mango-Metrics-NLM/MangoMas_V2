@@ -84,6 +84,7 @@ async def _evaluate_run_gates(
     min_pass_rate: float | None,
     fail_on_error: bool,
     max_mean_cost_usd: float | None,
+    min_pass_pow_k: float | None = None,
     baseline: EvalReport | None,
     max_mean_score_drop: float | None,
     max_pass_rate_drop: float | None,
@@ -102,6 +103,7 @@ async def _evaluate_run_gates(
             min_pass_rate=min_pass_rate,
             fail_on_error=fail_on_error,
             max_mean_cost_usd=max_mean_cost_usd,
+            min_pass_pow_k=min_pass_pow_k,
         )
         if gating_engaged
         else None
@@ -155,6 +157,8 @@ def _run_eval_pipeline(
     max_mean_score_drop: float | None,
     max_pass_rate_drop: float | None,
     allow_new_failures: bool | None,
+    trials: int | None = None,
+    min_pass_pow_k: float | None = None,
 ) -> None:
     """Resolve eval config, run the dataset, emit sinks, and apply the gate."""
     settings = get_settings()
@@ -166,19 +170,31 @@ def _run_eval_pipeline(
     source_name = dataset_source or cfg.dataset_source
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
     effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
+    effective_trials = trials if trials is not None else cfg.trials
+    if effective_trials < 1:
+        typer.echo(
+            f"Eval configuration error: trials must be >= 1; got {effective_trials}", err=True
+        )
+        raise typer.Exit(code=EXIT_CONFIG_ERROR)
     logger.debug(
         "Eval run starting",
         extra={"event": "eval_run_start", "scorer": scorer_name, "target": target_name},
     )
-    gating_engaged, eff_min_mean, eff_min_pass, eff_fail_on_error, eff_max_mean_cost = (
-        _resolve_gating(
-            gate=gate,
-            min_mean_score=min_mean_score,
-            min_pass_rate=min_pass_rate,
-            fail_on_error=fail_on_error,
-            max_mean_cost_usd=max_mean_cost_usd,
-            cfg=cfg,
-        )
+    (
+        gating_engaged,
+        eff_min_mean,
+        eff_min_pass,
+        eff_fail_on_error,
+        eff_max_mean_cost,
+        eff_min_pass_pow_k,
+    ) = _resolve_gating(
+        gate=gate,
+        min_mean_score=min_mean_score,
+        min_pass_rate=min_pass_rate,
+        fail_on_error=fail_on_error,
+        max_mean_cost_usd=max_mean_cost_usd,
+        min_pass_pow_k=min_pass_pow_k,
+        cfg=cfg,
     )
     effective_baseline, eff_max_mean_drop, eff_max_pass_drop, eff_allow_new = _resolve_regression(
         baseline=baseline,
@@ -209,6 +225,7 @@ def _run_eval_pipeline(
         parallelism=effective_parallelism,
         fail_fast=effective_fail_fast,
         slice_key=cfg.slice_key,
+        trials=effective_trials,
         provenance_labels=_provenance_labels(settings, target_name, scorer_names, agent_flag=agent),
     )
 
@@ -225,6 +242,7 @@ def _run_eval_pipeline(
             min_pass_rate=eff_min_pass,
             fail_on_error=eff_fail_on_error,
             max_mean_cost_usd=eff_max_mean_cost,
+            min_pass_pow_k=eff_min_pass_pow_k,
             baseline=baseline_report,
             max_mean_score_drop=eff_max_mean_drop,
             max_pass_rate_drop=eff_max_pass_drop,
@@ -283,6 +301,15 @@ def eval_cmd(
         "--fail-fast/--no-fail-fast",
         help="Cancel remaining rows after the first non-pass.",
     ),
+    trials: int | None = typer.Option(
+        None,
+        "--trials",
+        "-k",
+        help=(
+            "Attempts per row; a row passes only when all k pass, so pass_rate is "
+            "pass^k (default from MANGOMAS_EVAL__TRIALS)."
+        ),
+    ),
     output_json: str | None = typer.Option(
         None,
         "--output-json",
@@ -313,6 +340,11 @@ def eval_cmd(
         None,
         "--max-mean-cost-usd",
         help="Fail (exit 3) if mean_cost_usd exceeds this USD threshold.",
+    ),
+    min_pass_pow_k: float | None = typer.Option(
+        None,
+        "--min-pass-pow-k",
+        help="Fail (exit 3) if pass_pow_k < this threshold; requires --trials >= 2.",
     ),
     baseline: str | None = typer.Option(
         None,
@@ -352,6 +384,8 @@ def eval_cmd(
         min_pass_rate=min_pass_rate,
         fail_on_error=fail_on_error,
         max_mean_cost_usd=max_mean_cost_usd,
+        min_pass_pow_k=min_pass_pow_k,
+        trials=trials,
         baseline=baseline,
         max_mean_score_drop=max_mean_score_drop,
         max_pass_rate_drop=max_pass_rate_drop,

@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS eval_rows (
 _ADDITIVE_REPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("mean_cost_usd", "REAL"),
     ("run_json", "TEXT"),
+    # spec-0046: attempts per row and the pass^k fraction.
+    ("trials", "INTEGER"),
+    ("pass_pow_k", "REAL"),
 )
 
 
@@ -139,8 +142,9 @@ class SqliteResultsSink:
         cur = conn.execute(
             "INSERT INTO eval_reports "
             "(ts, scorer, agent_name, target_name, dataset_size, passed, failed, "
-            "errored, mean_score, duration_ms, gate_json, mean_cost_usd, run_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "errored, mean_score, duration_ms, gate_json, mean_cost_usd, run_json, "
+            "trials, pass_pow_k) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 clock.now().isoformat(),
                 report.scorer,
@@ -155,6 +159,8 @@ class SqliteResultsSink:
                 gate_json,
                 report.mean_cost_usd,
                 run_json,
+                report.trials,
+                report.pass_pow_k,
             ),
         )
         report_id = int(cur.lastrowid or 0)

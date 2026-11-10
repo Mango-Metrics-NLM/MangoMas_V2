@@ -280,3 +280,16 @@ async def test_sqlite_results_sink_wraps_unserialisable_metadata(tmp_path: Path)
     report = type(report)(**{**report.__dict__, "rows": [row]})
     with pytest.raises(PersistenceError):
         await SqliteResultsSink(db_path=str(tmp_path / "r.db")).emit(report)
+
+
+async def test_sqlite_results_sink_stores_trials_and_pass_pow_k(tmp_path: Path) -> None:
+    db = tmp_path / "results.db"
+    import dataclasses  # noqa: PLC0415 — local to keep the module header untouched
+
+    report = dataclasses.replace(_report(), trials=4, pass_pow_k=0.25)
+    await SqliteResultsSink(db_path=str(db)).emit(report)
+    with sqlite3.connect(db) as conn:
+        (trials, pass_pow_k) = conn.execute(
+            "SELECT trials, pass_pow_k FROM eval_reports"
+        ).fetchone()
+    assert (trials, pass_pow_k) == (4, 0.25)

@@ -37,12 +37,14 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__OUTPUT_DIR` | `eval-output` | Default report directory |
 | `MANGOMAS_EVAL__PARALLELISM` | `1` | Max concurrent rows |
 | `MANGOMAS_EVAL__FAIL_FAST` | `false` | Cancel after first non-pass |
+| `MANGOMAS_EVAL__TRIALS` | `1` | Attempts per row (`-k`); a row passes only when all attempts pass (pass^k) |
 | `MANGOMAS_EVAL__SCORER_OPTIONS` | `{}` | Free-form scorer options |
 | `MANGOMAS_EVAL__GATE_ENABLED` | `false` | Engage the quality gate (exit 3 on fail) |
 | `MANGOMAS_EVAL__MIN_MEAN_SCORE` | (unset) | Fail the gate if `mean_score` below this `[0,1]` |
 | `MANGOMAS_EVAL__MIN_PASS_RATE` | (unset) | Fail the gate if `passed/size` below this `[0,1]` |
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Fail the gate if any row errored |
 | `MANGOMAS_EVAL__MAX_MEAN_COST_USD` | (unset) | Fail the gate if `mean_cost_usd` exceeds this USD amount |
+| `MANGOMAS_EVAL__MIN_PASS_POW_K` | (unset) | Fail the gate if `pass_pow_k` below this `[0,1]`; fails closed when `TRIALS < 2` |
 | `MANGOMAS_EVAL__BASELINE_PATH` | (unset) | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | (unset) | Max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | (unset) | Max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -243,6 +245,44 @@ A drop is `baseline - current` (current run worse). A missing baseline file is
 exit 2 (config); a malformed one surfaces during the run as exit 1. Row
 regression keys on `row_id` stability — rows whose ids change show up as dropped
 + new rather than regressed.
+
+## Trials and pass^k (reliability)
+
+A single attempt per row measures capability, not reliability: an agent that
+answers a row correctly nine times in ten reads as a pass. `MANGOMAS_EVAL__TRIALS=k`
+(`--trials k` / `-k k`) repeats every row `k` times, each attempt with its own
+correlation id, and `collapse_trials` folds the attempts into the row's one
+result:
+
+| Row field | Under `k` trials |
+|---|---|
+| `passed` | `True` only when **every** attempt was a clean pass |
+| `score` | mean over non-errored attempts (`0.0` if all errored) |
+| `error` | the first attempt's error if any attempt errored (so `fail_on_error` sees intermittent crashes) |
+| `duration_ms` | sum over attempts |
+| `metadata.cost_usd` | mean over attempts that reported one |
+| `metadata.trials` | `{count, passed, errored, scores, correlation_ids}` |
+| `prediction`, `response_metadata`, `correlation_id` | the first attempt's |
+
+Because the collapsed row is a conjunction, `passed / dataset_size` **is**
+pass^k, and the report says so explicitly: `EvalReport.trials`,
+`EvalReport.pass_pow_k` (that fraction) and `EvalReport.trial_pass_rate` (passed
+attempts over all attempts — the pass@1 estimate). At `k=8` a 90 %-per-attempt
+agent reports `pass_pow_k ≈ 0.43`; `trial_pass_rate` still shows the 0.9.
+`k=1` is byte-identical to a run before this field existed.
+
+`MANGOMAS_EVAL__MIN_PASS_POW_K` (`--min-pass-pow-k`) adds a reliability
+threshold to the quality gate. Unlike the cost threshold it **fails closed**:
+a run with `trials < 2` cannot measure pass^k, so the gate fails with
+`min_pass_pow_k requires trials >= 2` rather than skipping — a reliability
+gate a single attempt can satisfy would be vacuous (ADR-0033). The regression
+gate is unchanged: a row that passed at `k=1` in the baseline and is flaky at
+`k=5` now is listed under `regressed_rows`, which is the point. Compare like
+with like: keep `trials` the same between a baseline and the run gated
+against it (`run.labels` do not record it; `report.trials` does).
+
+Trials multiply model calls and measured cost `k`-fold. `parallelism` still
+bounds concurrent *rows*; the `k` attempts of one row run sequentially.
 
 ## Report provenance and slices
 

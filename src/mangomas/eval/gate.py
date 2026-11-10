@@ -40,6 +40,9 @@ _COST_NON_FINITE_MEAN_NOTE = "mean_cost_usd is not a finite number"
 _EMPTY_DATASET_NOTE = "empty dataset — nothing to gate"
 _MEAN_SCORE_NON_FINITE_NOTE = "mean_score is not a finite number"
 _MEAN_DROP_NON_FINITE_NOTE = "mean_score drop is not a finite number"
+_RELIABILITY_UNAVAILABLE_NOTE = "pass_pow_k unavailable — min_pass_pow_k not met"
+#: ``min_pass_pow_k`` needs at least this many trials to mean anything.
+MIN_TRIALS_FOR_PASS_POW_K = 2
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,9 @@ class GateResult:
     kind: Literal["threshold", "regression"] = "threshold"
     actual_mean_cost_usd: float | None = None
     max_mean_cost_usd: float | None = None
+    # spec-0046: the reliability threshold and the report's pass^k.
+    min_pass_pow_k: float | None = None
+    actual_pass_pow_k: float | None = None
 
 
 # Sentinel supplying GateResult's own threshold-field defaults when
@@ -87,6 +93,7 @@ def evaluate_gate(
     min_pass_rate: float | None = None,
     fail_on_error: bool = False,
     max_mean_cost_usd: float | None = None,
+    min_pass_pow_k: float | None = None,
 ) -> GateResult:
     """Return a :class:`GateResult` for *report* against the given thresholds.
 
@@ -95,7 +102,11 @@ def evaluate_gate(
     the runner already returns a zeroed report for that case. ``max_mean_cost_usd``
     is USD (not a unit score); when the report has no ``mean_cost_usd`` the
     cost check is skipped rather than failed, so a quality-only run stays
-    valid if an operator also set a cost threshold.
+    valid if an operator also set a cost threshold. ``min_pass_pow_k`` is the
+    opposite: it fails *closed* when the run has fewer than
+    :data:`MIN_TRIALS_FOR_PASS_POW_K` trials or no ``pass_pow_k`` at all,
+    because a reliability threshold that a single attempt can satisfy is
+    vacuous (spec-0046).
     """
     pass_rate = report.passed / report.dataset_size if report.dataset_size else 0.0
     reasons: list[str] = []
@@ -121,16 +132,9 @@ def evaluate_gate(
         if fail_on_error and report.errored > 0:
             reasons.append(f"{report.errored} row(s) errored (fail_on_error)")
         if max_mean_cost_usd is not None:
-            if not math.isfinite(max_mean_cost_usd):
-                reasons.append(_COST_NON_FINITE_THRESHOLD_NOTE)
-            elif report.mean_cost_usd is None:
-                reasons.append(_COST_UNAVAILABLE_NOTE)
-            elif not math.isfinite(report.mean_cost_usd):
-                reasons.append(_COST_NON_FINITE_MEAN_NOTE)
-            elif report.mean_cost_usd > max_mean_cost_usd:
-                reasons.append(
-                    f"mean_cost_usd {report.mean_cost_usd} > max_mean_cost_usd {max_mean_cost_usd}"
-                )
+            reasons.extend(_cost_reasons(report, max_mean_cost_usd))
+        if min_pass_pow_k is not None:
+            reasons.extend(_reliability_reasons(report, min_pass_pow_k))
 
     informational = {_EMPTY_DATASET_NOTE, _COST_UNAVAILABLE_NOTE}
     failing = [reason for reason in reasons if reason not in informational]
@@ -145,9 +149,44 @@ def evaluate_gate(
         reasons=reasons,
         actual_mean_cost_usd=report.mean_cost_usd,
         max_mean_cost_usd=max_mean_cost_usd,
+        min_pass_pow_k=min_pass_pow_k,
+        actual_pass_pow_k=report.pass_pow_k,
     )
     _log(result)
     return result
+
+
+def _cost_reasons(report: EvalReport, max_mean_cost_usd: float) -> list[str]:
+    """The cost ladder: an unavailable mean is an informational skip, never a fail."""
+    if not math.isfinite(max_mean_cost_usd):
+        return [_COST_NON_FINITE_THRESHOLD_NOTE]
+    if report.mean_cost_usd is None:
+        return [_COST_UNAVAILABLE_NOTE]
+    if not math.isfinite(report.mean_cost_usd):
+        return [_COST_NON_FINITE_MEAN_NOTE]
+    if report.mean_cost_usd > max_mean_cost_usd:
+        return [f"mean_cost_usd {report.mean_cost_usd} > max_mean_cost_usd {max_mean_cost_usd}"]
+    return []
+
+
+def _reliability_reasons(report: EvalReport, min_pass_pow_k: float) -> list[str]:
+    """The ``min_pass_pow_k`` verdict: fails closed when pass^k is not measured.
+
+    A single attempt cannot measure reliability, so a run with fewer than
+    :data:`MIN_TRIALS_FOR_PASS_POW_K` trials fails the threshold outright
+    rather than skipping it (the cost gate's skip-when-unavailable rule is
+    deliberately *not* reused here — spec-0046).
+    """
+    if report.trials < MIN_TRIALS_FOR_PASS_POW_K:
+        return [
+            f"min_pass_pow_k requires trials >= {MIN_TRIALS_FOR_PASS_POW_K}; "
+            f"the run used trials={report.trials}"
+        ]
+    if report.pass_pow_k is None or not math.isfinite(report.pass_pow_k):
+        return [_RELIABILITY_UNAVAILABLE_NOTE]
+    if report.pass_pow_k < min_pass_pow_k:
+        return [f"pass_pow_k {report.pass_pow_k:.3f} < min_pass_pow_k {min_pass_pow_k:.3f}"]
+    return []
 
 
 def evaluate_regression_gate(
@@ -227,6 +266,8 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
         reasons=reasons,
         actual_mean_cost_usd=threshold_result.actual_mean_cost_usd,
         max_mean_cost_usd=threshold_result.max_mean_cost_usd,
+        min_pass_pow_k=threshold_result.min_pass_pow_k,
+        actual_pass_pow_k=threshold_result.actual_pass_pow_k,
     )
 
 
@@ -262,6 +303,10 @@ def _log(result: GateResult) -> None:
             span.set_attribute("gate.mean_cost_usd", result.actual_mean_cost_usd)
         if result.max_mean_cost_usd is not None:
             span.set_attribute("gate.max_mean_cost_usd", result.max_mean_cost_usd)
+        if result.actual_pass_pow_k is not None:
+            span.set_attribute("gate.pass_pow_k", result.actual_pass_pow_k)
+        if result.min_pass_pow_k is not None:
+            span.set_attribute("gate.min_pass_pow_k", result.min_pass_pow_k)
     logger.info(
         "Eval gate evaluated",
         extra={
@@ -270,6 +315,7 @@ def _log(result: GateResult) -> None:
             "mean_score": result.actual_mean_score,
             "pass_rate": result.actual_pass_rate,
             "mean_cost_usd": result.actual_mean_cost_usd,
+            "pass_pow_k": result.actual_pass_pow_k,
             "errored": result.errored,
             "reasons": result.reasons,
         },

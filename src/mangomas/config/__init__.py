@@ -159,6 +159,9 @@ from mangomas.config.evaluation import (
     DEFAULT_EVAL_MIN_MEAN_SCORE as DEFAULT_EVAL_MIN_MEAN_SCORE,
 )
 from mangomas.config.evaluation import (
+    DEFAULT_EVAL_MIN_PASS_POW_K as DEFAULT_EVAL_MIN_PASS_POW_K,
+)
+from mangomas.config.evaluation import (
     DEFAULT_EVAL_MIN_PASS_RATE as DEFAULT_EVAL_MIN_PASS_RATE,
 )
 from mangomas.config.evaluation import (
@@ -181,6 +184,9 @@ from mangomas.config.evaluation import (
 )
 from mangomas.config.evaluation import (
     DEFAULT_EVAL_TARGET as DEFAULT_EVAL_TARGET,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_TRIALS as DEFAULT_EVAL_TRIALS,
 )
 from mangomas.config.evaluation import (
     DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS as DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS,
@@ -518,6 +524,7 @@ __all__ = [
     "DEFAULT_EVAL_MAX_MEAN_SCORE_DROP",
     "DEFAULT_EVAL_MAX_PASS_RATE_DROP",
     "DEFAULT_EVAL_MIN_MEAN_SCORE",
+    "DEFAULT_EVAL_MIN_PASS_POW_K",
     "DEFAULT_EVAL_MIN_PASS_RATE",
     "DEFAULT_EVAL_OUTPUT_DIR",
     "DEFAULT_EVAL_PARALLELISM",
@@ -526,6 +533,7 @@ __all__ = [
     "DEFAULT_EVAL_SINKS",
     "DEFAULT_EVAL_SLICE_KEY",
     "DEFAULT_EVAL_TARGET",
+    "DEFAULT_EVAL_TRIALS",
     "DEFAULT_EVAL_WEBHOOK_TIMEOUT_SECONDS",
     "DEFAULT_GCP_SECRETS_TIMEOUT_SECONDS",
     "DEFAULT_GCP_SECRET_VERSION",

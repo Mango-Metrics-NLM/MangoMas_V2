@@ -121,3 +121,17 @@ def test_gate_result_serialises_in_json_payload() -> None:
     # GateResult must be asdict-able for the json_file payload.
     gate = GateResult(passed=True, actual_mean_score=1.0, actual_pass_rate=1.0)
     assert dataclasses.asdict(gate)["passed"] is True
+
+
+async def test_console_sink_prints_the_trials_line_only_for_multi_trial_runs() -> None:
+    lines: list[str] = []
+    await ConsoleSink(write=lines.append).emit(_report())
+    assert all("pass_pow_k=" not in line for line in lines), "k=1 output is unchanged"
+    multi = dataclasses.replace(_report(), trials=3, pass_pow_k=0.5, trial_pass_rate=0.75)
+    lines.clear()
+    await ConsoleSink(write=lines.append).emit(multi)
+    assert "trials=3 pass_pow_k=0.500 trial_pass_rate=0.750" in lines
+    no_rate = dataclasses.replace(multi, trial_pass_rate=None)
+    lines.clear()
+    await ConsoleSink(write=lines.append).emit(no_rate)
+    assert "trials=3 pass_pow_k=0.500" in lines

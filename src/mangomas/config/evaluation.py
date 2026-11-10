@@ -41,6 +41,13 @@ DEFAULT_EVAL_PARALLELISM: int = 1
 DEFAULT_EVAL_FAIL_FAST: bool = False
 
 
+# Trials per row (spec-0046 / reliability plan C1). ``1`` is today's single
+# attempt, byte-identical. ``k > 1`` repeats every row ``k`` times and a row
+# passes only when *all* ``k`` trials pass, so ``passed / dataset_size`` is
+# pass^k — the reliability metric of record — and the per-trial average is
+# reported beside it as ``trial_pass_rate`` (the pass@1 estimate).
+DEFAULT_EVAL_TRIALS: int = 1
+
 # Per-slice aggregates (spec-0045 B6): rows are grouped by this key of their
 # ``metadata``; rows without it are simply unsliced. Reporting only — nothing
 # gates on a slice.
@@ -61,6 +68,12 @@ DEFAULT_EVAL_MIN_PASS_RATE: float | None = None
 
 DEFAULT_EVAL_FAIL_ON_ERROR: bool = False
 
+
+# Reliability threshold on ``EvalReport.pass_pow_k`` (spec-0046). ``None``
+# keeps the gate blind to it. Unlike the cost gate it fails *closed*: a run
+# with ``trials < 2`` cannot measure pass^k, so the gate fails rather than
+# skipping (a reliability gate that passes on a single trial is vacuous).
+DEFAULT_EVAL_MIN_PASS_POW_K: float | None = None
 
 # Cost dimension (Kapoor 2024 / analysis §9.B) — default OFF. USD is not a
 # unit score, so these are unbounded-above non-negative floats. The per-row
@@ -154,6 +167,9 @@ class EvalSettings(BaseModel):
     output_dir: str = DEFAULT_EVAL_OUTPUT_DIR
     parallelism: int = DEFAULT_EVAL_PARALLELISM
     fail_fast: bool = DEFAULT_EVAL_FAIL_FAST
+    # Trials per row (spec-0046): ``1`` is a single attempt; ``k`` makes the
+    # row's verdict the conjunction of ``k`` attempts (pass^k).
+    trials: int = DEFAULT_EVAL_TRIALS
     # Row-metadata key the report's per-slice aggregates group by (spec-0045 B6).
     slice_key: str = DEFAULT_EVAL_SLICE_KEY
     # Free-form per-scorer options (e.g. ``{"threshold": 0.8}``). Forwarded
@@ -184,6 +200,9 @@ class EvalSettings(BaseModel):
     fail_on_error: bool = DEFAULT_EVAL_FAIL_ON_ERROR
     # USD, not a ``[0, 1]`` score. ``None`` keeps the gate cost-blind.
     max_mean_cost_usd: float | None = DEFAULT_EVAL_MAX_MEAN_COST_USD
+    # Reliability threshold on ``pass_pow_k`` ``[0, 1]`` (spec-0046); needs
+    # ``trials >= 2`` at run time or the gate fails closed.
+    min_pass_pow_k: float | None = DEFAULT_EVAL_MIN_PASS_POW_K
 
     # ── Regression / baseline gating (CI) — default OFF ───────────────────────
     baseline_path: str | None = DEFAULT_EVAL_BASELINE_PATH
@@ -213,6 +232,7 @@ class EvalSettings(BaseModel):
         for label, value in (
             ("min_mean_score", self.min_mean_score),
             ("min_pass_rate", self.min_pass_rate),
+            ("min_pass_pow_k", self.min_pass_pow_k),
             ("max_mean_score_drop", self.max_mean_score_drop),
             ("max_pass_rate_drop", self.max_pass_rate_drop),
         ):
@@ -225,6 +245,8 @@ class EvalSettings(BaseModel):
                 "eval.max_mean_cost_usd must be a finite number >= 0.0; "
                 f"got {self.max_mean_cost_usd}"
             )
+        if self.trials < 1:
+            raise ValueError(f"eval.trials must be >= 1; got {self.trials}")
         if self.schema_version > DEFAULT_EVAL_SCHEMA_VERSION:
             logger.warning(
                 "Eval config declares a future schema_version; reading with current code",

@@ -159,10 +159,15 @@ floor. It is `workflow_dispatch`-only, `EVAL_GATE_ENABLED`-gated, five rows,
   documenting a third is how a platform loses its own thread.
 - Profiles are the matrix axis for everything below, not a separate phase.
 
-### Milestone C1 — `pass^k` as the reliability metric of record
+### Milestone C1 — `pass^k` as the reliability metric of record ✅ (spec-0046)
 
 - **Failing test first:** `tests/eval/test_runner_trials.py::test_pass_pow_k_falls_when_one_trial_of_k_fails`.
-- **Depends on:** C0.
+- **Depends on:** C0. *Shipped without C0:* the metric is profile-agnostic
+  (the runner collapses trials the same way under every env set), so C0's
+  matrix consumes it rather than gates it. Landed as
+  `specs/0046-pass-pow-k-trials.md`; `MIN_PASS_POW_K` fails closed on
+  `trials < 2` instead of skipping (the cost gate's rule was reviewed on
+  PR #124 as a silently disabled budget and deliberately not copied).
 - `pass^k` is a *runner* concern, not a scorer: it needs k trials of the same
   row. Add `MANGOMAS_EVAL__TRIALS` (default `1`, preserving today's behaviour
   exactly) and an additive `pass_pow_k` field on `EvalReport` = the fraction of
