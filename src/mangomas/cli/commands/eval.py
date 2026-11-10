@@ -209,7 +209,7 @@ def _run_eval_pipeline(
         parallelism=effective_parallelism,
         fail_fast=effective_fail_fast,
         slice_key=cfg.slice_key,
-        provenance_labels=_provenance_labels(settings, target_name, scorer_names),
+        provenance_labels=_provenance_labels(settings, target_name, scorer_names, agent_flag=agent),
     )
 
     async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:

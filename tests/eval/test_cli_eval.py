@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -14,13 +15,21 @@ from typer.testing import CliRunner
 import mangomas.cli.main as cli_main
 from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
+from mangomas.cli.commands._eval_config import _provenance_labels
 from mangomas.cli.main import app
-from mangomas.config import get_settings
+from mangomas.config import (
+    AgentSettings,
+    EvalSettings,
+    LLMProfileSettings,
+    Settings,
+    get_settings,
+)
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
 from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import (
+    DEFAULT_AGENT_NAME,
     EVAL_COST_CONTROLLED_DATASET_FILENAME,
     EVAL_COST_GATE_ABOVE_UNIT_USD,
     EVAL_COST_GATE_TINY_USD,
@@ -873,3 +882,73 @@ def test_eval_cli_report_carries_provenance_labels(fixtures_dir: Path, tmp_path:
     assert run["labels"]["scorers"] == ["exact_match"]
     assert run["labels"]["scorer_options_sha256"].startswith("sha256:")
     assert run["dataset_sha256"].startswith("sha256:")
+
+
+# --- provenance labels follow the client the run dispatches through ---------
+#
+# Copilot review on PR #124: ``llm_provider`` / ``llm_model`` used to be read
+# from the base ``MANGOMAS_LLM__*`` block even when the ``agent`` target had
+# selected a profile, so a cloud-vs-local baseline pair labelled both runs as
+# the local model. The labels now mirror the dispatch precedence
+# (profile > per-agent ``MODEL_OVERRIDE`` > shared client).
+
+_PROFILE_NAME = "cloud"
+_PROFILE_MODEL = "profile-model"
+_OVERRIDE_MODEL = "override-model"
+
+
+def _settings_with(**overrides: Any) -> Settings:
+    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+
+
+def test_provenance_labels_follow_the_selected_profile() -> None:
+    settings = _settings_with(
+        llm_profiles={_PROFILE_NAME: LLMProfileSettings(provider="vertex", model=_PROFILE_MODEL)},
+        eval=EvalSettings(target_options={"agent": {"llm_profile": _PROFILE_NAME}}),
+    )
+    labels = _provenance_labels(settings, "agent", ["exact_match"])
+    assert (labels["llm_provider"], labels["llm_model"]) == ("vertex", _PROFILE_MODEL)
+    assert labels["llm_profile"] == _PROFILE_NAME
+
+
+def test_provenance_labels_follow_the_agent_model_override() -> None:
+    settings = _settings_with(
+        agents={DEFAULT_AGENT_NAME: AgentSettings(model_override=_OVERRIDE_MODEL)},
+        eval=EvalSettings(agent="planner"),
+    )
+    by_flag = _provenance_labels(settings, "agent", ["exact_match"], agent_flag=DEFAULT_AGENT_NAME)
+    assert (by_flag["llm_provider"], by_flag["llm_model"]) == (
+        settings.llm.provider,
+        _OVERRIDE_MODEL,
+    )
+    assert by_flag["llm_profile"] is None
+    # Without the flag the settings default agent (planner) has no override.
+    default = _provenance_labels(settings, "agent", ["exact_match"])
+    assert default["llm_model"] == settings.llm.model
+    # ``target_options["agent"]["agent"]`` is the middle of the precedence.
+    settings = _settings_with(
+        agents={DEFAULT_AGENT_NAME: AgentSettings(model_override=_OVERRIDE_MODEL)},
+        eval=EvalSettings(target_options={"agent": {"agent": DEFAULT_AGENT_NAME}}),
+    )
+    assert _provenance_labels(settings, "agent", ["exact_match"])["llm_model"] == _OVERRIDE_MODEL
+
+
+def test_provenance_labels_fall_back_to_the_shared_client() -> None:
+    settings = _settings_with(
+        llm_profiles={_PROFILE_NAME: LLMProfileSettings(provider="vertex", model=_PROFILE_MODEL)},
+        agents={DEFAULT_AGENT_NAME: AgentSettings(model_override=_OVERRIDE_MODEL)},
+        eval=EvalSettings(target_options={"agent": {"llm_profile": _PROFILE_NAME}}),
+    )
+    # A multi-agent target dispatches through the shared client; no profile is stamped.
+    labels = _provenance_labels(
+        settings, "pipeline", ["exact_match"], agent_flag=DEFAULT_AGENT_NAME
+    )
+    assert (labels["llm_provider"], labels["llm_model"]) == (
+        settings.llm.provider,
+        settings.llm.model,
+    )
+    assert labels["llm_profile"] is None
+    # An unknown profile name also falls back to the shared client.
+    unknown = _settings_with(eval=EvalSettings(target_options={"agent": {"llm_profile": "nope"}}))
+    assert _provenance_labels(unknown, "agent", ["exact_match"])["llm_profile"] is None
+    assert _provenance_labels(unknown, "agent", ["exact_match"])["llm_model"] == unknown.llm.model

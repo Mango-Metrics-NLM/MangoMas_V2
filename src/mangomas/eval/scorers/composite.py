@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from mangomas.config import EVAL_COST_USD_METADATA_KEY
 from mangomas.errors import ConfigError
 from mangomas.eval._options import require_list
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
@@ -62,15 +63,39 @@ class CompositeScorer:
         passed = all(entry["passed"] for entry in scores.values())
         score = min(entry["score"] for entry in scores.values())
         failed = [name for name, entry in scores.items() if not entry["passed"]]
+        metadata: dict[str, Any] = {
+            "scorer": self.name,
+            SCORES_METADATA_KEY: scores,
+            "failed": failed,
+        }
+        metadata.update(_cost_of(scores))
         logger.debug(
             "Composite scored",
             extra={"event": "eval_composite", "children": list(scores), "failed": failed},
         )
-        return ScoreResult(
-            score=score,
-            passed=passed,
-            metadata={"scorer": self.name, SCORES_METADATA_KEY: scores, "failed": failed},
-        )
+        return ScoreResult(score=score, passed=passed, metadata=metadata)
+
+
+def _cost_of(scores: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Lift the first child's ``cost_usd`` (and its ``source``) to the row's top level.
+
+    The runner's ``mean_cost_usd`` and the ``max_mean_cost_usd`` gate read only
+    the row's top-level ``cost_usd``; left nested under ``scores`` a
+    ``cost_budget`` child would measure every row while the gate silently
+    reported cost as unavailable and skipped (Copilot review on PR #124).
+    Children never disagree in practice — one ``cost_budget`` per composite —
+    so the first reporter wins and the others stay visible under ``scores``.
+    """
+    for entry in scores.values():
+        child_metadata = entry["metadata"]
+        if EVAL_COST_USD_METADATA_KEY in child_metadata:
+            lifted: dict[str, Any] = {
+                EVAL_COST_USD_METADATA_KEY: child_metadata[EVAL_COST_USD_METADATA_KEY]
+            }
+            if "source" in child_metadata:
+                lifted["source"] = child_metadata["source"]
+            return lifted
+    return {}
 
 
 def build_composite(specs: list[Any]) -> CompositeScorer:

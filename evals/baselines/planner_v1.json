@@ -1,18 +1,18 @@
 {
   "scorer": "composite",
   "agent_name": "planner",
-  "dataset_size": 6,
-  "passed": 6,
+  "dataset_size": 7,
+  "passed": 7,
   "failed": 0,
   "errored": 0,
   "mean_score": 1.0,
-  "duration_ms": 1.4147489999913887,
+  "duration_ms": 3.7042750000182423,
   "rows": [
     {
       "row_id": "planner-01-two-step",
       "score": 1.0,
       "passed": true,
-      "duration_ms": 0.4242169999884027,
+      "duration_ms": 1.7092279999815219,
       "prediction": "{\"goal\": \"Add a healthcheck endpoint\", \"steps\": [{\"step\": 1, \"description\": \"Add GET /healthz route\"}, {\"step\": 2, \"description\": \"Write a test for it\"}]}",
       "expected": "{\"goal\": \"\", \"steps\": []}",
       "metadata": {
@@ -56,7 +56,7 @@
         "failed": []
       },
       "error": null,
-      "correlation_id": "ec1b47be",
+      "correlation_id": "63b3d824",
       "response_metadata": {
         "loop": {
           "steps_taken": 1,
@@ -73,7 +73,7 @@
       "row_id": "planner-02-single-step",
       "score": 1.0,
       "passed": true,
-      "duration_ms": 0.22867600000608945,
+      "duration_ms": 0.23754400001507747,
       "prediction": "{\"goal\": \"Bump the version\", \"steps\": [{\"step\": 1, \"description\": \"Edit pyproject.toml version\"}]}",
       "expected": "{\"goal\": \"\", \"steps\": []}",
       "metadata": {
@@ -113,7 +113,7 @@
         "failed": []
       },
       "error": null,
-      "correlation_id": "1106cab5",
+      "correlation_id": "bb54e01f",
       "response_metadata": {
         "loop": {
           "steps_taken": 1,
@@ -130,7 +130,7 @@
       "row_id": "planner-03-goal-echo",
       "score": 1.0,
       "passed": true,
-      "duration_ms": 0.17496799998184542,
+      "duration_ms": 0.16808099996978854,
       "prediction": "{\"goal\": \"Rotate the API key\", \"steps\": [{\"step\": 1, \"description\": \"Create a new secret version\"}, {\"step\": 2, \"description\": \"Point the service at it\"}, {\"step\": 3, \"description\": \"Disable the old version\"}]}",
       "expected": "{\"goal\": \"\", \"steps\": []}",
       "metadata": {
@@ -165,7 +165,7 @@
         "failed": []
       },
       "error": null,
-      "correlation_id": "2cbe9a81",
+      "correlation_id": "55538e55",
       "response_metadata": {
         "loop": {
           "steps_taken": 1,
@@ -182,7 +182,7 @@
       "row_id": "planner-04-long-plan",
       "score": 1.0,
       "passed": true,
-      "duration_ms": 0.13917999999080166,
+      "duration_ms": 0.8336469999790097,
       "prediction": "{\"goal\": \"Migrate storage to Postgres\", \"steps\": [{\"step\": 1, \"description\": \"Add asyncpg adapter\"}, {\"step\": 2, \"description\": \"Write schema migration\"}, {\"step\": 3, \"description\": \"Dual-write behind a flag\"}, {\"step\": 4, \"description\": \"Backfill\"}, {\"step\": 5, \"description\": \"Cut over\"}, {\"step\": 6, \"description\": \"Remove sqlite path\"}]}",
       "expected": "{\"goal\": \"\", \"steps\": []}",
       "metadata": {
@@ -242,7 +242,7 @@
         "failed": []
       },
       "error": null,
-      "correlation_id": "2893ded4",
+      "correlation_id": "802d5535",
       "response_metadata": {
         "loop": {
           "steps_taken": 1,
@@ -259,7 +259,7 @@
       "row_id": "planner-05-unicode-goal",
       "score": 1.0,
       "passed": true,
-      "duration_ms": 0.13228399998865825,
+      "duration_ms": 0.14727399997127577,
       "prediction": "{\"goal\": \"Documenter l'API en fran\\u00e7ais\", \"steps\": [{\"step\": 1, \"description\": \"Traduire README\"}, {\"step\": 2, \"description\": \"Relire\"}]}",
       "expected": "{\"goal\": \"\", \"steps\": []}",
       "metadata": {
@@ -303,7 +303,7 @@
         "failed": []
       },
       "error": null,
-      "correlation_id": "463509d1",
+      "correlation_id": "19ae360e",
       "response_metadata": {
         "loop": {
           "steps_taken": 1,
@@ -320,7 +320,7 @@
       "row_id": "planner-06-steps-with-agents",
       "score": 1.0,
       "passed": true,
-      "duration_ms": 0.13000300000953757,
+      "duration_ms": 0.1695070000096166,
       "prediction": "{\"goal\": \"Add retries to the LLM client\", \"steps\": [{\"step\": 1, \"description\": \"Wrap complete() in a retry\", \"agent\": \"tool\"}, {\"step\": 2, \"description\": \"Review the change\", \"agent\": \"reviewer\"}]}",
       "expected": "{\"goal\": \"\", \"steps\": []}",
       "metadata": {
@@ -355,7 +355,7 @@
         "failed": []
       },
       "error": null,
-      "correlation_id": "5458b98a",
+      "correlation_id": "5d6a7740",
       "response_metadata": {
         "loop": {
           "steps_taken": 1,
@@ -367,22 +367,81 @@
           "llm_calls": 1
         }
       }
+    },
+    {
+      "row_id": "planner-07-missing-steps",
+      "score": 1.0,
+      "passed": true,
+      "duration_ms": 0.28417499999022766,
+      "prediction": "",
+      "expected": "",
+      "metadata": {
+        "expected_error": "LLMBadResponse",
+        "refused": true,
+        "error_type": "LLMBadResponse"
+      },
+      "error": null,
+      "correlation_id": "f7973a08",
+      "response_metadata": {}
     }
   ],
   "target_name": "planner",
   "mean_cost_usd": null,
   "run": {
-    "run_id": "af4b4f1b43e84356897eba932f77a220",
-    "started_at": "2026-11-09T03:29:05.895024+00:00",
-    "dataset_sha256": "sha256:f4b7a614f3642aea9ac5fe5e1287377321a4b6b423b5053a9984ba69f57339cd",
+    "run_id": "e2f8ddd9a5dd49aca78584e6cd35ec56",
+    "started_at": "2026-11-10T00:58:54.951327+00:00",
+    "dataset_sha256": "sha256:f8a7e19c2f21bb3f49f7ba4538639b6070f1d1eb3187e5d31199621e79d17fac",
     "scorer": "composite",
     "target": "planner",
     "mangomas_version": "0.4.0",
     "schema_version": 2,
-    "git_sha": "57704d059f9f08d308e2c7b74f617290686f501f",
+    "git_sha": "d7dcc6af0af29691417e6ee5814f1107bb4c1123",
     "labels": {
       "lane": "planner_v1"
     }
   },
-  "slices": {}
+  "slices": {
+    "goal": {
+      "size": 1,
+      "passed": 1,
+      "failed": 0,
+      "errored": 0,
+      "mean_score": 1.0
+    },
+    "long": {
+      "size": 1,
+      "passed": 1,
+      "failed": 0,
+      "errored": 0,
+      "mean_score": 1.0
+    },
+    "routing": {
+      "size": 1,
+      "passed": 1,
+      "failed": 0,
+      "errored": 0,
+      "mean_score": 1.0
+    },
+    "schema": {
+      "size": 1,
+      "passed": 1,
+      "failed": 0,
+      "errored": 0,
+      "mean_score": 1.0
+    },
+    "simple": {
+      "size": 2,
+      "passed": 2,
+      "failed": 0,
+      "errored": 0,
+      "mean_score": 1.0
+    },
+    "unicode": {
+      "size": 1,
+      "passed": 1,
+      "failed": 0,
+      "errored": 0,
+      "mean_score": 1.0
+    }
+  }
 }

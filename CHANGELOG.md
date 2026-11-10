@@ -50,6 +50,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
   and `MUT-EVAL-03` in the guard-probe manifest (now 57 entries);
   `tests/cognitive/test_adversarial_emit.py` pins INV-16 under a planner reply
   that smuggles every forbidden authority key.
+- Review follow-ups (Copilot on PR #124): `composite` lifts its `cost_budget`
+  child's `cost_usd` / `source` to the row's top level, so `mean_cost_usd` and
+  the `max_mean_cost_usd` gate judge a composite run instead of skipping it as
+  cost-unavailable (`tests/eval/test_composite.py::test_the_cost_gate_judges_a_composite_run`);
+  the CLI's provenance labels follow the client the `agent` target dispatches
+  through — profile, then per-agent `MODEL_OVERRIDE`, then the shared client
+  (`tests/eval/test_cli_eval.py::test_provenance_labels_follow_the_selected_profile`);
+  the planner / reviewer lanes run with `validate_output=True` and each carries
+  a schema-invalid refusal row (`*-07-*`, `expected_error: LLMBadResponse`)
+  that turns the lane red if validation is switched off; the merged lane
+  report rebuilds `run` over the whole dataset and recomputes `slices`.
 
 ### Changed — `ToolEffects` docstring states the enforcement that exists (ADR-0039)
 

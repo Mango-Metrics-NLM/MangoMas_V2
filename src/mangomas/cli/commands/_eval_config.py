@@ -58,22 +58,55 @@ def _build_sinks(
 _COMPOSITE_SCORER = "composite"
 
 
+def _resolve_llm_labels(
+    settings: Settings, target_name: str, agent_flag: str | None
+) -> tuple[str, str, str | None]:
+    """``(provider, model, profile)`` the run will actually use (spec-0045 B6).
+
+    Mirrors the dispatch precedence (spec-0040 / ADR-0028): for the ``agent``
+    target a selected ``llm_profile`` names its own provider and model, else an
+    agent ``MODEL_OVERRIDE`` swaps the model on the base provider, else the
+    shared client. Other targets dispatch several agents, so only the shared
+    client is a truthful label for them and no profile is stamped.
+    """
+    base = (settings.llm.provider, settings.llm.model, None)
+    if target_name != "agent":
+        return base
+    # ``EvalSettings.target_options`` is typed ``dict[str, dict[str, object]]``,
+    # so the per-target block is always a mapping once settings have parsed.
+    agent_options = settings.eval.target_options.get("agent", {})
+    profile = agent_options.get("llm_profile")
+    if isinstance(profile, str) and profile in settings.llm_profiles:
+        selected = settings.llm_profiles[profile]
+        return selected.provider, selected.model, profile
+    agent_name = agent_flag or agent_options.get("agent") or settings.eval.agent
+    agent_settings = settings.agents.get(str(agent_name))
+    override = agent_settings.model_override if agent_settings is not None else None
+    if isinstance(override, str) and override.strip():
+        return settings.llm.provider, override.strip(), None
+    return base
+
+
 def _provenance_labels(
-    settings: Settings, target_name: str, scorer_names: list[str]
+    settings: Settings,
+    target_name: str,
+    scorer_names: list[str],
+    *,
+    agent_flag: str | None = None,
 ) -> dict[str, object]:
     """Caller-side provenance the runner cannot see (spec-0045 B6).
 
-    Provider and model come from the live settings; the profile is the one
-    the ``agent`` target will stamp on every row, if any; option mappings are
+    Provider and model follow the client the ``agent`` target will dispatch
+    through (profile, then per-agent model override, then the shared client);
+    the profile is the one it stamps on every row, if any. Option mappings are
     digested rather than copied so a secret-shaped option never lands in a
     report.
     """
-    agent_options = settings.eval.target_options.get("agent", {})
-    profile = agent_options.get("llm_profile") if isinstance(agent_options, dict) else None
+    provider, model, profile = _resolve_llm_labels(settings, target_name, agent_flag)
     return {
-        "llm_provider": settings.llm.provider,
-        "llm_model": settings.llm.model,
-        "llm_profile": profile if isinstance(profile, str) else None,
+        "llm_provider": provider,
+        "llm_model": model,
+        "llm_profile": profile,
         "scorers": list(scorer_names),
         "scorer_options_sha256": digest_of(settings.eval.scorer_options),
         "target_options_sha256": digest_of(settings.eval.target_options.get(target_name, {})),

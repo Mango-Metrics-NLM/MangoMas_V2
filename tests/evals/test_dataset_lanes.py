@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -31,11 +32,14 @@ from typing import Any
 import pytest
 
 from mangomas.agents import ChatAgent, PlannerAgent, ReviewerAgent, ToolAgent
-from mangomas.core import AgentContext, Orchestrator
+from mangomas.config import DEFAULT_EVAL_SLICE_KEY, AgentSettings
+from mangomas.core import Agent, AgentContext, Orchestrator
 from mangomas.core.tools import ToolEffects, ToolRegistry
 from mangomas.eval import EvalReport, EvalRunner, diff_reports, load_baseline, load_jsonl
 from mangomas.eval.dataset import DatasetRow
 from mangomas.eval.protocol import Scorer
+from mangomas.eval.provenance import build_provenance, dataset_digest
+from mangomas.eval.runner import slice_stats
 from mangomas.eval.scorers.composite import build_composite
 from mangomas.eval.scorers.tool_trajectory import ToolTrajectoryScorer
 from mangomas.eval.sinks.json_file import JsonFileSink
@@ -48,10 +52,16 @@ _DATASETS = _REPO_ROOT / "evals" / "datasets"
 _BASELINES = _REPO_ROOT / "evals" / "baselines"
 _WRITE_BASELINES_ENV = "EVAL_LANES_WRITE_BASELINES"
 
-_AGENTS = {
+# The structured agents run with ``validate_output=True`` (the
+# ``MANGOMAS_AGENTS__<NAME>__VALIDATE_OUTPUT`` path): a schema-invalid reply
+# must raise ``LLMBadResponse`` rather than reach the scorer, and the
+# ``*-07-*`` refusal rows in each structured dataset are what turn the lane
+# red if that validation is ever switched off (Copilot review on PR #124).
+_VALIDATED = AgentSettings(validate_output=True)
+_AGENTS: dict[str, Callable[[], Agent]] = {
     "chat": ChatAgent,
-    "planner": PlannerAgent,
-    "reviewer": ReviewerAgent,
+    "planner": lambda: PlannerAgent(settings=_VALIDATED),
+    "reviewer": lambda: ReviewerAgent(settings=_VALIDATED),
     "tool": ToolAgent,
 }
 # Tokens each agent's outgoing system prompt must still carry: the structured
@@ -113,13 +123,20 @@ def _orchestrator(row: DatasetRow) -> tuple[Orchestrator, FakeLLM, str]:
     return orch, llm, agent_name
 
 
-def _merge(reports: list[EvalReport], rows: list[DatasetRow]) -> EvalReport:
-    """One report for the lane: per-row results concatenated, counts recomputed."""
+async def _merge(name: str, reports: list[EvalReport], rows: list[DatasetRow]) -> EvalReport:
+    """One report for the lane, as if the runner had seen the whole dataset.
+
+    Rows are concatenated and the counts recomputed; ``run`` is rebuilt over
+    *all* rows so ``dataset_sha256`` digests the dataset rather than its first
+    row, and ``slices`` are recomputed under the default slice key so the
+    baseline carries the per-category aggregates the report promises.
+    """
     all_rows = [r for report in reports for r in report.rows]
     passed = sum(1 for r in all_rows if r.passed and r.error is None)
     errored = sum(1 for r in all_rows if r.error is not None)
     scored = [r.score for r in all_rows if r.error is None]
     first = reports[0]
+    assert first.run is not None
     return replace(
         first,
         dataset_size=len(rows),
@@ -129,7 +146,10 @@ def _merge(reports: list[EvalReport], rows: list[DatasetRow]) -> EvalReport:
         mean_score=sum(scored) / len(scored) if scored else 0.0,
         duration_ms=sum(r.duration_ms for r in reports),
         rows=all_rows,
-        slices={},
+        run=await build_provenance(
+            rows=rows, scorer=first.run.scorer, target=first.run.target, labels={"lane": name}
+        ),
+        slices=slice_stats(rows, all_rows, slice_key=DEFAULT_EVAL_SLICE_KEY),
     )
 
 
@@ -142,7 +162,7 @@ async def _run_lane(name: str) -> tuple[EvalReport, list[DatasetRow]]:
         runner = EvalRunner(orch, _SCORERS[name], provenance_labels={"lane": name})
         reports.append(await runner.run([row], target=AgentTarget(agent=agent_name)))
         _assert_outgoing_prompt(row, llm, agent_name)
-    return _merge(reports, rows), rows
+    return await _merge(name, reports, rows), rows
 
 
 def _assert_outgoing_prompt(row: DatasetRow, llm: FakeLLM, agent_name: str) -> None:
@@ -168,6 +188,23 @@ def test_lane_matches_its_committed_baseline(lane: str) -> None:
     assert diff.regressed_rows == [], f"{lane}: regressed vs baseline: {diff.regressed_rows}"
     assert diff.dropped_rows == [], f"{lane}: rows vanished vs baseline: {diff.dropped_rows}"
     assert {r.id for r in rows} == {r.row_id for r in baseline.rows} | set(diff.new_rows)
+    # The merged report describes the whole lane, not its first row.
+    assert report.run is not None and report.run.dataset_sha256 == dataset_digest(rows)
+    categories = {str(r.metadata[DEFAULT_EVAL_SLICE_KEY]) for r in rows}
+    assert set(report.slices) == categories and sum(s.size for s in report.slices.values()) == len(
+        rows
+    )
+    assert baseline.run is not None and baseline.run.dataset_sha256 == report.run.dataset_sha256
+    assert set(baseline.slices) == categories
+
+
+def test_structured_lanes_refuse_schema_invalid_replies() -> None:
+    """Validation is on: a reply outside the schema is a refusal, not a scored row."""
+    for lane in ("planner_v1", "reviewer_v1"):
+        rows = asyncio.run(load_jsonl(_DATASETS / f"{lane}.jsonl"))
+        refusals = [r for r in rows if r.expected_error is not None]
+        assert refusals, f"{lane}: no schema-invalid refusal row"
+        assert {r.expected_error for r in refusals} == {"LLMBadResponse"}
 
 
 def test_every_committed_dataset_has_a_lane() -> None:
@@ -185,6 +222,9 @@ def test_fixture_rows_declare_what_the_lane_needs() -> None:
             fixture = raw["metadata"]["fixture"]
             assert fixture["agent"] in _AGENTS, raw["id"]
             assert fixture["llm_replies"], raw["id"]
+            assert "category" in raw["metadata"], raw["id"]
+            if raw.get("expected_error"):
+                continue  # a refusal row is judged by its error, never by the scorer
             if fixture["agent"] == "tool":
                 assert "expected_tools" in raw["metadata"], raw["id"]
             else:
