@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 import mangomas.cli.main as cli_main
 from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
-from mangomas.cli.commands._eval_config import _provenance_labels
+from mangomas.cli.commands._eval_config import _provenance_labels, _seed_judge_options
 from mangomas.cli.main import app
 from mangomas.config import (
     AgentSettings,
@@ -27,6 +27,7 @@ from mangomas.config import (
 from mangomas.core import AgentContext, Orchestrator
 from mangomas.eval import Sink
 from mangomas.eval.runner import EvalReport
+from mangomas.utils import clock as cli_main_clock
 from tests._seam_guards import forbid_real_orchestrator
 from tests.constants import (
     DEFAULT_AGENT_NAME,
@@ -1086,3 +1087,144 @@ def test_eval_cli_trials_env_and_threshold_validation(
         ],
     )
     assert bad_threshold.exit_code == EXIT_CONFIG_ERROR and "min-pass-pow-k" in bad_threshold.output
+
+
+# --- judge calibration seeding (spec-0047) ----------------------------------
+
+_JUDGE_REPLY = '{"score": 0.2, "rationale": "weak"}'
+_JUDGE_MODEL_ENV = "MANGOMAS_LLM__MODEL"
+_JUDGE_RECORD_ENV = "MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH"
+
+
+def _judge_orchestrator() -> Orchestrator:
+    orch = Orchestrator(AgentContext(llm=FakeLLM(reply=_JUDGE_REPLY), repo=FakeRepository()))
+    orch.register(ChatAgent())
+    return orch
+
+
+def _write_calibration(path: Path, model: str, **overrides: object) -> Path:
+    record: dict[str, object] = {
+        "judge_model": model,
+        "measured_at": "2026-11-01",
+        "sample_size": 300,
+        "cohens_kappa": 0.9,
+        "self_preference": "measured_unbiased",
+    }
+    record.update(overrides)
+    path.write_text(json.dumps(record), encoding="utf-8")
+    return path
+
+
+def _judge_eval(*extra: str) -> list[str]:
+    return [
+        "eval",
+        "-d",
+        "tests/eval/fixtures/all_pass.jsonl",
+        "-s",
+        "llm_judge",
+        "-a",
+        "chat",
+        *extra,
+    ]
+
+
+def test_eval_cli_uncalibrated_judge_is_reported_not_gated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(cli_runtime, "_build", _judge_orchestrator)
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(app, _judge_eval("--min-mean-score", "0.9", "-o", str(out)))
+    assert result.exit_code == 0, result.stdout
+    assert "judge=llm_judge uncalibrated (no calibration record" in result.stdout
+    assert "gate=PASS (note: llm_judge uncalibrated" in result.stdout
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["judge"]["calibrated"] is False
+    assert payload["gate"]["judge_excluded"] is True
+    assert payload["mean_score"] == pytest.approx(0.2), "the scores are still reported"
+
+
+def test_eval_cli_calibrated_judge_is_gated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(cli_runtime, "_build", _judge_orchestrator)
+    monkeypatch.setenv(_JUDGE_MODEL_ENV, "judge-under-test")
+    record = _write_calibration(tmp_path / "cal.json", "judge-under-test")
+    monkeypatch.setenv(_JUDGE_RECORD_ENV, str(record))
+    frozen = __import__("datetime").datetime(2026, 11, 10, tzinfo=__import__("datetime").UTC)
+    monkeypatch.setattr(cli_main_clock, "now", lambda: frozen)
+    result = CliRunner().invoke(app, _judge_eval("--min-mean-score", "0.9"))
+    assert result.exit_code == EVAL_GATE_EXIT_CODE, result.stdout
+    assert "judge=llm_judge calibrated (kappa=0.90" in result.stdout
+    assert "self-preference: measured_unbiased" in result.stdout
+    assert "gate=FAIL (mean_score" in result.stdout
+
+
+def test_eval_cli_record_for_another_model_stays_uncalibrated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(cli_runtime, "_build", _judge_orchestrator)
+    monkeypatch.setenv(_JUDGE_MODEL_ENV, "judge-under-test")
+    monkeypatch.setenv(_JUDGE_RECORD_ENV, str(_write_calibration(tmp_path / "cal.json", "other")))
+    result = CliRunner().invoke(app, _judge_eval("--min-mean-score", "0.9"))
+    assert result.exit_code == 0, result.stdout
+    assert "record is for model 'other'" in result.stdout
+
+
+def test_eval_cli_malformed_calibration_record_is_a_config_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    broken = tmp_path / "cal.json"
+    broken.write_text("{nope", encoding="utf-8")
+    monkeypatch.setenv(_JUDGE_RECORD_ENV, str(broken))
+    result = CliRunner().invoke(app, _judge_eval())
+    assert result.exit_code == EXIT_CONFIG_ERROR
+    assert "calibration record" in result.output
+
+
+def test_eval_cli_composite_with_a_judge_child_is_demoted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_runtime, "_build", _judge_orchestrator)
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval",
+            "-d",
+            "tests/eval/fixtures/all_pass.jsonl",
+            "-s",
+            "contains",
+            "-s",
+            "llm_judge",
+            "-a",
+            "chat",
+            "--min-pass-rate",
+            "0.9",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "judge=llm_judge (child of composite) uncalibrated" in result.stdout
+
+
+def test_seed_judge_options_only_fills_gaps() -> None:
+    cfg = EvalSettings(judge_calibration_path="cal.json", judge_min_sample_size=50)
+    flat = _seed_judge_options(
+        ["llm_judge"], {"threshold": 0.5, "min_kappa": 0.7}, cfg=cfg, judge_model="m"
+    )
+    assert flat["threshold"] == 0.5 and flat["min_kappa"] == 0.7, "explicit options win"
+    assert flat["calibration_path"] == "cal.json"
+    assert (flat["judge_model"], flat["min_sample_size"]) == ("m", 50)
+    nested = _seed_judge_options(
+        ["contains", "llm_judge"],
+        {"llm_judge": {"threshold": 0.6}, "contains": {}},
+        cfg=cfg,
+        judge_model="m",
+    )
+    child = nested["llm_judge"]
+    assert isinstance(child, dict) and child["threshold"] == 0.6 and child["judge_model"] == "m"
+    assert nested["contains"] == {}
+    untouched = _seed_judge_options(["exact_match"], {"x": 1}, cfg=cfg, judge_model="m")
+    assert untouched == {"x": 1}
+    replaced = _seed_judge_options(
+        ["contains", "llm_judge"], {"llm_judge": "bad"}, cfg=cfg, judge_model="m"
+    )
+    assert isinstance(replaced["llm_judge"], dict)

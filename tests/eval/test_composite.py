@@ -146,3 +146,18 @@ async def test_a_cost_child_without_a_source_lifts_only_the_cost() -> None:
     result = await CompositeScorer([_CostOnlyScorer(), ExactMatchScorer()]).score("a", "a")
     assert result.metadata[EVAL_COST_USD_METADATA_KEY] == 0.25
     assert "source" not in result.metadata
+
+
+# --- judge status (spec-0047) ------------------------------------------------
+
+
+def test_a_judge_child_demotes_the_whole_composite() -> None:
+    from mangomas.eval.protocol import JudgeAware  # noqa: PLC0415 — scoped to this test
+    from mangomas.eval.scorers.llm_judge import LLMJudgeScorer  # noqa: PLC0415
+
+    composite = CompositeScorer([ExactMatchScorer(), LLMJudgeScorer()])
+    assert isinstance(composite, JudgeAware)
+    status = composite.judge_status
+    assert status is not None and status.calibrated is False
+    assert status.scorer == "llm_judge (child of composite)"
+    assert CompositeScorer([ExactMatchScorer(), ContainsScorer()]).judge_status is None

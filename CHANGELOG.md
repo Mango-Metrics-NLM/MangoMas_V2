@@ -9,6 +9,27 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — judge calibration record: `llm_judge` reported, not gated, until calibrated (spec-0047 / reliability plan C2)
+
+- `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` + `JUDGE_CALIBRATION_MAX_AGE_DAYS` /
+  `JUDGE_MIN_KAPPA` / `JUDGE_MIN_RHO` / `JUDGE_MIN_SAMPLE_SIZE`: a JSON record
+  (judge model, date, n, Cohen's κ, Spearman ρ, self-preference) is loaded and
+  assessed by `eval/judge_calibration.py`; the first failing rule is the reason.
+  `LLMJudgeScorer.judge_status` is never None (a bare judge is uncalibrated),
+  `CompositeScorer` forwards a judge child's status, and the runner stamps it
+  on `EvalReport.judge` (`tests/eval/test_judge_calibration.py`,
+  `test_llm_judge.py`, `test_composite.py`).
+- Gate: an uncalibrated judge's score thresholds (`min_mean_score`,
+  `min_pass_rate`, `min_pass_pow_k`) and judge-derived regression deltas are
+  replaced by one informational note; `GateResult.judge_excluded` /
+  `judge_note` are additive and the note keeps the self-preference claim
+  (`tests/eval/test_gate.py::test_uncalibrated_judge_scores_are_reported_but_not_gated`).
+  `fail_on_error` and the cost threshold still apply.
+- Console prints `judge=…` for judge runs and now prints informational notes on
+  a **passing** verdict (`gate=PASS (note: …)`) — the cost-unavailable note was
+  silent before; `sqlite_results` gains `judge_json`; the CLI seeds the judge's
+  options from settings (`_seed_judge_options`; `tests/eval/test_cli_eval.py`).
+
 ### Added — pass^k trials as the reliability metric of record (spec-0046 / reliability plan C1)
 
 - `MANGOMAS_EVAL__TRIALS` / `--trials` (`-k`): every row runs `k` times and

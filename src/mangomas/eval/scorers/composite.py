@@ -15,13 +15,16 @@ runs, and a child may itself be any registered scorer — including a plugin.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mangomas.config import EVAL_COST_USD_METADATA_KEY
 from mangomas.errors import ConfigError
 from mangomas.eval._options import require_list
-from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
+from mangomas.eval.protocol import JudgeAware, Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mangomas.eval.judge_calibration import JudgeStatus
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,19 @@ class CompositeScorer:
     @property
     def children(self) -> tuple[Scorer, ...]:
         return tuple(self._children)
+
+    @property
+    def judge_status(self) -> JudgeStatus | None:
+        """The first judge child's status, labelled as this composite's child.
+
+        ``min`` / ``all`` make every aggregate judge-tainted when any child is
+        a judge, so the whole report is demoted (spec-0047); run the judge as
+        its own invocation when deterministic gating is wanted.
+        """
+        for child in self._children:
+            if isinstance(child, JudgeAware) and child.judge_status is not None:
+                return child.judge_status.as_child_of(self.name)
+        return None
 
     async def score(
         self,

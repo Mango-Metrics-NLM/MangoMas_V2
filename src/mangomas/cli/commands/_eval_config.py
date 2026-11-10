@@ -56,6 +56,48 @@ def _build_sinks(
 
 
 _COMPOSITE_SCORER = "composite"
+_JUDGE_SCORER = "llm_judge"
+
+
+def _seed_judge_options(
+    scorer_names: list[str],
+    scorer_options: dict[str, object],
+    *,
+    cfg: EvalSettings,
+    judge_model: str,
+) -> dict[str, object]:
+    """Hand the ``llm_judge`` factory its calibration inputs (spec-0047).
+
+    The factory stays Settings-free, so the CLI — the one place that holds
+    both — seeds ``calibration_path``, ``judge_model`` and the policy floors
+    from ``MANGOMAS_EVAL__JUDGE_*`` and ``MANGOMAS_LLM__MODEL`` into the
+    judge's options: the flat mapping for a single scorer, the sub-mapping
+    under ``"llm_judge"`` for a composite child. ``setdefault`` only, so an
+    explicit option wins. The judge always grades through the shared client
+    (``ScorerContext.llm``), so the shared model id is the right key even
+    when the agent target runs a profile or a ``MODEL_OVERRIDE``.
+    """
+    if _JUDGE_SCORER not in scorer_names:
+        return dict(scorer_options)
+    seeds: dict[str, object] = {
+        "calibration_path": cfg.judge_calibration_path,
+        "judge_model": judge_model,
+        "min_sample_size": cfg.judge_min_sample_size,
+        "min_kappa": cfg.judge_min_kappa,
+        "min_rho": cfg.judge_min_rho,
+        "max_age_days": cfg.judge_calibration_max_age_days,
+    }
+    options = dict(scorer_options)
+    if len(scorer_names) == 1:
+        for key, value in seeds.items():
+            options.setdefault(key, value)
+        return options
+    nested = options.get(_JUDGE_SCORER)
+    child: dict[str, object] = dict(nested) if isinstance(nested, dict) else {}
+    for key, value in seeds.items():
+        child.setdefault(key, value)
+    options[_JUDGE_SCORER] = child
+    return options
 
 
 def _resolve_llm_labels(

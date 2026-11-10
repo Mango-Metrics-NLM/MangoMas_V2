@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
 import pytest
 
 from mangomas.errors import ConfigError, LLMBadResponse
-from mangomas.eval.protocol import ScorerContext
+from mangomas.eval.protocol import JudgeAware, ScorerContext
 from mangomas.eval.registry import scorer_registry
-from mangomas.eval.scorers.llm_judge import LLMJudgeScorer
+from mangomas.eval.scorers.llm_judge import LLMJudgeScorer, judge_status_from_options
+from mangomas.utils import clock
 from tests.fakes import FakeLLM
 
 
@@ -137,3 +140,79 @@ async def test_judge_warns_once_that_it_grades_with_the_system_under_test_client
         r for r in caplog.records if r.__dict__.get("event") == "eval_llm_judge_self_grading"
     ]
     assert len(warnings) == 1
+
+
+# --- calibration status (spec-0047) ------------------------------------------
+
+
+def _write_record(path: Path, **overrides: object) -> Path:
+    record: dict[str, object] = {
+        "judge_model": "judge-model",
+        "measured_at": clock.now().date().isoformat(),
+        "sample_size": 300,
+        "cohens_kappa": 0.9,
+        "self_preference": "not_measured",
+    }
+    record.update(overrides)
+    path.write_text(json.dumps(record), encoding="utf-8")
+    return path
+
+
+def test_a_bare_judge_is_uncalibrated_and_says_so() -> None:
+    scorer = LLMJudgeScorer()
+    assert isinstance(scorer, JudgeAware)
+    assert scorer.judge_status.calibrated is False
+    assert scorer.judge_status.reason == "no calibration record"
+
+
+def test_factory_builds_the_status_from_options(tmp_path: Path) -> None:
+    path = _write_record(tmp_path / "cal.json")
+    calibrated = scorer_registry.get("llm_judge")(
+        {"calibration_path": str(path), "judge_model": "judge-model"}
+    )
+    assert isinstance(calibrated, LLMJudgeScorer) and calibrated.judge_status.calibrated is True
+    other_model = scorer_registry.get("llm_judge")(
+        {"calibration_path": str(path), "judge_model": "another-model"}
+    )
+    assert isinstance(other_model, LLMJudgeScorer)
+    assert other_model.judge_status.calibrated is False
+    assert "record is for model" in other_model.judge_status.reason
+    stricter = scorer_registry.get("llm_judge")(
+        {"calibration_path": str(path), "judge_model": "judge-model", "min_sample_size": 500}
+    )
+    assert isinstance(stricter, LLMJudgeScorer) and stricter.judge_status.calibrated is False
+    no_model = scorer_registry.get("llm_judge")({"calibration_path": str(path)})
+    assert isinstance(no_model, LLMJudgeScorer)
+    assert no_model.judge_status.reason == "judge model unknown"
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"calibration_path": 7},
+        {"judge_model": 7},
+        {"min_sample_size": 0},
+        {"min_sample_size": True},
+        {"max_age_days": "soon"},
+        {"min_kappa": 1.5},
+        {"min_rho": "high"},
+        {"calibration_path": "/nonexistent/record.json", "judge_model": "judge-model"},
+    ],
+)
+def test_factory_rejects_bad_calibration_options(options: dict[str, object]) -> None:
+    with pytest.raises(ConfigError):
+        judge_status_from_options(options)
+
+
+async def test_the_self_grading_warning_carries_the_calibration_status(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    scorer = LLMJudgeScorer()
+    ctx = ScorerContext(llm=FakeLLM(reply='{"score": 0.9, "rationale": "fine"}'))
+    with caplog.at_level(logging.WARNING, logger="mangomas.eval.scorers.llm_judge"):
+        await scorer.score("a", "b", context=ctx)
+    record = next(
+        r for r in caplog.records if r.__dict__.get("event") == "eval_llm_judge_self_grading"
+    )
+    assert record.__dict__["judge_calibrated"] is False
+    assert "uncalibrated" in record.getMessage()

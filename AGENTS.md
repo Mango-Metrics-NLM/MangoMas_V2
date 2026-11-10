@@ -254,6 +254,11 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Gate fails if any row errored |
 | `MANGOMAS_EVAL__MAX_MEAN_COST_USD` | _(none)_ | Gate threshold on `mean_cost_usd` in USD (not `[0,1]`; off when unset) |
 | `MANGOMAS_EVAL__MIN_PASS_POW_K` | _(none)_ | Reliability gate threshold on `EvalReport.pass_pow_k` `[0,1]`; **fails closed** when the run has `TRIALS < 2` (spec-0046) |
+| `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` | _(none)_ | JSON calibration record for `llm_judge` (judge model, date, n, Cohen's κ / Spearman ρ, self-preference). Unset, stale, for another model or below the floors → judge scores are **reported but excluded from the gate verdict** (spec-0047 / reliability plan C2) |
+| `MANGOMAS_EVAL__JUDGE_CALIBRATION_MAX_AGE_DAYS` | `180` | A record older than this is stale (`>= 1`) |
+| `MANGOMAS_EVAL__JUDGE_MIN_KAPPA` | `0.8` | Calibration floor on Cohen's κ `[0,1]`; κ **or** ρ at its floor suffices |
+| `MANGOMAS_EVAL__JUDGE_MIN_RHO` | `0.85` | Calibration floor on Spearman ρ `[0,1]` |
+| `MANGOMAS_EVAL__JUDGE_MIN_SAMPLE_SIZE` | `200` | Minimum labelled rows behind a record (`>= 1`) |
 | `MANGOMAS_EVAL__BASELINE_PATH` | _(none)_ | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | _(none)_ | Regression gate: max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | _(none)_ | Regression gate: max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -351,9 +356,11 @@ gates the run for CI. Everything is additive and default-OFF. See
   `reviewer` JSON output), `json_field` (ADR-0034 structured acceptance as a
   scorer), `tool_trajectory` (which tools `ToolAgent` ran, from its
   `metadata.tool_calls` trace), `composite` (several per row, min/all; `-s`
-  repeatable), `llm_judge` (self-grading; reported, not to be gated on until
-  calibrated), `embedding`, `cost_budget` (measured tier when the adapter
-  reports usage). Spec-0045: `Target.run -> TargetOutcome` carries response
+  repeatable), `llm_judge` (self-grading; **reported, not gated** unless a
+  `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` record covers the judge's model —
+  `EvalReport.judge` carries the status, `GateResult.judge_excluded` says when
+  score thresholds were demoted to a note; spec-0047), `embedding`,
+  `cost_budget` (measured tier when the adapter reports usage). Spec-0045: `Target.run -> TargetOutcome` carries response
   metadata to scorers; `EvalReport.run` is provenance, `slices` per-category
   aggregates; `DatasetRow.expected_error` expresses a must-refuse row.
 - **Targets** (`eval/target.py` + `eval/targets/`, registered in `target_registry`):

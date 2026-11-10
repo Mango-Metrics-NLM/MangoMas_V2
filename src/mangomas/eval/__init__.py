@@ -25,7 +25,15 @@ from mangomas.eval.gate import (
     evaluate_regression_gate,
     merge_gate_results,
 )
+from mangomas.eval.judge_calibration import (
+    CalibrationPolicy,
+    JudgeCalibrationRecord,
+    JudgeStatus,
+    assess_calibration,
+    load_calibration_record,
+)
 from mangomas.eval.protocol import (
+    JudgeAware,
     Scorer,
     ScorerContext,
     ScoreResult,
@@ -40,6 +48,7 @@ from mangomas.eval.target import Target
 from mangomas.eval.target_registry import TargetFactory, target_registry
 
 __all__ = [
+    "CalibrationPolicy",
     "DatasetRow",
     "DatasetSource",
     "DatasetSourceFactory",
@@ -47,6 +56,9 @@ __all__ = [
     "EvalRowResult",
     "EvalRunner",
     "GateResult",
+    "JudgeAware",
+    "JudgeCalibrationRecord",
+    "JudgeStatus",
     "ReportDiff",
     "RunProvenance",
     "ScoreResult",
@@ -58,6 +70,7 @@ __all__ = [
     "SliceStats",
     "Target",
     "TargetFactory",
+    "assess_calibration",
     "build_provenance",
     "dataset_source_registry",
     "diff_reports",
@@ -69,6 +82,7 @@ __all__ = [
     "evaluate_gate",
     "evaluate_regression_gate",
     "load_baseline",
+    "load_calibration_record",
     "load_jsonl",
     "merge_gate_results",
     "scorer_registry",

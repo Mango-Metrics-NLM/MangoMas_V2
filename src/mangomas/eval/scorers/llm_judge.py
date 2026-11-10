@@ -16,10 +16,23 @@ import logging
 import math
 from typing import Any
 
-from mangomas.config import DEFAULT_ERROR_DETAIL_TRUNCATE
+from mangomas.config import (
+    DEFAULT_ERROR_DETAIL_TRUNCATE,
+    DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS,
+    DEFAULT_EVAL_JUDGE_MIN_KAPPA,
+    DEFAULT_EVAL_JUDGE_MIN_RHO,
+    DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE,
+)
 from mangomas.core.agent import Message
-from mangomas.errors import LLMBadResponse
+from mangomas.errors import ConfigError, LLMBadResponse
 from mangomas.eval._options import coerce_float, require_unit_float
+from mangomas.eval.judge_calibration import (
+    CalibrationPolicy,
+    JudgeStatus,
+    assess_calibration,
+    load_calibration_record,
+    status_summary_fields,
+)
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 
@@ -52,9 +65,22 @@ class LLMJudgeScorer:
 
     name = "llm_judge"
 
-    def __init__(self, *, threshold: float = DEFAULT_JUDGE_THRESHOLD) -> None:
+    def __init__(
+        self,
+        *,
+        threshold: float = DEFAULT_JUDGE_THRESHOLD,
+        judge_status: JudgeStatus | None = None,
+    ) -> None:
         self._threshold = require_unit_float(threshold, owner=self.name)
         self._warned_self_grading = False
+        # spec-0047: a judge is uncalibrated until a record says otherwise —
+        # constructing one without a status never reads as calibrated.
+        self._judge_status: JudgeStatus = judge_status or assess_calibration(None, judge_model=None)
+
+    @property
+    def judge_status(self) -> JudgeStatus:
+        """Calibration status the report carries (``JudgeAware``)."""
+        return self._judge_status
 
     async def score(
         self,
@@ -70,14 +96,19 @@ class LLMJudgeScorer:
             )
         if not self._warned_self_grading:
             # ``ScorerContext.llm`` is the system under test's own client, so
-            # the judge grades its own provider with no calibration record —
-            # reported, and not to be gated on until the C2 calibration lands
-            # (spec-0045 R7; reliability plan C2).
+            # the judge grades its own provider; spec-0047 demotes its scores
+            # to "reported, not gated" unless a calibration record covers
+            # this model. One line per instance either way, with the status.
             self._warned_self_grading = True
             logger.warning(
-                "llm_judge grades with the system-under-test's own LLM client (self-grading, "
-                "uncalibrated); treat its scores as informational",
-                extra={"event": "eval_llm_judge_self_grading", "scorer": self.name},
+                "llm_judge grades with the system-under-test's own LLM client (self-grading); "
+                "calibration: %s",
+                self._judge_status.summary(),
+                extra={
+                    "event": "eval_llm_judge_self_grading",
+                    "scorer": self.name,
+                    **status_summary_fields(self._judge_status),
+                },
             )
         messages = _build_judge_messages(prediction, expected)
         logger.debug(
@@ -131,11 +162,62 @@ class LLMJudgeScorer:
         )
 
 
+def _positive_int(options: dict[str, Any], key: str, default: int) -> int:
+    raw = options.get(key, default)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+        raise ConfigError(f"llm_judge '{key}' must be an integer >= 1; got {raw!r}")
+    return raw
+
+
+def judge_status_from_options(options: dict[str, Any]) -> JudgeStatus:
+    """Resolve the calibration status from factory options (spec-0047).
+
+    ``calibration_path`` (``None`` = no record), ``judge_model`` (the shared
+    client's model id — the CLI seeds it from ``MANGOMAS_LLM__MODEL``), and
+    the policy floors ``min_sample_size`` / ``min_kappa`` / ``min_rho`` /
+    ``max_age_days``. A set-but-unreadable path is a :class:`ConfigError`.
+    """
+    path = options.get("calibration_path")
+    if path is not None and not isinstance(path, str):
+        raise ConfigError(f"llm_judge 'calibration_path' must be a string; got {path!r}")
+    model = options.get("judge_model")
+    if model is not None and not isinstance(model, str):
+        raise ConfigError(f"llm_judge 'judge_model' must be a string; got {model!r}")
+    policy = CalibrationPolicy(
+        min_sample_size=_positive_int(
+            options, "min_sample_size", DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE
+        ),
+        min_kappa=require_unit_float(
+            coerce_float(
+                options.get("min_kappa", DEFAULT_EVAL_JUDGE_MIN_KAPPA),
+                owner="llm_judge",
+                field="min_kappa",
+            ),
+            owner="llm_judge",
+            field="min_kappa",
+        ),
+        min_rho=require_unit_float(
+            coerce_float(
+                options.get("min_rho", DEFAULT_EVAL_JUDGE_MIN_RHO),
+                owner="llm_judge",
+                field="min_rho",
+            ),
+            owner="llm_judge",
+            field="min_rho",
+        ),
+        max_age_days=_positive_int(
+            options, "max_age_days", DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS
+        ),
+    )
+    record = load_calibration_record(path) if path else None
+    return assess_calibration(record, judge_model=model, policy=policy)
+
+
 def _llm_judge_factory(options: dict[str, Any]) -> Scorer:
     threshold = coerce_float(
         options.get("threshold", DEFAULT_JUDGE_THRESHOLD), owner="llm_judge", field="threshold"
     )
-    return LLMJudgeScorer(threshold=threshold)
+    return LLMJudgeScorer(threshold=threshold, judge_status=judge_status_from_options(options))
 
 
 scorer_registry.register("llm_judge", _llm_judge_factory)

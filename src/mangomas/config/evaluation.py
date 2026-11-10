@@ -75,6 +75,18 @@ DEFAULT_EVAL_FAIL_ON_ERROR: bool = False
 # skipping (a reliability gate that passes on a single trial is vacuous).
 DEFAULT_EVAL_MIN_PASS_POW_K: float | None = None
 
+# Judge calibration (spec-0047 / reliability plan C2). ``llm_judge`` grades
+# through the system-under-test's own client, so its scores are self-grading
+# until a calibration record says otherwise. ``judge_calibration_path`` names
+# that record; the thresholds below are the acceptance policy applied to it.
+# With no record (the default) judge scores are reported but excluded from
+# the gate verdict — dispatch and every non-judge run are untouched.
+DEFAULT_EVAL_JUDGE_CALIBRATION_PATH: str | None = None
+DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS: int = 180
+DEFAULT_EVAL_JUDGE_MIN_KAPPA: float = 0.8
+DEFAULT_EVAL_JUDGE_MIN_RHO: float = 0.85
+DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE: int = 200
+
 # Cost dimension (Kapoor 2024 / analysis §9.B) — default OFF. USD is not a
 # unit score, so these are unbounded-above non-negative floats. The per-row
 # scorer budget lives in ``scorer_options["max_cost_usd"]``; the gate field
@@ -204,6 +216,15 @@ class EvalSettings(BaseModel):
     # ``trials >= 2`` at run time or the gate fails closed.
     min_pass_pow_k: float | None = DEFAULT_EVAL_MIN_PASS_POW_K
 
+    # ── Judge calibration (spec-0047) ─────────────────────────────────────────
+    # Record the ``llm_judge`` scorer is calibrated by, and the acceptance
+    # policy applied to it (kappa OR rho suffices). Unset path = uncalibrated.
+    judge_calibration_path: str | None = DEFAULT_EVAL_JUDGE_CALIBRATION_PATH
+    judge_calibration_max_age_days: int = DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS
+    judge_min_kappa: float = DEFAULT_EVAL_JUDGE_MIN_KAPPA
+    judge_min_rho: float = DEFAULT_EVAL_JUDGE_MIN_RHO
+    judge_min_sample_size: int = DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE
+
     # ── Regression / baseline gating (CI) — default OFF ───────────────────────
     baseline_path: str | None = DEFAULT_EVAL_BASELINE_PATH
     max_mean_score_drop: float | None = DEFAULT_EVAL_MAX_MEAN_SCORE_DROP
@@ -233,6 +254,8 @@ class EvalSettings(BaseModel):
             ("min_mean_score", self.min_mean_score),
             ("min_pass_rate", self.min_pass_rate),
             ("min_pass_pow_k", self.min_pass_pow_k),
+            ("judge_min_kappa", self.judge_min_kappa),
+            ("judge_min_rho", self.judge_min_rho),
             ("max_mean_score_drop", self.max_mean_score_drop),
             ("max_pass_rate_drop", self.max_pass_rate_drop),
         ):
@@ -247,6 +270,12 @@ class EvalSettings(BaseModel):
             )
         if self.trials < 1:
             raise ValueError(f"eval.trials must be >= 1; got {self.trials}")
+        for label, count in (
+            ("judge_calibration_max_age_days", self.judge_calibration_max_age_days),
+            ("judge_min_sample_size", self.judge_min_sample_size),
+        ):
+            if count < 1:
+                raise ValueError(f"eval.{label} must be >= 1; got {count}")
         if self.schema_version > DEFAULT_EVAL_SCHEMA_VERSION:
             logger.warning(
                 "Eval config declares a future schema_version; reading with current code",

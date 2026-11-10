@@ -16,6 +16,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.llm.base import LLMClient
     from mangomas.core.agent import Message
+    from mangomas.eval.judge_calibration import JudgeStatus
 
 
 @dataclass(frozen=True)
@@ -80,3 +81,17 @@ class Scorer(Protocol):
     ) -> ScoreResult:
         """Return a :class:`ScoreResult` for ``prediction`` vs ``expected``."""
         ...
+
+
+@runtime_checkable
+class JudgeAware(Protocol):
+    """A scorer whose verdicts rest (wholly or partly) on an LLM judge (spec-0047).
+
+    ``judge_status`` is ``None`` when no judge took part; otherwise it says
+    whether the judge is calibrated, and why not. The runner copies it onto
+    :attr:`~mangomas.eval.runner.EvalReport.judge` so the gate can demote an
+    uncalibrated judge's scores to "reported, not gated".
+    """
+
+    @property
+    def judge_status(self) -> JudgeStatus | None: ...

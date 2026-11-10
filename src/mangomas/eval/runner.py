@@ -26,13 +26,14 @@ from mangomas.correlation import (
     generate_correlation_id,
     set_correlation_id,
 )
-from mangomas.eval.protocol import ScorerContext
+from mangomas.eval.protocol import JudgeAware, ScorerContext
 from mangomas.eval.provenance import RunProvenance, build_provenance
 from mangomas.eval.target import coerce_outcome
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
     from mangomas.eval.dataset import DatasetRow
+    from mangomas.eval.judge_calibration import JudgeStatus
     from mangomas.eval.protocol import Scorer
     from mangomas.eval.target import Target
 
@@ -264,6 +265,10 @@ class EvalReport:
     trials: int = DEFAULT_EVAL_TRIALS
     pass_pow_k: float | None = None
     trial_pass_rate: float | None = None
+    # spec-0047: present when an LLM judge took part in scoring; says whether
+    # it is calibrated. ``None`` for every deterministic scorer and for a
+    # baseline written before the field existed.
+    judge: JudgeStatus | None = None
 
 
 class EvalRunner:
@@ -310,6 +315,9 @@ class EvalRunner:
         self._slice_key = slice_key
         self._provenance_labels = dict(provenance_labels or {})
         self._trials = trials
+        self._judge: JudgeStatus | None = (
+            scorer.judge_status if isinstance(scorer, JudgeAware) else None
+        )
 
     async def _score_row_trials(self, row: DatasetRow, *, target: Target) -> EvalRowResult:
         """Run *row* ``trials`` times (sequentially, each its own correlation id)."""
@@ -473,6 +481,7 @@ class EvalRunner:
                 trials=self._trials,
                 pass_pow_k=0.0,
                 trial_pass_rate=0.0,
+                judge=self._judge,
             )
         logger.info(
             "Eval run starting",
@@ -513,6 +522,7 @@ class EvalRunner:
             trials=self._trials,
             pass_pow_k=passed / len(dataset),
             trial_pass_rate=_trial_pass_rate(rows, self._trials),
+            judge=self._judge,
         )
         logger.info(
             "Eval run complete",
