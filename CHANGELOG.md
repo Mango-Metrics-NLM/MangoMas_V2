@@ -9,6 +9,26 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — dev toolchain bumped in lockstep; Dependabot stops raising mirrored hook floors
+
+- `ruff` 0.16.6 → 0.17.3 and `mypy` 2.3.0 → 2.4.1 in `pyproject.toml`'s dev
+  extra **and** `.pre-commit-config.yaml` in one commit, which is what
+  `tests/tooling/test_toolchain_pin_parity.py` requires and what Dependabot
+  PRs #113 / #116 could not do from one ecosystem each. `coverage` 7.16.0 →
+  7.17.1 (#117) rides along: its only failure was the protected-path gate,
+  which a Dependabot commit cannot satisfy because it carries no
+  `BREAKING-CHANGE` trailer. ruff 0.17.3 reports nothing new over the full lint
+  surface; mypy 2.4.1 is clean at the repo's `python_version = "3.11"` — and,
+  unlike 2.3.0, no longer aborts on numpy ≥ 2.3 stubs (PEP 695 `type`
+  statements) when an extra such as `[rag]` installs numpy, so `make typecheck`
+  works in a full dev environment again.
+- `.github/dependabot.yml`: the pre-commit ecosystem ignores the mypy hook's
+  `additional_dependencies` (hook-scoped wildcard plus each package name). They
+  mirror pyproject's runtime ranges by contract, so a Dependabot PR raising them
+  alone (#112) can only fail the parity test. The hook revs still update
+  (`tests/deploy/test_workflow_hardening.py::test_dependabot_never_bumps_hook_dependencies_that_mirror_pyproject`,
+  `::test_dependabot_still_updates_the_hook_revs_themselves`).
+
 ### Added — judge calibration record: `llm_judge` reported, not gated, until calibrated (spec-0047 / reliability plan C2)
 
 - `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` + `JUDGE_CALIBRATION_MAX_AGE_DAYS` /

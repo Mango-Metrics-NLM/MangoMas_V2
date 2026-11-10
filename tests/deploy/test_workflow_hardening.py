@@ -37,9 +37,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import pytest
 import yaml
 
 from tests.deploy import _workflows
+from tests.tooling.test_toolchain_pin_parity import (
+    DEPENDENCY_MIRRORING_HOOKS,
+    TOOL_PINS,
+    hook_additional_dependencies,
+    normalize_distribution,
+)
 
 _EXPECTED_WORKFLOW_COUNT = 6
 # Vacuity floors: low enough that a legitimate change never trips them, high
@@ -233,6 +240,40 @@ _LOCKSTEPPED_EXCLUDES = {
     ("pip", "/"): {"ruff", "mypy"},
     ("pre-commit", "/"): {"*ruff-pre-commit*", "*mirrors-mypy*"},
 }
+
+
+def _precommit_ignore_names() -> set[str]:
+    doc = yaml.safe_load(_DEPENDABOT.read_text(encoding="utf-8"))
+    entries = [e for e in doc["updates"] if e["package-ecosystem"] == "pre-commit"]
+    assert len(entries) == 1, f"expected one pre-commit ecosystem entry: {entries!r}"
+    return {str(rule["dependency-name"]) for rule in entries[0].get("ignore") or []}
+
+
+@pytest.mark.parametrize("repo_url", DEPENDENCY_MIRRORING_HOOKS)
+def test_dependabot_never_bumps_hook_dependencies_that_mirror_pyproject(repo_url: str) -> None:
+    """A hook dependency that mirrors pyproject moves only when pyproject moves.
+
+    Dependabot's pre-commit ecosystem raised the mypy hook's
+    ``additional_dependencies`` floors on their own (PR #112), which can only
+    fail ``test_hook_dependencies_agree_with_runtime_ranges``. The ignore list
+    must cover every such dependency — both the hook-scoped wildcard and each
+    package name — and the expected names come from the hook itself, so adding a
+    dependency to the hook without ignoring it fails here.
+    """
+    ignored = _precommit_ignore_names()
+    hooked = hook_additional_dependencies(repo_url)
+    assert hooked, f"no additional_dependencies parsed for {repo_url}; scan broken?"
+    assert f"{repo_url}::*" in ignored, f"missing the hook-scoped ignore for {repo_url}"
+    missing = sorted(set(hooked) - {normalize_distribution(name) for name in ignored})
+    assert missing == [], f"dependabot would raise these hook floors alone: {missing}"
+
+
+def test_dependabot_still_updates_the_hook_revs_themselves() -> None:
+    """Ignoring a hook's dependencies must not freeze the hook's own rev."""
+    ignored = _precommit_ignore_names()
+    for pin in TOOL_PINS:
+        assert pin.precommit_repo not in ignored, f"{pin.precommit_repo} rev is frozen"
+        assert f"*{pin.distribution}*" not in ignored
 
 
 def test_dependabot_groups_exclude_the_lockstepped_toolchain() -> None:

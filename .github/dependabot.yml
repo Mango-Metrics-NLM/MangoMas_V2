@@ -81,6 +81,28 @@ updates:
         patterns: ["*"]
         exclude-patterns: ["*ruff-pre-commit*", "*mirrors-mypy*"]
         update-types: ["minor", "patch"]
+    # The mypy hook's `additional_dependencies` mirror pyproject's runtime
+    # ranges by contract (tests/tooling/test_toolchain_pin_parity.py
+    # ::test_hook_dependencies_agree_with_runtime_ranges), so they move only
+    # when pyproject moves — in the same commit, by hand. A Dependabot PR that
+    # raises them alone (PR #112: fastapi>=0.162.0 against pyproject's >=0.115)
+    # can only ever fail that test. Dependabot-core names these dependencies
+    # `<repo_url>::<hook_id>::<package>`, so the scoped pattern below covers
+    # them; the bare names cover the naming #112 was actually raised under
+    # (its group excluded "*mirrors-mypy*" and still swallowed them).
+    # tests/deploy/test_workflow_hardening.py derives the expected names from
+    # .pre-commit-config.yaml, so this list cannot drift from the hook. The hook
+    # *rev* itself is not ignored: it still arrives as its own PR.
+    ignore:
+      - dependency-name: "https://github.com/pre-commit/mirrors-mypy::*"
+      - dependency-name: "fastapi"
+      - dependency-name: "pydantic"
+      - dependency-name: "pydantic-settings"
+      - dependency-name: "httpx"
+      - dependency-name: "opentelemetry-api"
+      - dependency-name: "opentelemetry-sdk"
+      - dependency-name: "typer"
+      - dependency-name: "starlette"
 
   # Base-image digests. The Dockerfile pins python:3.11-slim by digest in both
   # stages (supply-chain baseline); without this entry those digests were only

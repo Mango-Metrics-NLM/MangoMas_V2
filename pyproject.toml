@@ -36,16 +36,16 @@ dev = [
     # coverage bump can shift a percentage under a green gate. Bump both
     # in one commit.
     "pytest-cov==7.1.0",
-    "coverage[toml]==7.16.0",
+    "coverage[toml]==7.17.1",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
     # Exact-pinned and kept in lockstep with the ruff-pre-commit rev in
     # .pre-commit-config.yaml so the hook, local pip, and CI cannot drift
     # (rule availability and formatter style both change between releases).
-    "ruff==0.16.6",
+    "ruff==0.17.3",
     # Exact-pinned in lockstep with the mirrors-mypy rev in
     # .pre-commit-config.yaml, for the same reason as the ruff pin above.
-    "mypy==2.3.0",
+    "mypy==2.4.1",
     # Exact-pinned: contract semantics and the TYPE_CHECKING exclusion flag
     # change between releases. `make lint-imports` is the one invocation.
     "import-linter==2.15",
