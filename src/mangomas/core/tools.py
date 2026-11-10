@@ -52,10 +52,13 @@ class ToolEffects(StrEnum):
     closed; the difference is that the record then says "nobody declared"
     rather than "declared safe".
 
-    Advisory metadata, not enforcement: nothing in this repository gates on it
-    today. It exists so that the day a write-capable tool is registered, the
-    vocabulary to distinguish it already exists on the contract rather than
-    needing to be added under pressure (ADR-0033).
+    Enforced, not advisory, since ADR-0039: ``harness.tool_policy.
+    enforce_tool_invocation_policy`` refuses any tool whose effect is not
+    ``READ_ONLY`` unless ``ToolAgent`` was constructed with that tool in
+    ``allowed_mutating_tools`` (``UNDECLARED`` is treated as ``MUTATES``), and
+    ``MUT-SBX-02`` in the guard-probe manifest proves that refusal still fires.
+    The vocabulary was added before the first write-capable tool so it sat on
+    the contract rather than being bolted on under pressure (ADR-0033).
     """
 
     UNDECLARED = "undeclared"
