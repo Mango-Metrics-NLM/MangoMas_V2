@@ -8,9 +8,16 @@ import math
 
 import pytest
 
-from mangomas.eval import GateResult, evaluate_gate, merge_gate_results
-from mangomas.eval.gate import MIN_TRIALS_FOR_PASS_POW_K
-from mangomas.eval.runner import EvalReport
+from mangomas.eval import GateResult, evaluate_gate, evaluate_regression_gate, merge_gate_results
+from mangomas.eval.baseline import ReportDiff
+from mangomas.eval.gate import MIN_TRIALS_FOR_PASS_POW_K, scorer_independent_row_ids
+from mangomas.eval.judge_calibration import JudgeStatus
+from mangomas.eval.runner import (
+    EXPECTED_ERROR_METADATA_KEY,
+    REFUSED_METADATA_KEY,
+    EvalReport,
+    EvalRowResult,
+)
 
 
 def _report(
@@ -21,9 +28,10 @@ def _report(
     errored: int = 0,
     mean_score: float = 1.0,
     mean_cost_usd: float | None = None,
+    scorer: str = "exact_match",
 ) -> EvalReport:
     return EvalReport(
-        scorer="exact_match",
+        scorer=scorer,
         agent_name="chat",
         dataset_size=dataset_size,
         passed=passed,
@@ -256,3 +264,195 @@ def test_merge_carries_the_reliability_fields_from_the_threshold_verdict() -> No
     merged = merge_gate_results([threshold, other])
     assert merged is not None and merged.passed is False
     assert (merged.min_pass_pow_k, merged.actual_pass_pow_k) == (0.9, 0.5)
+
+
+# --- llm_judge: reported, not gated, until calibrated (spec-0047) -------------
+
+_UNCALIBRATED = JudgeStatus(calibrated=False, reason="no calibration record", judge_model="m")
+_CALIBRATED = JudgeStatus(
+    calibrated=True,
+    reason="calibrated",
+    judge_model="m",
+    measured_at="2026-10-01",
+    sample_size=300,
+    cohens_kappa=0.86,
+    self_preference="measured_unbiased",
+)
+
+
+def _judge_report(status: JudgeStatus | None, *, mean_score: float = 0.4) -> EvalReport:
+    return dataclasses.replace(
+        _report(dataset_size=2, passed=1, failed=1, mean_score=mean_score, scorer="llm_judge"),
+        judge=status,
+    )
+
+
+def test_uncalibrated_judge_scores_are_reported_but_not_gated() -> None:
+    """Reliability plan C2's named test: the threshold is not applied, the verdict says so."""
+    result = evaluate_gate(_judge_report(_UNCALIBRATED), min_mean_score=0.9, min_pass_rate=0.9)
+    assert result.passed is True, "an uncalibrated judge cannot fail a quality threshold"
+    assert result.judge_excluded is True
+    assert result.judge_note is not None and "score thresholds not applied" in result.judge_note
+    assert "self-preference: not_measured" in result.judge_note
+    assert result.reasons == [result.judge_note], "one informational note, no threshold reasons"
+    assert result.actual_mean_score == pytest.approx(0.4), "the score is still reported"
+
+
+def test_calibrated_judge_scores_are_gated_normally() -> None:
+    failing = evaluate_gate(_judge_report(_CALIBRATED), min_mean_score=0.9)
+    assert failing.passed is False and failing.judge_excluded is False
+    assert any("mean_score" in r for r in failing.reasons)
+    assert failing.judge_note is not None and "calibrated" in failing.judge_note
+    assert "measured_unbiased" in failing.judge_note, "the measured claim is distinct"
+    passing = evaluate_gate(_judge_report(_CALIBRATED, mean_score=0.95), min_mean_score=0.9)
+    assert passing.passed is True and passing.reasons == []
+
+
+def test_judge_note_without_a_score_threshold_is_not_an_exclusion() -> None:
+    """No threshold configured → nothing was "not applied"; the note still travels."""
+    result = evaluate_gate(_judge_report(_UNCALIBRATED))
+    assert (result.passed, result.judge_excluded, result.reasons) == (True, False, [])
+    assert result.judge_note is not None and "uncalibrated" in result.judge_note
+
+
+def test_uncalibrated_judge_still_fails_on_errors_and_cost() -> None:
+    errored = dataclasses.replace(
+        _judge_report(_UNCALIBRATED), passed=1, failed=0, errored=1, mean_cost_usd=2.0
+    )
+    result = evaluate_gate(errored, min_mean_score=0.9, fail_on_error=True, max_mean_cost_usd=1.0)
+    assert result.passed is False and result.judge_excluded is True
+    assert any("errored" in r for r in result.reasons)
+    assert any("mean_cost_usd" in r for r in result.reasons)
+
+
+def test_uncalibrated_judge_with_a_reliability_threshold_is_excluded_too() -> None:
+    report = dataclasses.replace(_judge_report(_UNCALIBRATED), trials=1)
+    result = evaluate_gate(report, min_pass_pow_k=0.9)
+    assert result.passed is True and result.judge_excluded is True
+
+
+def test_non_judge_reports_carry_no_judge_fields() -> None:
+    result = evaluate_gate(_report(dataset_size=1, passed=1), min_mean_score=0.5)
+    assert (result.judge_excluded, result.judge_note) == (False, None)
+
+
+def _diff(*, mean_delta: float = -0.5, regressed: list[str] | None = None) -> ReportDiff:
+    return ReportDiff(
+        baseline_mean_score=1.0,
+        current_mean_score=1.0 + mean_delta,
+        mean_score_delta=mean_delta,
+        baseline_pass_rate=1.0,
+        current_pass_rate=0.5,
+        pass_rate_delta=-0.5,
+        passed_delta=-1,
+        failed_delta=1,
+        errored_delta=0,
+        regressed_rows=regressed or [],
+    )
+
+
+def test_regression_gate_on_an_uncalibrated_judge_is_informational() -> None:
+    gated = evaluate_regression_gate(_diff(regressed=["r1"]), max_mean_score_drop=0.1)
+    assert gated.passed is False
+    demoted = evaluate_regression_gate(
+        _diff(regressed=["r1"]),
+        max_mean_score_drop=0.1,
+        allow_new_failures=False,
+        judge=_UNCALIBRATED,
+    )
+    assert demoted.passed is True and demoted.judge_excluded is True
+    assert demoted.reasons == [demoted.judge_note]
+    assert (
+        demoted.judge_note is not None and "regression thresholds not applied" in demoted.judge_note
+    )
+    calibrated = evaluate_regression_gate(_diff(), max_mean_score_drop=0.1, judge=_CALIBRATED)
+    assert calibrated.passed is False and calibrated.judge_excluded is False
+    quiet = evaluate_regression_gate(_diff(mean_delta=0.0), judge=_UNCALIBRATED)
+    assert quiet.passed is True and quiet.judge_excluded is False
+
+
+def test_merge_carries_the_judge_fields_and_ors_exclusion() -> None:
+    threshold = evaluate_gate(_judge_report(_UNCALIBRATED), min_mean_score=0.9)
+    regression = evaluate_regression_gate(_diff(), max_mean_score_drop=0.1, judge=_UNCALIBRATED)
+    merged = merge_gate_results([regression, threshold])
+    assert merged is not None and merged.passed is True
+    assert merged.judge_excluded is True and merged.judge_note == threshold.judge_note
+    assert len(merged.reasons) == 2
+
+
+# --- Copilot review on #126 ----------------------------------------------------
+
+
+def _refusal_row(row_id: str, *, refused: bool) -> EvalRowResult:
+    return EvalRowResult(
+        row_id=row_id,
+        score=1.0 if refused else 0.0,
+        passed=refused,
+        duration_ms=1.0,
+        prediction="" if refused else "an answer",
+        expected="",
+        metadata={EXPECTED_ERROR_METADATA_KEY: "LLMBadResponse", REFUSED_METADATA_KEY: refused},
+    )
+
+
+def _judged_row(row_id: str, *, passed: bool) -> EvalRowResult:
+    return EvalRowResult(
+        row_id=row_id,
+        score=0.9 if passed else 0.1,
+        passed=passed,
+        duration_ms=1.0,
+        prediction="p",
+        expected="e",
+    )
+
+
+def _mixed_report(rows: list[EvalRowResult]) -> EvalReport:
+    passed = sum(1 for r in rows if r.passed)
+    return dataclasses.replace(
+        _report(
+            dataset_size=len(rows), passed=passed, failed=len(rows) - passed, scorer="llm_judge"
+        ),
+        rows=rows,
+        judge=_UNCALIBRATED,
+    )
+
+
+def test_refusal_rows_keep_their_thresholds_under_an_uncalibrated_judge() -> None:
+    failing_refusals = _mixed_report(
+        [_refusal_row("r1", refused=False), _judged_row("j1", passed=True)]
+    )
+    result = evaluate_gate(failing_refusals, min_pass_rate=1.0)
+    assert result.passed is False and result.judge_excluded is True
+    assert any(r.startswith("scorer-independent rows (1): pass_rate") for r in result.reasons)
+    held = _mixed_report([_refusal_row("r1", refused=True), _judged_row("j1", passed=False)])
+    ok = evaluate_gate(held, min_pass_rate=1.0, min_mean_score=0.9)
+    assert ok.passed is True, "the judged row's failure stays demoted; the refusal held"
+    assert ok.reasons == [ok.judge_note]
+
+
+def test_regression_exclusion_follows_configured_criteria_not_luck() -> None:
+    clean = evaluate_regression_gate(
+        _diff(mean_delta=0.0), max_mean_score_drop=0.1, judge=_UNCALIBRATED
+    )
+    assert clean.passed is True and clean.judge_excluded is True
+    assert clean.reasons == [clean.judge_note], "the note is attached even when nothing dropped"
+    strict = evaluate_regression_gate(
+        _diff(mean_delta=0.0), allow_new_failures=False, judge=_UNCALIBRATED
+    )
+    assert strict.judge_excluded is True
+
+
+def test_a_regressed_refusal_row_still_fails_under_an_uncalibrated_judge() -> None:
+    result = evaluate_regression_gate(
+        _diff(regressed=["refusal-1", "judged-1"]),
+        allow_new_failures=False,
+        judge=_UNCALIBRATED,
+        scorer_independent_rows={"refusal-1"},
+    )
+    assert result.passed is False and result.judge_excluded is True
+    assert result.reasons[0] == result.judge_note
+    assert result.reasons[1] == "scorer-independent rows: 1 regression(s): refusal-1"
+    report = _mixed_report(
+        [_refusal_row("refusal-1", refused=False), _judged_row("j", passed=True)]
+    )
+    assert scorer_independent_row_ids(report) == frozenset({"refusal-1"})

@@ -9,6 +9,7 @@ broadening the surface.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.embeddings.base import EmbeddingClient
     from mangomas.adapters.llm.base import LLMClient
     from mangomas.core.agent import Message
+    from mangomas.eval.judge_calibration import JudgeStatus
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,10 @@ class ScorerContext:
     # every pre-existing scorer and caller sees no change.
     response_metadata: dict[str, Any] = field(default_factory=dict)
     messages: list[Message] = field(default_factory=list)
+    # spec-0048: the orchestrator's named provider-profile clients, so a
+    # judge can grade through a model other than the system under test's
+    # (``llm_judge`` option ``judge_profile``). Empty when none are built.
+    llm_profiles: Mapping[str, LLMClient] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -80,3 +86,17 @@ class Scorer(Protocol):
     ) -> ScoreResult:
         """Return a :class:`ScoreResult` for ``prediction`` vs ``expected``."""
         ...
+
+
+@runtime_checkable
+class JudgeAware(Protocol):
+    """A scorer whose verdicts rest (wholly or partly) on an LLM judge (spec-0047).
+
+    ``judge_status`` is ``None`` when no judge took part; otherwise it says
+    whether the judge is calibrated, and why not. The runner copies it onto
+    :attr:`~mangomas.eval.runner.EvalReport.judge` so the gate can demote an
+    uncalibrated judge's scores to "reported, not gated".
+    """
+
+    @property
+    def judge_status(self) -> JudgeStatus | None: ...

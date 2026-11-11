@@ -22,14 +22,17 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal
 
 from opentelemetry import trace
 
+from mangomas.eval.runner import EXPECTED_ERROR_METADATA_KEY
+
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.baseline import ReportDiff
+    from mangomas.eval.judge_calibration import JudgeStatus
     from mangomas.eval.runner import EvalReport
 
 logger = logging.getLogger(__name__)
@@ -43,6 +46,9 @@ _MEAN_DROP_NON_FINITE_NOTE = "mean_score drop is not a finite number"
 _RELIABILITY_UNAVAILABLE_NOTE = "pass_pow_k unavailable — min_pass_pow_k not met"
 #: ``min_pass_pow_k`` needs at least this many trials to mean anything.
 MIN_TRIALS_FOR_PASS_POW_K = 2
+_JUDGE_THRESHOLDS_NOT_APPLIED = "score thresholds not applied"
+_JUDGE_REGRESSION_NOT_APPLIED = "regression thresholds not applied"
+_SCORER_INDEPENDENT = "scorer-independent rows"
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,12 @@ class GateResult:
     # spec-0046: the reliability threshold and the report's pass^k.
     min_pass_pow_k: float | None = None
     actual_pass_pow_k: float | None = None
+    # spec-0047: set whenever the report carries a judge status; ``judge_excluded``
+    # is True when score-derived thresholds were demoted to informational
+    # because the judge is uncalibrated — machine-readable, so a consumer can
+    # refuse a "green" that rests on an uncalibrated judge.
+    judge_excluded: bool = False
+    judge_note: str | None = None
 
 
 # Sentinel supplying GateResult's own threshold-field defaults when
@@ -106,10 +118,19 @@ def evaluate_gate(
     opposite: it fails *closed* when the run has fewer than
     :data:`MIN_TRIALS_FOR_PASS_POW_K` trials or no ``pass_pow_k`` at all,
     because a reliability threshold that a single attempt can satisfy is
-    vacuous (spec-0046).
+    vacuous (spec-0046). When the report's judge is uncalibrated (spec-0047)
+    the three score-derived thresholds are replaced by one informational
+    note — the judge is *reported, not gated* — while ``fail_on_error`` and
+    the cost threshold still apply.
     """
     pass_rate = report.passed / report.dataset_size if report.dataset_size else 0.0
     reasons: list[str] = []
+    thresholds_configured = any(
+        value is not None for value in (min_mean_score, min_pass_rate, min_pass_pow_k)
+    )
+    judge_excluded, judge_note = _judge_verdict(
+        report.judge, thresholds_configured=thresholds_configured
+    )
 
     if report.dataset_size == 0:
         # Nothing to gate — always passes; the threshold checks below are
@@ -117,26 +138,36 @@ def evaluate_gate(
         # pass_rate/mean_score of 0.0 (which would otherwise fail thresholds).
         reasons.append(_EMPTY_DATASET_NOTE)
     else:
-        if min_mean_score is not None:
-            # ``nan < x`` is always False, so an unguarded NaN mean (a plugin
-            # scorer's ``ScoreResult`` is an unvalidated dataclass) would pass
-            # every threshold. Mirrors the cost ladder below.
-            if not math.isfinite(report.mean_score):
-                reasons.append(_MEAN_SCORE_NON_FINITE_NOTE)
-            elif report.mean_score < min_mean_score:
-                reasons.append(
-                    f"mean_score {report.mean_score:.3f} < min_mean_score {min_mean_score:.3f}"
+        if judge_excluded and judge_note is not None:
+            reasons.append(judge_note)
+            # Refusal rows never reached the judge, so its demotion does not
+            # cover them: the score thresholds still apply to that subset.
+            reasons.extend(
+                _scorer_independent_reasons(
+                    report,
+                    min_mean_score=min_mean_score,
+                    min_pass_rate=min_pass_rate,
+                    min_pass_pow_k=min_pass_pow_k,
                 )
-        if min_pass_rate is not None and pass_rate < min_pass_rate:
-            reasons.append(f"pass_rate {pass_rate:.3f} < min_pass_rate {min_pass_rate:.3f}")
+            )
+        else:
+            reasons.extend(
+                _score_reasons(
+                    report,
+                    pass_rate,
+                    min_mean_score=min_mean_score,
+                    min_pass_rate=min_pass_rate,
+                    min_pass_pow_k=min_pass_pow_k,
+                )
+            )
         if fail_on_error and report.errored > 0:
             reasons.append(f"{report.errored} row(s) errored (fail_on_error)")
         if max_mean_cost_usd is not None:
             reasons.extend(_cost_reasons(report, max_mean_cost_usd))
-        if min_pass_pow_k is not None:
-            reasons.extend(_reliability_reasons(report, min_pass_pow_k))
 
     informational = {_EMPTY_DATASET_NOTE, _COST_UNAVAILABLE_NOTE}
+    if judge_excluded and judge_note is not None:
+        informational.add(judge_note)
     failing = [reason for reason in reasons if reason not in informational]
     result = GateResult(
         passed=report.dataset_size == 0 or not failing,
@@ -151,9 +182,99 @@ def evaluate_gate(
         max_mean_cost_usd=max_mean_cost_usd,
         min_pass_pow_k=min_pass_pow_k,
         actual_pass_pow_k=report.pass_pow_k,
+        judge_excluded=judge_excluded,
+        judge_note=judge_note,
     )
     _log(result)
     return result
+
+
+def _score_reasons(
+    report: EvalReport,
+    pass_rate: float,
+    *,
+    min_mean_score: float | None,
+    min_pass_rate: float | None,
+    min_pass_pow_k: float | None,
+) -> list[str]:
+    """The three score-derived thresholds (mean, pass rate, pass^k)."""
+    reasons: list[str] = []
+    if min_mean_score is not None:
+        # ``nan < x`` is always False, so an unguarded NaN mean (a plugin
+        # scorer's ``ScoreResult`` is an unvalidated dataclass) would pass
+        # every threshold. Mirrors the cost ladder.
+        if not math.isfinite(report.mean_score):
+            reasons.append(_MEAN_SCORE_NON_FINITE_NOTE)
+        elif report.mean_score < min_mean_score:
+            reasons.append(
+                f"mean_score {report.mean_score:.3f} < min_mean_score {min_mean_score:.3f}"
+            )
+    if min_pass_rate is not None and pass_rate < min_pass_rate:
+        reasons.append(f"pass_rate {pass_rate:.3f} < min_pass_rate {min_pass_rate:.3f}")
+    if min_pass_pow_k is not None:
+        reasons.extend(_reliability_reasons(report, min_pass_pow_k))
+    return reasons
+
+
+def scorer_independent_row_ids(report: EvalReport) -> frozenset[str]:
+    """Ids of rows judged without the scorer — ``expected_error`` refusal checks."""
+    return frozenset(r.row_id for r in report.rows if EXPECTED_ERROR_METADATA_KEY in r.metadata)
+
+
+def _scorer_independent_reasons(
+    report: EvalReport,
+    *,
+    min_mean_score: float | None,
+    min_pass_rate: float | None,
+    min_pass_pow_k: float | None,
+) -> list[str]:
+    """Score thresholds over the rows an uncalibrated judge never graded.
+
+    An ``expected_error`` row passes on the named refusal and fails on an
+    answer without consulting the scorer, so its verdict is deterministic and
+    an uncalibrated judge elsewhere in the run is no reason to waive it
+    (Copilot review on #126). The subset is gated like a report of its own.
+    """
+    rows = [r for r in report.rows if EXPECTED_ERROR_METADATA_KEY in r.metadata]
+    if not rows:
+        return []
+    passed = sum(1 for r in rows if r.passed and r.error is None)
+    scored = [r.score for r in rows if r.error is None]
+    subset = replace(
+        report,
+        dataset_size=len(rows),
+        passed=passed,
+        mean_score=sum(scored) / len(scored) if scored else 0.0,
+        pass_pow_k=passed / len(rows),
+        rows=rows,
+    )
+    found = _score_reasons(
+        subset,
+        passed / len(rows),
+        min_mean_score=min_mean_score,
+        min_pass_rate=min_pass_rate,
+        min_pass_pow_k=min_pass_pow_k,
+    )
+    return [f"{_SCORER_INDEPENDENT} ({len(rows)}): {reason}" for reason in found]
+
+
+def _judge_verdict(
+    judge: JudgeStatus | None, *, thresholds_configured: bool
+) -> tuple[bool, str | None]:
+    """``(excluded, note)`` for the report's judge (spec-0047).
+
+    The note exists whenever a judge took part, calibrated or not, so the
+    self-preference claim is never dropped from a verdict. Exclusion — the
+    note replacing the score thresholds as an informational reason — happens
+    only when the judge is uncalibrated *and* a score threshold was actually
+    configured; otherwise "thresholds not applied" would be untrue.
+    """
+    if judge is None:
+        return False, None
+    note = judge.summary()
+    if judge.calibrated or not thresholds_configured:
+        return False, note
+    return True, f"{note} — {_JUDGE_THRESHOLDS_NOT_APPLIED}"
 
 
 def _cost_reasons(report: EvalReport, max_mean_cost_usd: float) -> list[str]:
@@ -195,6 +316,8 @@ def evaluate_regression_gate(
     max_mean_score_drop: float | None = None,
     max_pass_rate_drop: float | None = None,
     allow_new_failures: bool = True,
+    judge: JudgeStatus | None = None,
+    scorer_independent_rows: Collection[str] = (),
 ) -> GateResult:
     """Return a :class:`GateResult` for a baseline *diff* (regression gating).
 
@@ -202,6 +325,12 @@ def evaluate_regression_gate(
     ``actual_*`` fields carry the *current* run's metrics. A "drop" is
     ``baseline - current`` (positive = regression). A no-op gate
     (``max_*_drop=None`` and ``allow_new_failures=True``) always passes.
+    Score deltas from an uncalibrated *judge* are judge-derived too: when any
+    regression criterion is configured, such a ``judge`` turns the verdict into
+    one informational note and ``judge_excluded=True`` — whether or not the
+    raw deltas would have failed, so the flag never depends on luck (spec-0047).
+    Rows in *scorer_independent_rows* (refusal checks) are exempt from that
+    demotion: with ``allow_new_failures=False`` a regressed refusal row still fails.
     """
     reasons: list[str] = []
     mean_drop = -diff.mean_score_delta
@@ -217,12 +346,29 @@ def evaluate_regression_gate(
     if not allow_new_failures and diff.regressed_rows:
         shown = ", ".join(diff.regressed_rows[:5])
         reasons.append(f"{len(diff.regressed_rows)} row regression(s): {shown}")
+    criteria_configured = (
+        max_mean_score_drop is not None or max_pass_rate_drop is not None or not allow_new_failures
+    )
+    judge_excluded = judge is not None and not judge.calibrated and criteria_configured
+    judge_note = judge.summary() if judge is not None else None
+    failing = reasons
+    if judge_excluded and judge_note is not None:
+        judge_note = f"{judge_note} — {_JUDGE_REGRESSION_NOT_APPLIED}"
+        independent = [r for r in diff.regressed_rows if r in set(scorer_independent_rows)]
+        failing = (
+            [f"{_SCORER_INDEPENDENT}: {len(independent)} regression(s): {', '.join(independent)}"]
+            if not allow_new_failures and independent
+            else []
+        )
+        reasons = [judge_note, *failing]
     result = GateResult(
-        passed=not reasons,
+        passed=not failing,
         actual_mean_score=diff.current_mean_score,
         actual_pass_rate=diff.current_pass_rate,
         reasons=reasons,
         kind="regression",
+        judge_excluded=judge_excluded,
+        judge_note=judge_note,
     )
     _log_regression(result, diff)
     return result
@@ -268,6 +414,8 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
         max_mean_cost_usd=threshold_result.max_mean_cost_usd,
         min_pass_pow_k=threshold_result.min_pass_pow_k,
         actual_pass_pow_k=threshold_result.actual_pass_pow_k,
+        judge_excluded=any(r.judge_excluded for r in present),
+        judge_note=threshold_result.judge_note,
     )
 
 
@@ -307,6 +455,7 @@ def _log(result: GateResult) -> None:
             span.set_attribute("gate.pass_pow_k", result.actual_pass_pow_k)
         if result.min_pass_pow_k is not None:
             span.set_attribute("gate.min_pass_pow_k", result.min_pass_pow_k)
+        span.set_attribute("gate.judge_excluded", result.judge_excluded)
     logger.info(
         "Eval gate evaluated",
         extra={
@@ -316,6 +465,8 @@ def _log(result: GateResult) -> None:
             "pass_rate": result.actual_pass_rate,
             "mean_cost_usd": result.actual_mean_cost_usd,
             "pass_pow_k": result.actual_pass_pow_k,
+            "judge_excluded": result.judge_excluded,
+            "judge_note": result.judge_note,
             "errored": result.errored,
             "reasons": result.reasons,
         },

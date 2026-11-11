@@ -147,6 +147,24 @@ from mangomas.config.evaluation import (
     DEFAULT_EVAL_GATE_ENABLED as DEFAULT_EVAL_GATE_ENABLED,
 )
 from mangomas.config.evaluation import (
+    DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS as DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_JUDGE_CALIBRATION_PATH as DEFAULT_EVAL_JUDGE_CALIBRATION_PATH,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_JUDGE_MIN_KAPPA as DEFAULT_EVAL_JUDGE_MIN_KAPPA,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_JUDGE_MIN_RHO as DEFAULT_EVAL_JUDGE_MIN_RHO,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE as DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE,
+)
+from mangomas.config.evaluation import (
+    DEFAULT_EVAL_JUDGE_PROFILE as DEFAULT_EVAL_JUDGE_PROFILE,
+)
+from mangomas.config.evaluation import (
     DEFAULT_EVAL_MAX_MEAN_COST_USD as DEFAULT_EVAL_MAX_MEAN_COST_USD,
 )
 from mangomas.config.evaluation import (
@@ -253,6 +271,9 @@ from mangomas.config.llm import (
 )
 from mangomas.config.llm import (
     LLM_PROFILE_METADATA_KEY as LLM_PROFILE_METADATA_KEY,
+)
+from mangomas.config.llm import (
+    LLM_PROFILES_EXTRAS_KEY as LLM_PROFILES_EXTRAS_KEY,
 )
 from mangomas.config.llm import (
     LLMProfileSettings as LLMProfileSettings,
@@ -520,6 +541,12 @@ __all__ = [
     "DEFAULT_EVAL_FAIL_FAST",
     "DEFAULT_EVAL_FAIL_ON_ERROR",
     "DEFAULT_EVAL_GATE_ENABLED",
+    "DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS",
+    "DEFAULT_EVAL_JUDGE_CALIBRATION_PATH",
+    "DEFAULT_EVAL_JUDGE_MIN_KAPPA",
+    "DEFAULT_EVAL_JUDGE_MIN_RHO",
+    "DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE",
+    "DEFAULT_EVAL_JUDGE_PROFILE",
     "DEFAULT_EVAL_MAX_MEAN_COST_USD",
     "DEFAULT_EVAL_MAX_MEAN_SCORE_DROP",
     "DEFAULT_EVAL_MAX_PASS_RATE_DROP",
@@ -607,6 +634,7 @@ __all__ = [
     "EVAL_COST_USD_METADATA_KEY",
     "EVAL_USAGE_LLM_CALLS_KEY",
     "EVAL_USAGE_METADATA_KEY",
+    "LLM_PROFILES_EXTRAS_KEY",
     "LLM_PROFILE_METADATA_KEY",
     "MAX_SIGNAL_TTL_SECONDS",
     "MIN_REPAIR_ORACLE_PIDS_LIMIT",

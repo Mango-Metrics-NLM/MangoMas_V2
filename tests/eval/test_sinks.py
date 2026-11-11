@@ -135,3 +135,23 @@ async def test_console_sink_prints_the_trials_line_only_for_multi_trial_runs() -
     lines.clear()
     await ConsoleSink(write=lines.append).emit(no_rate)
     assert "trials=3 pass_pow_k=0.500" in lines
+
+
+async def test_console_sink_prints_the_judge_line_and_notes_on_a_pass() -> None:
+    from mangomas.eval.judge_calibration import JudgeStatus  # noqa: PLC0415 — scoped
+
+    status = JudgeStatus(calibrated=False, reason="no calibration record")
+    report = dataclasses.replace(_report(), judge=status)
+    gate = evaluate_gate(report, min_mean_score=0.9)
+    lines: list[str] = []
+    await ConsoleSink(write=lines.append).emit(report, gate_result=gate)
+    assert any(line.startswith("judge=llm_judge uncalibrated") for line in lines)
+    assert any(line.startswith("gate=PASS (note: ") and "not applied" in line for line in lines)
+    # A clean pass keeps the bare line; a failing verdict keeps its reasons.
+    lines.clear()
+    await ConsoleSink(write=lines.append).emit(_report(), gate_result=evaluate_gate(_report()))
+    assert "gate=PASS" in lines
+    lines.clear()
+    failing = evaluate_gate(_report(), min_mean_score=0.99)
+    await ConsoleSink(write=lines.append).emit(_report(), gate_result=failing)
+    assert any(line.startswith("gate=FAIL (mean_score") for line in lines)

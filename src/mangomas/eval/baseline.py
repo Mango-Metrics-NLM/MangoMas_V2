@@ -23,6 +23,7 @@ from opentelemetry import trace
 
 from mangomas.config import DEFAULT_EVAL_TRIALS
 from mangomas.errors import ConfigError
+from mangomas.eval.judge_calibration import JudgeStatus
 from mangomas.eval.provenance import RunProvenance
 from mangomas.eval.runner import EvalReport, EvalRowResult, SliceStats
 
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 _ROW_FIELDS = {f.name for f in fields(EvalRowResult)}
 _RUN_FIELDS = {f.name for f in fields(RunProvenance)}
 _SLICE_FIELDS = {f.name for f in fields(SliceStats)}
+_JUDGE_FIELDS = {f.name for f in fields(JudgeStatus)}
 
 
 def _pass_rate(report: EvalReport) -> float:
@@ -157,6 +159,7 @@ def _report_from_dict(data: Mapping[str, Any]) -> EvalReport:
             trials=data.get("trials", DEFAULT_EVAL_TRIALS),
             pass_pow_k=data.get("pass_pow_k"),
             trial_pass_rate=data.get("trial_pass_rate"),
+            judge=_judge_from_dict(data.get("judge")),
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         # ``AttributeError``: a row that is not an object (``.items`` on a list /
@@ -169,6 +172,13 @@ def _run_from_dict(raw: Any) -> RunProvenance | None:
     if not isinstance(raw, Mapping):
         return None
     return RunProvenance(**{k: v for k, v in raw.items() if k in _RUN_FIELDS})
+
+
+def _judge_from_dict(raw: Any) -> JudgeStatus | None:
+    """Judge status (spec-0047): absent in older baselines, tolerant of new keys."""
+    if not isinstance(raw, Mapping):
+        return None
+    return JudgeStatus(**{k: v for k, v in raw.items() if k in _JUDGE_FIELDS})
 
 
 def _row_from_dict(raw: Mapping[str, Any]) -> EvalRowResult:

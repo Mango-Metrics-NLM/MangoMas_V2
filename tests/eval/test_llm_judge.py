@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
 import pytest
 
+from mangomas.core import Message
 from mangomas.errors import ConfigError, LLMBadResponse
-from mangomas.eval.protocol import ScorerContext
+from mangomas.eval.protocol import JudgeAware, ScorerContext
 from mangomas.eval.registry import scorer_registry
-from mangomas.eval.scorers.llm_judge import LLMJudgeScorer
+from mangomas.eval.scorers.llm_judge import (
+    _JUDGE_SYSTEM_PROMPT,
+    LLMJudgeScorer,
+    build_judge_system_prompt,
+    judge_prompt_sha256,
+    judge_status_from_options,
+)
+from mangomas.utils import clock
 from tests.fakes import FakeLLM
 
 
@@ -137,3 +147,223 @@ async def test_judge_warns_once_that_it_grades_with_the_system_under_test_client
         r for r in caplog.records if r.__dict__.get("event") == "eval_llm_judge_self_grading"
     ]
     assert len(warnings) == 1
+
+
+# --- calibration status (spec-0047) ------------------------------------------
+
+
+def _write_record(path: Path, **overrides: object) -> Path:
+    record: dict[str, object] = {
+        "judge_model": "judge-model",
+        "measured_at": clock.now().date().isoformat(),
+        "sample_size": 300,
+        "cohens_kappa": 0.9,
+        "self_preference": "not_measured",
+        "prompt_sha256": judge_prompt_sha256(),
+    }
+    record.update(overrides)
+    path.write_text(json.dumps(record), encoding="utf-8")
+    return path
+
+
+def test_a_bare_judge_is_uncalibrated_and_says_so() -> None:
+    scorer = LLMJudgeScorer()
+    assert isinstance(scorer, JudgeAware)
+    assert scorer.judge_status.calibrated is False
+    assert scorer.judge_status.reason == "no calibration record"
+
+
+def test_factory_builds_the_status_from_options(tmp_path: Path) -> None:
+    path = _write_record(tmp_path / "cal.json")
+    calibrated = scorer_registry.get("llm_judge")(
+        {"calibration_path": str(path), "judge_model": "judge-model"}
+    )
+    assert isinstance(calibrated, LLMJudgeScorer) and calibrated.judge_status.calibrated is True
+    other_model = scorer_registry.get("llm_judge")(
+        {"calibration_path": str(path), "judge_model": "another-model"}
+    )
+    assert isinstance(other_model, LLMJudgeScorer)
+    assert other_model.judge_status.calibrated is False
+    assert "record is for model" in other_model.judge_status.reason
+    stricter = scorer_registry.get("llm_judge")(
+        {"calibration_path": str(path), "judge_model": "judge-model", "min_sample_size": 500}
+    )
+    assert isinstance(stricter, LLMJudgeScorer) and stricter.judge_status.calibrated is False
+    no_model = scorer_registry.get("llm_judge")({"calibration_path": str(path)})
+    assert isinstance(no_model, LLMJudgeScorer)
+    assert no_model.judge_status.reason == "judge model unknown"
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"calibration_path": 7},
+        {"judge_model": 7},
+        {"min_sample_size": 0},
+        {"min_sample_size": True},
+        {"max_age_days": "soon"},
+        {"min_kappa": 1.5},
+        {"min_rho": "high"},
+        {"calibration_path": "/nonexistent/record.json", "judge_model": "judge-model"},
+    ],
+)
+def test_factory_rejects_bad_calibration_options(options: dict[str, object]) -> None:
+    with pytest.raises(ConfigError):
+        judge_status_from_options(options)
+
+
+async def test_the_self_grading_warning_carries_the_calibration_status(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    scorer = LLMJudgeScorer()
+    ctx = ScorerContext(llm=FakeLLM(reply='{"score": 0.9, "rationale": "fine"}'))
+    with caplog.at_level(logging.WARNING, logger="mangomas.eval.scorers.llm_judge"):
+        await scorer.score("a", "b", context=ctx)
+    record = next(
+        r for r in caplog.records if r.__dict__.get("event") == "eval_llm_judge_self_grading"
+    )
+    assert record.__dict__["judge_calibrated"] is False
+    assert "uncalibrated" in record.getMessage()
+
+
+# --- judge prompt controls (spec-0048) ---------------------------------------
+
+_VERDICT = '{"score": 0.8, "rationale": "close"}'
+_RUBRIC = ["Answers the question asked", "States no unsupported facts"]
+
+
+async def _send(scorer: LLMJudgeScorer, context: ScorerContext) -> list[Message]:
+    await scorer.score("the prediction", "the expected", context=context)
+    llm = context.llm_profiles.get("cloud") or context.llm
+    assert isinstance(llm, FakeLLM)
+    return llm.calls[-1]
+
+
+async def test_the_default_prompt_is_byte_identical() -> None:
+    sent = await _send(LLMJudgeScorer(), ScorerContext(llm=FakeLLM(reply=_VERDICT)))
+    assert sent[0].content == _JUDGE_SYSTEM_PROMPT
+    assert sent[1].content == "PREDICTION:\nthe prediction\n\nEXPECTED:\nthe expected"
+    assert build_judge_system_prompt() == _JUDGE_SYSTEM_PROMPT
+
+
+async def test_a_rubric_is_rendered_before_the_output_format() -> None:
+    sent = await _send(LLMJudgeScorer(rubric=_RUBRIC), ScorerContext(llm=FakeLLM(reply=_VERDICT)))
+    system = sent[0].content
+    assert "RUBRIC" in system and "- Answers the question asked" in system
+    assert system.endswith('"rationale": "<short explanation>"}'), "format stays last"
+    single = build_judge_system_prompt(rubric="Be terse")
+    assert "- Be terse" in single
+
+
+async def test_include_input_shows_every_input_message_with_its_role() -> None:
+    context = ScorerContext(
+        llm=FakeLLM(reply=_VERDICT),
+        messages=[
+            Message(role="system", content="You are terse."),
+            Message(role="user", content="What is 2+2?"),
+        ],
+    )
+    sent = await _send(LLMJudgeScorer(include_input=True), context)
+    assert "INPUT a model was asked" in sent[0].content
+    assert sent[1].content.startswith(
+        "INPUT:\n[system] You are terse.\n[user] What is 2+2?\n\nPREDICTION:"
+    )
+    bare = await _send(
+        LLMJudgeScorer(include_input=True), ScorerContext(llm=FakeLLM(reply=_VERDICT))
+    )
+    assert bare[1].content.startswith("INPUT:\n(none)\n\n")
+
+
+def test_the_prompt_digest_is_stable_and_moves_with_every_knob() -> None:
+    base = judge_prompt_sha256()
+    assert base == judge_prompt_sha256() == LLMJudgeScorer().prompt_sha256
+    assert base.startswith("sha256:")
+    variants = {
+        judge_prompt_sha256(rubric=_RUBRIC),
+        judge_prompt_sha256(rubric="Be terse"),
+        judge_prompt_sha256(include_input=True),
+        judge_prompt_sha256(rubric=_RUBRIC, include_input=True),
+    }
+    assert base not in variants and len(variants) == 4
+    assert LLMJudgeScorer().judge_status.prompt_sha256 == base
+
+
+async def test_a_fenced_reply_is_recovered_and_says_so() -> None:
+    fenced = 'Here you go:\n```json\n{"score": 0.9, "rationale": "good"}\n```'
+    result = await LLMJudgeScorer().score("a", "b", context=_ctx(fenced))
+    assert result.score == pytest.approx(0.9)
+    assert result.metadata["parse"] == "recovered"
+    strict = await LLMJudgeScorer().score("a", "b", context=_ctx(_VERDICT))
+    assert strict.metadata["parse"] == "strict"
+    with pytest.raises(LLMBadResponse, match="not JSON"):
+        await LLMJudgeScorer().score("a", "b", context=_ctx('prose {"rationale": "no score"}'))
+    with pytest.raises(LLMBadResponse, match="not numeric"):
+        await LLMJudgeScorer().score("a", "b", context=_ctx('note: {"score": "high"} end'))
+
+
+async def test_a_judge_profile_grades_through_its_own_client(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    shared = FakeLLM(reply='{"score": 0.1, "rationale": "shared"}')
+    profile = FakeLLM(reply=_VERDICT)
+    scorer = LLMJudgeScorer(judge_profile="cloud")
+    context = ScorerContext(llm=shared, llm_profiles={"cloud": profile})
+    with caplog.at_level(logging.INFO, logger="mangomas.eval.scorers.llm_judge"):
+        result = await scorer.score("a", "b", context=context)
+    assert result.score == pytest.approx(0.8)
+    assert shared.calls == [] and len(profile.calls) == 1
+    events = [r.__dict__.get("event") for r in caplog.records]
+    assert "eval_llm_judge_profile" in events
+    assert "eval_llm_judge_self_grading" not in events
+    assert scorer.judge_status.judge_profile == "cloud"
+    with pytest.raises(ConfigError, match="judge_profile 'cloud' is not a built LLM profile"):
+        await LLMJudgeScorer(judge_profile="cloud").score("a", "b", context=_ctx(_VERDICT))
+    with pytest.raises(LLMBadResponse, match="requires a ScorerContext"):
+        await LLMJudgeScorer().score("a", "b", context=ScorerContext(llm=None))
+
+
+def test_factory_reads_the_prompt_options_and_pins_the_digest(tmp_path: Path) -> None:
+    rubric_digest = judge_prompt_sha256(rubric=_RUBRIC, include_input=True)
+    path = _write_record(tmp_path / "cal.json", prompt_sha256=rubric_digest)
+    scorer = scorer_registry.get("llm_judge")(
+        {
+            "rubric": _RUBRIC,
+            "include_input": True,
+            "judge_profile": "cloud",
+            "calibration_path": str(path),
+            "judge_model": "judge-model",
+        }
+    )
+    assert isinstance(scorer, LLMJudgeScorer)
+    assert scorer.prompt_sha256 == rubric_digest
+    assert scorer.judge_status.calibrated is True
+    assert scorer.judge_status.judge_profile == "cloud"
+    default_prompt = scorer_registry.get("llm_judge")(
+        {"calibration_path": str(path), "judge_model": "judge-model"}
+    )
+    assert isinstance(default_prompt, LLMJudgeScorer)
+    assert default_prompt.judge_status.calibrated is False
+    assert "record is for judge prompt" in default_prompt.judge_status.reason
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"rubric": ""},
+        {"rubric": []},
+        {"rubric": ["ok", 3]},
+        {"rubric": 7},
+        {"include_input": "yes"},
+        {"judge_profile": ""},
+        {"judge_profile": 9},
+    ],
+)
+def test_factory_rejects_bad_prompt_options(options: dict[str, object]) -> None:
+    with pytest.raises(ConfigError):
+        scorer_registry.get("llm_judge")(options)
+
+
+def test_factory_accepts_a_single_rubric_string() -> None:
+    scorer = scorer_registry.get("llm_judge")({"rubric": "  Answers the question asked  "})
+    assert isinstance(scorer, LLMJudgeScorer)
+    assert scorer.prompt_sha256 == judge_prompt_sha256(rubric="Answers the question asked")

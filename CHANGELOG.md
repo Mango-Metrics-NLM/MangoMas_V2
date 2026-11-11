@@ -9,6 +9,63 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — dev toolchain bumped in lockstep; Dependabot stops raising mirrored hook floors
+
+- `ruff` 0.16.6 → 0.17.3 and `mypy` 2.3.0 → 2.4.1 in `pyproject.toml`'s dev
+  extra **and** `.pre-commit-config.yaml` in one commit, which is what
+  `tests/tooling/test_toolchain_pin_parity.py` requires and what Dependabot
+  PRs #113 / #116 could not do from one ecosystem each. `coverage` 7.16.0 →
+  7.17.1 (#117) rides along: its only failure was the protected-path gate,
+  which a Dependabot commit cannot satisfy because it carries no
+  `BREAKING-CHANGE` trailer. ruff 0.17.3 reports nothing new over the full lint
+  surface; mypy 2.4.1 is clean at the repo's `python_version = "3.11"` — and,
+  unlike 2.3.0, no longer aborts on numpy ≥ 2.3 stubs (PEP 695 `type`
+  statements) when an extra such as `[rag]` installs numpy, so `make typecheck`
+  works in a full dev environment again.
+- `.github/dependabot.yml`: the pre-commit ecosystem ignores the mypy hook's
+  `additional_dependencies` (hook-scoped wildcard plus each package name). They
+  mirror pyproject's runtime ranges by contract, so a Dependabot PR raising them
+  alone (#112) can only fail the parity test. The hook revs still update
+  (`tests/deploy/test_workflow_hardening.py::test_dependabot_never_bumps_hook_dependencies_that_mirror_pyproject`,
+  `::test_dependabot_still_updates_the_hook_revs_themselves`).
+
+### Added — judge calibration record: `llm_judge` reported, not gated, until calibrated (spec-0047 / reliability plan C2)
+
+- `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` + `JUDGE_CALIBRATION_MAX_AGE_DAYS` /
+  `JUDGE_MIN_KAPPA` / `JUDGE_MIN_RHO` / `JUDGE_MIN_SAMPLE_SIZE`: a JSON record
+  (judge model, date, n, Cohen's κ, Spearman ρ, self-preference) is loaded and
+  assessed by `eval/judge_calibration.py`; the first failing rule is the reason.
+  `LLMJudgeScorer.judge_status` is never None (a bare judge is uncalibrated),
+  `CompositeScorer` forwards a judge child's status, and the runner stamps it
+  on `EvalReport.judge` (`tests/eval/test_judge_calibration.py`,
+  `test_llm_judge.py`, `test_composite.py`).
+- Gate: an uncalibrated judge's score thresholds (`min_mean_score`,
+  `min_pass_rate`, `min_pass_pow_k`) and judge-derived regression deltas are
+  replaced by one informational note; `GateResult.judge_excluded` /
+  `judge_note` are additive and the note keeps the self-preference claim
+  (`tests/eval/test_gate.py::test_uncalibrated_judge_scores_are_reported_but_not_gated`).
+  `fail_on_error` and the cost threshold still apply.
+- Console prints `judge=…` for judge runs and now prints informational notes on
+  a **passing** verdict (`gate=PASS (note: …)`) — the cost-unavailable note was
+  silent before; `sqlite_results` gains `judge_json`; the CLI seeds the judge's
+  options from settings (`_seed_judge_options`; `tests/eval/test_cli_eval.py`).
+- Judge prompt controls (spec-0048): `llm_judge` options `rubric`,
+  `include_input` (row input incl. system prompt) and `judge_profile` /
+  `MANGOMAS_EVAL__JUDGE_PROFILE` (grade through a named LLM profile, logged at
+  INFO instead of the self-grading WARNING); a reply wrapped in prose or a fence
+  is recovered and the row records `parse`. The calibration record pins the
+  judge prompt by `prompt_sha256` and the judging model follows the profile, so
+  a record never vouches for a prompt or model it did not measure
+  (`tests/eval/test_judge_calibration.py::test_a_record_for_another_prompt_does_not_calibrate`).
+  `LLM_PROFILES_EXTRAS_KEY` now lives in `config/llm.py` (re-exported where it was).
+- Review follow-ups (Copilot on #126): the judge is stamped on a report only
+  when it graded a row, and refusal (`expected_error`) rows keep their score
+  thresholds under an uncalibrated judge; regression exclusion follows the
+  configured criteria rather than whether deltas failed, while a regressed
+  refusal row still fails; an explicit `-s composite` judge child is seeded
+  with the calibration settings; a status names the active judge model, not the
+  record's (`tests/eval/test_gate.py::test_refusal_rows_keep_their_thresholds_under_an_uncalibrated_judge`).
+
 ### Added — pass^k trials as the reliability metric of record (spec-0046 / reliability plan C1)
 
 - `MANGOMAS_EVAL__TRIALS` / `--trials` (`-k`): every row runs `k` times and

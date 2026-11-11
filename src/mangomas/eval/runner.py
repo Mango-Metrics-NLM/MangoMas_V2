@@ -20,19 +20,21 @@ from mangomas.config import (
     DEFAULT_EVAL_SLICE_KEY,
     DEFAULT_EVAL_TRIALS,
     EVAL_COST_USD_METADATA_KEY,
+    LLM_PROFILES_EXTRAS_KEY,
 )
 from mangomas.core import AgentRequest
 from mangomas.correlation import (
     generate_correlation_id,
     set_correlation_id,
 )
-from mangomas.eval.protocol import ScorerContext
+from mangomas.eval.protocol import JudgeAware, ScorerContext
 from mangomas.eval.provenance import RunProvenance, build_provenance
 from mangomas.eval.target import coerce_outcome
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
     from mangomas.eval.dataset import DatasetRow
+    from mangomas.eval.judge_calibration import JudgeStatus
     from mangomas.eval.protocol import Scorer
     from mangomas.eval.target import Target
 
@@ -125,6 +127,16 @@ def _mean_cost_usd(rows: list[EvalRowResult]) -> float | None:
     if not present:
         return None
     return sum(present) / len(present)
+
+
+def consulted_scorer(row: EvalRowResult) -> bool:
+    """Whether the scorer could have graded *row* (spec-0047, Copilot review on #126).
+
+    An ``expected_error`` row is judged by its refusal alone — the scorer is
+    never consulted — and a ``fail_fast`` placeholder was never dispatched.
+    Every other row reached the scorer, or errored on the way to it.
+    """
+    return EXPECTED_ERROR_METADATA_KEY not in row.metadata and not row.metadata.get("skipped")
 
 
 #: Row-metadata key under which a multi-trial row records its trials (spec-0046).
@@ -264,6 +276,10 @@ class EvalReport:
     trials: int = DEFAULT_EVAL_TRIALS
     pass_pow_k: float | None = None
     trial_pass_rate: float | None = None
+    # spec-0047: present when an LLM judge took part in scoring; says whether
+    # it is calibrated. ``None`` for every deterministic scorer and for a
+    # baseline written before the field existed.
+    judge: JudgeStatus | None = None
 
 
 class EvalRunner:
@@ -310,6 +326,9 @@ class EvalRunner:
         self._slice_key = slice_key
         self._provenance_labels = dict(provenance_labels or {})
         self._trials = trials
+        self._judge: JudgeStatus | None = (
+            scorer.judge_status if isinstance(scorer, JudgeAware) else None
+        )
 
     async def _score_row_trials(self, row: DatasetRow, *, target: Target) -> EvalRowResult:
         """Run *row* ``trials`` times (sequentially, each its own correlation id)."""
@@ -361,6 +380,7 @@ class EvalRunner:
                 correlation_id=correlation_id,
                 response_metadata=dict(response_metadata),
                 messages=list(row.messages),
+                llm_profiles=dict(self._orch.context.extras.get(LLM_PROFILES_EXTRAS_KEY) or {}),
             )
             result = await self._scorer.score(prediction, row.expected, context=ctx)
         except Exception as exc:
@@ -473,6 +493,8 @@ class EvalRunner:
                 trials=self._trials,
                 pass_pow_k=0.0,
                 trial_pass_rate=0.0,
+                # Nothing was judged, so there is no judge verdict to demote.
+                judge=None,
             )
         logger.info(
             "Eval run starting",
@@ -513,6 +535,9 @@ class EvalRunner:
             trials=self._trials,
             pass_pow_k=passed / len(dataset),
             trial_pass_rate=_trial_pass_rate(rows, self._trials),
+            # Stamped only when the judge graded at least one row: a dataset of
+            # refusal checks never consults it, and must not be demoted by it.
+            judge=self._judge if any(consulted_scorer(r) for r in rows) else None,
         )
         logger.info(
             "Eval run complete",

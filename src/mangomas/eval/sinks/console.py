@@ -74,9 +74,20 @@ class ConsoleSink:
             self._write(
                 f"run={report.run.run_id} dataset={report.run.dataset_sha256[:19]} git={sha[:12]}"
             )
+        if report.judge is not None:
+            self._write(f"judge={report.judge.summary()}")
         if gate_result is not None:
             verdict = "PASS" if gate_result.passed else "FAIL"
-            suffix = "" if gate_result.passed else f" ({'; '.join(gate_result.reasons)})"
+            joined = "; ".join(gate_result.reasons)
+            # A passing verdict can still carry informational notes (empty
+            # dataset, cost unavailable, uncalibrated judge); printing them is
+            # what keeps a "PASS" from hiding that a threshold was not applied.
+            if not gate_result.reasons:
+                suffix = ""
+            elif gate_result.passed:
+                suffix = f" (note: {joined})"
+            else:
+                suffix = f" ({joined})"
             self._write(f"gate={verdict}{suffix}")
 
 

@@ -73,6 +73,8 @@ _ADDITIVE_REPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     # spec-0046: attempts per row and the pass^k fraction.
     ("trials", "INTEGER"),
     ("pass_pow_k", "REAL"),
+    # spec-0047: the judge calibration status, when a judge took part.
+    ("judge_json", "TEXT"),
 )
 
 
@@ -139,12 +141,15 @@ class SqliteResultsSink:
         conn.executescript(_SCHEMA)
         SqliteResultsSink._migrate(conn)
         run_json = json.dumps(dataclasses.asdict(report.run)) if report.run is not None else None
+        judge_json = (
+            json.dumps(dataclasses.asdict(report.judge)) if report.judge is not None else None
+        )
         cur = conn.execute(
             "INSERT INTO eval_reports "
             "(ts, scorer, agent_name, target_name, dataset_size, passed, failed, "
             "errored, mean_score, duration_ms, gate_json, mean_cost_usd, run_json, "
-            "trials, pass_pow_k) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "trials, pass_pow_k, judge_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 clock.now().isoformat(),
                 report.scorer,
@@ -161,6 +166,7 @@ class SqliteResultsSink:
                 run_json,
                 report.trials,
                 report.pass_pow_k,
+                judge_json,
             ),
         )
         report_id = int(cur.lastrowid or 0)

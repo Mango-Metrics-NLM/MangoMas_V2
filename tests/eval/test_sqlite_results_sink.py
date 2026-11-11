@@ -293,3 +293,18 @@ async def test_sqlite_results_sink_stores_trials_and_pass_pow_k(tmp_path: Path) 
             "SELECT trials, pass_pow_k FROM eval_reports"
         ).fetchone()
     assert (trials, pass_pow_k) == (4, 0.25)
+
+
+async def test_sqlite_results_sink_stores_judge_json(tmp_path: Path) -> None:
+    import dataclasses  # noqa: PLC0415 — local to keep the module header untouched
+
+    from mangomas.eval.judge_calibration import JudgeStatus  # noqa: PLC0415
+
+    db = tmp_path / "results.db"
+    status = JudgeStatus(calibrated=False, reason="no calibration record")
+    await SqliteResultsSink(db_path=str(db)).emit(dataclasses.replace(_report(), judge=status))
+    await SqliteResultsSink(db_path=str(db)).emit(_report())
+    with sqlite3.connect(db) as conn:
+        rows = conn.execute("SELECT judge_json FROM eval_reports ORDER BY id").fetchall()
+    assert json.loads(rows[0][0])["calibrated"] is False
+    assert rows[1][0] is None

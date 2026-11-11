@@ -178,10 +178,15 @@ floor. It is `workflow_dispatch`-only, `EVAL_GATE_ENABLED`-gated, five rows,
 - The metric earns its place: at k=8, a 90 %-pass@1 agent reports 57 %.
   Single-trial `pass_rate` cannot see that.
 
-### Milestone C2 — demote `llm_judge` until it is calibrated
+### Milestone C2 — demote `llm_judge` until it is calibrated ✅ (spec-0047, record + demotion)
 
 - **Failing test first:** `tests/eval/test_gate.py::test_uncalibrated_judge_scores_are_reported_but_not_gated`.
-- **Depends on:** C1.
+- **Depends on:** C1. *Landed:* `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` + the
+  κ / ρ / n / age floors, `EvalReport.judge`, `GateResult.judge_excluded`, the
+  console `judge=` line and notes on a passing gate; then (spec-0048) `rubric`,
+  `include_input`, `judge_profile` and lenient parsing, with the record pinned to
+  the prompt by `prompt_sha256`. *Still open under C2:* the calibration run
+  itself — no record exists yet, so the judge stays demoted.
 - `llm_judge` scores through `context.llm` — the same client as the system under
   test — so self-preference bias is structural. Today it can contribute to a
   gate verdict with no calibration evidence at all.

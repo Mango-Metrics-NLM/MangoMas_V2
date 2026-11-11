@@ -45,6 +45,12 @@ env-driven via `MANGOMAS_EVAL__*`:
 | `MANGOMAS_EVAL__FAIL_ON_ERROR` | `false` | Fail the gate if any row errored |
 | `MANGOMAS_EVAL__MAX_MEAN_COST_USD` | (unset) | Fail the gate if `mean_cost_usd` exceeds this USD amount |
 | `MANGOMAS_EVAL__MIN_PASS_POW_K` | (unset) | Fail the gate if `pass_pow_k` below this `[0,1]`; fails closed when `TRIALS < 2` |
+| `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` | (unset) | `llm_judge` calibration record; unset = judge reported, not gated |
+| `MANGOMAS_EVAL__JUDGE_CALIBRATION_MAX_AGE_DAYS` | `180` | Record staleness limit |
+| `MANGOMAS_EVAL__JUDGE_MIN_KAPPA` | `0.8` | Cohen's κ floor (κ or ρ suffices) |
+| `MANGOMAS_EVAL__JUDGE_MIN_RHO` | `0.85` | Spearman ρ floor |
+| `MANGOMAS_EVAL__JUDGE_MIN_SAMPLE_SIZE` | `200` | Minimum labelled rows behind a record |
+| `MANGOMAS_EVAL__JUDGE_PROFILE` | (unset) | LLM profile the judge grades through (unset = the shared client) |
 | `MANGOMAS_EVAL__BASELINE_PATH` | (unset) | Baseline report JSON to diff against (regression gating) |
 | `MANGOMAS_EVAL__MAX_MEAN_SCORE_DROP` | (unset) | Max allowed `mean_score` drop vs baseline `[0,1]` |
 | `MANGOMAS_EVAL__MAX_PASS_RATE_DROP` | (unset) | Max allowed `pass_rate` drop vs baseline `[0,1]` |
@@ -109,7 +115,7 @@ thresholds without callers re-implementing the rule).
 | Scorer | Registry name | Behaviour |
 |---|---|---|
 | `ExactMatchScorer` | `exact_match` | Strict string match, with optional case-folding (`case_sensitive`) and whitespace normalisation (`strip_whitespace`). Default options: case-insensitive, whitespace-collapsing. |
-| `LLMJudgeScorer` | `llm_judge` | Routes a structured prompt through the orchestrator's LLM client. Expects a one-line JSON response `{"score": <float>, "rationale": "..."}`. `passed = score >= threshold` (default `0.7`). Malformed responses raise `LLMBadResponse`. |
+| `LLMJudgeScorer` | `llm_judge` | Routes a structured prompt through the orchestrator's LLM client. Expects a one-line JSON response `{"score": <float>, "rationale": "..."}`. `passed = score >= threshold` (default `0.7`). Malformed responses raise `LLMBadResponse`. **Self-grading**: the judge is the system under test's own client, so its scores are *reported, not gated* until a calibration record covers its model — see "Judge calibration" below. |
 | `EmbeddingScorer` | `embedding` | Cosine similarity of embeddings of `prediction` and `expected`. **Requires an LLM with `.embed()`**. |
 | `RegexMatchScorer` | `regex_match` | `expected` is a **regex** (per row); pass iff it matches `prediction`. Options: `flags` (`ignorecase`/`multiline`/`dotall`), `fullmatch`. |
 | `ContainsScorer` | `contains` | `expected` is a **substring** (per row); pass iff contained in `prediction`. Option: `case_sensitive`. |
@@ -221,6 +227,99 @@ Consequences, all pinned by `tests/eval/test_cost_measurement_basis.py`:
 
 So read `source` before publishing a threshold, and gate `mean_cost_usd` only over
 rows whose tier you mean.
+
+### Judge calibration (reported, not gated)
+
+`llm_judge` scores through `ScorerContext.llm` — the orchestrator's shared
+client, i.e. the system under test's own model — so self-preference bias is
+structural and a judge verdict is not evidence until it has been checked
+against people. Spec-0047 (reliability plan C2) makes that explicit:
+
+- Every judge run stamps `EvalReport.judge` with a `JudgeStatus` (`calibrated`,
+  `reason`, `judge_model`, `measured_at`, `sample_size`, `cohens_kappa`,
+  `spearman_rho`, `self_preference`). The console prints it as `judge=…`; the
+  JSON / webhook payloads and `sqlite_results` (`judge_json`) carry it.
+- With no record, or one that is stale, for another model, too small, below the
+  floors, or `self_preference: measured_biased`, the judge is **uncalibrated**:
+  when a score threshold (`--min-mean-score`, `--min-pass-rate`,
+  `--min-pass-pow-k`) is configured the gate replaces those checks with one
+  informational note — `gate=PASS (note: llm_judge uncalibrated (…) — score
+  thresholds not applied; …)` — and sets `GateResult.judge_excluded = true`, so a
+  downstream consumer can refuse a green that rests on an uncalibrated judge.
+  `--fail-on-error` and `--max-mean-cost-usd` still apply. **Refusal rows**
+  (`expected_error`) never reach the judge, so the score thresholds still apply
+  to that subset (`scorer-independent rows (n): …`), and a report whose rows were
+  all refusal checks carries no judge at all. A regression gate on a judge run
+  is demoted whenever a regression criterion is configured — `judge_excluded`
+  does not depend on whether the deltas happened to fail — except that a
+  regressed refusal row still fails under `--no-allow-new-failures`. This is the `cost_budget` posture (skip, say so), chosen over
+  failing closed so a team can keep collecting judge scores while it produces
+  the record; a future opt-in to fail closed is the right place for the
+  stricter stance.
+- A **composite** with a judge child is demoted as a whole (`min` / `all` make
+  every aggregate judge-tainted); run the judge as its own invocation when you
+  want deterministic gating beside it. The judge child is seeded with the
+  calibration settings whether it comes from repeated `-s` or from an explicit
+  `-s composite` (`{"scorers": ["contains", "llm_judge"]}`, bare name or object form).
+
+#### Judge options (spec-0048)
+
+Set through `MANGOMAS_EVAL__SCORER_OPTIONS` (flat for `-s llm_judge`, under
+`"llm_judge"` when it is one of several `-s`); all default off, and the
+default prompt is byte-identical to the historical one.
+
+| Option | Default | Effect |
+|---|---|---|
+| `threshold` | `0.7` | `passed = score >= threshold` |
+| `rubric` | (none) | A string or list of criteria rendered as a `RUBRIC` block before the output format |
+| `include_input` | `false` | The judge also sees the row's input messages, system prompt included, as `INPUT: [role] content` |
+| `judge_profile` | `MANGOMAS_EVAL__JUDGE_PROFILE` | Grade through that LLM profile's client instead of the shared one; logged at INFO, not as self-grading |
+
+A reply wrapped in a code fence or prose is recovered (`parse: "recovered"` in
+the row metadata; `"strict"` otherwise); recovery widens formatting tolerance
+only — a recovered score passes the same numeric / finite checks.
+
+`rubric` and `include_input` change what the judge is asked, so they change the
+**prompt digest** (`EvalReport.judge.prompt_sha256`, printed short in the
+console `judge=` line). A calibration record must name the same digest: one
+measured under another prompt, or one that pins none, does not calibrate.
+`judge_profile` changes *who* judges, so with a profile the record's
+`judge_model` must be that profile's model.
+
+The record is JSON at `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH` (a set-but-missing
+or malformed path is exit 2, never "absent"):
+
+```json
+{
+  "judge_model": "local-model",
+  "measured_at": "2026-10-01",
+  "sample_size": 300,
+  "cohens_kappa": 0.86,
+  "spearman_rho": 0.91,
+  "self_preference": "not_measured",
+  "prompt_sha256": "sha256:<64 hex — copy judge.prompt_sha256 from the JSON report>",
+  "notes": "300 expert pass/fail labels over planner_v1 + reviewer_v1; rubric v3"
+}
+```
+
+`judge_model` must equal the model that judges: `MANGOMAS_LLM__MODEL` for the
+shared client, or the `MANGOMAS_EVAL__JUDGE_PROFILE` profile's model. An
+agent-level `MODEL_OVERRIDE` or `llm_profile` on the *target* does not change
+which model is judging. `prompt_sha256` must equal the run's
+`judge.prompt_sha256`. Acceptance: `sample_size >=
+JUDGE_MIN_SAMPLE_SIZE`, age `<= JUDGE_CALIBRATION_MAX_AGE_DAYS`, and κ `>=
+JUDGE_MIN_KAPPA` **or** ρ `>= JUDGE_MIN_RHO`. `self_preference` is one of
+`not_measured`, `measured_unbiased`, `measured_biased`: the first two both
+calibrate but are printed verbatim and never conflated — "not measured" is not
+a clean bill — and the third never calibrates.
+
+Producing a record: label 200–500 rows with expert pass / fail (or a graded
+score) across the datasets the judge will grade; run the judge over the same
+rows with candidate positions rotated and a decomposed rubric rather than one
+holistic score; compute κ (binary) or ρ (graded) between judge and labels and
+iterate the rubric until κ > 0.8 or ρ > 0.85; record the date, model id and
+sample size. Re-measure when the judge model, its prompt, or the datasets
+change — the age limit is a backstop, not the trigger.
 
 ### Regression gating (baseline diff)
 
@@ -380,10 +479,12 @@ adapter log line carries the row's id.
   `MANGOMAS_EMBEDDINGS__ENABLED=true`), else an LLM client exposing `embed()`,
   and raises `NotImplementedError` only when neither is present. No LLM
   adapter shipped today exposes `embed()`, so enable the embeddings seam.
-- **`LLMJudgeScorer`** trusts the model to return strict JSON. Sloppy
-  responses raise `LLMBadResponse`; consider lowering temperature
+- **`LLMJudgeScorer`** recovers a JSON object wrapped in prose or a code fence
+  (spec-0048) but still raises `LLMBadResponse` when no object with a numeric,
+  finite `score` can be found; consider lowering temperature
   (`MANGOMAS_LLM__TEMPERATURE`) when running the judge against a less
-  deterministic model.
+  deterministic model. A decomposed rubric still produces one overall score;
+  per-criterion scores are not recorded.
 
 ## Testing your own scorer
 

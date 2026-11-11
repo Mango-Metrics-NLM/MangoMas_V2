@@ -55,6 +55,14 @@ DEFAULT_LLM_PROVIDER_ALLOWLIST: list[str] = []
 #: them may import the others for a string.
 LLM_PROFILE_METADATA_KEY: Final[str] = "llm_profile"
 
+#: ``AgentContext.extras`` key carrying the named provider-profile clients
+#: (spec-0040 / ADR-0038): ``dict[str, LLMClient]`` keyed by profile name, built
+#: once at startup by ``composition/llm.py::build_llm_profiles``. Defined here
+#: for the same reason as the metadata key above: ``agents/`` reads it to
+#: resolve a request's profile and ``eval/`` reads it to hand a judge its own
+#: client (spec-0048), and neither may import the other for a string.
+LLM_PROFILES_EXTRAS_KEY: Final[str] = "llm_profiles"
+
 
 class LLMSettings(BaseModel):
     """LLM endpoint configuration (LM Studio by default; OpenAI-compatible).

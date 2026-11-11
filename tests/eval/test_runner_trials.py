@@ -33,6 +33,10 @@ from mangomas.eval.sinks.json_file import JsonFileSink
 from mangomas.eval.targets import AgentTarget
 from tests.constants import (
     DEFAULT_AGENT_NAME,
+    DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS,
+    DEFAULT_EVAL_JUDGE_MIN_KAPPA,
+    DEFAULT_EVAL_JUDGE_MIN_RHO,
+    DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE,
     DEFAULT_EVAL_TRIALS,
     EVAL_COST_USD_METADATA_KEY,
     STUB_REPLY,
@@ -245,3 +249,59 @@ def test_settings_validate_trials_and_the_reliability_threshold() -> None:
         EvalSettings(trials=0)
     with pytest.raises(ValueError, match="min_pass_pow_k"):
         EvalSettings(min_pass_pow_k=1.5)
+
+
+def test_settings_validate_the_judge_calibration_policy() -> None:
+    defaults = EvalSettings()
+    assert defaults.judge_calibration_path is None
+    assert (defaults.judge_min_kappa, defaults.judge_min_rho) == (
+        DEFAULT_EVAL_JUDGE_MIN_KAPPA,
+        DEFAULT_EVAL_JUDGE_MIN_RHO,
+    )
+    assert defaults.judge_min_sample_size == DEFAULT_EVAL_JUDGE_MIN_SAMPLE_SIZE
+    assert defaults.judge_calibration_max_age_days == DEFAULT_EVAL_JUDGE_CALIBRATION_MAX_AGE_DAYS
+    for bad in (
+        {"judge_min_kappa": 1.5},
+        {"judge_min_rho": -0.1},
+        {"judge_min_sample_size": 0},
+        {"judge_calibration_max_age_days": 0},
+    ):
+        with pytest.raises(ValueError, match=next(iter(bad))):
+            EvalSettings(**bad)
+
+
+async def test_the_report_carries_the_judge_status_and_round_trips(tmp_path: Path) -> None:
+    """spec-0047: a judge run stamps ``EvalReport.judge``; deterministic runs leave it None."""
+    from mangomas.eval.scorers.llm_judge import LLMJudgeScorer  # noqa: PLC0415 — scoped
+
+    judge_llm = FakeLLM(reply=json.dumps({"score": 0.9, "rationale": "ok"}))
+    runner = EvalRunner(_orchestrator(judge_llm), LLMJudgeScorer())
+    report = await runner.run([_row()], target=AgentTarget(agent=DEFAULT_AGENT_NAME))
+    assert report.judge is not None and report.judge.calibrated is False
+    path = tmp_path / "judge-report.json"
+    await JsonFileSink(path=str(path)).emit(report)
+    loaded = await load_baseline(path)
+    assert loaded.judge == report.judge
+    plain, _ = await _run(FakeLLM(), [_row()])
+    assert plain.judge is None  # type: ignore[attr-defined]
+    empty = await runner.run([], target=AgentTarget(agent=DEFAULT_AGENT_NAME))
+    assert empty.judge is None, "nothing was judged"
+
+
+async def test_a_judge_that_graded_no_row_is_not_stamped() -> None:
+    """Copilot review on #126: refusal rows never reach the scorer."""
+    from mangomas.eval.scorers.llm_judge import LLMJudgeScorer  # noqa: PLC0415 — scoped
+
+    refusal = DatasetRow(
+        id="must-refuse",
+        messages=[Message(role="user", content="hi")],
+        expected="",
+        expected_error="LLMBadResponse",
+    )
+    runner = EvalRunner(_orchestrator(FakeLLM()), LLMJudgeScorer())
+    only_refusals = await runner.run([refusal], target=AgentTarget(agent=DEFAULT_AGENT_NAME))
+    assert only_refusals.judge is None
+    judge_llm = FakeLLM(reply=json.dumps({"score": 0.9, "rationale": "ok"}))
+    mixed_runner = EvalRunner(_orchestrator(judge_llm), LLMJudgeScorer())
+    mixed = await mixed_runner.run([refusal, _row()], target=AgentTarget(agent=DEFAULT_AGENT_NAME))
+    assert mixed.judge is not None
