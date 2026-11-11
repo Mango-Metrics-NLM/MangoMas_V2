@@ -9,6 +9,81 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — GCP local-CLI demonstration and read-only pre-flight (spec-0049)
+
+- `scripts/verify_gcp_prerequisites.py` + `make gcp-preflight`: five read-only
+  checks (ADC refresh, project resolution, **billing enabled and billing
+  account open**, required APIs derived from the configured providers,
+  Postgres endpoint from `MANGOMAS_DB__URL`). Defaults come from `Settings`;
+  `google-auth` is optional and injected, so the suite runs under `[dev]` only
+  (`tests/test_preflight_verification.py`, 100% statement and branch coverage).
+  Operator-only: not in `gate` or CI.
+- `.env.gcp-demo`: tracked template (`!.env.gcp-demo` in `.gitignore`)
+  switching every backend to its GCP provider, with eval cost guards
+  (`PARALLELISM=1`, `MAX_MEAN_COST_USD`). Its names *and values* are validated
+  against `Settings` (`tests/deploy/test_env_example_contract.py`).
+- `docs/runbooks/gcp-local-demo.md`: five-minute quickstart, five journeys
+  (PowerShell + Bash), troubleshooting matrix including the closed-billing
+  `PERMISSION_DENIED` case.
+- Offline contract suites: `tests/test_telemetry_gcp_contract.py` (Cloud
+  Logging JSON schema, W3C propagation; exporter cases gated by `gcp_trace`),
+  `tests/deploy/test_manifest_render_contract.py`,
+  `tests/agents/test_vertex_tool_agent.py`,
+  `tests/eval/test_eval_gate_falsifiability.py`,
+  `tests/postgres/test_postgres_history_contract.py` (`RUN_POSTGRES`),
+  `tests/rag/test_vertex_dimension_isolation.py` (nightly
+  `embeddings-local` lane).
+- `mango-gcp-demo` skill (owned by `mango-ci-dev`); `make gcp-trace` now also
+  collects the GCP telemetry contract.
+- Review follow-ups (Copilot + CodeQL on #130, plus two SDLC / narrow-critic audit passes):
+  - **CodeQL `py/clear-text-logging-sensitive-data` (alert 66) & exception hygiene:** DEBUG
+    logging records only static probe labels (`probe=cb_project status=200`), never request
+    URLs or derived API names, and every exception message / JSON detail is sanitized to
+    `type(exc).__name__` so raw transport errors (proxy URLs, credential paths, DSNs) never leak.
+  - **`MANGOMAS_DB__URL` parsing follows RFC 3986 *and* asyncpg.** The authority ends at the first `/`, `?` or
+    `#`. Ambiguous shapes fail with percent-encoding guidance without echoing the URL or sending
+    mistyped passwords to DNS:
+    - an authority with more than one `@` (asyncpg splits at the first);
+    - an `@` after the host part;
+    - an unbracketed multi-colon authority without `@host` (`postgresql://user:pass:5432/db`);
+    - an all-digit host.
+
+    An `@` in the query no longer redirects the probe. Shapes asyncpg resolves differently
+    from one TCP probe are refused as "not probed": multi-host lists, percent-encoded hosts,
+    and `?host=`/`?port=`/`?service=` overrides. Bracketed IPv6 literals (`[::1]:5432`) are
+    validated via `ipaddress.IPv6Address`; unbracketed IPv6, stray brackets, and non-ASCII-digit
+    ports fail closed. Only `postgresql://` and `postgres://` are accepted, and a URL with no
+    `user@` part withholds its host and port from the report (`postgresql://user:12345/db`).
+  - **Session & timeout lifecycle.** `--timeout` flows into `auth.default(request=...)`,
+    `creds.refresh(...)`, `AuthorizedSession(refresh_timeout=...)`, and per-GET `timeout=`, and
+    `run_checks` closes `AuthorizedSession` in a `finally:` block. Regex validators anchor with
+    `\A...\Z` (rejecting trailing newlines), and `check_billing` validates project IDs directly.
+  - **APIs follow the runtime's projects.**
+    - `required_apis` includes Vertex `MANGOMAS_LLM_PROFILES__*` profiles, cross-project
+      `projects/<id>/secrets/...` references (`llm.secret_ref`, `llm_profiles[*].secret_ref`,
+      and `auth.secret_ref` when `auth.enabled`), `cloudtrace.googleapis.com` when
+      `MANGOMAS_HARNESS__ENABLED=true` (`METRICS_EXPORTER=gcp`), and `monitoring.googleapis.com`
+      when `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` (`EXPORTER=gcp`).
+    - Every provider is probed in the project its client targets: its own `*_PROJECT_ID`,
+      else the profile's inherited LLM project, else `google.auth.default()`'s project
+      (`GOOGLE_CLOUD_PROJECT`, `GCLOUD_PROJECT`, then ADC). `--project` isn't read at runtime,
+      so it doesn't move project-less clients.
+    - `billing` checks each targeted project; `gcp_project` fails on GCP secrets without
+      `MANGOMAS_SECRETS__PROJECT_ID`, as the app does.
+    - New: `api_requirements`, `api_plan`, `check_required_apis_by_project`,
+      `check_billing_projects` and `configuration_problems`.
+  - **Docs & contract suites.**
+    - All six JSON / JSONL blocks in `docs/runbooks/gcp-local-demo.md` (`ExecutionPlan`,
+      `ReviewResult`, `WorkflowGraph`, `RetrievalTool` call, persisted `turns` row, and Cloud
+      Logging JSONL stream) plus all repo-relative file paths across the runbook, plan, skill,
+      and `specs/0049-gcp-integration-demonstration.md` are validated by
+      `tests/tooling/test_gcp_demo_docs_contract.py`.
+    - §6 clarifies `_vertex_factory`'s service-account JSON contract on `MANGOMAS_LLM__SECRET_REF`
+      versus `lmstudio` / `MANGOMAS_AUTH__SECRET_REF`, `NotFound -> None` under strict mode, and
+      the exact `Configuration error:` CLI stderr prefix.
+    - No doc prints any part of an OAuth token, and `.env.gcp-demo` documents `MAX_MEAN_COST_USD`'s
+      post-run semantics.
+
 ### Changed — dev toolchain bumped in lockstep; Dependabot stops raising mirrored hook floors
 
 - `ruff` 0.16.6 → 0.17.3 and `mypy` 2.3.0 → 2.4.1 in `pyproject.toml`'s dev

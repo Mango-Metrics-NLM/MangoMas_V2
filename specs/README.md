@@ -84,6 +84,11 @@ thinking tool, not a gate.
 | [0042](0042-origin-delta-aqa-20261106.md) | Origin-delta AQA for PR #111 + PR #115: dual-population, CUDA, Postgres, live LM Studio, and `ConfigError` translation on invalid SQLite URLs |
 | [0043](0043-harness-tool-and-coding-sandbox.md) | MangoMas harness tool-execution policy, repair-loop staging sandbox, and destructive-`Bash` hook gate (ADR-0039; 0042 is allocated to the origin-delta AQA PR) |
 | [0044](0044-oracle-isolation-backend.md) | Pluggable repair-loop oracle isolation backends (`docker`, `wsl`/`bubblewrap`, `none`) and `MANGOMAS_REPAIR__*` settings (ADR-0040) |
+| [0045](0045-measured-eval-and-governance-mechanisation.md) | Measured evaluation and governance mechanisation (ADR-0041) |
+| [0046](0046-pass-pow-k-trials.md) | `pass^k` trials as the reliability metric of record |
+| [0047](0047-judge-calibration-record.md) | Judge calibration record — `llm_judge` reported, not gated, until calibrated |
+| [0048](0048-judge-prompt-controls.md) | Judge prompt controls, and calibration pinned to the prompt |
+| [0049](0049-gcp-integration-demonstration.md) | GCP local-CLI demonstration: `.env.gcp-demo`, read-only `make gcp-preflight` (billing-account-open, required APIs), runbook and offline contract suites |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -94,4 +99,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0045** (0036 is reserved); next free ADR: **0041**.
+than reused. Next free spec on this branch: **0050** (0036 is reserved); next free ADR: **0042**.

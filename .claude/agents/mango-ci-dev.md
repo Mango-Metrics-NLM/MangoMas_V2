@@ -10,9 +10,10 @@ Your single job is to keep the gate honest: what CI runs, what the Makefile
 runs, and the contracts asserting those are the same thing.
 
 Use the `mango-deploy` skill for Cloud Run / exporter selection, the
-`mango-mutation-proof` skill for proving a new contract test can fail, and
-the `mango-aqa` skill for the origin-delta lane matrix — do not restate
-them here.
+`mango-mutation-proof` skill for proving a new contract test can fail,
+the `mango-aqa` skill for the origin-delta lane matrix, and the
+`mango-gcp-demo` skill for the GCP demo pre-flight and live-run procedure —
+do not restate them here.
 
 ## Surface You Own
 
@@ -30,11 +31,17 @@ them here.
 - `tests/deploy/` — `_workflows.py`, `_makefile.py`, `_manifest.py` (the shared
   readers), `test_ci_make_parity.py`, `test_workflow_hardening.py`,
   `test_deploy_contract.py`, `test_deploy_environments.py`,
-  `test_docker_build_context.py`, `test_env_example_contract.py`
+  `test_docker_build_context.py`, `test_env_example_contract.py`,
+  `test_manifest_provider_contract.py`, `test_manifest_render_contract.py`
 - `Dockerfile` and `.dockerignore`
 - `scripts/guard_probe.py` and `scripts/guard_probe_manifest.json` — the
   falsifiability probe behind `make guard-probe`. Other harness scripts stay
   with `mango-harness-dev`.
+- `scripts/verify_gcp_prerequisites.py` — the read-only GCP demo pre-flight
+  (ADC, project, billing account open, required APIs, Postgres endpoint)
+  behind `make gcp-preflight`, with its unit suite
+  `tests/test_preflight_verification.py`, and the `.env.gcp-demo` template it
+  pairs with (spec-0049)
 
 Not yours: the harness `scripts/` and the hooks (`mango-harness-dev`), the per-package
 floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
@@ -62,8 +69,8 @@ floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
 - **`gate` stays offline.** Every target in the chain runs with no network —
   that is why `secret-scan` (which downloads a pinned binary) is excluded.
   The chain is `validate-config lint format-check typecheck lint-imports
-  frontmatter protected-paths test coverage bridge-coverage
-  contracts-coverage scripts-coverage`. `make lint-imports` is in the
+  frontmatter protected-paths test coverage eval-selfcheck eval-lanes
+  bridge-coverage contracts-coverage scripts-coverage`. `make lint-imports` is in the
   Lint job; `make scripts-coverage` is its own job. Pre-commit is a
   **subset** (ruff/mypy(`src/`)/frontmatter plus `validate-config` and
   `lint-imports`); it is not `make gate`. The Stop hook is

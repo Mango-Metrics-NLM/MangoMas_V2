@@ -8,6 +8,44 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: GCP local-CLI demo and pre-flight (2026-11-09, spec-0049)
+
+Landed: `make gcp-preflight` (read-only ADC / project / billing-account /
+required-API / Postgres-endpoint checks), `.env.gcp-demo`, the GCP runbook,
+offline contract suites, the `mango-gcp-demo` skill. An operator run on
+2026-11-09 found that a project can report `billingEnabled=true` while its
+billing account is closed: every Vertex call returned `PERMISSION_DENIED`,
+and the original 3-check pre-flight still passed. The `billing` check now
+reads the account's `open` flag.
+
+Follow-ups, each needing its own spec and `src/` change, ordered by risk:
+
+1. **Vertex SDK migration (high).** `adapters/llm/vertex/_client.py` and
+   `adapters/embeddings/vertex.py` import `vertexai.generative_models` /
+   `vertexai.language_models`, which warn *"will be removed on June 24, 2026"*.
+   That date has passed. Move to `google-genai` behind the unchanged
+   `LLMClient` / `EmbeddingClient` protocols (ADR required).
+2. **Permission vs. bad-response error codes (medium).** A billing or IAM
+   `PERMISSION_DENIED` is persisted as `error_code="llm_bad_response"`, so
+   operators can't tell an environment fault from a model fault without
+   reading the stack. Add a typed permission error to the Vertex mapping.
+3. **Embedding output dimensionality (medium).** `gemini-embedding-001`
+   defaults to 3072 dimensions; the adapter passes no `output_dimensionality`.
+   An opt-in `MANGOMAS_EMBEDDINGS__OUTPUT_DIMENSIONALITY` would let a model
+   switch keep an existing collection.
+4. **Retired live-test default (low).** `tests/constants/live.py`
+   `DEFAULT_VERTEX_TEST_MODEL = "gemini-1.5-flash"` names a retired model; the
+   `make vertex` lane will fail at the first call unless `VERTEX_MODEL` is set.
+5. **Branch-drift guard (low).** A pre-PR check that reports ahead/behind
+   against the default branch and spec/ADR number collisions. This work began
+   on a branch 86 commits behind trunk whose spec number (0039) was already
+   taken.
+6. **Orchestrator decomposition candidate.** `core/orchestrator/_client.py`
+   (616 lines, protected path) is the largest `src/` module. Measure before
+   any split (the `mango-decompose` skill).
+
+---
+
 ## Overlay: Origin-delta AQA and harness sandbox hardening (2026-11-06)
 
 Two sequential origin-delta deliveries validated and hardened the tree against

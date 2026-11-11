@@ -72,6 +72,16 @@ C4Container
 
 ## Notes
 
+- **GCP demo topology (spec-0049).** The containers above don't change.
+  `.env.gcp-demo` selects the cloud provider of each seam: `vertex` for the LLM
+  and embeddings, `postgres` reached via the Cloud SQL Auth Proxy on loopback,
+  `gcp` for Secret Manager, and the `gcp` exporter for Cloud Trace. The `cli`
+  container then drives Google Cloud from a workstation.
+  `scripts/verify_gcp_prerequisites.py` (`make gcp-preflight`) sits outside
+  the runtime: a read-only operator check of ADC, billing-account state, API
+  enablement and the Postgres endpoint before any live call. Runbook:
+  [`docs/runbooks/gcp-local-demo.md`](../runbooks/gcp-local-demo.md).
+
 - `api`, `cli`, and `eval_harness` share the same `composition/` wiring;
   no duplicated adapter construction.
 - `cli/` follows the same permanent re-export facade pattern as `config/` and
