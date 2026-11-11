@@ -624,7 +624,7 @@ pip install '.[vertex]'
 $env:RUN_VERTEX = '1'
 $env:VERTEX_PROJECT_ID = 'your-gcp-project'
 $env:VERTEX_LOCATION = 'us-central1'
-$env:VERTEX_MODEL = 'gemini-1.5-flash'
+$env:VERTEX_MODEL = 'gemini-2.5-flash'
 python -m pytest tests/vertex --no-cov
 ```
 

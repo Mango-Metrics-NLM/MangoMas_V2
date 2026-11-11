@@ -115,7 +115,7 @@ that used to exist were all reachable and now have tests.
 Three floors sit outside `FLOORS` because they measure a different tree:
 `eval_harness_bridge` (100%, `make bridge-coverage`),
 `mango-integration-contracts` (100%, `make contracts-coverage`), and
-`scripts/` (92%, `make scripts-coverage`, a measured ratchet rather than a
+`scripts/` (94%, `make scripts-coverage`, a measured ratchet rather than a
 round number).
 
 `scripts/check_coverage.py` is the authority — if this table and that script
@@ -200,7 +200,7 @@ Gated on `RUN_VERTEX=1`. Requires Gemini model access in the GCP project.
 $env:RUN_VERTEX = '1'
 $env:VERTEX_PROJECT_ID = 'your-gcp-project'
 $env:VERTEX_LOCATION = 'us-central1'
-$env:VERTEX_MODEL = 'gemini-1.5-flash'
+$env:VERTEX_MODEL = 'gemini-2.5-flash'
 python -m pytest tests/vertex --no-cov -q
 ```
 

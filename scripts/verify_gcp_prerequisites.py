@@ -42,6 +42,8 @@ from __future__ import annotations
 import argparse
 import enum
 import functools
+import inspect
+import ipaddress
 import json
 import logging
 import math
@@ -55,12 +57,16 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 from urllib.parse import parse_qsl, quote, quote_plus
 
+import _stdio
+
 from mangomas.config import Settings
 
 logger = logging.getLogger("verify_gcp_prerequisites")
 
 EXIT_OK: Final[int] = 0
 EXIT_FAILURE: Final[int] = 1
+EXIT_USAGE_ERROR: Final[int] = 2
+DEFAULT_REPORT_WIDTH: Final[int] = 78
 
 MIN_TCP_PORT: Final[int] = 1
 MAX_TCP_PORT: Final[int] = 65535
@@ -70,11 +76,14 @@ HTTP_BAD_REQUEST: Final[int] = 400
 HTTP_FORBIDDEN: Final[int] = 403
 
 BILLING_ACCOUNT_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"^billingAccounts/[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$"
+    r"\AbillingAccounts/[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}\Z"
 )
-GCP_PROJECT_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9-]{3,28}[a-z0-9]$")
+GCP_PROJECT_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"\A[a-z][a-z0-9-]{3,28}[a-z0-9]\Z")
 GCP_API_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
+    r"\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\Z"
+)
+CROSS_PROJECT_RESOURCE_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"\Aprojects/([^/]+)/secrets/[^/]+(?:/versions/[^/]+)?\Z"
 )
 
 CLOUD_PLATFORM_SCOPE: Final[str] = "https://www.googleapis.com/auth/cloud-platform"
@@ -94,7 +103,7 @@ TELEMETRY_EXPORTER_APIS: Final[dict[str, str]] = {"gcp": "cloudtrace.googleapis.
 TELEMETRY_METRICS_APIS: Final[dict[str, str]] = {"gcp": "monitoring.googleapis.com"}
 # google.auth.default() reads these before the credential's own project, so a
 # project-less client (Cloud Trace exporter, Vertex without project_id) uses it.
-ADC_PROJECT_ENV_OVERRIDES: Final[tuple[str, ...]] = ("GOOGLE_CLOUD_PROJECT",)
+ADC_PROJECT_ENV_OVERRIDES: Final[tuple[str, ...]] = ("GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT")
 # Environment fallbacks for the *primary* project, after Settings.
 PROJECT_ENV_FALLBACKS: Final[tuple[str, ...]] = (
     *ADC_PROJECT_ENV_OVERRIDES,
@@ -103,6 +112,10 @@ PROJECT_ENV_FALLBACKS: Final[tuple[str, ...]] = (
 SECRETS_PROJECT_REQUIRED: Final[str] = (
     "MANGOMAS_SECRETS__PROJECT_ID is required when MANGOMAS_SECRETS__PROVIDER=gcp "
     "(the app refuses to start without it)."
+)
+INVALID_CROSS_PROJECT_REF: Final[str] = (
+    "A cross-project projects/<id>/secrets/<name> reference has an invalid "
+    "GCP project ID or resource path."
 )
 
 # Static probe labels: the only thing DEBUG logging records about a request.
@@ -118,7 +131,7 @@ POSTGRES_SCHEMES: Final[frozenset[str]] = frozenset({"postgres", "postgresql"})
 # RFC 3986: the authority ends at the first of these delimiters.
 URL_AUTHORITY_DELIMITERS: Final[str] = "/?#"
 # asyncpg honours these query parameters over the authority; the probe does not.
-POSTGRES_QUERY_ENDPOINT_OVERRIDES: Final[frozenset[str]] = frozenset({"host", "port"})
+POSTGRES_QUERY_ENDPOINT_OVERRIDES: Final[frozenset[str]] = frozenset({"host", "port", "service"})
 # Authority characters this probe cannot interpret like asyncpg does:
 # ',' (multi-host lists) and '%' (percent-encoded hosts, e.g. socket paths).
 POSTGRES_UNSUPPORTED_HOST_CHARS: Final[str] = ",%"
@@ -154,7 +167,7 @@ class GoogleAuthBackend:
 
     default: Callable[..., tuple[Any, str | None]]
     make_request: Callable[[], Any]
-    make_session: Callable[[Any], Any]
+    make_session: Callable[..., Any]
     credentials_error: type[Exception]
     refresh_error: type[Exception]
 
@@ -211,6 +224,26 @@ def _clean(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _accepts_kwarg(fn: Callable[..., Any], kwarg: str) -> bool:
+    """True when ``fn`` accepts ``kwarg`` by name or ``**kwargs``."""
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        param.kind is inspect.Parameter.VAR_KEYWORD or param.name == kwarg for param in params
+    )
+
+
+def _open_session(auth: GoogleAuthBackend | None, credentials: Any, timeout: float) -> Any:
+    """Build an authenticated HTTP session bounded by ``timeout`` when supported."""
+    if auth is None or credentials is None:
+        return None
+    if _accepts_kwarg(auth.make_session, "refresh_timeout"):
+        return auth.make_session(credentials, refresh_timeout=timeout)
+    return auth.make_session(credentials)
+
+
 def check_adc_credentials(
     auth: GoogleAuthBackend | None, timeout: float | None = None
 ) -> AdcOutcome:
@@ -219,6 +252,8 @@ def check_adc_credentials(
     ``timeout`` bounds the token refresh the same way google-auth bounds its
     own refreshes (``functools.partial(request, timeout=...)``); without it the
     transport's default (120 s for ``google.auth.transport.requests``) applies.
+    Exception payloads are reduced to ``type(exc).__name__`` so proxy URLs,
+    OAuth bodies, or credential-file snippets never reach stdout or JSON.
     """
     name = "adc_credentials"
     if auth is None:
@@ -227,51 +262,62 @@ def check_adc_credentials(
                 name, CheckStatus.FAIL, "google-auth is not installed.", remediation=INSTALL_HINT
             )
         )
+    request = auth.make_request()
+    if timeout is not None:
+        request = functools.partial(request, timeout=timeout)
+    default_kwargs: dict[str, Any] = {"scopes": [CLOUD_PLATFORM_SCOPE]}
+    if timeout is not None and _accepts_kwarg(auth.default, "request"):
+        default_kwargs["request"] = request
     try:
-        credentials, adc_project = auth.default(scopes=[CLOUD_PLATFORM_SCOPE])
+        credentials, adc_project = auth.default(**default_kwargs)
     except auth.credentials_error as exc:
+        err_type = type(exc).__name__
+        logger.debug("adc discovery failed error=%s", err_type)
         return AdcOutcome(
             CheckResult(
                 name,
                 CheckStatus.FAIL,
                 "Application Default Credentials (ADC) not found.",
-                details={"error": str(exc)},
+                details={"error": err_type},
                 remediation=f"Run: {ADC_LOGIN_HINT}",
             )
         )
     except Exception as exc:
+        err_type = type(exc).__name__
+        logger.debug("adc discovery unexpected error=%s", err_type)
         return AdcOutcome(
             CheckResult(
                 name,
                 CheckStatus.FAIL,
-                f"Error discovering ADC: {exc}",
-                details={"error": str(exc)},
+                f"Error discovering ADC ({err_type}).",
+                details={"error": err_type},
                 remediation=f"Check credential file permissions, or run: {ADC_LOGIN_HINT}",
             )
         )
     try:
-        request = auth.make_request()
-        if timeout is not None:
-            request = functools.partial(request, timeout=timeout)
         logger.debug("ADC refresh starting (timeout=%s)", timeout)
         credentials.refresh(request)
     except auth.refresh_error as exc:
+        err_type = type(exc).__name__
+        logger.debug("adc refresh rejected error=%s", err_type)
         return AdcOutcome(
             CheckResult(
                 name,
                 CheckStatus.FAIL,
                 "ADC token is expired or revoked.",
-                details={"error": str(exc)},
+                details={"error": err_type},
                 remediation=f"Run: {ADC_LOGIN_HINT}",
             )
         )
     except Exception as exc:
+        err_type = type(exc).__name__
+        logger.debug("adc refresh transport error=%s", err_type)
         return AdcOutcome(
             CheckResult(
                 name,
                 CheckStatus.FAIL,
-                f"Network error refreshing the ADC token: {exc}",
-                details={"error": str(exc)},
+                f"Network error refreshing the ADC token ({err_type}).",
+                details={"error": err_type},
                 remediation="Check connectivity to oauth2.googleapis.com.",
             )
         )
@@ -310,10 +356,11 @@ def resolve_ambient_project(adc_project: str | None, fallback: str | None = None
     """The project a client uses at runtime when its provider sets no ``project_id``.
 
     Mirrors ``google.auth.default()``, which the Cloud Trace exporter and a
-    project-less Vertex client fall back to: ``GOOGLE_CLOUD_PROJECT``, then the
-    credential's own project. ``--project`` is deliberately absent: nothing at
-    runtime reads it. ``fallback`` (the primary project) applies only when
-    neither is known, so the check still has somewhere to probe.
+    project-less Vertex client fall back to: ``GOOGLE_CLOUD_PROJECT``,
+    ``GCLOUD_PROJECT``, then the credential's own project. ``--project`` is
+    deliberately absent: nothing at runtime reads it. ``fallback`` (the primary
+    project) applies only when none is known, so the check still has somewhere
+    to probe.
     """
     candidates = [
         *(os.environ.get(var) for var in ADC_PROJECT_ENV_OVERRIDES),
@@ -323,13 +370,44 @@ def resolve_ambient_project(adc_project: str | None, fallback: str | None = None
     return next((p for p in map(_clean, candidates) if p), None)
 
 
+def _extract_resource_project(raw_ref: str | None) -> str | None:
+    """Extract valid ``<project>`` from ``projects/<project>/secrets/<id>[/versions/<v>]``."""
+    cleaned = _clean(raw_ref)
+    if cleaned is None:
+        return None
+    match = CROSS_PROJECT_RESOURCE_PATTERN.match(cleaned)
+    if match is None:
+        return None
+    candidate = match.group(1)
+    return candidate if GCP_PROJECT_ID_PATTERN.match(candidate) else None
+
+
+def _configured_resource_refs(settings: Settings) -> list[str | None]:
+    """Configured resource-reference strings active at runtime."""
+    refs: list[str | None] = [
+        settings.llm.secret_ref,
+        *(prof.secret_ref for _, prof in sorted(settings.llm_profiles.items())),
+    ]
+    if settings.auth.enabled:
+        refs.append(settings.auth.secret_ref)
+    return refs
+
+
 def configuration_problems(settings: Settings) -> list[str]:
     """Static GCP misconfigurations the app itself refuses to start with."""
     problems: list[str] = []
-    if settings.secrets.provider in SECRETS_PROVIDER_APIS and not _clean(
-        settings.secrets.project_id
-    ):
-        problems.append(SECRETS_PROJECT_REQUIRED)
+    if settings.secrets.provider in SECRETS_PROVIDER_APIS:
+        if not _clean(settings.secrets.project_id):
+            problems.append(SECRETS_PROJECT_REQUIRED)
+        for raw_ref in _configured_resource_refs(settings):
+            cleaned = _clean(raw_ref)
+            if (
+                cleaned is not None
+                and cleaned.startswith("projects/")
+                and _extract_resource_project(cleaned) is None
+            ):
+                problems.append(INVALID_CROSS_PROJECT_REF)
+                break
     return problems
 
 
@@ -346,7 +424,9 @@ def check_gcp_project(
             CheckStatus.FAIL,
             " ".join(problems),
             details={"project_id": project, "problems": list(problems)},
-            remediation="Set the missing *_PROJECT_ID (see .env.gcp-demo).",
+            remediation=(
+                "Set a valid *_PROJECT_ID or cross-project resource path (see .env.gcp-demo)."
+            ),
         )
     if not project:
         return CheckResult(
@@ -422,13 +502,31 @@ def api_requirements(
             settings.embeddings.project_id,
             "embeddings",
         )
-    add(
-        SECRETS_PROVIDER_APIS.get(settings.secrets.provider), settings.secrets.project_id, "secrets"
-    )
+    secrets_api = SECRETS_PROVIDER_APIS.get(settings.secrets.provider)
+    add(secrets_api, settings.secrets.project_id, "secrets")
+    if secrets_api is not None:
+        cross_project_refs: list[tuple[str, str | None]] = [
+            ("llm_ref", settings.llm.secret_ref),
+            *(
+                ("llm_profile_ref", prof.secret_ref)
+                for _, prof in sorted(settings.llm_profiles.items())
+            ),
+        ]
+        if settings.auth.enabled:
+            cross_project_refs.append(("auth_ref", settings.auth.secret_ref))
+        for ref_source, ref_value in cross_project_refs:
+            if (ref_project := _extract_resource_project(ref_value)) is not None:
+                add(secrets_api, ref_project, ref_source)
     # The Cloud Trace exporter is built with no project: it uses the ADC default.
     add(TELEMETRY_EXPORTER_APIS.get(settings.telemetry.exporter), None, "telemetry")
     if settings.telemetry.metrics_enabled:
         add(TELEMETRY_METRICS_APIS.get(settings.telemetry.exporter), None, "telemetry.metrics")
+    if settings.harness.enabled:
+        add(
+            TELEMETRY_EXPORTER_APIS.get(settings.harness.metrics_exporter),
+            None,
+            "harness.exporter",
+        )
     for api in map(_clean, extra):
         if api:
             requirements.append(
@@ -550,9 +648,18 @@ def _billing_account_verdict(
 def check_billing(session: Any, project: str | None, timeout: float) -> CheckResult:
     if (skip := _prereq_skip("billing", session, project)) is not None:
         return skip
-    escaped_project = quote(str(project), safe="")
+    project_id = str(project)
+    if not GCP_PROJECT_ID_PATTERN.match(project_id):
+        return CheckResult(
+            "billing",
+            CheckStatus.FAIL,
+            f"Invalid GCP project ID: {project_id!r}",
+            details={"project_id": project_id},
+            remediation="Specify a valid GCP project ID: gcloud config set project <ID>",
+        )
+    escaped_project = quote(project_id, safe="")
     console = (
-        f"https://console.cloud.google.com/billing/linkedaccount?project={quote_plus(str(project))}"
+        f"https://console.cloud.google.com/billing/linkedaccount?project={quote_plus(project_id)}"
     )
     try:
         status, info = _get_json(
@@ -561,7 +668,7 @@ def check_billing(session: Any, project: str | None, timeout: float) -> CheckRes
             timeout,
             probe=PROBE_CB_PROJECT,
         )
-        verdict = _billing_project_verdict(status, info, str(project), console)
+        verdict = _billing_project_verdict(status, info, project_id, console)
         if verdict is not None:
             return verdict
         account = str(info.get("billingAccountName", "")).strip()
@@ -578,11 +685,13 @@ def check_billing(session: Any, project: str | None, timeout: float) -> CheckRes
             session, f"{CLOUD_BILLING_API}/{escaped_account}", timeout, probe=PROBE_CB_ACCOUNT
         )
     except Exception as exc:
+        err_type = type(exc).__name__
+        logger.debug("probe=billing transport_error=%s", err_type)
         return CheckResult(
             "billing",
             CheckStatus.FAIL,
-            f"Billing probe failed: {exc}",
-            details={"error": str(exc)},
+            f"Billing probe failed ({err_type}).",
+            details={"error": err_type},
         )
     return _billing_account_verdict(acct_status, acct, account, console)
 
@@ -683,7 +792,9 @@ def _probe_project_apis(
             elif body.get("state") != "ENABLED":
                 probe.disabled.append(api)
         except Exception as exc:
-            probe.errors.append({"api": api, "error": str(exc)})
+            err_type = type(exc).__name__
+            logger.debug("probe=%s transport_error=%s", PROBE_SERVICE_USAGE, err_type)
+            probe.errors.append({"api": api, "error": err_type})
     return probe
 
 
@@ -774,24 +885,40 @@ def check_required_apis(
     return check_required_apis_by_project(session, {project: list(apis)}, timeout)
 
 
-def _parse_host_and_port(host_port: str) -> tuple[str, str | None]:
-    """Isolate host and raw port string from authority host_port."""
-    if host_port.startswith("["):
-        closing = host_port.find("]")
-        if closing == -1:
-            raise ValueError("MANGOMAS_DB__URL does not parse: unterminated IPv6 literal.")
-        host = host_port[1:closing]
-        rest = host_port[closing + 1 :]
-        if rest.startswith(":"):
-            return host, rest[1:]
-        if not rest:
-            return host, None
-        raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.")
+def _parse_bracketed_ipv6(host_port: str) -> tuple[str, str | None]:
+    """Extract ``(ipv6_host, raw_port)`` from a bracketed authority ``[addr][:port]``."""
+    closing = host_port.find("]")
+    if closing == -1:
+        raise ValueError("MANGOMAS_DB__URL does not parse: unterminated IPv6 literal.")
+    host = host_port[1:closing]
+    rest = host_port[closing + 1 :]
+    try:
+        ipaddress.IPv6Address(host)
+    except ipaddress.AddressValueError as exc:
+        raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.") from exc
+    if rest.startswith(":"):
+        return host, rest[1:]
+    if not rest:
+        return host, None
+    raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.")
 
-    if ":" in host_port:
-        host, _, raw_port = host_port.rpartition(":")
-        return host, raw_port
-    return host_port, None
+
+def _parse_host_and_port(host_port: str, *, has_userinfo: bool = True) -> tuple[str, str | None]:
+    """Isolate host and raw port string from authority ``host_port``."""
+    if host_port.startswith("["):
+        return _parse_bracketed_ipv6(host_port)
+    if "[" in host_port or "]" in host_port:
+        raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.")
+    if ":" not in host_port:
+        return host_port, None
+    host, _, raw_port = host_port.partition(":")
+    if ":" in raw_port:
+        if not has_userinfo:
+            raise ValueError(
+                "MANGOMAS_DB__URL is ambiguous: multiple colons without user@ separator."
+            )
+        raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.")
+    return host, raw_port
 
 
 def _postgres_authority(db_url: str) -> tuple[str, bool]:
@@ -803,9 +930,9 @@ def _postgres_authority(db_url: str) -> tuple[str, bool]:
     unencoded ``@`` in the password) is ambiguous. So is an ``@`` only after the
     authority: an unencoded ``/``, ``?`` or ``#`` in the password, or an
     unencoded ``@`` in the path/query. Shapes the runtime resolves differently
-    from a plain TCP probe (``?host=``/``?port=`` overrides, multi-host lists,
-    percent-encoded hosts) are refused as unsupported rather than guessed.
-    Every ``ValueError`` message is static.
+    from a plain TCP probe (``?host=``/``?port=``/``?service=`` overrides,
+    multi-host lists, percent-encoded hosts) are refused as unsupported rather
+    than guessed. Every ``ValueError`` message is static.
     """
     if not db_url or not db_url.strip():
         raise ValueError("MANGOMAS_DB__URL names no host.")
@@ -839,12 +966,12 @@ def _parse_postgres_endpoint(db_url: str) -> tuple[str, int]:
     Handles percent-encoded userinfo, IPv6 literals, and omitted ports.
     Raises ValueError with a sanitized message.
     """
-    host_port, _ = _postgres_authority(db_url)
+    host_port, has_userinfo = _postgres_authority(db_url)
 
     if not host_port:
         raise ValueError("MANGOMAS_DB__URL names no host.")
 
-    host, raw_port = _parse_host_and_port(host_port)
+    host, raw_port = _parse_host_and_port(host_port, has_userinfo=has_userinfo)
     if not host:
         raise ValueError("MANGOMAS_DB__URL names no host.")
     if host.isascii() and host.isdigit():
@@ -891,7 +1018,7 @@ _POSTGRES_PARSE_FAILURES: Final[tuple[_PostgresParseFailure, ...]] = (
     _PostgresParseFailure(
         "not probed",
         "MANGOMAS_DB__URL is not probed: it uses a multi-host list, a percent-encoded "
-        "host, or a ?host=/?port= override, which asyncpg resolves differently from "
+        "host, or a ?host=/?port=/?service= override, which asyncpg resolves differently from "
         "a single TCP probe.",
         remediation=UNSUPPORTED_ENDPOINT_HINT,
     ),
@@ -963,7 +1090,7 @@ def check_postgres_endpoint(db_url: str | None, timeout: float) -> CheckResult:
         return _postgres_parse_failure(exc)
 
     if has_userinfo:
-        label = f"{host}:{port}"
+        label = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
         details: dict[str, Any] = {"host": host, "port": port}
         port_hint = str(port)
         suffix = ""
@@ -977,7 +1104,8 @@ def check_postgres_endpoint(db_url: str | None, timeout: float) -> CheckResult:
         with socket.create_connection((host, port), timeout=timeout):
             pass
     except (OSError, ValueError, OverflowError) as exc:
-        error = str(exc) if has_userinfo else type(exc).__name__
+        error = type(exc).__name__
+        logger.debug("probe=postgres_tcp error=%s redacted=%s", error, not has_userinfo)
         return CheckResult(
             name,
             CheckStatus.FAIL,
@@ -1015,19 +1143,24 @@ def run_checks(
     plan = api_plan(requirements)
     for req in requirements:
         logger.debug("requirement source=%s", req.source)
-    session = auth.make_session(adc.credentials) if auth and adc.credentials is not None else None
-    url = db_url or (settings.db.url if settings.db.provider == "postgres" else None)
-    results = [
-        adc.result,
-        check_gcp_project(resolved, list(plan), configuration_problems(settings)),
-        check_billing_projects(session, list(plan) or [resolved], timeout),
-        # An empty plan still carries the primary project, so a missing project
-        # is reported as such (the single-project precedence).
-        check_required_apis_by_project(session, plan or {resolved: []}, timeout),
-        check_postgres_endpoint(url, timeout),
-    ]
+    session = _open_session(auth, adc.credentials, timeout)
+    try:
+        url = db_url or (settings.db.url if settings.db.provider == "postgres" else None)
+        results = [
+            adc.result,
+            check_gcp_project(resolved, list(plan), configuration_problems(settings)),
+            check_billing_projects(session, list(plan) or [resolved], timeout),
+            # An empty plan still carries the primary project, so a missing project
+            # is reported as such (the single-project precedence).
+            check_required_apis_by_project(session, plan or {resolved: []}, timeout),
+            check_postgres_endpoint(url, timeout),
+        ]
+    finally:
+        close = getattr(session, "close", None)
+        if callable(close):
+            close()
     for r in results:
-        logger.info("check=%s status=%s", r.name, r.status.value)
+        logger.debug("check=%s status=%s", r.name, r.status.value)
     return results
 
 
@@ -1040,7 +1173,7 @@ def _counts(checks: Sequence[CheckResult]) -> dict[str, int]:
     }
 
 
-def format_text_report(checks: Sequence[CheckResult], width: int = 78) -> str:
+def format_text_report(checks: Sequence[CheckResult], width: int = DEFAULT_REPORT_WIDTH) -> str:
     lines = ["=" * width, "Mango-Mas GCP Demonstration Pre-flight Verification", "=" * width]
     for c in checks:
         lines.append(f"[{c.status.value}] {c.name}: {c.message}")
@@ -1095,7 +1228,7 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
             "Primary GCP project (default: Settings, SDK env, then ADC); --require-api "
             "APIs are checked here. A provider with its own *_PROJECT_ID is checked in "
             "that project; one without is checked where its client runs: "
-            "GOOGLE_CLOUD_PROJECT, then the ADC project."
+            "GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT, then the ADC project."
         ),
     )
     parser.add_argument(
@@ -1119,19 +1252,25 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     return parser
 
 
+def _configure_logging(verbose: bool) -> None:
+    """Set module logger level directly so ``-v`` works even when root handlers exist."""
+    logger.setLevel(logging.DEBUG if verbose else logging.WARNING)
+    if not logger.handlers and not logging.getLogger().handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        logger.addHandler(handler)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     settings: Settings | None = None,
     auth_loader: Callable[[], GoogleAuthBackend | None] = load_google_auth,
 ) -> int:
+    _stdio.configure_utf8_stdio()
     settings = settings or Settings()
     args = build_parser(settings).parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.WARNING,
-        stream=sys.stderr,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    _configure_logging(args.verbose)
     checks = run_checks(
         settings,
         project=args.project,

@@ -7,11 +7,11 @@ Milestone B2 / Story 5.1.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from typer.testing import CliRunner
@@ -24,46 +24,25 @@ from mangomas.agents import ChatAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli.exit_codes import EVAL_GATE_EXIT_CODE
 from mangomas.cli.main import app
-from mangomas.config import DEFAULT_VERTEX_LOCATION, get_settings
+from mangomas.config import DEFAULT_VERTEX_LOCATION, Settings, get_settings
 from mangomas.core import AgentContext, Orchestrator
-from mangomas.core.agent import Message
 from mangomas.eval.scorers.llm_judge import judge_prompt_sha256
 from mangomas.utils import clock as app_clock
 from tests._seam_guards import forbid_real_orchestrator
-from tests.constants import DEFAULT_EMBEDDINGS_MODEL, TEST_VERTEX_PROJECT
-from tests.fakes import FakeLLM, FakeRepository, FakeVertexGenerativeModel, _FakeGenerationResponse
+from tests.constants import (
+    DEFAULT_EMBEDDINGS_MODEL,
+    SETTINGS_ENV_PREFIX,
+    TEST_VERTEX_PROJECT,
+)
+from tests.fakes import (
+    FakeLLM,
+    FakeRepository,
+    FakeVertexEmbeddingModel,
+    FakeVertexGenerativeModel,
+    _FakeGenerationResponse,
+)
 
-
-@dataclass
-class _FakeEmbedding:
-    values: list[float]
-
-
-@dataclass
-class _FakeModelClient:
-    """Fake Vertex TextEmbeddingModel client returning fixed-vector embeddings."""
-
-    values: list[float]
-
-    async def get_embeddings_async(self, texts: list[str]) -> list[_FakeEmbedding]:
-        return [_FakeEmbedding(values=list(self.values)) for _ in texts]
-
-
-class _FakeAlternatingModelClient:
-    """Fake Vertex TextEmbeddingModel client alternating orthogonal vectors."""
-
-    def __init__(self) -> None:
-        self._count = 0
-
-    async def get_embeddings_async(self, texts: list[str]) -> list[_FakeEmbedding]:
-        res: list[_FakeEmbedding] = []
-        for _ in texts:
-            if self._count % 2 == 0:
-                res.append(_FakeEmbedding(values=[1.0, 0.0]))
-            else:
-                res.append(_FakeEmbedding(values=[0.0, 1.0]))
-            self._count += 1
-        return res
+_EXIT_OK: Final[int] = 0
 
 
 class _FakeJudgeGenerativeModel(FakeVertexGenerativeModel):
@@ -94,23 +73,13 @@ class _FakeJudgeGenerativeModel(FakeVertexGenerativeModel):
         return _FakeGenerationResponse(text="agent prediction")
 
 
-class _FailingLLM(FakeLLM):
-    """LLM client that raises an exception during generation."""
-
-    async def complete(
-        self,
-        messages: list[Message],
-        *,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-    ) -> str:
-        del messages, temperature, max_tokens
-        raise RuntimeError("LLM transient failure during eval row execution")
-
-
 @pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    """Ensure each test runs with a fresh Settings cache."""
+def _reset_settings_cache(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Ensure each test runs with clean ``MANGOMAS_*`` env vars, no ``.env``, and fresh cache."""
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    for key in list(os.environ):
+        if key.startswith(SETTINGS_ENV_PREFIX):
+            monkeypatch.delenv(key, raising=False)
     get_settings.cache_clear()
     try:
         yield
@@ -122,8 +91,9 @@ def _reset_settings_cache() -> Iterator[None]:
 def _stub_cli_orchestrator(
     eval_orchestrator: Orchestrator,
     monkeypatch: pytest.MonkeyPatch,
+    cli_logging_calls: list[dict[str, object]],  # noqa: ARG001
 ) -> None:
-    """Stub default CLI orchestrator with an offline fake orchestrator."""
+    """Stub default CLI orchestrator and CLI logging seam for offline isolation."""
     forbid_real_orchestrator(monkeypatch)
     monkeypatch.setattr(cli_runtime, "_build", lambda: eval_orchestrator)
 
@@ -169,7 +139,7 @@ def test_gate_falsifiability_mean_score_boundary_pass(fixtures_dir: Path) -> Non
             "0.66",
         ],
     )
-    assert result.exit_code == 0
+    assert result.exit_code == _EXIT_OK
     assert "gate=PASS" in result.stdout
 
 
@@ -216,7 +186,7 @@ def test_gate_falsifiability_baseline_mean_score_drop(fixtures_dir: Path, tmp_pa
             str(baseline_path),
         ],
     )
-    assert base_res.exit_code == 0
+    assert base_res.exit_code == _EXIT_OK
 
     # Step 2: Run mixed.jsonl (mean_score = 0.667; drop = 0.333 > 0.100)
     result = runner.invoke(
@@ -261,7 +231,7 @@ def test_gate_falsifiability_baseline_pass_rate_drop(fixtures_dir: Path, tmp_pat
             str(baseline_path),
         ],
     )
-    assert base_res.exit_code == 0
+    assert base_res.exit_code == _EXIT_OK
 
     # Step 2: Run mixed.jsonl (pass_rate = 0.667; drop = 0.333 > 0.100)
     result = runner.invoke(
@@ -306,7 +276,7 @@ def test_gate_falsifiability_no_allow_new_failures(fixtures_dir: Path, tmp_path:
             str(baseline_path),
         ],
     )
-    assert base_res.exit_code == 0
+    assert base_res.exit_code == _EXIT_OK
 
     # Step 2: Run a dataset where row p1 now fails
     regressed_dataset = tmp_path / "regressed.jsonl"
@@ -366,7 +336,7 @@ def test_gate_falsifiability_allow_new_failures_permitted_by_default(
             str(baseline_path),
         ],
     )
-    assert base_res.exit_code == 0
+    assert base_res.exit_code == _EXIT_OK
 
     regressed_dataset = tmp_path / "regressed.jsonl"
     regressed_dataset.write_text(
@@ -399,7 +369,7 @@ def test_gate_falsifiability_allow_new_failures_permitted_by_default(
             "1.0",
         ],
     )
-    assert result.exit_code == 0
+    assert result.exit_code == _EXIT_OK
     assert "gate=PASS" in result.stdout
 
 
@@ -407,7 +377,10 @@ def test_gate_falsifiability_fail_on_error(
     fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Gate trips with exit code 3 when any row errors under --fail-on-error."""
-    failing_orch = Orchestrator(AgentContext(llm=_FailingLLM(), repo=FakeRepository()))
+    failing_llm = FakeLLM(
+        raise_on_complete=RuntimeError("LLM transient failure during eval row execution")
+    )
+    failing_orch = Orchestrator(AgentContext(llm=failing_llm, repo=FakeRepository()))
     failing_orch.register(ChatAgent())
     monkeypatch.setattr(cli_runtime, "_build", lambda: failing_orch)
 
@@ -522,7 +495,7 @@ def test_gate_falsifiability_vertex_llm_judge_passes(
             "0.7",
         ],
     )
-    assert result.exit_code == 0
+    assert result.exit_code == _EXIT_OK
     assert "judge=llm_judge calibrated" in result.stdout
     assert "gate=PASS" in result.stdout
     assert "mean_score=0.950" in result.stdout
@@ -601,7 +574,7 @@ def test_gate_falsifiability_vertex_llm_judge_uncalibrated_reported_not_gated(
             "0.7",
         ],
     )
-    assert result.exit_code == 0
+    assert result.exit_code == _EXIT_OK
     assert "judge=llm_judge uncalibrated" in result.stdout
     assert "gate=PASS (note: llm_judge uncalibrated" in result.stdout
     assert "mean_score=0.350" in result.stdout
@@ -611,7 +584,7 @@ def test_gate_falsifiability_vertex_embedding_scorer_passes(
     fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """VertexEmbeddingClient with embedding scorer passes when cosine similarity is high."""
-    embedding_model = _FakeModelClient(values=[1.0, 0.0])
+    embedding_model = FakeVertexEmbeddingModel(replies=[[1.0, 0.0]])
     vertex_embed = VertexEmbeddingClient(
         project_id=TEST_VERTEX_PROJECT,
         location=DEFAULT_VERTEX_LOCATION,
@@ -638,7 +611,7 @@ def test_gate_falsifiability_vertex_embedding_scorer_passes(
             "0.8",
         ],
     )
-    assert result.exit_code == 0
+    assert result.exit_code == _EXIT_OK
     assert "gate=PASS" in result.stdout
     assert "mean_score=1.000" in result.stdout
 
@@ -647,7 +620,7 @@ def test_gate_falsifiability_vertex_embedding_scorer_fails_exit_3(
     fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """VertexEmbeddingClient with embedding scorer trips exit 3 when vectors diverge."""
-    embedding_model = _FakeAlternatingModelClient()
+    embedding_model = FakeVertexEmbeddingModel(replies=[[1.0, 0.0], [0.0, 1.0]])
     vertex_embed = VertexEmbeddingClient(
         project_id=TEST_VERTEX_PROJECT,
         location=DEFAULT_VERTEX_LOCATION,
@@ -717,4 +690,4 @@ def test_gate_falsifiability_env_driven_settings(
             "--no-gate",
         ],
     )
-    assert no_gate_res.exit_code == 0
+    assert no_gate_res.exit_code == _EXIT_OK

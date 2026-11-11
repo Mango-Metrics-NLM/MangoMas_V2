@@ -21,7 +21,9 @@ Validates Story 2.2 and Story 5.2 (Milestone C1):
 from __future__ import annotations
 
 import json
-from typing import Any
+import os
+from collections.abc import Iterator
+from typing import Any, Final
 
 import pytest
 from typer.testing import CliRunner
@@ -32,18 +34,37 @@ from mangomas.agents import ChatAgent, SummarizeAgent
 from mangomas.agents.tool_agent import ToolAgent
 from mangomas.cli import _runtime as cli_runtime
 from mangomas.cli import main as cli_main
-from mangomas.config import DEFAULT_VERTEX_LOCATION, get_settings
+from mangomas.config import DEFAULT_VERTEX_LOCATION, Settings, get_settings
 from mangomas.core import AgentContext, AgentRequest, AgentResponse, Message, Orchestrator
 from mangomas.core.tools import ToolRegistry
 from mangomas.errors import ToolExecutionError, ToolNotFound
 from mangomas.registry import Registry
 from mangomas.workflow import execute_workflow
 from mangomas.workflow.graph import WorkflowGraph
-from tests.constants import STUB_REPLY, WORKFLOW_CONFIG_EXIT_CODE
+from tests.constants import (
+    SETTINGS_ENV_PREFIX,
+    STUB_REPLY,
+    TEST_VERTEX_PROJECT,
+    WORKFLOW_CONFIG_EXIT_CODE,
+)
 from tests.fakes import FakeTool, FakeVertexGenerativeModel
 
-_TEST_PROJECT = "demo-gcp-project"
-_TEST_MODEL = "gemini-2.0-flash"
+_TEST_MODEL: Final[str] = "gemini-2.0-flash"
+_EXIT_OK: Final[int] = 0
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Scrub ambient ``MANGOMAS_*`` env vars, ignore ``.env``, and reset Settings cache."""
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    for key in list(os.environ):
+        if key.startswith(SETTINGS_ENV_PREFIX):
+            monkeypatch.delenv(key, raising=False)
+    get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        get_settings.cache_clear()
 
 
 def _make_vertex_client(
@@ -53,7 +74,7 @@ def _make_vertex_client(
     """Build a VertexClient backed by an offline FakeVertexGenerativeModel."""
     fake = FakeVertexGenerativeModel(reply=reply, replies=replies or [])
     client = VertexClient(
-        project_id=_TEST_PROJECT,
+        project_id=TEST_VERTEX_PROJECT,
         location=DEFAULT_VERTEX_LOCATION,
         model=_TEST_MODEL,
         client=fake,
@@ -267,19 +288,23 @@ def _build_test_graph() -> tuple[str, WorkflowGraph]:
     return graph_json, WorkflowGraph.model_validate(graph_dict)
 
 
-def test_workflow_validate_cli_valid_graph() -> None:
+def test_workflow_validate_cli_valid_graph(
+    cli_logging_calls: list[dict[str, object]],  # noqa: ARG001
+) -> None:
     """CLI mangomas workflow validate passes on valid multi-node workflow graph."""
     runner = CliRunner()
     graph_json, _ = _build_test_graph()
 
     result = runner.invoke(cli_main.app, ["workflow", "validate", "-f", graph_json])
-    assert result.exit_code == 0
+    assert result.exit_code == _EXIT_OK
     assert "ok" in result.stdout
     assert "name=vertex-multi-agent-pipeline" in result.stdout
     assert "root=sequence" in result.stdout
 
 
-def test_workflow_validate_cli_invalid_syntax_exits_config_error() -> None:
+def test_workflow_validate_cli_invalid_syntax_exits_config_error(
+    cli_logging_calls: list[dict[str, object]],  # noqa: ARG001
+) -> None:
     """CLI mangomas workflow validate exits 2 on malformed JSON or invalid schema."""
     runner = CliRunner()
 
@@ -337,7 +362,10 @@ async def test_workflow_execution_under_vertex_orchestrator() -> None:
     assert len(fake_model.calls) == 5
 
 
-def test_workflow_run_cli_under_vertex_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_workflow_run_cli_under_vertex_orchestrator(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_logging_calls: list[dict[str, object]],  # noqa: ARG001
+) -> None:
     """CLI mangomas workflow run dispatches through Vertex-wired orchestrator and prints result."""
     runner = CliRunner()
     graph_json, _ = _build_test_graph()
@@ -371,5 +399,5 @@ def test_workflow_run_cli_under_vertex_orchestrator(monkeypatch: pytest.MonkeyPa
         cli_main.app,
         ["workflow", "run", "Start review", "--definition", graph_json],
     )
-    assert result.exit_code == 0
+    assert result.exit_code == _EXIT_OK
     assert "STATUS:DONE" in result.stdout

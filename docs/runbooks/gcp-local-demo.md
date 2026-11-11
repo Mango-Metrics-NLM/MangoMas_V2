@@ -78,7 +78,7 @@ gcloud services enable \
 ```
 
 ### 1.4 Local Environment Installation
-Install the required dependencies including cloud and monitoring extras:
+Install the required dependencies including cloud and RAG extras:
 
 **PowerShell (Windows)**:
 ```powershell
@@ -105,7 +105,7 @@ pip install -e ./mango-integration-contracts
 | `adc_credentials` | ADC exists and its token refreshes within `--timeout` | `gcloud auth application-default login` |
 | `gcp_project` | `--project`, `MANGOMAS_LLM__PROJECT_ID` / `EMBEDDINGS__` / `SECRETS__`, SDK env vars, or ADC names a project, and every project a provider targets is a valid ID | `gcloud config set project <ID>` |
 | `billing` | Billing is enabled **and** the linked billing account is open, in every project a provider targets | Reopen or link a billing account |
-| `required_apis` | Every API implied by the configured providers is enabled (`aiplatform` for a Vertex LLM, a Vertex `MANGOMAS_LLM_PROFILES__*` profile or Vertex embeddings; `secretmanager` for GCP secrets; `cloudtrace` for the GCP exporter), plus any `--require-api`, each in the project its client targets | `gcloud services enable <api> --project <ID>` (one line per project) |
+| `required_apis` | Every API implied by the configured providers is enabled (`aiplatform` for a Vertex LLM, a Vertex `MANGOMAS_LLM_PROFILES__*` profile or Vertex embeddings; `secretmanager` for GCP secrets and any cross-project `projects/<id>/secrets/...` ref; `cloudtrace` for the GCP trace exporter or when `MANGOMAS_HARNESS__ENABLED=true` with `METRICS_EXPORTER=gcp`; `monitoring` when `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` with `EXPORTER=gcp`), plus any `--require-api`, each in the project its client targets | `gcloud services enable <api> --project <ID>` (one line per project) |
 | `postgres_endpoint` | The host/port in `MANGOMAS_DB__URL` accepts TCP (only when `MANGOMAS_DB__PROVIDER=postgres`) | Start `cloud-sql-proxy`, or use SQLite; percent-encode reserved characters in the password |
 
 A 403 on the billing or Service Usage probe is reported as **SKIP** (the state could not be verified),
@@ -113,28 +113,32 @@ not FAIL. A TCP pass proves something listens on the port: the Auth Proxy or a l
 
 Each provider is checked in the project its runtime client uses: its own `*_PROJECT_ID`, else
 (for a named LLM profile) `MANGOMAS_LLM__PROJECT_ID`, else where `google.auth.default()` points
-(`GOOGLE_CLOUD_PROJECT`, then the ADC project). `--project` sets the primary project and the
-project for `--require-api`; nothing at runtime reads it, so it does not move a project-less
-client. With Vertex in one project and Secret Manager in another, the `billing` and
-`required_apis` rows report each project separately, prefixed `[project-id]`. Two more rules
-mirror the app: `MANGOMAS_SECRETS__PROVIDER=gcp` without `MANGOMAS_SECRETS__PROJECT_ID` fails
-`gcp_project` (the app refuses to start), and `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` with the
-`gcp` exporter also requires `monitoring.googleapis.com`.
+(`GOOGLE_CLOUD_PROJECT`, `GCLOUD_PROJECT`, then the ADC project). `--project` sets the primary
+project and the project for `--require-api`; nothing at runtime reads it, so it does not move a
+project-less client. With Vertex in one project and Secret Manager (or a cross-project
+`projects/<id>/secrets/...` reference) in another, the `billing` and `required_apis` rows report
+each project separately, prefixed `[project-id]`. One more rule mirrors the app:
+`MANGOMAS_SECRETS__PROVIDER=gcp` without `MANGOMAS_SECRETS__PROJECT_ID` fails `gcp_project` (the
+app refuses to start).
 
 `MANGOMAS_DB__URL` must use `postgresql://` or `postgres://` (the schemes asyncpg accepts) and
-must percent-encode reserved characters in the password (`@` → `%40`, `/` → `%2F`, `?` → `%3F`,
-`#` → `%23`), as libpq and asyncpg require. These URLs fail without being echoed:
+must percent-encode reserved characters in the password (`@` → `%40`, `:` in an unauthenticated
+authority, `/` → `%2F`, `?` → `%3F`, `#` → `%23`), as libpq and asyncpg require. Bracketed IPv6
+hosts (`[::1]:5432`) are validated via `ipaddress.IPv6Address`. These URLs fail without being
+echoed:
 
 - **Ambiguous:**
-  - more than one `@` in the host part. asyncpg splits at the first `@`, RFC readers at the
-    last;
+  - more than one `@` in the host part (asyncpg splits at the first `@`, RFC readers at the last);
   - an `@` after the host part;
+  - an unbracketed multi-colon authority without `@host` (such as `postgresql://user:pass:5432/db`,
+    rejected without DNS lookup so a mistyped password is never sent to DNS);
   - an all-digit host.
 - **Not probed:** forms asyncpg resolves differently from a single TCP probe:
   - a multi-host list;
   - a percent-encoded host;
-  - a `?host=` or `?port=` override.
-- **Invalid port:** a port that isn't plain ASCII digits.
+  - a `?host=`, `?port=`, or `?service=` override.
+- **Invalid host/port:** an unbracketed IPv6 literal, stray `[`/`]`, or a port that isn't plain
+  ASCII digits in `1..65535`.
 
 A URL with no `user@` part is still probed, but its host and port are withheld from the report.
 `postgresql://user:12345/db` (a forgotten `@host`) cannot be told apart from
@@ -575,8 +579,16 @@ mangomas eval -d tests/eval/fixtures/mixed.jsonl -s exact_match -a chat --gate -
 ## 6. Story 4.2: Strict GCP Secret Manager Resolution & Fail-Closed Auth
 
 Mango-Mas integrates with Google Cloud Secret Manager via `GCPSecretManagerProvider`.
-In production and development, strict mode ensures missing or unauthorized secrets fail closed
-rather than silently proceeding with missing credentials.
+In production and development, strict mode (`MANGOMAS_SECRETS__STRICT=true`) ensures permission,
+authentication, timeout, or API failures raise a typed `SecretsResolutionError` rather than
+silently proceeding with degraded credentials (`NotFound` still returns `None` per ADR-002 / ADR-0010).
+
+> **Provider credential contract (`MANGOMAS_LLM__SECRET_REF`).** Under `MANGOMAS_LLM__PROVIDER=vertex`,
+> `_vertex_factory` (`src/mangomas/composition/llm.py`) forwards a resolved `MANGOMAS_LLM__SECRET_REF`
+> as a **service-account JSON body** (`credentials_json`); ambient ADC requires leaving
+> `MANGOMAS_LLM__SECRET_REF` unset. Plain string bearer tokens belong on `MANGOMAS_LLM__SECRET_REF`
+> when `MANGOMAS_LLM__PROVIDER=lmstudio` (or on `MANGOMAS_AUTH__SECRET_REF` when running the HTTP API
+> with `MANGOMAS_AUTH__ENABLED=true`).
 
 ### 6.1 Strict Mode Configuration
 
@@ -586,7 +598,8 @@ $env:MANGOMAS_SECRETS__PROVIDER = "gcp"
 $env:MANGOMAS_SECRETS__PROJECT_ID = "<YOUR_GCP_PROJECT_ID>"
 $env:MANGOMAS_SECRETS__STRICT = "true"
 $env:MANGOMAS_SECRETS__DEFAULT_VERSION = "latest"
-$env:MANGOMAS_LLM__SECRET_REF = "mangomas-llm-api-key"
+# Under PROVIDER=vertex, SECRET_REF must hold a service-account JSON payload (or test an unauthorized secret ref):
+$env:MANGOMAS_LLM__SECRET_REF = "mangomas-vertex-sa-json"
 ```
 
 **Bash (Linux/macOS)**:
@@ -595,36 +608,47 @@ export MANGOMAS_SECRETS__PROVIDER="gcp"
 export MANGOMAS_SECRETS__PROJECT_ID="<YOUR_GCP_PROJECT_ID>"
 export MANGOMAS_SECRETS__STRICT="true"
 export MANGOMAS_SECRETS__DEFAULT_VERSION="latest"
-export MANGOMAS_LLM__SECRET_REF="mangomas-llm-api-key"
+export MANGOMAS_LLM__SECRET_REF="mangomas-vertex-sa-json"
 ```
 
 ### 6.2 Fail-Closed Verification
-1. Attempt to invoke the CLI referencing a non-existent secret or in an unauthorized environment:
+1. Attempt to invoke the CLI referencing a secret to which the active principal lacks `roles/secretmanager.secretAccessor` (or without valid ADC):
    ```bash
    mangomas chat "Testing fail-closed secret resolution" -a chat
    ```
 2. **Observed Behavior**:
    - The CLI halts immediately with configuration exit code 2 (`EXIT_CONFIG_ERROR`).
    - Stderr emits:
-     ```
-     Config error: Failed to resolve secret 'mangomas-llm-api-key' from provider 'gcp'. (PermissionDenied)
+     ```text
+     Configuration error: Failed to resolve secret 'mangomas-vertex-sa-json' from provider 'gcp'. (PermissionDenied)
      ```
    - **Log Redaction Guarantee**: Application logs never contain secret values, secret versions, or full GCP resource strings.
+3. Clear `MANGOMAS_LLM__SECRET_REF` before returning to ambient ADC Vertex journeys:
+   - **PowerShell**: `Remove-Item env:MANGOMAS_LLM__SECRET_REF -ErrorAction SilentlyContinue`
+   - **Bash**: `unset MANGOMAS_LLM__SECRET_REF`
 
 ### 6.3 Non-Strict Fallback (Local Prototyping)
-When strict mode is disabled (`MANGOMAS_SECRETS__STRICT=false`), unresolved cloud secrets return `None` and fall back to local environment variables (e.g., `MANGOMAS_LLM__API_KEY`):
+When strict mode is disabled (`MANGOMAS_SECRETS__STRICT=false`) under `MANGOMAS_LLM__PROVIDER=lmstudio`, unresolved cloud secrets return `None` and fall back to inline local settings (`MANGOMAS_LLM__API_KEY`):
 
 **PowerShell**:
 ```powershell
+$env:MANGOMAS_LLM__PROVIDER = "lmstudio"
 $env:MANGOMAS_SECRETS__STRICT = "false"
+$env:MANGOMAS_LLM__SECRET_REF = "mangomas-llm-api-key"
 $env:MANGOMAS_LLM__API_KEY = "local-dev-fallback-key"
 ```
 
 **Bash**:
 ```bash
+export MANGOMAS_LLM__PROVIDER="lmstudio"
 export MANGOMAS_SECRETS__STRICT="false"
+export MANGOMAS_LLM__SECRET_REF="mangomas-llm-api-key"
 export MANGOMAS_LLM__API_KEY="local-dev-fallback-key"
 ```
+
+After testing the local fallback, clear both overrides before switching back to `vertex` in §7:
+- **PowerShell**: `Remove-Item env:MANGOMAS_LLM__SECRET_REF, env:MANGOMAS_LLM__API_KEY -ErrorAction SilentlyContinue`
+- **Bash**: `unset MANGOMAS_LLM__SECRET_REF MANGOMAS_LLM__API_KEY`
 
 ---
 
@@ -642,7 +666,7 @@ Vertex AI foundation models (`gemini-2.5-flash`).
    - The loop continues until the model produces a final answer without requesting further tools, or until the execution budget is exhausted.
    - The total number of LLM completions consumed is recorded in `AgentResponse.metadata["tool_steps"]`.
 
-2. **Vertex AI Role Folding & Gemini Turn Parity (`src/mangomas/adapters/llm/vertex/_client.py`)**:
+2. **Vertex AI Role Folding & Gemini Turn Parity (`src/mangomas/adapters/llm/vertex/_messages.py`)**:
    - Google Cloud Vertex AI Gemini models enforce a strict alternating turn structure (`user` -> `model` -> `user` -> `model`) and explicitly reject arbitrary role identifiers like `"tool"` or `"system"`.
    - `VertexClient` transparently folds message roles:
      - `_vertex_role_for`: Maps `"assistant"` to Gemini's native `"model"` role, and maps all other roles (`"user"`, `"system"`, `"tool"`) to `"user"`.
@@ -659,7 +683,7 @@ Vertex AI foundation models (`gemini-2.5-flash`).
    - Supported node primitives:
      - `sequence`: Sequential execution chaining outputs across steps.
      - `fan_out`: Parallel concurrent execution across multiple agent branches with join reduction (e.g., `concat`).
-     - `loop`: Iterative execution repeating an agent until an acceptance predicate (`contains`, `regex`, `json_keys`) evaluates to true or `max_steps` is reached.
+     - `loop`: Iterative execution repeating an agent until an acceptance predicate (`contains`, `regex`, `json_field`) evaluates to true or `max_steps` is reached.
      - `branch`: Conditional routing based on predicate evaluation.
      - `agent`: Direct execution of a registered agent.
    - Offline validation (`mangomas workflow validate`) verifies graph syntax, schemas, and predicate specifications without invoking models.
@@ -843,7 +867,7 @@ deployment manifests with zero unrendered placeholders.
 ### 8.1 Architecture & Observability Context
 
 1. **Google Cloud Trace Exporter (`src/mangomas/telemetry/exporters.py`)**:
-   - When `MANGOMAS_TELEMETRY__EXPORTER=gcp` is configured, `_lazy_cloud_trace_exporter()` lazily loads `opentelemetry.exporter.cloud_trace.CloudTraceSpanExporter` from the optional `[gcp-monitoring]` extra.
+   - When `MANGOMAS_TELEMETRY__EXPORTER=gcp` is configured, `_lazy_cloud_trace_exporter()` lazily loads `opentelemetry.exporter.cloud_trace.CloudTraceSpanExporter` from the `[gcp]` extra (included in `[cloud]`).
    - Spans generated across agent dispatch, LLM calls, and storage operations are captured and exported in batches to Google Cloud Trace (`cloudtrace.googleapis.com`) using ambient ADC (`roles/cloudtrace.agent`).
    - Standard W3C Trace Context headers (`traceparent: 00-{trace_id}-{span_id}-01`) are injected and propagated across external HTTP boundaries.
 
@@ -869,7 +893,7 @@ $env:MANGOMAS_ENV = "dev"
 $env:MANGOMAS_LOG_LEVEL = "DEBUG"
 $env:MANGOMAS_LOG__FORMAT = "json"
 $env:MANGOMAS_TELEMETRY__EXPORTER = "gcp"
-$env:MANGOMAS_TELEMETRY__METRICS_ENABLED = "true"
+$env:MANGOMAS_TELEMETRY__METRICS_ENABLED = "false"
 $env:MANGOMAS_LLM__PROVIDER = "vertex"
 $env:MANGOMAS_LLM__PROJECT_ID = "<YOUR_GCP_PROJECT_ID>"
 $env:MANGOMAS_LLM__LOCATION = "us-central1"
@@ -882,12 +906,16 @@ export MANGOMAS_ENV="dev"
 export MANGOMAS_LOG_LEVEL="DEBUG"
 export MANGOMAS_LOG__FORMAT="json"
 export MANGOMAS_TELEMETRY__EXPORTER="gcp"
-export MANGOMAS_TELEMETRY__METRICS_ENABLED="true"
+export MANGOMAS_TELEMETRY__METRICS_ENABLED="false"
 export MANGOMAS_LLM__PROVIDER="vertex"
 export MANGOMAS_LLM__PROJECT_ID="<YOUR_GCP_PROJECT_ID>"
 export MANGOMAS_LLM__LOCATION="us-central1"
 export MANGOMAS_LLM__MODEL="gemini-2.5-flash"
 ```
+
+> **Opt-in Cloud Monitoring metrics.** To export OTel counters and histograms alongside traces
+> (`MANGOMAS_TELEMETRY__METRICS_ENABLED="true"`), install the separate `pip install -e ".[gcp-monitoring]"`
+> extra, enable `monitoring.googleapis.com`, and grant `roles/monitoring.metricWriter` on the target project.
 
 ### 8.3 Step 1: Distributed Trace Streaming & Structured JSON Log Verification
 
@@ -903,9 +931,9 @@ mangomas chat "Verify distributed trace propagation and Cloud Logging JSON schem
 mangomas chat "Verify distributed trace propagation and Cloud Logging JSON schema." -a chat -v
 ```
 
-#### Expected Structured JSON Log Stream (stderr):
+#### Illustrative Structured JSON Log Stream (stderr, `JsonFormatter`):
 ```json
-{"timestamp": "2026-11-09T23:55:01.102345+00:00", "severity": "DEBUG", "logger": "mangomas.telemetry", "message": "Telemetry configured: exporter=gcp, log_format=json", "trace_id": "", "span_id": "", "correlation_id": "-"}
+{"timestamp": "2026-11-09T23:55:01.102345+00:00", "severity": "DEBUG", "logger": "mangomas.telemetry", "message": "Telemetry configured", "trace_id": "", "span_id": "", "correlation_id": "-", "event": "telemetry_configured", "exporter": "gcp"}
 {"timestamp": "2026-11-09T23:55:01.215432+00:00", "severity": "INFO", "logger": "mangomas.agents.chat", "message": "Dispatching agent request to vertex [gemini-2.5-flash]", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7", "correlation_id": "corr-8f12a3b4"}
 {"timestamp": "2026-11-09T23:55:02.348910+00:00", "severity": "DEBUG", "logger": "mangomas.adapters.llm.vertex", "message": "Vertex AI generation completed in 1.13s", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7", "correlation_id": "corr-8f12a3b4"}
 ```
@@ -937,7 +965,10 @@ python scripts/deploy_environment.py --registry deploy/environments.yaml validat
 
 **Expected Output**:
 ```text
-Validated 3 environment(s) against base manifest 'deploy/service.yaml': dev, qa, prod.
+INFO deploy_environment: Environment dev OK: service=mangomas-dev repository=... trigger=...
+INFO deploy_environment: Environment qa OK: service=mangomas-qa repository=... trigger=...
+INFO deploy_environment: Environment prod OK: service=mangomas repository=... trigger=...
+INFO deploy_environment: Registry deploy/environments.yaml valid: 3 environment(s) ['dev', 'qa', 'prod']
 ```
 - **Exit Code**: `0` ($LASTEXITCODE in PowerShell, $? in Bash).
 - **Safety Guarantee**: Offline validation renders each environment against sentinels, confirming that overlays match schema contracts without making GCP API calls.
@@ -1032,6 +1063,7 @@ ERROR deploy_environment: --substitute-from-env: unset environment variable(s) [
 | `PersistenceError / InvalidArgumentError: Collection expecting embedding with dimension of 384, got 768` | Vertex embeddings written to local Chroma collection | Inspect `MANGOMAS_VECTOR__PERSIST_DIR` | Ensure `MANGOMAS_VECTOR__PERSIST_DIR=./data/chroma_vertex` and `MANGOMAS_VECTOR__COLLECTION=mangomas_vertex` to isolate 768-dim embeddings. |
 | `Eval quality gate failed (exit code 3)` | Sub-threshold metric, errored row, or regression vs baseline | Inspect stdout `gate=FAIL (...)` and report JSON | Check score thresholds (`--min-mean-score`, `--min-pass-rate`), baseline delta (`--max-mean-score-drop`), or fix regressed prompt/agent logic. |
 | `ImportError: Cloud Trace exporter is not installed` | Missing optional OpenTelemetry Cloud Trace SDK extra | `python -c "import opentelemetry.exporter.cloud_trace"` | Run `pip install -e ".[gcp]"` (the extra that ships `opentelemetry-exporter-gcp-trace`). |
+| `ImportError: ... mangomas[gcp-monitoring]` | `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` with `EXPORTER=gcp` without the monitoring extra | `python -c "import opentelemetry.exporter.cloud_monitoring"` | Run `pip install -e ".[gcp-monitoring]"`, enable `monitoring.googleapis.com`, and grant `roles/monitoring.metricWriter` (or set `MANGOMAS_TELEMETRY__METRICS_ENABLED=false`). |
 | `ConfigError: Unknown telemetry exporter '<TOKEN>'` | Invalid exporter token passed in `MANGOMAS_TELEMETRY__EXPORTER` | Inspect `MANGOMAS_TELEMETRY__EXPORTER` value | Set `MANGOMAS_TELEMETRY__EXPORTER=gcp` for Google Cloud Trace or `MANGOMAS_TELEMETRY__EXPORTER=console` for local console output. |
 | `PermissionDenied (403): Google Cloud Trace API` | Principal lacks Cloud Trace Agent role | `gcloud projects get-iam-policy <PROJECT_ID>` | Grant `roles/cloudtrace.agent` to workstation user or service account. |
 | `Workflow configuration error: ...` (Exit code 2) | Malformed workflow JSON definition, invalid node kind, or bad predicate | `mangomas workflow validate -f <path>` | Validate JSON syntax against `WorkflowGraph` schema; verify root node kind is one of `sequence`, `fan_out`, `loop`, `branch`, `agent`. |

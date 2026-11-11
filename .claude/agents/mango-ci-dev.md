@@ -31,7 +31,8 @@ do not restate them here.
 - `tests/deploy/` — `_workflows.py`, `_makefile.py`, `_manifest.py` (the shared
   readers), `test_ci_make_parity.py`, `test_workflow_hardening.py`,
   `test_deploy_contract.py`, `test_deploy_environments.py`,
-  `test_docker_build_context.py`, `test_env_example_contract.py`
+  `test_docker_build_context.py`, `test_env_example_contract.py`,
+  `test_manifest_provider_contract.py`, `test_manifest_render_contract.py`
 - `Dockerfile` and `.dockerignore`
 - `scripts/guard_probe.py` and `scripts/guard_probe_manifest.json` — the
   falsifiability probe behind `make guard-probe`. Other harness scripts stay
@@ -68,8 +69,8 @@ floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
 - **`gate` stays offline.** Every target in the chain runs with no network —
   that is why `secret-scan` (which downloads a pinned binary) is excluded.
   The chain is `validate-config lint format-check typecheck lint-imports
-  frontmatter protected-paths test coverage bridge-coverage
-  contracts-coverage scripts-coverage`. `make lint-imports` is in the
+  frontmatter protected-paths test coverage eval-selfcheck eval-lanes
+  bridge-coverage contracts-coverage scripts-coverage`. `make lint-imports` is in the
   Lint job; `make scripts-coverage` is its own job. Pre-commit is a
   **subset** (ruff/mypy(`src/`)/frontmatter plus `validate-config` and
   `lint-imports`); it is not `make gate`. The Stop hook is

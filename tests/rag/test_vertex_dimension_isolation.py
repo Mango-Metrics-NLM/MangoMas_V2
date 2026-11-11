@@ -11,7 +11,6 @@ Verifies that:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -21,6 +20,8 @@ from mangomas.adapters.vector.chroma import ChromaVectorStore
 from mangomas.config import RagSettings
 from mangomas.errors import PersistenceError
 from mangomas.rag import IngestionPipeline, Retriever
+from tests.constants import DEFAULT_VERTEX_EMBEDDING_MODEL, TEST_VERTEX_PROJECT
+from tests.fakes import FakeVertexEmbeddingModel
 
 # Every case opens a real ChromaVectorStore, which needs the `rag` extra
 # (chromadb); `make install` installs only `[dev]`. The marker pair mirrors the
@@ -35,21 +36,6 @@ pytestmark = [pytest.mark.embeddings_local, pytest.mark.rag]
 # which is exactly the silent switch the isolation convention guards against.
 LOCAL_EMBEDDING_DIM = 384
 VERTEX_EMBEDDING_DIM = 768
-
-
-@dataclass
-class _FakeEmbedding:
-    values: list[float]
-
-
-@dataclass
-class _FakeModelClient:
-    """Fake Vertex TextEmbeddingModel returning fixed-dimension vectors."""
-
-    dim: int = VERTEX_EMBEDDING_DIM
-
-    async def get_embeddings_async(self, texts: list[str]) -> list[_FakeEmbedding]:
-        return [_FakeEmbedding(values=[0.05] * self.dim) for _ in texts]
 
 
 def _make_store(persist_dir: Path, collection_name: str) -> ChromaVectorStore:
@@ -172,10 +158,10 @@ async def test_ingestion_pipeline_with_vertex_embeddings_isolated(
     doc_path = tmp_path / "sample.md"
     doc_path.write_text("Mango-Mas provides modular multi-agent support for Google Cloud.")
 
-    fake_model = _FakeModelClient(dim=VERTEX_EMBEDDING_DIM)
+    fake_model = FakeVertexEmbeddingModel(replies=[[0.05] * VERTEX_EMBEDDING_DIM])
     embedding_client = VertexEmbeddingClient(
-        project_id="test-project",
-        model="text-embedding-004",
+        project_id=TEST_VERTEX_PROJECT,
+        model=DEFAULT_VERTEX_EMBEDDING_MODEL,
         client=fake_model,
     )
     store = _make_store(tmp_path / "chroma_vertex", "mangomas_vertex")
@@ -217,10 +203,10 @@ async def test_ingestion_pipeline_collision_raises_persistence_error(
     doc_path = tmp_path / "sample.md"
     doc_path.write_text("This should collide and raise PersistenceError.")
 
-    fake_model = _FakeModelClient(dim=VERTEX_EMBEDDING_DIM)
+    fake_model = FakeVertexEmbeddingModel(replies=[[0.05] * VERTEX_EMBEDDING_DIM])
     embedding_client = VertexEmbeddingClient(
-        project_id="test-project",
-        model="text-embedding-004",
+        project_id=TEST_VERTEX_PROJECT,
+        model=DEFAULT_VERTEX_EMBEDDING_MODEL,
         client=fake_model,
     )
 
