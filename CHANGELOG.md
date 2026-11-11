@@ -35,6 +35,46 @@ Versioning: [Semantic Versioning](https://semver.org/).
   `embeddings-local` lane).
 - `mango-gcp-demo` skill (owned by `mango-ci-dev`); `make gcp-trace` now also
   collects the GCP telemetry contract.
+- Review follow-ups (Copilot + CodeQL on #130, then an independent read-only review):
+  - **CodeQL `py/clear-text-logging-sensitive-data` (alert 66):** DEBUG logging records
+    only static probe labels (`probe=cb_project status=200`). It never records the request
+    URL, which embeds configured identifiers, or the API names derived from them.
+  - **`MANGOMAS_DB__URL` parsing follows RFC 3986 *and* asyncpg.** The authority ends at the first `/`, `?` or
+    `#`. Three shapes are ambiguous and fail with percent-encoding guidance, never echoing
+    the URL; asyncpg would mis-read the same URL:
+    - an authority with more than one `@` (asyncpg splits at the first);
+    - an `@` after the host part;
+    - an all-digit host.
+
+    An `@` in the query no longer redirects the probe. Shapes asyncpg resolves differently
+    from one TCP probe are refused as "not probed": multi-host lists, percent-encoded hosts,
+    and `?host=`/`?port=` overrides. Ports must be plain ASCII digits; the only accepted
+    schemes are `postgresql://` and `postgres://`. A URL with no `user@` part is probed,
+    but its host and port are withheld (`postgresql://user:12345/db`).
+  - **The ADC refresh honours `--timeout`.** It uses `functools.partial(request, timeout=...)`,
+    google-auth's own idiom.
+  - **APIs follow the runtime's projects.**
+    - `required_apis` includes Vertex `MANGOMAS_LLM_PROFILES__*` profiles. It adds
+      `monitoring.googleapis.com` when GCP metrics are enabled.
+    - Every provider is probed in the project its client targets: its own `*_PROJECT_ID`,
+      else the profile's inherited LLM project, else `google.auth.default()`'s project
+      (`GOOGLE_CLOUD_PROJECT`, then ADC). `--project` isn't read at runtime, so it doesn't
+      move project-less clients.
+    - `billing` checks each targeted project.
+    - `gcp_project` fails on GCP secrets without `MANGOMAS_SECRETS__PROJECT_ID`, as the app
+      does.
+    - New: `api_requirements`, `api_plan`, `check_required_apis_by_project`,
+      `check_billing_projects` and `configuration_problems`.
+    - A single-project report reads as before, except that an invalid project ID is no
+      longer probed.
+  - **Docs.**
+    - The runbook's `ExecutionPlan` and `ReviewResult` examples now match the schemas.
+    - The `ToolAgent` journey uses the real `retrieve` tool instead of a `list_agents`
+      tool that doesn't exist.
+    - No doc prints any part of an OAuth token.
+    - `.env.gcp-demo` states that `MAX_MEAN_COST_USD` is a post-run check that is skipped
+      when rows carry no `cost_usd`.
+    - All of this is pinned by `tests/tooling/test_gcp_demo_docs_contract.py`.
 
 ### Changed — dev toolchain bumped in lockstep; Dependabot stops raising mirrored hook floors
 
