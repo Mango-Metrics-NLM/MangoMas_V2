@@ -405,9 +405,8 @@ def test_project_less_clients_are_checked_where_they_run_not_in_the_flag_project
 
 def test_profile_project_resolves_the_primary_project(pf: ModuleType) -> None:
     """Review of #130: a Vertex profile's project names the project when nothing else does."""
-    s = _settings(
-        llm_profiles={"judge": LLMProfileSettings(provider="vertex", model="m", project_id="prof-p")}
-    )
+    profile = LLMProfileSettings(provider="vertex", model="m", project_id="prof-p")
+    s = _settings(llm_profiles={"judge": profile})
     assert pf.resolve_project(s, None, None) == "prof-p"
 
 
@@ -423,8 +422,9 @@ def test_gcp_secrets_without_project_id_fails_like_the_app(pf: ModuleType) -> No
 def test_gcp_metrics_require_cloud_monitoring(pf: ModuleType) -> None:
     on = _settings(telemetry=TelemetrySettings(exporter="gcp", metrics_enabled=True))
     off = _settings(telemetry=TelemetrySettings(exporter="gcp", metrics_enabled=False))
-    assert "monitoring.googleapis.com" in pf.required_apis(on)
-    assert "monitoring.googleapis.com" not in pf.required_apis(off)
+    # Set arithmetic, not `in`: an exact service name, never a substring match.
+    added = set(pf.required_apis(on)) - set(pf.required_apis(off))
+    assert added == {pf.TELEMETRY_METRICS_APIS["gcp"]}
 
 
 def test_gcp_project_lists_and_validates_every_targeted_project(pf: ModuleType) -> None:
