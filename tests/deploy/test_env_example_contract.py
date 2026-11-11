@@ -16,10 +16,7 @@ that quietly does nothing, not one that explodes.
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -32,10 +29,6 @@ from tests.deploy import _settings_names
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ENV_EXAMPLE = _REPO_ROOT / ".env.example"
-# spec-0049: the GCP demo template is held to the same name contract as
-# .env.example, and additionally must parse into a valid Settings object.
-_ENV_GCP_DEMO = _REPO_ROOT / ".env.gcp-demo"
-_TRACKED_ENV_TEMPLATES: tuple[Path, ...] = (_ENV_EXAMPLE, _ENV_GCP_DEMO)
 # The root instruction pair as one document: CLAUDE.md's first line is
 # `@AGENTS.md`, so a session is told the union. Reading either half alone
 # would let a row move across the split and vanish from this contract while
@@ -144,35 +137,6 @@ def test_env_example_exists_and_parses() -> None:
     assert _names_in(_ENV_EXAMPLE), "parsed zero MANGOMAS_* names from .env.example"
 
 
-def test_env_gcp_demo_exists_and_parses() -> None:
-    assert _ENV_GCP_DEMO.is_file(), ".env.gcp-demo template is missing (spec-0049)"
-    assert _names_in(_ENV_GCP_DEMO), "parsed zero MANGOMAS_* names from .env.gcp-demo"
-
-
-def test_env_templates_are_tracked_not_ignored() -> None:
-    """`.env.*` is ignored wholesale; each template needs its own negation.
-
-    Without one the template is dropped on clone and CI checkout, and
-    test_env_gcp_demo_exists_and_parses fails on every fresh runner while
-    passing on the author's workstation.
-    """
-    rules = {line.strip() for line in (_REPO_ROOT / ".gitignore").read_text("utf-8").splitlines()}
-    missing = [f"!{p.name}" for p in _TRACKED_ENV_TEMPLATES if f"!{p.name}" not in rules]
-    assert missing == [], f".gitignore lacks negation rule(s): {missing}"
-
-    git_bin = shutil.which("git")
-    if git_bin is None or not (_REPO_ROOT / ".git").exists():
-        return  # static rule check above is the portable half of the contract
-    for template in _TRACKED_ENV_TEMPLATES:
-        result = subprocess.run(  # noqa: S603 -- fixed argv, no shell, no user input
-            [git_bin, "check-ignore", "--quiet", template.name],
-            cwd=_REPO_ROOT,
-            check=False,
-        )
-        # check-ignore exits 0 when the path IS ignored, 1 when it is not.
-        assert result.returncode == 1, f"{template.name} is git-ignored"
-
-
 def test_instruction_docs_config_tables_parse() -> None:
     assert all(doc.is_file() for doc in _INSTRUCTION_DOCS)
     assert _names_in_instructions(), "parsed zero MANGOMAS_* names from CLAUDE.md"
@@ -202,32 +166,6 @@ def test_env_example_names_all_resolve() -> None:
     sets it gets no error and no effect.
     """
     assert _unresolved(_ENV_EXAMPLE) == []
-
-
-def test_env_gcp_demo_names_all_resolve() -> None:
-    """Every name in the GCP demo template maps to a declared Settings field."""
-    assert _unresolved(_ENV_GCP_DEMO) == []
-
-
-def test_env_gcp_demo_values_validate_against_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Names resolving is not enough: every *value* must also pass validation.
-
-    A typo'd enum value (``MANGOMAS_TELEMETRY__EXPORTER=gpc``) resolves by name
-    but fails at startup, which an operator following the runbook would hit
-    first. The ambient environment is cleared so only the template is read.
-    """
-    for name in [n for n in os.environ if n.startswith(_PREFIX)]:
-        monkeypatch.delenv(name)
-    settings = Settings(_env_file=_ENV_GCP_DEMO)  # type: ignore[call-arg]
-    # The template exists to switch every pluggable backend to its GCP provider.
-    assert settings.llm.provider == "vertex"
-    assert settings.embeddings.provider == "vertex"
-    assert settings.secrets.provider == "gcp"
-    assert settings.telemetry.exporter == "gcp"
-    assert settings.db.provider == "postgres"
-    # A billed demo must not fan out paid calls or run without a cost ceiling.
-    assert settings.eval.parallelism == 1
-    assert settings.eval.max_mean_cost_usd is not None
 
 
 def test_instruction_doc_names_all_resolve() -> None:

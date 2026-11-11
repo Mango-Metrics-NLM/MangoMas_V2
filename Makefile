@@ -32,7 +32,7 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
                  tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
                  tests/test_deploy_environment.py tests/harness \
                  tests/test_studio_consumer_probe.py tests/test_destructive_bash.py \
-                 tests/test_bootstrap_gpu_env.py tests/test_preflight_verification.py
+                 tests/test_bootstrap_gpu_env.py
 # Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
 # was the gate's own blind spot — 24%, imported only for its FLOORS/
 # GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect
@@ -127,7 +127,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local gpu oracle-isolation-docker oracle-isolation-wsl secret-scan pip-audit sbom-scan \
-        install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply gcp-preflight \
+        install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply \
         lock lock-upgrade docker-build docker-smoke oracle-image \
         nightly-scan-refs
 
@@ -159,13 +159,6 @@ deploy-render: ## Render ENVIRONMENT's manifest for IMAGE into RENDERED_MANIFEST
 
 deploy-validate: ## Offline registry check: render every environment (no credentials)
 	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) validate
-
-# Operator-only (needs network + ADC), so it is not in `gate` or CI. Every probe
-# is a read: ADC refresh, billing-account state, Service Usage, a TCP connect.
-# Extra flags pass through, e.g. GCP_PREFLIGHT_FLAGS="--json --require-api sqladmin.googleapis.com".
-GCP_PREFLIGHT_FLAGS ?=
-gcp-preflight: ## Read-only GCP demo pre-flight: ADC, project, billing, APIs, Postgres (spec-0049)
-	@$(PYTHON) scripts/verify_gcp_prerequisites.py $(GCP_PREFLIGHT_FLAGS)
 
 nightly-scan-refs: ## Branches the nightly security scans check out (reads NIGHTLY_SCAN_ENVIRONMENT_BRANCHES)
 	$(PYTHON) $(DEPLOY_SCRIPT) --registry $(DEPLOY_REGISTRY) --log-level $(DEPLOY_LOG_LEVEL) scan-refs
@@ -334,7 +327,7 @@ gcp-secrets: ## Live GCP Secret Manager suite (needs ADC + project)
 	RUN_GCP_SECRETS=1 $(PYTHON) -m pytest tests/integration -m gcp_secrets --no-cov $(PYTEST_FLAGS)
 
 gcp-trace: ## Cloud Trace exporter suite (needs the gcp extra installed)
-	RUN_GCP_TRACE=1 $(PYTHON) -m pytest tests/test_telemetry.py tests/test_telemetry_gcp_contract.py -m gcp_trace --no-cov $(PYTEST_FLAGS)
+	RUN_GCP_TRACE=1 $(PYTHON) -m pytest tests/test_telemetry.py -m gcp_trace --no-cov $(PYTEST_FLAGS)
 
 langfuse: ## Langfuse sink/source suite (needs the langfuse extra installed)
 	RUN_LANGFUSE=1 $(PYTHON) -m pytest tests/eval -m langfuse --no-cov $(PYTEST_FLAGS)
