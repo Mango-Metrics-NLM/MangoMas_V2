@@ -122,8 +122,7 @@ def test_validate_registry_programmatic() -> None:
     """Programmatic validate_registry renders every environment offline without credentials."""
     checked = deploy_env.validate_registry(_REGISTRY, _manifest.base_manifest())
     assert checked == _ENVIRONMENT_NAMES
-    assert len(checked) == 3
-    assert set(checked) == {"dev", "qa", "prod"}
+    assert len(checked) >= 1
 
 
 def test_validate_registry_cli() -> None:
@@ -211,7 +210,7 @@ def test_falsifiability_missing_substitute_env_var_fails(
             str(_REGISTRY_PATH),
             "render",
             "--environment",
-            "dev",
+            _ENVIRONMENT_NAMES[0],
             "--image",
             TEST_IMAGE_REF,
             "--output",
@@ -224,7 +223,8 @@ def test_falsifiability_missing_substitute_env_var_fails(
     assert not output_path.exists()
 
 
-def test_falsifiability_unoverridden_base_placeholder_detected() -> None:
+@pytest.mark.parametrize("name", _ENVIRONMENT_NAMES)
+def test_falsifiability_unoverridden_base_placeholder_detected(name: str) -> None:
     """If the base manifest contains a placeholder not overridden, deep search detects it."""
     base = _manifest.base_manifest()
     # Inject an un-overridden placeholder into the base manifest
@@ -233,7 +233,7 @@ def test_falsifiability_unoverridden_base_placeholder_detected() -> None:
 
     rendered = deploy_env.render_manifest(
         base,
-        _REGISTRY.environments["prod"],
+        _REGISTRY.environments[name],
         TEST_IMAGE_REF,
         RENDER_PLACEHOLDER_VALUES,
     )

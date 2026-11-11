@@ -21,9 +21,11 @@ Validates:
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import logging
+import os
 import re
 import sys
 from collections.abc import Iterator
@@ -50,9 +52,39 @@ from mangomas.telemetry.exporters import (
     _lazy_cloud_trace_exporter,
 )
 from mangomas.telemetry.logs import JsonFormatter, TraceContextFilter
+from tests.constants import SETTINGS_ENV_PREFIX, TEST_VERTEX_PROJECT
 
 # W3C Trace Context trace-flags bit 0: the span is sampled.
 _W3C_SAMPLED_FLAG = 0x01
+
+
+@contextlib.contextmanager
+def _captured_json_logger(
+    name: str,
+    *,
+    level: int = logging.INFO,
+    with_filters: bool = True,
+) -> Iterator[tuple[logging.Logger, io.StringIO]]:
+    """Attach an isolated ``JsonFormatter`` stream handler and clean it up on exit."""
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(JsonFormatter())
+    if with_filters:
+        handler.addFilter(TraceContextFilter())
+        handler.addFilter(CorrelationFilter())
+
+    logger = logging.getLogger(name)
+    old_level = logger.level
+    old_propagate = logger.propagate
+    logger.setLevel(level)
+    logger.propagate = False
+    logger.addHandler(handler)
+    try:
+        yield logger, buf
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
 
 
 @pytest.fixture(autouse=True)
@@ -76,20 +108,11 @@ def reset_telemetry_and_logging() -> Iterator[None]:
 
 def test_cloud_logging_json_schema_structure() -> None:
     """Cloud Logging JSON format emits all required schema fields."""
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(TraceContextFilter())
-    handler.addFilter(CorrelationFilter())
-
-    logger = logging.getLogger("test.contract.schema")
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-
     test_message = "structured log test"
-    logger.info(test_message)
+    with _captured_json_logger("test.contract.schema") as (logger, buf):
+        logger.info(test_message)
+        output = buf.getvalue().strip()
 
-    output = buf.getvalue().strip()
     data: dict[str, Any] = json.loads(output)
 
     # Core Cloud Logging fields
@@ -112,27 +135,18 @@ def test_cloud_logging_trace_context_active_span() -> None:
     """During active span, trace_id is 32-hex and span_id is 16-hex matching active span."""
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(InMemorySpanExporter()))
-    tracer = provider.get_tracer("test.tracer")
+    try:
+        tracer = provider.get_tracer("test.tracer")
+        with _captured_json_logger("test.contract.active_span") as (logger, buf):
+            with tracer.start_as_current_span("test-operation") as span:
+                ctx = span.get_span_context()
+                expected_trace_id = format(ctx.trace_id, "032x")
+                expected_span_id = format(ctx.span_id, "016x")
+                logger.info("inside span")
+            output = buf.getvalue().strip()
+    finally:
+        provider.shutdown()
 
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(TraceContextFilter())
-    handler.addFilter(CorrelationFilter())
-
-    logger = logging.getLogger("test.contract.active_span")
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-
-    span_name = "test-operation"
-    with tracer.start_as_current_span(span_name) as span:
-        ctx = span.get_span_context()
-        expected_trace_id = format(ctx.trace_id, "032x")
-        expected_span_id = format(ctx.span_id, "016x")
-
-        logger.info("inside span")
-
-    output = buf.getvalue().strip()
     data: dict[str, Any] = json.loads(output)
 
     assert re.match(r"^[0-9a-f]{32}$", data["trace_id"])
@@ -143,19 +157,10 @@ def test_cloud_logging_trace_context_active_span() -> None:
 
 def test_cloud_logging_trace_context_inactive_span() -> None:
     """Outside any span, trace_id and span_id are empty strings."""
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(TraceContextFilter())
-    handler.addFilter(CorrelationFilter())
+    with _captured_json_logger("test.contract.inactive_span") as (logger, buf):
+        logger.info("outside span")
+        output = buf.getvalue().strip()
 
-    logger = logging.getLogger("test.contract.inactive_span")
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-
-    logger.info("outside span")
-
-    output = buf.getvalue().strip()
     data: dict[str, Any] = json.loads(output)
 
     assert data["trace_id"] == ""
@@ -164,50 +169,32 @@ def test_cloud_logging_trace_context_inactive_span() -> None:
 
 def test_cloud_logging_correlation_id_active_and_fallback() -> None:
     """correlation_id matches active ContextVar; defaults to '-' when unset."""
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(TraceContextFilter())
-    handler.addFilter(CorrelationFilter())
+    with _captured_json_logger("test.contract.correlation") as (logger, buf):
+        # 1. Unset fallback
+        logger.info("no correlation")
+        line1 = buf.getvalue().splitlines()[-1]
+        data1: dict[str, Any] = json.loads(line1)
+        assert data1["correlation_id"] == "-"
 
-    logger = logging.getLogger("test.contract.correlation")
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-
-    # 1. Unset fallback
-    logger.info("no correlation")
-    line1 = buf.getvalue().splitlines()[-1]
-    data1: dict[str, Any] = json.loads(line1)
-    assert data1["correlation_id"] == "-"
-
-    # 2. Active correlation ID
-    active_cid = "c0-corr-8f92"
-    set_correlation_id(active_cid)
-    logger.info("with correlation")
-    line2 = buf.getvalue().splitlines()[-1]
-    data2: dict[str, Any] = json.loads(line2)
-    assert data2["correlation_id"] == active_cid
+        # 2. Active correlation ID
+        active_cid = "c0-corr-8f92"
+        set_correlation_id(active_cid)
+        logger.info("with correlation")
+        line2 = buf.getvalue().splitlines()[-1]
+        data2: dict[str, Any] = json.loads(line2)
+        assert data2["correlation_id"] == active_cid
 
 
 def test_cloud_logging_exception_serialization() -> None:
     """exc_info=True serializes traceback into the 'exception' JSON field."""
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(TraceContextFilter())
-    handler.addFilter(CorrelationFilter())
-
-    logger = logging.getLogger("test.contract.exception")
-    logger.setLevel(logging.ERROR)
-    logger.addHandler(handler)
-
     err_msg = "simulated telemetry contract error"
-    try:
-        raise RuntimeError(err_msg)
-    except RuntimeError:
-        logger.exception("operation failed")
+    with _captured_json_logger("test.contract.exception", level=logging.ERROR) as (logger, buf):
+        try:
+            raise RuntimeError(err_msg)
+        except RuntimeError:
+            logger.exception("operation failed")
+        output = buf.getvalue().strip()
 
-    output = buf.getvalue().strip()
     data: dict[str, Any] = json.loads(output)
 
     assert "exception" in data
@@ -218,25 +205,16 @@ def test_cloud_logging_exception_serialization() -> None:
 
 def test_cloud_logging_extra_fields_forwarding() -> None:
     """Custom attributes in extra={...} are placed at the root level of JSON."""
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(TraceContextFilter())
-    handler.addFilter(CorrelationFilter())
-
-    logger = logging.getLogger("test.contract.extra")
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-
     custom_extras: dict[str, Any] = {
         "user_id": "test-user-mc0",
         "turn_count": 3,
         "gcp_region": "us-central1",
         "dry_run": True,
     }
-    logger.info("turn completed", extra=custom_extras)
+    with _captured_json_logger("test.contract.extra") as (logger, buf):
+        logger.info("turn completed", extra=custom_extras)
+        output = buf.getvalue().strip()
 
-    output = buf.getvalue().strip()
     data: dict[str, Any] = json.loads(output)
 
     for key, value in custom_extras.items():
@@ -256,17 +234,14 @@ def test_cloud_logging_extra_fields_forwarding() -> None:
 )
 def test_cloud_logging_severity_levels(level_name: str, level_int: int) -> None:
     """Severity levels match standard logging levels."""
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(JsonFormatter())
+    with _captured_json_logger(
+        f"test.contract.severity.{level_name}",
+        level=logging.DEBUG,
+        with_filters=False,
+    ) as (logger, buf):
+        logger.log(level_int, "message at level %s", level_name)
+        output = buf.getvalue().strip()
 
-    logger = logging.getLogger(f"test.contract.severity.{level_name}")
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
-
-    logger.log(level_int, "message at level %s", level_name)
-
-    output = buf.getvalue().strip()
     data: dict[str, Any] = json.loads(output)
     assert data["severity"] == level_name
 
@@ -281,31 +256,33 @@ def test_cloud_trace_export_offline_mock_client() -> None:
     from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter  # noqa: PLC0415
 
     mock_client = MagicMock()
-    test_project = "demo-gcp-project"
     exporter_cls = cast(Any, CloudTraceSpanExporter)
-    exporter = exporter_cls(project_id=test_project, client=mock_client)
+    exporter = exporter_cls(project_id=TEST_VERTEX_PROJECT, client=mock_client)
 
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    tracer = provider.get_tracer("gcp.contract.test")
+    try:
+        tracer = provider.get_tracer("gcp.contract.test")
 
-    span_name = "agent-reasoning-step"
-    with tracer.start_as_current_span(span_name) as span:
-        span.set_attribute("mangomas.model", "gemini-2.5-pro")
-        span.set_attribute("mangomas.step", 1)
+        span_name = "agent-reasoning-step"
+        with tracer.start_as_current_span(span_name) as span:
+            span.set_attribute("mangomas.model", "gemini-2.5-pro")
+            span.set_attribute("mangomas.step", 1)
+    finally:
+        provider.shutdown()
 
     assert mock_client.batch_write_spans.called is True
     call_kwargs = mock_client.batch_write_spans.call_args.kwargs
     request = call_kwargs["request"]
 
     # Verify project name format
-    assert request.name == f"projects/{test_project}"
+    assert request.name == f"projects/{TEST_VERTEX_PROJECT}"
 
     # Verify converted spans
     assert len(request.spans) == 1
     exported_span = request.spans[0]
     assert exported_span.display_name.value == span_name
-    assert exported_span.name.startswith(f"projects/{test_project}/traces/")
+    assert exported_span.name.startswith(f"projects/{TEST_VERTEX_PROJECT}/traces/")
     assert f"/spans/{format(span.get_span_context().span_id, '016x')}" in exported_span.name
 
 
@@ -313,15 +290,18 @@ def test_cloud_trace_w3c_propagation() -> None:
     """TraceContextTextMapPropagator injects and extracts W3C traceparent headers."""
     propagator = TraceContextTextMapPropagator()
     provider = TracerProvider()
-    tracer = provider.get_tracer("test.w3c")
+    try:
+        tracer = provider.get_tracer("test.w3c")
 
-    # 1. Injection test
-    carrier: dict[str, str] = {}
-    with tracer.start_as_current_span("parent-span") as span:
-        propagator.inject(carrier)
-        ctx = span.get_span_context()
-        expected_trace_id = format(ctx.trace_id, "032x")
-        expected_span_id = format(ctx.span_id, "016x")
+        # 1. Injection test
+        carrier: dict[str, str] = {}
+        with tracer.start_as_current_span("parent-span") as span:
+            propagator.inject(carrier)
+            ctx = span.get_span_context()
+            expected_trace_id = format(ctx.trace_id, "032x")
+            expected_span_id = format(ctx.span_id, "016x")
+    finally:
+        provider.shutdown()
 
     assert "traceparent" in carrier
     # W3C traceparent format: version-trace_id-parent_id-trace_flags
@@ -348,8 +328,13 @@ def test_cloud_trace_w3c_propagation() -> None:
 
 def test_configure_cli_logging_gcp_and_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """configure_cli_logging under GCP exporter and JSON format configures JsonFormatter."""
+    for key in list(os.environ):
+        if key.startswith(SETTINGS_ENV_PREFIX):
+            monkeypatch.delenv(key, raising=False)
+
     # Mock settings with GCP exporter and JSON format
     test_settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
         log=LogSettings(format="json"),
         telemetry=TelemetrySettings(exporter="gcp", metrics_enabled=False),
     )
@@ -384,7 +369,8 @@ def test_configure_cli_logging_gcp_and_json(monkeypatch: pytest.MonkeyPatch) -> 
     # Python 3.11 but the (possibly replaced) record on 3.12+, so assert
     # truthiness, which is the contract both versions honour.
     assert handler.filter(test_record)
-    output = handler.formatter.format(test_record)  # type: ignore[union-attr]
+    assert handler.formatter is not None
+    output = handler.formatter.format(test_record)
     parsed: dict[str, Any] = json.loads(output)
     assert parsed["message"] == "cli bootstrap test message"
     assert parsed["severity"] == "INFO"

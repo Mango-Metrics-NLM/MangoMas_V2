@@ -38,11 +38,11 @@ The Mango-Mas architecture enforces strict decoupling between high-level agent d
    - For developer workstations, connecting to Cloud SQL requires running the local Cloud SQL Auth Proxy (`./cloud-sql-proxy <PROJECT>:<REGION>:<INSTANCE> --port 5432`), establishing an encrypted, IAM-authenticated mTLS tunnel to `127.0.0.1:5432`.
    - On connection initialization, `PostgresRepository` idempotently executes schema definitions (`turns` table) and JSONB codecs, providing 100% data shape parity with `SQLiteRepository`.
 3. **Fail-Closed Secret Management**:
-   - `GCPSecretManagerProvider` operates in strict mode (`MANGOMAS_SECRETS__STRICT=true`), raising typed `SecretsResolutionError` (HTTP 503) whenever a referenced secret version is missing or IAM permissions are deficient, ensuring zero silent authorization bypasses.
+   - `GCPSecretManagerProvider` operates in strict mode (`MANGOMAS_SECRETS__STRICT=true`), raising typed `SecretsResolutionError` (HTTP 503 / CLI exit 2) on permission, authentication, timeout, or API failures (`NotFound` returns `None` per ADR-002 / ADR-0010), ensuring zero silent authorization bypasses.
    - Logging redaction guarantees that secret resource names and versions are scrubbed before writing to logs.
 4. **OpenTelemetry Telemetry Pipeline**:
    - When `MANGOMAS_TELEMETRY__EXPORTER=gcp` is set, `configure_telemetry()` registers `CloudTraceSpanExporter` from `opentelemetry-exporter-gcp-trace`.
-   - `JsonFormatter` formats stdout/stderr into Cloud Logging JSON objects with automatically injected `logging.googleapis.com/trace` and `logging.googleapis.com/spanId` fields.
+   - `JsonFormatter` formats stdout/stderr into Cloud Logging JSON objects with automatically injected `trace_id` and `span_id` fields.
 5. **Cloud Run Manifest Validation**:
    - Deployment manifests in `deploy/service.yaml` and overlays in `deploy/environments.yaml` are verified offline via `scripts/deploy_environment.py` to prevent placeholder omissions or missing environment bindings.
 
@@ -109,9 +109,9 @@ gcloud config set project <YOUR_GCP_PROJECT_ID>
 gcloud auth application-default print-access-token | Out-Null; if ($?) { "ADC token OK" }  # never print the bearer token
 ```
 
-Install repository with cloud extras:
+Install repository with cloud and RAG extras (`gcp-monitoring` is optional and needed only when `MANGOMAS_TELEMETRY__METRICS_ENABLED=true`):
 ```powershell
-pip install -e ".[dev,cloud,gcp-monitoring,rag]"
+pip install -e ".[dev,cloud,rag]"
 pip install -e ./mango-integration-contracts
 ```
 
@@ -190,17 +190,17 @@ mangomas history --limit 3
 ```
 
 #### Journey 4: Continuous Evaluation Harness against Vertex AI (`mangomas eval`)
-Demonstrates deterministic quality gating and LLM-as-a-judge scoring powered by Vertex AI.
+Demonstrates deterministic quality gating and LLM-as-a-judge scoring powered by Vertex AI (under spec-0047, `llm_judge` score thresholds report without gating unless calibrated via `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH`).
 
 ```powershell
 # 1. Run LLM-as-a-judge evaluation with Gemini
-mangomas eval -d tests/fixtures/all_pass.jsonl -s llm_judge -a chat --gate --min-mean-score 0.7 -o eval-output/vertex_eval_report.json
+mangomas eval -d tests/eval/fixtures/all_pass.jsonl -s llm_judge -a chat --gate --min-mean-score 0.7 -o eval-output/vertex_eval_report.json
 
 # 2. Run semantic embedding similarity evaluation
-mangomas eval -d tests/fixtures/all_pass.jsonl -s embedding -a chat -o eval-output/vertex_embedding_eval.json
+mangomas eval -d tests/eval/fixtures/all_pass.jsonl -s embedding -a chat -o eval-output/vertex_embedding_eval.json
 
 # 3. Simulate CI regression gate enforcement (exit code 3 on failure)
-mangomas eval -d tests/fixtures/all_pass.jsonl -s exact_match -a chat --gate --min-mean-score 1.0 --baseline eval-output/vertex_eval_report.json --max-mean-score-drop 0.0
+mangomas eval -d tests/eval/fixtures/mixed.jsonl -s exact_match -a chat --gate --min-mean-score 1.0 --baseline eval-output/vertex_eval_report.json --max-mean-score-drop 0.0
 ```
 
 #### Journey 5: Cloud Telemetry Verification & Cloud Run Manifest Validation
@@ -218,7 +218,7 @@ python scripts/deploy_environment.py --registry deploy/environments.yaml validat
 # 3. Render environment overlay for Cloud Run
 $env:PROJECT_ID = "<YOUR_GCP_PROJECT_ID>"
 $env:LLM_MODEL = "gemini-2.5-flash"
-python scripts/deploy_environment.py --registry deploy/environments.yaml render --environment dev --image gcr.io/<YOUR_GCP_PROJECT_ID>/mangomas:dev --output rendered-service.yaml
+python scripts/deploy_environment.py --registry deploy/environments.yaml render --environment dev --image gcr.io/<YOUR_GCP_PROJECT_ID>/mangomas:dev --output rendered-service.yaml --substitute-from-env PROJECT_ID --substitute-from-env LLM_MODEL
 ```
 
 ---
@@ -230,7 +230,7 @@ python scripts/deploy_environment.py --registry deploy/environments.yaml render 
 | `DefaultCredentialsError` / `Missing ADC` | Missing or expired gcloud ADC token on local workstation. | `gcloud auth application-default print-access-token >/dev/null && echo ok` (never print the token) | Run `gcloud auth application-default login`. Fallback: set `MANGOMAS_LLM__PROVIDER=lmstudio` for offline work. |
 | `VertexError (LLMBadResponse)` 404 | Model name invalid or region unsupported. | `gcloud ai models list --region=us-central1` | Set `MANGOMAS_LLM__MODEL=gemini-2.5-flash` and `MANGOMAS_LLM__LOCATION=us-central1`. |
 | `ResourceExhausted (429)` | Vertex AI API quota rate limit exceeded. | Review Cloud Console Vertex AI Quotas. | Set `--parallelism 1` in `eval`, increase `MANGOMAS_LLM__TIMEOUT_SECONDS=120`, or switch to `gemini-2.5-flash`. |
-| `InvalidDimensionException` in Chroma | 768-dim embeddings written to 384-dim collection. | Inspect `./data/chroma/` metadata. | Set `MANGOMAS_VECTOR__COLLECTION=mangomas_vertex` and `MANGOMAS_VECTOR__PERSIST_DIR=./data/chroma_vertex`. |
+| `PersistenceError` (wrapping Chroma `InvalidArgumentError`) | 768-dim embeddings written to 384-dim collection. | Inspect `./data/chroma/` metadata. | Set `MANGOMAS_VECTOR__COLLECTION=mangomas_vertex` and `MANGOMAS_VECTOR__PERSIST_DIR=./data/chroma_vertex`. |
 | `SecretsResolutionError` (PermissionDenied) | Missing `roles/secretmanager.secretAccessor` IAM role. | `gcloud secrets versions access latest --secret=<NAME>` | Grant role to user account, or set `MANGOMAS_SECRETS__STRICT=false` for local fallback. |
 | `asyncpg.CannotConnectNowError` | Cloud SQL Proxy is not running on port 5432. | `Test-NetConnection -ComputerName 127.0.0.1 -Port 5432` | Start `cloud-sql-proxy <PROJECT>:<REGION>:<INSTANCE> --port 5432`. Fallback: `MANGOMAS_DB__PROVIDER=sqlite`. |
 | CLI command hangs during exit | Telemetry exporter awaiting network flush. | Check stderr logs for OTel exporter errors. | Fallback: set `MANGOMAS_TELEMETRY__EXPORTER=console` to bypass cloud network latency. |
@@ -252,7 +252,7 @@ python scripts/deploy_environment.py --registry deploy/environments.yaml render 
   2. Zero repository application code modifications made in `src/`.
   3. Automated unit, integration, and gated tests pass (`pytest`, `ruff`, `mypy`).
   4. Demonstration runbook verified in both PowerShell (Windows) and Bash (Linux/macOS).
-  5. The global 95% test coverage floor is preserved.
+  5. The global 98% test coverage floor is preserved.
 
 ---
 
@@ -285,9 +285,9 @@ python scripts/deploy_environment.py --registry deploy/environments.yaml render 
 * **Story 2.2: ToolAgent Multi-Step Reasoning with Vertex AI** — [x] (COMPLETED — Sprint 3)
   - *Description*: As an AI Engineer, I want `ToolAgent` to execute multi-step tool calls against Vertex AI up to the configured `max_tool_steps`.
   - *Acceptance Criteria*:
-    - **Given** `MANGOMAS_LLM__PROVIDER=vertex` and `MANGOMAS_AGENTS__TOOL__MAX_TOOL_STEPS=5`,
-    - **When** `mangomas chat "What agents are registered?" -a tool` is executed,
-    - **Then** the agent invokes the tool registry, executes within budget, and returns the agent roster.
+    - **Given** `MANGOMAS_LLM__PROVIDER=vertex`, RAG enabled (`MANGOMAS_EMBEDDINGS__ENABLED=true` and `MANGOMAS_VECTOR__ENABLED=true`), and `MANGOMAS_AGENTS__TOOL__MAX_TOOL_STEPS=5`,
+    - **When** `mangomas chat "Using the knowledge base, explain how Mango-Mas swaps local providers for GCP ones." -a tool` is executed,
+    - **Then** the agent invokes the `retrieve` (`RetrievalTool`) entry in the tool registry, executes within budget, and returns a grounded answer over the ingested RAG corpus.
   - *Estimate*: 5 SP | *Dependencies*: Story 2.1.
 
 #### Epic 3: Cloud-Native Knowledge Retrieval (Vertex Embeddings + Vector Store)
@@ -365,7 +365,7 @@ Sprint 3: Distributed Observability, Workflows & Cloud Run Validation (12 SP) �
 | **RSK-01** | Developer workstation lacks gcloud ADC or token expires mid-demo. | Med / High | `DefaultCredentialsError` in CLI output. | Automated pre-flight check in `scripts/verify_gcp_prerequisites.py`; clear documentation to run `gcloud auth application-default login`. | DevOps Lead |
 | **RSK-02** | Vertex AI API rate limiting (429) during parallel batch evaluation runs. | Med / Med | HTTP 429 / `ResourceExhausted` during `mangomas eval`. | Default `--parallelism 1` in demo configurations; implement exponential backoff; support model fallback. | AI/ML Lead |
 | **RSK-03** | Cloud SQL connectivity blocked by network firewalls or missing proxy. | Med / High | Connection refused on `127.0.0.1:5432`. | Package Cloud SQL Auth Proxy startup script; document fallback to local SQLite (`MANGOMAS_DB__PROVIDER=sqlite`). | DevOps Lead |
-| **RSK-04** | Unexpected cloud infrastructure billing costs during extensive evaluations. | Low / Med | Spikes in Gemini API usage or Cloud Trace ingestion. | Enforce cost ceiling `--max-mean-cost-usd 0.05` in `mangomas eval`; default to `gemini-2.5-flash`; set GCP billing alerts. | Product Lead |
+| **RSK-04** | Unexpected cloud infrastructure billing costs during extensive evaluations. | Low / Med | Spikes in Gemini API usage or Cloud Trace ingestion. | Pair `--parallelism 1` with post-run cost gate `--max-mean-cost-usd 0.05` over `cost_budget` rows in `mangomas eval`; default to `gemini-2.5-flash`; set GCP billing alerts. | Product Lead |
 | **RSK-05** | Cloud Trace OpenTelemetry exporter latency causing CLI command delays. | Low / Low | CLI commands taking >5s to exit after completion. | Lazy loading of exporters; flush timeouts bounded to 5s; fallback to `MANGOMAS_TELEMETRY__EXPORTER=console`. | SRE Lead |
 
 ---
@@ -393,7 +393,7 @@ Sprint 3: Distributed Observability, Workflows & Cloud Run Validation (12 SP) �
 ### PR 2 — Knowledge Retrieval, Enterprise Persistence & Evaluation (spec-0049) — [x] DELIVERED
 
 #### Milestone B0 — Vertex AI Embeddings & Vector Dimension Isolation — [x] Completed
-- **Failing test first:** `tests/adapters/embeddings/test_vertex_dimension_guard.py` asserting dimension mismatch error on mixed Chroma collections.
+- **Failing test first:** `tests/rag/test_vertex_dimension_isolation.py` asserting dimension mismatch error on mixed Chroma collections.
 - **Depends on:** Milestone A0.
 - **Deliverables:**
   - Document isolated collection conventions (`mangomas_vertex`, `./data/chroma_vertex`).
@@ -436,7 +436,7 @@ Sprint 3: Distributed Observability, Workflows & Cloud Run Validation (12 SP) �
 - **Depends on:** Milestone C0, C1.
 - **Deliverables:**
   - Complete `docs/runbooks/gcp-local-demo.md` with Story 2.2 (`ToolAgent` multi-step reasoning and declarative workflows) and Journey 5 (Cloud Telemetry verification and Cloud Run manifest validation) in dual PowerShell and Bash syntax.
-  - Reconcile `specs/0049-gcp-integration-demonstration.md` and `docs/plans/20261109T010000Z-gcp-integration-demonstration-plan.md` marking all acceptance criteria and milestones complete.
+  - Reconcile `specs/0049-gcp-integration-demonstration.md` and `docs/plans/20261109T010000Z-gcp-integration-demonstration-plan.md` marking offline acceptance criteria and milestones complete while tracking live billed-project items open in `specs/0049-gcp-integration-demonstration.md`.
 
 ---
 
@@ -464,7 +464,7 @@ python -m pytest tests/deploy/test_env_example_contract.py tests/deploy/test_man
 python -m pytest tests/test_cli_surface.py tests/test_cli.py tests/test_cli_runtime.py -q
 
 # 4. Gated Live Verification against GCP Services (when ADC and Project are configured)
-RUN_VERTEX=1 VERTEX_PROJECT="<YOUR_GCP_PROJECT_ID>" python -m pytest tests/vertex/test_smoke.py tests/vertex/test_embeddings.py -q --no-cov
+RUN_VERTEX=1 VERTEX_PROJECT_ID="<YOUR_GCP_PROJECT_ID>" python -m pytest tests/vertex/test_smoke.py tests/vertex/test_embeddings.py -q --no-cov
 RUN_GCP_SECRETS=1 GCP_SECRETS_PROJECT="<YOUR_GCP_PROJECT_ID>" python -m pytest tests/integration/test_gcp_secrets_live.py -q --no-cov
-RUN_GCP_TRACE=1 python -m pytest tests/test_telemetry.py -m gcp_trace -q --no-cov
+RUN_GCP_TRACE=1 python -m pytest tests/test_telemetry.py tests/test_telemetry_gcp_contract.py -m gcp_trace -q --no-cov
 ```

@@ -49,19 +49,19 @@ Furthermore, local small models (e.g., 7B/8B instruction-tuned models) frequentl
 
 ### Scenario 3: Vertex AI Embeddings & Vector Search with Dimension Isolation
 - WHEN `MANGOMAS_EMBEDDINGS__PROVIDER=vertex` and `MANGOMAS_VECTOR__COLLECTION=mangomas_vertex` are configured for document ingestion (`mangomas rag ingest <file>`) THEN text chunks are embedded as 768-dimensional vectors via `text-embedding-004`, upserted into Chroma, and subsequent queries (`mangomas rag query "<text>"`) return ranked results with cosine similarity scores in `[0.0, 1.0]`.
-- WHEN 768-dimensional Vertex AI embeddings are written into an existing Chroma collection that was previously initialized with 384-dimensional local embeddings THEN Chroma throws an `InvalidDimensionException`, proving collection isolation is mandatory across distinct embedding models.
+- WHEN 768-dimensional Vertex AI embeddings are written into an existing Chroma collection that was previously initialized with 384-dimensional local embeddings THEN `ChromaVectorStore` raises typed `PersistenceError` (wrapping Chroma's `InvalidArgumentError`), proving collection isolation is mandatory across distinct embedding models.
 
 ### Scenario 4: Turn Persistence to Cloud SQL Postgres via Proxy
 - WHEN `MANGOMAS_DB__PROVIDER=postgres` is configured and the Cloud SQL Auth Proxy is running on `127.0.0.1:5432` THEN `mangomas chat "Persist this" -a chat` creates the `turns` table idempotently, persists the conversation turn as a JSONB record, and `mangomas history --limit 1` displays the persisted JSON turn.
-- WHEN `MANGOMAS_DB__PROVIDER=postgres` is configured and the database endpoint is unreachable (proxy stopped) THEN `asyncpg` raises a connection failure, translated to typed `StorageError`, halting execution with exit code 1.
+- WHEN `MANGOMAS_DB__PROVIDER=postgres` is configured and the database endpoint is unreachable (proxy stopped) THEN `asyncpg` raises a connection failure, translated to typed `PersistenceError`, halting execution with exit code 1.
 
 ### Scenario 5: Secret Resolution via GCP Secret Manager in Strict Mode
-- WHEN `MANGOMAS_SECRETS__PROVIDER=gcp` and `MANGOMAS_SECRETS__STRICT=true` are configured and an agent or API authentication references a valid secret `projects/<PROJECT>/secrets/<NAME>/versions/latest` accessible via ADC THEN the secret payload is resolved securely in memory and redacted from all logs.
-- WHEN a secret reference is missing, unauthorized, or deleted in strict mode THEN `GCPSecretManagerProvider` raises typed `SecretsResolutionError`, failing closed immediately rather than returning `None`.
+- WHEN `MANGOMAS_SECRETS__PROVIDER=gcp` and `MANGOMAS_SECRETS__STRICT=true` are configured and a service-account JSON secret (`MANGOMAS_LLM__SECRET_REF` under `PROVIDER=vertex`), bearer token (`MANGOMAS_LLM__SECRET_REF` under `PROVIDER=lmstudio`), or API auth token (`MANGOMAS_AUTH__SECRET_REF` under `MANGOMAS_AUTH__ENABLED=true`) references a valid secret `projects/<PROJECT>/secrets/<NAME>/versions/latest` accessible via ADC THEN the secret payload is resolved securely in memory and redacted from all logs.
+- WHEN a secret lookup fails due to permission denial, missing/invalid authentication, timeout, or API error in strict mode THEN `GCPSecretManagerProvider` raises typed `SecretsResolutionError` (`NotFound` returns `None` per ADR-002 / ADR-0010), failing closed immediately rather than silently degrading credentials.
 
 ### Scenario 6: Continuous Evaluation CI Quality Gate & Regression Enforcement
-- WHEN `mangomas eval` executes against Vertex AI with `--gate --min-mean-score 0.8` and all test predictions score $\ge 0.8$ THEN the evaluation summary outputs passing metrics across all sinks and terminates with exit code 0.
-- WHEN any test prediction score drops below `--min-mean-score`, or when `--max-mean-score-drop` is exceeded relative to `--baseline` THEN the evaluation runner prints the regression delta, flushes all sinks, and terminates with exit code 3 (`EVAL_GATE_EXIT_CODE`).
+- WHEN `mangomas eval` executes against Vertex AI with `--gate --min-mean-score 0.8` using deterministic/`embedding` scorers (or a calibrated `llm_judge` via `MANGOMAS_EVAL__JUDGE_CALIBRATION_PATH`, per spec-0047 / spec-0048) and all test predictions score $\ge 0.8$ THEN the evaluation summary outputs passing metrics across all sinks and terminates with exit code 0.
+- WHEN any gated prediction score drops below `--min-mean-score`, or when `--max-mean-score-drop` is exceeded relative to `--baseline` THEN the evaluation runner prints the regression delta, flushes all sinks, and terminates with exit code 3 (`EVAL_GATE_EXIT_CODE`).
 
 ### Scenario 7: OpenTelemetry Cloud Trace & Cloud Logging Export
 - WHEN `MANGOMAS_TELEMETRY__EXPORTER=gcp` and `MANGOMAS_LOG__FORMAT=json` are configured THEN CLI executions stream OTel trace spans to Google Cloud Trace, and format stderr logs as JSON with GCP-compliant `severity`, `trace_id`, and `span_id`.
@@ -111,7 +111,7 @@ All tunables represent existing Pydantic fields in `src/mangomas/config/` surfac
   - `EmbeddingClient` in `src/mangomas/adapters/embeddings/base.py`
   - `TurnRepository` in `src/mangomas/adapters/storage/base.py`
   - `SecretsProvider` in `src/mangomas/secrets/provider.py`
-  - `Scorer` in `src/mangomas/eval/base.py`
+  - `Scorer` in `src/mangomas/eval/protocol.py`
 - **New error types:** _none — existing typed errors are reused:_
   - `LLMBadResponse`, `LLMTimeout`, `LLMUnavailable` in `src/mangomas/errors.py`
   - `SecretsResolutionError` in `src/mangomas/errors.py`
@@ -139,14 +139,14 @@ All tunables represent existing Pydantic fields in `src/mangomas/config/` surfac
   - `tests/test_cli_surface.py`: Verifies CLI commands (`agents`, `chat`, `eval`, `history`, `rag`, `workflow`) and argument parsing.
   - `tests/deploy/test_env_example_contract.py`: Asserts bidirectional schema alignment between `.env.example`, `.env.gcp-demo`, and Pydantic `Settings`.
 - **Gated Live Integration Tests**:
-  - `RUN_VERTEX=1 VERTEX_PROJECT=<ID> pytest tests/vertex/test_smoke.py tests/vertex/test_embeddings.py`: Live generation, streaming, and embeddings against Vertex AI Gemini and `text-embedding-004`.
+  - `RUN_VERTEX=1 VERTEX_PROJECT_ID=<ID> pytest tests/vertex/test_smoke.py tests/vertex/test_embeddings.py`: Live generation, streaming, and embeddings against Vertex AI Gemini and `text-embedding-004`.
   - `RUN_POSTGRES=1 pytest tests/postgres/test_postgres_smoke.py`: Live turn insertion and retrieval against PostgreSQL.
   - `RUN_GCP_SECRETS=1 GCP_SECRETS_PROJECT=<ID> pytest tests/integration/test_gcp_secrets_live.py`: Live secret version resolution from GCP Secret Manager.
-  - `RUN_GCP_TRACE=1 pytest tests/test_telemetry.py -m gcp_trace`: Live OTel span export to Google Cloud Trace.
+  - `RUN_GCP_TRACE=1 pytest tests/test_telemetry.py tests/test_telemetry_gcp_contract.py -m gcp_trace`: Live OTel span export to Google Cloud Trace.
 - **Falsifiability & Gate Proofs**:
   - The CI quality gate in `mangomas eval` must terminate with exit code 3 when thresholds are violated, and exit code 0 when satisfied (Scenario 6).
   - Validation enforcement in `PlannerAgent` must reject fenced markdown with `LLMBadResponse` and accept valid JSON (Scenario 2).
-- **Coverage**: Maintains the global 95% test coverage floor across the repository.
+- **Coverage**: Maintains the global 98% test coverage floor across the repository.
 
 ## Acceptance criteria
 
