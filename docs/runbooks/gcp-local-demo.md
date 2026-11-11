@@ -47,14 +47,15 @@ Credentials (ADC) without requiring static service account keys on developer mac
    ```bash
    gcloud config set project <YOUR_GCP_PROJECT_ID>
    ```
-4. **Verify ADC token issuance**:
+4. **Verify ADC token issuance** (stdout is discarded, so no part of the bearer token
+   reaches the terminal, a recording, or a captured transcript):
    **Bash**:
    ```bash
-   TOKEN=$(gcloud auth application-default print-access-token) && echo "${TOKEN:0:10}... [TOKEN ISSUED - MASKED]"
+   gcloud auth application-default print-access-token >/dev/null && echo "ADC token issued (not printed)"
    ```
    **PowerShell**:
    ```powershell
-   $token = gcloud auth application-default print-access-token; "$($token.Substring(0, 10))... [TOKEN ISSUED - MASKED]"
+   gcloud auth application-default print-access-token | Out-Null; if ($?) { "ADC token issued (not printed)" }
    ```
 
 ### 1.2 Required IAM Roles
@@ -101,14 +102,43 @@ pip install -e ./mango-integration-contracts
 
 | Check | Passes when | Typical FAIL remediation |
 |---|---|---|
-| `adc_credentials` | ADC exists and its token refreshes | `gcloud auth application-default login` |
-| `gcp_project` | `--project`, `MANGOMAS_LLM__PROJECT_ID` / `EMBEDDINGS__` / `SECRETS__`, SDK env vars, or ADC names a project | `gcloud config set project <ID>` |
-| `billing` | Billing is enabled **and** the linked billing account is open | Reopen or link a billing account |
-| `required_apis` | Every API implied by the configured providers is enabled (`aiplatform` for Vertex, `secretmanager` for GCP secrets, `cloudtrace` for the GCP exporter), plus any `--require-api` | `gcloud services enable <api> --project <ID>` |
-| `postgres_endpoint` | The host/port in `MANGOMAS_DB__URL` accepts TCP (only when `MANGOMAS_DB__PROVIDER=postgres`) | Start `cloud-sql-proxy`, or use SQLite |
+| `adc_credentials` | ADC exists and its token refreshes within `--timeout` | `gcloud auth application-default login` |
+| `gcp_project` | `--project`, `MANGOMAS_LLM__PROJECT_ID` / `EMBEDDINGS__` / `SECRETS__`, SDK env vars, or ADC names a project, and every project a provider targets is a valid ID | `gcloud config set project <ID>` |
+| `billing` | Billing is enabled **and** the linked billing account is open, in every project a provider targets | Reopen or link a billing account |
+| `required_apis` | Every API implied by the configured providers is enabled (`aiplatform` for a Vertex LLM, a Vertex `MANGOMAS_LLM_PROFILES__*` profile or Vertex embeddings; `secretmanager` for GCP secrets; `cloudtrace` for the GCP exporter), plus any `--require-api`, each in the project its client targets | `gcloud services enable <api> --project <ID>` (one line per project) |
+| `postgres_endpoint` | The host/port in `MANGOMAS_DB__URL` accepts TCP (only when `MANGOMAS_DB__PROVIDER=postgres`) | Start `cloud-sql-proxy`, or use SQLite; percent-encode reserved characters in the password |
 
 A 403 on the billing or Service Usage probe is reported as **SKIP** (the state could not be verified),
 not FAIL. A TCP pass proves something listens on the port: the Auth Proxy or a local Postgres.
+
+Each provider is checked in the project its runtime client uses: its own `*_PROJECT_ID`, else
+(for a named LLM profile) `MANGOMAS_LLM__PROJECT_ID`, else where `google.auth.default()` points
+(`GOOGLE_CLOUD_PROJECT`, then the ADC project). `--project` sets the primary project and the
+project for `--require-api`; nothing at runtime reads it, so it does not move a project-less
+client. With Vertex in one project and Secret Manager in another, the `billing` and
+`required_apis` rows report each project separately, prefixed `[project-id]`. Two more rules
+mirror the app: `MANGOMAS_SECRETS__PROVIDER=gcp` without `MANGOMAS_SECRETS__PROJECT_ID` fails
+`gcp_project` (the app refuses to start), and `MANGOMAS_TELEMETRY__METRICS_ENABLED=true` with the
+`gcp` exporter also requires `monitoring.googleapis.com`.
+
+`MANGOMAS_DB__URL` must use `postgresql://` or `postgres://` (the schemes asyncpg accepts) and
+must percent-encode reserved characters in the password (`@` → `%40`, `/` → `%2F`, `?` → `%3F`,
+`#` → `%23`), as libpq and asyncpg require. These URLs fail without being echoed:
+
+- **Ambiguous:**
+  - more than one `@` in the host part. asyncpg splits at the first `@`, RFC readers at the
+    last;
+  - an `@` after the host part;
+  - an all-digit host.
+- **Not probed:** forms asyncpg resolves differently from a single TCP probe:
+  - a multi-host list;
+  - a percent-encoded host;
+  - a `?host=` or `?port=` override.
+- **Invalid port:** a port that isn't plain ASCII digits.
+
+A URL with no `user@` part is still probed, but its host and port are withheld from the report.
+`postgresql://user:12345/db` (a forgotten `@host`) cannot be told apart from
+`postgresql://host:12345/db`.
 
 **PowerShell**:
 ```powershell
@@ -195,30 +225,31 @@ mangomas chat "Create a 3-step migration plan to transition turn persistence fro
 ```
 
 **Expected Result**:
-The agent outputs a valid JSON object matching the `ExecutionPlan` Pydantic schema:
+The agent outputs a valid JSON object matching the `ExecutionPlan` Pydantic schema
+(`src/mangomas/agents/planner.py`): a required `goal` string and a non-empty `steps` list
+whose items carry a required `step` (integer ≥ 1) and `description`, plus an optional `agent`.
+Any other shape, including a missing `goal` or a `step_id` key, fails validation and raises
+`LLMBadResponse`:
 ```json
 {
+  "goal": "Transition turn persistence from SQLite to Cloud SQL PostgreSQL",
   "steps": [
     {
-      "step_id": 1,
-      "description": "Deploy Cloud SQL Postgres instance and start local Auth Proxy",
-      "agent": "tool",
-      "dependencies": []
+      "step": 1,
+      "description": "Provision the Cloud SQL Postgres instance and start the local Auth Proxy",
+      "agent": "tool"
     },
     {
-      "step_id": 2,
-      "description": "Configure MANGOMAS_DB__PROVIDER=postgres and run idempotent schema migrations",
-      "agent": "tool",
-      "dependencies": [1]
+      "step": 2,
+      "description": "Set MANGOMAS_DB__PROVIDER=postgres and let the repository run its idempotent schema migration",
+      "agent": "tool"
     },
     {
-      "step_id": 3,
-      "description": "Execute validation test suite against PostgreSQL turn repository",
-      "agent": "reviewer",
-      "dependencies": [2]
+      "step": 3,
+      "description": "Run the history-parity suite against the PostgreSQL turn repository",
+      "agent": "reviewer"
     }
-  ],
-  "rationale": "Sequenced migration ensuring infrastructure reachability prior to cutover."
+  ]
 }
 ```
 
@@ -238,12 +269,18 @@ mangomas chat "Review proposal: Disable database transaction logging to speed up
 ```
 
 **Expected Result**:
-A valid JSON object matching the `ReviewResult` schema with `verdict`, `score`, and `feedback`:
+A valid JSON object matching the `ReviewResult` schema (`src/mangomas/agents/reviewer.py`):
+a required boolean `passed`, a `score` in `[0, 1]`, a `feedback` string, and an optional
+`suggestions` list. There is no `verdict` field; the workflow predicate in §7.4 reads `passed`:
 ```json
 {
-  "verdict": "REJECTED",
+  "passed": false,
   "score": 0.1,
-  "feedback": "Disabling transaction logging compromises ACID compliance, data durability, and disaster recovery capabilities."
+  "feedback": "Disabling transaction logging compromises ACID compliance, data durability, and disaster recovery capabilities.",
+  "suggestions": [
+    "Profile the completion path before touching durability settings",
+    "Batch turn writes instead of disabling the write-ahead log"
+  ]
 }
 ```
 
@@ -654,52 +691,54 @@ export MANGOMAS_AGENTS__TOOL__MAX_TOOL_STEPS="5"
 
 ### 7.3 Step 1: Interactive Multi-Step Tool Reasoning
 
-Execute an interactive multi-step reasoning task using `ToolAgent` targeting Vertex AI:
+Execute an interactive multi-step reasoning task using `ToolAgent` targeting Vertex AI.
+
+> **Prerequisite: the RAG tool.** The CLI composition root registers exactly one tool,
+> `retrieve` (`RetrievalTool`, `src/mangomas/composition/rag.py`), and only when **both**
+> `MANGOMAS_EMBEDDINGS__ENABLED=true` and `MANGOMAS_VECTOR__ENABLED=true`. Run this step in
+> the shell you used for Journey 2 (§3), after `mangomas rag ingest README.md`. Without
+> those settings `ctx.tools` is empty and the agent answers in one turn with no tool call.
+> There is no `list_agents` tool in the CLI composition; a model that invents one gets
+> `ToolNotFound`.
 
 **PowerShell**:
 ```powershell
-mangomas chat "What capabilities and tools are available in the system?" -a tool
+mangomas chat "Using the knowledge base, explain how Mango-Mas swaps local providers for GCP ones." -a tool
 ```
 
 **Bash**:
 ```bash
-mangomas chat "What capabilities and tools are available in the system?" -a tool
+mangomas chat "Using the knowledge base, explain how Mango-Mas swaps local providers for GCP ones." -a tool
 ```
 
 #### Execution Trace & Lifecycle Verification:
 1. **Turn 1 (Prompt & Model Tool Call)**:
-   - `ToolAgent` prompts Vertex AI Gemini with system context and registered tools.
-   - Gemini recognizes the need for tool execution and emits a structured JSON tool call:
+   - `ToolAgent` prompts Vertex AI Gemini with system context and the registered `retrieve` tool spec
+     (`{"query": string, "top_k"?: integer}`).
+   - Gemini recognizes it needs grounded context and emits a structured JSON tool call:
      ```json
-     ```json
-     {"tool": "list_agents", "arguments": {}}
-     ```
+     {"tool": "retrieve", "arguments": {"query": "provider swap local to GCP", "top_k": 3}}
      ```
 2. **Turn 2 (Tool Execution & Vertex Role Folding)**:
-   - `ToolAgent` parses the tool call, invokes `list_agents` via `ToolRegistry`, and receives the registered roster (`["chat", "summarize", "tool", "planner", "reviewer"]`).
+   - `ToolAgent` parses the tool call and invokes `retrieve` via `ToolRegistry`. The tool embeds the query
+     with Vertex `text-embedding-004`, searches the isolated Chroma collection, and returns a ranked block:
+     `[1] (score=0.812, source=README.md) ...`.
    - `ToolAgent` appends the assistant's call and the tool's result to conversation history:
-     `Message(role="tool", content='{"tool": "list_agents", "output": ["chat", "summarize", "tool", "planner", "reviewer"]}')`.
+     `Message(role="tool", content='{"tool": "retrieve", "output": "[1] (score=0.812, source=README.md) ..."}')`.
    - `VertexClient` translates this message into a Gemini-compatible `user` turn prefixed with `[tool]`:
-     `[tool] {"tool": "list_agents", "output": ["chat", "summarize", "tool", "planner", "reviewer"]}`.
+     `[tool] {"tool": "retrieve", "output": "[1] (score=0.812, source=README.md) ..."}`.
 3. **Turn 3 (Final Answer Generation)**:
-   - Vertex AI Gemini receives the folded context and generates a synthesized natural language explanation:
-     ```text
-     The system provides the following active agents and capabilities:
-     - chat: Conversational interaction and open-domain dialogue.
-     - summarize: History and text condensation with context retention.
-     - tool: Autonomous multi-step tool execution coordinator.
-     - planner: Structured execution plan generation with ExecutionPlan schema.
-     - reviewer: Structured proposal assessment with ReviewResult schema.
-     Available tools include document retrieval (RAG) and system introspection.
-     ```
-   - `response.metadata["tool_steps"]` equals `2`, confirming two complete LLM completion turns.
+   - Vertex AI Gemini receives the folded context and answers from the retrieved passages, citing
+     `README.md` (exact wording varies by model and corpus).
+   - `response.metadata["tool_steps"]` equals `2` (two LLM completions), and
+     `response.metadata["tool_calls"]` records the one `retrieve` call.
 
 ### 7.4 Step 2: Declarative Workflow Validation (`mangomas workflow validate`)
 
 Validate a multi-agent declarative workflow graph offline without network or cloud API calls.
 
 #### Example Composite Workflow Definition:
-Save the following graph to `workflows/gcp-analysis-pipeline.json` (or pass inline JSON). It defines a sequential pipeline that condenses input with `summarize`, fans out in parallel to `chat` and `planner` with `concat` join, and enters an iterative verification `loop` with `reviewer` until `VERDICT: APPROVED` is produced:
+Save the following graph to `workflows/gcp-analysis-pipeline.json` (or pass inline JSON). It defines a sequential pipeline that condenses input with `summarize`, fans out in parallel to `chat` and `planner` with `concat` join, and enters an iterative verification `loop` with `reviewer` until its `ReviewResult.passed` field is `true` (`json_field` predicate):
 
 ```json
 {

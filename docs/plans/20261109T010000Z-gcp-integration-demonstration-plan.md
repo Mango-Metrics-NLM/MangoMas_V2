@@ -106,7 +106,7 @@ Workstation authentication:
 gcloud auth login
 gcloud auth application-default login
 gcloud config set project <YOUR_GCP_PROJECT_ID>
-gcloud auth application-default print-access-token  # Verify valid OAuth2 token
+gcloud auth application-default print-access-token | Out-Null; if ($?) { "ADC token OK" }  # never print the bearer token
 ```
 
 Install repository with cloud extras:
@@ -227,7 +227,7 @@ python scripts/deploy_environment.py --registry deploy/environments.yaml render 
 
 | Symptom / Error | Root Cause | Diagnostic Command | Remediation Action |
 |---|---|---|---|
-| `DefaultCredentialsError` / `Missing ADC` | Missing or expired gcloud ADC token on local workstation. | `gcloud auth application-default print-access-token` | Run `gcloud auth application-default login`. Fallback: set `MANGOMAS_LLM__PROVIDER=lmstudio` for offline work. |
+| `DefaultCredentialsError` / `Missing ADC` | Missing or expired gcloud ADC token on local workstation. | `gcloud auth application-default print-access-token >/dev/null && echo ok` (never print the token) | Run `gcloud auth application-default login`. Fallback: set `MANGOMAS_LLM__PROVIDER=lmstudio` for offline work. |
 | `VertexError (LLMBadResponse)` 404 | Model name invalid or region unsupported. | `gcloud ai models list --region=us-central1` | Set `MANGOMAS_LLM__MODEL=gemini-2.5-flash` and `MANGOMAS_LLM__LOCATION=us-central1`. |
 | `ResourceExhausted (429)` | Vertex AI API quota rate limit exceeded. | Review Cloud Console Vertex AI Quotas. | Set `--parallelism 1` in `eval`, increase `MANGOMAS_LLM__TIMEOUT_SECONDS=120`, or switch to `gemini-2.5-flash`. |
 | `InvalidDimensionException` in Chroma | 768-dim embeddings written to 384-dim collection. | Inspect `./data/chroma/` metadata. | Set `MANGOMAS_VECTOR__COLLECTION=mangomas_vertex` and `MANGOMAS_VECTOR__PERSIST_DIR=./data/chroma_vertex`. |
