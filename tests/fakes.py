@@ -310,44 +310,6 @@ class FakeVertexGenerativeModel:
 
 
 @dataclass
-class _FakeVertexEmbedding:
-    """Stub for ``vertexai.language_models.TextEmbedding``."""
-
-    values: list[float]
-
-
-@dataclass
-class FakeVertexEmbeddingModel:
-    """In-memory stub for ``vertexai.language_models.TextEmbeddingModel``.
-
-    Injected into :class:`~mangomas.adapters.embeddings.vertex.VertexEmbeddingClient`
-    via its ``client`` constructor argument so unit tests can drive the adapter
-    without importing the real Vertex SDK.
-
-    ``replies`` cycles across emitted embeddings across items and calls; setting
-    ``raise_on_call`` causes the next call to raise ``raise_on_call`` once.
-    """
-
-    replies: list[list[float]] = field(default_factory=lambda: [[1.0, 0.0]])
-    raise_on_call: BaseException | None = None
-    calls: list[list[str]] = field(default_factory=list)
-    _emitted: int = 0
-
-    async def get_embeddings_async(self, texts: list[str]) -> list[_FakeVertexEmbedding]:
-        self.calls.append(list(texts))
-        if self.raise_on_call is not None:
-            exc = self.raise_on_call
-            self.raise_on_call = None
-            raise exc
-        out: list[_FakeVertexEmbedding] = []
-        for _ in texts:
-            vec = self.replies[self._emitted % len(self.replies)]
-            self._emitted += 1
-            out.append(_FakeVertexEmbedding(values=list(vec)))
-        return out
-
-
-@dataclass
 class FakeEmbeddingClient:
     """In-memory stub satisfying the
     :class:`~mangomas.adapters.embeddings.base.EmbeddingClient` protocol.

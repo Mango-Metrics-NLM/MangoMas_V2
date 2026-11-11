@@ -72,7 +72,6 @@ the per-suite sections below, or use the matching `make` target
 | Deploy contract | `tests/deploy/` | `service.yaml` / `deploy.yml` shape; Dockerfile ↔ `.dockerignore` build-context consistency |
 | CLI RAG | `tests/test_cli_rag.py` | `mangomas rag ingest|query` (Typer `CliRunner`, fakes injected) |
 | Orchestrator teardown | `tests/test_orchestrator_aclose.py` | `aclose()` closes embeddings + vector store, fault-tolerant + idempotent |
-| GCP demo (spec-0049) | `tests/test_preflight_verification.py`, `tests/tooling/test_gcp_demo_docs_contract.py`, `tests/test_telemetry_gcp_contract.py`, `tests/deploy/test_manifest_render_contract.py`, `tests/agents/test_vertex_tool_agent.py`, `tests/eval/test_eval_gate_falsifiability.py` (default run); `tests/postgres/test_postgres_history_contract.py` (`RUN_POSTGRES`); `tests/rag/test_vertex_dimension_isolation.py` (`RUN_EMBEDDINGS_LOCAL` + `RUN_RAG`, nightly); Cloud Trace exporter cases (`RUN_GCP_TRACE`, `make gcp-trace`) | Read-only pre-flight (billing-account-closed, API, ADC, endpoint branches) with an injected fake `google-auth`; per-project API/billing plan (profiles, split projects), ADC refresh timeout, RFC 3986 DSN authority (ambiguous `@` rejected, no-userinfo endpoint redacted); runbook `ExecutionPlan` / `ReviewResult` / tool-call examples vs the real schemas and tool roster, no doc prints an OAuth token; `.env.gcp-demo` names **and values** vs `Settings`; Cloud Logging JSON + W3C sampled bit; zero unrendered manifest placeholders; eval exit-3 falsifiability; Postgres↔SQLite history parity; Chroma dimension isolation |
 
 ---
 
@@ -115,7 +114,7 @@ that used to exist were all reachable and now have tests.
 Three floors sit outside `FLOORS` because they measure a different tree:
 `eval_harness_bridge` (100%, `make bridge-coverage`),
 `mango-integration-contracts` (100%, `make contracts-coverage`), and
-`scripts/` (94%, `make scripts-coverage`, a measured ratchet rather than a
+`scripts/` (92%, `make scripts-coverage`, a measured ratchet rather than a
 round number).
 
 `scripts/check_coverage.py` is the authority — if this table and that script
@@ -200,7 +199,7 @@ Gated on `RUN_VERTEX=1`. Requires Gemini model access in the GCP project.
 $env:RUN_VERTEX = '1'
 $env:VERTEX_PROJECT_ID = 'your-gcp-project'
 $env:VERTEX_LOCATION = 'us-central1'
-$env:VERTEX_MODEL = 'gemini-2.5-flash'
+$env:VERTEX_MODEL = 'gemini-1.5-flash'
 python -m pytest tests/vertex --no-cov -q
 ```
 
