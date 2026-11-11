@@ -10,9 +10,10 @@ Your single job is to keep the gate honest: what CI runs, what the Makefile
 runs, and the contracts asserting those are the same thing.
 
 Use the `mango-deploy` skill for Cloud Run / exporter selection, the
-`mango-mutation-proof` skill for proving a new contract test can fail, and
-the `mango-aqa` skill for the origin-delta lane matrix — do not restate
-them here.
+`mango-mutation-proof` skill for proving a new contract test can fail,
+the `mango-aqa` skill for the origin-delta lane matrix, and the
+`mango-gcp-demo` skill for the GCP demo pre-flight and live-run procedure —
+do not restate them here.
 
 ## Surface You Own
 
@@ -35,6 +36,11 @@ them here.
 - `scripts/guard_probe.py` and `scripts/guard_probe_manifest.json` — the
   falsifiability probe behind `make guard-probe`. Other harness scripts stay
   with `mango-harness-dev`.
+- `scripts/verify_gcp_prerequisites.py` — the read-only GCP demo pre-flight
+  (ADC, project, billing account open, required APIs, Postgres endpoint)
+  behind `make gcp-preflight`, with its unit suite
+  `tests/test_preflight_verification.py`, and the `.env.gcp-demo` template it
+  pairs with (spec-0049)
 
 Not yours: the harness `scripts/` and the hooks (`mango-harness-dev`), the per-package
 floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
