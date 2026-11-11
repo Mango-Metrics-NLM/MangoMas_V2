@@ -22,6 +22,7 @@ import pytest
 from mangomas.config import (
     DBSettings,
     EmbeddingSettings,
+    LLMProfileSettings,
     LLMSettings,
     SecretsSettings,
     Settings,
@@ -84,10 +85,22 @@ class _Creds:
     refresh_exc: Exception | None = None
     refreshed: int = 0
 
-    def refresh(self, _request: object) -> None:
+    def refresh(self, request: Any) -> None:
         self.refreshed += 1
+        # Drive the transport the way google-auth's token endpoint call does.
+        request(url="https://oauth2.example.invalid/token", method="POST")
         if self.refresh_exc is not None:
             raise self.refresh_exc
+
+
+@dataclass
+class _RecordingRequest:
+    """Stand-in for ``google.auth.transport.requests.Request``: records kwargs."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def __call__(self, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
 
 
 @dataclass
@@ -126,15 +139,17 @@ def _backend(
     default_exc: Exception | None = None,
     adc_project: str | None = None,
     session: _Session | None = None,
+    request: _RecordingRequest | None = None,
 ) -> Any:
     def default(**_kw: Any) -> tuple[Any, str | None]:
         if default_exc is not None:
             raise default_exc
         return (creds or _Creds()), adc_project
 
+    recorder = request or _RecordingRequest()
     return pf.GoogleAuthBackend(
         default=default,
-        make_request=object,
+        make_request=lambda: recorder,
         make_session=lambda _c: session or _Session(),
         credentials_error=_CredError,
         refresh_error=_RefreshError,
@@ -193,6 +208,27 @@ def test_adc_failure_modes_are_fail_rows_not_crashes(
     assert fragment in outcome.result.message.lower()
     assert remedy in outcome.result.remediation
     assert outcome.credentials is None
+
+
+def test_adc_refresh_forwards_the_probe_timeout(pf: ModuleType) -> None:
+    """Copilot #130: a stalled OAuth endpoint must not outlive ``--timeout``."""
+    recorder = _RecordingRequest()
+    outcome = pf.check_adc_credentials(_backend(pf, request=recorder), 2.5)
+    assert outcome.result.status is pf.CheckStatus.PASS
+    assert [call["timeout"] for call in recorder.calls] == [2.5]
+
+
+def test_adc_refresh_without_timeout_keeps_transport_default(pf: ModuleType) -> None:
+    """Backwards compatible: no timeout argument leaves the transport untouched."""
+    recorder = _RecordingRequest()
+    pf.check_adc_credentials(_backend(pf, request=recorder))
+    assert recorder.calls and all("timeout" not in call for call in recorder.calls)
+
+
+def test_run_checks_threads_timeout_into_adc_refresh(pf: ModuleType) -> None:
+    recorder = _RecordingRequest()
+    pf.run_checks(_settings(), timeout=3.0, auth=_backend(pf, request=recorder))
+    assert recorder.calls[0]["timeout"] == 3.0
 
 
 # ── Project resolution ────────────────────────────────────────────────────────
@@ -270,6 +306,135 @@ def test_disabled_embeddings_add_nothing(pf: ModuleType) -> None:
 def test_extra_apis_are_deduplicated_and_blank_dropped(pf: ModuleType) -> None:
     got = pf.required_apis(_settings(), ["sqladmin.googleapis.com", " ", "sqladmin.googleapis.com"])
     assert got == ["sqladmin.googleapis.com"]
+
+
+def test_vertex_llm_profile_requires_aiplatform_under_a_local_base(pf: ModuleType) -> None:
+    """Copilot #130: a Vertex judge profile over an LM Studio base still needs aiplatform."""
+    s = _settings(llm_profiles={"judge": LLMProfileSettings(provider="vertex", model="m")})
+    assert pf.required_apis(s) == ["aiplatform.googleapis.com"]
+
+
+def test_local_llm_profile_requires_nothing(pf: ModuleType) -> None:
+    s = _settings(llm_profiles={"alt": LLMProfileSettings(provider="lmstudio", model="m")})
+    assert pf.required_apis(s) == []
+
+
+# ── Per-project API plan ──────────────────────────────────────────────────────
+
+_OTHER = "secrets-project"
+_PROFILE_PROJECT = "judge-project"
+
+
+def test_api_requirements_target_each_providers_effective_project(pf: ModuleType) -> None:
+    """Copilot #130: Vertex in project A and Secret Manager in B are planned separately."""
+    s = _gcp_settings(
+        secrets=SecretsSettings(provider="gcp", project_id=_OTHER),
+        llm_profiles={
+            "judge": LLMProfileSettings(provider="vertex", model="m", project_id=_PROFILE_PROJECT),
+            "inherit": LLMProfileSettings(provider="vertex", model="m"),
+        },
+        embeddings=EmbeddingSettings(enabled=True, provider="vertex"),
+    )
+    reqs = pf.api_requirements(
+        s, ["sqladmin.googleapis.com"], primary_project="primary", ambient_project="ambient"
+    )
+    by_source = {r.source: (r.api, r.project) for r in reqs}
+    assert by_source == {
+        "llm": ("aiplatform.googleapis.com", _PROJECT),
+        "llm_profiles.inherit": ("aiplatform.googleapis.com", _PROJECT),  # inherits LLM project
+        "llm_profiles.judge": ("aiplatform.googleapis.com", _PROFILE_PROJECT),
+        "embeddings": ("aiplatform.googleapis.com", "ambient"),  # no project_id -> ADC default
+        "secrets": ("secretmanager.googleapis.com", _OTHER),
+        "telemetry": ("cloudtrace.googleapis.com", "ambient"),
+        "--require-api": ("sqladmin.googleapis.com", "primary"),
+    }
+    assert pf.api_plan(reqs) == {
+        "ambient": ["aiplatform.googleapis.com", "cloudtrace.googleapis.com"],
+        _PROJECT: ["aiplatform.googleapis.com"],
+        _PROFILE_PROJECT: ["aiplatform.googleapis.com"],
+        "primary": ["sqladmin.googleapis.com"],
+        _OTHER: ["secretmanager.googleapis.com"],
+    }
+
+
+def test_api_plan_orders_unresolved_project_last(pf: ModuleType) -> None:
+    reqs = [
+        pf.ApiRequirement(api="b.googleapis.com", project=None, source="x"),
+        pf.ApiRequirement(api="a.googleapis.com", project="p-one", source="y"),
+    ]
+    assert list(pf.api_plan(reqs)) == ["p-one", None]
+
+
+def test_ambient_project_precedence(pf: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mirrors google.auth.default(): GOOGLE_CLOUD_PROJECT, then the ADC project."""
+    assert pf.resolve_ambient_project("adc-p", "fallback-p") == "adc-p"
+    assert pf.resolve_ambient_project(None, "fallback-p") == "fallback-p"
+    assert pf.resolve_ambient_project(None) is None
+    monkeypatch.setenv("CLOUDSDK_CORE_PROJECT", "gcloud-p")  # not read by google.auth
+    assert pf.resolve_ambient_project("adc-p", "fallback-p") == "adc-p"
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-p")
+    assert pf.resolve_ambient_project("adc-p", "fallback-p") == "env-p"
+
+
+def test_project_less_clients_are_checked_where_they_run_not_in_the_flag_project(
+    pf: ModuleType,
+) -> None:
+    """Review of #130: --project is not read at runtime, so it must not move telemetry."""
+    settings = _settings(telemetry=TelemetrySettings(exporter="gcp"))
+    session = _Session(
+        {
+            "projects/adc-project/billingInfo": _Response(
+                200, {"billingEnabled": True, "billingAccountName": _ACCOUNT}
+            ),
+            _ACCOUNT: _Response(200, {"open": True}),
+            "adc-project/services/cloudtrace.googleapis.com": _Response(200, {"state": "ENABLED"}),
+        }
+    )
+    results = {
+        r.name: r
+        for r in pf.run_checks(
+            settings,
+            project="cli-project",
+            timeout=1.0,
+            auth=_backend(pf, adc_project="adc-project", session=session),
+        )
+    }
+    assert results["required_apis"].status is pf.CheckStatus.PASS
+    assert not any("cli-project" in url for url in session.calls)
+
+
+def test_profile_project_resolves_the_primary_project(pf: ModuleType) -> None:
+    """Review of #130: a Vertex profile's project names the project when nothing else does."""
+    s = _settings(
+        llm_profiles={"judge": LLMProfileSettings(provider="vertex", model="m", project_id="prof-p")}
+    )
+    assert pf.resolve_project(s, None, None) == "prof-p"
+
+
+def test_gcp_secrets_without_project_id_fails_like_the_app(pf: ModuleType) -> None:
+    s = _settings(secrets=SecretsSettings(provider="gcp"))
+    assert pf.configuration_problems(s) == [pf.SECRETS_PROJECT_REQUIRED]
+    result = pf.check_gcp_project(_PROJECT, [], pf.configuration_problems(s))
+    assert result.status is pf.CheckStatus.FAIL
+    assert "MANGOMAS_SECRETS__PROJECT_ID" in result.message
+    assert pf.configuration_problems(_gcp_settings()) == []
+
+
+def test_gcp_metrics_require_cloud_monitoring(pf: ModuleType) -> None:
+    on = _settings(telemetry=TelemetrySettings(exporter="gcp", metrics_enabled=True))
+    off = _settings(telemetry=TelemetrySettings(exporter="gcp", metrics_enabled=False))
+    assert "monitoring.googleapis.com" in pf.required_apis(on)
+    assert "monitoring.googleapis.com" not in pf.required_apis(off)
+
+
+def test_gcp_project_lists_and_validates_every_targeted_project(pf: ModuleType) -> None:
+    ok = pf.check_gcp_project(_PROJECT, [_PROJECT, _OTHER, None])
+    assert ok.status is pf.CheckStatus.PASS
+    assert ok.details["projects"] == [_PROJECT, _OTHER]
+    assert _OTHER in ok.message
+    bad = pf.check_gcp_project(_PROJECT, ["Bad_Project"])
+    assert bad.status is pf.CheckStatus.FAIL
+    assert bad.details["invalid"] == ["Bad_Project"]
 
 
 # ── Billing ───────────────────────────────────────────────────────────────────
@@ -425,6 +590,127 @@ def test_required_apis_forbidden_and_disabled_reports_disabled_failure(pf: Modul
     assert "Disabled API(s): secretmanager.googleapis.com" in result.message
 
 
+def _two_project_session(*, sm_state: str = "ENABLED", other_open: bool = True) -> _Session:
+    routes: dict[str, _Response | Exception] = {}
+    for project in (_PROJECT, _OTHER):
+        routes[f"projects/{project}/billingInfo"] = _Response(
+            200, {"billingEnabled": True, "billingAccountName": _ACCOUNT}
+        )
+    routes[_ACCOUNT] = _Response(200, {"open": True})
+    routes[f"{_PROJECT}/services/{_AIP}"] = _Response(200, {"state": "ENABLED"})
+    routes[f"{_OTHER}/services/{_SM}"] = _Response(200, {"state": sm_state})
+    if not other_open:
+        other_account = "billingAccounts/111111-BBBBBB-222222"
+        routes[f"projects/{_OTHER}/billingInfo"] = _Response(
+            200, {"billingEnabled": True, "billingAccountName": other_account}
+        )
+        routes[other_account] = _Response(200, {"open": False})
+    return _Session(routes)
+
+
+def test_apis_are_probed_in_each_providers_project(pf: ModuleType) -> None:
+    session = _two_project_session(sm_state="DISABLED")
+    plan = {_PROJECT: [_AIP], _OTHER: [_SM]}
+    result = pf.check_required_apis_by_project(session, plan, 1.0)
+    assert result.status is pf.CheckStatus.FAIL
+    assert f"[{_OTHER}] Disabled API(s): {_SM}" in result.message
+    assert result.details["projects"][_PROJECT]["status"] == "PASS"
+    assert result.details["projects"][_OTHER]["disabled"] == [_SM]
+    assert result.remediation == f"[{_OTHER}] gcloud services enable {_SM} --project {_OTHER}"
+    assert any(f"projects/{_OTHER}/services/{_SM}" in url for url in session.calls)
+    assert not any(f"projects/{_PROJECT}/services/{_SM}" in url for url in session.calls)
+
+
+def test_multi_project_apis_all_enabled_pass(pf: ModuleType) -> None:
+    plan = {_PROJECT: [_AIP], _OTHER: [_SM]}
+    result = pf.check_required_apis_by_project(_two_project_session(), plan, 1.0)
+    assert result.status is pf.CheckStatus.PASS
+    assert result.remediation is None
+
+
+def test_api_plan_with_unresolved_project_skips(pf: ModuleType) -> None:
+    result = pf.check_required_apis_by_project(_Session(), {None: [_AIP]}, 1.0)
+    assert result.status is pf.CheckStatus.SKIP
+
+
+def test_api_plan_invalid_project_is_skipped_not_probed(pf: ModuleType) -> None:
+    session = _Session()
+    result = pf.check_required_apis_by_project(session, {"Bad_Project": [_AIP]}, 1.0)
+    assert result.status is pf.CheckStatus.SKIP
+    assert session.calls == []
+
+
+def test_billing_is_checked_for_every_targeted_project(pf: ModuleType) -> None:
+    result = pf.check_billing_projects(
+        _two_project_session(other_open=False), [_PROJECT, _OTHER], 1.0
+    )
+    assert result.status is pf.CheckStatus.FAIL
+    assert result.details["projects"][_PROJECT]["status"] == "PASS"
+    assert result.details["projects"][_OTHER]["status"] == "FAIL"
+    assert f"[{_OTHER}]" in result.message and "CLOSED" in result.message
+    assert result.remediation is not None and result.remediation.startswith(f"[{_OTHER}]")
+
+
+def test_billing_projects_single_project_matches_direct_call(pf: ModuleType) -> None:
+    session = _healthy_session()
+    assert pf.check_billing_projects(session, [_PROJECT, _PROJECT], 1.0) == pf.check_billing(
+        _healthy_session(), _PROJECT, 1.0
+    )
+
+
+def test_billing_projects_skip_unresolved_or_invalid(pf: ModuleType) -> None:
+    assert pf.check_billing_projects(_Session(), [None], 1.0).status is pf.CheckStatus.SKIP
+    assert pf.check_billing_projects(_Session(), [], 1.0).status is pf.CheckStatus.SKIP
+    assert pf.check_billing_projects(None, [_PROJECT], 1.0).status is pf.CheckStatus.SKIP
+    session = _Session()
+    invalid = pf.check_billing_projects(session, ["Bad_Project"], 1.0)
+    assert invalid.status is pf.CheckStatus.SKIP
+    assert session.calls == []
+
+
+def test_merge_of_no_projects_is_a_skip(pf: ModuleType) -> None:
+    assert pf._merge_project_results("billing", {}).status is pf.CheckStatus.SKIP
+
+
+def test_merge_pass_and_skip_is_skip_and_keeps_only_skip_remediation(pf: ModuleType) -> None:
+    merged = pf._merge_project_results(
+        "required_apis",
+        {
+            "p-one": pf.CheckResult("required_apis", pf.CheckStatus.PASS, "ok", remediation="x"),
+            "p-two": pf.CheckResult(
+                "required_apis", pf.CheckStatus.SKIP, "403", remediation="grant role"
+            ),
+        },
+    )
+    assert merged.status is pf.CheckStatus.SKIP
+    assert merged.remediation == "[p-two] grant role"
+    assert merged.message == "[p-one] ok; [p-two] 403"
+
+
+def test_required_apis_without_adc_or_providers_keeps_the_prerequisite_message(
+    pf: ModuleType,
+) -> None:
+    """Review of #130: the single-project precedence (prerequisite before 'none required')."""
+    results = {r.name: r for r in pf.run_checks(_settings(), timeout=1.0, auth=None)}
+    assert results["required_apis"].message == "Skipped: needs valid ADC and a resolved project."
+
+
+def test_run_checks_probes_split_projects(pf: ModuleType) -> None:
+    """End to end: Vertex in one project, Secret Manager in another (Copilot #130)."""
+    settings = _settings(
+        llm=LLMSettings(provider="vertex", project_id=_PROJECT),
+        secrets=SecretsSettings(provider="gcp", project_id=_OTHER),
+    )
+    session = _two_project_session(sm_state="DISABLED")
+    results = {
+        r.name: r for r in pf.run_checks(settings, timeout=1.0, auth=_backend(pf, session=session))
+    }
+    assert results["gcp_project"].details["projects"] == [_PROJECT, _OTHER]
+    assert results["billing"].status is pf.CheckStatus.PASS
+    assert results["required_apis"].status is pf.CheckStatus.FAIL
+    assert f"--project {_OTHER}" in results["required_apis"].remediation
+
+
 # ── Postgres endpoint ─────────────────────────────────────────────────────────
 
 
@@ -457,13 +743,172 @@ def test_endpoint_reachable_passes_without_echoing_password(
     assert _SECRET_PASSWORD not in json.dumps(result.details) + result.message
 
 
-def test_postgres_endpoint_password_with_hash(pf: ModuleType, listening_port: int) -> None:
-    pw_with_hash = "p#ss#w0rd#special"
-    url = f"postgresql://user:{pw_with_hash}@127.0.0.1:{listening_port}/db"
+@pytest.mark.parametrize(
+    "password",
+    ["Kx7#Qp2#Vm9", "Rt5secret?Yh8", "Lm3/Nb6"],
+    ids=["hash", "query-char", "slash"],
+)
+def test_postgres_endpoint_unencoded_reserved_password_fails_without_leaking(
+    pf: ModuleType, listening_port: int, password: str
+) -> None:
+    """libpq/asyncpg would mis-parse these URLs too, so pre-flight must not PASS them."""
+    url = f"postgresql://user:{password}@127.0.0.1:{listening_port}/db"
+    result = pf.check_postgres_endpoint(url, 1.0)
+    assert result.status is pf.CheckStatus.FAIL
+    assert "ambiguous" in result.message
+    assert "%40" in result.remediation and "%23" in result.remediation
+    combined = json.dumps(result.details) + result.message + result.remediation
+    for fragment in (password, *password.replace("?", "#").replace("/", "#").split("#")):
+        assert fragment not in combined
+
+
+@pytest.mark.parametrize("password", ["p%23ss%23w0rd", "secret%3Ftoken", "pa%2Fss", "p%40ss"])
+def test_postgres_endpoint_percent_encoded_password_passes(
+    pf: ModuleType, listening_port: int, password: str
+) -> None:
+    url = f"postgresql://user:{password}@127.0.0.1:{listening_port}/db"
     result = pf.check_postgres_endpoint(url, 1.0)
     assert result.status is pf.CheckStatus.PASS
-    assert "proxy or local Postgres" in result.message
-    assert pw_with_hash not in json.dumps(result.details) + result.message
+    assert result.details == {"host": "127.0.0.1", "port": listening_port}
+    assert password not in json.dumps(result.details) + result.message
+
+
+def test_postgres_endpoint_at_sign_in_query_is_not_the_host(
+    pf: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Copilot #130: an '@' in the query string must not redirect the probe."""
+    seen: list[tuple[str, int]] = []
+
+    def fake_connect(addr: tuple[str, int], timeout: float) -> socket.socket:
+        assert timeout > 0
+        seen.append(addr)
+        raise ConnectionRefusedError("refused")
+
+    monkeypatch.setattr(pf.socket, "create_connection", fake_connect)
+    url = (
+        f"postgresql://user:{_SECRET_PASSWORD}@db.demo.test:5544/demo"
+        "?application_name=operator@example.com"
+    )
+    result = pf.check_postgres_endpoint(url, 1.0)
+    assert seen == [("db.demo.test", 5544)]
+    assert result.details["host"] == "db.demo.test"
+    assert "example.com" not in json.dumps(result.details) + result.message
+    assert _SECRET_PASSWORD not in json.dumps(result.details) + result.message
+
+
+def test_postgres_endpoint_at_sign_in_query_without_userinfo_is_ambiguous(
+    pf: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        pf.socket, "create_connection", lambda *_a, **_k: pytest.fail("must not probe")
+    )
+    url = "postgresql://db.internal:5544/demo?application_name=operator@example.com"
+    result = pf.check_postgres_endpoint(url, 1.0)
+    assert result.status is pf.CheckStatus.FAIL
+    assert "ambiguous" in result.message
+    assert "example.com" not in json.dumps(result.details) + result.message
+
+
+def test_postgres_endpoint_in_range_numeric_password_is_redacted(
+    pf: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Copilot #130: ``user:12345`` without ``@host`` reads as host:port; never echo it."""
+    seen: list[tuple[str, int]] = []
+
+    def fake_connect(addr: tuple[str, int], timeout: float) -> socket.socket:
+        assert timeout > 0
+        seen.append(addr)
+        raise ConnectionRefusedError("refused to user:12345")
+
+    monkeypatch.setattr(pf.socket, "create_connection", fake_connect)
+    result = pf.check_postgres_endpoint("postgresql://user:12345/db", 1.0)
+    assert seen == [("user", 12345)]  # still probed: it might be a real host:port
+    assert result.status is pf.CheckStatus.FAIL
+    assert result.details == {
+        "host": None,
+        "port": None,
+        "redacted": True,
+        "error": "ConnectionRefusedError",
+    }
+    combined = json.dumps(result.details) + result.message + result.remediation
+    assert "12345" not in combined
+    assert "--port <PORT>" in result.remediation
+
+
+def test_postgres_endpoint_without_userinfo_redacts_on_pass(
+    pf: ModuleType, listening_port: int
+) -> None:
+    result = pf.check_postgres_endpoint(f"postgresql://127.0.0.1:{listening_port}/db", 1.0)
+    assert result.status is pf.CheckStatus.PASS
+    assert result.details == {"host": None, "port": None, "redacted": True}
+    assert str(listening_port) not in result.message
+    assert "withheld" in result.message
+
+
+@pytest.mark.parametrize(
+    ("userinfo", "rest", "secrets"),
+    [
+        # asyncpg splits at the FIRST '@' (host 'Qp2@db...'); RFC readers take the last.
+        ("u:Kx7@Qp2", "db.demo.test:5433/db", ["Kx7", "Qp2"]),
+        # A forgotten '@host' after a password containing '@' leaves an all-digit
+        # "host" (an inet_aton shorthand, never a real database name): host '2024'.
+        ("admin:Hunter", "2024/db", ["Hunter", "2024"]),
+    ],
+)
+def test_postgres_endpoint_multiple_at_signs_are_ambiguous(
+    pf: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    userinfo: str,
+    rest: str,
+    secrets: list[str],
+) -> None:
+    monkeypatch.setattr(
+        pf.socket, "create_connection", lambda *_a, **_k: pytest.fail("must not probe")
+    )
+    # Assembled at runtime so the fixture never reads as a literal credential URL.
+    url = f"postgresql://{userinfo}@{rest}"
+    result = pf.check_postgres_endpoint(url, 1.0)
+    assert result.status is pf.CheckStatus.FAIL
+    assert "ambiguous" in result.message
+    rendered = result.message + json.dumps(result.details) + (result.remediation or "")
+    for secret in secrets:
+        assert secret not in rendered
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://u@h1.demo.test:5433,h2.demo.test:5434/db",  # multi-host list
+        "postgresql://u@%2Fcloudsql%2Fp%3Ar%3Ai/db",  # percent-encoded socket path
+        "postgresql://u@db.demo.test:5433/db?port=6543",  # asyncpg query override
+        "postgresql://u@db.demo.test/db?sslmode=require&HOST=other.demo.test",
+    ],
+)
+def test_postgres_endpoint_forms_asyncpg_resolves_differently_are_not_probed(
+    pf: ModuleType, monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.setattr(
+        pf.socket, "create_connection", lambda *_a, **_k: pytest.fail("must not probe")
+    )
+    result = pf.check_postgres_endpoint(url, 1.0)
+    assert result.status is pf.CheckStatus.FAIL
+    assert "not probed" in result.message
+    assert result.remediation == pf.UNSUPPORTED_ENDPOINT_HINT
+    assert result.details == {"host": None, "port": None}
+
+
+@pytest.mark.parametrize("raw_port", ["+5433", "5_433", "\u0665\u0664\u0663\u0663", "-1"])
+def test_postgres_endpoint_rejects_ports_libpq_rejects(pf: ModuleType, raw_port: str) -> None:
+    result = pf.check_postgres_endpoint(f"postgresql://u@db.demo.test:{raw_port}/db", 1.0)
+    assert result.status is pf.CheckStatus.FAIL
+    assert result.message == "MANGOMAS_DB__URL does not parse: invalid port."
+
+
+def test_postgres_endpoint_rejects_the_sqlalchemy_asyncpg_scheme(pf: ModuleType) -> None:
+    """asyncpg itself accepts only postgresql:// and postgres:// (``_normalise_dsn``)."""
+    result = pf.check_postgres_endpoint("postgresql+asyncpg://u@127.0.0.1:5432/db", 1.0)
+    assert result.status is pf.CheckStatus.FAIL
+    assert "unsupported scheme" in result.message
 
 
 def test_postgres_endpoint_does_not_leak_on_parse_error(pf: ModuleType) -> None:
@@ -472,18 +917,6 @@ def test_postgres_endpoint_does_not_leak_on_parse_error(pf: ModuleType) -> None:
     assert result.status is pf.CheckStatus.FAIL
     assert "does not parse" in result.message.lower()
     assert _SECRET_PASSWORD not in json.dumps(result.details) + result.message
-
-
-def test_postgres_endpoint_password_with_query_char_redacted(
-    pf: ModuleType, listening_port: int
-) -> None:
-    pw = "secret?token"
-    url = f"postgresql://user:{pw}@127.0.0.1:{listening_port}/db"
-    result = pf.check_postgres_endpoint(url, 1.0)
-    assert result.status is pf.CheckStatus.PASS
-    combined = json.dumps(result.details) + result.message
-    assert "secret" not in combined
-    assert "token" not in combined
 
 
 def test_postgres_endpoint_missing_at_host_does_not_leak(pf: ModuleType) -> None:
@@ -505,10 +938,13 @@ def test_postgres_endpoint_numeric_password_does_not_leak(pf: ModuleType) -> Non
 
 
 def test_postgres_endpoint_adversarial_redaction_comprehensive(pf: ModuleType) -> None:
-    # 1. Parsing with question mark in password extracts correct host/port
-    host, port = pf._parse_postgres_endpoint("postgresql://user:secret?token@localhost:5432/db")
-    assert host == "localhost"
-    assert port == 5432
+    # 1. Percent-encoded reserved characters parse to the real host/port...
+    host, port = pf._parse_postgres_endpoint("postgresql://user:secret%3Ftoken@localhost:5432/db")
+    assert (host, port) == ("localhost", 5432)
+    # ...while the unencoded form is rejected with a static message.
+    with pytest.raises(ValueError, match="ambiguous") as exc:
+        pf._parse_postgres_endpoint("postgresql://user:secret?token@localhost:5432/db")
+    assert "secret" not in str(exc.value)
 
     # 2. Assert zero leaks in CheckResult across adversarial inputs
     cases: list[tuple[str, list[str]]] = [
@@ -516,12 +952,13 @@ def test_postgres_endpoint_adversarial_redaction_comprehensive(pf: ModuleType) -
         ("postgresql://user:my_secret_pass/db", ["my_secret_pass"]),
         ("postgresql://user:999999/db", ["999999"]),
         ("postgresql://user:0/db", ["user"]),
+        ("postgresql://u:pw#frag@h.invalid/db?x=a@b", ["pw", "frag"]),
     ]
     for url, sensitive_tokens in cases:
         res = pf.check_postgres_endpoint(url, 0.1)
+        rendered = res.message + json.dumps(res.details) + (res.remediation or "")
         for token in sensitive_tokens:
-            assert token not in res.message, f"Leaked token {token!r} in {res.message}"
-            assert token not in json.dumps(res.details)
+            assert token not in rendered, f"Leaked token {token!r} in {rendered}"
 
 
 def test_endpoint_refused_fails_with_proxy_hint(pf: ModuleType, closed_port: int) -> None:
@@ -544,6 +981,7 @@ def test_endpoint_refused_fails_with_proxy_hint(pf: ModuleType, closed_port: int
         ("postgresql://u@[::1]junk/db", "does not parse"),
         ("postgresql://u@127.0.0.1:99999/db", "does not parse"),
         ("postgresql://u@127.0.0.1:0/db", "invalid port 0"),
+        ("mysql://u@127.0.0.1:3306/db", "unsupported scheme"),
     ],
 )
 def test_endpoint_rejects_malformed_urls(pf: ModuleType, url: str, fragment: str) -> None:
@@ -644,6 +1082,14 @@ def test_timeout_default_comes_from_settings(pf: ModuleType) -> None:
     assert pf.build_parser(settings).parse_args([]).timeout == 7.5
 
 
+def test_explicit_timeout_flag_reaches_adc_refresh(pf: ModuleType) -> None:
+    recorder = _RecordingRequest()
+    backend = _backend(pf, request=recorder)
+    code = pf.main(["--timeout", "2.5"], settings=_settings(), auth_loader=lambda: backend)
+    assert code == pf.EXIT_FAILURE  # no project configured
+    assert recorder.calls[0]["timeout"] == 2.5
+
+
 def test_verbose_emits_debug_logs_without_tokens(
     pf: ModuleType, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -653,7 +1099,8 @@ def test_verbose_emits_debug_logs_without_tokens(
         pf.main(["-v"], settings=settings, auth_loader=lambda: _backend(pf, session=session))
     text = caplog.text
     assert "check=billing status=PASS" in text
-    assert "billingInfo" in text  # the probed URL is logged at DEBUG
+    assert "probe=cb_project status=200" in text  # a static probe label, never the URL
+    assert "billingInfo" not in text and _PROJECT not in text  # CodeQL alert #66
     assert "token" not in text.lower()
 
 
