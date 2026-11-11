@@ -72,6 +72,7 @@ the per-suite sections below, or use the matching `make` target
 | Deploy contract | `tests/deploy/` | `service.yaml` / `deploy.yml` shape; Dockerfile ↔ `.dockerignore` build-context consistency |
 | CLI RAG | `tests/test_cli_rag.py` | `mangomas rag ingest|query` (Typer `CliRunner`, fakes injected) |
 | Orchestrator teardown | `tests/test_orchestrator_aclose.py` | `aclose()` closes embeddings + vector store, fault-tolerant + idempotent |
+| GCP demo (spec-0049) | `tests/test_preflight_verification.py`, `tests/test_telemetry_gcp_contract.py`, `tests/deploy/test_manifest_render_contract.py`, `tests/agents/test_vertex_tool_agent.py`, `tests/eval/test_eval_gate_falsifiability.py` (default run); `tests/postgres/test_postgres_history_contract.py` (`RUN_POSTGRES`); `tests/rag/test_vertex_dimension_isolation.py` (`RUN_EMBEDDINGS_LOCAL` + `RUN_RAG`, nightly); Cloud Trace exporter cases (`RUN_GCP_TRACE`, `make gcp-trace`) | Read-only pre-flight (billing-account-closed, API, ADC, endpoint branches) with an injected fake `google-auth`; `.env.gcp-demo` names **and values** vs `Settings`; Cloud Logging JSON + W3C sampled bit; zero unrendered manifest placeholders; eval exit-3 falsifiability; Postgres↔SQLite history parity; Chroma dimension isolation |
 
 ---
 

@@ -9,6 +9,33 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — GCP local-CLI demonstration and read-only pre-flight (spec-0049)
+
+- `scripts/verify_gcp_prerequisites.py` + `make gcp-preflight`: five read-only
+  checks (ADC refresh, project resolution, **billing enabled and billing
+  account open**, required APIs derived from the configured providers,
+  Postgres endpoint from `MANGOMAS_DB__URL`). Defaults come from `Settings`;
+  `google-auth` is optional and injected, so the suite runs under `[dev]` only
+  (`tests/test_preflight_verification.py`, 100% branch coverage bar the
+  `__main__` guard). Operator-only: not in `gate` or CI.
+- `.env.gcp-demo`: tracked template (`!.env.gcp-demo` in `.gitignore`)
+  switching every backend to its GCP provider, with eval cost guards
+  (`PARALLELISM=1`, `MAX_MEAN_COST_USD`). Its names *and values* are validated
+  against `Settings` (`tests/deploy/test_env_example_contract.py`).
+- `docs/runbooks/gcp-local-demo.md`: five-minute quickstart, five journeys
+  (PowerShell + Bash), troubleshooting matrix including the closed-billing
+  `PERMISSION_DENIED` case.
+- Offline contract suites: `tests/test_telemetry_gcp_contract.py` (Cloud
+  Logging JSON schema, W3C propagation; exporter cases gated by `gcp_trace`),
+  `tests/deploy/test_manifest_render_contract.py`,
+  `tests/agents/test_vertex_tool_agent.py`,
+  `tests/eval/test_eval_gate_falsifiability.py`,
+  `tests/postgres/test_postgres_history_contract.py` (`RUN_POSTGRES`),
+  `tests/rag/test_vertex_dimension_isolation.py` (nightly
+  `embeddings-local` lane).
+- `mango-gcp-demo` skill (owned by `mango-ci-dev`); `make gcp-trace` now also
+  collects the GCP telemetry contract.
+
 ### Changed — dev toolchain bumped in lockstep; Dependabot stops raising mirrored hook floors
 
 - `ruff` 0.16.6 → 0.17.3 and `mypy` 2.3.0 → 2.4.1 in `pyproject.toml`'s dev

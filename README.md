@@ -136,7 +136,7 @@ pip install 'mangomas[vertex]'
 MANGOMAS_LLM__PROVIDER=vertex
 MANGOMAS_LLM__PROJECT_ID=your-gcp-project
 MANGOMAS_LLM__LOCATION=us-central1               # default
-MANGOMAS_LLM__MODEL=gemini-1.5-flash
+MANGOMAS_LLM__MODEL=gemini-2.5-flash              # gemini-1.5-* ids are retired on Vertex
 # Optional explicit credentials (otherwise Application Default Credentials):
 # MANGOMAS_LLM__CREDENTIALS_PATH=/path/to/sa.json
 # Or resolved via the SecretsProvider seam:
@@ -155,6 +155,21 @@ The Vertex SDK is lazy-imported inside `VertexClient.__init__`, so
 `mangomas.adapters.llm.vertex` remains importable even when the extra is
 not installed. See [docs/adapters/vertex.md](docs/adapters/vertex.md) for
 the full error-mapping matrix, auth precedence, and logging events.
+
+### Run the full demo on GCP
+
+[`.env.gcp-demo`](.env.gcp-demo) switches every backend to its GCP provider:
+Vertex LLM and embeddings, Cloud SQL via the Auth Proxy, Secret Manager and
+Cloud Trace. Always run the read-only pre-flight first:
+
+```bash
+pip install -e ".[dev,cloud,rag]"
+make gcp-preflight        # ADC, project, billing account open, required APIs, Postgres endpoint
+```
+
+The step-by-step journeys (PowerShell and Bash) and the troubleshooting matrix
+are in [docs/runbooks/gcp-local-demo.md](docs/runbooks/gcp-local-demo.md)
+(spec-0049).
 
 ---
 
