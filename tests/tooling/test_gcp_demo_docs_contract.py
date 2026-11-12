@@ -46,24 +46,26 @@ _CREDENTIAL_COMMANDS: Final[re.Pattern[str]] = re.compile(
     r"\b(?:print-access-token|print-identity-token|secrets\s+versions\s+access)\b"
 )
 _GFM_CELL_SPLIT: Final[re.Pattern[str]] = re.compile(r"(?<!\\)\|")
-_SAFE_CMD_FRAGMENT: Final[str] = (
-    r"(?:<[A-Za-z0-9_.-]+>|(?<![0-9])2>&1|(?<![0-9])2>\s*(?:/dev/null|\$null)|[^;&|`#<>(){}\\])"
-)
+_CMD_BOUNDARY_RE: Final[re.Pattern[str]] = re.compile(r"[;&|`]")
 _CMD_END_LOOKAHEAD: Final[str] = r"(?=[;`#]|&&|\|\||\Z)"
+_FLAG_PLACEHOLDER: Final[str] = r"(?<=\s)--[a-z0-9-]+=<[A-Z][A-Z0-9_]*>(?=\s)"
+_STDERR_DISCARD: Final[str] = (
+    r"(?<![0-9&*])2(?:>&1|>\s*(?:/dev/null|(?i:\$null)))(?=\s|[;`#]|&&|\|\||\Z)"
+)
+_PLAIN_PREFIX_CHAR: Final[str] = r"[^;&|`#<>(){}\\\n]"
+_PREFIX_FRAGMENT: Final[str] = rf"(?:{_FLAG_PLACEHOLDER}|{_STDERR_DISCARD}|{_PLAIN_PREFIX_CHAR})"
+_POST_DISCARD_TAIL: Final[str] = rf"(?:\s+{_STDERR_DISCARD})*\s*"
 # Matched at `m.end()` immediately after each credential-emitting gcloud verb.
-# Flags/placeholders (`--secret=<NAME>`) may appear first, and benign stderr
-# redirects (`2>&1`, `2>/dev/null`, `2> $null`) may appear before or after a
-# stdout discard redirect, but the remainder of the simple command must reach a
-# command boundary (`;`, `&&`, `||`, closing `` ` ``, `#`, or end-of-segment)
-# without any overriding stdout redirect (`>`, `>>`, `1>`, `1>&2`, `&>`, `*>`)
-# or extra pipeline stage.
+# Uppercase doc placeholders are permitted only in `--flag=<PLACEHOLDER>` position
+# before the discard; after `>/dev/null` or `> $null`, only optional benign stderr
+# discards (`2>&1`, `2>/dev/null`, `2> $null`) and whitespace may appear before a
+# command boundary (`;`, `&&`, `||`, closing `` ` ``, `#`, or end-of-segment).
 _CMD_STDOUT_DISCARDED: Final[re.Pattern[str]] = re.compile(
-    rf"{_SAFE_CMD_FRAGMENT}*?(?:"
-    rf"(?<![0-9&*])>\s*(?:/dev/null|\$null)(?=\s|[;`#]|&&|\|\||\Z)"
-    rf"{_SAFE_CMD_FRAGMENT}*{_CMD_END_LOOKAHEAD}"
-    rf"|(?<!\|)\|(?!\|)\s*Out-Null\b\s*{_CMD_END_LOOKAHEAD}"
-    rf")",
-    re.IGNORECASE,
+    rf"{_PREFIX_FRAGMENT}*?(?:"
+    rf"(?<![0-9&*])>\s*(?:/dev/null|(?i:\$null))(?=\s|[;`#]|&&|\|\||\Z)"
+    rf"{_POST_DISCARD_TAIL}{_CMD_END_LOOKAHEAD}"
+    rf"|(?<!\|)\|(?!\|)\s*(?i:Out-Null)\b\s*{_CMD_END_LOOKAHEAD}"
+    rf")"
 )
 _TURN_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
     {"id", "ts", "agent", "request", "response", "schema_version", "status", "error_code", "error"}
@@ -89,6 +91,15 @@ def _segments_for_line(line: str, *, in_fence: bool = False) -> list[str]:
     return [line]
 
 
+def _match_discards_stdout(segment: str, match: re.Match[str]) -> bool:
+    prior = segment[: match.start()]
+    boundaries = list(_CMD_BOUNDARY_RE.finditer(prior))
+    cmd_head = prior[boundaries[-1].end() :] if boundaries else prior
+    if any(ch in cmd_head for ch in "#<>()"):
+        return False
+    return _CMD_STDOUT_DISCARDED.match(segment, match.end()) is not None
+
+
 def _discards_stdout(line: str, *, in_fence: bool = False) -> bool:
     segments = _segments_for_line(line, in_fence=in_fence)
     found_any = False
@@ -97,7 +108,7 @@ def _discards_stdout(line: str, *, in_fence: bool = False) -> bool:
         if not matches:
             continue
         found_any = True
-        if not all(_CMD_STDOUT_DISCARDED.match(segment, m.end()) is not None for m in matches):
+        if not all(_match_discards_stdout(segment, m) for m in matches):
             return False
     return found_any
 
@@ -256,6 +267,12 @@ def test_docs_reference_only_existing_repo_paths(path: Path) -> None:
         ("gcloud auth application-default print-access-token > token.txt", False),
         ("gcloud auth application-default print-access-token >/dev/null.txt", False),
         ("gcloud secrets versions access latest --secret=example >/dev/null >token.txt", False),
+        ("gcloud secrets versions access latest >/dev/null <input>token.txt", False),
+        ("gcloud secrets versions access latest <input>token.txt >/dev/null", False),
+        ("gcloud secrets versions access latest --secret=<NAME>token.txt >/dev/null", False),
+        ("gcloud secrets versions access latest --secret=<input> >/dev/null", False),
+        ("gcloud secrets versions access latest --secret=example >/dev/null --extra", False),
+        (">token.txt gcloud auth application-default print-access-token >/dev/null", False),
         ("gcloud secrets versions access latest --secret=example >/dev/null >>token.txt", False),
         ("gcloud secrets versions access latest --secret=example >/dev/null 1>token.txt", False),
         ("gcloud secrets versions access latest --secret=example >/dev/null 1>&2", False),
