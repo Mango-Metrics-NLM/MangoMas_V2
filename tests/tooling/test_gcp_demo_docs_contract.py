@@ -42,13 +42,20 @@ _JSON_FENCE: Final[re.Pattern[str]] = re.compile(r"```json\s*\n(.*?)\n\s*```", r
 _REPO_RELPATH_RE: Final[re.Pattern[str]] = re.compile(
     r"(?<![A-Za-z0-9_./-])((?:src|scripts|tests|docs|specs|deploy)(?:/[A-Za-z0-9_.-]+)*/?)"
 )
-_TOKEN_COMMAND: Final[str] = "print-access-token"  # noqa: S105 -- a gcloud verb, not a secret
-# A token command is safe only when its *stdout* is discarded on the same line:
-# `>/dev/null`, `> $null` or `| Out-Null`. A stderr-only redirect (`2>/dev/null`,
-# `2> $null`) or a redirect to a real file still exposes the token, so the
-# redirect must not be preceded by a file-descriptor digit or '&'.
-_STDOUT_DISCARDED: Final[re.Pattern[str]] = re.compile(
-    r"(?<![0-9&])>\s*(?:/dev/null|\$null)\b|\|\s*Out-Null\b", re.IGNORECASE
+_CREDENTIAL_COMMANDS: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:print-access-token|print-identity-token|secrets\s+versions\s+access)\b"
+)
+# Matched at `m.end()` immediately after each credential-emitting gcloud verb.
+# Flags/placeholders (`--secret=<NAME>`) may appear first, but execution must not
+# cross a command separator (`;`, `&`, `|`), inline-code closing backtick, `#`
+# comment, or another `>` redirect before discarding stdout via `>/dev/null`,
+# `> $null`, or `| Out-Null`.
+_CMD_STDOUT_DISCARDED: Final[re.Pattern[str]] = re.compile(
+    r"(?:<[A-Za-z0-9_.-]+>|[^;&|`#<>])*?(?:"
+    r"(?<![0-9&])>\s*(?:/dev/null|\$null)(?=\s|[;&|`#]|\Z)"
+    r"|(?<!\|)\|(?!\|)\s*Out-Null\b"
+    r")",
+    re.IGNORECASE,
 )
 _TURN_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
     {"id", "ts", "agent", "request", "response", "schema_version", "status", "error_code", "error"}
@@ -59,7 +66,10 @@ _CLOUD_LOG_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
 
 
 def _discards_stdout(line: str) -> bool:
-    return _STDOUT_DISCARDED.search(line) is not None
+    matches = list(_CREDENTIAL_COMMANDS.finditer(line))
+    return bool(matches) and all(
+        _CMD_STDOUT_DISCARDED.match(line, m.end()) is not None for m in matches
+    )
 
 
 def _json_fences(path: Path) -> list[str]:
@@ -195,21 +205,43 @@ def test_docs_reference_only_existing_repo_paths(path: Path) -> None:
         ("gcloud auth application-default print-access-token >/dev/null && echo ok", True),
         ("gcloud auth application-default print-access-token > $null", True),
         ("gcloud auth application-default print-access-token | Out-Null; if ($?) { 'ok' }", True),
+        ("gcloud secrets versions access latest --secret=<NAME> >/dev/null && echo ok", True),
+        ("gcloud secrets versions access latest --secret=<NAME> | Out-Null", True),
+        ("gcloud auth print-identity-token >/dev/null", True),
+        (
+            "`gcloud secrets versions access latest --secret=<NAME> >/dev/null` or "
+            "`gcloud secrets versions access latest --secret=<NAME> | Out-Null`",
+            True,
+        ),
         ("gcloud auth application-default print-access-token", False),
+        ("gcloud secrets versions access latest --secret=<NAME>", False),
         ("gcloud auth application-default print-access-token 2>/dev/null", False),
         ("gcloud auth application-default print-access-token 2> $null", False),
         ("gcloud auth application-default print-access-token > token.txt", False),
+        ("gcloud auth application-default print-access-token >/dev/null.txt", False),
+        ("gcloud auth application-default print-access-token && echo ok >/dev/null", False),
+        ("gcloud auth application-default print-access-token; echo ok > $null", False),
+        ("gcloud auth application-default print-access-token || Out-Null", False),
+        ("gcloud auth application-default print-access-token | tee token.txt | Out-Null", False),
+        ("gcloud auth application-default print-access-token # >/dev/null", False),
+        ("gcloud auth application-default print-access-token # | Out-Null", False),
+        (
+            "`gcloud auth print-access-token >/dev/null` or `gcloud auth print-access-token`",
+            False,
+        ),
     ],
 )
-def test_stdout_discard_detection_is_not_fooled_by_stderr_redirects(line: str, safe: bool) -> None:
+def test_stdout_discard_detection_is_not_fooled_by_stderr_or_chained_redirects(
+    line: str, safe: bool
+) -> None:
     assert _discards_stdout(line) is safe
 
 
 @pytest.mark.parametrize("path", _TOKEN_DOCS, ids=lambda p: p.name)
-def test_docs_never_print_a_bearer_token(path: Path) -> None:
+def test_docs_never_print_a_bearer_token_or_secret_payload(path: Path) -> None:
     offending = [
         line.strip()
         for line in path.read_text(encoding="utf-8").splitlines()
-        if _TOKEN_COMMAND in line and not _discards_stdout(line)
+        if _CREDENTIAL_COMMANDS.search(line) and not _discards_stdout(line)
     ]
-    assert offending == [], f"{path.name} prints an OAuth token: {offending}"
+    assert offending == [], f"{path.name} prints an unmasked token or secret payload: {offending}"

@@ -81,8 +81,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
     - §6 clarifies `_vertex_factory`'s service-account JSON contract on `MANGOMAS_LLM__SECRET_REF`
       versus `lmstudio` / `MANGOMAS_AUTH__SECRET_REF`, `NotFound -> None` under strict mode, and
       the exact `Configuration error:` CLI stderr prefix.
-    - No doc prints any part of an OAuth token, and `.env.gcp-demo` documents `MAX_MEAN_COST_USD`'s
-      post-run semantics.
+    - No doc prints any part of an OAuth token or Secret Manager payload, and `.env.gcp-demo`
+      documents `MAX_MEAN_COST_USD`'s post-run semantics.
 
 ### Changed — dev toolchain bumped in lockstep; Dependabot stops raising mirrored hook floors
 
