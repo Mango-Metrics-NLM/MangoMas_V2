@@ -45,16 +45,24 @@ _REPO_RELPATH_RE: Final[re.Pattern[str]] = re.compile(
 _CREDENTIAL_COMMANDS: Final[re.Pattern[str]] = re.compile(
     r"\b(?:print-access-token|print-identity-token|secrets\s+versions\s+access)\b"
 )
+_GFM_CELL_SPLIT: Final[re.Pattern[str]] = re.compile(r"(?<!\\)\|")
+_SAFE_CMD_FRAGMENT: Final[str] = (
+    r"(?:<[A-Za-z0-9_.-]+>|(?<![0-9])2>&1|(?<![0-9])2>\s*(?:/dev/null|\$null)|[^;&|`#<>(){}\\])"
+)
+_CMD_END_LOOKAHEAD: Final[str] = r"(?=[;`#]|&&|\|\||\Z)"
 # Matched at `m.end()` immediately after each credential-emitting gcloud verb.
-# Flags/placeholders (`--secret=<NAME>`) may appear first, but execution must not
-# cross a command separator (`;`, `&`, `|`), inline-code closing backtick, `#`
-# comment, or another `>` redirect before discarding stdout via `>/dev/null`,
-# `> $null`, or `| Out-Null`.
+# Flags/placeholders (`--secret=<NAME>`) may appear first, and benign stderr
+# redirects (`2>&1`, `2>/dev/null`, `2> $null`) may appear before or after a
+# stdout discard redirect, but the remainder of the simple command must reach a
+# command boundary (`;`, `&&`, `||`, closing `` ` ``, `#`, or end-of-segment)
+# without any overriding stdout redirect (`>`, `>>`, `1>`, `1>&2`, `&>`, `*>`)
+# or extra pipeline stage.
 _CMD_STDOUT_DISCARDED: Final[re.Pattern[str]] = re.compile(
-    r"(?:<[A-Za-z0-9_.-]+>|[^;&|`#<>])*?(?:"
-    r"(?<![0-9&])>\s*(?:/dev/null|\$null)(?=\s|[;&|`#]|\Z)"
-    r"|(?<!\|)\|(?!\|)\s*Out-Null\b"
-    r")",
+    rf"{_SAFE_CMD_FRAGMENT}*?(?:"
+    rf"(?<![0-9&*])>\s*(?:/dev/null|\$null)(?=\s|[;`#]|&&|\|\||\Z)"
+    rf"{_SAFE_CMD_FRAGMENT}*{_CMD_END_LOOKAHEAD}"
+    rf"|(?<!\|)\|(?!\|)\s*Out-Null\b\s*{_CMD_END_LOOKAHEAD}"
+    rf")",
     re.IGNORECASE,
 )
 _TURN_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
@@ -65,11 +73,33 @@ _CLOUD_LOG_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
 )
 
 
-def _discards_stdout(line: str) -> bool:
-    matches = list(_CREDENTIAL_COMMANDS.finditer(line))
-    return bool(matches) and all(
-        _CMD_STDOUT_DISCARDED.match(line, m.end()) is not None for m in matches
-    )
+def _gfm_row_cells(stripped_line: str) -> list[str]:
+    raw_cells = _GFM_CELL_SPLIT.split(stripped_line)
+    if raw_cells and raw_cells[0] == "":
+        raw_cells = raw_cells[1:]
+    if raw_cells and raw_cells[-1] == "":
+        raw_cells = raw_cells[:-1]
+    return [cell.replace(r"\|", "|") for cell in raw_cells]
+
+
+def _segments_for_line(line: str, *, in_fence: bool = False) -> list[str]:
+    stripped = line.strip()
+    if not in_fence and stripped.startswith("|") and stripped.endswith("|"):
+        return _gfm_row_cells(stripped)
+    return [line]
+
+
+def _discards_stdout(line: str, *, in_fence: bool = False) -> bool:
+    segments = _segments_for_line(line, in_fence=in_fence)
+    found_any = False
+    for segment in segments:
+        matches = list(_CREDENTIAL_COMMANDS.finditer(segment))
+        if not matches:
+            continue
+        found_any = True
+        if not all(_CMD_STDOUT_DISCARDED.match(segment, m.end()) is not None for m in matches):
+            return False
+    return found_any
 
 
 def _json_fences(path: Path) -> list[str]:
@@ -203,6 +233,7 @@ def test_docs_reference_only_existing_repo_paths(path: Path) -> None:
     ("line", "safe"),
     [
         ("gcloud auth application-default print-access-token >/dev/null && echo ok", True),
+        ("gcloud auth application-default print-access-token >/dev/null 2>&1 && echo ok", True),
         ("gcloud auth application-default print-access-token > $null", True),
         ("gcloud auth application-default print-access-token | Out-Null; if ($?) { 'ok' }", True),
         ("gcloud secrets versions access latest --secret=<NAME> >/dev/null && echo ok", True),
@@ -213,12 +244,31 @@ def test_docs_reference_only_existing_repo_paths(path: Path) -> None:
             "`gcloud secrets versions access latest --secret=<NAME> | Out-Null`",
             True,
         ),
+        (
+            "| err | cause | "
+            "`gcloud secrets versions access latest --secret=<NAME> \\| Out-Null` | fix |",
+            True,
+        ),
         ("gcloud auth application-default print-access-token", False),
         ("gcloud secrets versions access latest --secret=<NAME>", False),
         ("gcloud auth application-default print-access-token 2>/dev/null", False),
         ("gcloud auth application-default print-access-token 2> $null", False),
         ("gcloud auth application-default print-access-token > token.txt", False),
         ("gcloud auth application-default print-access-token >/dev/null.txt", False),
+        ("gcloud secrets versions access latest --secret=example >/dev/null >token.txt", False),
+        ("gcloud secrets versions access latest --secret=example >/dev/null >>token.txt", False),
+        ("gcloud secrets versions access latest --secret=example >/dev/null 1>token.txt", False),
+        ("gcloud secrets versions access latest --secret=example >/dev/null 1>&2", False),
+        ("gcloud secrets versions access latest --secret=example >/dev/null &>token.txt", False),
+        ("gcloud secrets versions access latest --secret=example > $null > token.txt", False),
+        ("gcloud secrets versions access latest --secret=example | Out-Null > token.txt", False),
+        ("echo $(gcloud auth application-default print-access-token) >/dev/null", False),
+        ("gcloud secrets versions access latest --secret=<NAME> \\| Out-Null", False),
+        (
+            "| err | cause | "
+            "`gcloud secrets versions access latest --secret=<NAME> | Out-Null` | fix |",
+            False,
+        ),
         ("gcloud auth application-default print-access-token && echo ok >/dev/null", False),
         ("gcloud auth application-default print-access-token; echo ok > $null", False),
         ("gcloud auth application-default print-access-token || Out-Null", False),
@@ -238,10 +288,39 @@ def test_stdout_discard_detection_is_not_fooled_by_stderr_or_chained_redirects(
 
 
 @pytest.mark.parametrize("path", _TOKEN_DOCS, ids=lambda p: p.name)
+def test_docs_markdown_tables_preserve_column_counts(path: Path) -> None:
+    mismatches: list[tuple[int, int, int]] = []
+    in_fence = False
+    expected_cols: int | None = None
+    for line_no, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        stripped = raw_line.strip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if stripped.startswith("|"):
+            cols = len(_gfm_row_cells(stripped))
+            if expected_cols is None:
+                expected_cols = cols
+            elif cols != expected_cols:
+                mismatches.append((line_no, expected_cols, cols))
+        else:
+            expected_cols = None
+    assert mismatches == [], f"{path.name} has unescaped '|' splitting table cells: {mismatches}"
+
+
+@pytest.mark.parametrize("path", _TOKEN_DOCS, ids=lambda p: p.name)
 def test_docs_never_print_a_bearer_token_or_secret_payload(path: Path) -> None:
-    offending = [
-        line.strip()
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if _CREDENTIAL_COMMANDS.search(line) and not _discards_stdout(line)
-    ]
+    offending: list[str] = []
+    in_fence = False
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if _CREDENTIAL_COMMANDS.search(raw_line) and not _discards_stdout(
+            raw_line, in_fence=in_fence
+        ):
+            offending.append(stripped)
     assert offending == [], f"{path.name} prints an unmasked token or secret payload: {offending}"
