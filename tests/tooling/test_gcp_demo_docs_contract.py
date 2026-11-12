@@ -48,40 +48,52 @@ _CREDENTIAL_COMMANDS: Final[re.Pattern[str]] = re.compile(
 _FENCE_OPEN_RE: Final[re.Pattern[str]] = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _ATX_HEADING_RE: Final[re.Pattern[str]] = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+.*|[ \t]*)$")
 _BLOCKQUOTE_RE: Final[re.Pattern[str]] = re.compile(r"^ {0,3}>")
-_LIST_ITEM_RE: Final[re.Pattern[str]] = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+")
-_HTML_BLOCK_RE: Final[re.Pattern[str]] = re.compile(
-    r"^ {0,3}(?:<!--|<\?|<![A-Z]|<!\[CDATA\[|"
-    r"</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|"
-    r"dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|"
-    r"h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|"
-    r"ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|"
-    r"tr|track|ul|script|style|textarea)(?:[ \t/>]|$))",
-    re.IGNORECASE,
-)
 _THEMATIC_BREAK_RE: Final[re.Pattern[str]] = re.compile(
     r"^ {0,3}(?:-[ \t]*){3,}$|^ {0,3}(?:_[ \t]*){3,}$|^ {0,3}(?:\*[ \t]*){3,}$"
 )
+_LIST_ITEM_RE: Final[re.Pattern[str]] = re.compile(
+    r"^ {0,3}(?:[-+*]|[0-9]{1,9}[.)])(?:[ \t]+.*|[ \t]*)$"
+)
+_HTML_BLOCK_TAGS: Final[str] = (
+    r"pre|script|style|textarea|address|article|aside|base|basefont|blockquote|body|"
+    r"caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|"
+    r"figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|"
+    r"link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|"
+    r"summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul"
+)
+_HTML_BLOCK_START_RE: Final[re.Pattern[str]] = re.compile(
+    rf"^ {{0,3}}(?:"
+    rf"<!--|<\?|<![A-Za-z]|<!\[CDATA\["
+    rf"|</?(?:{_HTML_BLOCK_TAGS})(?:[ \t/>]|$)"
+    rf"|(?:<[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[^>\n]*?)?/?>|</[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*$"
+    rf")",
+    re.IGNORECASE,
+)
 _GFM_DELIMITER_CELL_RE: Final[re.Pattern[str]] = re.compile(r"^\s*:?-+:?\s*$")
 _BACKTICK_RUN_RE: Final[re.Pattern[str]] = re.compile(r"`+")
-_CMD_END_LOOKAHEAD: Final[str] = r"(?=[;]|&&|\|\||\Z|(?<=\s)#)"
-_FLAG_PLACEHOLDER: Final[str] = r"(?<=\s)--[a-z0-9-]+=<[A-Z][A-Z0-9_]*>(?=\s)"
+# `#` starts a shell comment in Bash/PowerShell only at a token boundary (after ASCII blank).
+_SHELL_BLANK: Final[str] = r"[ \t]"
+_CMD_END_LOOKAHEAD: Final[str] = rf"(?=;|(?<={_SHELL_BLANK})#|&&|\|\||\Z)"
+_FLAG_PLACEHOLDER: Final[str] = (
+    rf"(?<={_SHELL_BLANK})--[a-z0-9-]+=<[A-Z][A-Z0-9_]*>(?={_SHELL_BLANK})"
+)
 _QUOTED_SAFE_VALUE: Final[str] = r"(?:\"[A-Za-z0-9_./:-]+\"|'[A-Za-z0-9_./:-]+')"
 _STDERR_DISCARD: Final[str] = (
-    r"(?<![0-9&*])2(?:>&1|>\s*(?:/dev/null|(?i:\$null)))"
-    r"(?=\s|;|&&|\|\||\Z|(?<=\s)#)"
+    rf"(?<={_SHELL_BLANK})2(?:>&1|>{_SHELL_BLANK}*(?:/dev/null|(?i:\$null)))"
+    rf"(?={_SHELL_BLANK}|;|&&|\|\||\Z)"
 )
-_PLAIN_PREFIX_CHAR: Final[str] = r"""[^;&|`#<>(){}\\"'\n]"""
+_PLAIN_PREFIX_CHAR: Final[str] = r"""[^;&|`#<>(){}\\"'\r\n]"""
 _PREFIX_FRAGMENT: Final[str] = (
     rf"(?:{_FLAG_PLACEHOLDER}|{_STDERR_DISCARD}|{_QUOTED_SAFE_VALUE}|{_PLAIN_PREFIX_CHAR})"
 )
-_POST_DISCARD_TAIL: Final[str] = rf"(?:\s+{_STDERR_DISCARD})*\s*"
+_POST_DISCARD_TAIL: Final[str] = rf"(?:{_SHELL_BLANK}+{_STDERR_DISCARD})*{_SHELL_BLANK}*"
 # Matched on pure shell snippets (fenced lines or extracted CommonMark code spans),
 # so `` ` `` is always a shell metacharacter and never a Markdown delimiter.
 _CMD_STDOUT_DISCARDED: Final[re.Pattern[str]] = re.compile(
     rf"{_PREFIX_FRAGMENT}*?(?:"
-    rf"(?<![0-9&*])>\s*(?:/dev/null|(?i:\$null))(?=\s|;|&&|\|\||\Z|(?<=\s)#)"
+    rf"(?<![0-9&*])>{_SHELL_BLANK}*(?:/dev/null|(?i:\$null))(?={_SHELL_BLANK}|;|&&|\|\||\Z)"
     rf"{_POST_DISCARD_TAIL}{_CMD_END_LOOKAHEAD}"
-    rf"|(?<!\|)\|(?!\|)\s*(?i:Out-Null)\b\s*{_CMD_END_LOOKAHEAD}"
+    rf"|(?<!\|)\|(?!\|){_SHELL_BLANK}*(?i:Out-Null)\b{_SHELL_BLANK}*{_CMD_END_LOOKAHEAD}"
     rf")"
 )
 _TURN_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
@@ -168,9 +180,9 @@ def _interrupts_gfm_table(raw_line: str) -> bool:
     return bool(
         _ATX_HEADING_RE.match(raw_line)
         or _BLOCKQUOTE_RE.match(raw_line)
-        or _LIST_ITEM_RE.match(raw_line)
-        or _HTML_BLOCK_RE.match(raw_line)
         or _THEMATIC_BREAK_RE.match(raw_line)
+        or _LIST_ITEM_RE.match(raw_line)
+        or _HTML_BLOCK_START_RE.match(raw_line)
     )
 
 
@@ -203,7 +215,7 @@ def _iter_doc_lines(text: str) -> list[tuple[int, str, bool, int | None]]:
             raw_line.strip()
             and not _interrupts_gfm_table(raw_line)
             and idx + 1 < len(lines)
-            and _is_fence_open(lines[idx + 1]) is None
+            and not _interrupts_gfm_table(lines[idx + 1])
         ):
             delim_cols = _gfm_delimiter_cols(lines[idx + 1])
             if delim_cols is not None:
@@ -461,7 +473,6 @@ def test_docs_reference_only_existing_repo_paths(path: Path) -> None:
         ("gcloud auth application-default print-access-token >/dev/null && echo ok", True),
         ("gcloud auth application-default print-access-token >/dev/null 2>&1 && echo ok", True),
         ("gcloud auth application-default print-access-token > $null", True),
-        ("gcloud auth application-default print-access-token >/dev/null # discarded", True),
         ("gcloud auth application-default print-access-token | Out-Null; if ($?) { 'ok' }", True),
         ("gcloud secrets versions access latest --secret=<NAME> >/dev/null && echo ok", True),
         ("gcloud secrets versions access latest --secret=<NAME> | Out-Null", True),
@@ -495,11 +506,6 @@ def test_docs_reference_only_existing_repo_paths(path: Path) -> None:
         ("gcloud secrets versions access latest --secret=example >/dev/null &>token.txt", False),
         ("gcloud secrets versions access latest --secret=example > $null > token.txt", False),
         ("gcloud secrets versions access latest --secret=example | Out-Null > token.txt", False),
-        (
-            "gcloud auth application-default print-access-token "
-            ">/dev/null#suffix >token.txt",
-            False,
-        ),
         ("echo $(gcloud auth application-default print-access-token) >/dev/null", False),
         ('gcloud secrets versions access latest --filter="x >/dev/null ;"', False),
         ('echo "gcloud auth application-default print-access-token >/dev/null ;"', False),
@@ -531,14 +537,39 @@ def test_stdout_discard_detection_is_not_fooled_by_stderr_or_chained_redirects(
     assert _discards_stdout(line) is safe
 
 
-def test_fenced_shell_backticks_do_not_act_as_markdown_delimiters() -> None:
-    leaking = "gcloud auth application-default print-access-token >/dev/null`printf ''` >token.txt"
-    assert _discards_stdout(leaking, in_fence=True) is False
-    doc = f"```bash\n{leaking}\n```\n"
-    assert _find_unmasked_credential_lines(doc) == [leaking]
+def test_fenced_shell_backticks_and_hash_suffixes_do_not_bypass_discard_check() -> None:
+    backtick_leak = (
+        "gcloud auth application-default print-access-token >/dev/null`printf ''` >token.txt"
+    )
+    hash_suffix_leak = (
+        "gcloud auth application-default print-access-token >/dev/null#suffix >token.txt"
+    )
+    out_null_hash_leak = (
+        "gcloud auth application-default print-access-token | Out-Null#suffix >token.txt"
+    )
+    stderr_hash_leak = (
+        "gcloud auth application-default print-access-token >/dev/null 2>&1#suffix >token.txt"
+    )
+    nbsp_hash_leak = (
+        "gcloud auth application-default print-access-token >/dev/null\u00a0#suffix >token.txt"
+    )
+    for leaking in (
+        backtick_leak,
+        hash_suffix_leak,
+        out_null_hash_leak,
+        stderr_hash_leak,
+        nbsp_hash_leak,
+    ):
+        assert _discards_stdout(leaking, in_fence=True) is False
+        assert _discards_stdout(leaking, in_fence=False) is False
+        doc = f"```bash\n{leaking}\n```\n"
+        assert _find_unmasked_credential_lines(doc) == [leaking]
+
+    spaced_comment = "gcloud auth application-default print-access-token >/dev/null # >token.txt"
+    assert _discards_stdout(spaced_comment, in_fence=True) is True
 
 
-def test_gfm_table_rows_without_outer_pipes_reject_unescaped_pipeline_splits() -> None:
+def test_gfm_table_rows_without_outer_pipes_and_block_interruptions() -> None:
     unescaped_table = (
         "| Symptom | Cause | Diagnostic | Remediation |\n"
         "|---|---|---|---|\n"
@@ -557,19 +588,20 @@ def test_gfm_table_rows_without_outer_pipes_reject_unescaped_pipeline_splits() -
     assert _find_table_column_mismatches(escaped_table) == []
     assert _find_unmasked_credential_lines(escaped_table) == []
 
-
-@pytest.mark.parametrize(
-    "interruption",
-    [
+    for interruption in (
         "- Follow-up instruction",
-        "1. Follow-up instruction",
-        "<div>Follow-up content</div>",
-        "<!-- Follow-up comment -->",
-    ],
-)
-def test_gfm_tables_end_at_list_and_html_block_interruptions(interruption: str) -> None:
-    document = f"| Header | Value |\n|---|---|\n{interruption}\n"
-    assert _find_table_column_mismatches(document) == []
+        "-",
+        "1. Numbered follow-up",
+        "<div>Note block</div>",
+        "<pre>raw block</pre>",
+        "<details><summary>More</summary></details>",
+        "<!-- trailing comment -->",
+    ):
+        table_then_block = f"| Col A | Col B |\n|---|---|\n| 1 | 2 |\n{interruption}\n"
+        assert _find_table_column_mismatches(table_then_block) == []
+
+    inline_html_row_mismatch = "| Col A | Col B |\n|---|---|\n<code>err</code> | cause | extra\n"
+    assert _find_table_column_mismatches(inline_html_row_mismatch) == [(3, 2, 3)]
 
 
 @pytest.mark.parametrize("path", _TOKEN_DOCS, ids=lambda p: p.name)
