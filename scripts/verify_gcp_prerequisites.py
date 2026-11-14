@@ -43,7 +43,6 @@ import argparse
 import enum
 import functools
 import inspect
-import ipaddress
 import json
 import logging
 import math
@@ -55,8 +54,10 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
-from urllib.parse import parse_qsl, quote, quote_plus
+from urllib.parse import quote, quote_plus
 
+import _gcp_postgres_probe
+import _logging
 import _stdio
 
 from mangomas.config import Settings
@@ -68,10 +69,9 @@ EXIT_FAILURE: Final[int] = 1
 EXIT_USAGE_ERROR: Final[int] = 2
 DEFAULT_REPORT_WIDTH: Final[int] = 78
 
-MIN_TCP_PORT: Final[int] = 1
-MAX_TCP_PORT: Final[int] = 65535
-# libpq's documented default; used only when MANGOMAS_DB__URL names no port.
-LIBPQ_DEFAULT_PORT: Final[int] = 5432
+MIN_TCP_PORT: Final[int] = _gcp_postgres_probe.MIN_TCP_PORT
+MAX_TCP_PORT: Final[int] = _gcp_postgres_probe.MAX_TCP_PORT
+LIBPQ_DEFAULT_PORT: Final[int] = _gcp_postgres_probe.LIBPQ_DEFAULT_PORT
 HTTP_BAD_REQUEST: Final[int] = 400
 HTTP_FORBIDDEN: Final[int] = 403
 
@@ -125,25 +125,13 @@ PROBE_CB_PROJECT: Final[str] = "cb_project"
 PROBE_CB_ACCOUNT: Final[str] = "cb_account"
 PROBE_SERVICE_USAGE: Final[str] = "service_usage"
 
-# The schemes the runtime accepts: asyncpg takes postgresql:// and postgres://
-# (adapters/storage/postgres.py::_normalise_dsn rewrites the latter).
-POSTGRES_SCHEMES: Final[frozenset[str]] = frozenset({"postgres", "postgresql"})
-# RFC 3986: the authority ends at the first of these delimiters.
-URL_AUTHORITY_DELIMITERS: Final[str] = "/?#"
-# asyncpg honours these query parameters over the authority; the probe does not.
-POSTGRES_QUERY_ENDPOINT_OVERRIDES: Final[frozenset[str]] = frozenset({"host", "port", "service"})
-# Authority characters this probe cannot interpret like asyncpg does:
-# ',' (multi-host lists) and '%' (percent-encoded hosts, e.g. socket paths).
-POSTGRES_UNSUPPORTED_HOST_CHARS: Final[str] = ",%"
-REDACTED_PORT_PLACEHOLDER: Final[str] = "<PORT>"
-PERCENT_ENCODING_HINT: Final[str] = (
-    "Percent-encode reserved characters in the user/password "
-    "('@' -> %40, '/' -> %2F, '?' -> %3F, '#' -> %23, ':' -> %3A) and any '@' in the "
-    "database path or query, as libpq/asyncpg require."
-)
-UNSUPPORTED_ENDPOINT_HINT: Final[str] = (
-    "Probe one TCP endpoint explicitly: --db-url postgresql://<user>@<HOST>:<PORT>/<db>"
-)
+POSTGRES_SCHEMES = _gcp_postgres_probe.POSTGRES_SCHEMES
+URL_AUTHORITY_DELIMITERS = _gcp_postgres_probe.URL_AUTHORITY_DELIMITERS
+POSTGRES_QUERY_ENDPOINT_OVERRIDES = _gcp_postgres_probe.POSTGRES_QUERY_ENDPOINT_OVERRIDES
+POSTGRES_UNSUPPORTED_HOST_CHARS = _gcp_postgres_probe.POSTGRES_UNSUPPORTED_HOST_CHARS
+REDACTED_PORT_PLACEHOLDER = _gcp_postgres_probe.REDACTED_PORT_PLACEHOLDER
+PERCENT_ENCODING_HINT = _gcp_postgres_probe.PERCENT_ENCODING_HINT
+UNSUPPORTED_ENDPOINT_HINT = _gcp_postgres_probe.UNSUPPORTED_ENDPOINT_HINT
 
 
 class CheckStatus(enum.StrEnum):
@@ -885,243 +873,41 @@ def check_required_apis(
     return check_required_apis_by_project(session, {project: list(apis)}, timeout)
 
 
-def _parse_bracketed_ipv6(host_port: str) -> tuple[str, str | None]:
-    """Extract ``(ipv6_host, raw_port)`` from a bracketed authority ``[addr][:port]``."""
-    closing = host_port.find("]")
-    if closing == -1:
-        raise ValueError("MANGOMAS_DB__URL does not parse: unterminated IPv6 literal.")
-    host = host_port[1:closing]
-    rest = host_port[closing + 1 :]
-    try:
-        ipaddress.IPv6Address(host)
-    except ipaddress.AddressValueError as exc:
-        raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.") from exc
-    if rest.startswith(":"):
-        return host, rest[1:]
-    if not rest:
-        return host, None
-    raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.")
-
-
-def _parse_host_and_port(host_port: str, *, has_userinfo: bool = True) -> tuple[str, str | None]:
-    """Isolate host and raw port string from authority ``host_port``."""
-    if host_port.startswith("["):
-        return _parse_bracketed_ipv6(host_port)
-    if "[" in host_port or "]" in host_port:
-        raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.")
-    if ":" not in host_port:
-        return host_port, None
-    host, _, raw_port = host_port.partition(":")
-    if ":" in raw_port:
-        if not has_userinfo:
-            raise ValueError(
-                "MANGOMAS_DB__URL is ambiguous: multiple colons without user@ separator."
-            )
-        raise ValueError("MANGOMAS_DB__URL does not parse: invalid host format.")
-    return host, raw_port
-
-
-def _postgres_authority(db_url: str) -> tuple[str, bool]:
-    """Return ``(host[:port] text, authority carried userinfo)`` per RFC 3986.
-
-    The authority ends at the first ``/``, ``?`` or ``#``. asyncpg splits
-    userinfo at the **first** ``@`` (``netloc.partition('@')``) while RFC 3986
-    readers take the last, so any authority with more than one ``@`` (an
-    unencoded ``@`` in the password) is ambiguous. So is an ``@`` only after the
-    authority: an unencoded ``/``, ``?`` or ``#`` in the password, or an
-    unencoded ``@`` in the path/query. Shapes the runtime resolves differently
-    from a plain TCP probe (``?host=``/``?port=``/``?service=`` overrides,
-    multi-host lists, percent-encoded hosts) are refused as unsupported rather
-    than guessed. Every ``ValueError`` message is static.
-    """
-    if not db_url or not db_url.strip():
-        raise ValueError("MANGOMAS_DB__URL names no host.")
-    url = db_url.strip()
-    if "://" not in url:
-        raise ValueError("MANGOMAS_DB__URL does not parse: missing scheme.")
-    scheme, _, after_scheme = url.partition("://")
-    if scheme.lower() not in POSTGRES_SCHEMES:
-        raise ValueError("MANGOMAS_DB__URL does not parse: unsupported scheme.")
-    end = next(
-        (i for i, char in enumerate(after_scheme) if char in URL_AUTHORITY_DELIMITERS),
-        len(after_scheme),
-    )
-    authority, remainder = after_scheme[:end], after_scheme[end:]
-    at_signs = authority.count("@")
-    if at_signs > 1 or (at_signs == 0 and "@" in remainder):
-        raise ValueError("MANGOMAS_DB__URL is ambiguous: '@' outside a single user@ separator.")
-    host_port = authority.partition("@")[2] if at_signs else authority
-    query = remainder.partition("?")[2].partition("#")[0]
-    overridden = {key.lower() for key, _ in parse_qsl(query, keep_blank_values=True)}
-    if overridden & POSTGRES_QUERY_ENDPOINT_OVERRIDES or any(
-        char in host_port for char in POSTGRES_UNSUPPORTED_HOST_CHARS
-    ):
-        raise ValueError("MANGOMAS_DB__URL is not probed: unsupported endpoint form.")
-    return host_port, bool(at_signs)
-
-
-def _parse_postgres_endpoint(db_url: str) -> tuple[str, int]:
-    """Safely extract (host, port) from a database URL without leaking credentials.
-
-    Handles percent-encoded userinfo, IPv6 literals, and omitted ports.
-    Raises ValueError with a sanitized message.
-    """
-    host_port, has_userinfo = _postgres_authority(db_url)
-
-    if not host_port:
-        raise ValueError("MANGOMAS_DB__URL names no host.")
-
-    host, raw_port = _parse_host_and_port(host_port, has_userinfo=has_userinfo)
-    if not host:
-        raise ValueError("MANGOMAS_DB__URL names no host.")
-    if host.isascii() and host.isdigit():
-        # A bare all-digit "host" is an inet_aton shorthand no database uses; it
-        # is what a password containing '@' leaves when '@host' was forgotten.
-        raise ValueError("MANGOMAS_DB__URL is ambiguous: all-digit host.")
-
-    if raw_port is None:
-        port = LIBPQ_DEFAULT_PORT
-    else:
-        # int() also accepts '+5433', ' 5433', '5_433' and non-ASCII digits;
-        # libpq and asyncpg accept only plain ASCII digits.
-        if not (raw_port.isascii() and raw_port.isdigit()):
-            raise ValueError("MANGOMAS_DB__URL does not parse: invalid port.")
-        port = int(raw_port)
-
-    if not (MIN_TCP_PORT <= port <= MAX_TCP_PORT):
-        if port == 0:
-            raise ValueError("Invalid port 0 (1-65535).")
-        raise ValueError("MANGOMAS_DB__URL does not parse: port out of range (1-65535).")
-
-    return host, port
-
-
-@dataclass(frozen=True)
-class _PostgresParseFailure:
-    """A sanitized, static report row for one class of URL parse failure."""
-
-    needle: str
-    message: str
-    details: dict[str, Any] = field(default_factory=lambda: {"host": None, "port": None})
-    remediation: str | None = None
-
-
-# First match wins: more specific needles come before their prefixes.
-_POSTGRES_PARSE_FAILURES: Final[tuple[_PostgresParseFailure, ...]] = (
-    _PostgresParseFailure(
-        "ambiguous",
-        "MANGOMAS_DB__URL is ambiguous: its user/password and host cannot be told apart "
-        "the way asyncpg reads them, so an unencoded reserved character is likely in the "
-        "password, path or query.",
-        remediation=PERCENT_ENCODING_HINT,
-    ),
-    _PostgresParseFailure(
-        "not probed",
-        "MANGOMAS_DB__URL is not probed: it uses a multi-host list, a percent-encoded "
-        "host, or a ?host=/?port=/?service= override, which asyncpg resolves differently from "
-        "a single TCP probe.",
-        remediation=UNSUPPORTED_ENDPOINT_HINT,
-    ),
-    _PostgresParseFailure("names no host", "MANGOMAS_DB__URL names no host."),
-    _PostgresParseFailure(
-        "invalid port 0", "Invalid port 0 (1-65535).", details={"host": None, "port": 0}
-    ),
-    _PostgresParseFailure(
-        "unterminated ipv6", "MANGOMAS_DB__URL does not parse: unterminated IPv6 literal."
-    ),
-    _PostgresParseFailure(
-        "invalid host format", "MANGOMAS_DB__URL does not parse: invalid host format."
-    ),
-    _PostgresParseFailure(
-        "port out of range",
-        "MANGOMAS_DB__URL does not parse: port out of range (1-65535).",
-        remediation=PERCENT_ENCODING_HINT,
-    ),
-    _PostgresParseFailure(
-        "invalid port",
-        "MANGOMAS_DB__URL does not parse: invalid port.",
-        remediation=PERCENT_ENCODING_HINT,
-    ),
-    _PostgresParseFailure("missing scheme", "MANGOMAS_DB__URL does not parse: missing scheme."),
-    _PostgresParseFailure(
-        "unsupported scheme", "MANGOMAS_DB__URL does not parse: unsupported scheme."
-    ),
-)
-
-_REDACTED_ENDPOINT_LABEL: Final[str] = "the MANGOMAS_DB__URL endpoint"
-_REDACTED_ENDPOINT_NOTE: Final[str] = (
-    "host/port withheld: the URL has no user@ part, so a 'user:password' typed "
-    "without '@host' would read as host:port"
-)
+_parse_bracketed_ipv6 = _gcp_postgres_probe.parse_bracketed_ipv6
+_parse_host_and_port = _gcp_postgres_probe.parse_host_and_port
+_postgres_authority = _gcp_postgres_probe.postgres_authority
+_parse_postgres_endpoint = _gcp_postgres_probe.parse_postgres_endpoint
+_PostgresParseFailure = _gcp_postgres_probe.PostgresParseFailure
+_POSTGRES_PARSE_FAILURES = _gcp_postgres_probe.POSTGRES_PARSE_FAILURES
+_REDACTED_ENDPOINT_LABEL = _gcp_postgres_probe.REDACTED_ENDPOINT_LABEL
+_REDACTED_ENDPOINT_NOTE = _gcp_postgres_probe.REDACTED_ENDPOINT_NOTE
 
 
 def _postgres_parse_failure(exc: ValueError) -> CheckResult:
-    """Map a parser error to its static row; the URL never reaches the report."""
-    msg_lower = str(exc).lower()
-    failure = next(
-        (f for f in _POSTGRES_PARSE_FAILURES if f.needle in msg_lower),
-        _PostgresParseFailure("", "MANGOMAS_DB__URL does not parse."),
-    )
+    outcome = _gcp_postgres_probe.postgres_parse_failure_outcome(exc)
     return CheckResult(
         "postgres_endpoint",
-        CheckStatus.FAIL,
-        failure.message,
-        details=dict(failure.details),
-        remediation=failure.remediation,
+        CheckStatus(outcome.status),
+        outcome.message,
+        details=outcome.details,
+        remediation=outcome.remediation,
     )
 
 
 def check_postgres_endpoint(db_url: str | None, timeout: float) -> CheckResult:
-    """TCP-probe the host/port of a ``postgres*://`` URL.
-
-    The URL itself is never echoed: it may carry a password in its userinfo.
-    When the authority has no ``user@`` part the host and port are withheld
-    too, because ``postgresql://user:12345/db`` (a forgotten ``@host``) is
-    indistinguishable from ``postgresql://host:12345/db``.
-    """
-    name = "postgres_endpoint"
-    if db_url is None:
-        return CheckResult(name, CheckStatus.SKIP, "Skipped: storage provider is not postgres.")
-
-    try:
-        _, has_userinfo = _postgres_authority(db_url)
-        host, port = _parse_postgres_endpoint(db_url)
-    except ValueError as exc:
-        return _postgres_parse_failure(exc)
-
-    if has_userinfo:
-        label = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
-        details: dict[str, Any] = {"host": host, "port": port}
-        port_hint = str(port)
-        suffix = ""
-    else:
-        label = _REDACTED_ENDPOINT_LABEL
-        details = {"host": None, "port": None, "redacted": True}
-        port_hint = REDACTED_PORT_PLACEHOLDER
-        suffix = f"; {_REDACTED_ENDPOINT_NOTE}"
-    logger.debug("probe=postgres_tcp redacted=%s", not has_userinfo)
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            pass
-    except (OSError, ValueError, OverflowError) as exc:
-        error = type(exc).__name__
-        logger.debug("probe=postgres_tcp error=%s redacted=%s", error, not has_userinfo)
-        return CheckResult(
-            name,
-            CheckStatus.FAIL,
-            f"Nothing accepts TCP on {label} ({error}{suffix}).",
-            details={**details, "error": error},
-            remediation=(
-                "Start the proxy: cloud-sql-proxy <PROJECT>:<REGION>:<INSTANCE> "
-                f"--port {port_hint}\n"
-                "Or use SQLite locally: MANGOMAS_DB__PROVIDER=sqlite"
-            ),
-        )
+    """TCP-probe the host/port of a ``postgres*://`` URL without leaking credentials."""
+    outcome = _gcp_postgres_probe.probe_postgres_endpoint(
+        db_url,
+        timeout,
+        connect_fn=socket.create_connection,
+        log=logger,
+    )
     return CheckResult(
-        name,
-        CheckStatus.PASS,
-        f"TCP reachable at {label} (proxy or local Postgres{suffix}).",
-        details=details,
+        "postgres_endpoint",
+        CheckStatus(outcome.status),
+        outcome.message,
+        details=outcome.details,
+        remediation=outcome.remediation,
     )
 
 
@@ -1254,11 +1040,10 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
 
 def _configure_logging(verbose: bool) -> None:
     """Set module logger level directly so ``-v`` works even when root handlers exist."""
-    logger.setLevel(logging.DEBUG if verbose else logging.WARNING)
-    if not logger.handlers and not logging.getLogger().handlers:
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-        logger.addHandler(handler)
+    _logging.configure_script_logging(
+        level=logging.DEBUG if verbose else logging.WARNING,
+        module_logger=logger,
+    )
 
 
 def main(

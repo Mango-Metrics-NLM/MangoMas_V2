@@ -70,6 +70,11 @@ def resolve_sandbox_argv(
     allow_host_interpreter: bool = False,
 ) -> list[str]:
     """Rewrite a leading ``{python}``/``python`` token and reject host paths in sandboxes."""
+    if not argv:
+        raise ToolExecutionError(
+            f"Sandbox command argv for backend {backend_name!r} must not be empty",
+            tool_name="repair_sandbox",
+        )
     head = argv[0]
     if head in PYTHON_ARGV_TOKENS:
         return [interpreter, *argv[1:]]
@@ -83,6 +88,28 @@ def resolve_sandbox_argv(
 
 
 SANDBOX_IMPORT_SUBDIRS: Final[tuple[str, ...]] = ("src", "")
+_FORBIDDEN_PYTHON_STARTUP_STEMS: Final[frozenset[str]] = frozenset(
+    {"sitecustomize", "usercustomize"}
+)
+_FORBIDDEN_PYTHON_STARTUP_SUFFIX: Final[str] = ".pth"
+
+
+def reject_candidate_python_startup_hooks(cwd: Path) -> None:
+    """Refuse staging trees that carry candidate-controlled Python startup hooks."""
+    if not cwd.is_dir():
+        return
+    resolved = cwd.resolve()
+    for entry in resolved.rglob("*"):
+        name = entry.name.lower()
+        stem = name.split(".", 1)[0]
+        if stem in _FORBIDDEN_PYTHON_STARTUP_STEMS or name.endswith(
+            _FORBIDDEN_PYTHON_STARTUP_SUFFIX
+        ):
+            rel = entry.relative_to(resolved).as_posix()
+            raise ToolExecutionError(
+                f"Staging workspace contains forbidden Python startup hook {rel!r}",
+                tool_name="repair_sandbox",
+            )
 
 
 def sandbox_pythonpath(work_dir: str) -> str:

@@ -65,7 +65,8 @@ def convert_row(row: Any, *, index: int = 1, agent: str | None = None) -> dict[s
         raise ValueError(
             f"row {row_id!r}: 'expected' must be a string, got {type(expected).__name__}"
         )
-    metadata = row.get("metadata") or {}
+    raw_metadata = row.get("metadata")
+    metadata = {} if raw_metadata is None else raw_metadata
     if not isinstance(metadata, dict):
         raise ValueError(
             f"row {row_id!r}: 'metadata' must be an object, got {type(metadata).__name__}"

@@ -389,6 +389,9 @@ from mangomas.config.repair import (
 from mangomas.config.repair import (
     RepairSettings as RepairSettings,
 )
+from mangomas.config.repair import (
+    validate_cli_token as validate_cli_token,
+)
 from mangomas.config.secrets import (
     DEFAULT_GCP_SECRET_VERSION as DEFAULT_GCP_SECRET_VERSION,
 )
@@ -662,4 +665,5 @@ __all__ = [
     "WorkflowSettings",
     "get_settings",
     "policy_snapshot_hash_for",
+    "validate_cli_token",
 ]

@@ -26,6 +26,7 @@ from mangomas.errors import ConfigError
 from mangomas.eval.judge_calibration import JudgeStatus
 from mangomas.eval.provenance import RunProvenance
 from mangomas.eval.runner import EvalReport, EvalRowResult, SliceStats
+from mangomas.utils.json_path import finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -136,29 +137,67 @@ def _read_baseline(path: Path) -> EvalReport:
     return _report_from_dict(data)
 
 
+def _require_finite_number(value: Any, *, field_name: str) -> float:
+    result = finite_number(value)
+    if result is None:
+        raise ValueError(f"{field_name} must be a finite number; got {value!r}")
+    return result
+
+
+def _require_non_bool_int(value: Any, *, field_name: str, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be an integer; got {type(value).__name__}")
+    if value < minimum:
+        raise ValueError(f"{field_name} must be >= {minimum}; got {value!r}")
+    return value
+
+
+def _require_optional_finite_number(value: Any, *, field_name: str) -> float | None:
+    return None if value is None else _require_finite_number(value, field_name=field_name)
+
+
 def _report_from_dict(data: Mapping[str, Any]) -> EvalReport:
+    if not isinstance(data, Mapping):
+        raise ConfigError(
+            f"Invalid baseline report structure: expected mapping, got {type(data).__name__}"
+        )
     try:
         rows = [_row_from_dict(r) for r in data["rows"]]
+        raw_slices = data.get("slices")
+        if raw_slices is None:
+            slices: dict[str, SliceStats] = {}
+        elif not isinstance(raw_slices, Mapping):
+            raise TypeError(f"slices must be a mapping or null; got {type(raw_slices).__name__}")
+        else:
+            slices = {
+                name: SliceStats(**{k: v for k, v in raw.items() if k in _SLICE_FIELDS})
+                for name, raw in raw_slices.items()
+            }
         return EvalReport(
             scorer=data["scorer"],
             agent_name=data["agent_name"],
-            dataset_size=data["dataset_size"],
-            passed=data["passed"],
-            failed=data["failed"],
-            errored=data["errored"],
-            mean_score=data["mean_score"],
-            duration_ms=data["duration_ms"],
+            dataset_size=_require_non_bool_int(data["dataset_size"], field_name="dataset_size"),
+            passed=_require_non_bool_int(data["passed"], field_name="passed"),
+            failed=_require_non_bool_int(data["failed"], field_name="failed"),
+            errored=_require_non_bool_int(data["errored"], field_name="errored"),
+            mean_score=_require_finite_number(data["mean_score"], field_name="mean_score"),
+            duration_ms=_require_finite_number(data["duration_ms"], field_name="duration_ms"),
             rows=rows,
             target_name=data.get("target_name", ""),
-            mean_cost_usd=data.get("mean_cost_usd"),
+            mean_cost_usd=_require_optional_finite_number(
+                data.get("mean_cost_usd"), field_name="mean_cost_usd"
+            ),
             run=_run_from_dict(data.get("run")),
-            slices={
-                name: SliceStats(**{k: v for k, v in raw.items() if k in _SLICE_FIELDS})
-                for name, raw in (data.get("slices") or {}).items()
-            },
-            trials=data.get("trials", DEFAULT_EVAL_TRIALS),
-            pass_pow_k=data.get("pass_pow_k"),
-            trial_pass_rate=data.get("trial_pass_rate"),
+            slices=slices,
+            trials=_require_non_bool_int(
+                data.get("trials", DEFAULT_EVAL_TRIALS), field_name="trials", minimum=1
+            ),
+            pass_pow_k=_require_optional_finite_number(
+                data.get("pass_pow_k"), field_name="pass_pow_k"
+            ),
+            trial_pass_rate=_require_optional_finite_number(
+                data.get("trial_pass_rate"), field_name="trial_pass_rate"
+            ),
             judge=_judge_from_dict(data.get("judge")),
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:

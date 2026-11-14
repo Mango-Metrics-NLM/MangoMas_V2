@@ -31,6 +31,8 @@ import sys
 from pathlib import Path
 from typing import Final
 
+import _logging
+
 try:
     import httpx
 except ImportError:  # bare web-session interpreter — degrade, never die
@@ -95,27 +97,20 @@ async def _probe_lmstudio(
 
 
 def _configure_logging() -> None:
-    if not _MANGOMAS_AVAILABLE:
-        raise ImportError("mangomas is not installed — telemetry unavailable")
-    cfg = get_settings()
-    configure_telemetry(
-        service_name=cfg.harness.metrics_namespace,
-        log_level=cfg.harness.hook_log_level,
-        log_format=cfg.log.format,
-        exporter=cfg.telemetry.exporter,
+    _logging.configure_harness_telemetry_logging(
+        logger,
+        available=_MANGOMAS_AVAILABLE,
+        fallback_message="Harness logging not configured; falling back to basicConfig",
+        include_exc_info=False,
+        extra_on_error=True,
+        get_settings_fn=get_settings if _MANGOMAS_AVAILABLE else None,
+        configure_telemetry_fn=configure_telemetry if _MANGOMAS_AVAILABLE else None,
     )
 
 
 def main() -> int:
     """Run the session-start checks; return ``EXIT_OK`` unconditionally."""
-    try:
-        _configure_logging()
-    except Exception as exc:  # never fail the session over telemetry setup
-        logging.basicConfig(level=logging.INFO)
-        logger.warning(
-            "Harness logging not configured; falling back to basicConfig",
-            extra={"error": str(exc)},
-        )
+    _configure_logging()
 
     repo_root = Path(__file__).resolve().parents[1]
     _check_venv(repo_root)

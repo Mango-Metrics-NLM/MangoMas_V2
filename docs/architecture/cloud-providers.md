@@ -36,7 +36,7 @@ The meta-extra `pip install -e ".[cloud]"` installs all three.
 | `MANGOMAS_LLM__PROVIDER` | `lmstudio` | Set to `vertex` to activate |
 | `MANGOMAS_LLM__PROJECT_ID` | _(none)_ | **Required.** GCP project that owns the model |
 | `MANGOMAS_LLM__LOCATION` | `us-central1` | Vertex region |
-| `MANGOMAS_LLM__MODEL` | `local-model` | Gemini id, e.g. `gemini-1.5-flash` |
+| `MANGOMAS_LLM__MODEL` | `local-model` | Gemini id, e.g. `gemini-2.5-flash` |
 | `MANGOMAS_LLM__TIMEOUT_SECONDS` | `60.0` | Per-request deadline |
 | `MANGOMAS_LLM__TEMPERATURE` | `0.2` | Sampling temperature |
 
@@ -58,11 +58,10 @@ factory is invoked (`llm_registry.get(cfg.llm.provider)(cfg.llm)`).
 
 ### Notes
 
-- The Vertex SDK is synchronous; calls are wrapped in
-  `asyncio.to_thread`. A v0.4.0 follow-up will switch to
-  `generate_content_async` when the SDK pin permits.
+- `VertexClient` invokes `generate_content_async` directly when supported by
+  the configured SDK client rather than wrapping every call in `asyncio.to_thread`.
 - `vertexai.init()` mutates a process-global. v0.3.0 constructs one
-  `VertexLLMClient` per orchestrator (single-tenant per process); the
+  `VertexClient` per orchestrator (single-tenant per process); the
   multi-tenant story is on the long-term roadmap.
 - `ping()` issues a one-token `generate_content` — operators running
   aggressive `/readyz` probes against Vertex should widen probe
@@ -148,8 +147,8 @@ silently degraded to a stale inline `api_key` is the ERROR log line.
 Operators MUST alert on
 `logger=mangomas.secrets.gcp severity=ERROR`.
 
-The v0.4.0 roadmap adds `SecretsSettings.strict: bool = False` for an
-opt-in "fail loud" mode in production.
+Set `MANGOMAS_SECRETS__STRICT=true` (`SecretsSettings.strict`) to raise
+`SecretsResolutionError` instead of falling back in production.
 
 ### Logging safety
 
@@ -162,15 +161,24 @@ opt-in "fail loud" mode in production.
 
 ## Identity (Workload Identity Federation)
 
-All three providers consume **ambient identity** via Application
-Default Credentials. Locally, `gcloud auth application-default login`
-provides credentials; on GCP compute (GKE, Cloud Run, Cloud
-Functions), Workload Identity Federation provides them at the metadata
-endpoint.
+The Google API providers (`VertexClient`, `VertexEmbeddingClient`,
+`GCPSecretManagerProvider`, and `CloudTraceSpanExporter`) consume **ambient
+identity** via Application Default Credentials (ADC). Locally,
+`gcloud auth application-default login` provides credentials; on GCP compute
+(GKE, Cloud Run, Cloud Functions), Workload Identity Federation provides them
+at the metadata endpoint.
 
-The codebase does not accept service-account JSON keys via env, config,
-or file paths. This is enforced by code review, not by a runtime check —
-adding such a path would require a new ADR justifying it.
+`VertexEmbeddingClient`, `GCPSecretManagerProvider`, and
+`CloudTraceSpanExporter` rely solely on ambient ADC identity without
+service-account JSON key files. For `VertexClient` (`llm` only),
+`MANGOMAS_LLM__SECRET_REF` (`credentials_json`) and
+`MANGOMAS_LLM__CREDENTIALS_PATH` (`credentials_path`) remain supported with ADC
+fallback when both are unset.
+
+By contrast, `PostgresRepository` authenticates over the PostgreSQL wire
+protocol via the configured `MANGOMAS_DB__URL` DSN (and optional external
+Cloud SQL Auth Proxy for IAM database authentication / private tunnel) rather
+than Google API ADC credentials.
 
 **Per environment (ADR-0036).** The deploy pipeline runs one GitHub
 Environment per stage (`dev`, `qa`, `prod`), each with its own WIF-federated

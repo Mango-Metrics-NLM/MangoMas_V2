@@ -212,3 +212,25 @@ Plus one functional smoke test per MCP server (list the repo root via
 and — once installed — a positive-path check that `rtk` actually rewrites
 Bash output rather than only the negative "absent → passes through
 unmodified" path.
+
+## Skill and Agent Extraction Candidates
+
+The following reusable workflows identified during audit triage are recorded as
+extraction candidates (kept in backlog rather than added to `.claude/` until an
+owner and contract-test update in `tests/constants/corpus.py` are scheduled):
+
+- **`mango-supply-chain`**: Consolidate secret scanning (`.gitleaks.toml`),
+  `make gitleaks-selftest`, worktree/dependency allowlist hygiene, and clean-tree
+  audit checks currently split across ad-hoc PR checklists.
+- **`mango-local-e2e`**: Standardize gated local hardware verification
+  (`make embeddings-local`, `make gpu`, `CUDA_VISIBLE_DEVICES=-1` fail-loud check,
+  `make studio-probe-mock`, and live LM Studio runs) with P1/P2 environment guards.
+- **`mango-contract-sync`**: Guide synchronized updates across
+  `mango-integration-contracts/`, `src/mangomas/`, `eval_harness_bridge/`,
+  `scripts/guard_probe_manifest.json`, and P1/P2 `mypy --strict` typing checks.
+- **`mango-aqa-pr-handoff`**: Bundle origin-delta AQA triage, `make gate`,
+  `make guard-probe`, `docs/testing/rca-*.md` updates, and Tier-C PR packaging.
+
+`scripts/run_workflow_e2e.py` remains intentionally unowned in
+`UNOWNED_SCRIPT_ENTRY_POINTS` (`tests/constants/corpus.py`) because it is an
+interactive local-LM-Studio workflow harness driver with no automated CI caller.

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Final
 from urllib.parse import urlsplit, urlunsplit
 
+import _logging
 import _stdio
 import _studio_probe_journeys as journeys
 import httpx
@@ -311,7 +312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Exit 0 when no check fails, 1 when any fails, 2 on a config gap."""
     _stdio.configure_utf8_stdio()
     args = parse_args(argv)
-    logging.basicConfig(level=args.log_level, format="%(levelname)s %(name)s: %(message)s")
+    _logging.configure_script_logging(level=args.log_level)
     try:
         cfg = resolve_config(args)
     except ProbeConfigError as exc:

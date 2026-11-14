@@ -31,6 +31,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final
 
+import _logging
 import _stdio
 
 logger = logging.getLogger(__name__)
@@ -283,7 +284,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for ``python scripts/bootstrap_gpu_env.py``."""
     _stdio.configure_utf8_stdio()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    _logging.configure_script_logging()
     args = _build_parser().parse_args(argv)
     return run_bootstrap(
         venv_dir=args.venv_dir,

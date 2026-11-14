@@ -157,8 +157,10 @@ _EXPECTED_ALLOWLIST_PATHS: frozenset[str] = frozenset(
     {
         r"^\.hypothesis/",
         r"^gitleaks$",
+        r"^gitleaks\.exe$",
         r"(^|/)__pycache__/",
         r"^\.venv/",
+        r"^\.venv-gpu/",
     }
 )
 

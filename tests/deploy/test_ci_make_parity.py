@@ -620,3 +620,18 @@ def test_nightly_is_scheduled_and_manually_dispatchable() -> None:
     triggers = _workflows.triggers("nightly.yml")
     assert triggers["schedule"], "nightly.yml must carry a cron schedule"
     assert "workflow_dispatch" in triggers
+
+
+def test_makefile_every_target_is_declared_phony() -> None:
+    """Every command target in the Makefile appears in `.PHONY:` and vice versa."""
+    defined = _makefile.defined_targets()
+    phony = _makefile.phony_targets()
+    assert defined - phony == set(), f"Missing from .PHONY: {sorted(defined - phony)}"
+    assert phony - defined == set(), f"Stale .PHONY entries: {sorted(phony - defined)}"
+
+
+def test_makefile_live_secrets_target_enables_integration_gate() -> None:
+    """The live secrets Make target must set RUN_INTEGRATION=1 alongside its target gate."""
+    body = _make_target_body("gcp-secrets")
+    assert "RUN_INTEGRATION=1" in body
+    assert "RUN_GCP_SECRETS=1" in body

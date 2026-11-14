@@ -6,11 +6,16 @@ does not resolve is "not accepted", never an exception.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any
 
 from mangomas.core.structured import parse_llm_json_object
 from mangomas.errors import ConfigError, LLMBadResponse
+from mangomas.utils.json_path import (
+    finite_number,
+    resolve_dotted_path,
+    strict_json_equals,
+)
 from mangomas.workflow.predicate._spec import (
     _AT_LEAST,
     _AT_MOST,
@@ -23,34 +28,16 @@ from mangomas.workflow.predicate._spec import (
 _Comparison = Callable[[Any], bool]
 
 
-def _as_number(found: Any) -> float | None:
-    """Return *found* as a float, or ``None`` when it is not a number.
-
-    ``bool`` is rejected first: ``True >= 0.5`` is otherwise silently true.
-    """
-    if isinstance(found, bool):
-        return None
-    if isinstance(found, int | float):
-        try:
-            return float(found)
-        except OverflowError:
-            return None
-    return None
-
-
 def _build_equals(expected: Any) -> _Comparison:
     def _equals(found: Any) -> bool:
-        # ``True == 1`` in Python. Compare bool-ness before equality, both ways.
-        if (type(found) is bool) is not (type(expected) is bool):
-            return False
-        return bool(found == expected)
+        return strict_json_equals(found, expected)
 
     return _equals
 
 
 def _build_at_least(threshold: Any) -> _Comparison:
     def _at_least(found: Any) -> bool:
-        number = _as_number(found)
+        number = finite_number(found)
         return number is not None and number >= threshold
 
     return _at_least
@@ -58,7 +45,7 @@ def _build_at_least(threshold: Any) -> _Comparison:
 
 def _build_at_most(threshold: Any) -> _Comparison:
     def _at_most(found: Any) -> bool:
-        number = _as_number(found)
+        number = finite_number(found)
         return number is not None and number <= threshold
 
     return _at_most
@@ -91,11 +78,6 @@ def _parse_object(content: str) -> dict[str, Any] | None:
         return None
 
 
-def _resolve(data: Mapping[str, Any], segments: tuple[str, ...]) -> tuple[bool, Any]:
-    """Walk a dotted path over mappings. ``(False, None)`` when it runs off."""
-    current: Any = data
-    for segment in segments:
-        if not isinstance(current, Mapping) or segment not in current:
-            return False, None
-        current = current[segment]
-    return True, current
+# Retained aliases so workflow.predicate and regression tests share the helpers.
+_as_number = finite_number
+_resolve = resolve_dotted_path

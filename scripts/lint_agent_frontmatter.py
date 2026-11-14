@@ -1,6 +1,6 @@
 """Frontmatter linter for Claude Code agents and skills — and its hook modes.
 
-Validates every ``.github/agents/**/*.agent.md`` and
+Validates every ``.claude/agents/**/*.md`` and
 ``.claude/skills/**/SKILL.md`` against the project's Pydantic v2 frontmatter
 schemas (the default, no-argument mode). Two independent hook modes live here
 too, both stdlib-only so neither depends on ``pydantic``/``pyyaml`` being
@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import argparse
 import glob
-import json
 import logging
 import os
 import re
@@ -61,8 +60,9 @@ from pathlib import Path
 from typing import IO, Final
 
 import _destructive_bash
+import _frontmatter_hooks
 import _governance
-import _stdin_json
+import _logging
 
 # ``pydantic``/``pyyaml`` are deferred into the schema-lint code path (the
 # module-level ``if`` below), not imported unconditionally at the top of the
@@ -186,10 +186,6 @@ EXIT_SCHEMA: Final[int] = 1
 EXIT_PROTECTED: Final[int] = 2
 
 # ── Claude Code agent-format validators (spec-0018 / ADR-0024) ────────────────
-#
-# Unwired on purpose in this commit: defined, tested, and called by nothing.
-# The schema swap that calls them is a separate, near-mechanical diff, so the
-# logic lands where it can be reviewed on its own.
 
 # Agent identity. Kebab-case, matching the filename stem. The `mango-` prefix
 # that scopes the shared roster is asserted by a corpus contract test rather
@@ -358,9 +354,9 @@ def _invalid_agent_fields(fm: dict[str, object]) -> list[str]:
 
 
 # PreToolUse decision constants (ADR-0021 + spec-0043).
-_HOOK_EVENT_NAME: Final[str] = "PreToolUse"
-_HOOK_PERMISSION_ASK: Final[str] = "ask"
-_HOOK_PERMISSION_DENY: Final[str] = "deny"
+_HOOK_EVENT_NAME: Final[str] = _frontmatter_hooks.HOOK_EVENT_NAME
+_HOOK_PERMISSION_ASK: Final[str] = _frontmatter_hooks.HOOK_PERMISSION_ASK
+_HOOK_PERMISSION_DENY: Final[str] = _frontmatter_hooks.HOOK_PERMISSION_DENY
 
 # Destructive Bash commands are hard-denied (`permissionDecision: "deny"`) on
 # every session — especially on native Windows (`win32`), where Claude Code
@@ -375,7 +371,7 @@ _DESTRUCTIVE_BASH_RULES: Final = _destructive_bash.DESTRUCTIVE_BASH_RULES
 if _SCHEMA_DEPS_AVAILABLE:
 
     class SkillFrontmatter(BaseModel):
-        """Frontmatter schema for ``.github/skills/<name>/SKILL.md``."""
+        """Frontmatter schema for ``.claude/skills/<name>/SKILL.md``."""
 
         model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -514,17 +510,36 @@ def _staged_diff(path: str) -> str:
     return result.stdout
 
 
+_PROTECTED_BY_LOWER: Final[dict[str, str]] = {p.lower(): p for p in PROTECTED_PATHS}
+
+
+def _canonical_protected_path(path: str) -> str | None:
+    """Resolve *path* (absolute, symlink, traversal, or case-varied) to a canonical path."""
+    cwd_resolved = Path.cwd().resolve()
+    raw = path.replace("\\", "/")
+    candidate = Path(raw)
+    base_candidate = candidate if candidate.is_absolute() else cwd_resolved / raw
+    resolved = base_candidate.resolve()
+    repo_root = Path(__file__).resolve().parent.parent
+    for root in (repo_root, cwd_resolved):
+        try:
+            rel = resolved.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        canonical = _PROTECTED_BY_LOWER.get(rel.lower())
+        if canonical is not None:
+            return canonical
+    return None
+
+
 def _check_protected_path(path: str) -> int:
     """Return ``EXIT_PROTECTED`` if *path* is protected and unmarked, else ``EXIT_OK``.
 
-    Uses :func:`_normalize_path` (not ``str.lstrip``) so Windows backslash paths
-    and a leading ``./`` are matched against the forward-slash ``PROTECTED_PATHS``
-    set — otherwise a ``src\\mangomas\\core\\agent.py`` edit would silently bypass
-    the hook. ``lstrip`` is also avoided because it strips individual leading
-    characters rather than a fixed prefix.
+    Uses :func:`_canonical_protected_path` (not ``str.lstrip``) so Windows backslash paths,
+    absolute repo paths, ``./``/``..`` traversals, and case variations match ``PROTECTED_PATHS``.
     """
-    normalised = _normalize_path(path)
-    if normalised not in PROTECTED_PATHS:
+    normalised = _canonical_protected_path(path)
+    if normalised is None:
         return EXIT_OK
     diff = _staged_diff(normalised)
     matched_marker = _governance.find_breaking_change_marker(diff, BREAKING_CHANGE_MARKER_ALIASES)
@@ -557,188 +572,49 @@ def _check_protected_path(path: str) -> int:
 # in-session agent cannot rewrite. These hooks exist to inform, not to block.
 
 
+SHELL_UNSAFE_PATH_CHARACTERS: Final[frozenset[str]] = (
+    _frontmatter_hooks.SHELL_UNSAFE_PATH_CHARACTERS
+)
+is_shell_safe_path = _frontmatter_hooks.is_shell_safe_path
+_extract_tool_path = _frontmatter_hooks.extract_tool_path
+_extract_bash_command = _frontmatter_hooks.extract_bash_command
+_destructive_bash_reason = _frontmatter_hooks.destructive_bash_reason
+_emit_decision = _frontmatter_hooks.emit_decision
+_emit_ask = _frontmatter_hooks.emit_ask
+_emit_deny = _frontmatter_hooks.emit_deny
+
+
 def _read_hook_payload(stream: IO[str]) -> dict[str, object]:
-    """Return the hook's stdin JSON, or ``{}`` on any parse failure.
-
-    Thin wrapper around the shared ``scripts/_stdin_json.py`` reader — a
-    hook must never crash a session over its own plumbing, so malformed or
-    empty stdin degrades to "nothing to report" rather than raising.
-    """
-    return _stdin_json.read_json_payload(stream, logger=logger)
-
-
-def _extract_tool_path(payload: dict[str, object]) -> str | None:
-    """Return the path a ``PreToolUse``/``PostToolUse`` payload names, if any.
-
-    Tries ``tool_input.file_path`` first (``Edit``/``Write``), then
-    ``tool_input.notebook_path`` (``NotebookEdit``) — matching the matcher
-    widened to ``Edit|Write|NotebookEdit`` in ``.claude/settings.json``.
-    """
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return None
-    for key in ("file_path", "notebook_path"):
-        value = tool_input.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
-
-
-def _extract_bash_command(payload: dict[str, object]) -> str | None:
-    """Return ``tool_input.command`` from a ``Bash`` payload, if any."""
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return None
-    value = tool_input.get("command")
-    if isinstance(value, str) and value:
-        return value
-    return None
+    """Return the hook's stdin JSON, or ``{}`` on any parse failure."""
+    return _frontmatter_hooks.read_hook_payload(stream, log=logger)
 
 
 def _protected_paths_in_command(command: str) -> list[str]:
-    """Return the protected paths *command* mentions, backslash-normalised.
-
-    A plain substring scan, deliberately: parsing shell to decide whether a
-    mention is a write reopens the bypass family (redirects, heredocs,
-    ``sed -i``, ``python -c``, ``tee``) that made ADR-0021 declare this layer
-    advisory in the first place. The accepted false positive is a read-only
-    mention — ``grep``, ``cat``, ``git diff`` of a protected path also trips
-    the advisory, and the reason text says so.
-    """
-    normalised = command.replace("\\", "/")
-    return sorted(path for path in PROTECTED_PATHS if path in normalised)
-
-
-def _destructive_bash_reason(command: str) -> str | None:
-    """Return the block reason if *command* is host-destructive, else ``None``."""
-    return _destructive_bash.destructive_bash_reason(command)
-
-
-def _emit_decision(decision_value: str, reason: str) -> None:
-    """Print a ``PreToolUse`` ``hookSpecificOutput`` JSON decision envelope."""
-    decision = {
-        "hookSpecificOutput": {
-            "hookEventName": _HOOK_EVENT_NAME,
-            "permissionDecision": decision_value,
-            "permissionDecisionReason": reason,
-        }
-    }
-    print(json.dumps(decision))
-
-
-def _emit_ask(reason: str) -> None:
-    """Print a ``permissionDecision: "ask"`` envelope."""
-    _emit_decision(_HOOK_PERMISSION_ASK, reason)
-
-
-def _emit_deny(reason: str) -> None:
-    """Print a ``permissionDecision: "deny"`` envelope for destructive Bash calls."""
-    _emit_decision(_HOOK_PERMISSION_DENY, reason)
+    """Return sorted protected paths mentioned in *command*."""
+    return _frontmatter_hooks.protected_paths_in_command(command, PROTECTED_PATHS)
 
 
 def _pre_tool_use_hook(stream: IO[str]) -> int:
-    """Protected-path advisory (`ask`) + destructive-Bash gate (`deny`). Always exits 0.
-
-    For an edit to a protected core contract — a ``file_path``/
-    ``notebook_path`` payload from ``Edit``/``Write``/``NotebookEdit``, or a
-    ``Bash`` payload whose ``command`` mentions a protected path — prints a
-    ``permissionDecision: "ask"`` JSON response so the human approving the
-    tool call sees a heads-up naming the path and the trailer requirement the
-    CI gate enforces (ADR-0021).
-
-    For a ``Bash`` payload that matches :data:`_DESTRUCTIVE_BASH_RULES`
-    (recursive deletes, ``git reset --hard``, ``git clean -f``, force-push,
-    ``git diff/log/show --output=`` file overwrite, or ``guard_probe.py
-    --manifest`` override), prints ``permissionDecision: "deny"`` (spec-0043).
-    """
-    payload = _read_hook_payload(stream)
-    path = _extract_tool_path(payload)
-    if path is not None:
-        normalised = _normalize_path(path)
-        if normalised not in PROTECTED_PATHS:
-            return EXIT_OK
-        _emit_ask(
-            f"{normalised} is a protected core contract (CLAUDE.md 'File "
-            f"Ownership'). Approve only if this change will land in a commit "
-            f"whose message contains {BREAKING_CHANGE_MARKER!r} — "
-            f"scripts/check_protected_paths.py enforces this in CI."
-        )
-        return EXIT_OK
-
-    command = _extract_bash_command(payload)
-    if command is None:
-        return EXIT_OK
-    destructive_reason = _destructive_bash_reason(command)
-    if destructive_reason is not None:
-        _emit_deny(destructive_reason)
-        return EXIT_OK
-    mentioned = _protected_paths_in_command(command)
-    if not mentioned:
-        return EXIT_OK
-    _emit_ask(
-        f"This command mentions protected core contract(s): "
-        f"{', '.join(mentioned)} (CLAUDE.md 'File Ownership'). If it writes "
-        f"to them, the change must land in a commit whose message contains "
-        f"{BREAKING_CHANGE_MARKER!r} — scripts/check_protected_paths.py "
-        f"enforces this in CI. This is a mention-level advisory: a read-only "
-        f"command (grep, cat, git diff) trips it too."
+    """Delegate PreToolUse hook execution to :mod:`_frontmatter_hooks`."""
+    return _frontmatter_hooks.pre_tool_use_hook(
+        stream,
+        log=logger,
+        canonical_protected_path=_canonical_protected_path,
+        protected_paths=PROTECTED_PATHS,
+        breaking_change_marker=BREAKING_CHANGE_MARKER,
     )
-    return EXIT_OK
-
-
-# Characters that carry meaning to a shell, or break the one-path-per-line
-# framing `xargs` relies on. Mirrors the intent of
-# ``mango_contracts.proposed_action.SHELL_INTENT_MARKERS``, which refuses shell
-# syntax in a string that is never even executed — this mode's output *is* fed
-# to a pipeline, so it has strictly more reason to be strict.
-#
-# A denylist rather than a path allowlist because legitimate paths are
-# unicode-open-ended; the cost of a false positive is only that one file skips
-# its autofix, which the ``Stop`` hook's ``format-check`` then catches.
-SHELL_UNSAFE_PATH_CHARACTERS: Final[frozenset[str]] = frozenset(";|&`$()<>\n\r\t\"'\\*?!{}[]~")
-
-
-def is_shell_safe_path(path: str) -> bool:
-    """Return whether *path* is free of shell metacharacters and framing breaks."""
-    return not any(char in SHELL_UNSAFE_PATH_CHARACTERS for char in path)
 
 
 def _post_tool_use_emit_path(stream: IO[str]) -> int:
-    """Print the edited file's path (or nothing). Always returns ``EXIT_OK``.
-
-    Companion to the ``PostToolUse`` ruff-autofix hook, which had the same
-    ``$CLAUDE_TOOL_INPUT_path`` defect. ``.claude/settings.json`` pipes this
-    mode's stdout into ``xargs -r python -m ruff ...`` — ``xargs -r``
-    treats empty input as "run nothing", so a payload naming no path is a
-    silent no-op rather than an error.
-
-    A path carrying shell syntax is dropped rather than emitted (ADR-0030).
-    The path comes from the model's own tool call, and a model can be steered
-    by file content it has read, so it is not trusted input. The hook's
-    pipeline no longer wraps it in ``sh -c``, which is the primary fix; this is
-    the defence that survives someone reintroducing a shell later.
-    """
-    path = _extract_tool_path(_read_hook_payload(stream))
-    if not path:
-        return EXIT_OK
-    if not is_shell_safe_path(path):
-        # stderr, not stdout: stdout is the pipeline's input. A hook mode must
-        # never fail the calling process, so this notices without exiting.
-        print(
-            f"lint_agent_frontmatter: refusing to emit path with shell syntax: {path!r}",
-            file=sys.stderr,
-        )
-        return EXIT_OK
-    print(path)
-    return EXIT_OK
+    """Delegate PostToolUse path emission to :mod:`_frontmatter_hooks`."""
+    return _frontmatter_hooks.post_tool_use_emit_path(stream, log=logger)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 
 def _configure_logging() -> None:
-    if not logging.getLogger().handlers:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    _logging.configure_script_logging(only_if_unconfigured=True)
 
 
 @dataclass(frozen=True)

@@ -335,6 +335,101 @@ class EvalRunner:
         attempts = [await self._score_row(row, target=target) for _ in range(self._trials)]
         return collapse_trials(attempts)
 
+    def _build_scorer_context(
+        self,
+        row: DatasetRow,
+        *,
+        correlation_id: str,
+        response_metadata: dict[str, Any],
+    ) -> ScorerContext:
+        return ScorerContext(
+            llm=self._orch.context.llm,
+            embeddings=self._orch.context.embeddings,
+            row_metadata=dict(row.metadata),
+            correlation_id=correlation_id,
+            response_metadata=dict(response_metadata),
+            messages=list(row.messages),
+            llm_profiles=dict(self._orch.context.extras.get(LLM_PROFILES_EXTRAS_KEY) or {}),
+        )
+
+    @staticmethod
+    def _unwanted_answer_result(
+        row: DatasetRow,
+        *,
+        prediction: str,
+        response_metadata: dict[str, Any],
+        duration_ms: float,
+        correlation_id: str,
+    ) -> EvalRowResult:
+        """Fail rows that answered when ``expected_error`` demanded refusal."""
+        return EvalRowResult(
+            row_id=row.id,
+            score=0.0,
+            passed=False,
+            duration_ms=duration_ms,
+            prediction=prediction,
+            expected=row.expected,
+            metadata={
+                EXPECTED_ERROR_METADATA_KEY: row.expected_error,
+                REFUSED_METADATA_KEY: False,
+            },
+            correlation_id=correlation_id,
+            response_metadata=response_metadata,
+        )
+
+    @staticmethod
+    def _handle_row_exception(
+        row: DatasetRow,
+        exc: Exception,
+        *,
+        duration_ms: float,
+        correlation_id: str,
+    ) -> EvalRowResult:
+        if row.expected_error is not None and _matches_expected_error(exc, row.expected_error):
+            logger.debug(
+                "Eval row refused as expected",
+                extra={
+                    "event": "eval_row_refused",
+                    "row_id": row.id,
+                    "error_type": type(exc).__name__,
+                    "duration_ms": duration_ms,
+                },
+            )
+            return EvalRowResult(
+                row_id=row.id,
+                score=1.0,
+                passed=True,
+                duration_ms=duration_ms,
+                prediction="",
+                expected=row.expected,
+                metadata={
+                    EXPECTED_ERROR_METADATA_KEY: row.expected_error,
+                    REFUSED_METADATA_KEY: True,
+                    "error_type": type(exc).__name__,
+                },
+                correlation_id=correlation_id,
+            )
+        logger.error(
+            "Eval row errored",
+            extra={
+                "event": "eval_error",
+                "row_id": row.id,
+                "error_type": type(exc).__name__,
+                "duration_ms": duration_ms,
+            },
+        )
+        return EvalRowResult(
+            row_id=row.id,
+            score=0.0,
+            passed=False,
+            duration_ms=duration_ms,
+            prediction="",
+            expected=row.expected,
+            metadata={"error_type": type(exc).__name__},
+            error=str(exc)[:_ROW_ERROR_TRUNCATE],
+            correlation_id=correlation_id,
+        )
+
     async def _score_row(
         self,
         row: DatasetRow,
@@ -355,79 +450,24 @@ class EvalRunner:
             prediction = outcome.content
             response_metadata = dict(outcome.metadata)
             if row.expected_error is not None:
-                # It answered when it should have refused: a failing row, and
-                # the scorer is not consulted — no grade of the answer can
-                # redeem a missing refusal.
-                duration_ms = (time.monotonic() - started) * 1000
-                return EvalRowResult(
-                    row_id=row.id,
-                    score=0.0,
-                    passed=False,
-                    duration_ms=duration_ms,
+                return self._unwanted_answer_result(
+                    row,
                     prediction=prediction,
-                    expected=row.expected,
-                    metadata={
-                        EXPECTED_ERROR_METADATA_KEY: row.expected_error,
-                        REFUSED_METADATA_KEY: False,
-                    },
-                    correlation_id=correlation_id,
                     response_metadata=response_metadata,
+                    duration_ms=(time.monotonic() - started) * 1000,
+                    correlation_id=correlation_id,
                 )
-            ctx = ScorerContext(
-                llm=self._orch.context.llm,
-                embeddings=self._orch.context.embeddings,
-                row_metadata=dict(row.metadata),
+            ctx = self._build_scorer_context(
+                row,
                 correlation_id=correlation_id,
-                response_metadata=dict(response_metadata),
-                messages=list(row.messages),
-                llm_profiles=dict(self._orch.context.extras.get(LLM_PROFILES_EXTRAS_KEY) or {}),
+                response_metadata=response_metadata,
             )
             result = await self._scorer.score(prediction, row.expected, context=ctx)
         except Exception as exc:
-            duration_ms = (time.monotonic() - started) * 1000
-            if row.expected_error is not None and _matches_expected_error(exc, row.expected_error):
-                # The row asked for exactly this refusal: a pass, not an error.
-                logger.debug(
-                    "Eval row refused as expected",
-                    extra={
-                        "event": "eval_row_refused",
-                        "row_id": row.id,
-                        "error_type": type(exc).__name__,
-                        "duration_ms": duration_ms,
-                    },
-                )
-                return EvalRowResult(
-                    row_id=row.id,
-                    score=1.0,
-                    passed=True,
-                    duration_ms=duration_ms,
-                    prediction="",
-                    expected=row.expected,
-                    metadata={
-                        EXPECTED_ERROR_METADATA_KEY: row.expected_error,
-                        REFUSED_METADATA_KEY: True,
-                        "error_type": type(exc).__name__,
-                    },
-                    correlation_id=correlation_id,
-                )
-            logger.error(
-                "Eval row errored",
-                extra={
-                    "event": "eval_error",
-                    "row_id": row.id,
-                    "error_type": type(exc).__name__,
-                    "duration_ms": duration_ms,
-                },
-            )
-            return EvalRowResult(
-                row_id=row.id,
-                score=0.0,
-                passed=False,
-                duration_ms=duration_ms,
-                prediction="",
-                expected=row.expected,
-                metadata={"error_type": type(exc).__name__},
-                error=str(exc)[:_ROW_ERROR_TRUNCATE],
+            return self._handle_row_exception(
+                row,
+                exc,
+                duration_ms=(time.monotonic() - started) * 1000,
                 correlation_id=correlation_id,
             )
         duration_ms = (time.monotonic() - started) * 1000
@@ -454,64 +494,36 @@ class EvalRunner:
             response_metadata=response_metadata,
         )
 
-    async def run(
-        self,
-        dataset: list[DatasetRow],
-        agent_name: str | None = None,
-        *,
-        target: Target | None = None,
-    ) -> EvalReport:
-        """Score every row in ``dataset`` against a target.
-
-        Backward compatible: callers that pass ``agent_name`` (the legacy
-        signature) keep working — it is wrapped in the default ``agent`` target.
-        Pass ``target`` to evaluate a pipeline / fan-out / echo baseline instead.
-        Exactly one of ``agent_name`` / ``target`` must be supplied.
-        """
-        eff_target = self._resolve_target(agent_name, target)
-        label = eff_target.name
-        run = await build_provenance(
-            rows=dataset,
+    def _empty_report(self, *, label: str, run: RunProvenance) -> EvalReport:
+        return EvalReport(
             scorer=self._scorer.name,
-            target=label,
-            labels=self._provenance_labels,
+            agent_name=label,
+            dataset_size=0,
+            passed=0,
+            failed=0,
+            errored=0,
+            mean_score=0.0,
+            duration_ms=0.0,
+            rows=[],
+            target_name=label,
+            mean_cost_usd=None,
+            run=run,
+            trials=self._trials,
+            pass_pow_k=0.0,
+            trial_pass_rate=0.0,
+            # Nothing was judged, so there is no judge verdict to demote.
+            judge=None,
         )
-        if not dataset:
-            return EvalReport(
-                scorer=self._scorer.name,
-                agent_name=label,
-                dataset_size=0,
-                passed=0,
-                failed=0,
-                errored=0,
-                mean_score=0.0,
-                duration_ms=0.0,
-                rows=[],
-                target_name=label,
-                mean_cost_usd=None,
-                run=run,
-                trials=self._trials,
-                pass_pow_k=0.0,
-                trial_pass_rate=0.0,
-                # Nothing was judged, so there is no judge verdict to demote.
-                judge=None,
-            )
-        logger.info(
-            "Eval run starting",
-            extra={
-                "event": "eval_start",
-                "dataset_size": len(dataset),
-                "scorer": self._scorer.name,
-                "agent_name": label,
-                "target_name": label,
-                "parallelism": self._parallelism,
-                "fail_fast": self._fail_fast,
-                "trials": self._trials,
-            },
-        )
-        started = time.monotonic()
-        rows = await self._dispatch_rows(dataset, eff_target)
-        duration_ms = (time.monotonic() - started) * 1000
+
+    def _build_report(
+        self,
+        *,
+        dataset: list[DatasetRow],
+        rows: list[EvalRowResult],
+        label: str,
+        run: RunProvenance,
+        duration_ms: float,
+    ) -> EvalReport:
         passed = sum(1 for r in rows if r.passed and r.error is None)
         errored = sum(1 for r in rows if r.error is not None)
         scored = sum(1 for r in rows if r.error is None)
@@ -535,8 +547,7 @@ class EvalRunner:
             trials=self._trials,
             pass_pow_k=passed / len(dataset),
             trial_pass_rate=_trial_pass_rate(rows, self._trials),
-            # Stamped only when the judge graded at least one row: a dataset of
-            # refusal checks never consults it, and must not be demoted by it.
+            # Stamped only when the judge graded at least one row.
             judge=self._judge if any(consulted_scorer(r) for r in rows) else None,
         )
         logger.info(
@@ -557,6 +568,53 @@ class EvalRunner:
             },
         )
         return report
+
+    async def run(
+        self,
+        dataset: list[DatasetRow],
+        agent_name: str | None = None,
+        *,
+        target: Target | None = None,
+    ) -> EvalReport:
+        """Score every row in ``dataset`` against a target.
+
+        Backward compatible: callers that pass ``agent_name`` (the legacy
+        signature) keep working — it is wrapped in the default ``agent`` target.
+        Pass ``target`` to evaluate a pipeline / fan-out / echo baseline instead.
+        Exactly one of ``agent_name`` / ``target`` must be supplied.
+        """
+        eff_target = self._resolve_target(agent_name, target)
+        label = eff_target.name
+        run = await build_provenance(
+            rows=dataset,
+            scorer=self._scorer.name,
+            target=label,
+            labels=self._provenance_labels,
+        )
+        if not dataset:
+            return self._empty_report(label=label, run=run)
+        logger.info(
+            "Eval run starting",
+            extra={
+                "event": "eval_start",
+                "dataset_size": len(dataset),
+                "scorer": self._scorer.name,
+                "agent_name": label,
+                "target_name": label,
+                "parallelism": self._parallelism,
+                "fail_fast": self._fail_fast,
+                "trials": self._trials,
+            },
+        )
+        started = time.monotonic()
+        rows = await self._dispatch_rows(dataset, eff_target)
+        return self._build_report(
+            dataset=dataset,
+            rows=rows,
+            label=label,
+            run=run,
+            duration_ms=(time.monotonic() - started) * 1000,
+        )
 
     @staticmethod
     def _resolve_target(agent_name: str | None, target: Target | None) -> Target:

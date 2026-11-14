@@ -14,10 +14,11 @@ optional ``list | tuple`` ``required_keys``) are not forced onto these helpers.
 
 from __future__ import annotations
 
-import math
+import numbers
 from typing import Any
 
 from mangomas.errors import ConfigError
+from mangomas.utils.json_path import coerce_finite_float, finite_number
 
 
 def require_str(options: dict[str, Any], key: str, *, owner: str) -> str:
@@ -54,26 +55,25 @@ def require_unit_float(value: float, *, owner: str, field: str = "threshold") ->
     ``field`` the option name (defaults to ``"threshold"``, the only current
     use case: ``LLMJudgeScorer`` / ``EmbeddingScorer``).
     """
-    if not 0.0 <= value <= 1.0:
+    number = finite_number(value)
+    if number is None or not 0.0 <= number <= 1.0:
         raise ConfigError(f"{owner} '{field}' must be in [0.0, 1.0]; got {value}")
-    return value
+    return number
 
 
 def coerce_float(value: object, *, owner: str, field: str) -> float:
-    """Return *value* as a ``float`` or raise :class:`ConfigError`.
+    """Return *value* as a finite ``float`` or raise :class:`ConfigError`.
 
-    Accepts ``int`` / ``float`` and numeric strings (options arrive as JSON or
-    env text), rejects ``bool`` and anything ``float()`` cannot parse — so a
-    typo such as ``"threshold": "high"`` is a config error (exit 2), not a bare
-    ``ValueError`` escaping a factory. Finiteness is the caller's concern
-    (``require_unit_float`` / ``require_non_negative_float``).
+    Accepts ``int`` / ``float`` / real numeric scalars (e.g. NumPy) and numeric
+    strings (options arrive as JSON or env text), rejects ``bool``, overflows,
+    non-finite values, and anything unparseable — so a typo such as
+    ``"threshold": "high"`` is a config error (exit 2), not a bare
+    ``ValueError`` or ``OverflowError`` escaping a factory.
     """
-    if isinstance(value, bool) or not isinstance(value, int | float | str):
-        raise ConfigError(f"{owner} '{field}' must be a number; got {type(value).__name__}")
-    try:
-        return float(value)
-    except ValueError as exc:
-        raise ConfigError(f"{owner} '{field}' must be a number; got {value!r}") from exc
+    number = coerce_finite_float(value)
+    if number is None:
+        raise ConfigError(f"{owner} '{field}' must be a number; got {value!r}")
+    return number
 
 
 def require_bool(options: dict[str, Any], key: str, *, default: bool, owner: str) -> bool:
@@ -100,13 +100,12 @@ def require_non_negative_float(value: object, *, owner: str, field: str) -> floa
     """Return *value* coerced to ``float`` when it is finite and ``>= 0.0``.
 
     Rejects ``bool`` (a subclass of ``int``) so ``True`` cannot silently
-    become ``1.0``. Rejects ``NaN`` / infinities: those compare false
-    against ``>= 0.0`` / ``>`` and would otherwise bypass a USD cap.
+    become ``1.0``. Rejects ``NaN``, infinities, and overflowing ints.
     Used for USD amounts, which are not unit scores.
     """
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
         raise ConfigError(f"{owner} '{field}' must be a number; got {type(value).__name__}")
-    number = float(value)
-    if not math.isfinite(number) or number < 0.0:
-        raise ConfigError(f"{owner} '{field}' must be a finite number >= 0.0; got {number}")
+    number = finite_number(value)
+    if number is None or number < 0.0:
+        raise ConfigError(f"{owner} '{field}' must be a finite number >= 0.0; got {value!r}")
     return number

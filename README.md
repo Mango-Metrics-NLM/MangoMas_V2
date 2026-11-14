@@ -283,6 +283,9 @@ Built-in scorers (registered through `mangomas.eval.scorer_registry`):
 | `regex_match` | Pattern match against the prediction, with configurable regex flags |
 | `contains` | Substring containment, with case-folding toggle |
 | `json_keys` | Schema conformance — asserts the required keys in structured JSON output (`planner` / `reviewer`) |
+| `json_field` | Structured acceptance over a dotted mapping path in parsed JSON (`equals`, `at_least`, `at_most`, `min_length`), matching `VALIDATE_OUTPUT` parsing |
+| `tool_trajectory` | Grades `ToolAgent` executed tools (`response_metadata["tool_calls"]`) against `metadata["expected_tools"]` and optional `max_steps` |
+| `composite` | Runs multiple registered scorers per row and keeps every child under `metadata["scores"]` (`score = min`, `passed = all`) |
 | `llm_judge` | Routes a structured JSON prompt through the orchestrator's LLM; pass = `score >= threshold` |
 | `embedding` | Cosine similarity of embeddings; resolves a real provider via `ScorerContext.embeddings` |
 | `cost_budget` | Estimates USD per row (explicit `cost_usd`, token counts, or output chars). Measure-only unless `max_cost_usd` is set; gate via `MANGOMAS_EVAL__MAX_MEAN_COST_USD` |
@@ -299,8 +302,8 @@ Built-in scorers (registered through `mangomas.eval.scorer_registry`):
 RAG adds two protocol seams (`EmbeddingClient`, `VectorStoreRepository`) and a
 pure-domain `rag/` package. It is **off by default** — both
 `MANGOMAS_EMBEDDINGS__ENABLED` and `MANGOMAS_VECTOR__ENABLED` are `false`, so
-existing deployments behave identically. Enabling it makes the previously
-stubbed `embedding` scorer operational and gives agents a `retrieve` tool.
+existing deployments behave identically. Enabling it wires a live
+`EmbeddingClient` into the `embedding` scorer and gives agents a `retrieve` tool.
 
 ### Local backend (no server required)
 

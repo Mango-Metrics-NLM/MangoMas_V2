@@ -31,9 +31,13 @@ coverage.xml
 # CI downloads fresh into an ephemeral runner and discards it; a local run
 # leaves both sitting in the repo root.
 gitleaks
+gitleaks.exe
 gitleaks.tar.gz
+gitleaks.zip
 trivy
+trivy.exe
 trivy.tar.gz
+trivy.zip
 sbom.cdx.json
 
 # Local validation artefacts and lock drafts (not source).
