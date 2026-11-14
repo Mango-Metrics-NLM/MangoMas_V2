@@ -560,3 +560,51 @@ def test_live_wsl_isolation_enforces_filesystem_and_network_containment(
     assert outcome.promoted is True, outcome.stdout + outcome.stderr
     assert "live-wsl-isolation-ok" in outcome.stdout
     assert (repo / rel).read_text(encoding="utf-8") == "VALUE = 202\n"
+
+
+def test_reject_candidate_python_startup_hooks_ignores_missing_dir(tmp_path: Path) -> None:
+    from mangomas.harness.isolation.base import reject_candidate_python_startup_hooks  # noqa: PLC0415
+
+    reject_candidate_python_startup_hooks(tmp_path / "missing-staging-dir")
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (
+            ["python", "-W", "default", "-X", "utf8", "-u", "-m", "pytest", "-q"],
+            ("-m", "pytest", ("-q",)),
+        ),
+        (["python", "-cprint(1)"], ("-c", "print(1)", ())),
+        (["python", "-mpytest", "-q"], ("-m", "pytest", ("-q",))),
+        (["python", "-Bmpytest", "-q"], ("-m", "pytest", ("-q",))),
+        (["python", "-Bm", "pytest", "-q"], ("-m", "pytest", ("-q",))),
+        (["python", "-Bc", "print(1)"], ("-c", "print(1)", ())),
+        (["python", "-Bcprint(1)"], ("-c", "print(1)", ())),
+        (["python", "-BWdefault", "-BXutf8", "run.py"], ("script", "run.py", ())),
+        (["python", "--check-hash-based-pycs", "always", "run.py"], ("script", "run.py", ())),
+        (["python", "--check-hash-based-pycs=always", "run.py"], ("script", "run.py", ())),
+        (["python", "--", "run.py", "--flag"], ("script", "run.py", ("--flag",))),
+        (["python", "run.py", "arg"], ("script", "run.py", ("arg",))),
+        (["python", "-m"], None),
+        (["python", "-Bm"], None),
+        (["python", "-W"], None),
+        (["python", "--"], None),
+        (["python", "-"], None),
+        (["python", "-u"], None),
+        (["pytest", "-q"], None),
+        ([], None),
+    ],
+)
+def test_split_python_oracle_command_variants(
+    argv: list[str],
+    expected: tuple[str, str, tuple[str, ...]] | None,
+) -> None:
+    from mangomas.harness.isolation.none import _split_python_oracle_command  # noqa: PLC0415
+
+    result = _split_python_oracle_command(argv)
+    if expected is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert (result.mode, result.target, result.args) == expected

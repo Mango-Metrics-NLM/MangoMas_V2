@@ -18,6 +18,7 @@ from mangomas.errors import ToolExecutionError
 from mangomas.harness.isolation.base import (
     IsolationResult,
     SubprocessRunner,
+    reject_candidate_python_startup_hooks,
     resolve_sandbox_argv,
     sandbox_pythonpath,
     select_sandbox_env,
@@ -183,6 +184,7 @@ class WslBwrapIsolationBackend:
         timeout_seconds: float,
     ) -> IsolationResult:
         """Run *argv* in a WSL2 ``bubblewrap`` sandbox with *cwd* bound read-only at ``/work``."""
+        reject_candidate_python_startup_hooks(cwd)
         inner_argv = resolve_sandbox_argv(
             argv,
             interpreter=self._python_executable,

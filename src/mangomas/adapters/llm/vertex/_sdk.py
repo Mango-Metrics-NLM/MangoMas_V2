@@ -30,20 +30,30 @@ def _translate_vertex_error(exc: BaseException, *, project: str | None) -> Excep
     return translate_vertex_error(exc, project=project, bad_request_error=VertexError)
 
 
-def _lazy_import_vertex() -> tuple[Any, Any, Any]:  # pragma: no cover - requires vertex extra
-    """Import ``vertexai``, ``Content``, ``Part`` lazily.
+class _GenAIPartCompat:
+    """Expose positional ``from_text(text)`` over ``google.genai.types.Part``."""
 
-    Returns ``(vertexai_module, Content_cls, Part_cls)``. Raises
+    def __init__(self, part_cls: Any) -> None:
+        self._part_cls = part_cls
+
+    def from_text(self, text: str) -> Any:
+        return self._part_cls.from_text(text=text)
+
+
+def _lazy_import_vertex() -> tuple[Any, Any, Any]:  # pragma: no cover - requires vertex extra
+    """Import ``google.genai``, ``Content``, ``Part`` lazily.
+
+    Returns ``(genai_module, Content_cls, Part_compat)``. Raises
     :class:`ImportError` with an install hint when the SDK is absent.
     """
     try:
         # Lazy: the SDK is an optional extra. Importing it at module load would
         # force the dependency on every user.
-        import vertexai  # noqa: PLC0415
-        from vertexai.generative_models import Content, Part  # noqa: PLC0415
+        import google.genai  # noqa: PLC0415
+        from google.genai import types  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(_SDK_INSTALL_HINT) from exc
-    return vertexai, Content, Part
+    return google.genai, types.Content, _GenAIPartCompat(types.Part)
 
 
 def _lazy_import_credentials() -> Any:  # pragma: no cover - requires vertex extra

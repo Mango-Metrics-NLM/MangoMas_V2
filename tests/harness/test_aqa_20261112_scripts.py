@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 
@@ -86,6 +88,11 @@ def test_d11_destructive_bash_blocks_python_module_guard_probe_manifest(
         "python -W ignore -m guard_probe --manifest evil.json",
         "python -BW ignore -m guard_probe --manifest evil.json",
         "python -Xdev -m guard_probe --manifest evil.json",
+        "python -Ximporttime -m scripts.guard_probe --manifest evil.json",
+        "python -Xc -m guard_probe --manifest evil.json",
+        "python -BXc -m guard_probe --manifest evil.json",
+        "python -Wc -m scripts.guard_probe --manifest evil.json",
+        "python -Wdefault:c -m guard_probe --manifest evil.json",
     ],
 )
 def test_d11_critic_destructive_bash_blocks_python_clustered_abbreviated_and_versioned_flags(
@@ -105,6 +112,9 @@ def test_d11_critic_destructive_bash_blocks_python_clustered_abbreviated_and_ver
         "python -W",
         "python -m",
         "python -",
+        'python -Ximporttime -c "guard_probe --manifest evil.json"',
+        "python -Xm guard_probe --manifest evil.json",
+        "python -Wm scripts.guard_probe --manifest evil.json",
     ],
 )
 def test_d11_critic_destructive_bash_allows_safe_python_invocations(command: str) -> None:
@@ -116,6 +126,7 @@ def test_d11_critic_frontmatter_handles_relative_traversal_subcwd_and_case_bash(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """PreToolUse catches relative traversal into repo and case-varied Bash protected mentions."""
+    monkeypatch.chdir(_REPO_ROOT)
     repo_dir = _REPO_ROOT.name
     traversal = f"../{repo_dir}/pyproject.toml"
     assert linter._canonical_protected_path(traversal) == "pyproject.toml"
@@ -142,3 +153,15 @@ def test_d11_critic_frontmatter_handles_relative_traversal_subcwd_and_case_bash(
     assert linter._protected_paths_in_command("cat src\\MANGOMAS\\ERRORS.PY") == [
         "src/mangomas/errors.py"
     ]
+
+
+def test_d11_guard_probe_runs_via_module_mode() -> None:
+    """``python -m scripts.guard_probe --help`` must work without ``PYTHONPATH=scripts``."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "scripts.guard_probe", "--help"],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, f"stderr={proc.stderr!r} stdout={proc.stdout!r}"

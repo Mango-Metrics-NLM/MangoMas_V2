@@ -72,3 +72,45 @@ def resolve_dotted_path(data: Mapping[str, Any], path: str | Sequence[str]) -> t
             return False, None
         current = current[segment]
     return True, current
+
+
+def _normalize_json_container(
+    value: Mapping[Any, Any] | list[Any] | tuple[Any, ...], *, seen: set[int]
+) -> Any:
+    """Recursively validate and normalize Mapping / list / tuple containers."""
+    obj_id = id(value)
+    if obj_id in seen:
+        raise ValueError("Cyclic container is not permitted in JSON value")
+    seen.add(obj_id)
+    try:
+        if isinstance(value, Mapping):
+            return {
+                normalize_json_value(k, _seen=seen): normalize_json_value(v, _seen=seen)
+                for k, v in value.items()
+            }
+        normalized = [normalize_json_value(item, _seen=seen) for item in value]
+        return tuple(normalized) if isinstance(value, tuple) else normalized
+    finally:
+        seen.discard(obj_id)
+
+
+def normalize_json_value(value: object, *, _seen: set[int] | None = None) -> Any:
+    """Validate finiteness recursively and normalize real/integer scalars to JSON built-ins.
+
+    Preserves arbitrary-precision Python integers (e.g. ``10**400``) without lossy
+    float conversion, coerces non-integer :class:`numbers.Real` scalars (such as
+    ``numpy.float32`` and ``Fraction``) to finite ``float``, normalizes NumPy/bool
+    scalars, and raises ``ValueError`` / ``OverflowError`` on non-finite values.
+    """
+    if isinstance(value, Mapping | list | tuple):
+        return _normalize_json_container(value, seen=set() if _seen is None else _seen)
+    if is_bool_scalar(value):
+        return bool(value)
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, numbers.Real):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(f"Non-finite numeric value is not permitted: {value!r}")
+        return number
+    return value

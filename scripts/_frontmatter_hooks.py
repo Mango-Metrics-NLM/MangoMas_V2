@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import sys
 from collections.abc import Callable, Collection
 from typing import IO, Final
@@ -149,5 +150,5 @@ def post_tool_use_emit_path(stream: IO[str], *, log: logging.Logger) -> int:
             file=sys.stderr,
         )
         return EXIT_OK
-    print(normalized)
+    print(shlex.quote(normalized) if any(ch.isspace() for ch in normalized) else normalized)
     return EXIT_OK

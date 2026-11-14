@@ -332,7 +332,7 @@ gpu: ## CUDA placement + CPU ranking parity on every visible GPU (run with PYTHO
 # rather than pointing at a subdirectory.
 
 gcp-secrets: ## Live GCP Secret Manager suite (needs ADC + project)
-	RUN_GCP_SECRETS=1 $(PYTHON) -m pytest tests/integration -m gcp_secrets --no-cov $(PYTEST_FLAGS)
+	RUN_INTEGRATION=1 RUN_GCP_SECRETS=1 $(PYTHON) -m pytest tests/integration -m gcp_secrets --no-cov $(PYTEST_FLAGS)
 
 gcp-trace: ## Cloud Trace exporter suite (needs the gcp extra installed)
 	RUN_GCP_TRACE=1 $(PYTHON) -m pytest tests/test_telemetry.py tests/test_telemetry_gcp_contract.py -m gcp_trace --no-cov $(PYTEST_FLAGS)

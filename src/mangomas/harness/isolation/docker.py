@@ -21,6 +21,7 @@ from mangomas.errors import ToolExecutionError
 from mangomas.harness.isolation.base import (
     IsolationResult,
     SubprocessRunner,
+    reject_candidate_python_startup_hooks,
     resolve_sandbox_argv,
     sandbox_pythonpath,
     select_sandbox_env,
@@ -219,6 +220,7 @@ class DockerIsolationBackend:
         timeout_seconds: float,
     ) -> IsolationResult:
         """Run *argv* inside a restricted container with *cwd* mounted read-only at ``/work``."""
+        reject_candidate_python_startup_hooks(cwd)
         inner_argv = resolve_sandbox_argv(
             argv,
             interpreter=DOCKER_CONTAINER_PYTHON,

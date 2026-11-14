@@ -11,8 +11,8 @@ none of these run in the default CI suite.
 | --- | --- | --- |
 | `RUN_VERTEX` | _(unset)_ | Set to `1` to enable `tests/vertex/` collection |
 | `VERTEX_PROJECT` | _(required)_ | GCP project that owns the model |
-| `VERTEX_LOCATION` | `us-central1` | Vertex region |
-| `VERTEX_MODEL` | `gemini-2.5-flash` | Gemini model id |
+| `VERTEX_LOCATION` | `us-central1` | Vertex region (set `global` on projects provisioned for `gemini-3.5-*`) |
+| `VERTEX_MODEL` | `gemini-2.5-flash` | Gemini model id (use e.g. `gemini-3.5-flash-lite` with `VERTEX_LOCATION=global` if `gemini-2.5-flash` returns `404 NOT_FOUND`) |
 | `VERTEX_BAD_MODEL` | `does-not-exist-model` | Bogus model id for scenario 6 |
 
 Identity: Application Default Credentials. Run
@@ -70,9 +70,10 @@ summarize agent. Asserts 200, non-empty content, and a persisted
 ### Scenario 6 — Unknown model (`tests/vertex/test_unknown_model.py`)
 
 Targets a bogus model id (`VERTEX_BAD_MODEL`, defaulting to
-`does-not-exist-model`). Vertex raises a `google.api_core.exceptions`
-subclass which the adapter translates to `VertexError(LLMBadResponse)`,
-mapping to HTTP 502 (`llm_bad_response` error envelope).
+`does-not-exist-model`). Vertex raises a `google.genai.errors` /
+`google.api_core.exceptions` exception which the adapter translates to
+`VertexError(LLMBadResponse)`, mapping to HTTP 502 (`llm_bad_response` error
+envelope).
 
 ## Implementation notes
 
@@ -84,8 +85,12 @@ mapping to HTTP 502 (`llm_bad_response` error envelope).
 - Fixtures in `tests/vertex/conftest.py` (`vertex_project`,
   `vertex_location`, `vertex_model`, `vertex_orchestrator`, `vertex_app`)
   mirror the LM Studio E2E shape.
-- `VertexClient` invokes `generate_content_async` directly rather than wrapping
-  synchronous SDK calls in `asyncio.to_thread`.
+- `VertexClient` and `VertexEmbeddingClient` construct isolated
+  `google.genai.Client(vertexai=True, ...)` instances and invoke async
+  `aio.models` calls directly rather than calling process-global
+  `vertexai.init(...)` or wrapping synchronous calls in `asyncio.to_thread`, so
+  `global` chat and regional embeddings (`us-central1`) can coexist in one
+  process.
 - **Cost note:** every scenario incurs Gemini token billing. The ping
   is one token; the chat / stream / summarize scenarios are bounded by
   short prompts but still cost real cents. Use Gemini Flash (cheapest

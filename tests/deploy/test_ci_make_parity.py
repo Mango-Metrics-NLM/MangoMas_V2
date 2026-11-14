@@ -628,3 +628,10 @@ def test_makefile_every_target_is_declared_phony() -> None:
     phony = _makefile.phony_targets()
     assert defined - phony == set(), f"Missing from .PHONY: {sorted(defined - phony)}"
     assert phony - defined == set(), f"Stale .PHONY entries: {sorted(phony - defined)}"
+
+
+def test_makefile_live_secrets_target_enables_integration_gate() -> None:
+    """The live secrets Make target must set RUN_INTEGRATION=1 alongside its target gate."""
+    body = _make_target_body("gcp-secrets")
+    assert "RUN_INTEGRATION=1" in body
+    assert "RUN_GCP_SECRETS=1" in body

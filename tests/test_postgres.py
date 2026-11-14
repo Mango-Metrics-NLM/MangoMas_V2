@@ -16,6 +16,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from mangomas.adapters.storage import postgres as postgres_module
 from mangomas.adapters.storage._schema import (
@@ -369,7 +372,7 @@ async def test_save_failed_turn_translates_postgres_error() -> None:
             "bot", _make_request(), error_code="llm_timeout", error="upstream slow"
         )
 
-    assert exc_info.value.__cause__ is pg_err
+    assert exc_info.value.__cause__ is None
 
 
 # ── save_turn ─────────────────────────────────────────────────────────────────
@@ -399,7 +402,7 @@ async def test_save_turn_translates_postgres_error() -> None:
     with pytest.raises(PersistenceError, match="Failed to persist turn") as exc_info:
         await repo.save_turn("bot", _make_request(), _make_response())
 
-    assert exc_info.value.__cause__ is pg_err
+    assert exc_info.value.__cause__ is None
     assert "PostgresError" in exc_info.value.detail
 
 
@@ -491,7 +494,7 @@ async def test_list_turns_translates_postgres_error() -> None:
     with pytest.raises(PersistenceError, match="Failed to list turns") as exc_info:
         await repo.list_turns()
 
-    assert exc_info.value.__cause__ is pg_err
+    assert exc_info.value.__cause__ is None
 
 
 # ── aclose with live pool ────────────────────────────────────────────────────
@@ -891,7 +894,7 @@ async def test_save_turn_wraps_pool_creation_failure(
     with pytest.raises(PersistenceError, match="Failed to persist turn") as info:
         await repo.save_turn("bot", _make_request(), _make_response())
 
-    assert info.value.__cause__ is exc
+    assert info.value.__cause__ is None
     assert type(exc).__name__ in info.value.detail
 
 
@@ -908,7 +911,7 @@ async def test_list_turns_wraps_pool_creation_failure(
     with pytest.raises(PersistenceError, match="Failed to list turns") as info:
         await repo.list_turns()
 
-    assert info.value.__cause__ is exc
+    assert info.value.__cause__ is None
 
 
 @_requires_asyncpg
@@ -929,7 +932,7 @@ async def test_save_turn_wraps_non_postgres_error_during_query(
     with pytest.raises(PersistenceError, match="Failed to persist turn") as info:
         await repo.save_turn("bot", _make_request(), _make_response())
 
-    assert info.value.__cause__ is exc
+    assert info.value.__cause__ is None
 
 
 @_requires_asyncpg
@@ -946,7 +949,7 @@ async def test_list_turns_wraps_non_postgres_error_during_query(
     with pytest.raises(PersistenceError, match="Failed to list turns") as info:
         await repo.list_turns()
 
-    assert info.value.__cause__ is exc
+    assert info.value.__cause__ is None
 
 
 @_requires_asyncpg
@@ -1125,3 +1128,46 @@ async def test_failure_logs_record_only_the_exception_type(
     assert str(exc) not in blob, "the raw driver message reached the logs"
     assert _DSN_PASSWORD not in blob
     assert any(getattr(r, "error", None) == type(exc).__name__ for r in caplog.records)
+
+
+@_requires_asyncpg
+@pytest.mark.parametrize("kind", ["bad_credentials", "connection_refused"])
+async def test_failure_does_not_leak_driver_message_into_otel_span(
+    monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """Suppressing ``__cause__`` keeps OTel span exception events free of DSN/password text."""
+    exc = _driver_failure(kind)
+    _patch_create_pool(monkeypatch, RecordingCreatePool(side_effect=exc))
+    repo = PostgresRepository(DBSettings(provider="postgres", url=_SECRET_DSN))
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer(__name__)
+
+    try:
+        with (
+            pytest.raises(PersistenceError) as exc_info,
+            tracer.start_as_current_span("pg.save_turn"),
+        ):
+            await repo.save_turn("bot", _make_request(), _make_response())
+        assert exc_info.value.__cause__ is None
+        assert exc_info.value.detail == type(exc).__name__
+
+        spans = exporter.get_finished_spans()
+        assert spans
+        event_text = json.dumps(
+            [
+                {
+                    "name": event.name,
+                    "attrs": dict(event.attributes or {}),
+                }
+                for span in spans
+                for event in span.events
+            ],
+            default=str,
+        )
+        assert _DSN_PASSWORD not in event_text
+        assert str(exc) not in event_text
+        assert "PersistenceError" in event_text
+    finally:
+        provider.shutdown()

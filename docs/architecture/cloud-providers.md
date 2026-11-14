@@ -161,17 +161,24 @@ Set `MANGOMAS_SECRETS__STRICT=true` (`SecretsSettings.strict`) to raise
 
 ## Identity (Workload Identity Federation)
 
-All three providers consume **ambient identity** via Application
-Default Credentials. Locally, `gcloud auth application-default login`
-provides credentials; on GCP compute (GKE, Cloud Run, Cloud
-Functions), Workload Identity Federation provides them at the metadata
-endpoint.
+The Google API providers (`VertexClient`, `VertexEmbeddingClient`,
+`GCPSecretManagerProvider`, and `CloudTraceSpanExporter`) consume **ambient
+identity** via Application Default Credentials (ADC). Locally,
+`gcloud auth application-default login` provides credentials; on GCP compute
+(GKE, Cloud Run, Cloud Functions), Workload Identity Federation provides them
+at the metadata endpoint.
 
-`VertexEmbeddingClient`, `GCPSecretManagerProvider`, and `PostgresRepository` rely
-solely on ambient ADC identity without service-account JSON key files. For
-`VertexClient` (`llm` only), `MANGOMAS_LLM__SECRET_REF` (`credentials_json`) and
+`VertexEmbeddingClient`, `GCPSecretManagerProvider`, and
+`CloudTraceSpanExporter` rely solely on ambient ADC identity without
+service-account JSON key files. For `VertexClient` (`llm` only),
+`MANGOMAS_LLM__SECRET_REF` (`credentials_json`) and
 `MANGOMAS_LLM__CREDENTIALS_PATH` (`credentials_path`) remain supported with ADC
 fallback when both are unset.
+
+By contrast, `PostgresRepository` authenticates over the PostgreSQL wire
+protocol via the configured `MANGOMAS_DB__URL` DSN (and optional external
+Cloud SQL Auth Proxy for IAM database authentication / private tunnel) rather
+than Google API ADC credentials.
 
 **Per environment (ADR-0036).** The deploy pipeline runs one GitHub
 Environment per stage (`dev`, `qa`, `prod`), each with its own WIF-federated

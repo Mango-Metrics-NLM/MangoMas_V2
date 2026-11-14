@@ -9,10 +9,13 @@ import numbers
 from fractions import Fraction
 from typing import Any
 
+import pytest
+
 from mangomas.utils.json_path import (
     coerce_finite_float,
     finite_number,
     is_bool_scalar,
+    normalize_json_value,
     resolve_dotted_path,
     strict_json_equals,
 )
@@ -175,3 +178,15 @@ def test_real_numpy_scalars_when_installed() -> None:
     assert coerce_finite_float(np.float64(1.25)) == 1.25
     assert finite_number(np.float32("nan")) is None
     assert finite_number(np.float64("inf")) is None
+
+
+def test_normalize_json_value_rejects_cyclic_containers() -> None:
+    cyclic_list: list[Any] = []
+    cyclic_list.append(cyclic_list)
+    with pytest.raises(ValueError, match="Cyclic container"):
+        normalize_json_value(cyclic_list)
+
+    cyclic_dict: dict[str, Any] = {}
+    cyclic_dict["self"] = cyclic_dict
+    with pytest.raises(ValueError, match="Cyclic container"):
+        normalize_json_value(cyclic_dict)

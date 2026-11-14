@@ -171,6 +171,34 @@ def _check_guard_probe(args: Sequence[str]) -> str | None:
     return None
 
 
+def _resolve_python_module_arg(
+    arg: str, args: Sequence[str], idx: int, pos: int
+) -> tuple[str, Sequence[str]] | None:
+    """Extract ``(module_name, remaining_args)`` from a ``-m`` option in *arg*."""
+    after = arg[2 + pos :]
+    if after:
+        return after, args[idx + 1 :]
+    if idx + 1 < len(args):
+        return args[idx + 1], args[idx + 2 :]
+    return None
+
+
+def _check_python_flag_token(arg: str, args: Sequence[str], idx: int) -> tuple[int, str | None]:
+    """Inspect one short-option *arg*; return ``(next_idx, block_reason)`` (-1 = stop parsing)."""
+    for pos, ch in enumerate(arg[1:]):
+        if ch == "c":
+            return -1, None
+        if ch in {"W", "X"}:
+            return (idx + 2 if pos + 2 == len(arg) else idx + 1), None
+        if ch == "m":
+            resolved = _resolve_python_module_arg(arg, args, idx, pos)
+            if resolved is None:
+                return -1, None
+            module, rest = resolved
+            return -1, (_check_guard_probe(rest) if module in _GUARD_PROBE_MODULES else None)
+    return idx + 1, None
+
+
 def _check_python(args: Sequence[str]) -> str | None:
     """Block ``python -m [scripts.]guard_probe --manifest ...`` (spec-0050 D-11)."""
     idx = 0
@@ -184,24 +212,9 @@ def _check_python(args: Sequence[str]) -> str | None:
         if arg.startswith("--"):
             idx += 1
             continue
-        for pos, ch in enumerate(arg[1:]):
-            if ch == "c":
-                return None
-            if ch in {"W", "X"} and pos + 2 == len(arg):
-                idx += 1
-                break
-            if ch == "m":
-                after = arg[2 + pos :]
-                if after:
-                    module, rest = after, args[idx + 1 :]
-                elif idx + 1 < len(args):
-                    module, rest = args[idx + 1], args[idx + 2 :]
-                else:
-                    return None
-                if module in _GUARD_PROBE_MODULES:
-                    return _check_guard_probe(rest)
-                return None
-        idx += 1
+        idx, reason = _check_python_flag_token(arg, args, idx)
+        if idx < 0:
+            return reason
     return None
 
 

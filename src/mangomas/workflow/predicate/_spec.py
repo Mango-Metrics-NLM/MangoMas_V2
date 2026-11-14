@@ -97,11 +97,7 @@ class PredicateSpec(BaseModel):
             )
         for comp_name in _COMPARISON_FIELDS:
             val = getattr(self, comp_name)
-            if (
-                isinstance(val, int | float)
-                and not isinstance(val, bool)
-                and not math.isfinite(val)
-            ):
+            if isinstance(val, float) and not math.isfinite(val):
                 raise ValueError(f"predicate {comp_name} must be finite; got {val!r}")
         return self
 

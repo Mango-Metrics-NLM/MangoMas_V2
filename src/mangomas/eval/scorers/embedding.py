@@ -33,13 +33,13 @@ class _Embeddable(Protocol):
     async def embed(self, text: str) -> list[float]: ...
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Return cosine similarity in ``[-1.0, 1.0]``; zero/non-finite vector → ``0.0``."""
+def _cosine_similarity_checked(a: list[float], b: list[float]) -> tuple[float, bool]:
+    """Return ``(cosine_similarity, is_valid)`` in ``[-1.0, 1.0]``."""
     if not a or not b or len(a) != len(b):
-        return 0.0
+        return 0.0, True
     if not all(math.isfinite(x) for x in a) or not all(math.isfinite(y) for y in b):
         logger.warning("Non-finite embedding vector component; returning cosine similarity 0.0")
-        return 0.0
+        return 0.0, False
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -47,10 +47,15 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
         logger.warning(
             "Embedding norm or dot product overflowed to non-finite value; returning 0.0"
         )
-        return 0.0
+        return 0.0, False
     if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return max(-1.0, min(1.0, dot / (norm_a * norm_b)))
+        return 0.0, True
+    return max(-1.0, min(1.0, dot / (norm_a * norm_b))), True
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Return cosine similarity in ``[-1.0, 1.0]``; zero/non-finite vector → ``0.0``."""
+    return _cosine_similarity_checked(a, b)[0]
 
 
 class EmbeddingScorer:
@@ -96,8 +101,19 @@ class EmbeddingScorer:
             )
         pred_vec = await embedder.embed(prediction)
         exp_vec = await embedder.embed(expected)
+        cosine, is_valid = _cosine_similarity_checked(pred_vec, exp_vec)
+        if not is_valid:
+            return ScoreResult(
+                score=0.0,
+                passed=False,
+                metadata={
+                    "scorer": self.name,
+                    "threshold": self._threshold,
+                    "cosine_similarity": 0.0,
+                    "error": "invalid_embedding",
+                },
+            )
         # Map cosine [-1, 1] to [0, 1] so it fits the ScoreResult contract.
-        cosine = _cosine_similarity(pred_vec, exp_vec)
         score = max(0.0, min(1.0, (cosine + 1.0) / 2.0))
         return ScoreResult(
             score=score,

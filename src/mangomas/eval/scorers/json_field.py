@@ -35,6 +35,8 @@ from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
 from mangomas.utils.json_path import (
     finite_number,
+    is_bool_scalar,
+    normalize_json_value,
     resolve_dotted_path,
     strict_json_equals,
 )
@@ -74,20 +76,22 @@ def _validate_check(check: Mapping[str, Any], *, owner: str) -> tuple[str, str, 
         raise ConfigError(f"{owner}: exactly one of {list(COMPARISONS)} is required; got {given}")
     comparison = given[0]
     operand = check[comparison]
-    if comparison in (_AT_LEAST, _AT_MOST) and finite_number(operand) is None:
-        raise ConfigError(f"{owner}: {comparison!r} needs a numeric threshold; got {operand!r}")
-    if (
-        comparison == _EQUALS
-        and isinstance(operand, numbers.Real)
-        and not isinstance(operand, bool)
-        and finite_number(operand) is None
-    ):
-        raise ConfigError(f"{owner}: {comparison!r} needs a finite threshold; got {operand!r}")
-    if comparison == _MIN_LENGTH and (
-        isinstance(operand, bool) or not isinstance(operand, int) or operand < 0
-    ):
+    if comparison in (_AT_LEAST, _AT_MOST):
+        bound = finite_number(operand)
+        if bound is None:
+            raise ConfigError(f"{owner}: {comparison!r} needs a numeric threshold; got {operand!r}")
+        return path, comparison, bound
+    if comparison == _EQUALS:
+        try:
+            normalized = normalize_json_value(operand)
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ConfigError(
+                f"{owner}: {comparison!r} needs a finite value; got {operand!r}"
+            ) from exc
+        return path, comparison, normalized
+    if is_bool_scalar(operand) or not isinstance(operand, numbers.Integral) or int(operand) < 0:
         raise ConfigError(f"{owner}: {_MIN_LENGTH!r} needs a non-negative int; got {operand!r}")
-    return path, comparison, operand
+    return path, comparison, int(operand)
 
 
 class JsonFieldScorer:
@@ -137,8 +141,17 @@ class JsonFieldScorer:
             logger.debug("json_field path not found", extra={"path": path})
             metadata["error"] = "path_not_found"
             return ScoreResult(score=0.0, passed=False, metadata=metadata)
-        metadata["found"] = found
-        accepted = _compare(comparison, operand, found)
+        try:
+            normalized_found = normalize_json_value(found)
+        except (OverflowError, TypeError, ValueError) as exc:
+            logger.debug(
+                "json_field resolved value is non-finite",
+                extra={"path": path, "error": type(exc).__name__},
+            )
+            metadata["error"] = "non_finite_value"
+            return ScoreResult(score=0.0, passed=False, metadata=metadata)
+        metadata["found"] = normalized_found
+        accepted = _compare(comparison, operand, normalized_found)
         return ScoreResult(score=1.0 if accepted else 0.0, passed=accepted, metadata=metadata)
 
 

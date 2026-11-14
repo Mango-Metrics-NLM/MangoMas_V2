@@ -130,10 +130,14 @@ C4Container
   `confidence` never enters PDP input. A `CognitiveSignal` can cause review,
   archival, prompt-context compilation, or a separate `ProposedAction`
   record — never a command, write, capability grant, completion, or release.
-  Command/patch execution runs inside Ring 1 (`mangomas.harness.isolation`
-  `OracleIsolationBackend` backends under ADR-0040), bounded by Ring 2
-  `enforce_tool_invocation_policy` / `repair_sandbox` controls and Ring 3
-  CI governance gates.
+  In-product LLM tool execution is governed by Ring 1
+  (`enforce_tool_invocation_policy` inside `ToolAgent`); automated coding and
+  staged repair verification run under Ring 2 (`repair_sandbox` and
+  `mangomas.harness.isolation` `OracleIsolationBackend` backends under
+  ADR-0040 — defaulting to host-process `NoIsolationBackend` without OS
+  isolation unless `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` selects a
+  sandboxed backend such as `docker` or `wsl`); and Ring 3 enforces
+  coding-agent/hook controls (`.claude/`) and CI governance gates.
 - **Validation tooling is not a runtime container.** The Studio contract is
   pinned by `scripts/studio_consumer_probe.py` (spec-0041), which drives the
   real `api` in-process through `httpx.ASGITransport`. `--mode mock` swaps

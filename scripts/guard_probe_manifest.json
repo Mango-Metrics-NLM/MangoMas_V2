@@ -1191,8 +1191,8 @@
     {
       "id": "MUT-AQA-1112-03",
       "path": "src/mangomas/eval/scorers/embedding.py",
-      "fixed": "    if not all(math.isfinite(x) for x in a) or not all(math.isfinite(y) for y in b):\n        logger.warning(\"Non-finite embedding vector component; returning cosine similarity 0.0\")\n        return 0.0\n    dot = sum(x * y for x, y in zip(a, b, strict=False))\n    norm_a = math.sqrt(sum(x * x for x in a))\n    norm_b = math.sqrt(sum(x * x for x in b))\n    if not (math.isfinite(dot) and math.isfinite(norm_a) and math.isfinite(norm_b)):\n        logger.warning(\n            \"Embedding norm or dot product overflowed to non-finite value; returning 0.0\"\n        )\n        return 0.0\n    if norm_a == 0.0 or norm_b == 0.0:\n        return 0.0\n    return max(-1.0, min(1.0, dot / (norm_a * norm_b)))",
-      "defect": "    dot = sum(x * y for x, y in zip(a, b, strict=False))\n    norm_a = math.sqrt(sum(x * x for x in a))\n    norm_b = math.sqrt(sum(x * x for x in b))\n    if norm_a == 0.0 or norm_b == 0.0:\n        return 0.0\n    return dot / (norm_a * norm_b)",
+      "fixed": "    if not all(math.isfinite(x) for x in a) or not all(math.isfinite(y) for y in b):\n        logger.warning(\"Non-finite embedding vector component; returning cosine similarity 0.0\")\n        return 0.0, False\n    dot = sum(x * y for x, y in zip(a, b, strict=False))\n    norm_a = math.sqrt(sum(x * x for x in a))\n    norm_b = math.sqrt(sum(x * x for x in b))\n    if not (math.isfinite(dot) and math.isfinite(norm_a) and math.isfinite(norm_b)):\n        logger.warning(\n            \"Embedding norm or dot product overflowed to non-finite value; returning 0.0\"\n        )\n        return 0.0, False\n    if norm_a == 0.0 or norm_b == 0.0:\n        return 0.0, True\n    return max(-1.0, min(1.0, dot / (norm_a * norm_b))), True",
+      "defect": "    dot = sum(x * y for x, y in zip(a, b, strict=False))\n    norm_a = math.sqrt(sum(x * x for x in a))\n    norm_b = math.sqrt(sum(x * x for x in b))\n    if norm_a == 0.0 or norm_b == 0.0:\n        return 0.0, True\n    return dot / (norm_a * norm_b), True",
       "gate": [
         "{python}",
         "-m",
@@ -1299,8 +1299,8 @@
     {
       "id": "MUT-AQA-1112-07",
       "path": "mango-integration-contracts/src/mango_contracts/authority.py",
-      "fixed": "    if isinstance(value, BaseModel):\n        _reject_model_keys(value, location=location)\n        return",
-      "defect": "    if False and isinstance(value, BaseModel):\n        _reject_model_keys(value, location=location)\n        return",
+      "fixed": "    if isinstance(value, BaseModel):\n        _reject_model_keys(value, location=location, _seen=_seen)\n        return",
+      "defect": "    if False and isinstance(value, BaseModel):\n        _reject_model_keys(value, location=location, _seen=_seen)\n        return",
       "gate": [
         "{python}",
         "-m",

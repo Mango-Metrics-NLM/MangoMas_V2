@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
-from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, Field
+from pydantic import (
+    AliasChoices,
+    AliasPath,
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    model_serializer,
+)
 
 from mango_contracts.authority import reject_authority_shaped_keys
 
@@ -122,3 +132,138 @@ def test_d7_critic_rejects_authority_keys_in_pydantic_aliases() -> None:
         _ModelWithSafeAliases.model_validate({"short_name": "ok"}),
         location="envelope",
     )
+
+
+class _ComputedFieldDirectName(BaseModel):
+    ok: str = "x"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def allowed_tools(self) -> list[str]:
+        return ["bash"]
+
+
+class _ComputedFieldAlias(BaseModel):
+    ok: str = "x"
+
+    @computed_field(alias="capability_grant")  # type: ignore[prop-decorator]
+    @property
+    def computed_label(self) -> str:
+        return "yes"
+
+
+class _NestedSerializationAlias(BaseModel):
+    internal: str = Field(default="yes", serialization_alias="execution_approved")
+
+
+class _ComputedFieldNestedModel(BaseModel):
+    ok: str = "x"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def computed_meta(self) -> _NestedSerializationAlias:
+        return _NestedSerializationAlias()
+
+
+class _ComputedFieldNestedPayload(BaseModel):
+    ok: str = "x"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def summary(self) -> dict[str, str]:
+        return {"api_key": "leaked"}
+
+
+class _CustomSerializerModel(BaseModel):
+    safe: str = "ok"
+
+    @model_serializer
+    def _dump(self) -> dict[str, object]:
+        return {"safe": self.safe, "granted_capabilities": ["shell"]}
+
+
+class _JsonWhenUsedModelSerializer(BaseModel):
+    safe: str = "ok"
+
+    @model_serializer(when_used="json")
+    def _dump_json(self) -> dict[str, object]:
+        return {"safe": self.safe, "sandbox_bypass": True}
+
+
+class _FieldSerializerPayload(BaseModel):
+    payload: str = "safe"
+
+    @field_serializer("payload")
+    def _serialize_payload(self, value: str) -> dict[str, str]:
+        return {"note": value, "execution_approved": "true"}
+
+
+class _SafeFieldSerializerPayload(BaseModel):
+    payload: str = "safe"
+
+    @field_serializer("payload")
+    def _serialize_payload(self, value: str) -> dict[str, str]:
+        return {"note": value}
+
+
+@dataclass
+class _CyclicDataclass:
+    label: str = "ok"
+    child: Any = None
+
+
+class _SafeComputedAndSerializedModel(BaseModel):
+    safe: str = "ok"
+
+    @computed_field(alias="public_label")  # type: ignore[prop-decorator]
+    @property
+    def internal_label(self) -> dict[str, str]:
+        return {"note": self.safe}
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def plain_note(self) -> str:
+        return self.safe
+
+
+class _CyclicSafeModel(BaseModel):
+    label: str = "ok"
+    child: _CyclicSafeModel | None = None
+
+
+def test_d03_authority_key_guard_inspects_computed_fields_and_model_serializer() -> None:
+    """Computed fields, Python/JSON serializers, and cyclic containers are safely scanned."""
+    for model in (
+        _ComputedFieldDirectName(),
+        _ComputedFieldAlias(),
+        _ComputedFieldNestedModel(),
+        _ComputedFieldNestedPayload(),
+        _CustomSerializerModel(),
+        _JsonWhenUsedModelSerializer(),
+        _FieldSerializerPayload(),
+    ):
+        with pytest.raises(ValueError, match="forbidden"):
+            reject_authority_shaped_keys(model, location="envelope")
+    reject_authority_shaped_keys(
+        _SafeComputedAndSerializedModel(),
+        location="envelope",
+    )
+    reject_authority_shaped_keys(
+        _SafeFieldSerializerPayload(),
+        location="envelope",
+    )
+    cyclic = _CyclicSafeModel()
+    cyclic.child = cyclic
+    reject_authority_shaped_keys(cyclic, location="envelope")
+
+    cyclic_dict: dict[str, Any] = {"ok": "val"}
+    cyclic_dict["self"] = cyclic_dict
+    reject_authority_shaped_keys(cyclic_dict, location="envelope")
+
+    cyclic_list: list[Any] = ["ok"]
+    cyclic_list.append(cyclic_list)
+    reject_authority_shaped_keys(cyclic_list, location="envelope")
+
+    cyclic_dc = _CyclicDataclass()
+    cyclic_dc.child = cyclic_dc
+    reject_authority_shaped_keys(cyclic_dc, location="envelope")

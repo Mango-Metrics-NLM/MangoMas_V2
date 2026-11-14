@@ -101,7 +101,11 @@ def _seed_judge_options(
             ]
     elif _JUDGE_SCORER in scorer_names:
         nested = options.get(_JUDGE_SCORER)
-        child = dict(nested) if isinstance(nested, dict) else {}
+        if nested is not None and not isinstance(nested, dict):
+            raise ConfigError(
+                f"Eval scorer {_JUDGE_SCORER!r} options must be a dict, got {type(nested).__name__}"
+            )
+        child = dict(nested) if nested is not None else {}
         _seed_judge(child, seeds, base_model=base_model, profile_models=profile_models)
         options[_JUDGE_SCORER] = child
     return options

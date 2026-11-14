@@ -28,7 +28,7 @@ Record every lane as one of `PASS`, `FAIL`, `NOT-RUN`, or `FAIL(GATE)`.
 ## Procedure
 
 1. Pin the interpreter & check both populations (P1 `.venv` core+dev and P2
-   `.venv-gpu` with optional `[embeddings-local,rag,vertex]` + CUDA wheel),
+   `.venv-gpu` with optional `[cloud,embeddings-local,rag,vertex]` + CUDA wheel),
    including `mypy --strict` across `src tests scripts eval_harness_bridge/src mango-integration-contracts/src`
    in **both** P1 and P2 so optional-extra imports never hide under missing-import
    silences. `sys.executable` and `pip show mangomas` must name the same

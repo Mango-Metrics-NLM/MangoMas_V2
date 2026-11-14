@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import types
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -226,8 +227,33 @@ async def test_d3_cosine_similarity_and_scorer_clamp_ieee_drift() -> None:
     scorer = EmbeddingScorer(threshold=0.5)
     drift_score = await scorer.score("a", "a", context=ScorerContext(embeddings=_DriftEmbedder()))
     nan_score = await scorer.score("a", "b", context=ScorerContext(embeddings=_DriftEmbedder()))
-    assert 0.0 <= drift_score.score <= 1.0
-    assert math.isfinite(nan_score.score) and nan_score.score == pytest.approx(0.5)
+    zero_thresh = await EmbeddingScorer(threshold=0.0).score(
+        "a", "b", context=ScorerContext(embeddings=_DriftEmbedder())
+    )
+    assert 0.0 <= drift_score.score <= 1.0 and drift_score.passed is True
+    assert nan_score.score == 0.0
+    assert nan_score.passed is False
+    assert nan_score.metadata.get("error") == "invalid_embedding"
+    assert zero_thresh.score == 0.0
+    assert zero_thresh.passed is False
+    assert zero_thresh.metadata.get("error") == "invalid_embedding"
+
+    class _OrthogonalEmbedder:
+        async def embed(self, text: str) -> list[float]:
+            return [1.0, 0.0] if text == "a" else [0.0, 1.0]
+
+        async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+            return [await self.embed(t) for t in texts]
+
+        async def aclose(self) -> None:
+            return None
+
+    ortho_score = await scorer.score(
+        "a", "b", context=ScorerContext(embeddings=_OrthogonalEmbedder())
+    )
+    assert ortho_score.score == pytest.approx(0.5)
+    assert ortho_score.passed is True
+    assert "error" not in ortho_score.metadata
 
 
 # ── D-4: Non-finite floats & union types in json_field, predicates, ToolPolicy ─
@@ -246,6 +272,34 @@ def test_d4_json_field_and_predicate_reject_non_finite_numbers(bad: float) -> No
         PredicateSpec(kind="json_field", field="score", at_least=bad)
     with pytest.raises(ValidationError):
         PredicateSpec(kind="json_field", field="score", equals=bad)
+
+
+async def test_d4_json_field_rejects_nested_non_finite_and_normalizes_thresholds() -> None:
+    """Nested non-finite operands/values fail closed, and real scalar bounds JSON-serialize."""
+    with pytest.raises(ConfigError):
+        JsonFieldScorer(check={"path": "payload", "equals": {"n": float("inf")}})
+    with pytest.raises(ConfigError):
+        JsonFieldScorer(check={"path": "items", "equals": [1, {"x": float("nan")}]})
+
+    scorer = JsonFieldScorer(check={"path": "value", "equals": {"n": 100}})
+    inf_pred = await scorer.score('{"value": {"n": 1e400}}', "")
+    assert inf_pred.passed is False
+    assert inf_pred.score == 0.0
+    assert inf_pred.metadata.get("error") == "non_finite_value"
+
+    frac_range = JsonFieldScorer(check={"path": "score", "at_least": Fraction(1, 2)})
+    frac_result = await frac_range.score('{"score": 0.75}', "")
+    assert frac_result.passed is True
+    # Report sinks serialize result metadata with json.dumps (must not raise TypeError).
+    encoded = json.dumps(frac_result.metadata)
+    assert "0.5" in encoded
+
+
+def test_d4_predicate_spec_preserves_huge_int_equals() -> None:
+    """Arbitrary-precision Python ints like ``10**400`` are valid finite integers for equals."""
+    huge = 10**400
+    spec = PredicateSpec(kind="json_field", field="big", equals=huge)
+    assert spec.equals == huge
 
 
 def test_d4_tool_policy_rejects_non_finite_number_and_checks_union_types() -> None:
@@ -434,6 +488,95 @@ def test_d8_resolve_sandbox_argv_rejects_empty_and_no_isolation_sets_pythonpath(
     assert captured_envs[0]["PYTHONPATH"] == f"{expected_prefix}{os.pathsep}/existing/site"
     assert captured_envs[1]["PYTHONDONTWRITEBYTECODE"] == "1"
     assert captured_envs[1]["PYTHONPATH"] == expected_prefix
+
+
+def test_d8_no_isolation_loads_partial_staged_file_ahead_of_editable_install(
+    tmp_path: Path,
+) -> None:
+    """Single staged file without ``__init__.py`` must shadow the installed package (#7)."""
+    real_chat = (_REPO_ROOT / "src" / "mangomas" / "agents" / "chat.py").read_text(encoding="utf-8")
+    staged_chat = tmp_path / "src" / "mangomas" / "agents" / "chat.py"
+    staged_chat.parent.mkdir(parents=True)
+    staged_chat.write_text(f'{real_chat}\nSTAGED_MARKER = "from_staging_ok"\n', encoding="utf-8")
+
+    backend = NoIsolationBackend(interpreter=sys.executable)
+    proc = backend.run(
+        [
+            "{python}",
+            "-c",
+            (
+                "import mangomas.agents.chat as c, mangomas.config as cfg; "
+                "assert getattr(c, 'STAGED_MARKER', None) == 'from_staging_ok'; "
+                "assert hasattr(cfg, 'Settings')"
+            ),
+        ],
+        cwd=tmp_path,
+        env={},
+        timeout_seconds=15.0,
+    )
+    assert proc.returncode == 0, f"stderr={proc.stderr!r} stdout={proc.stdout!r}"
+
+
+@pytest.mark.parametrize(
+    "hook_relpath",
+    [
+        "src/usercustomize.py",
+        "sitecustomize.py",
+        "sitecustomize/__init__.py",
+        "src/usercustomize/__init__.py",
+        "src/sitecustomize.pyc",
+        "src/usercustomize.cpython-311.pyc",
+        "sitecustomize.pyw",
+        "src/usercustomize.pyd",
+        "sitecustomize.so",
+        "src/evil.pth",
+    ],
+)
+def test_d8_no_isolation_rejects_candidate_startup_hooks(
+    tmp_path: Path,
+    hook_relpath: str,
+) -> None:
+    """Staged ``sitecustomize*`` / ``usercustomize*`` / ``*.pth`` must be refused (#8)."""
+    hook = tmp_path / hook_relpath
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text("import os; os._exit(0)\n", encoding="utf-8")
+
+    backend = NoIsolationBackend(interpreter=sys.executable)
+    with pytest.raises(ToolExecutionError):
+        backend.run(
+            ["{python}", "-c", "import sys; sys.exit(1)"],
+            cwd=tmp_path,
+            env={},
+            timeout_seconds=15.0,
+        )
+
+
+def test_d8_no_isolation_rejects_early_os_exit_bypass(tmp_path: Path) -> None:
+    """``os._exit(0)`` bypassing oracle sentinel must raise ``ToolExecutionError`` (#8)."""
+    backend = NoIsolationBackend(interpreter=sys.executable)
+    with pytest.raises(ToolExecutionError):
+        backend.run(
+            ["{python}", "-c", "import os; os._exit(0)"],
+            cwd=tmp_path,
+            env={},
+            timeout_seconds=15.0,
+        )
+    with pytest.raises(ToolExecutionError):
+        backend.run(
+            ["{python}", "-Bc", "import os; os._exit(0)"],
+            cwd=tmp_path,
+            env={},
+            timeout_seconds=15.0,
+        )
+
+    ok = backend.run(
+        ["{python}", "-c", "print('oracle_done')"],
+        cwd=tmp_path,
+        env={},
+        timeout_seconds=15.0,
+    )
+    assert ok.returncode == 0
+    assert "oracle_done" in ok.stdout
 
 
 # ── D-9: loopback URL port overflow & case-insensitive protected promotion ────

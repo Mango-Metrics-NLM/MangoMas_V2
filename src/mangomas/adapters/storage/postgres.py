@@ -305,7 +305,7 @@ class PostgresRepository:
             raise PersistenceError(
                 "Failed to persist turn",
                 detail=type(exc).__name__,
-            ) from exc
+            ) from None
         int_id = int(row_id)
         debug_extra: dict[str, Any] = {
             "row_id": int_id,
@@ -378,7 +378,7 @@ class PostgresRepository:
             raise PersistenceError(
                 "Failed to list turns",
                 detail=type(exc).__name__,
-            ) from exc
+            ) from None
         # Built from the shared column tuple so a new record column reaches both
         # backends' reads at once; ``id`` and ``ts`` keep their bespoke coercion
         # because asyncpg hands back an int and a datetime where SQLite returns
