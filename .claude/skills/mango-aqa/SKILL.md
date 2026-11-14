@@ -27,12 +27,19 @@ Record every lane as one of `PASS`, `FAIL`, `NOT-RUN`, or `FAIL(GATE)`.
 
 ## Procedure
 
-1. Pin the interpreter. `sys.executable` and `pip show mangomas` must name the
-   same environment. A second population (`[dev,embeddings-local,rag]` plus a
-   `cu130` CUDA wheel) is a different interpreter, not a flag on the first.
+1. Pin the interpreter & check both populations (P1 `.venv` core+dev and P2
+   `.venv-gpu` with optional `[embeddings-local,rag,vertex]` + CUDA wheel),
+   including `mypy --strict` across `src tests scripts eval_harness_bridge/src mango-integration-contracts/src`
+   in **both** P1 and P2 so optional-extra imports never hide under missing-import
+   silences. `sys.executable` and `pip show mangomas` must name the same
+   environment.
 2. Write the defect in the regression module before changing production code.
    Run that guard and keep the failure.
-3. Fix the smallest cause. Re-run the same guard green.
+3. Fix the smallest cause. Re-run the same guard green. Verify CLI/config
+   boundaries (`MANGOMAS_EVAL__PARALLELISM >= 1`, `MANGOMAS_VECTOR__MAX_TOP_K`
+   forwarding, IEEE-754 finiteness, `judge_excluded` gate precedence) alongside
+   cross-package floors (`bridge-coverage`, `contracts-coverage`,
+   `scripts-coverage`).
 4. Hermetic lanes use fakes and `httpx.MockTransport`. They do not open a
    socket and do not import torch unless `RUN_GPU=1`.
 5. `make gpu` is fail-not-skip: with the gate set, a missing CUDA device fails

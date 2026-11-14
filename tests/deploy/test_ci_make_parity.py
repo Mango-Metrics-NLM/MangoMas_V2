@@ -620,3 +620,11 @@ def test_nightly_is_scheduled_and_manually_dispatchable() -> None:
     triggers = _workflows.triggers("nightly.yml")
     assert triggers["schedule"], "nightly.yml must carry a cron schedule"
     assert "workflow_dispatch" in triggers
+
+
+def test_makefile_every_target_is_declared_phony() -> None:
+    """Every command target in the Makefile appears in `.PHONY:` and vice versa."""
+    defined = _makefile.defined_targets()
+    phony = _makefile.phony_targets()
+    assert defined - phony == set(), f"Missing from .PHONY: {sorted(defined - phony)}"
+    assert phony - defined == set(), f"Stale .PHONY entries: {sorted(phony - defined)}"

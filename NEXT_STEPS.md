@@ -33,9 +33,9 @@ Follow-ups, each needing its own spec and `src/` change, ordered by risk:
    defaults to 3072 dimensions; the adapter passes no `output_dimensionality`.
    An opt-in `MANGOMAS_EMBEDDINGS__OUTPUT_DIMENSIONALITY` would let a model
    switch keep an existing collection.
-4. **Retired live-test default (low).** `tests/constants/live.py`
-   `DEFAULT_VERTEX_TEST_MODEL = "gemini-1.5-flash"` names a retired model; the
-   `make vertex` lane will fail at the first call unless `VERTEX_MODEL` is set.
+4. ~~**Retired live-test default (low).**~~ **Resolved (spec-0050 / D-12):** `tests/constants/live.py`
+   `DEFAULT_VERTEX_TEST_MODEL` and `docs/testing/vertex-e2e.md` now default to
+   `"gemini-2.5-flash"` instead of the retired `"gemini-1.5-flash"`.
 5. **Branch-drift guard (low).** A pre-PR check that reports ahead/behind
    against the default branch and spec/ADR number collisions. This work began
    on a branch 86 commits behind trunk whose spec number (0039) was already
@@ -43,6 +43,34 @@ Follow-ups, each needing its own spec and `src/` change, ordered by risk:
 6. **Orchestrator decomposition candidate.** `core/orchestrator/_client.py`
    (616 lines, protected path) is the largest `src/` module. Measure before
    any split (the `mango-decompose` skill).
+
+---
+
+## Overlay: Origin-delta AQA & pre-PR enterprise hardening (2026-11-12, spec-0050)
+
+Completed against `origin/feat/initial-release@9f14fe4` and `origin/main@beb01bf`:
+
+- Fixed fifteen defects (`D-1`..`D-15`) spanning CLI `eval`/`rag` bounds & resource
+  cleanup, IEEE-754 finiteness + cosine clamping across scorers/predicates/`ToolPolicy`/`load_baseline`,
+  `mango_bridge` slug/timeout guards, `merge_gate_results` calibration flag preservation,
+  `mango_contracts.authority` dataclass/BaseModel/set traversal, Ring 1–3 oracle isolation
+  (`None`, `Docker`, `WSL`), frontmatter/destructive-bash Windows canonicalization,
+  `GCPSecretManagerProvider` `SecretManagerServiceClient` P2 typing, `telemetry/tracing.py`
+  `_LiveStderrHandler`, and `mangomas.config.validate_cli_token` facade parity.
+- Synced `.gitignore`, `.dockerignore`, `.gitleaks.toml` (`.venv-gpu/` + `gitleaks.exe`
+  allowlist paired with `tests/deploy/test_gitleaks_config.py`), C4 architecture diagrams,
+  Vertex/eval docs, README scorer matrix, CHANGELOG, skills, and `docs/testing/rca-20261112.md`.
+- Completed code-hygiene & decomposition follow-up: extracted shared stdlib helpers
+  (`src/mangomas/utils/json_path.py`, `scripts/_logging.py`,
+  `scripts/_frontmatter_hooks.py`, `scripts/_gcp_postgres_probe.py`), decomposed
+  `eval/runner.py` and `postgres.py` helpers, fixed `Makefile` `.PHONY` parity,
+  hardened NumPy scalar / `SentenceTransformersEmbeddingClient._encode` / `mango_bridge`
+  `max_steps` validation with structured logging, added `tests/test_utils_json_path.py`
+  and logging/NumPy/bridge regression tests, and cataloged extraction candidates
+  (`mango-supply-chain`, `mango-local-e2e`, `mango-contract-sync`,
+  `mango-aqa-pr-handoff`) in `docs/tooling/claude-code-ecosystem.md`.
+- Remaining environment gate (`ENV-3`): grant `roles/billing.viewer` / open billing
+  on project `hrmtrain` before running live billable `make vertex` and `make gcp-secrets`.
 
 ---
 
@@ -268,11 +296,11 @@ and the D1–D9 sponsor-decision register live in the analysis doc):
 
 ## Near term
 
-_(All cloud adapters (Vertex AI, Postgres, GCP Secret Manager) and the
+*(All cloud adapters (Vertex AI, Postgres, GCP Secret Manager) and the
 offline evaluation harness landed in v0.3.0. The Claude Code enterprise
 harness landed in Unreleased. The four near-term items below all landed
 in the Unreleased Milestone A–E series — see `CHANGELOG.md` and
-`specs/0001`–`0004`. Remaining forward work is under "Long term".)_
+`specs/0001`–`0004`. Remaining forward work is under "Long term".)*
 
 ### ✅ Harness metrics-exporter selection — done (Milestone C)
 
@@ -470,14 +498,14 @@ see the skill and agent tables in `CLAUDE.md` for the current set.
 
 - **8 skills** under `.claude/skills/<name>/SKILL.md` covering
   testing, adapter authoring, agent addition, error taxonomy,
-  observability, config, release, and topology. _(Since grown, and
+  observability, config, release, and topology. *(Since grown, and
   relocated to `.claude/` by spec-0018 — see the skill table in
-  `CLAUDE.md`, which is the pinned source of truth for the current set.)_
+  `CLAUDE.md`, which is the pinned source of truth for the current set.)*
 - **19 agents** under `.claude/agents/mango-<slug>.md` (4 routers + 15 specialists)
   grouped under the 4 parent agents (including `pr-watcher` under
-  `architect`). _(Since superseded: the parent/child hierarchy and its
+  `architect`). *(Since superseded: the parent/child hierarchy and its
   `sub_agents:` key are gone — see the agent tables in
-  `CLAUDE.md`.)_
+  `CLAUDE.md`.)*
 - **`HarnessSettings`** (env prefix `MANGOMAS_HARNESS__`,
   `enabled=False` default) drives whether `build_orchestrator`
   returns a `_HarnessOrchestrator` wrapper that adds a
@@ -714,7 +742,7 @@ defects and a further round of duplication clusters via a full-repo audit:
   `eval.discovery` configuring telemetry as an import side effect, and
   `eval.gate.merge_gate_results` reading the wrong verdict positionally.
 - **Five more shared helpers** — `agents/_prompt.py` (`resolve_system_prompt`
-  + `build_messages`, collapsing five agents' prompt-precedence logic),
+  - `build_messages`, collapsing five agents' prompt-precedence logic),
   `agents/_structured.py` (`StructuredOutputAgent`, the planner/reviewer
   base), `eval/_langfuse.py` + `eval/_options.py` (Langfuse bootstrap +
   option validation, shared by the sink/source/target factories),
@@ -809,9 +837,9 @@ defects and a further round of duplication clusters via a full-repo audit:
 
 ## Long term
 
-_(The first long-term capability — the evaluation harness — landed in
+*(The first long-term capability — the evaluation harness — landed in
 v0.3.0; the embedding-capable provider that unblocked its `EmbeddingScorer`
-landed on the RAG branch above. Follow-ups below.)_
+landed on the RAG branch above. Follow-ups below.)*
 
 ### ✅ Multi-agent workflows — done
 
@@ -863,4 +891,3 @@ spec 0006.
 - GCP resource provisioning scripts (no cloud resources created by this repo).
 - Model fine-tuning or RLHF pipelines.
 - UI / chat interface (out of scope; existing `cli/` covers local interaction).
-

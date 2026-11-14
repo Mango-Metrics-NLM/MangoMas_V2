@@ -6,10 +6,10 @@ than a substring: dotted path over mappings, exactly one comparison, strict
 whole-text parse via :func:`~mangomas.core.structured.parse_llm_json_object`
 so it agrees with ``VALIDATE_OUTPUT``, booleans excluded from numeric
 comparison, and an unparseable or unresolvable prediction is a failing row
-(``score 0.0``), never an exception. The two packages are kept independent by
-the import-linter contract, so the semantics are re-implemented here rather
-than imported; `tests/eval/test_json_field_scorer.py` pins them against the
-predicate's own cases.
+(``score 0.0``), never an exception. The two packages share the pure helpers
+in :mod:`mangomas.utils.json_path` while remaining mutually independent under
+the import-linter contract; `tests/eval/test_json_field_scorer.py` pins them
+against the predicate's own cases.
 
 One additive comparison beyond ADR-0034: ``min_length`` on a list or string
 (``ExecutionPlan.steps`` is a list, and "at least one step" is the planner's
@@ -25,6 +25,7 @@ different expectations.
 from __future__ import annotations
 
 import logging
+import numbers
 from collections.abc import Mapping
 from typing import Any, Final
 
@@ -32,6 +33,14 @@ from mangomas.core.structured import parse_llm_json_object
 from mangomas.errors import ConfigError, LLMBadResponse
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
+from mangomas.utils.json_path import (
+    finite_number,
+    resolve_dotted_path,
+    strict_json_equals,
+)
+
+# Retained alias so legacy/regression callers importing `_as_number` share the helper.
+_as_number = finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -44,34 +53,12 @@ _MIN_LENGTH: Final[str] = "min_length"
 COMPARISONS: Final[tuple[str, ...]] = (_EQUALS, _AT_LEAST, _AT_MOST, _MIN_LENGTH)
 
 
-def _as_number(found: Any) -> float | None:
-    """*found* as a float, or ``None``; ``bool`` is rejected (``True >= 0.5``)."""
-    if isinstance(found, bool) or not isinstance(found, int | float):
-        return None
-    try:
-        return float(found)
-    except OverflowError:
-        return None
-
-
-def _resolve(data: Mapping[str, Any], segments: tuple[str, ...]) -> tuple[bool, Any]:
-    """Walk a dotted path over mappings. ``(False, None)`` when it runs off."""
-    current: Any = data
-    for segment in segments:
-        if not isinstance(current, Mapping) or segment not in current:
-            return False, None
-        current = current[segment]
-    return True, current
-
-
 def _compare(comparison: str, operand: Any, found: Any) -> bool:
     if comparison == _EQUALS:
-        if (type(found) is bool) is not (type(operand) is bool):
-            return False
-        return bool(found == operand)
+        return strict_json_equals(found, operand)
     if comparison == _MIN_LENGTH:
         return isinstance(found, list | str) and len(found) >= operand
-    number = _as_number(found)
+    number = finite_number(found)
     if number is None:
         return False
     return bool(number >= operand) if comparison == _AT_LEAST else bool(number <= operand)
@@ -87,8 +74,15 @@ def _validate_check(check: Mapping[str, Any], *, owner: str) -> tuple[str, str, 
         raise ConfigError(f"{owner}: exactly one of {list(COMPARISONS)} is required; got {given}")
     comparison = given[0]
     operand = check[comparison]
-    if comparison in (_AT_LEAST, _AT_MOST) and _as_number(operand) is None:
+    if comparison in (_AT_LEAST, _AT_MOST) and finite_number(operand) is None:
         raise ConfigError(f"{owner}: {comparison!r} needs a numeric threshold; got {operand!r}")
+    if (
+        comparison == _EQUALS
+        and isinstance(operand, numbers.Real)
+        and not isinstance(operand, bool)
+        and finite_number(operand) is None
+    ):
+        raise ConfigError(f"{owner}: {comparison!r} needs a finite threshold; got {operand!r}")
     if comparison == _MIN_LENGTH and (
         isinstance(operand, bool) or not isinstance(operand, int) or operand < 0
     ):
@@ -131,11 +125,16 @@ class JsonFieldScorer:
         }
         try:
             parsed = parse_llm_json_object(prediction)
-        except (LLMBadResponse, ValueError, RecursionError):
+        except (LLMBadResponse, ValueError, RecursionError) as exc:
+            logger.debug(
+                "json_field prediction is not a JSON object",
+                extra={"error": type(exc).__name__},
+            )
             metadata["error"] = "not_json_object"
             return ScoreResult(score=0.0, passed=False, metadata=metadata)
-        resolved, found = _resolve(parsed, tuple(path.split(".")))
+        resolved, found = resolve_dotted_path(parsed, path)
         if not resolved:
+            logger.debug("json_field path not found", extra={"path": path})
             metadata["error"] = "path_not_found"
             return ScoreResult(score=0.0, passed=False, metadata=metadata)
         metadata["found"] = found

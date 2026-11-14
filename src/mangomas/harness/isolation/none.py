@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -55,12 +56,22 @@ class NoIsolationBackend:
             backend_name=self.name,
             allow_host_interpreter=True,
         )
+        resolved_cwd = cwd.resolve()
+        staged_prefix = f"{resolved_cwd / 'src'}{os.pathsep}{resolved_cwd}"
+        run_env = dict(env)
+        existing_pythonpath = run_env.get("PYTHONPATH", "")
+        run_env["PYTHONPATH"] = (
+            f"{staged_prefix}{os.pathsep}{existing_pythonpath}"
+            if existing_pythonpath
+            else staged_prefix
+        )
+        run_env["PYTHONDONTWRITEBYTECODE"] = "1"
         runner = subprocess.run if self._runner is None else self._runner
         try:
             completed = runner(
                 resolved_argv,
-                cwd=cwd.resolve(),
-                env=dict(env),
+                cwd=resolved_cwd,
+                env=run_env,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

@@ -70,6 +70,11 @@ def resolve_sandbox_argv(
     allow_host_interpreter: bool = False,
 ) -> list[str]:
     """Rewrite a leading ``{python}``/``python`` token and reject host paths in sandboxes."""
+    if not argv:
+        raise ToolExecutionError(
+            f"Sandbox command argv for backend {backend_name!r} must not be empty",
+            tool_name="repair_sandbox",
+        )
     head = argv[0]
     if head in PYTHON_ARGV_TOKENS:
         return [interpreter, *argv[1:]]

@@ -23,6 +23,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import _logging
+
 logger = logging.getLogger(__name__)
 
 EXIT_OK = 0
@@ -196,12 +198,15 @@ def run_probe(root: Path, manifest: Path, *, allow_dirty: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Prove manifest guards still fire.")
+    parser = argparse.ArgumentParser(
+        description="Prove manifest guards still fire.",
+        allow_abbrev=False,
+    )
     parser.add_argument("--manifest", type=Path, default=_default_manifest())
     parser.add_argument("--root", type=Path, default=_repo_root())
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    _logging.configure_script_logging(fmt="%(levelname)s %(message)s")
     try:
         run_probe(args.root, args.manifest, allow_dirty=args.allow_dirty)
     except ProbeError as exc:

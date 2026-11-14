@@ -218,9 +218,11 @@ def _build_scorer(names: list[str], scorer_options: dict[str, object]) -> Scorer
     children: list[dict[str, object]] = []
     for name in names:
         options = scorer_options.get(name)
-        children.append(
-            {"name": name, "options": dict(options) if isinstance(options, dict) else {}}
-        )
+        if options is not None and not isinstance(options, dict):
+            raise ConfigError(
+                f"scorer {name!r} options must be a mapping; got {type(options).__name__}"
+            )
+        children.append({"name": name, "options": dict(options) if options is not None else {}})
     return scorer_registry.get(_COMPOSITE_SCORER)({"scorers": children})
 
 

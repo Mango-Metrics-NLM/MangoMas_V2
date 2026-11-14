@@ -123,9 +123,11 @@ def build_composite(specs: list[Any]) -> CompositeScorer:
             name, options = spec, {}
         elif isinstance(spec, dict) and isinstance(spec.get("name"), str):
             name = spec["name"]
-            options = spec.get("options") or {}
-            if not isinstance(options, dict):
+            raw_options = spec.get("options")
+            options_candidate = {} if raw_options is None else raw_options
+            if not isinstance(options_candidate, dict):
                 raise ConfigError(f"composite: child {name!r} 'options' must be an object")
+            options = options_candidate
         else:
             raise ConfigError(
                 f"composite: each child must be a name or {{name, options}}; got {spec!r}"

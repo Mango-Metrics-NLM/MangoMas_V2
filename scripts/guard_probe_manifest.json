@@ -756,9 +756,9 @@
     },
     {
       "id": "MUT-SBX-03",
-      "path": "scripts/lint_agent_frontmatter.py",
-      "fixed": "    destructive_reason = _destructive_bash_reason(command)\n    if destructive_reason is not None:\n        _emit_deny(destructive_reason)\n        return EXIT_OK\n",
-      "defect": "    destructive_reason = _destructive_bash_reason(command)\n    if False and destructive_reason is not None:\n        _emit_deny(destructive_reason)\n        return EXIT_OK\n",
+      "path": "scripts/_frontmatter_hooks.py",
+      "fixed": "    reason = destructive_bash_reason(command)\n    if reason is not None:\n        emit_deny(reason)\n        return EXIT_OK\n",
+      "defect": "    reason = destructive_bash_reason(command)\n    if False and reason is not None:\n        emit_deny(reason)\n        return EXIT_OK\n",
       "gate": [
         "{python}",
         "-m",
@@ -1126,6 +1126,276 @@
         "tests/evals/test_dataset_lanes.py",
         "-k",
         "planner",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-01",
+      "path": "src/mangomas/config/evaluation.py",
+      "fixed": "        for label, count in (\n            (\"parallelism\", self.parallelism),\n            (\"trials\", self.trials),",
+      "defect": "        for label, count in (\n            (\"trials\", self.trials),",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d1_eval_settings_rejects_non_positive_parallelism",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-01B",
+      "path": "src/mangomas/cli/commands/eval.py",
+      "fixed": "    for flag_name, count in ((\"parallelism\", effective_parallelism), (\"trials\", effective_trials)):",
+      "defect": "    for flag_name, count in ((\"trials\", effective_trials),):",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d1_cli_eval_zero_parallelism_exits_config_error",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-02",
+      "path": "src/mangomas/cli/commands/rag.py",
+      "fixed": "                top_k=cfg.vector.top_k,\n                max_top_k=cfg.vector.max_top_k,",
+      "defect": "                top_k=cfg.vector.top_k,",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d2_cli_rag_query_forwards_vector_max_top_k",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-03",
+      "path": "src/mangomas/eval/scorers/embedding.py",
+      "fixed": "    if not all(math.isfinite(x) for x in a) or not all(math.isfinite(y) for y in b):\n        logger.warning(\"Non-finite embedding vector component; returning cosine similarity 0.0\")\n        return 0.0\n    dot = sum(x * y for x, y in zip(a, b, strict=False))\n    norm_a = math.sqrt(sum(x * x for x in a))\n    norm_b = math.sqrt(sum(x * x for x in b))\n    if not (math.isfinite(dot) and math.isfinite(norm_a) and math.isfinite(norm_b)):\n        logger.warning(\n            \"Embedding norm or dot product overflowed to non-finite value; returning 0.0\"\n        )\n        return 0.0\n    if norm_a == 0.0 or norm_b == 0.0:\n        return 0.0\n    return max(-1.0, min(1.0, dot / (norm_a * norm_b)))",
+      "defect": "    dot = sum(x * y for x, y in zip(a, b, strict=False))\n    norm_a = math.sqrt(sum(x * x for x in a))\n    norm_b = math.sqrt(sum(x * x for x in b))\n    if norm_a == 0.0 or norm_b == 0.0:\n        return 0.0\n    return dot / (norm_a * norm_b)",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d3_cosine_similarity_fails_closed_on_non_finite",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-04",
+      "path": "src/mangomas/harness/tool_policy.py",
+      "fixed": "    if expected_type == \"number\" and isinstance(value, float) and not math.isfinite(value):\n        return False",
+      "defect": "    if False:\n        return False",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d4_tool_policy_rejects_non_finite_number_and_checks_union_types",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-04B",
+      "path": "src/mangomas/utils/json_path.py",
+      "fixed": "    return number if math.isfinite(number) else None",
+      "defect": "    return number",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d4_json_field_and_predicate_reject_non_finite_numbers",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-05",
+      "path": "src/mangomas/eval/scorers/composite.py",
+      "fixed": "            raw_options = spec.get(\"options\")\n            options_candidate = {} if raw_options is None else raw_options",
+      "defect": "            options_candidate = spec.get(\"options\") or {}",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d5_eval_composite_dataset_and_config_reject_falsy_non_dict",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-05B",
+      "path": "eval_harness_bridge/src/mango_bridge.py",
+      "fixed": "    if not re.fullmatch(r\"\\A[A-Za-z0-9][A-Za-z0-9._-]*\\Z\", agent):\n        raise ValueError(f\"invalid agent name: {agent!r}\")",
+      "defect": "    if False:\n        raise ValueError(f\"invalid agent name: {agent!r}\")",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/eval_harness_bridge/test_aqa_20261112_bridge.py::test_d5_mango_bridge_rejects_unsafe_agent_slug",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-06",
+      "path": "src/mangomas/eval/baseline.py",
+      "fixed": "            mean_score=_require_finite_number(data[\"mean_score\"], field_name=\"mean_score\"),",
+      "defect": "            mean_score=data[\"mean_score\"],",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d6_baseline_report_from_dict_rejects_bool_nan_and_non_mapping",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-07",
+      "path": "mango-integration-contracts/src/mango_contracts/authority.py",
+      "fixed": "    if isinstance(value, BaseModel):\n        _reject_model_keys(value, location=location)\n        return",
+      "defect": "    if False and isinstance(value, BaseModel):\n        _reject_model_keys(value, location=location)\n        return",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/mango_contracts/test_aqa_20261112_contracts.py::test_d7_rejects_authority_or_secret_keys_inside_pydantic_model_and_extras",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-08",
+      "path": "src/mangomas/harness/isolation/none.py",
+      "fixed": "        run_env[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n        runner = subprocess.run if self._runner is None else self._runner\n        try:\n            completed = runner(\n                resolved_argv,\n                cwd=resolved_cwd,\n                env=run_env,",
+      "defect": "        runner = subprocess.run if self._runner is None else self._runner\n        try:\n            completed = runner(\n                resolved_argv,\n                cwd=resolved_cwd,\n                env=dict(env),",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d8_resolve_sandbox_argv_rejects_empty_and_no_isolation_sets_pythonpath",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-09",
+      "path": "src/mangomas/harness/repair_sandbox.py",
+      "fixed": "    protected_norm = {normalize_path(p).lower() for p in protected_paths} | {\n        normalize_path(p).lower() for p in governance_surface\n    }\n    if norm.lower() in protected_norm:",
+      "defect": "    protected_norm = {normalize_path(p) for p in protected_paths} | {\n        normalize_path(p) for p in governance_surface\n    }\n    if norm in protected_norm:",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d9_repair_sandbox_port_overflow_and_case_insensitive_protected_target",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-10",
+      "path": "src/mangomas/harness/isolation/docker.py",
+      "fixed": "        cmd.append(\"--\")\n        cmd.append(self._image)\n        cmd.extend(inner_argv)",
+      "defect": "        cmd.append(self._image)\n        cmd.extend(inner_argv)",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d10_docker_wsl_and_repair_settings_hardening",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-11",
+      "path": "scripts/_destructive_bash.py",
+      "fixed": "    \"python\": _check_python,\n    \"python3\": _check_python,\n    \"py\": _check_python,",
+      "defect": "    \"_disabled_python\": _check_python,",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/harness/test_aqa_20261112_scripts.py::test_d11_destructive_bash_blocks_python_module_guard_probe_manifest",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1112-12",
+      "path": "src/mangomas/secrets/gcp.py",
+      "fixed": "                from google.cloud.secretmanager import (  # noqa: PLC0415\n                    SecretManagerServiceClient as _SecretManagerServiceClient,\n                )\n            except ImportError as exc:\n                raise ImportError(_SDK_INSTALL_HINT) from exc\n\n            self._client = _SecretManagerServiceClient()",
+      "defect": "                from google.cloud import secretmanager  # noqa: PLC0415\n            except ImportError as exc:\n                raise ImportError(_SDK_INSTALL_HINT) from exc\n\n            self._client = secretmanager.SecretManagerServiceClient()",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261112_defects.py::test_d13_gcp_secrets_avoids_namespace_package_attr_import",
         "-q",
         "--tb=no",
         "-p",

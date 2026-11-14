@@ -31,7 +31,7 @@ argument-hint: "Describe the eval change (e.g. 'add a bleu scorer', 'add a csv d
 ```
 eval/protocol.py       Scorer, ScorerContext, ScoreResult protocols
 eval/registry.py       scorer_registry (+ sibling registries per component)
-eval/scorers/          exact_match, regex_match, contains, json_keys, llm_judge, embedding, cost_budget
+eval/scorers/          exact_match, regex_match, contains, json_keys, json_field, tool_trajectory, composite, llm_judge, embedding, cost_budget
 eval/sink.py + sinks/  console, json_file, sqlite_results, webhook, langfuse
 eval/_serialize.py     report_payload(report, *, gate_result=None) — the one payload builder
 eval/target.py + targets/  agent (default), pipeline, fan_out, echo
@@ -92,22 +92,22 @@ mangomas eval -d <dataset.jsonl> -s <scorer> [-t <target>] `
 ```
 
 Gate flags map to `MANGOMAS_EVAL__GATE_ENABLED`, `MIN_MEAN_SCORE`,
-`MIN_PASS_RATE`, `FAIL_ON_ERROR`, `MAX_MEAN_COST_USD` (USD, not a `[0, 1]`
-score), and the regression flags (`--baseline`, `--max-mean-score-drop`,
-`--max-pass-rate-drop`, `--no-allow-new-failures`). `--max-mean-cost-usd`
+`MIN_PASS_RATE`, `MIN_PASS_POW_K` (`--min-pass-pow-k`, requires `--trials` /
+`-k >= 2`), `FAIL_ON_ERROR`, `MAX_MEAN_COST_USD` (`--max-mean-cost-usd`, USD, not
+a `[0, 1]` score), `TRIALS` (`--trials` / `-k`), plus `JUDGE_CALIBRATION_PATH` /
+`JUDGE_PROFILE` (uncalibrated `llm_judge` scores are excluded from gate verdicts
+by default) and the regression flags (`--baseline`, `--max-mean-score-drop`,
+`--max-pass-rate-drop`, `--no-allow-new-failures`). Any gate threshold flag
 engages the gate when set; `--no-gate` still disables it.
 
-**`mean_cost_usd` is declared, not measured.** `Target.run` returns a `str`, so
-the `AgentResponse` and its metadata are dropped at that boundary and
-`ScorerContext.row_metadata` carries the *dataset row's* metadata. `cost_budget`
-therefore reads token counts the JSONL declared, or falls through to
-`len(prediction)` × a rate; no adapter emits token usage. A cost gate consequently
-fires on **verbosity** and is blind to a `MODEL_OVERRIDE` swap, a per-token price
-change, or extra tool steps. Only gate `mean_cost_usd` over a declared-cost
-dataset (the `cost_controlled_v1.jsonl` shape), and say so next to any published
-threshold. See `docs/eval/harness.md` § "What the cost threshold measures" and
-`tests/eval/test_cost_measurement_basis.py`, which pins it. Measuring cost for
-real is D15, not a present capability.
+**`mean_cost_usd` precedence (spec-0045).** `Target.run` returns `TargetOutcome`,
+carrying adapter-accumulated token usage in `TargetOutcome.metadata["usage"]`
+(`input_tokens`, `output_tokens`, `llm_calls`). `cost_budget` prefers **measured
+adapter tokens** (when `llm_calls > 0` and token counts are non-zero) over
+explicit row `cost_usd`, declared row token counts, and `len(prediction)` × output
+char rate. When using simulated/declared datasets or silent adapters, state
+whether `mean_cost_usd` reflects measured tokens or declared/fallback estimates;
+see `docs/eval/harness.md` and `tests/eval/test_cost_measurement_basis.py`.
 
 ---
 

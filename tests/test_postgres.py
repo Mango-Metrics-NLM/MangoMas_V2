@@ -985,6 +985,9 @@ async def test_auth_failure_message_never_reaches_the_public_error_message(
 
     assert str(info.value) == "Failed to list turns"
     assert "password authentication failed" not in str(info.value)
+    assert info.value.detail == "InvalidPasswordError"
+    assert "password authentication failed" not in info.value.detail
+    assert "app_user" not in info.value.detail
 
 
 # ── Tenancy stays correct through the rebuilt paths ──────────────────────────
@@ -1111,10 +1114,13 @@ async def test_failure_logs_record_only_the_exception_type(
 
     with (
         caplog.at_level(logging.DEBUG, logger=_PG_LOGGER),
-        pytest.raises(PersistenceError),
+        pytest.raises(PersistenceError) as exc_info,
     ):
         await repo.save_turn("bot", _make_request(), _make_response())
 
+    assert exc_info.value.detail == type(exc).__name__
+    assert str(exc) not in exc_info.value.detail
+    assert _DSN_PASSWORD not in exc_info.value.detail
     blob = _log_blob(caplog)
     assert str(exc) not in blob, "the raw driver message reached the logs"
     assert _DSN_PASSWORD not in blob

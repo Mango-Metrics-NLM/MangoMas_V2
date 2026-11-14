@@ -42,7 +42,6 @@ from mangomas.config import (
 from mangomas.errors import PersistenceError
 from mangomas.tenancy import DEFAULT_TENANT, get_tenant
 from mangomas.utils import clock
-from mangomas.utils.exc import truncated_exc_detail
 
 if TYPE_CHECKING:  # pragma: no cover
     import asyncpg
@@ -260,22 +259,24 @@ class PostgresRepository:
             self._pool = pool
             return pool
 
-    async def save_turn(
+    async def _insert_turn_row(
         self,
+        *,
+        op_name: str,
         agent: str,
         request: AgentRequest,
-        response: AgentResponse,
+        response_payload: dict[str, Any],
+        status: TurnStatus,
+        error_code: str | None = None,
+        error: str | None = None,
     ) -> int:
-        """Persist a single turn; returns the new row id."""
+        """Persist one row into ``turns`` and translate driver errors uniformly."""
         import asyncpg  # noqa: PLC0415
 
         tenant = get_tenant()
         try:
             # Inside the ``try``: pool creation is an I/O boundary like any
-            # other. With it outside, connection-refused, bad-credentials,
-            # wrong-database and connect-timeout escaped the typed vocabulary
-            # and surfaced raw — including into the *unauthenticated* /readyz
-            # body, which publishes ``str(exc)`` of whatever the repo raises.
+            # other so connection/auth/timeout errors surface as PersistenceError.
             pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 row_id = await conn.fetchval(
@@ -284,43 +285,52 @@ class PostgresRepository:
                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
                     clock.now(),
                     agent,
-                    # model_dump(mode="json"), not model_dump_json(): the jsonb
-                    # codec registered in _ensure_pool applies json.dumps on the
-                    # way out, so handing it an already-serialised string stored
-                    # a JSON *scalar* and read back a str — while SQLiteRepository
-                    # returns a dict. That broke the row-shape parity the codec
-                    # comment claims, and no test covered the shape.
+                    # model_dump(mode="json"): the registered jsonb codec applies json.dumps.
                     request.model_dump(mode="json"),
-                    response.model_dump(mode="json"),
+                    response_payload,
                     tenant,
                     TURN_SCHEMA_VERSION,
-                    str(TurnStatus.OK),
-                    None,
-                    None,
+                    str(status),
+                    error_code,
+                    error,
                 )
         except _driver_failures(asyncpg) as exc:
-            # ``logger.error``, not ``logger.exception``: the traceback renders
-            # ``str(exc)``, and now that connection failures reach this handler
-            # that body can be ``password authentication failed for user "…"``.
-            # Same rule as ``_terminate_quietly`` — the type name only.
+            # Type name only: raw exc text can leak credentials in /readyz,
+            # HTTP 500 error details, or logs.
             logger.error(
-                "Postgres save_turn failed",
+                "Postgres %s failed",
+                op_name,
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
             raise PersistenceError(
                 "Failed to persist turn",
-                detail=truncated_exc_detail(exc),
+                detail=type(exc).__name__,
             ) from exc
         int_id = int(row_id)
-        logger.debug(
-            "Postgres save_turn persisted",
-            extra={
-                "row_id": int_id,
-                "agent": agent,
-                "dsn_host": _dsn_host(self._dsn),
-            },
-        )
+        debug_extra: dict[str, Any] = {
+            "row_id": int_id,
+            "agent": agent,
+            "dsn_host": _dsn_host(self._dsn),
+        }
+        if error_code is not None:
+            debug_extra["error_code"] = error_code
+        logger.debug("Postgres %s persisted", op_name, extra=debug_extra)
         return int_id
+
+    async def save_turn(
+        self,
+        agent: str,
+        request: AgentRequest,
+        response: AgentResponse,
+    ) -> int:
+        """Persist a single turn; returns the new row id."""
+        return await self._insert_turn_row(
+            op_name="save_turn",
+            agent=agent,
+            request=request,
+            response_payload=response.model_dump(mode="json"),
+            status=TurnStatus.OK,
+        )
 
     async def save_failed_turn(
         self,
@@ -330,56 +340,16 @@ class PostgresRepository:
         error_code: str,
         error: str,
     ) -> int:
-        """Persist a dispatch that raised; returns the new row id.
-
-        Parity with :meth:`SQLiteRepository.save_failed_turn` — the same row
-        shape, the same ``status``/``error_code``/``error`` semantics, and the
-        same empty-object ``response`` for a turn that never produced one. A
-        deployment that swaps backends must not change what its audit trail
-        can answer.
-        """
-        import asyncpg  # noqa: PLC0415
-
-        tenant = get_tenant()
-        truncated = error[:DEFAULT_ERROR_DETAIL_TRUNCATE]
-        try:
-            pool = await self._ensure_pool()
-            async with pool.acquire() as conn:
-                row_id = await conn.fetchval(
-                    "INSERT INTO turns (ts, agent, request, response, tenant, "
-                    "schema_version, status, error_code, error) "
-                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
-                    clock.now(),
-                    agent,
-                    request.model_dump(mode="json"),
-                    {},
-                    tenant,
-                    TURN_SCHEMA_VERSION,
-                    str(TurnStatus.ERROR),
-                    error_code,
-                    truncated,
-                )
-        except _driver_failures(asyncpg) as exc:
-            # Type name only — see the note in ``save_turn``.
-            logger.error(
-                "Postgres save_failed_turn failed",
-                extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
-            )
-            raise PersistenceError(
-                "Failed to persist turn",
-                detail=truncated_exc_detail(exc),
-            ) from exc
-        int_id = int(row_id)
-        logger.debug(
-            "Postgres save_failed_turn persisted",
-            extra={
-                "row_id": int_id,
-                "agent": agent,
-                "error_code": error_code,
-                "dsn_host": _dsn_host(self._dsn),
-            },
+        """Persist a dispatch that raised; returns the new row id."""
+        return await self._insert_turn_row(
+            op_name="save_failed_turn",
+            agent=agent,
+            request=request,
+            response_payload={},
+            status=TurnStatus.ERROR,
+            error_code=error_code,
+            error=error[:DEFAULT_ERROR_DETAIL_TRUNCATE],
         )
-        return int_id
 
     async def list_turns(
         self, limit: int = DEFAULT_STORAGE_LIST_TURNS_LIMIT
@@ -400,14 +370,14 @@ class PostgresRepository:
                     limit,
                 )
         except _driver_failures(asyncpg) as exc:
-            # Type name only — see the note in ``save_turn``.
+            # Type name only — see the note in ``_insert_turn_row``.
             logger.error(
                 "Postgres list_turns failed",
                 extra={"error": type(exc).__name__, "dsn_host": _dsn_host(self._dsn)},
             )
             raise PersistenceError(
                 "Failed to list turns",
-                detail=truncated_exc_detail(exc),
+                detail=type(exc).__name__,
             ) from exc
         # Built from the shared column tuple so a new record column reaches both
         # backends' reads at once; ``id`` and ``ts`` keep their bespoke coercion

@@ -55,6 +55,7 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any, Final
 
+import _logging
 import _stdin_json
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -95,24 +96,7 @@ def _configure_logging(cfg: Any | None = None) -> None:
     *cfg* is the settings object ``main`` already loaded, so a successful
     session does not parse settings twice.
     """
-    try:
-        from mangomas.telemetry import configure_telemetry  # noqa: PLC0415
-
-        if cfg is None:
-            from mangomas.config import get_settings  # noqa: PLC0415
-
-            cfg = get_settings()
-        configure_telemetry(
-            service_name=cfg.harness.metrics_namespace,
-            log_level=cfg.harness.hook_log_level,
-            log_format=cfg.log.format,
-            exporter=cfg.telemetry.exporter,
-        )
-    except Exception:
-        logging.basicConfig(level=logging.INFO)
-        logger.warning(
-            "Structured telemetry setup failed; falling back to basicConfig", exc_info=True
-        )
+    _logging.configure_harness_telemetry_logging(logger, cfg=cfg)
 
 
 def _resolve_mode(cfg: Any | None = None) -> ConfigChangeMode:

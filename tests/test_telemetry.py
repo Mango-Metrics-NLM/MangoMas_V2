@@ -377,3 +377,37 @@ def test_configure_telemetry_leaves_logging_untouched_when_the_exporter_fails(
     assert telemetry._state.configured is False
     assert root.handlers == handlers_before
     assert root.level == level_before
+
+
+def test_configure_telemetry_tracks_live_sys_stderr_across_closed_redirect() -> None:
+    """Handler installed by configure_telemetry must resolve sys.stderr dynamically.
+
+    Regression for Click CliRunner capture: CliRunner swaps sys.stderr to a
+    short-lived TextIOWrapper during invoke() and closes it on return. Caching
+    that closed stream breaks later logging calls with ``ValueError: I/O
+    operation on closed file``.
+    """
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+
+    root = logging.getLogger()
+    old_handlers = list(root.handlers)
+    old_level = root.level
+    old_configured = telemetry._state.configured
+    telemetry._state.configured = False
+    try:
+        first_buf = io.StringIO()
+        with contextlib.redirect_stderr(first_buf):
+            telemetry.configure_telemetry(service_name="t")
+            logging.getLogger("mangomas.test.live_stderr").warning("first call")
+        assert "first call" in first_buf.getvalue()
+        first_buf.close()
+
+        second_buf = io.StringIO()
+        with contextlib.redirect_stderr(second_buf):
+            logging.getLogger("mangomas.test.live_stderr").warning("second call")
+        assert "second call" in second_buf.getvalue()
+    finally:
+        root.handlers = old_handlers
+        root.setLevel(old_level)
+        telemetry._state.configured = old_configured

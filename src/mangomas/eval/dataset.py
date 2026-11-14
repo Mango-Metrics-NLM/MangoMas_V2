@@ -84,7 +84,8 @@ def _parse_row(raw: dict[str, Any], *, index: int, source: str) -> DatasetRow:
             f"{source} row {index}: 'expected' must be a string",
             detail=f"got {type(expected).__name__}",
         )
-    metadata = raw.get("metadata") or {}
+    raw_metadata = raw.get("metadata")
+    metadata = {} if raw_metadata is None else raw_metadata
     if not isinstance(metadata, dict):
         raise DatasetError(
             f"{source} row {index}: 'metadata' must be an object",

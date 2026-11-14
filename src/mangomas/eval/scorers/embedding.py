@@ -34,15 +34,23 @@ class _Embeddable(Protocol):
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Return cosine similarity in ``[-1.0, 1.0]``; zero vector → ``0.0``."""
+    """Return cosine similarity in ``[-1.0, 1.0]``; zero/non-finite vector → ``0.0``."""
     if not a or not b or len(a) != len(b):
+        return 0.0
+    if not all(math.isfinite(x) for x in a) or not all(math.isfinite(y) for y in b):
+        logger.warning("Non-finite embedding vector component; returning cosine similarity 0.0")
         return 0.0
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
+    if not (math.isfinite(dot) and math.isfinite(norm_a) and math.isfinite(norm_b)):
+        logger.warning(
+            "Embedding norm or dot product overflowed to non-finite value; returning 0.0"
+        )
+        return 0.0
     if norm_a == 0.0 or norm_b == 0.0:
         return 0.0
-    return dot / (norm_a * norm_b)
+    return max(-1.0, min(1.0, dot / (norm_a * norm_b)))
 
 
 class EmbeddingScorer:
@@ -90,7 +98,7 @@ class EmbeddingScorer:
         exp_vec = await embedder.embed(expected)
         # Map cosine [-1, 1] to [0, 1] so it fits the ScoreResult contract.
         cosine = _cosine_similarity(pred_vec, exp_vec)
-        score = (cosine + 1.0) / 2.0
+        score = max(0.0, min(1.0, (cosine + 1.0) / 2.0))
         return ScoreResult(
             score=score,
             passed=score >= self._threshold,

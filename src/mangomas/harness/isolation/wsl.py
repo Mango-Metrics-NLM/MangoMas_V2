@@ -12,6 +12,7 @@ from mangomas.config.repair import (
     DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS,
     DEFAULT_REPAIR_WSL_DISTRO,
     DEFAULT_REPAIR_WSL_PYTHON,
+    validate_cli_token,
 )
 from mangomas.errors import ToolExecutionError
 from mangomas.harness.isolation.base import (
@@ -29,13 +30,34 @@ WSL_TMP_DIR: Final[str] = "/tmp"  # noqa: S108 — bwrap sandbox tmpfs mount poi
 WSL_SAFE_PATH: Final[str] = "/usr/local/bin:/usr/bin:/bin"
 WSL_RO_BINDS: Final[tuple[str, ...]] = ("/usr", "/lib", "/bin", "/etc")
 WSL_RO_BIND_TRY: Final[tuple[str, ...]] = ("/lib64", "/opt")
+_MIN_EXTENDED_DRIVE_LEN: Final[int] = 3
 
 
 def windows_to_wsl_path(host_path: Path | str) -> str:
     """Convert a Windows drive path or POSIX path to a WSL ``/mnt/<drive>/...`` path."""
     raw = str(host_path)
+    if raw[:4] in {"\\\\?\\", "//?/"}:
+        after = raw[4:]
+        if (
+            len(after) >= _MIN_EXTENDED_DRIVE_LEN
+            and after[0].isascii()
+            and after[0].isalpha()
+            and after[1] == ":"
+            and after[2] in {"\\", "/"}
+        ):
+            raw = after
+    if raw.startswith(("\\\\", "//")):
+        raise ToolExecutionError(
+            f"UNC or device paths are not supported by the WSL backend: {host_path!r}",
+            tool_name="repair_sandbox",
+        )
     win = PureWindowsPath(raw)
     if win.drive and ":" in win.drive:
+        if not win.root:
+            raise ToolExecutionError(
+                f"Drive-relative Windows paths cannot be mapped to WSL: {raw!r}",
+                tool_name="repair_sandbox",
+            )
         drive_letter = win.drive.rstrip(":").lower()
         rest = "/".join(part for part in win.parts[1:] if part not in {"\\", "/"})
         return f"/mnt/{drive_letter}/{rest}" if rest else f"/mnt/{drive_letter}"
@@ -55,8 +77,13 @@ class WslBwrapIsolationBackend:
         probe_timeout_seconds: float = DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS,
         runner: SubprocessRunner | None = None,
     ) -> None:
-        self._distro = distro
-        self._python_executable = python_executable
+        try:
+            self._distro = validate_cli_token(distro, field_name="distro")
+            self._python_executable = validate_cli_token(
+                python_executable, field_name="python_executable"
+            )
+        except ValueError as exc:
+            raise ToolExecutionError(str(exc), tool_name="repair_sandbox") from exc
         self._probe_timeout_seconds = probe_timeout_seconds
         self._runner = runner
 

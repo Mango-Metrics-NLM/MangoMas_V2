@@ -16,47 +16,47 @@ Mango-Mas V2 follows **Hexagonal Architecture (Ports and Adapters)** with strict
 ```mermaid
 classDiagram
     direction TB
-    
+
     class Agent {
         <<Protocol>>
         +name: str
         +handle(request: AgentRequest, ctx: AgentContext) AgentResponse
     }
-    
+
     class StreamingAgent {
         <<Protocol>>
         +stream(request: AgentRequest, ctx: AgentContext) AsyncIterator[str]
     }
-    
+
     class LLMClient {
         <<Protocol>>
         +complete(messages: list[Message]) str
     }
-    
+
     class StreamingLLMClient {
         <<Protocol>>
         +stream(messages: list[Message]) AsyncIterator[str]
     }
-    
+
     class EmbeddingClient {
         <<Protocol>>
         +embed(text: str) list[float]
         +embed_batch(texts: list[str]) list[list[float]]
         +aclose() None
     }
-    
+
     class TurnRepository {
         <<Protocol>>
         +save_turn(agent: str, request: AgentRequest, response: AgentResponse) int
         +list_turns(limit: int) list[dict[str, Any]]
     }
-    
+
     class VectorStoreRepository {
         <<Protocol>>
         +upsert(ids: list[str], embeddings: list[list[float]], documents: list[str], metadatas: list[dict[str, Any]]) None
         +query(embedding: list[float], top_k: int) list[VectorMatch]
     }
-    
+
     class Orchestrator {
         -registry: Registry[Agent]
         -ctx: AgentContext
@@ -67,7 +67,7 @@ classDiagram
         +dispatch_fan_out_settled(agent_names: list[str], request: AgentRequest) list[FanOutOutcome]
         +aclose() None
     }
-    
+
     class AgentContext {
         +llm: LLMClient
         +repo: TurnRepository
@@ -77,7 +77,7 @@ classDiagram
         +vector_store: VectorStoreRepository | None
         +extras: dict[str, Any]
     }
-    
+
     Orchestrator --> AgentContext : manages
     Orchestrator --> Agent : resolves & invokes
     Agent <|.. ChatAgent : implements
@@ -90,8 +90,9 @@ classDiagram
     LLMClient <|.. VertexClient : implements
     EmbeddingClient <|.. SentenceTransformersEmbeddingClient : implements
     EmbeddingClient <|.. LMStudioEmbeddingClient : implements
+    EmbeddingClient <|.. VertexEmbeddingClient : implements
     TurnRepository <|.. SQLiteRepository : implements
-    TurnRepository <|.. PostgresTurnRepository : implements
+    TurnRepository <|.. PostgresRepository : implements
 ```
 
 ---
@@ -138,7 +139,7 @@ classDiagram
 ### 3.3 Persistence & Vector Storage (`adapters/storage/`, `adapters/vector/`)
 
 - **`SQLiteRepository`**: Embedded SQLite implementation for single-node local execution, supporting WAL mode and atomic turn insertion.
-- **`PostgresTurnRepository`**: Enterprise multi-tenant relational persistence backed by `asyncpg`. Automatically isolates turn records by `tenant_id`.
+- **`PostgresRepository`**: Enterprise multi-tenant relational persistence backed by `asyncpg`. Automatically isolates turn records by `tenant_id`.
 - **`ChromaVectorStore`**: Embedded vector database adapter implementing `VectorStoreRepository` for dense document chunk retrieval.
 
 ---
@@ -154,7 +155,7 @@ flowchart LR
     Chunks --> Pipeline[pipeline.py: IngestionPipeline]
     Pipeline --> Embedder[EmbeddingClient: embed_batch]
     Embedder --> VectorStore[VectorStoreRepository: upsert]
-    
+
     Query[User Query] --> Retriever[retrieval.py: Retriever]
     Retriever --> EmbedQuery[EmbeddingClient: embed]
     EmbedQuery --> Search[VectorStoreRepository: query]
@@ -190,7 +191,7 @@ The workflow engine executes a bounded workflow tree defined as inline JSON or a
 - Interoperates with `mango-integration-contracts` to emit machine-readable telemetry on agent performance, risk, and PII detection.
 - **Non-Interference Invariants**: Enforces strict policy decoupling; cognitive signals are observational artifacts and cannot alter deterministic policy input shapes or authorization paths.
 
-### 6.3 Runtime Tool-Execution and Repair-Loop Policy (`mangomas.harness.tool_policy`, `mangomas.harness.repair_sandbox`)
+### 6.2 Runtime Tool-Execution and Repair-Loop Policy (`mangomas.harness.tool_policy`, `mangomas.harness.repair_sandbox`)
 
 ADR-0039 introduces two fail-closed, code-level governance modules that keep an LLM or automated coding workflow from damaging the host PC:
 
@@ -205,19 +206,25 @@ ADR-0039 introduces two fail-closed, code-level governance modules that keep an 
 
 ---
 
-### 6.2 Governance & Protected Core Paths
+### 6.3 Governance & Protected Core Paths
 
 `scripts/check_protected_paths.py` enforces commit-level governance:
 
 ```toml
 [tool.mangomas.governance]
 protected_paths = [
+    ".mcp.json",
+    "pyproject.toml",
+    "sitecustomize.py",
+    "scripts/check_protected_paths.py",
+    "scripts/_governance.py",
     "src/mangomas/core/agent.py",
     "src/mangomas/core/orchestrator/__init__.py",
     "src/mangomas/core/orchestrator/_client.py",
     "src/mangomas/core/structured.py",
     "src/mangomas/core/tools.py",
     "src/mangomas/errors.py",
+    "src/mangomas/harness/governance.py",
     "src/mangomas/registry.py",
 ]
 breaking_change_marker_aliases = ["BREAKING-CHANGE", "# approved-breaking-change"]
@@ -266,3 +273,10 @@ classDiagram
 - **HTTP Status Mapping**: The FastAPI exception handler walks the exception MRO to yield canonical HTTP status codes (`UnknownProvider` / `ConfigError` $\to$ 400, `AgentNotFound` $\to$ 404, `MaxStepsExceeded` $\to$ 422, `LLMUnavailable` $\to$ 503, `LLMTimeout` $\to$ 504). `AuthenticationError` is defined in `api/auth.py` (not `errors.py`) and maps to 401 via the same `_ERROR_STATUS` table.
 - **Correlation Propagation**: Every error envelope carries `error`, `message`, `correlation_id`, and ISO-8601 `timestamp`.
 
+### Shared Utilities & Script Helpers
+
+- **Cross-Layer Pure Utilities (`src/mangomas/utils/json_path.py`)**: Stdlib-only helpers (`is_bool_scalar`, `finite_number`, `coerce_finite_float`, `strict_json_equals`, `resolve_dotted_path`) shared by independent `eval` (`scorers/json_field.py`, `_options.py`, `baseline.py`, `scorers/cost_budget.py`) and `workflow/predicate` layers without introducing cross-domain imports (`import-linter` contract-clean), supporting Python ints/floats, `numbers.Real` / NumPy scalars, overflow guards, and non-coercing boolean equality.
+- **Stdlib-Only Repository Script Modules (`scripts/`)**:
+  - `scripts/_logging.py`: Shared `DEFAULT_LOG_FORMAT`, `configure_script_logging`, and fail-safe Claude Code hook telemetry setup (`configure_harness_telemetry_logging`).
+  - `scripts/_frontmatter_hooks.py`: Claude Code `PreToolUse` / `PostToolUse` stdin-JSON payload parsing, protected-path advisory checks, destructive-Bash denial delegation, and shell-safe path emission extracted from `scripts/lint_agent_frontmatter.py`.
+  - `scripts/_gcp_postgres_probe.py`: RFC 3986 PostgreSQL DSN authority parsing, credential redaction, and fail-closed TCP reachability probing extracted from `scripts/verify_gcp_prerequisites.py`.

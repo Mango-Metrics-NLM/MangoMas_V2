@@ -93,6 +93,7 @@ def rag_query(
                 embeddings=embeddings,
                 vector_store=vector_store,
                 top_k=cfg.vector.top_k,
+                max_top_k=cfg.vector.max_top_k,
             )
             results = await retriever.search(text, top_k=top_k)
             return [

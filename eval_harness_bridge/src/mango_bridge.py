@@ -37,7 +37,9 @@ from __future__ import annotations
 
 import atexit
 import logging
+import math
 import os
+import re
 import time
 from functools import lru_cache
 from typing import Any
@@ -68,7 +70,15 @@ def _client() -> httpx.Client:
     inside the harness before any environment is configured.
     """
     base_url = os.environ.get("MANGO_BASE_URL", _DEFAULT_BASE_URL)
-    timeout = float(os.environ.get("MANGO_TIMEOUT", _DEFAULT_TIMEOUT_SECONDS))
+    raw_timeout = os.environ.get("MANGO_TIMEOUT", str(_DEFAULT_TIMEOUT_SECONDS))
+    try:
+        timeout = float(raw_timeout)
+    except ValueError as exc:
+        raise ValueError(
+            f"MANGO_TIMEOUT must be a finite positive float; got {raw_timeout!r}"
+        ) from exc
+    if not math.isfinite(timeout) or timeout <= 0.0:
+        raise ValueError(f"MANGO_TIMEOUT must be a finite positive float; got {raw_timeout!r}")
     logger.info(
         "Bridge HTTP client configured",
         extra={"event": "bridge_client_configured", "base_url": base_url, "timeout_s": timeout},
@@ -90,8 +100,36 @@ def close_client() -> None:
 atexit.register(close_client)
 
 
+def _parse_positive_int(raw: object, *, name: str) -> int:
+    """Parse *raw* as a positive integer (``>= 1``), rejecting ``bool`` and ``None``."""
+    if isinstance(raw, bool):
+        logger.debug("Rejected boolean value for positive integer field", extra={"field": name})
+        raise ValueError(f"{name} must be a positive integer >= 1; got {raw!r}")
+    if isinstance(raw, int):
+        value = raw
+    elif isinstance(raw, str):
+        try:
+            value = int(raw.strip(), 10)
+        except ValueError as exc:
+            logger.debug(
+                "Rejected non-numeric string for positive integer field", extra={"field": name}
+            )
+            raise ValueError(f"{name} must be a positive integer >= 1; got {raw!r}") from exc
+    else:
+        logger.debug(
+            "Rejected invalid type for positive integer field",
+            extra={"field": name, "actual_type": type(raw).__name__},
+        )
+        raise ValueError(f"{name} must be a positive integer >= 1; got {raw!r}")
+    if value < 1:
+        logger.debug("Rejected non-positive integer value", extra={"field": name, "value": value})
+        raise ValueError(f"{name} must be a positive integer >= 1; got {value!r}")
+    return value
+
+
 def _default_max_steps() -> int:
-    return int(os.environ.get("MANGO_MAX_STEPS", _DEFAULT_MAX_STEPS))
+    raw = os.environ.get("MANGO_MAX_STEPS")
+    return _DEFAULT_MAX_STEPS if raw is None else _parse_positive_int(raw, name="MANGO_MAX_STEPS")
 
 
 def _validated_turn(entry: Any) -> dict[str, str]:
@@ -141,15 +179,24 @@ def predict(inputs: dict[str, Any]) -> str:
     the row as *errored* (``TargetOutput.error``) rather than silently scoring a
     bogus string. Emits structured logs for request outcome, latency, and agent.
     """
-    agent = str(inputs.get("agent") or os.environ.get("MANGO_AGENT", _DEFAULT_AGENT))
-    metadata = inputs.get("metadata") or {}
+    raw_agent = inputs.get("agent")
+    agent = str(os.environ.get("MANGO_AGENT", _DEFAULT_AGENT) if raw_agent is None else raw_agent)
+    if not re.fullmatch(r"\A[A-Za-z0-9][A-Za-z0-9._-]*\Z", agent):
+        raise ValueError(f"invalid agent name: {agent!r}")
+    raw_metadata = inputs.get("metadata")
+    metadata = {} if raw_metadata is None else raw_metadata
     if not isinstance(metadata, dict):
         raise ValueError(f"inputs.metadata must be an object; got {type(metadata).__name__}")
+    max_steps = (
+        _parse_positive_int(inputs["max_steps"], name="inputs.max_steps")
+        if "max_steps" in inputs
+        else _default_max_steps()
+    )
     messages = to_messages(inputs)
     payload: dict[str, Any] = {
         "messages": messages,
         "metadata": dict(metadata),
-        "max_steps": int(inputs.get("max_steps", _default_max_steps())),
+        "max_steps": max_steps,
     }
     started = time.perf_counter()
     try:

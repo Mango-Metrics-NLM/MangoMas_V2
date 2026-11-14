@@ -15,6 +15,7 @@ from mangomas.config.repair import (
     DEFAULT_REPAIR_ORACLE_MEMORY_LIMIT,
     DEFAULT_REPAIR_ORACLE_PIDS_LIMIT,
     DEFAULT_REPAIR_ORACLE_PROBE_TIMEOUT_SECONDS,
+    validate_cli_token,
 )
 from mangomas.errors import ToolExecutionError
 from mangomas.harness.isolation.base import (
@@ -60,8 +61,11 @@ class DockerIsolationBackend:
         kill_verify_interval_seconds: float = DEFAULT_DOCKER_KILL_VERIFY_INTERVAL_SECONDS,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        self._image = image
-        self._memory_limit = memory_limit
+        try:
+            self._image = validate_cli_token(image, field_name="image")
+            self._memory_limit = validate_cli_token(memory_limit, field_name="memory_limit")
+        except ValueError as exc:
+            raise ToolExecutionError(str(exc), tool_name="repair_sandbox") from exc
         self._pids_limit = pids_limit
         self._probe_timeout_seconds = probe_timeout_seconds
         self._runner = runner
@@ -127,6 +131,12 @@ class DockerIsolationBackend:
         cwd: Path,
         env: Mapping[str, str],
     ) -> list[str]:
+        cwd_str = str(cwd.resolve())
+        if any(ch in cwd_str for ch in (",", '"', "\r", "\n", "\x00")):
+            raise ToolExecutionError(
+                f"Unsafe workspace path for Docker --mount specification: {cwd_str!r}",
+                tool_name="repair_sandbox",
+            )
         mount_spec = f"type=bind,src={cwd.resolve()},dst={DOCKER_WORK_DIR},readonly"
         cmd: list[str] = [
             "docker",
@@ -156,6 +166,7 @@ class DockerIsolationBackend:
         sandbox_env["PYTHONPATH"] = sandbox_pythonpath(DOCKER_WORK_DIR)
         for key, val in sorted(sandbox_env.items()):
             cmd.extend(["-e", f"{key}={val}"])
+        cmd.append("--")
         cmd.append(self._image)
         cmd.extend(inner_argv)
         return cmd

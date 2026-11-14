@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, cast
 from mangomas.errors import SecretsResolutionError
 
 if TYPE_CHECKING:  # pragma: no cover
-    from google.cloud import secretmanager
+    from google.cloud.secretmanager import SecretManagerServiceClient
 
 logger = logging.getLogger(__name__)
 
@@ -134,19 +134,21 @@ class GCPSecretManagerProvider:
         if self._strict:
             raise SecretsResolutionError(ref, _PROVIDER_NAME, detail=type(exc).__name__)
 
-    def _ensure_client(self) -> secretmanager.SecretManagerServiceClient:
+    def _ensure_client(self) -> SecretManagerServiceClient:
         # The SDK-construction branch is exercised only when the optional
         # ``gcp`` extra is installed; unit tests always inject ``client``
         # via the constructor seam, so the import + instantiation paths
         # are excluded from coverage.
         if self._client is None:  # pragma: no cover - requires gcp extra
             try:
-                from google.cloud import secretmanager  # noqa: PLC0415
+                from google.cloud.secretmanager import (  # noqa: PLC0415
+                    SecretManagerServiceClient as _SecretManagerServiceClient,
+                )
             except ImportError as exc:
                 raise ImportError(_SDK_INSTALL_HINT) from exc
 
-            self._client = secretmanager.SecretManagerServiceClient()
-        return cast("secretmanager.SecretManagerServiceClient", self._client)
+            self._client = _SecretManagerServiceClient()
+        return cast("SecretManagerServiceClient", self._client)
 
     def _handle_failure(
         self,

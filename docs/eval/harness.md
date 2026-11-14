@@ -116,7 +116,7 @@ thresholds without callers re-implementing the rule).
 |---|---|---|
 | `ExactMatchScorer` | `exact_match` | Strict string match, with optional case-folding (`case_sensitive`) and whitespace normalisation (`strip_whitespace`). Default options: case-insensitive, whitespace-collapsing. |
 | `LLMJudgeScorer` | `llm_judge` | Routes a structured prompt through the orchestrator's LLM client. Expects a one-line JSON response `{"score": <float>, "rationale": "..."}`. `passed = score >= threshold` (default `0.7`). Malformed responses raise `LLMBadResponse`. **Self-grading**: the judge is the system under test's own client, so its scores are *reported, not gated* until a calibration record covers its model — see "Judge calibration" below. |
-| `EmbeddingScorer` | `embedding` | Cosine similarity of embeddings of `prediction` and `expected`. **Requires an LLM with `.embed()`**. |
+| `EmbeddingScorer` | `embedding` | Cosine similarity of embeddings of `prediction` and `expected`. Resolves a configured provider via `ScorerContext.embeddings` (`EmbeddingClient`). |
 | `RegexMatchScorer` | `regex_match` | `expected` is a **regex** (per row); pass iff it matches `prediction`. Options: `flags` (`ignorecase`/`multiline`/`dotall`), `fullmatch`. |
 | `ContainsScorer` | `contains` | `expected` is a **substring** (per row); pass iff contained in `prediction`. Option: `case_sensitive`. |
 | `JsonKeysScorer` | `json_keys` | Parses `prediction` as a JSON object and grades by required-key coverage (great for `planner`/`reviewer` structured output). Keys come from `required_keys` option, else from `expected` parsed as a JSON object. Option: `strict` (extra keys → score 0). Malformed prediction → failing row (`score=0`), not an error. |

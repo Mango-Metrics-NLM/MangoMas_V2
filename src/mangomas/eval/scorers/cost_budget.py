@@ -12,7 +12,6 @@ cost is a *dimension*, not a silent quality override.
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any
 
 from mangomas.config import (
@@ -29,6 +28,7 @@ from mangomas.config import (
 from mangomas.eval._options import require_non_negative_float
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
+from mangomas.utils.json_path import finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +40,8 @@ _TOKENS_PER_THOUSAND: float = 1000.0
 
 
 def _metadata_non_negative_float(metadata: dict[str, Any], key: str) -> float | None:
-    raw = metadata.get(key)
-    if isinstance(raw, bool) or not isinstance(raw, int | float):
-        return None
-    number = float(raw)
-    if not math.isfinite(number) or number < 0.0:
+    number = finite_number(metadata.get(key))
+    if number is None or number < 0.0:
         return None
     return number
 
