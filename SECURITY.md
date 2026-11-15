@@ -33,7 +33,6 @@ branches, superseded tags — is unsupported.
 | `main` | Production record; releases are `v*` tags on it | Yes (hotfix, then back-merged) |
 | `qa` | Release candidate | Yes, via promotion from `dev` |
 | `dev` | Integration trunk | Yes |
-| `feat/initial-release` | Current default branch until it is renamed to `dev` | Yes |
 
 ## Scope
 

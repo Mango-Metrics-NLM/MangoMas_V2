@@ -41,6 +41,7 @@ import math
 import os
 import re
 import time
+from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
 
@@ -132,19 +133,61 @@ def _default_max_steps() -> int:
     return _DEFAULT_MAX_STEPS if raw is None else _parse_positive_int(raw, name="MANGO_MAX_STEPS")
 
 
+def _require_mapping(value: Any, *, field: str, message: str) -> Mapping[str, Any]:
+    """Ensure *value* is a ``Mapping``, emitting a type-only debug record on failure."""
+    if not isinstance(value, Mapping):
+        logger.debug(
+            "Rejected non-mapping field",
+            extra={
+                "event": "bridge_invalid_field",
+                "field": field,
+                "actual_type": type(value).__name__,
+            },
+        )
+        raise ValueError(f"{message}; got {type(value).__name__}")
+    return value
+
+
 def _validated_turn(entry: Any) -> dict[str, str]:
     """Return a ``{role, content}`` turn, failing loud on off-contract entries."""
     if (
-        not isinstance(entry, dict)
+        not isinstance(entry, Mapping)
         or not isinstance(entry.get("role"), str)
         or not isinstance(entry.get("content"), str)
     ):
-        raise ValueError(f"malformed message in inputs.messages: {entry!r}")
+        logger.debug(
+            "Rejected malformed message entry",
+            extra={
+                "event": "bridge_invalid_field",
+                "field": "inputs.messages[]",
+                "actual_type": type(entry).__name__,
+            },
+        )
+        raise ValueError(
+            "malformed message in inputs.messages: expected role/content strings, "
+            f"got {type(entry).__name__}"
+        )
     return {"role": entry["role"], "content": entry["content"]}
 
 
-def to_messages(inputs: dict[str, Any]) -> list[dict[str, str]]:
-    """Map an Agents ``inputs`` dict to Mango-Mas ``messages``.
+def _validated_optional_str(inputs: Mapping[str, Any], key: str) -> str | None:
+    """Return ``inputs.get(key)`` if absent/``None`` or ``str``, raising on other types."""
+    value = inputs.get(key)
+    if value is not None and not isinstance(value, str):
+        logger.debug(
+            "Rejected non-string field",
+            extra={
+                "event": "bridge_invalid_field",
+                "field": f"inputs.{key}",
+                "actual_type": type(value).__name__,
+            },
+        )
+        raise ValueError(f"inputs.{key} must be a string; got {type(value).__name__}")
+    return value
+
+
+def to_messages(inputs: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Map an Agents ``inputs`` mapping to Mango-Mas ``messages``.
 
     Precedence:
 
@@ -152,41 +195,62 @@ def to_messages(inputs: dict[str, Any]) -> list[dict[str, str]]:
        ``{role, content}`` objects — passed through verbatim (multi-turn rows
        round-trip losslessly). A present-but-malformed value fails loud rather
        than silently degrading, matching the surrounding fail-closed posture.
-    2. Otherwise synthesise: an optional ``system`` message, then a single
-       ``user`` message taken from the first *present* of
+    2. Otherwise synthesise: an optional non-empty ``system`` string, then a
+       single ``user`` message taken from the first non-``None`` string of
        ``question`` / ``prompt`` / ``input`` (see :data:`_USER_TEXT_FIELDS`),
-       else the empty string.
+       else the empty string. Present non-string values fail loud across all
+       synthesised fields rather than silently coercing (including rejecting
+       ``None`` coercion to ``"None"``).
     """
+    inputs = _require_mapping(inputs, field="inputs", message="inputs must be a mapping")
     raw = inputs.get("messages")
     if raw is not None:
         if not isinstance(raw, list) or not raw:
-            raise ValueError(f"inputs.messages must be a non-empty list; got {raw!r}")
+            logger.debug(
+                "Rejected malformed messages list",
+                extra={
+                    "event": "bridge_invalid_field",
+                    "field": "inputs.messages",
+                    "actual_type": type(raw).__name__,
+                },
+            )
+            raise ValueError(f"inputs.messages must be a non-empty list; got {type(raw).__name__}")
         return [_validated_turn(entry) for entry in raw]
 
     messages: list[dict[str, str]] = []
-    system = inputs.get("system")
-    if isinstance(system, str) and system:
+    system = _validated_optional_str(inputs, "system")
+    if system:
         messages.append({"role": "system", "content": system})
-    user = next((str(inputs[key]) for key in _USER_TEXT_FIELDS if key in inputs), "")
+    user_values = [_validated_optional_str(inputs, key) for key in _USER_TEXT_FIELDS]
+    user = next((val for val in user_values if val is not None), "")
     messages.append({"role": "user", "content": user})
     return messages
 
 
-def predict(inputs: dict[str, Any]) -> str:
+def predict(inputs: Mapping[str, Any]) -> str:
     """Agents ``callable`` target entry point — return the graded prediction.
 
     Raises on a non-2xx response or an off-contract body so the harness records
     the row as *errored* (``TargetOutput.error``) rather than silently scoring a
     bogus string. Emits structured logs for request outcome, latency, and agent.
     """
-    raw_agent = inputs.get("agent")
-    agent = str(os.environ.get("MANGO_AGENT", _DEFAULT_AGENT) if raw_agent is None else raw_agent)
+    inputs = _require_mapping(inputs, field="inputs", message="inputs must be a mapping")
+    override_agent = _validated_optional_str(inputs, "agent")
+    agent = (
+        os.environ.get("MANGO_AGENT", _DEFAULT_AGENT) if override_agent is None else override_agent
+    )
     if not re.fullmatch(r"\A[A-Za-z0-9][A-Za-z0-9._-]*\Z", agent):
         raise ValueError(f"invalid agent name: {agent!r}")
     raw_metadata = inputs.get("metadata")
-    metadata = {} if raw_metadata is None else raw_metadata
-    if not isinstance(metadata, dict):
-        raise ValueError(f"inputs.metadata must be an object; got {type(metadata).__name__}")
+    metadata = (
+        {}
+        if raw_metadata is None
+        else _require_mapping(
+            raw_metadata,
+            field="inputs.metadata",
+            message="inputs.metadata must be an object",
+        )
+    )
     max_steps = (
         _parse_positive_int(inputs["max_steps"], name="inputs.max_steps")
         if "max_steps" in inputs

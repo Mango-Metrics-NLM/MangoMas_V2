@@ -3,8 +3,7 @@ name: CI
 on:
   # Both triggers name the same branches — the ones that *receive* merges
   # (ADR-0036): `dev` is the integration trunk, `qa` the release candidate,
-  # `main` production. `feat/initial-release` is the pre-rename name of `dev`,
-  # kept only until the rename lands so no PR loses CI in between.
+  # `main` production.
   #
   # `push` was `["**"]`, so every commit on a PR branch ran this pipeline
   # twice: once for the push, once for the `pull_request` event the same
@@ -13,9 +12,9 @@ on:
   # tests/deploy/test_ci_make_parity.py derives both lists from the deploy
   # registry and fails if either drifts.
   push:
-    branches: ["feat/initial-release", "dev", "qa", "main"]
+    branches: ["dev", "qa", "main"]
   pull_request:
-    branches: ["feat/initial-release", "dev", "qa", "main"]
+    branches: ["dev", "qa", "main"]
 
 # A newer commit on the same PR supersedes the run in flight: cancel it rather
 # than queue behind it. Keyed on the ref so branches never cancel each other.

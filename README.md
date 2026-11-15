@@ -6,7 +6,7 @@ Local-first, modular agent platform built on FastAPI and LM Studio. Designed
 for local development today; architected for GCP swap-in without rewriting
 core agent contracts.
 
-> **License** Proprietary. All rights reserved. This is a private repository;
+> **License** Proprietary. All rights reserved. This repository is public;
 > [CONTRIBUTING.md](CONTRIBUTING.md) is for its authorized contributors.
 
 **What this is not.** This FastAPI runtime is not the Hugging Face Gradio demo
