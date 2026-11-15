@@ -388,10 +388,21 @@ def test_run_oracle_and_promote_translates_no_follow_open_refusal(
     target = (repo / rel).resolve()
     real_open = os.open
 
-    def _refuse_target(path: str | os.PathLike[str], flags: int, mode: int = 0o777) -> int:
-        if Path(path) == target:
+    def _refuse_target(
+        path: str | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        # CPython's shutil.rmtree passes dir_fd=... on POSIX during
+        # NoIsolationBackend's TemporaryDirectory cleanup; keep the fake
+        # compatible with os.open(path, flags, mode=0o777, *, dir_fd=None).
+        if dir_fd is None and Path(path) == target:
             raise OSError(errno.ELOOP, "Too many levels of symbolic links", str(path))
-        return real_open(path, flags, mode)
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(os, "open", _refuse_target)
     with pytest.raises(ToolExecutionError, match="without following links"):
