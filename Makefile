@@ -20,11 +20,10 @@ CONTRACTS_TESTS ?= tests/mango_contracts
 CONTRACTS_FLOOR ?= 100
 PYTEST_FLAGS ?= -q
 # Base ref for the protected-path governance gate (ADR-0021). Local default:
-# the integration trunk (`feat/initial-release` until ADR-0036 renames it to
-# `dev`). CI never uses this default — it passes the PR's own base branch.
-# Override for a one-off check against another base, e.g. a promotion PR:
-# `make protected-paths BASE_REF=origin/qa`.
-BASE_REF    ?= origin/feat/initial-release
+# the integration trunk (`dev` per ADR-0036). CI never uses this default — it
+# passes the PR's own base branch. Override for a one-off check against another
+# base, e.g. a promotion PR: `make protected-paths BASE_REF=origin/qa`.
+BASE_REF    ?= origin/dev
 SCRIPTS_SRC  ?= scripts
 SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session_start.py \
                  tests/test_run_workflow_e2e.py tests/deploy/test_ci_make_parity.py \

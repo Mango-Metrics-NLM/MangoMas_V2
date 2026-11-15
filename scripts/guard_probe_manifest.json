@@ -597,7 +597,7 @@
     {
       "id": "MUT-CI-03",
       "path": ".github/workflows/ci.yml",
-      "fixed": "  push:\n    branches: [\"feat/initial-release\", \"dev\", \"qa\", \"main\"]\n  pull_request:\n",
+      "fixed": "  push:\n    branches: [\"dev\", \"qa\", \"main\"]\n  pull_request:\n",
       "defect": "  push:\n    branches: [\"**\"]\n  pull_request:\n",
       "gate": [
         "{python}",

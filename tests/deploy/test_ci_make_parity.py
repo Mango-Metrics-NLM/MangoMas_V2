@@ -32,14 +32,11 @@ _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 
 # The branching model (ADR-0036), derived from the environment registry rather
 # than restated: every branch an environment deploys from, then every branch a
-# release tag must be reachable from (production's `main`). `feat/initial-release`
-# is `dev`'s pre-rename name and leaves the list once the rename has landed.
-_LEGACY_TRUNK = "feat/initial-release"
+# release tag must be reachable from (production's `main`).
 _DEPLOY_REGISTRY = load_script_module("deploy_environment.py").load_registry(
     _REPO_ROOT / _makefile.variable("DEPLOY_REGISTRY")
 )
 _PR_TRIGGER_BRANCHES = (
-    _LEGACY_TRUNK,
     *_DEPLOY_REGISTRY.branch_triggers(),
     *(
         env.trigger.ancestor_branch
@@ -172,8 +169,7 @@ def test_pull_request_trigger_targets_the_environment_branches() -> None:
     (release candidate) → `main` (production), and every one of them takes
     PRs: feature work into `dev`, promotions into `qa` and `main`, hotfixes
     into `main`. A PR opened against any of them must get
-    `pull_request`-triggered CI, or it merges ungated. `feat/initial-release`
-    is the pre-rename name of `dev`, listed only for the rename window.
+    `pull_request`-triggered CI, or it merges ungated.
 
     Pinned as an exact list so a stray `develop` (which never existed here)
     or a dropped environment branch fails visibly, as spec-0021 intended.

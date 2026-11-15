@@ -43,8 +43,8 @@ Exit codes
 
 Run::
 
-    python scripts/check_protected_paths.py --base-ref origin/feat/initial-release
-    python scripts/check_protected_paths.py --base-ref origin/feat/initial-release --head-ref HEAD
+    python scripts/check_protected_paths.py --base-ref origin/dev
+    python scripts/check_protected_paths.py --base-ref origin/dev --head-ref HEAD
 """
 
 from __future__ import annotations
@@ -230,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--base-ref",
         required=True,
-        help="Git ref to diff against (e.g. origin/feat/initial-release).",
+        help="Git ref to diff against (e.g. origin/dev).",
     )
     parser.add_argument(
         "--head-ref",
