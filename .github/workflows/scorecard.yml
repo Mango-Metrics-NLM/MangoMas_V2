@@ -16,10 +16,9 @@ on:
     # Weekly, Monday 04:23 UTC — off the hour, so this does not pile onto
     # the top-of-hour surge that GitHub's shared runners see.
     - cron: "23 4 * * 1"
-  # Scorecard only publishes for the default branch; this is its current name
-  # (ADR-0036 renames it to `dev` — update the list in the same change).
+  # Scorecard only publishes for the default branch (`dev` per ADR-0036).
   push:
-    branches: ["feat/initial-release"]
+    branches: ["dev"]
   # Re-evaluate when branch protection changes, so the Branch-Protection
   # score reflects the rule that was just added or removed.
   branch_protection_rule: {}
@@ -27,7 +26,8 @@ on:
 
 # Read-only at the workflow level; the two write scopes Scorecard needs are
 # granted to its job alone (tests/deploy/test_workflow_hardening.py).
-permissions: read-all
+permissions:
+  contents: read
 
 # A newer push supersedes a run in flight only for PR runs; this workflow has
 # none, but the form is the one every push-triggered workflow must use so a
@@ -56,8 +56,7 @@ jobs:
       # `publish_results: true` below.
       id-token: write
       # A job-level block replaces the workflow-level one entirely, so the
-      # read scopes the checkout and the private-repository path need are
-      # restated here.
+      # read scopes the checkout and repository checks need are restated here.
       contents: read
       actions: read
     steps:

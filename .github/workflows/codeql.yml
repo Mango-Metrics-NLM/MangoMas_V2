@@ -4,18 +4,16 @@ name: CodeQL
 # SARIF. CodeQL needs no build step for Python and does not need the project
 # installed, so there is no `make` target to delegate to.
 #
-# NOTE: code scanning is only available on a public repository or one with
-# GitHub Advanced Security enabled; on a plain private repository the
-# `analyze` step fails at upload (README.md still describes this repository
-# as private — resolve that before expecting a green run here).
+# NOTE: code scanning is enabled on this public repository (or any repository
+# with GitHub Advanced Security enabled).
 
 on:
   # The same branch roster as ci.yml (ADR-0036): the trunks that receive
-  # merges. `feat/initial-release` is the pre-rename name of `dev`.
+  # merges.
   push:
-    branches: ["feat/initial-release", "dev", "qa", "main"]
+    branches: ["dev", "qa", "main"]
   pull_request:
-    branches: ["feat/initial-release", "dev", "qa", "main"]
+    branches: ["dev", "qa", "main"]
   schedule:
     # Weekly, Tuesday 05:41 UTC — off the hour and on a different day from
     # Scorecard, so the two weekly scans never contend for the same window.
@@ -43,8 +41,7 @@ jobs:
       # Upload the SARIF to the code-scanning dashboard.
       security-events: write
       # A job-level block replaces the workflow-level one entirely, so the
-      # read scopes the checkout and the private-repository path need are
-      # restated here.
+      # read scopes the checkout and code scanning need are restated here.
       contents: read
       actions: read
     steps:
@@ -61,6 +58,9 @@ jobs:
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: "/language:python"
+          # External fork PRs run with a read-only GITHUB_TOKEN (security-events: write
+          # is stripped); analyze locally but skip SARIF upload to avoid spurious 403s.
+          upload: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork != true) && 'always' || 'never' }}
 
   # Same pattern as nightly.yml's `notify`. A PR run's failure is visible on
   # the PR itself, so only unattended runs (schedule, trunk push) file an
