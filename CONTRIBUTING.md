@@ -58,8 +58,7 @@ table, and read from there by both `src/mangomas/harness/governance.py` and
 ## Required GitHub checks (admin)
 
 These jobs must be required status checks on every environment branch —
-`dev`, `qa` and `main` (ADR-0036; `feat/initial-release` until it is renamed to
-`dev`). That is what would have blocked #58 (format + secrets floor) from
+`dev`, `qa` and `main` (ADR-0036). That is what would have blocked #58 (format + secrets floor) from
 merging red. This file cannot flip the GitHub setting — a repo admin has to
 mark them required:
 

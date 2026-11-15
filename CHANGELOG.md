@@ -9,6 +9,12 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — ADR-0036 production branch cutover (`dev` → `qa` → `main`) & `eval_harness_bridge` hardening
+
+- Branch reconciliation (`ADR-0036` / `spec-0035`): tagged legacy `origin/main` (`beb01bf`) as `archive/main-legacy`, atomically renamed `feat/initial-release` → `dev`, aligned `qa` and `main` to `490bc23`, and removed `_LEGACY_TRUNK` (`feat/initial-release`) transition shims across `ci.yml`, `codeql.yml`, `scorecard.yml`, `Makefile` (`BASE_REF ?= origin/dev`), `scripts/guard_probe_manifest.json` (`MUT-CI-03`), `tests/deploy/test_ci_make_parity.py`, `scripts/check_protected_paths.py`, `CONTRIBUTING.md`, `SECURITY.md`, `specs/0035-environment-branching-and-deploy.md`, and `NEXT_STEPS.md`.
+- Repository hygiene & workflow hardening: updated `README.md` (`visibility: public` note aligned with `codeql.yml`), removed stale root draft `PR_BODY.md`, tightened `scorecard.yml` workflow-level permissions to `contents: read`, and gated `codeql.yml` SARIF upload to skip read-only external fork PRs.
+- Bridge validation parity (PR #20 `e85dd1d` gap): hardened `eval_harness_bridge/src/mango_bridge.py` (`_require_mapping`, `_validated_turn`, `_validated_optional_str`) to reject non-`Mapping` inputs cleanly, treat explicit `None` as absent (preventing `"None"` stringification), validate `agent`, `system`, `metadata`, and all `question`/`prompt`/`input` fields loudly without coercion (including `bool`/`int` slugs), and emit structured debug logging with unit tests.
+
 ### Changed & Fixed — PR #135 follow-up: `google.genai` multi-region migration, `pip-audit`, and security hardening
 
 - Dependency vulnerability audit (`requirements.lock`): regenerated linux lockfile upgrading `opentelemetry-*` (`1.45.1->1.45.2` / `0.66b1->0.66b2`) to resolve `PYSEC`/`GHSA` audit findings while keeping wheel constraints and fixed-point reproducibility green.

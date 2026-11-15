@@ -77,4 +77,4 @@ each deploying to its own environment without cross-environment trust.
 
 - [x] R1–R7 implemented and tested.
 - [ ] Admin steps in `deploy/README.md` performed; `MULTI_ENV_DEPLOY_ENABLED` set.
-- [ ] `feat/initial-release` renamed to `dev`; legacy `main` archived and reset.
+- [x] `feat/initial-release` renamed to `dev`; legacy `main` archived (`archive/main-legacy`) and reset.

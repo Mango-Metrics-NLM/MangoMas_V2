@@ -330,7 +330,7 @@ registry check in `make validate-config`. Open, all admin or follow-up:
       `MULTI_ENV_DEPLOY_ENABLED=true`.
 - [ ] Create GitHub Environments `dev` / `qa` / `prod` (tag rule `v*`, required
       reviewers with prevent self-review) and a `v*` tag ruleset.
-- [ ] Rename `feat/initial-release` → `dev`, tag legacy `main` as
+- [x] Rename `feat/initial-release` → `dev`, tag legacy `main` as
       `archive/main-legacy`, reset `main` from `dev`, then drop the legacy
       trunk name from `ci.yml` / `Makefile` `BASE_REF`.
 - [ ] Give production its own runtime service account (changes prod; review).
