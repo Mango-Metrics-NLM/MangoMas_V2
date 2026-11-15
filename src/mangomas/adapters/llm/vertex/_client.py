@@ -1,10 +1,16 @@
-"""Vertex AI adapter — Gemini chat completions via ``vertexai.generative_models``.
+"""Vertex AI adapter — Gemini chat completions via isolated ``google.genai.Client``.
 
-The actual ``vertexai`` / ``google.cloud.aiplatform`` SDK imports are deferred to
+The actual ``google.genai`` SDK imports are deferred to
 :meth:`VertexClient.__init__` so the module is always importable, even when the
 ``vertex`` extra has not been installed. The class then raises a clear
 ``ImportError`` pointing at ``pip install mangomas[vertex]`` when the SDK is
 genuinely missing and the caller did not inject a test double.
+
+Each instance owns an isolated ``google.genai.Client(vertexai=True, ...)``
+with its own project, location, credentials, and HTTP options — avoiding the
+process-global ``vertexai.init(...)`` singleton state that collides when chat
+and embedding adapters run in different regions (for example ``global`` chat +
+``us-central1`` embeddings).
 
 Error translation is qualname-based (``type(exc).__module__ + __qualname__``)
 so unit tests can exercise the matrix without installing the Google SDK.
@@ -19,10 +25,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
+from mangomas.adapters._genai import close_client_handle, close_genai_client
 from mangomas.adapters.llm.vertex._messages import (
     _PING_PROMPT,
     _aiter,
@@ -48,7 +56,41 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+_MS_PER_SECOND: Final[int] = 1000
+
 __all__ = ["VertexClient", "VertexError", "_translate_vertex_error"]
+
+
+class _GenAIModelAdapter:
+    """Expose ``generate_content_async`` and ``aclose`` over ``google.genai.Client``."""
+
+    def __init__(self, client: Any, *, model: str, types_mod: Any) -> None:
+        self._client = client
+        self._model = model
+        self._types = types_mod
+
+    async def generate_content_async(
+        self,
+        contents: Any,
+        *,
+        generation_config: dict[str, Any],
+        stream: bool = False,
+    ) -> Any:
+        config = self._types.GenerateContentConfig(**generation_config)
+        if stream:
+            return await self._client.aio.models.generate_content_stream(
+                model=self._model,
+                contents=contents,
+                config=config,
+            )
+        return await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=contents,
+            config=config,
+        )
+
+    async def aclose(self) -> None:
+        await close_genai_client(self._client)
 
 
 # ── Adapter ──────────────────────────────────────────────────────────────────
@@ -101,32 +143,37 @@ class VertexClient:
         credentials_path: str | None,
         credentials_json: str | None,
     ) -> Any:
-        """Initialise the real SDK and return a ``GenerativeModel`` instance.
+        """Initialise an isolated ``google.genai.Client`` and return its model adapter.
 
         Excluded from coverage because every call site requires the optional
         ``vertex`` extra to be installed; the early-failure path (lazy import
         raises ``ImportError``) is exercised in
         ``tests/test_vertex_unit.py::test_constructor_without_sdk_raises_import_error``.
         """
-        vertexai, Content, Part = _lazy_import_vertex()
-        self._vertexai = vertexai
+        genai, Content, Part = _lazy_import_vertex()
+        self._vertexai = genai
         self._Content = Content
         self._Part = Part
         credentials = self._resolve_credentials(
             credentials_path=credentials_path,
             credentials_json=credentials_json,
         )
-        vertexai.init(
-            project=self._project_id,
-            location=self._location,
-            credentials=credentials,
+        types_mod = genai.types
+        timeout_ms = (
+            max(1, math.ceil(self._timeout_seconds * _MS_PER_SECOND))
+            if math.isfinite(self._timeout_seconds) and self._timeout_seconds > 0
+            else None
         )
-        # Lazy: ``GenerativeModel`` is part of the optional ``vertexai`` SDK
-        # imported above; pulling it out of the eagerly-imported tuple would
-        # widen ``_lazy_import_vertex`` for one caller only.
-        from vertexai.generative_models import GenerativeModel  # noqa: PLC0415
-
-        return GenerativeModel(self._model)
+        client_kwargs: dict[str, Any] = {
+            "vertexai": True,
+            "project": self._project_id,
+            "location": self._location,
+            "http_options": types_mod.HttpOptions(timeout=timeout_ms),
+        }
+        if credentials is not None:
+            client_kwargs["credentials"] = credentials
+        client = genai.Client(**client_kwargs)
+        return _GenAIModelAdapter(client, model=self._model, types_mod=types_mod)
 
     @staticmethod
     def _resolve_credentials(
@@ -387,15 +434,6 @@ class VertexClient:
             raise self._translate_call_error(exc) from exc
 
     async def aclose(self) -> None:
-        """Release underlying resources.
-
-        The Vertex SDK manages its own gRPC transport pools; the adapter has
-        no owned sockets to release. This method exists to satisfy the
-        :class:`~mangomas.adapters.llm.base.LLMClient` protocol.
-        """
+        """Release underlying owned client resources."""
         if self._owns_client:
-            close = getattr(self._client, "aclose", None) or getattr(self._client, "close", None)
-            if callable(close):
-                result = close()
-                if hasattr(result, "__await__"):
-                    await result
+            await close_client_handle(self._client)

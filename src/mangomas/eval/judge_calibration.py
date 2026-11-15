@@ -16,6 +16,7 @@ and every sink prints it — neither blocks calibration, only
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
@@ -31,6 +32,8 @@ from mangomas.config import (
 )
 from mangomas.errors import ConfigError
 from mangomas.utils import clock
+
+logger = logging.getLogger(__name__)
 
 SelfPreference = Literal["not_measured", "measured_unbiased", "measured_biased"]
 
@@ -66,15 +69,33 @@ def load_calibration_record(path: str | Path) -> JudgeCalibrationRecord:
     """Read and validate a record; a set-but-wrong path is a configuration error."""
     file = Path(path)
     if not file.is_file():
+        logger.warning("Judge calibration record file not found", extra={"path": str(file)})
         raise ConfigError(f"Judge calibration record not found: {file}")
     try:
         raw = json.loads(file.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Malformed judge calibration record",
+            extra={"path": str(file), "error_type": type(exc).__name__},
+        )
         raise ConfigError(f"Malformed judge calibration record {file}: {exc}") from exc
     try:
-        return JudgeCalibrationRecord.model_validate(raw)
+        record = JudgeCalibrationRecord.model_validate(raw)
     except ValidationError as exc:
+        logger.warning(
+            "Invalid judge calibration record schema",
+            extra={"path": str(file), "error_type": type(exc).__name__},
+        )
         raise ConfigError(f"Invalid judge calibration record {file}: {exc}") from exc
+    logger.debug(
+        "Loaded judge calibration record",
+        extra={
+            "path": str(file),
+            "judge_model": record.judge_model,
+            "sample_size": record.sample_size,
+        },
+    )
+    return record
 
 
 @dataclass(frozen=True)
@@ -173,6 +194,10 @@ def assess_calibration(
     """
     rules = policy or CalibrationPolicy()
     if record is None:
+        logger.debug(
+            "LLM judge uncalibrated (no record)",
+            extra={"judge_model": judge_model, "judge_profile": judge_profile},
+        )
         return uncalibrated(
             NO_RECORD_REASON,
             judge_model=judge_model,
@@ -182,6 +207,11 @@ def assess_calibration(
     reason = _first_failing_rule(
         record, judge_model=judge_model, prompt_sha256=prompt_sha256, rules=rules, now=now
     )
+    if reason is not None:
+        logger.warning(
+            "LLM judge demoted to uncalibrated",
+            extra={"judge_model": judge_model, "judge_profile": judge_profile, "reason": reason},
+        )
     return JudgeStatus(
         calibrated=reason is None,
         reason=reason or "calibrated",

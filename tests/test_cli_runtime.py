@@ -428,7 +428,8 @@ def test_run_or_exit_omits_an_empty_detail(capsys: pytest.CaptureFixture[str]) -
             failure_label="Chat failed",
             runtime_exit_code=EXIT_RUNTIME_ERROR,
         )
-    assert capsys.readouterr().err.strip() == "Chat failed: down"
+    err = capsys.readouterr().err.strip()
+    assert err.splitlines()[-1] == "Chat failed: down"
 
 
 def test_run_or_exit_lets_a_genuine_crash_propagate() -> None:

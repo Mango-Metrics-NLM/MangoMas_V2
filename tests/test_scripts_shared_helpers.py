@@ -170,3 +170,123 @@ def test_configure_utf8_stdio_reconfigures_both_streams_on_windows(
     expected = {"encoding": "utf-8", "errors": "replace"}
     assert stdout.calls == [expected]
     assert stderr.calls == [expected]
+
+
+script_logging = load_script_module("_logging.py")
+
+
+def test_configure_script_logging_attaches_module_handler_when_unconfigured() -> None:
+    mod_log = logging.getLogger("test_scripts_shared_helpers.mod_fresh")
+    mod_log.handlers.clear()
+    root = logging.getLogger()
+    saved_root_handlers = list(root.handlers)
+    root.handlers.clear()
+    buf = StringIO()
+    try:
+        script_logging.configure_script_logging(module_logger=mod_log, stream=buf)
+        assert len(mod_log.handlers) == 1
+        assert mod_log.level == logging.INFO
+        mod_log.info("hello")
+        assert "INFO test_scripts_shared_helpers.mod_fresh: hello" in buf.getvalue()
+    finally:
+        mod_log.handlers.clear()
+        root.handlers[:] = saved_root_handlers
+
+
+def test_configure_script_logging_skips_handler_when_root_configured() -> None:
+    mod_log = logging.getLogger("test_scripts_shared_helpers.mod_with_root")
+    mod_log.handlers.clear()
+    script_logging.configure_script_logging(level=logging.DEBUG, module_logger=mod_log)
+    assert mod_log.handlers == []
+    assert mod_log.level == logging.DEBUG
+
+
+def test_configure_script_logging_only_if_unconfigured_and_basic_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(logging, "basicConfig", lambda **kw: calls.append(kw))
+    root = logging.getLogger()
+    saved = list(root.handlers)
+    try:
+        root.handlers = [logging.NullHandler()]
+        script_logging.configure_script_logging(only_if_unconfigured=True)
+        assert calls == []
+
+        script_logging.configure_script_logging(level=logging.WARNING, force=True)
+        assert calls == [
+            {
+                "level": logging.WARNING,
+                "format": script_logging.DEFAULT_LOG_FORMAT,
+                "force": True,
+            }
+        ]
+    finally:
+        root.handlers[:] = saved
+
+
+def test_configure_harness_telemetry_logging_happy_path_and_fallbacks(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Cfg:
+        class harness:
+            metrics_namespace = "mango.test"
+            hook_log_level = "INFO"
+
+        class log:
+            format = "json"
+
+        class telemetry:
+            exporter = "console"
+
+    recorded: list[dict[str, object]] = []
+    log = logging.getLogger("test_scripts_shared_helpers.telemetry")
+    caplog.set_level(logging.WARNING, logger=log.name)
+
+    script_logging.configure_harness_telemetry_logging(
+        log,
+        get_settings_fn=_Cfg,
+        configure_telemetry_fn=lambda **kw: recorded.append(kw),
+    )
+    assert recorded == [
+        {
+            "service_name": "mango.test",
+            "log_level": "INFO",
+            "log_format": "json",
+            "exporter": "console",
+        }
+    ]
+
+    recorded.clear()
+    script_logging.configure_harness_telemetry_logging(
+        log,
+        cfg=_Cfg(),
+        configure_telemetry_fn=lambda **kw: recorded.append(kw),
+    )
+    assert len(recorded) == 1
+
+    basic_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(logging, "basicConfig", lambda **kw: basic_calls.append(kw))
+    script_logging.configure_harness_telemetry_logging(
+        log,
+        available=False,
+        fallback_message="unavailable fallback",
+        include_exc_info=False,
+        extra_on_error=True,
+    )
+    script_logging.configure_harness_telemetry_logging(
+        log,
+        cfg=_Cfg(),
+        configure_telemetry_fn=lambda **_kw: (_ for _ in ()).throw(RuntimeError("boom")),
+        fallback_message="boom fallback",
+        include_exc_info=False,
+        extra_on_error=False,
+    )
+    assert len(basic_calls) == 2
+    assert any(r.message == "unavailable fallback" for r in caplog.records)
+    assert any(r.message == "boom fallback" for r in caplog.records)
+    # Also exercise default-import resolution branches cleanly against live mangomas.
+    monkeypatch.setattr("mangomas.telemetry.configure_telemetry", lambda **kw: recorded.append(kw))
+    script_logging.configure_harness_telemetry_logging(log)
+    assert len(recorded) == 2

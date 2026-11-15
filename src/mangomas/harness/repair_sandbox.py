@@ -154,6 +154,7 @@ def validate_loopback_llm_url(url: str) -> str:
     """Ensure *url* targets a loopback HTTP(S) endpoint, or raise ``ConfigError``."""
     try:
         parsed = urlparse(url)
+        _ = parsed.port
     except ValueError as exc:
         raise ConfigError(
             "Repair-loop LLM URL could not be parsed",
@@ -275,10 +276,10 @@ def validate_promotion_target(
             f"{sorted(normalized_allowlist)}",
             tool_name="repair_sandbox",
         )
-    protected_norm = {normalize_path(p) for p in protected_paths} | {
-        normalize_path(p) for p in governance_surface
+    protected_norm = {normalize_path(p).lower() for p in protected_paths} | {
+        normalize_path(p).lower() for p in governance_surface
     }
-    if norm in protected_norm:
+    if norm.lower() in protected_norm:
         raise ToolExecutionError(
             f"Promotion target {norm!r} is a protected or governance-surface path",
             tool_name="repair_sandbox",

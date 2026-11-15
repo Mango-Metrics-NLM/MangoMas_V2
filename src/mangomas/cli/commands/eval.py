@@ -175,11 +175,11 @@ def _run_eval_pipeline(
     effective_parallelism = parallelism if parallelism is not None else cfg.parallelism
     effective_fail_fast = fail_fast if fail_fast is not None else cfg.fail_fast
     effective_trials = trials if trials is not None else cfg.trials
-    if effective_trials < 1:
-        typer.echo(
-            f"Eval configuration error: trials must be >= 1; got {effective_trials}", err=True
-        )
-        raise typer.Exit(code=EXIT_CONFIG_ERROR)
+    for flag_name, count in (("parallelism", effective_parallelism), ("trials", effective_trials)):
+        if count < 1:
+            logger.warning("Invalid eval CLI argument: %s=%s", flag_name, count)
+            typer.echo(f"Eval configuration error: {flag_name} must be >= 1; got {count}", err=True)
+            raise typer.Exit(code=EXIT_CONFIG_ERROR)
     logger.debug(
         "Eval run starting",
         extra={"event": "eval_run_start", "scorer": scorer_name, "target": target_name},
@@ -229,20 +229,30 @@ def _run_eval_pipeline(
             asyncio.run(load_baseline(effective_baseline)) if effective_baseline else None
         )
     except MangomasError as exc:
+        logger.warning(
+            "Eval configuration error",
+            extra={"error_type": type(exc).__name__, "error": str(exc)},
+        )
         detail = f" ({exc.detail})" if exc.detail else ""
         typer.echo(f"Eval configuration error: {exc}{detail}", err=True)
         raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
 
     orch = _runtime.build_or_exit(config_exit_code=EXIT_CONFIG_ERROR)
-    runner = EvalRunner(
-        orch,
-        scorer_instance,
-        parallelism=effective_parallelism,
-        fail_fast=effective_fail_fast,
-        slice_key=cfg.slice_key,
-        trials=effective_trials,
-        provenance_labels=_provenance_labels(settings, target_name, scorer_names, agent_flag=agent),
-    )
+    try:
+        runner = EvalRunner(
+            orch,
+            scorer_instance,
+            parallelism=effective_parallelism,
+            fail_fast=effective_fail_fast,
+            slice_key=cfg.slice_key,
+            trials=effective_trials,
+            provenance_labels=_provenance_labels(
+                settings, target_name, scorer_names, agent_flag=agent
+            ),
+        )
+    except BaseException:
+        asyncio.run(_runtime._close_orchestrator(orch))
+        raise
 
     async def _run_eval() -> tuple[EvalReport, GateResult | None, BaseException | None]:
         try:

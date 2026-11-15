@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from typing import Any, cast
+from typing import IO, Any, cast
 
 from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter
@@ -69,6 +69,32 @@ def _lazy_cloud_trace_exporter() -> Any:  # pragma: no cover - requires gcp extr
 _VALID_APP_EXPORTERS: frozenset[str] = frozenset({EXPORTER_CONSOLE, EXPORTER_GCP})
 
 
+class _StderrConsoleSpanExporter(ConsoleSpanExporter):
+    """Console span exporter whose stream resolves the live ``sys.stderr`` on every use."""
+
+    @property
+    def out(self) -> IO[Any]:
+        return sys.stderr
+
+    @out.setter
+    def out(self, _stream: IO[Any]) -> None:
+        # Ignore base constructor's initial capture so later ``sys.stderr``
+        # redirects and closed capture streams do not break export writes.
+        return None
+
+
+class _StderrConsoleMetricExporter(ConsoleMetricExporter):
+    """Console metric exporter whose stream resolves the live ``sys.stderr`` on every use."""
+
+    @property
+    def out(self) -> IO[Any]:
+        return sys.stderr
+
+    @out.setter
+    def out(self, _stream: IO[Any]) -> None:
+        return None
+
+
 def _build_span_exporter(exporter: str) -> Any:
     """Return a span exporter for the selected *exporter* token.
 
@@ -86,7 +112,7 @@ def _build_span_exporter(exporter: str) -> Any:
         # bootstrap, and span JSON on stdout interleaved with `chat` replies
         # and `history` JSON lines. Diagnostics belong on stderr; stdout stays
         # the command's result.
-        return ConsoleSpanExporter(out=sys.stderr)
+        return _StderrConsoleSpanExporter()
     raise ConfigError(
         f"Unknown telemetry exporter {exporter!r}; expected one of {sorted(_VALID_APP_EXPORTERS)}."
     )
@@ -124,7 +150,7 @@ def _build_metric_reader(exporter: str) -> Any:
         return PeriodicExportingMetricReader(_lazy_cloud_monitoring_exporter())
     if exporter == EXPORTER_CONSOLE:
         # Same stdout/stderr split as the span exporter above.
-        return PeriodicExportingMetricReader(ConsoleMetricExporter(out=sys.stderr))
+        return PeriodicExportingMetricReader(_StderrConsoleMetricExporter())
     raise ConfigError(
         f"Unknown telemetry exporter {exporter!r}; expected one of {sorted(_VALID_APP_EXPORTERS)}."
     )

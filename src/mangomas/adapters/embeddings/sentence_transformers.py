@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 from mangomas.adapters.embeddings._shared import NoTransportAcloseMixin, SingleTextEmbedMixin
+from mangomas.errors import LLMBadResponse
 
 logger = logging.getLogger(__name__)
 
@@ -67,5 +69,37 @@ class SentenceTransformersEmbeddingClient(SingleTextEmbedMixin, NoTransportAclos
         return await asyncio.to_thread(self._encode, texts)
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
-        result = self._model.encode(texts, show_progress_bar=False)
-        return [[float(x) for x in row] for row in result]
+        if not texts:
+            return []
+        raw = self._model.encode(texts, show_progress_bar=False)
+        rows = raw.tolist() if hasattr(raw, "tolist") else list(raw)
+        if len(rows) != len(texts):
+            raise LLMBadResponse(
+                "SentenceTransformer returned mismatched embedding count",
+                detail=f"expected {len(texts)} vectors, received {len(rows)}",
+            )
+        vectors: list[list[float]] = []
+        for row in rows:
+            try:
+                vector = [float(x) for x in row]
+            except (OverflowError, TypeError, ValueError) as exc:
+                raise LLMBadResponse(
+                    "SentenceTransformer returned malformed embedding vector",
+                    detail=f"{type(exc).__name__}: {exc}",
+                ) from exc
+            if not all(math.isfinite(val) for val in vector):
+                raise LLMBadResponse(
+                    "SentenceTransformer returned non-finite embedding value",
+                    detail=f"model={self._model_name!r}",
+                )
+            vectors.append(vector)
+        logger.debug(
+            "Encoded sentence-transformers batch",
+            extra={
+                "model": self._model_name,
+                "device": self._device,
+                "batch_size": len(vectors),
+                "dimensions": len(vectors[0]) if vectors else 0,
+            },
+        )
+        return vectors

@@ -303,7 +303,7 @@ def test_shipped_manifest_snippets_each_occur_once() -> None:
     # + 1 MUT-EVAL-* (spec-0045 B1: a corrupted self-check row must exit 3)
     # + 1 MUT-SEC-* (spec-0045 B4: a tool argument must never persist verbatim)
     # + 1 MUT-EVAL-03 (spec-0045 B7: a planner fixture that loses `steps` reddens the lane).
-    assert len(entries) == 57
+    assert len(entries) == 72
     assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
     proofs = [(entry.path, _gate_test(entry.gate)) for entry in entries]
     duplicated = sorted({proof for proof in proofs if proofs.count(proof) > 1})
@@ -312,3 +312,10 @@ def test_shipped_manifest_snippets_each_occur_once() -> None:
         text = (probe._repo_root() / entry.path).read_text(encoding="utf-8")
         assert probe._to_lf(text).count(probe._to_lf(entry.fixed)) == 1, entry.entry_id
     assert probe._repo_root() == _REPO_ROOT
+
+
+def test_cli_rejects_abbreviated_manifest_flag() -> None:
+    """``argparse`` abbreviations like ``--man`` must fail closed (allow_abbrev=False)."""
+    with pytest.raises(SystemExit) as exc_info:
+        probe.main(["--man", "evil.json"])
+    assert exc_info.value.code == 2

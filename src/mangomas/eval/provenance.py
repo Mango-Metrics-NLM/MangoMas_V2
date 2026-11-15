@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import uuid
 from collections.abc import Iterable, Mapping
@@ -35,8 +36,9 @@ from mangomas.utils import clock
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.dataset import DatasetRow
 
+logger = logging.getLogger(__name__)
+
 GIT_SHA_ENV = "GITHUB_SHA"
-_GIT_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -118,7 +120,11 @@ def _git_head_sync(start: Path | None = None) -> str | None:
                 sha, _, name = line.partition(" ")
                 if name.strip() == ref:
                     return sha.strip() or None
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.debug(
+            "Unable to resolve git HEAD from repository files; returning None",
+            extra={"error_type": type(exc).__name__},
+        )
         return None
     return None
 
@@ -138,7 +144,7 @@ async def build_provenance(
     target: str,
     labels: Mapping[str, Any] | None = None,
 ) -> RunProvenance:
-    """Stamp a run. Cheap, side-effect free apart from one ``git`` subprocess."""
+    """Stamp a run. Cheap, side-effect free (reads ``.git/HEAD`` off-loop)."""
     return RunProvenance(
         run_id=uuid.uuid4().hex,
         started_at=clock.now().isoformat(),

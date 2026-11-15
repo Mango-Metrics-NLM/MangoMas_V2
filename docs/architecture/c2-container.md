@@ -12,7 +12,7 @@ C4Container
 
   Container_Boundary(mangomas_boundary, "Mango-Mas V2") {
     Container(api, "FastAPI Application", "Python / FastAPI", "Exposes REST endpoints. Factory: create_app(). Middleware: AccessLogMiddleware, TraceMiddleware. Manages lifespan: startup wires adapters, shutdown closes clients.")
-    Container(cli, "Typer CLI", "Python / Typer", "A package behind a permanent re-export facade (ADR-0019 / spec-0015 R1) — main.py is the facade the console script resolves. mangomas chat (single-turn), mangomas history (turn log), mangomas eval (offline harness), mangomas rag ingest|query, mangomas workflow validate|run. Shares the same composition root as the API.")
+    Container(cli, "Typer CLI", "Python / Typer", "A package behind a permanent re-export facade (ADR-0019 / spec-0015 R1) — main.py is the facade the console script resolves. mangomas chat (single-turn), mangomas agents (registered roster), mangomas history (turn log), mangomas eval (offline harness), mangomas rag ingest|query, mangomas workflow validate|run. Shares the same composition root as the API.")
     Container(eval_harness, "Evaluation Harness", "Python package (src/mangomas/eval/)", "Drives a JSONL dataset through the orchestrator and aggregates per-row Scorer results. In-process; no extra runtime dependency. Surfaced via the CLI's `eval` subcommand.")
     Container(rag, "RAG Layer (opt-in)", "Python package (src/mangomas/rag/)", "Pure-domain retrieval-augmented generation: chunker, loader, IngestionPipeline, Retriever, RetrievalTool. Imports only the EmbeddingClient / VectorStoreRepository protocols. Surfaced via `mangomas rag ingest|query` and wired into ToolAgent via ctx.tools. Dormant unless MANGOMAS_EMBEDDINGS__ENABLED + MANGOMAS_VECTOR__ENABLED.")
     Container(workflow, "Workflow Graph Layer (opt-in)", "Python package (src/mangomas/workflow/)", "Declarative multi-agent topologies: a frozen WorkflowGraph (agent / sequence / fan_out / loop / branch) compiled to the Orchestrator's public dispatch primitives — every leaf is one dispatch call, so an all-agent sequence equals dispatch_pipeline. Surfaced via POST /workflows/run|validate and `mangomas workflow validate|run`. Dormant unless MANGOMAS_WORKFLOW__ENABLED or an explicit --definition.")
@@ -102,7 +102,8 @@ C4Container
 - The evaluation harness ships its own Scorer registry
   (`mangomas.eval.scorer_registry`) parallel to the agent/LLM/storage
   registries. Built-in scorers: `exact_match`, `regex_match`, `contains`,
-  `json_keys`, `llm_judge`, `embedding`.
+  `json_keys`, `json_field`, `tool_trajectory`, `composite`,
+  `cost_budget`, `llm_judge`, `embedding`.
   The `embedding` scorer prefers `ctx.embeddings` and falls back to an
   `embed`-capable LLM; it raises only when neither is available.
 - The **RAG layer** is opt-in and dual-gated: `ctx.embeddings` is attached
@@ -129,8 +130,14 @@ C4Container
   `confidence` never enters PDP input. A `CognitiveSignal` can cause review,
   archival, prompt-context compilation, or a separate `ProposedAction`
   record — never a command, write, capability grant, completion, or release.
-  Command/patch execution remains blocked until the harness isolation
-  backend exists.
+  In-product LLM tool execution is governed by Ring 1
+  (`enforce_tool_invocation_policy` inside `ToolAgent`); automated coding and
+  staged repair verification run under Ring 2 (`repair_sandbox` and
+  `mangomas.harness.isolation` `OracleIsolationBackend` backends under
+  ADR-0040 — defaulting to host-process `NoIsolationBackend` without OS
+  isolation unless `MANGOMAS_REPAIR__ORACLE_ISOLATION=required` selects a
+  sandboxed backend such as `docker` or `wsl`); and Ring 3 enforces
+  coding-agent/hook controls (`.claude/`) and CI governance gates.
 - **Validation tooling is not a runtime container.** The Studio contract is
   pinned by `scripts/studio_consumer_probe.py` (spec-0041), which drives the
   real `api` in-process through `httpx.ASGITransport`. `--mode mock` swaps

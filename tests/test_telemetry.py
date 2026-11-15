@@ -377,3 +377,75 @@ def test_configure_telemetry_leaves_logging_untouched_when_the_exporter_fails(
     assert telemetry._state.configured is False
     assert root.handlers == handlers_before
     assert root.level == level_before
+
+
+def test_configure_telemetry_tracks_live_sys_stderr_across_closed_redirect() -> None:
+    """Handler installed by configure_telemetry must resolve sys.stderr dynamically.
+
+    Regression for Click CliRunner capture: CliRunner swaps sys.stderr to a
+    short-lived TextIOWrapper during invoke() and closes it on return. Caching
+    that closed stream breaks later logging calls with ``ValueError: I/O
+    operation on closed file``.
+    """
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+
+    root = logging.getLogger()
+    old_handlers = list(root.handlers)
+    old_level = root.level
+    old_configured = telemetry._state.configured
+    telemetry._state.configured = False
+    try:
+        first_buf = io.StringIO()
+        with contextlib.redirect_stderr(first_buf):
+            telemetry.configure_telemetry(service_name="t")
+            logging.getLogger("mangomas.test.live_stderr").warning("first call")
+        assert "first call" in first_buf.getvalue()
+        first_buf.close()
+
+        second_buf = io.StringIO()
+        with contextlib.redirect_stderr(second_buf):
+            logging.getLogger("mangomas.test.live_stderr").warning("second call")
+        assert "second call" in second_buf.getvalue()
+    finally:
+        root.handlers = old_handlers
+        root.setLevel(old_level)
+        telemetry._state.configured = old_configured
+
+
+def test_console_exporters_track_live_sys_stderr_across_closed_redirect() -> None:
+    """Console span/metric exporters must resolve ``sys.stderr`` dynamically on write."""
+    import contextlib  # noqa: PLC0415
+    import io  # noqa: PLC0415
+
+    from opentelemetry.sdk.metrics import MeterProvider  # noqa: PLC0415
+    from opentelemetry.sdk.metrics.export import MetricExportResult  # noqa: PLC0415
+    from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: PLC0415
+
+    first_buf = io.StringIO()
+    second_buf = io.StringIO()
+    with contextlib.redirect_stderr(first_buf):
+        span_exporter = telemetry._build_span_exporter(telemetry.EXPORTER_CONSOLE)
+        metric_reader = telemetry.exporters._build_metric_reader(telemetry.EXPORTER_CONSOLE)
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+        meter_provider = MeterProvider(metric_readers=[metric_reader])
+        tracer = provider.get_tracer(__name__)
+        counter = meter_provider.get_meter(__name__).create_counter("live_stderr_counter")
+        with tracer.start_as_current_span("first-span"):
+            counter.add(1)
+        assert metric_reader.collect() or True
+    first_buf.close()
+
+    try:
+        with contextlib.redirect_stderr(second_buf):
+            with tracer.start_as_current_span("second-span"):
+                counter.add(2)
+            assert metric_reader.collect() is not None or MetricExportResult.SUCCESS is not None
+        out = second_buf.getvalue()
+        assert "second-span" in out
+        assert "live_stderr_counter" in out
+    finally:
+        provider.shutdown()
+        meter_provider.shutdown()

@@ -27,6 +27,8 @@ from tests.constants import (
     EVAL_COST_SOURCE_TOKENS,
     EVAL_COST_TOKENS_PER_THOUSAND,
     EVAL_COST_USD_METADATA_KEY,
+    EVAL_USAGE_LLM_CALLS_KEY,
+    EVAL_USAGE_METADATA_KEY,
     STUB_REPLY,
 )
 
@@ -267,3 +269,51 @@ def test_explicit_cost_is_returned_unchanged(cost_usd: float) -> None:
     )
     assert source == EVAL_COST_SOURCE_EXPLICIT
     assert got == pytest.approx(cost_usd)
+
+
+def test_estimate_rejects_unrepresentable_explicit_cost_overflow() -> None:
+    """Present but overflowing metadata/usage scalars must not fall back to cheap defaults."""
+    with pytest.raises(OverflowError):
+        estimate_cost_usd(
+            STUB_REPLY,
+            metadata={EVAL_COST_USD_METADATA_KEY: 10**400},
+            usd_per_1k_input_tokens=DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
+            usd_per_1k_output_tokens=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
+            usd_per_1k_output_chars=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
+        )
+
+
+def test_estimate_rejects_unrepresentable_token_and_usage_overflow() -> None:
+    """Overflowing declared tokens, measured usage, or product cost must raise OverflowError."""
+    with pytest.raises(OverflowError):
+        estimate_cost_usd(
+            STUB_REPLY,
+            metadata={EVAL_COST_INPUT_TOKENS_METADATA_KEY: 10**400},
+            usd_per_1k_input_tokens=DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
+            usd_per_1k_output_tokens=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
+            usd_per_1k_output_chars=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
+        )
+
+    with pytest.raises(OverflowError):
+        estimate_cost_usd(
+            STUB_REPLY,
+            metadata={},
+            response_metadata={
+                EVAL_USAGE_METADATA_KEY: {
+                    EVAL_USAGE_LLM_CALLS_KEY: 10**400,
+                    EVAL_COST_INPUT_TOKENS_METADATA_KEY: 10,
+                }
+            },
+            usd_per_1k_input_tokens=DEFAULT_EVAL_COST_USD_PER_1K_INPUT_TOKENS,
+            usd_per_1k_output_tokens=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
+            usd_per_1k_output_chars=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
+        )
+
+    with pytest.raises(OverflowError):
+        estimate_cost_usd(
+            STUB_REPLY,
+            metadata={EVAL_COST_INPUT_TOKENS_METADATA_KEY: 10**308},
+            usd_per_1k_input_tokens=10000.0,
+            usd_per_1k_output_tokens=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_TOKENS,
+            usd_per_1k_output_chars=DEFAULT_EVAL_COST_USD_PER_1K_OUTPUT_CHARS,
+        )

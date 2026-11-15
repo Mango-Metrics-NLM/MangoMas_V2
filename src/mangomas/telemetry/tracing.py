@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import sys
+from typing import TYPE_CHECKING
 
 from opentelemetry import trace
 from opentelemetry.propagate import set_global_textmap
@@ -16,6 +18,34 @@ from mangomas.telemetry import exporters
 from mangomas.telemetry._state import _lock, _state
 from mangomas.telemetry.exporters import EXPORTER_CONSOLE
 from mangomas.telemetry.logs import JsonFormatter, TraceContextFilter
+
+if TYPE_CHECKING:  # pragma: no cover
+    from typing import TextIO
+
+    _StreamHandlerBase = logging.StreamHandler[TextIO]
+else:
+    _StreamHandlerBase = logging.StreamHandler
+
+
+class _LiveStderrHandler(_StreamHandlerBase):
+    """StreamHandler delegating ``stream`` dynamically to current ``sys.stderr``.
+
+    Prevents caching transient wrappers (such as Click ``CliRunner``'s
+    short-lived ``sys.stderr`` capture) across invocations after ``invoke()``
+    closes them.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(None)
+
+    @property
+    def stream(self) -> TextIO:
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, _value: TextIO | None) -> None:
+        pass
+
 
 # Bound to the package name rather than ``__name__`` so the ``logger`` field in
 # a JSON log record reads ``mangomas.telemetry``, exactly as it did before the
@@ -53,7 +83,7 @@ def configure_telemetry(
         # need three separate patches. The selectors stay underscore-private because
         # ADR-0009, ADR-0013 and the mango-observability skill cite them by that name.
 
-        handler = logging.StreamHandler()
+        handler = _LiveStderrHandler()
         if log_format == "json":
             handler.setFormatter(JsonFormatter())
         else:

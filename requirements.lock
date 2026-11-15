@@ -145,7 +145,7 @@ markdown-it-py==4.2.0
     # via rich
 mdurl==0.1.2
     # via markdown-it-py
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
     # via
     #   google-api-core
     #   mangomas
@@ -158,13 +158,13 @@ opentelemetry-exporter-gcp-trace==1.15.0
     # via mangomas
 opentelemetry-resourcedetector-gcp==1.14.0
     # via opentelemetry-exporter-gcp-trace
-opentelemetry-sdk==1.45.1
+opentelemetry-sdk==1.45.2
     # via
     #   mangomas
     #   mangomas (pyproject.toml)
     #   opentelemetry-exporter-gcp-trace
     #   opentelemetry-resourcedetector-gcp
-opentelemetry-semantic-conventions==0.66b1
+opentelemetry-semantic-conventions==0.66b2
     # via opentelemetry-sdk
 packaging==26.3
     # via

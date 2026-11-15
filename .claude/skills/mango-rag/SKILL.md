@@ -69,8 +69,8 @@ rag/                   models, chunker, loader, pipeline, retrieval (imports pro
 ## Configuration
 
 `MANGOMAS_EMBEDDINGS__*` (enabled, provider, model, base_url, api_key,
-batch_size, timeout_seconds, project_id, location), `MANGOMAS_VECTOR__*`
-(enabled, provider, persist_dir, collection, top_k), `MANGOMAS_RAG__*`
+batch_size, timeout_seconds, device, project_id, location), `MANGOMAS_VECTOR__*`
+(enabled, provider, persist_dir, collection, top_k, max_top_k), `MANGOMAS_RAG__*`
 (chunk_words, chunk_overlap). `RagSettings` validates
 `1 <= chunk_words` and `0 <= chunk_overlap < chunk_words`
 at construction.

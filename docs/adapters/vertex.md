@@ -31,7 +31,7 @@ delimiter:
 | `MANGOMAS_LLM__PROVIDER` | yes | Must be `vertex` |
 | `MANGOMAS_LLM__PROJECT_ID` | yes | GCP project that hosts the Vertex endpoint |
 | `MANGOMAS_LLM__LOCATION` | no | GCP region (default `us-central1`) |
-| `MANGOMAS_LLM__MODEL` | yes | Gemini model id, e.g. `gemini-1.5-flash` |
+| `MANGOMAS_LLM__MODEL` | yes | Gemini model id, e.g. `gemini-2.5-flash` |
 | `MANGOMAS_LLM__TEMPERATURE` | no | Sampling temperature (default `0.2`) |
 | `MANGOMAS_LLM__TIMEOUT_SECONDS` | no | Per-request timeout (default `60.0`) |
 | `MANGOMAS_LLM__CREDENTIALS_PATH` | no | Path to a service-account JSON key |
@@ -44,8 +44,8 @@ provider is selected.
 
 The adapter resolves credentials in this priority order:
 
-1. **`secret_ref`** — if set, `mangomas.composition._resolve_llm_secrets`
-   resolves it through `secrets_registry` (today: the env-var provider) and
+1. **`secret_ref`** — if set, `mangomas.composition.secrets._resolve_llm_secrets`
+   resolves it through `secrets_registry` (`MANGOMAS_SECRETS__PROVIDER=env` or `gcp`) and
    the returned string is treated as a service-account JSON body. This is
    the recommended production path because no key material touches the
    filesystem.
@@ -65,10 +65,10 @@ matrix without installing the Google SDK.
 | Vertex exception | Typed error | HTTP status |
 |---|---|---|
 | `google.api_core.exceptions.DeadlineExceeded`, `RetryError` | `LLMTimeout` | 504 |
-| `google.api_core.exceptions.ServiceUnavailable`, `InternalServerError`, `GatewayTimeout`, `Aborted` | `LLMUnavailable` | 502 |
-| `google.auth.exceptions.RefreshError`, `DefaultCredentialsError` | `LLMUnavailable` | 502 |
+| `google.api_core.exceptions.ServiceUnavailable`, `InternalServerError`, `GatewayTimeout`, `Aborted` | `LLMUnavailable` | 503 |
+| `google.auth.exceptions.RefreshError`, `DefaultCredentialsError` | `LLMUnavailable` | 503 |
 | `google.api_core.exceptions.InvalidArgument`, `PermissionDenied`, `Unauthenticated`, `NotFound`, `FailedPrecondition` | `VertexError` (→ `LLMBadResponse`) | 502 |
-| anything else | `LLMUnavailable` | 502 |
+| anything else | `LLMUnavailable` | 503 |
 
 ## Logging events
 
@@ -106,15 +106,15 @@ skipped so callers see only non-empty content tokens.
 RUN_VERTEX=1 \
   VERTEX_PROJECT_ID=my-gcp-project \
   VERTEX_LOCATION=us-central1 \
-  VERTEX_MODEL=gemini-1.5-flash \
+  VERTEX_MODEL=gemini-2.5-flash \
   python -m pytest tests/vertex --no-cov -q
 ```
 
 ## Known gaps and follow-ups
 
-- The adapter does not yet expose an `embed()` method. The evaluation
-  harness's `EmbeddingScorer` skips with a clear warning when used against
-  Vertex — to be revisited when the eval harness lands an embedding path.
+- `VertexClient` handles text generation and streaming; Vertex embeddings are
+  provided separately by `VertexEmbeddingClient` (`MANGOMAS_EMBEDDINGS__PROVIDER=vertex`),
+  which the evaluation harness's `EmbeddingScorer` consumes via `ScorerContext.embeddings`.
 - `vertexai.init()` mutates module-level SDK state. Building multiple
   `VertexClient` instances for different projects in the same process is
   not yet validated — each `init()` call overwrites the prior one. Fine

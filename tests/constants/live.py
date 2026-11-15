@@ -50,7 +50,7 @@ VERTEX_LOCATION_ENV: str = "VERTEX_LOCATION"
 VERTEX_MODEL_ENV: str = "VERTEX_MODEL"
 VERTEX_CREDENTIALS_PATH_ENV: str = "VERTEX_CREDENTIALS_PATH"
 # Default Vertex model used by E2E tests when ``VERTEX_MODEL`` is unset.
-DEFAULT_VERTEX_TEST_MODEL: str = "gemini-1.5-flash"
+DEFAULT_VERTEX_TEST_MODEL: str = "gemini-2.5-flash"
 STUB_VERTEX_REPLY: str = "stub-vertex-reply"
 
 # ── Live-suite timeout budgets (spec-0029 R2.1) ───────────────────────────────

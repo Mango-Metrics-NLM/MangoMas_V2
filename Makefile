@@ -129,6 +129,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         gated-suites embeddings-local gpu oracle-isolation-docker oracle-isolation-wsl secret-scan pip-audit sbom-scan \
         install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply gcp-preflight \
         lock lock-upgrade docker-build docker-smoke oracle-image \
+        eval-selfcheck eval-selfcheck-baseline eval-lanes eval-lanes-baseline \
         nightly-scan-refs
 
 help: ## Show this help
@@ -331,7 +332,7 @@ gpu: ## CUDA placement + CPU ranking parity on every visible GPU (run with PYTHO
 # rather than pointing at a subdirectory.
 
 gcp-secrets: ## Live GCP Secret Manager suite (needs ADC + project)
-	RUN_GCP_SECRETS=1 $(PYTHON) -m pytest tests/integration -m gcp_secrets --no-cov $(PYTEST_FLAGS)
+	RUN_INTEGRATION=1 RUN_GCP_SECRETS=1 $(PYTHON) -m pytest tests/integration -m gcp_secrets --no-cov $(PYTEST_FLAGS)
 
 gcp-trace: ## Cloud Trace exporter suite (needs the gcp extra installed)
 	RUN_GCP_TRACE=1 $(PYTHON) -m pytest tests/test_telemetry.py tests/test_telemetry_gcp_contract.py -m gcp_trace --no-cov $(PYTEST_FLAGS)

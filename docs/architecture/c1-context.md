@@ -53,7 +53,7 @@ C4Context
 - All external service coordinates are env-driven (`MANGOMAS_*` prefix); no
   endpoint, project id, or model id is hardcoded in source.
 - Every GCP boundary this diagram once listed as "future" has landed, each
-  through an existing registry seam rather than a rewrite: Vertex AI (ADR-001,
+  through an existing registry seam rather than a rewrite: Vertex AI (ADR-0001,
   v0.3.0), PostgreSQL via asyncpg and GCP Secret Manager (v0.3.1, both E2E
   verified), the Cloud Trace span exporter (ADR-0009 / spec-0001) and Cloud Run
   (spec-0004), now deployed per environment from the `dev` → `qa` → `main`

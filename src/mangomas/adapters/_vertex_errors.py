@@ -2,9 +2,10 @@
 
 Both the chat (:mod:`mangomas.adapters.llm.vertex`) and embedding
 (:mod:`mangomas.adapters.embeddings.vertex`) Vertex adapters surface the same
-``google.api_core`` / ``google.auth`` exception families. This module hosts the
-single qualname-based translation matrix so neither adapter has to import the
-other's internals (which would couple the two adapter namespaces).
+``google.genai.errors`` / ``google.api_core`` / ``google.auth`` exception
+families. This module hosts the single qualname-based translation matrix so
+neither adapter has to import the other's internals (which would couple the two
+adapter namespaces).
 
 Translation is qualname-based (``module.qualname``) so the matrix can be
 exercised in unit tests without installing the Google SDK.
@@ -12,12 +13,50 @@ exercised in unit tests without installing the Google SDK.
 
 from __future__ import annotations
 
+from typing import Final
+
 from mangomas.errors import LLMBadResponse, LLMTimeout, LLMUnavailable
 from mangomas.utils.exc import truncated_exc_detail
+
+_GENAI_TIMEOUT_STATUS_CODES: Final[frozenset[int]] = frozenset({408, 504})
+_GENAI_TOO_MANY_REQUESTS_CODE: Final[int] = 429
+_GENAI_CLIENT_ERROR_MIN: Final[int] = 400
+_GENAI_CLIENT_ERROR_MAX: Final[int] = 500
+
+_GENAI_ERROR_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "google.genai.errors.APIError",
+        "google.genai.errors.ClientError",
+        "google.genai.errors.ServerError",
+    }
+)
 
 
 def _qualname(exc: BaseException) -> str:
     return f"{type(exc).__module__}.{type(exc).__qualname__}"
+
+
+def _translate_genai_error(
+    exc: BaseException,
+    *,
+    project: str | None,
+    detail: str,
+    bad_request_error: type[LLMBadResponse],
+) -> Exception:
+    code = getattr(exc, "code", None)
+    if code in _GENAI_TIMEOUT_STATUS_CODES:
+        return LLMTimeout(f"Vertex AI request timed out (project={project!r})", detail=detail)
+    if code == _GENAI_TOO_MANY_REQUESTS_CODE:
+        return LLMUnavailable(f"Vertex AI unavailable (project={project!r})", detail=detail)
+    if (
+        isinstance(code, int)
+        and not isinstance(code, bool)
+        and _GENAI_CLIENT_ERROR_MIN <= code < _GENAI_CLIENT_ERROR_MAX
+    ):
+        return bad_request_error(
+            f"Vertex AI rejected the request (project={project!r})", detail=detail
+        )
+    return LLMUnavailable(f"Vertex AI unavailable (project={project!r})", detail=detail)
 
 
 _VERTEX_TIMEOUT_TYPES: frozenset[str] = frozenset(
@@ -62,6 +101,13 @@ def translate_vertex_error(
     """
     qualname = _qualname(exc)
     detail = truncated_exc_detail(exc)
+    if qualname in _GENAI_ERROR_TYPES:
+        return _translate_genai_error(
+            exc,
+            project=project,
+            detail=detail,
+            bad_request_error=bad_request_error,
+        )
     if qualname in _VERTEX_TIMEOUT_TYPES:
         return LLMTimeout(f"Vertex AI request timed out (project={project!r})", detail=detail)
     if qualname in _VERTEX_BAD_REQUEST_TYPES:

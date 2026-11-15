@@ -43,6 +43,7 @@ _COST_NON_FINITE_MEAN_NOTE = "mean_cost_usd is not a finite number"
 _EMPTY_DATASET_NOTE = "empty dataset — nothing to gate"
 _MEAN_SCORE_NON_FINITE_NOTE = "mean_score is not a finite number"
 _MEAN_DROP_NON_FINITE_NOTE = "mean_score drop is not a finite number"
+_RATE_DROP_NON_FINITE_NOTE = "pass_rate drop is not a finite number"
 _RELIABILITY_UNAVAILABLE_NOTE = "pass_pow_k unavailable — min_pass_pow_k not met"
 #: ``min_pass_pow_k`` needs at least this many trials to mean anything.
 MIN_TRIALS_FOR_PASS_POW_K = 2
@@ -341,8 +342,11 @@ def evaluate_regression_gate(
             reasons.append(_MEAN_DROP_NON_FINITE_NOTE)
         elif mean_drop > max_mean_score_drop:
             reasons.append(f"mean_score dropped {mean_drop:.3f} > max {max_mean_score_drop:.3f}")
-    if max_pass_rate_drop is not None and pass_drop > max_pass_rate_drop:
-        reasons.append(f"pass_rate dropped {pass_drop:.3f} > max {max_pass_rate_drop:.3f}")
+    if max_pass_rate_drop is not None:
+        if not math.isfinite(pass_drop):
+            reasons.append(_RATE_DROP_NON_FINITE_NOTE)
+        elif pass_drop > max_pass_rate_drop:
+            reasons.append(f"pass_rate dropped {pass_drop:.3f} > max {max_pass_rate_drop:.3f}")
     if not allow_new_failures and diff.regressed_rows:
         shown = ", ".join(diff.regressed_rows[:5])
         reasons.append(f"{len(diff.regressed_rows)} row regression(s): {shown}")
@@ -401,6 +405,15 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
     # the pre-``kind`` behaviour for a regression-only merge.
     threshold_result = threshold_candidates[0] if threshold_candidates else _DEFAULT_THRESHOLDS
     reasons: list[str] = [reason for r in present for reason in r.reasons]
+    ordered = [threshold_result, *(r for r in present if r is not threshold_result)]
+    excluded_note = next(
+        (r.judge_note for r in ordered if r.judge_excluded and r.judge_note is not None),
+        None,
+    )
+    fallback_note = threshold_result.judge_note or next(
+        (r.judge_note for r in present if r.judge_note is not None),
+        None,
+    )
     return GateResult(
         passed=all(r.passed for r in present),
         actual_mean_score=present[0].actual_mean_score,
@@ -415,7 +428,7 @@ def merge_gate_results(results: Sequence[GateResult | None]) -> GateResult | Non
         min_pass_pow_k=threshold_result.min_pass_pow_k,
         actual_pass_pow_k=threshold_result.actual_pass_pow_k,
         judge_excluded=any(r.judge_excluded for r in present),
-        judge_note=threshold_result.judge_note,
+        judge_note=excluded_note or fallback_note,
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import subprocess
 import sys
 from io import StringIO
@@ -721,6 +722,19 @@ def test_emit_path_still_emits_an_ordinary_path_with_spaces(
     ruff autofix hook off for the whole repo.
     """
     ordinary = "src/mangomas/some dir/chat.py"
+    payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": ordinary}})
+
+    result = linter._post_tool_use_emit_path(StringIO(payload))
+
+    assert result == linter.EXIT_OK
+    assert capsys.readouterr().out.strip() == shlex.quote(ordinary)
+
+
+def test_emit_path_leaves_ordinary_no_space_path_unquoted(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Paths without whitespace or shell metacharacters emit bare for xargs."""
+    ordinary = "src/mangomas/chat.py"
     payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": ordinary}})
 
     result = linter._post_tool_use_emit_path(StringIO(payload))

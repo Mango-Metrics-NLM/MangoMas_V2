@@ -7,6 +7,7 @@ be constructed without pulling the closure machinery in.
 
 from __future__ import annotations
 
+import math
 from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -94,6 +95,10 @@ class PredicateSpec(BaseModel):
                 f"predicate kind {self.kind!r} requires exactly one of "
                 f"{list(_COMPARISON_FIELDS)}; got {given}"
             )
+        for comp_name in _COMPARISON_FIELDS:
+            val = getattr(self, comp_name)
+            if isinstance(val, float) and not math.isfinite(val):
+                raise ValueError(f"predicate {comp_name} must be finite; got {val!r}")
         return self
 
     def _reject(self, names: tuple[str, ...]) -> None:

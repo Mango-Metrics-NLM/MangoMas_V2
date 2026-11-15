@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import time
+import types
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
@@ -681,3 +683,166 @@ async def test_stream_translates_sdk_exception_raised_mid_drain(
     assert received == ["first"]
     record = next(r for r in caplog.records if r.getMessage() == "Vertex stream failed mid-drain")
     assert record.error_type == "ServiceUnavailable"  # type: ignore[attr-defined]
+
+
+def _make_genai_error(name: str, code: int, message: str = "genai boom") -> Exception:
+    cls = type(name, (Exception,), {"__module__": "google.genai.errors"})
+    instance = cls(message)
+    instance.code = code
+    assert isinstance(instance, Exception)
+    return instance
+
+
+@pytest.mark.parametrize(
+    ("name", "code", "expected_cls"),
+    [
+        ("ClientError", 400, VertexError),
+        ("ClientError", 404, LLMBadResponse),
+        ("ClientError", 408, LLMTimeout),
+        ("ClientError", 429, LLMUnavailable),
+        ("ServerError", 503, LLMUnavailable),
+        ("ServerError", 504, LLMTimeout),
+        ("APIError", 403, VertexError),
+        ("APIError", 502, LLMUnavailable),
+    ],
+)
+def test_translate_vertex_error_handles_google_genai_errors(
+    name: str, code: int, expected_cls: type
+) -> None:
+    exc = _make_genai_error(name, code)
+    translated = _translate_vertex_error(exc, project=_TEST_PROJECT)
+    assert isinstance(translated, expected_cls), (name, code, type(translated))
+
+
+async def test_vertex_chat_and_embeddings_coexist_across_locations_without_global_init(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Chat (``global``) and embeddings (``us-central1``) must hold isolated clients."""
+    from mangomas.adapters.embeddings.vertex import VertexEmbeddingClient  # noqa: PLC0415
+
+    created_clients: list[dict[str, Any]] = []
+    closed_events: list[str] = []
+
+    class _FakeGenAIClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+            self.closed = False
+            self.aio = _FakeAsyncHandle(self)
+            created_clients.append(kwargs)
+
+        def close(self) -> None:
+            self.closed = True
+            closed_events.append(f"sync:{self.kwargs['location']}")
+
+    class _FakeAsyncModels:
+        def __init__(self, parent: _FakeGenAIClient) -> None:
+            self._parent = parent
+
+        async def generate_content(self, *, model: str, contents: Any, config: Any = None) -> Any:
+            _ = (model, contents, config)
+            return types.SimpleNamespace(text=f"from:{self._parent.kwargs['location']}")
+
+        async def generate_content_stream(
+            self, *, model: str, contents: Any, config: Any = None
+        ) -> Any:
+            _ = (model, contents, config)
+
+            async def _gen() -> Any:
+                yield types.SimpleNamespace(text=f"stream:{self._parent.kwargs['location']}")
+
+            return _gen()
+
+        async def embed_content(self, *, model: str, contents: Any, config: Any = None) -> Any:
+            _ = (model, config)
+            return types.SimpleNamespace(
+                embeddings=[types.SimpleNamespace(values=[0.25, 0.75]) for _ in contents]
+            )
+
+    class _FakeAsyncHandle:
+        def __init__(self, parent: _FakeGenAIClient) -> None:
+            self._parent = parent
+            self.models = _FakeAsyncModels(parent)
+
+        async def aclose(self) -> None:
+            closed_events.append(f"aio:{self._parent.kwargs['location']}")
+
+    fake_types = types.ModuleType("google.genai.types")
+    fake_types.Content = lambda **kw: kw  # type: ignore[attr-defined]
+    fake_types.Part = types.SimpleNamespace(from_text=lambda *, text: {"text": text})  # type: ignore[attr-defined]
+    fake_types.GenerateContentConfig = lambda **kw: kw  # type: ignore[attr-defined]
+    fake_types.HttpOptions = lambda **kw: kw  # type: ignore[attr-defined]
+
+    fake_genai = types.ModuleType("google.genai")
+    fake_genai.Client = _FakeGenAIClient  # type: ignore[attr-defined]
+    fake_genai.types = fake_types  # type: ignore[attr-defined]
+
+    fake_google = types.ModuleType("google")
+    fake_google.genai = fake_genai  # type: ignore[attr-defined]
+
+    def _forbid_global_init(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("vertexai.init must not mutate process-global state")
+
+    poison_vertexai = types.ModuleType("vertexai")
+    poison_vertexai.init = _forbid_global_init  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "google", fake_google)
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+    monkeypatch.setitem(sys.modules, "vertexai", poison_vertexai)
+
+    chat = VertexClient(
+        project_id=_TEST_PROJECT,
+        location="global",
+        model="gemini-3.5-flash-lite",
+    )
+    embedder = VertexEmbeddingClient(
+        project_id=_TEST_PROJECT,
+        location="us-central1",
+        model="text-embedding-004",
+    )
+
+    try:
+        assert [entry["location"] for entry in created_clients] == ["global", "us-central1"]
+        assert await chat.complete([Message(role="user", content="hi")]) == "from:global"
+        streamed = [tok async for tok in await chat.stream([Message(role="user", content="hi")])]
+        assert streamed == ["stream:global"]
+        assert await embedder.embed_batch(["hello"]) == [[0.25, 0.75]]
+    finally:
+        await chat.aclose()
+        await embedder.aclose()
+
+    assert "aio:global" in closed_events
+    assert "aio:us-central1" in closed_events
+
+
+async def test_close_genai_client_handles_async_and_missing_handles() -> None:
+    """``close_genai_client`` covers sync/error ``aio.aclose``, async ``close``, and no-ops."""
+    from mangomas.adapters._genai import close_client_handle, close_genai_client  # noqa: PLC0415
+
+    events: list[str] = []
+
+    class _SyncAioAndAsyncClose:
+        def __init__(self) -> None:
+            self.aio = types.SimpleNamespace(aclose=lambda: events.append("sync_aio"))
+
+        async def close(self) -> None:
+            events.append("async_close")
+
+    class _FailingAioWithSyncClose:
+        def __init__(self) -> None:
+            async def _boom() -> None:
+                events.append("failing_aio")
+                raise RuntimeError("aio close failure")
+
+            self.aio = types.SimpleNamespace(aclose=_boom)
+
+        def close(self) -> None:
+            events.append("sync_close_after_error")
+
+    await close_genai_client(_SyncAioAndAsyncClose())
+    with pytest.raises(RuntimeError, match="aio close failure"):
+        await close_genai_client(_FailingAioWithSyncClose())
+    await close_genai_client(types.SimpleNamespace(aio=object()))
+    await close_genai_client(object())
+    await close_client_handle(object())
+    assert events == ["sync_aio", "async_close", "failing_aio", "sync_close_after_error"]

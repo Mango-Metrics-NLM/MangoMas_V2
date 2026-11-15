@@ -560,3 +560,147 @@ def test_live_wsl_isolation_enforces_filesystem_and_network_containment(
     assert outcome.promoted is True, outcome.stdout + outcome.stderr
     assert "live-wsl-isolation-ok" in outcome.stdout
     assert (repo / rel).read_text(encoding="utf-8") == "VALUE = 202\n"
+
+
+def test_reject_candidate_python_startup_hooks_ignores_missing_dir(tmp_path: Path) -> None:
+    from mangomas.harness.isolation.base import reject_candidate_python_startup_hooks  # noqa: PLC0415
+
+    reject_candidate_python_startup_hooks(tmp_path / "missing-staging-dir")
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (
+            ["python", "-W", "default", "-X", "utf8", "-u", "-m", "pytest", "-q"],
+            ("-m", "pytest", ("-q",)),
+        ),
+        (["python", "-cprint(1)"], ("-c", "print(1)", ())),
+        (["python", "-mpytest", "-q"], ("-m", "pytest", ("-q",))),
+        (["python", "-Bmpytest", "-q"], ("-m", "pytest", ("-q",))),
+        (["python", "-Bm", "pytest", "-q"], ("-m", "pytest", ("-q",))),
+        (["python", "-Bc", "print(1)"], ("-c", "print(1)", ())),
+        (["python", "-Bcprint(1)"], ("-c", "print(1)", ())),
+        (["python", "-BWdefault", "-BXutf8", "run.py"], ("script", "run.py", ())),
+        (["python", "--check-hash-based-pycs", "always", "run.py"], ("script", "run.py", ())),
+        (["python", "--check-hash-based-pycs=always", "run.py"], ("script", "run.py", ())),
+        (["python", "--", "run.py", "--flag"], ("script", "run.py", ("--flag",))),
+        (["python", "run.py", "arg"], ("script", "run.py", ("arg",))),
+        (["python", "-m"], None),
+        (["python", "-Bm"], None),
+        (["python", "-W"], None),
+        (["python", "--"], None),
+        (["python", "-"], None),
+        (["python", "-u"], None),
+        (["pytest", "-q"], None),
+        ([], None),
+    ],
+)
+def test_split_python_oracle_command_variants(
+    argv: list[str],
+    expected: tuple[str, str, tuple[str, ...]] | None,
+) -> None:
+    from mangomas.harness.isolation.none import _split_python_oracle_command  # noqa: PLC0415
+
+    result = _split_python_oracle_command(argv)
+    if expected is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert (result.mode, result.target, result.args) == expected
+
+
+@pytest.mark.parametrize(
+    ("initial_env", "is_live_subprocess", "host_os", "host_environ", "expected_env"),
+    [
+        pytest.param(
+            {},
+            True,
+            "nt",
+            {"SYSTEMROOT": r"C:\Windows"},
+            {"SYSTEMROOT": r"C:\Windows"},
+            id="windows_live_subprocess_injects_systemroot",
+        ),
+        pytest.param(
+            {"SYSTEMROOT": r"D:\CustomRoot"},
+            True,
+            "nt",
+            {"SYSTEMROOT": r"C:\Windows"},
+            {"SYSTEMROOT": r"D:\CustomRoot"},
+            id="windows_live_subprocess_preserves_existing_systemroot",
+        ),
+        pytest.param(
+            {"FOO": "bar"},
+            True,
+            "nt",
+            {},
+            {"FOO": "bar"},
+            id="windows_live_subprocess_without_host_systemroot",
+        ),
+        pytest.param(
+            {},
+            True,
+            "posix",
+            {"SYSTEMROOT": r"C:\Windows"},
+            {},
+            id="posix_host_does_not_inject_systemroot",
+        ),
+        pytest.param(
+            {},
+            False,
+            "nt",
+            {"SYSTEMROOT": r"C:\Windows"},
+            {},
+            id="custom_runner_stub_does_not_inject_systemroot",
+        ),
+    ],
+)
+def test_preserve_windows_systemroot_matrix(
+    initial_env: dict[str, str],
+    is_live_subprocess: bool,
+    host_os: str,
+    host_environ: dict[str, str],
+    expected_env: dict[str, str],
+) -> None:
+    from mangomas.harness.isolation.none import _preserve_windows_systemroot  # noqa: PLC0415
+
+    run_env = dict(initial_env)
+    _preserve_windows_systemroot(
+        run_env,
+        is_live_subprocess=is_live_subprocess,
+        host_os=host_os,
+        host_environ=host_environ,
+    )
+    assert run_env == expected_env
+
+
+def test_preserve_windows_systemroot_emits_debug_event(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from mangomas.harness.isolation.none import _preserve_windows_systemroot  # noqa: PLC0415
+
+    caplog.set_level("DEBUG", logger="mangomas.harness.isolation.none")
+    run_env: dict[str, str] = {}
+    _preserve_windows_systemroot(
+        run_env,
+        is_live_subprocess=True,
+        host_os="nt",
+        host_environ={"SYSTEMROOT": r"C:\Windows"},
+    )
+    assert run_env == {"SYSTEMROOT": r"C:\Windows"}
+    events = [
+        (rec.levelname, getattr(rec, "event", None))
+        for rec in caplog.records
+        if rec.name == "mangomas.harness.isolation.none"
+    ]
+    assert events == [("DEBUG", "repair_oracle_systemroot_preserved")]
+
+    caplog.clear()
+    _preserve_windows_systemroot(
+        run_env,
+        is_live_subprocess=True,
+        host_os="nt",
+        host_environ={"SYSTEMROOT": r"C:\OtherWindows"},
+    )
+    assert run_env == {"SYSTEMROOT": r"C:\Windows"}
+    assert caplog.records == []

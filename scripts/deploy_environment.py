@@ -76,6 +76,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
+import _logging
 import yaml
 
 logger = logging.getLogger("deploy_environment")
@@ -643,7 +644,7 @@ def render_manifest(
 
 def _configure_logging(level_name: str) -> None:
     level = logging.DEBUG if os.environ.get(RUNNER_DEBUG_ENV) == "1" else level_name
-    logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s", force=True)
+    _logging.configure_script_logging(level=level, force=True)
 
 
 def _report(exc: Exception, title: str) -> None:

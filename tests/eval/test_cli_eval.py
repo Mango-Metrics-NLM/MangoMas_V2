@@ -1236,10 +1236,22 @@ def test_seed_judge_options_only_fills_gaps() -> None:
         ["exact_match"], {"x": 1}, cfg=cfg, base_model="m", profile_models={}
     )
     assert untouched == {"x": 1}
-    replaced = _seed_judge_options(
-        ["contains", "llm_judge"], {"llm_judge": "bad"}, cfg=cfg, base_model="m", profile_models={}
-    )
-    assert isinstance(replaced["llm_judge"], dict)
+    with pytest.raises(ConfigError, match="llm_judge"):
+        _seed_judge_options(
+            ["contains", "llm_judge"],
+            {"llm_judge": "bad"},
+            cfg=cfg,
+            base_model="m",
+            profile_models={},
+        )
+    with pytest.raises(ConfigError, match="llm_judge"):
+        _seed_judge_options(
+            ["contains", "llm_judge"],
+            {"llm_judge": False},
+            cfg=cfg,
+            base_model="m",
+            profile_models={},
+        )
 
 
 def test_seed_judge_options_resolves_the_judging_model_from_the_profile() -> None:

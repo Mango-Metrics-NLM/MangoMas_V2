@@ -122,3 +122,25 @@ async def test_short_response_is_a_typed_bad_response() -> None:
 async def test_exact_count_passes_through() -> None:
     vectors = await _client(_FakeModelClient()).embed_batch(["a", "b"])
     assert len(vectors) == 2
+
+
+async def test_owned_embedding_client_is_closed_on_aclose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[bool] = []
+
+    class _OwnedFakeClient:
+        async def get_embeddings_async(self, texts: list[str]) -> list[Any]:
+            return [_FakeEmbedding(values=[0.1]) for _ in texts]
+
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    monkeypatch.setattr(vertex_module, "_lazy_init_model", lambda **_kw: _OwnedFakeClient())
+    client = VertexEmbeddingClient(
+        project_id=TEST_VERTEX_PROJECT,
+        location=DEFAULT_VERTEX_LOCATION,
+        model=DEFAULT_EMBEDDINGS_MODEL,
+    )
+    await client.aclose()
+    assert closed == [True]

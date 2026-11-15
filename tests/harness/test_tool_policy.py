@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -250,3 +251,44 @@ async def test_tool_agent_allows_explicitly_granted_mutating_tool() -> None:
     resp = await agent.handle(req, ctx)
     assert resp.content == "Done."
     assert mutating_tool.calls == [{"x": 1}]
+
+
+def test_tool_policy_logs_warnings_and_debug_without_leaking_argument_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sentinel_arg = "ARG-SENTINEL-VALUE-999"
+    caplog.set_level(logging.DEBUG, logger="mangomas.harness.tool_policy")
+    ro_spec = ToolSpec(
+        name="retrieve",
+        description="Search",
+        effects=ToolEffects.READ_ONLY,
+        parameters_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    )
+    enforce_tool_invocation_policy(ro_spec, {"query": sentinel_arg})
+    assert any(
+        r.levelno == logging.DEBUG and "Tool invocation allowed" in r.message
+        for r in caplog.records
+    )
+
+    caplog.clear()
+    mut_spec = ToolSpec(name="mutate", description="Mutates", effects=ToolEffects.MUTATES)
+    with pytest.raises(ToolExecutionError):
+        enforce_tool_invocation_policy(mut_spec, {"payload": sentinel_arg})
+    assert any(
+        r.levelno == logging.WARNING and "blocked by fail-closed policy" in r.message
+        for r in caplog.records
+    )
+
+    with pytest.raises(ToolExecutionError):
+        validate_tool_arguments(ro_spec, {"other": sentinel_arg})
+    assert any(
+        r.levelno == logging.WARNING and "missing required keys" in r.message
+        for r in caplog.records
+    )
+    for rec in caplog.records:
+        assert sentinel_arg not in rec.getMessage()
+        assert sentinel_arg not in repr(rec.__dict__)

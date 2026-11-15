@@ -148,9 +148,73 @@ def _check_git(args: Sequence[str]) -> str | None:
     return None
 
 
+_GUARD_PROBE_MODULES: Final[frozenset[str]] = frozenset({"guard_probe", "scripts.guard_probe"})
+
+
+_PYTHON_VALUE_OPTIONS: Final[frozenset[str]] = frozenset({"-W", "-X", "--check-hash-based-pycs"})
+_VERSIONED_PYTHON_RE: Final[re.Pattern[str]] = re.compile(
+    r"python\d+\.\d+(?:\.\d+)*|py\d+(?:\.\d+)*"
+)
+
+
+_MIN_MANIFEST_PREFIX_LEN = 3
+
+
+def _is_manifest_flag(arg: str) -> bool:
+    flag = arg.split("=", 1)[0]
+    return len(flag) >= _MIN_MANIFEST_PREFIX_LEN and "--manifest".startswith(flag)
+
+
 def _check_guard_probe(args: Sequence[str]) -> str | None:
-    if any(arg == "--manifest" or arg.startswith("--manifest=") for arg in args):
+    if any(_is_manifest_flag(arg) for arg in args):
         return GUARD_PROBE_REASON
+    return None
+
+
+def _resolve_python_module_arg(
+    arg: str, args: Sequence[str], idx: int, pos: int
+) -> tuple[str, Sequence[str]] | None:
+    """Extract ``(module_name, remaining_args)`` from a ``-m`` option in *arg*."""
+    after = arg[2 + pos :]
+    if after:
+        return after, args[idx + 1 :]
+    if idx + 1 < len(args):
+        return args[idx + 1], args[idx + 2 :]
+    return None
+
+
+def _check_python_flag_token(arg: str, args: Sequence[str], idx: int) -> tuple[int, str | None]:
+    """Inspect one short-option *arg*; return ``(next_idx, block_reason)`` (-1 = stop parsing)."""
+    for pos, ch in enumerate(arg[1:]):
+        if ch == "c":
+            return -1, None
+        if ch in {"W", "X"}:
+            return (idx + 2 if pos + 2 == len(arg) else idx + 1), None
+        if ch == "m":
+            resolved = _resolve_python_module_arg(arg, args, idx, pos)
+            if resolved is None:
+                return -1, None
+            module, rest = resolved
+            return -1, (_check_guard_probe(rest) if module in _GUARD_PROBE_MODULES else None)
+    return idx + 1, None
+
+
+def _check_python(args: Sequence[str]) -> str | None:
+    """Block ``python -m [scripts.]guard_probe --manifest ...`` (spec-0050 D-11)."""
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        if arg in {"--", "-"} or not arg.startswith("-"):
+            return None
+        if arg in _PYTHON_VALUE_OPTIONS:
+            idx += 2
+            continue
+        if arg.startswith("--"):
+            idx += 1
+            continue
+        idx, reason = _check_python_flag_token(arg, args, idx)
+        if idx < 0:
+            return reason
     return None
 
 
@@ -167,6 +231,9 @@ DESTRUCTIVE_BASH_RULES: Final[dict[str, Checker]] = {
     "rmdir": _check_windows_delete,
     "git": _check_git,
     "guard_probe.py": _check_guard_probe,
+    "python": _check_python,
+    "python3": _check_python,
+    "py": _check_python,
 }
 
 
@@ -208,6 +275,8 @@ def _segment_reason(segment: Sequence[str], depth: int) -> str | None:
         program = _program_name(token)
         args = segment[index + 1 :]
         checker = DESTRUCTIVE_BASH_RULES.get(program)
+        if checker is None and _VERSIONED_PYTHON_RE.fullmatch(program) is not None:
+            checker = _check_python
         if checker is not None and (reason := checker(args)) is not None:
             return reason
         payload = _nested_payload(program, args)

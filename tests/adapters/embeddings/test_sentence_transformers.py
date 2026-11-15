@@ -12,6 +12,7 @@ from mangomas.adapters.embeddings.sentence_transformers import (
 )
 from mangomas.composition.embeddings import _sentence_transformers_embedding_factory
 from mangomas.config import EmbeddingSettings
+from mangomas.errors import LLMBadResponse
 from tests.constants import (
     DEFAULT_EMBEDDINGS_DEVICE,
     DEFAULT_EMBEDDINGS_MODEL,
@@ -117,3 +118,59 @@ def test_settings_default_leaves_the_device_unset() -> None:
     """
     assert EmbeddingSettings().device is DEFAULT_EMBEDDINGS_DEVICE
     assert DEFAULT_EMBEDDINGS_DEVICE is None
+
+
+class _ArrayLikeResult:
+    def __init__(self, rows: list[list[object]]) -> None:
+        self._rows = rows
+
+    def tolist(self) -> list[list[object]]:
+        return self._rows
+
+
+class _ReturningModel:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def encode(self, _texts: list[str], *, show_progress_bar: bool = False) -> object:
+        assert show_progress_bar is False
+        return self._value
+
+
+async def test_embed_batch_empty_returns_empty_list_without_calling_model() -> None:
+    model = _FakeModel()
+    client = SentenceTransformersEmbeddingClient(model=DEFAULT_EMBEDDINGS_MODEL, client=model)
+    assert await client.embed_batch([]) == []
+    assert model.calls == []
+
+
+async def test_embed_batch_converts_tolist_array_results() -> None:
+    model = _ReturningModel(_ArrayLikeResult([[1, 2.5], [3, 4]]))
+    client = SentenceTransformersEmbeddingClient(model=DEFAULT_EMBEDDINGS_MODEL, client=model)
+    assert await client.embed_batch(["a", "b"]) == [[1.0, 2.5], [3.0, 4.0]]
+
+
+async def test_embed_batch_rejects_mismatched_vector_count() -> None:
+    model = _ReturningModel([[1.0, 2.0]])
+    client = SentenceTransformersEmbeddingClient(model=DEFAULT_EMBEDDINGS_MODEL, client=model)
+    with pytest.raises(LLMBadResponse, match="mismatched embedding count"):
+        await client.embed_batch(["a", "b"])
+
+
+@pytest.mark.parametrize(
+    ("bad_rows", "match"),
+    [
+        ([["not-a-float"]], "malformed embedding vector"),
+        ([[10**400]], "malformed embedding vector"),
+        ([[float("nan")]], "non-finite embedding value"),
+        ([[float("inf")]], "non-finite embedding value"),
+    ],
+)
+async def test_embed_batch_rejects_malformed_or_non_finite_vectors(
+    bad_rows: list[list[object]],
+    match: str,
+) -> None:
+    model = _ReturningModel(bad_rows)
+    client = SentenceTransformersEmbeddingClient(model=DEFAULT_EMBEDDINGS_MODEL, client=model)
+    with pytest.raises(LLMBadResponse, match=match):
+        await client.embed_batch(["a"])

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import math
+import numbers
 from typing import Any
 
 from mangomas.config import (
@@ -29,6 +30,7 @@ from mangomas.config import (
 from mangomas.eval._options import require_non_negative_float
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.registry import scorer_registry
+from mangomas.utils.json_path import is_bool_scalar
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +43,20 @@ _TOKENS_PER_THOUSAND: float = 1000.0
 
 def _metadata_non_negative_float(metadata: dict[str, Any], key: str) -> float | None:
     raw = metadata.get(key)
-    if isinstance(raw, bool) or not isinstance(raw, int | float):
+    if not isinstance(raw, numbers.Real) or is_bool_scalar(raw):
         return None
+    # Unrepresentable magnitudes (e.g. 10**400) must raise OverflowError rather
+    # than degrading to None and silently falling back to a cheaper tier.
     number = float(raw)
     if not math.isfinite(number) or number < 0.0:
         return None
     return number
+
+
+def _checked_finite_cost(cost: float) -> float:
+    if not math.isfinite(cost):
+        raise OverflowError("Computed cost_usd overflows finite float range")
+    return cost
 
 
 def measured_usage(response_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -92,7 +102,7 @@ def estimate_cost_usd(
     if usage is not None:
         in_tok = _metadata_non_negative_float(usage, EVAL_COST_INPUT_TOKENS_METADATA_KEY) or 0.0
         out_tok = _metadata_non_negative_float(usage, EVAL_COST_OUTPUT_TOKENS_METADATA_KEY) or 0.0
-        cost = (
+        cost = _checked_finite_cost(
             in_tok / _TOKENS_PER_THOUSAND * usd_per_1k_input_tokens
             + out_tok / _TOKENS_PER_THOUSAND * usd_per_1k_output_tokens
         )
@@ -105,12 +115,12 @@ def estimate_cost_usd(
     if input_tokens is not None or output_tokens is not None:
         in_tok = input_tokens or 0.0
         out_tok = output_tokens or 0.0
-        cost = (
+        cost = _checked_finite_cost(
             in_tok / _TOKENS_PER_THOUSAND * usd_per_1k_input_tokens
             + out_tok / _TOKENS_PER_THOUSAND * usd_per_1k_output_tokens
         )
         return cost, _COST_SOURCE_TOKENS
-    cost = len(prediction) / _TOKENS_PER_THOUSAND * usd_per_1k_output_chars
+    cost = _checked_finite_cost(len(prediction) / _TOKENS_PER_THOUSAND * usd_per_1k_output_chars)
     return cost, _COST_SOURCE_OUTPUT_CHARS
 
 

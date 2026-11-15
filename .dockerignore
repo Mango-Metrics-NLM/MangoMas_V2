@@ -68,12 +68,19 @@ scripts/deploy_environment.py
 rendered-service.yaml
 
 # Local scanner binaries / caches (make secret-scan, make sbom-scan, import-linter)
+.cache/
 .import_linter_cache/
+.gitleaks.toml
 gitleaks
+gitleaks.exe
 gitleaks.tar.gz
 trivy
+trivy.exe
 trivy.tar.gz
+*.zip
 sbom.cdx.json
+evals/
+scripts/verify_gcp_prerequisites.py
 
 # Dev-only pytest environment guard — not part of the runtime image
 sitecustomize.py

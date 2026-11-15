@@ -17,6 +17,8 @@ registered :class:`~mangomas.core.tools.Tool`:
 
 from __future__ import annotations
 
+import logging
+import math
 from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, Any, Final
 
@@ -25,6 +27,8 @@ from mangomas.errors import ToolExecutionError
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core.tools import ToolSpec
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ARGUMENT_COUNT: Final[int] = 32
 DEFAULT_MAX_STRING_ARGUMENT_CHARS: Final[int] = 16_384
@@ -38,6 +42,8 @@ def _matches_json_type(value: object, expected_type: str) -> bool:
     types pass through so a future ``ToolSpec`` is not silently rejected.
     """
     if expected_type in {"integer", "number"} and isinstance(value, bool):
+        return False
+    if expected_type == "number" and isinstance(value, float) and not math.isfinite(value):
         return False
     type_map: dict[str, type | tuple[type, ...]] = {
         "string": str,
@@ -56,6 +62,10 @@ def _enforce_max_string_length(value: Any, max_chars: int, path: str) -> None:
     """Recursively enforce *max_chars* on every string in a JSON-shaped *value*."""
     if isinstance(value, str):
         if len(value) > max_chars:
+            logger.warning(
+                "Tool argument rejected: string exceeds maximum length",
+                extra={"path": path, "max_chars": max_chars, "length": len(value)},
+            )
             raise ToolExecutionError(
                 f"argument {path} exceeds maximum length of {max_chars} characters",
                 tool_name="policy_argument_validator",
@@ -68,6 +78,18 @@ def _enforce_max_string_length(value: Any, max_chars: int, path: str) -> None:
             _enforce_max_string_length(item, max_chars, f"{path}[{index}]")
 
 
+def _matches_expected_type(value: Any, expected_type: Any) -> bool:
+    """Support both scalar and JSON-Schema union ``type`` declarations."""
+    if isinstance(expected_type, str):
+        return _matches_json_type(value, expected_type)
+    if isinstance(expected_type, list):
+        return any(
+            isinstance(candidate, str) and _matches_json_type(value, candidate)
+            for candidate in expected_type
+        )
+    return True
+
+
 def validate_tool_arguments(
     spec: ToolSpec,
     arguments: Mapping[str, Any],
@@ -77,6 +99,14 @@ def validate_tool_arguments(
 ) -> None:
     """Validate *arguments* against *spec.parameters_schema*, or raise ``ToolExecutionError``."""
     if len(arguments) > max_argument_count:
+        logger.warning(
+            "Tool arguments rejected: argument count exceeds limit",
+            extra={
+                "tool": spec.name,
+                "argument_count": len(arguments),
+                "max_argument_count": max_argument_count,
+            },
+        )
         raise ToolExecutionError(
             f"Tool {spec.name!r} received {len(arguments)} arguments "
             f"(maximum allowed is {max_argument_count})",
@@ -94,6 +124,10 @@ def validate_tool_arguments(
     if isinstance(required, list):
         missing = [req for req in required if isinstance(req, str) and req not in arguments]
         if missing:
+            logger.warning(
+                "Tool arguments rejected: missing required keys",
+                extra={"tool": spec.name, "missing_keys": missing},
+            )
             raise ToolExecutionError(
                 f"Tool {spec.name!r} missing required argument(s): {missing}",
                 tool_name=spec.name,
@@ -107,6 +141,10 @@ def validate_tool_arguments(
     if schema.get("additionalProperties") is False:
         unknown = sorted(key for key in arguments if key not in properties)
         if unknown:
+            logger.warning(
+                "Tool arguments rejected: unexpected keys",
+                extra={"tool": spec.name, "unknown_keys": unknown},
+            )
             raise ToolExecutionError(
                 f"Tool {spec.name!r} received unexpected argument(s): {unknown}",
                 tool_name=spec.name,
@@ -116,7 +154,16 @@ def validate_tool_arguments(
         if not isinstance(prop_schema, Mapping):
             continue
         expected_type = prop_schema.get("type")
-        if isinstance(expected_type, str) and not _matches_json_type(val, expected_type):
+        if not _matches_expected_type(val, expected_type):
+            logger.warning(
+                "Tool argument rejected: type mismatch",
+                extra={
+                    "tool": spec.name,
+                    "key": key,
+                    "expected_type": expected_type,
+                    "actual_type": type(val).__name__,
+                },
+            )
             raise ToolExecutionError(
                 f"Tool {spec.name!r} argument {key!r} must be of type "
                 f"{expected_type!r}, got {type(val).__name__}",
@@ -136,6 +183,10 @@ def enforce_tool_invocation_policy(
     refused unless its name appears in *allowed_mutating_tools*.
     """
     if spec.effects is not ToolEffects.READ_ONLY and spec.name not in allowed_mutating_tools:
+        logger.warning(
+            "Tool invocation blocked by fail-closed policy",
+            extra={"tool": spec.name, "effect": spec.effects.value},
+        )
         raise ToolExecutionError(
             f"Tool {spec.name!r} has effect {spec.effects.value!r} and is blocked by the "
             "fail-closed tool policy (only 'read_only' tools may execute without an "
@@ -143,3 +194,7 @@ def enforce_tool_invocation_policy(
             tool_name=spec.name,
         )
     validate_tool_arguments(spec, arguments)
+    logger.debug(
+        "Tool invocation allowed by policy",
+        extra={"tool": spec.name, "effect": spec.effects.value},
+    )

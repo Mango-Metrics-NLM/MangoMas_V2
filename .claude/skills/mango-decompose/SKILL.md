@@ -113,7 +113,7 @@ exact bad entry, then revert.
 
 ### 4. Verify per-submodule coverage, not just the package aggregate
 
-A package can clear its 95% floor while individual submodules sit at
+A package can clear the 98% global floor while individual submodules sit at
 60-70% — this happened to `composition/embeddings.py` (67%) and
 `composition/vector.py` (70%) because their SDK-backed factories only had
 registry-membership tests, never kwarg-forwarding tests, while the

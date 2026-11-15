@@ -275,9 +275,9 @@ class EvalSettings(BaseModel):
                 "eval.max_mean_cost_usd must be a finite number >= 0.0; "
                 f"got {self.max_mean_cost_usd}"
             )
-        if self.trials < 1:
-            raise ValueError(f"eval.trials must be >= 1; got {self.trials}")
         for label, count in (
+            ("parallelism", self.parallelism),
+            ("trials", self.trials),
             ("judge_calibration_max_age_days", self.judge_calibration_max_age_days),
             ("judge_min_sample_size", self.judge_min_sample_size),
         ):

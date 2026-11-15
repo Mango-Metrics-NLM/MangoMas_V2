@@ -36,3 +36,29 @@ def variable(name: str) -> str:
     # silently truncated to its first line.
     assert not value.endswith("\\"), f"{name} is a multi-line value; read it another way"
     return value
+
+
+def defined_targets() -> set[str]:
+    """Return every explicit rule target declared in the repository Makefile."""
+    targets: set[str] = set()
+    for line in text().splitlines():
+        match = re.match(r"^([A-Za-z0-9_.-]+):(?!=)", line)
+        if match and match.group(1) != ".PHONY":
+            targets.add(match.group(1))
+    return targets
+
+
+def phony_targets() -> set[str]:
+    """Return every target listed in ``.PHONY:`` declarations in the Makefile."""
+    lines = text().splitlines()
+    phony: set[str] = set()
+    idx = 0
+    while idx < len(lines):
+        if lines[idx].startswith(".PHONY:"):
+            buf = lines[idx][len(".PHONY:") :]
+            while buf.rstrip().endswith("\\") and idx + 1 < len(lines):
+                buf = buf.rstrip()[:-1] + " " + lines[idx + 1]
+                idx += 1
+            phony.update(buf.split())
+        idx += 1
+    return phony
