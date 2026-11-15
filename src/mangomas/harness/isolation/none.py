@@ -179,6 +179,31 @@ def _build_wrapped_argv(
     ]
 
 
+def _preserve_windows_systemroot(
+    run_env: dict[str, str],
+    *,
+    is_live_subprocess: bool,
+    host_os: str | None = None,
+    host_environ: Mapping[str, str] | None = None,
+) -> None:
+    """Inject ``SYSTEMROOT`` on Windows live subprocesses when omitted by caller."""
+    resolved_os = os.name if host_os is None else host_os
+    source_env = os.environ if host_environ is None else host_environ
+    if (
+        is_live_subprocess
+        and resolved_os == "nt"
+        and "SYSTEMROOT" not in run_env
+        and "SYSTEMROOT" in source_env
+    ):
+        # Windows Winsock / asyncio (_overlapped) fails with WinError 10106
+        # inside live subprocesses when SYSTEMROOT is stripped from env.
+        run_env["SYSTEMROOT"] = source_env["SYSTEMROOT"]
+        logger.debug(
+            "Preserved SYSTEMROOT for live Windows oracle subprocess",
+            extra={"event": "repair_oracle_systemroot_preserved"},
+        )
+
+
 class NoIsolationBackend:
     """Host subprocess backend that preserves legacy behaviour and logs a warning."""
 
@@ -227,10 +252,10 @@ class NoIsolationBackend:
             else staged_prefix
         )
         run_env["PYTHONNOUSERSITE"] = "1"
-        if self._runner is None and os.name == "nt" and "SYSTEMROOT" in os.environ:
-            # Windows Winsock / asyncio (_overlapped) fails with WinError 10106
-            # inside live subprocesses when SYSTEMROOT is stripped from env.
-            run_env.setdefault("SYSTEMROOT", os.environ["SYSTEMROOT"])
+        _preserve_windows_systemroot(
+            run_env,
+            is_live_subprocess=self._runner is None,
+        )
         python_spec = _split_python_oracle_command(resolved_argv) if self._runner is None else None
         if python_spec is not None:
             with tempfile.TemporaryDirectory(prefix="mangomas-oracle-") as sentinel_dir:
