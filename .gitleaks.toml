@@ -74,9 +74,11 @@ paths = [
   # source held, so a finding here is always a duplicate of a source finding.
   # `dir` walks the filesystem, gitignore and all.
   '''(^|/)__pycache__/''',
-  # In-repo virtualenvs created by README install / `make venv-gpu` (gitignored,
-  # `dir`-scan only). Third-party packages ship test keys (testcontainers,
-  # pywin32), so without this the local dir pass is red on every machine.
-  '''^\.venv/''',
-  '''^\.venv-gpu/''',
+  # In-repo virtualenvs created by README install / `make venv-gpu` / matrix
+  # checks (gitignored, `dir`-scan only). Third-party packages ship test keys
+  # (testcontainers, pywin32, pip fixtures), so without this local dir scans
+  # trip on third-party packages rather than repository files.
+  '''(^|/)\.venv/''',
+  '''(^|/)\.venv-[^/]+/''',
+  '''(^|/)venv/''',
 ]

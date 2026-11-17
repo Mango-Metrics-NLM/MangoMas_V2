@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from mangomas.eval._options import require_str
 from mangomas.eval._serialize import report_payload
-from mangomas.eval.sink import Sink
+from mangomas.eval.sink import JSON_FILE_PATH_OPTION, JSON_FILE_SINK_NAME, Sink
 from mangomas.eval.sink_registry import sink_registry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class JsonFileSink:
     """Write the report as pretty-printed JSON to ``path``."""
 
-    name = "json_file"
+    name = JSON_FILE_SINK_NAME
 
     def __init__(self, *, path: str) -> None:
         self._path = Path(path)
@@ -54,8 +54,8 @@ class JsonFileSink:
 
 
 def _json_file_factory(options: dict[str, Any]) -> Sink:
-    path = require_str(options, "path", owner="json_file sink")
+    path = require_str(options, JSON_FILE_PATH_OPTION, owner=f"{JSON_FILE_SINK_NAME} sink")
     return JsonFileSink(path=path)
 
 
-sink_registry.register("json_file", _json_file_factory)
+sink_registry.register(JSON_FILE_SINK_NAME, _json_file_factory)

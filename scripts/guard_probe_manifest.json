@@ -1403,6 +1403,80 @@
         "-o",
         "addopts="
       ]
+    },
+    {
+      "id": "MUT-AQA-1115-01",
+      "path": "src/mangomas/api/health.py",
+      "fixed": "        if timeout_seconds is not None:\n            await asyncio.wait_for(probe_fn(), timeout=timeout_seconds)\n        else:\n            await probe_fn()",
+      "defect": "        await probe_fn()",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261115_defects.py::test_d2_check_ready_bounds_hung_llm_ping",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1115-02",
+      "path": "src/mangomas/api/app.py",
+      "fixed": "    api_cfg = get_settings().api\n    app.state.ready_timeout_seconds = api_cfg.ready_timeout_seconds\n    _install_backpressure(app, api_cfg)",
+      "defect": "    api_cfg = get_settings().api\n    app.state.ready_timeout_seconds = None\n    _install_backpressure(app, api_cfg)",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261115_defects.py::test_d2_http_readiness_routes_enforce_ready_timeout_env",
+        "-k",
+        "llm-/readyz",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1115-03",
+      "path": "src/mangomas/cli/commands/_eval_config.py",
+      "fixed": "    default_dir = output_dir.strip() if isinstance(output_dir, str) else \"\"",
+      "defect": "    default_dir = \"\"",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261115_defects.py::test_d3_cli_eval_uses_output_dir_for_json_and_sqlite_sinks",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-1115-04",
+      "path": "src/mangomas/api/health.py",
+      "fixed": "    normalized = finite_number(timeout_seconds)\n    if normalized is None or normalized <= 0.0:",
+      "defect": "    normalized = finite_number(timeout_seconds)\n    if normalized is None:",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261115_defects.py::test_d5_check_ready_validates_timeout_scalars",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     }
   ]
 }

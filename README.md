@@ -179,9 +179,10 @@ are in [docs/runbooks/gcp-local-demo.md](docs/runbooks/gcp-local-demo.md)
 |---|---|---|
 | `GET` | `/healthz` | Liveness probe — returns `{"status": "ok"}` |
 | `GET` | `/health` | Alias for `/healthz` (backwards compatibility) |
-| `GET` | `/readyz` | Readiness probe — checks LLM + DB connectivity |
+| `GET` | `/readyz` | Readiness probe — bounded LLM + DB connectivity check (`MANGOMAS_API__READY_TIMEOUT_SECONDS`) |
 | `GET` | `/ready` | Alias for `/readyz` (backwards compatibility) |
 | `GET` | `/agents` | List registered agent names |
+| `GET` | `/llm/profiles` | Secret-free roster of configured `MANGOMAS_LLM_PROFILES__*` provider profiles |
 | `POST` | `/agents/{name}/invoke` | Invoke an agent (buffered response) |
 | `POST` | `/agents/{name}/stream` | Stream agent response as Server-Sent Events |
 | `GET` | `/history` | Recent persisted turns (bounded `limit` query; HTTP twin of `mangomas history`) |
@@ -343,14 +344,15 @@ mangomas eval --scorer embedding -d data.jsonl   # real cosine scores
 | `MANGOMAS_EMBEDDINGS__PROVIDER` | Extra | Notes |
 |---|---|---|
 | `lmstudio` (default) | _(built-in)_ | POST `{base_url}/embeddings`; reuses the LM Studio endpoint |
-| `sentence_transformers` | `embeddings-local` | In-process; lazy SDK, runs `encode` off-thread |
-| `vertex` | `vertex` | `text-embedding-004`; **ADC auth only** (no service-account JSON) |
+| `sentence_transformers` | `embeddings-local` | In-process; lazy SDK, runs `encode` off-thread (`MANGOMAS_EMBEDDINGS__DEVICE` selects Torch device) |
+| `vertex` | `vertex` | Isolated `google.genai.Client` (`gemini-embedding-001` / `text-embedding-004`); **ADC auth only** (no SA JSON) |
 
 | Variable | Default | Description |
 |---|---|---|
 | `MANGOMAS_EMBEDDINGS__MODEL` | `local-model` | Embedding model id (set per provider) |
 | `MANGOMAS_EMBEDDINGS__BATCH_SIZE` | `32` | Pipeline embed-batch size |
 | `MANGOMAS_EMBEDDINGS__TIMEOUT_SECONDS` | `60.0` | httpx timeout (LM Studio) |
+| `MANGOMAS_EMBEDDINGS__DEVICE` | _(none)_ | Torch device for `sentence_transformers` (unset = auto-detect CUDA → MPS → CPU) |
 | `MANGOMAS_VECTOR__PROVIDER` | `chroma` | Vector backend |
 | `MANGOMAS_VECTOR__PERSIST_DIR` | `./data/chroma` | Chroma persistent directory |
 | `MANGOMAS_VECTOR__COLLECTION` | `mangomas` | Collection name |
@@ -445,7 +447,12 @@ The production image builds both wheels.
 | `MANGOMAS_SIGNAL__DIR` | `./data/cognitive-signals` | JSONL directory (`signals.jsonl`) |
 | `MANGOMAS_SIGNAL__SCHEMA_VERSION` | `1.1.0` | Rejects `1.0.0` at Settings parse (no silent coerce) |
 | `MANGOMAS_SIGNAL__GENAI_SPANS` | `false` | Additive `gen_ai.invoke_agent` span alias |
+| `MANGOMAS_SIGNAL__TTL_SECONDS` | `86400` | Envelope lifetime in seconds (max 30 days; sinks refuse expired signals) |
+| `MANGOMAS_SIGNAL__POLICY_ID` | `mangomas.cognitive.default` | Policy identifier stamped on envelopes |
+| `MANGOMAS_SIGNAL__POLICY_VERSION` | `1` | Policy version string stamped on envelopes |
+| `MANGOMAS_SIGNAL__POLICY_SNAPSHOT_HASH` | `sha256:b2fecba7...` | `sha256:` provenance digest bound to `policy_id:policy_version` |
 | `MANGOMAS_SIGNAL__HTTP_URL` | _(none)_ | Optional POST of the envelope JSON |
+| `MANGOMAS_SIGNAL__HTTP_TIMEOUT_SECONDS` | `5.0` | Timeout for optional HTTP ingest POST |
 
 Sink failures are logged and swallowed. Streaming does not emit. `tool` has
 no harness role (`retrieve` stays local RAG).
@@ -550,6 +557,7 @@ CI runs, so one target reproduces the whole pipeline locally:
 ```powershell
 make gate     # validate-config + lint + format-check + typecheck + lint-imports
               # + frontmatter + protected-paths + test + coverage
+              # + eval-selfcheck + eval-lanes
               # + bridge-coverage + contracts-coverage + scripts-coverage
 make help     # list every target
 ```
@@ -558,18 +566,21 @@ Individually — note the lint surface includes `eval_harness_bridge/src` and
 `mango-integration-contracts/src`, matching `.github/workflows/ci.yml`:
 
 ```powershell
-make lint            # python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
-make format-check    # python -m ruff format --check ...
-make typecheck       # python -m mypy --strict ...
-make lint-imports    # import-linter (core ↛ outer; sibling independence)
-make frontmatter     # python scripts/lint_agent_frontmatter.py
-make protected-paths # BREAKING-CHANGE trailer on protected core files
-make test            # python -m pytest -q  (addopts supply --cov + the global floor)
-make coverage        # python scripts/check_coverage.py  — per-package floors
-make bridge-coverage # eval_harness_bridge isolated 100% floor
+make validate-config    # validate Cloud Run envs + Claude/.mcp.json configs
+make lint               # python -m ruff check src tests scripts eval_harness_bridge/src mango-integration-contracts/src
+make format-check       # python -m ruff format --check ...
+make typecheck          # python -m mypy --strict ...
+make lint-imports       # import-linter (core ↛ outer; sibling independence)
+make frontmatter        # python scripts/lint_agent_frontmatter.py
+make protected-paths    # BREAKING-CHANGE trailer on protected core files
+make test               # python -m pytest -q  (addopts supply --cov + the global floor)
+make coverage           # python scripts/check_coverage.py  — per-package floors
+make eval-selfcheck     # deterministic echo baseline gate (eval/selfcheck_echo_v1)
+make eval-lanes         # deterministic dataset-lane replay tests
+make bridge-coverage    # eval_harness_bridge isolated 100% floor
 make contracts-coverage # mango-integration-contracts isolated 100% floor
-make scripts-coverage # scripts/ isolated floor (Makefile SCRIPTS_FLOOR)
-make precommit       # pre-commit run --all-files (subset of the gate; see below)
+make scripts-coverage   # scripts/ isolated floor (Makefile SCRIPTS_FLOOR)
+make precommit          # pre-commit run --all-files (subset of the gate; see below)
 ```
 
 `make secret-scan` (gitleaks) is CI-only and deliberately outside `make
@@ -578,7 +589,8 @@ release binary is the one exception. Run it directly to reproduce that CI job
 locally (needs network access).
 
 Scheduled and repository automation outside the gate:
-`.github/workflows/nightly.yml` (Postgres suite + secret scan; files a tracking
+`.github/workflows/nightly.yml` (Postgres suite, `embeddings-local` CPU suite,
+secret scan, and Trivy/SBOM scan; files a tracking
 issue on failure), `.github/dependabot.yml` (monthly `github-actions` and `pip`
 updates), and the mandatory checklist in `.github/PULL_REQUEST_TEMPLATE.md`.
 
@@ -647,6 +659,7 @@ src/mangomas/
   rag/          Opt-in RAG layer — chunker, loader, ingestion pipeline, retriever + RetrievalTool
   workflow/     Opt-in declarative workflow graphs — frozen node models, predicate
                 compiler, node registry + executors, loader (compiles to dispatch)
+  cognitive/    Opt-in CognitiveSignal 1.1.0 producer (planner/reviewer emit; INV-16)
   api/          FastAPI app factory, routes, middleware, auth, health checks
   cli/          Typer CLI, one module per dependency layer behind a permanent
                 facade (ADR-0019 / spec-0015 R1) — chat, history, eval, rag,
@@ -659,14 +672,14 @@ src/mangomas/
   correlation.py  Per-request correlation id ContextVar + filter
   tenancy.py    Opt-in tenant ContextVar for tenant-scoped storage
   errors.py     Typed error hierarchy (MangomasError subclasses)
-  harness/      Claude Code harness governance (protected paths, ConfigChange audit)
+  harness/      Claude Code + runtime containment governance (protected paths, ConfigChange audit, tool_policy, repair_sandbox, isolation/)
   _headers.py   Shared HTTP header sanitization (correlation, tenancy)
   _entry_points.py Shared entry-point iteration for eval plugin discovery
   registry.py   Generic, protocol-checked provider store
   metrics.py    Opt-in OTel MeterProvider + agent metrics
   telemetry/    OpenTelemetry configuration, one module per dependency layer
                 behind a permanent re-export facade
-  utils/        Shared helpers (clock, exception text, regex flags)
+  utils/        Shared helpers (clock, exception text, regex flags, LLM usage scope, json_path)
 
 tests/
   (root)         Unit tests, named after the module under test
@@ -676,7 +689,8 @@ tests/
   deploy/        CI/Makefile parity, workflow hardening, deploy manifests,
                  Docker build context, and the gitleaks ruleset contract
   eval/          Evaluation-harness tests (in-process)
-  harness/       Protected-path governance + ConfigChange decision table
+  evals/         Deterministic eval dataset-lane replay tests (`make eval-lanes`)
+  harness/       Protected-path governance, containment sandbox, isolation & ConfigChange audit
   rag/           RAG domain tests
   cognitive/     CognitiveSignal producer (roles, PDP, sinks, emit)
   tooling/       Corpus contracts (agents/skills/settings/.mcp.json),
@@ -704,6 +718,9 @@ docs/
 specs/           One thin spec per non-trivial feature, written before the code
 scripts/         Coverage gate, frontmatter lint, harness hook entry points, deploy-environment planner
 deploy/          Cloud Run base manifest + per-environment registry (dev / qa / prod, ADR-0036)
+evals/           Deterministic eval datasets & baselines (`selfcheck_echo_v1`, `planner_v1`, `reviewer_v1`, `safety_toolagent_v1`)
+eval_harness_bridge/  Standalone black-box eval bridge package (100% coverage floor)
+mango-integration-contracts/  Sibling CognitiveSignal 1.1.0 / ProposedAction envelope package (100% coverage floor)
 .claude/         Agents, skills and settings — the live Claude Code corpus
 .github/         CI, deploy, eval-gate and nightly workflows + dependabot
 ```

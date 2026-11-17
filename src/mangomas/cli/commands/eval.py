@@ -220,7 +220,9 @@ def _run_eval_pipeline(
                 },
             ),
         )
-        sinks = _build_sinks(list(cfg.sinks), cfg.sink_options, output_json)
+        sinks = _build_sinks(
+            list(cfg.sinks), cfg.sink_options, output_json, output_dir=cfg.output_dir
+        )
         target_instance = _build_target(target_name, cfg.target_options, agent, cfg.agent)
         source_instance = _build_dataset_source(
             source_name, cfg.dataset_source_options, dataset_path, cfg.dataset_path

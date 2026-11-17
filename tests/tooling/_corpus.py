@@ -103,6 +103,35 @@ def cites_basename(token: str, basename: str) -> bool:
     return candidate == basename or candidate.endswith(f"/{basename}")
 
 
+# Directory names excluded from recursive repo walks (virtualenvs, vcs, caches,
+# scratch/work areas). Any ``.venv-*`` secondary interpreter directory is also
+# excluded so `.venv-gpu/`, `.venv-aqa311/`, etc. never pollute corpus scans.
+IGNORED_REPO_WALK_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".hypothesis",
+        ".import_linter_cache",
+        "node_modules",
+        ".gemini",
+        "artifacts",
+        "scratch",
+    }
+)
+
+
+def is_ignored_repo_walk_path(rel_posix: str) -> bool:
+    """Return ``True`` when a repo-relative POSIX path sits inside an ignored directory."""
+    return any(
+        part in IGNORED_REPO_WALK_DIRS or part.startswith(".venv-") for part in rel_posix.split("/")
+    )
+
+
 def find_basename_citations(basename: str) -> list[Citation]:
     """Locate every live-doc backtick span naming ``basename``."""
     citations: list[Citation] = []

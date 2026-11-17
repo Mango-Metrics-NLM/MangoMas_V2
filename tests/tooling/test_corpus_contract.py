@@ -52,6 +52,7 @@ from tests.constants import (
     UNOWNED_SOURCE_SURFACES,
     WRITE_CAPABLE_AGENT_SLUGS,
 )
+from tests.tooling._corpus import is_ignored_repo_walk_path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SKILLS_DIR = _REPO_ROOT / CLAUDE_SKILLS_DIR_RELPATH
@@ -766,11 +767,32 @@ def test_no_stray_agent_md_files_remain() -> None:
     promotion to a nested `CLAUDE.md`; the rest were skill duplicates. A file
     nothing loads cannot be kept honest, so the convention stays retired."""
     strays = [
-        p.relative_to(_REPO_ROOT).as_posix()
+        rel
         for p in _REPO_ROOT.rglob(RETIRED_STRAY_AGENT_FILENAME)
-        if ".git/" not in p.as_posix()
+        for rel in [p.relative_to(_REPO_ROOT).as_posix()]
+        if not is_ignored_repo_walk_path(rel)
     ]
     assert strays == []
+
+
+_CORPUS_STALE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bgoogle-cloud-aiplatform\b"), "retired google-cloud-aiplatform package"),
+    (re.compile(r"\bvertexai\b"), "retired vertexai SDK reference"),
+    (re.compile(r"\bmangomas\.api\.correlation\b"), "retired mangomas.api.correlation module"),
+    (re.compile(r"\b85\s*%"), "stale 85 % package coverage floor"),
+)
+
+
+def test_corpus_contains_no_retired_sdk_or_stale_coverage_floors() -> None:
+    """Live agent and skill markdown must stay free of retired SDKs and stale floors."""
+    offenders: list[str] = []
+    for path in _corpus_files():
+        rel = path.relative_to(_REPO_ROOT).as_posix()
+        text = path.read_text(encoding="utf-8")
+        for pattern, reason in _CORPUS_STALE_PATTERNS:
+            if pattern.search(text):
+                offenders.append(f"{rel} ({reason})")
+    assert offenders == [], f"stale reference(s) in .claude corpus: {offenders}"
 
 
 def test_repair_loop_skill_wires_build_oracle_isolation() -> None:

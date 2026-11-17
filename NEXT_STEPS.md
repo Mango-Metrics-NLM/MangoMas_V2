@@ -8,6 +8,37 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: Post-cutover main parity, live E2E & enterprise governance sync (2026-11-16, spec-0051)
+
+Verified full parity across `origin/dev@45e04fa`, `origin/qa@a45d6cd`, and
+`origin/main@b3f7c76` (`git diff origin/main origin/dev` empty) across P1
+(`.venv`), P2 CUDA (`.venv-gpu`, 2× RTX 5060), Postgres testcontainers, Docker
+/ WSL2 oracle isolation, offline GCP preflight + Cloud Trace, live LM Studio,
+and live no-mock TCP / CLI / bridge / GPU / eval runs (`docs/testing/rca-20261115.md`):
+
+- Fixed container image smoke (`D-1`: `Makefile`, `tests/constants/deploy.py`,
+  `deploy/README.md`), bounded readiness probes + finite/NumPy scalar validation
+  (`D-2` / `D-5`: `APISettings.ready_timeout_seconds`, `api/health.py`,
+  `api/app.py`, `api/routes/system.py`), and `MANGOMAS_EVAL__OUTPUT_DIR`
+  default artifact paths + finite gating bounds (`D-3` / `D-5`: `eval/sink.py`,
+  `cli/commands/{_eval_config,eval}.py`).
+- Hardened `.gitignore`, `.dockerignore`, `.gitleaks.toml`, `Makefile clean`,
+  and shared repo-walk filtering (`is_ignored_repo_walk_path`) for secondary
+  virtualenvs (`.venv-*`, `venv/`) and local `uv.lock` / `.uv/` artifacts (`D-6`).
+- Synced C1–C4 architecture diagrams, observability/eval docs, `README.md`,
+  `AGENTS.md`, `CLAUDE.md`, `.claude/agents/*`, `.claude/skills/*`, deterministic
+  red-first regression + enterprise contract suites, and `MUT-AQA-1115-01..04`
+  in `scripts/guard_probe_manifest.json` (`D-4` / `D-7`).
+- Recorded god-file decomposition inventory (`>= 300` lines, led by non-protected
+  `scripts/verify_gcp_prerequisites.py` 1072 lines, `scripts/deploy_environment.py`
+  910 lines, `scripts/lint_agent_frontmatter.py` 791 lines, `src/mangomas/eval/runner.py`
+  699 lines, `eval/gate.py` 486 lines, `harness/repair_sandbox.py` 440 lines, and
+  protected `core/orchestrator/_client.py` 721 lines) and reusable skill/agent
+  extraction candidates (`docs/tooling/claude-code-ecosystem.md` +
+  `mango-decompose` for any future package split).
+
+---
+
 ## Overlay: GCP local-CLI demo and pre-flight (2026-11-09, spec-0049)
 
 Landed: `make gcp-preflight` (read-only ADC / project / billing-account /
@@ -20,11 +51,13 @@ reads the account's `open` flag.
 
 Follow-ups, each needing its own spec and `src/` change, ordered by risk:
 
-1. **Vertex SDK migration (high).** `adapters/llm/vertex/_client.py` and
-   `adapters/embeddings/vertex.py` import `vertexai.generative_models` /
-   `vertexai.language_models`, which warn *"will be removed on June 24, 2026"*.
-   That date has passed. Move to `google-genai` behind the unchanged
-   `LLMClient` / `EmbeddingClient` protocols (ADR required).
+1. ~~**Vertex SDK migration (high).**~~ **Resolved (`PR #135` / `874aece`, synced `spec-0051`):**
+   `adapters/llm/vertex/{_sdk,_client}.py` and `adapters/embeddings/vertex.py`
+   now construct isolated `google.genai.Client(vertexai=True, ...)` handles with
+   async/sync `close_genai_client` teardown (`_genai.py`) and
+   `google.genai.errors.*` mapping (`_vertex_errors.py`) behind unchanged
+   `LLMClient` / `EmbeddingClient` protocols; `Makefile` / `PROVIDER_REQUIREMENTS`
+   image smoke and `.claude`/architecture docs align on `google.genai`.
 2. **Permission vs. bad-response error codes (medium).** A billing or IAM
    `PERMISSION_DENIED` is persisted as `error_code="llm_bad_response"`, so
    operators can't tell an environment fault from a model fault without
@@ -144,8 +177,11 @@ defect:
     skill.
   - Lift `scripts/_openai_compat_stub.py` into a shared test fixture so other
     suites stop hand-rolling OpenAI-compatible fakes.
-  - Reconcile legacy `main` per ADR-0036. Its 11 unmerged commits are
-    superseded by ADR-0023, so promote from `dev`; do not merge `main` back.
+  - ~~Reconcile legacy `main` per ADR-0036. Its 11 unmerged commits are
+    superseded by ADR-0023, so promote from `dev`; do not merge `main` back.~~
+    **Resolved (`PR #136`–`#138`):** legacy `main@beb01bf` archived at
+    `archive/main-legacy@eb84c48`; `origin/dev`, `origin/qa`, and `origin/main`
+    cut over cleanly.
 - Open decisions for the Studio v1 milestone:
   - D-11: should `/readyz` cover the profile clients?
   - D-12: stamp streamed turns. This needs a protected `core/orchestrator/`

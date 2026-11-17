@@ -110,12 +110,14 @@ per chunk (never across a `yield`, which would leak the span into the
 consumer's own spans) and closes on full drain, an upstream error, or
 early consumer abandonment alike — see ADR-0021.
 
-`src/mangomas/harness/` (`governance.py`, `config_audit.py`) hosts the
-in-package governance logic: the protected-path set and `BREAKING-CHANGE`
-marker aliases (read from `pyproject.toml`'s `[tool.mangomas.governance]`
-table — the single source of truth, shared with `scripts/lint_agent_frontmatter.py`
-and `scripts/check_protected_paths.py`), and the `ConfigChange` hook's
-decision table.
+`src/mangomas/harness/` (`governance.py`, `config_audit.py`, `tool_policy.py`,
+`repair_sandbox.py`, `isolation/`) hosts the in-package governance and runtime
+containment logic: the protected-path set and `BREAKING-CHANGE` marker aliases
+(read from `pyproject.toml`'s `[tool.mangomas.governance]` table — the single
+source of truth, shared with `scripts/lint_agent_frontmatter.py` and
+`scripts/check_protected_paths.py`), the `ConfigChange` hook's decision table,
+Ring 1 `ToolEffects`/argument-schema policy, and Ring 2/3 repair-loop staging and
+oracle isolation backends (ADR-0039, ADR-0040).
 
 Protected core paths (`src/mangomas/core/agent.py`,
 `src/mangomas/core/orchestrator/`, `src/mangomas/core/structured.py`,
@@ -157,10 +159,11 @@ Harness scripts in `scripts/` complete the layer:
   **stdlib-only** hook
   modes reading Claude Code's tool-call JSON from stdin (never a
   `$CLAUDE_TOOL_INPUT_*` env var — Claude Code does not define one):
-  `--hook pre-tool-use` emits an advisory `permissionDecision: "ask"` for a
-  protected-path edit, and `--hook post-tool-use --emit-path` prints the
-  edited file's path for piping into `ruff check --fix`. Neither mode
-  requires `pydantic`/`pyyaml` to be installed. The legacy
+  `--hook pre-tool-use` emits `permissionDecision: "ask"` on a
+  protected-path edit and hard `permissionDecision: "deny"` on host-destructive
+  `Bash` commands (`scripts/_destructive_bash.py`, ADR-0039), while
+  `--hook post-tool-use --emit-path` prints the edited file's path for piping into
+  `ruff check --fix`. Neither mode requires `pydantic`/`pyyaml` to be installed. The legacy
   `--check-protected-paths <path>` flag (staged-diff based) remains for
   pre-commit, where a staged diff genuinely exists.
 - `check_protected_paths.py` — the CI gate described above.
@@ -251,4 +254,3 @@ stack; sends code to third parties by default) — see ADR-0020 before
 re-proposing it.
 
 ---
-

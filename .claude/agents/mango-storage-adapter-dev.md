@@ -50,4 +50,4 @@ Use the `mango-adapter` skill for the recipe and the reference table.
 
 1. `sqlite3.OperationalError: database is locked` → missing `Lock` around the cursor.
 2. `RuntimeError: Event loop is closed` on shutdown → `close()` doing async work; make it sync or call from lifespan.
-3. Coverage at adapters/storage falls below 85 % → add `close()` and error-path tests.
+3. Coverage at adapters/storage falls below 98 % → add `close()` and error-path tests.

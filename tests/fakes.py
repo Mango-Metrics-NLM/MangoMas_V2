@@ -38,6 +38,9 @@ class FakeLLM:
     closed: bool = False
     pinged: bool = False
     ping_error: BaseException | None = None
+    # Seconds ``ping()`` awaits before returning or raising ``ping_error`` so
+    # readiness-budget tests can hold the LLM probe past ``ready_timeout_seconds``.
+    ping_delay_seconds: float = 0.0
     # Raised by complete() when set — the buffered-call twin of `ping_error`, so a
     # CLI or API test can drive a typed LLM failure (e.g. `LLMUnavailable`)
     # through a real agent instead of stubbing the agent layer.
@@ -92,6 +95,8 @@ class FakeLLM:
 
     async def ping(self) -> None:
         self.pinged = True
+        if self.ping_delay_seconds > 0:
+            await asyncio.sleep(self.ping_delay_seconds)
         if self.ping_error is not None:
             raise self.ping_error
 
@@ -160,6 +165,9 @@ class FakeRepository:
 
     _turns: list[dict[str, Any]] = field(default_factory=list)
     closed: bool = False
+    # Seconds ``list_turns()`` awaits before returning so readiness-budget tests
+    # can isolate a hung DB probe independently of the LLM check.
+    list_turns_delay_seconds: float = 0.0
 
     async def save_turn(
         self,
@@ -215,6 +223,8 @@ class FakeRepository:
         return row_id
 
     async def list_turns(self, limit: int = 50) -> list[dict[str, Any]]:
+        if self.list_turns_delay_seconds > 0:
+            await asyncio.sleep(self.list_turns_delay_seconds)
         return list(reversed(self._turns[-limit:]))
 
     def close(self) -> None:

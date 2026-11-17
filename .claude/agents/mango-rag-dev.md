@@ -45,7 +45,7 @@ rather than skips, when no CUDA device is visible.
 
 - DO NOT lower the `rag` (98 %) or `adapters` (98 %) floor in
   `scripts/check_coverage.py` to land a change.
-- DO NOT import `chromadb`, `sentence_transformers` or `vertexai` at module
+- DO NOT import `chromadb`, `sentence_transformers` or `google.genai` at module
   scope — each is an optional extra and the module must import without it.
 - DO NOT add a service-account-JSON path to the Vertex embedding client; ADC is
   the only credential source it accepts.
