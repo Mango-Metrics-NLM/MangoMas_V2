@@ -43,7 +43,11 @@ from tests.constants.corpus import (
     EXPECTED_SKILL_SLUGS,
     RETIRED_STRAY_AGENT_FILENAME,
 )
-from tests.tooling._corpus import REPO_ROOT, iter_backticked_tokens
+from tests.tooling._corpus import (
+    REPO_ROOT,
+    is_ignored_repo_walk_path,
+    iter_backticked_tokens,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -101,11 +105,10 @@ def test_directory_doc_inventory_matches_the_tree() -> None:
     """
     declared = set(DIRECTORY_DOC_RELPATHS)
     found = {
-        path.relative_to(REPO_ROOT).as_posix()
+        rel
         for path in REPO_ROOT.rglob("CLAUDE.md")
-        if ".git/" not in path.as_posix()
-        and ".venv/" not in path.as_posix()
-        and path != REPO_ROOT / "CLAUDE.md"
+        for rel in [path.relative_to(REPO_ROOT).as_posix()]
+        if not is_ignored_repo_walk_path(rel) and path != REPO_ROOT / "CLAUDE.md"
     }
     assert found == declared, (
         f"undeclared: {sorted(found - declared)}; declared but missing: "

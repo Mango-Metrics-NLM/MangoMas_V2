@@ -79,6 +79,7 @@ src/mangomas/
 │   ├── planner.py      PlannerAgent (ExecutionPlan structured output)
 │   └── reviewer.py     ReviewerAgent (ReviewResult structured output)
 ├── adapters/
+│   ├── _genai.py        Shared google.genai Client lifecycle + async/sync close helpers
 │   ├── _http_errors.py  Shared httpx → typed-error translator (llm + embeddings)
 │   ├── _vertex_errors.py Shared Vertex qualname error matrix (llm + embeddings)
 │   ├── _openai_client.py OpenAICompatHTTPClient — shared httpx lifecycle base
@@ -127,9 +128,12 @@ src/mangomas/
 │   ├── _runtime.py     _build / _close_orchestrator seam + win32 stdout
 │   ├── exit_codes.py   EXIT_RUNTIME_ERROR / EXIT_CONFIG_ERROR / EVAL_GATE_EXIT_CODE
 │   └── commands/       chat (agents/chat/history), eval + _eval_config, rag, workflow
-├── harness/        Claude Code harness/hook governance (opt-in; ADR-0021)
-│   ├── governance.py   PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
-│   └── config_audit.py ConfigChange hook decision table
+├── harness/        Claude Code + runtime containment governance (opt-in; ADR-0021, ADR-0039, ADR-0040)
+│   ├── governance.py    PROTECTED_PATHS + BREAKING-CHANGE marker aliases (pyproject.toml-sourced)
+│   ├── config_audit.py  ConfigChange hook decision table
+│   ├── tool_policy.py   Fail-closed ToolEffects + JSON-Schema argument validation (Ring 1)
+│   ├── repair_sandbox.py Loopback LLM, staging-path containment, scrubbed oracle promotion (Ring 2)
+│   └── isolation/       OracleIsolationBackend protocol + Docker/WSL2/none backends
 ├── composition/    Composition root — wires settings → adapters → orchestrator
 ├── config/         Pydantic-settings, one module per domain behind a
 │                   permanent re-export facade (ADR-0019 / spec-0015):
@@ -140,7 +144,7 @@ src/mangomas/
 ├── telemetry/      OpenTelemetry, one module per dependency layer behind a
 │                   permanent facade: _state, logs, exporters (console|gcp),
 │                   tracing, meters, scoped
-├── utils/          Shared helpers: clock seam, exception text, regex flags, LLM usage scope
+├── utils/          Shared helpers: clock seam, exception text, regex flags, LLM usage scope, json_path (NumPy-safe)
 ├── _headers.py     Shared HTTP header sanitization (correlation, tenancy)
 ├── _entry_points.py Shared entry-point iteration for eval plugin discovery
 └── metrics.py      Instrumentation registry (singleton, double-checked lock)
@@ -325,7 +329,7 @@ both `false`), so existing deployments see no behaviour change. Three seams:
 - **`EmbeddingClient`** (`adapters/embeddings/base.py`) — `embed` / `embed_batch`
   / `aclose`. Backends: `LMStudioEmbeddingClient` (httpx POST `{base_url}/embeddings`),
   `SentenceTransformersEmbeddingClient` (in-process, lazy SDK), `VertexEmbeddingClient`
-  (`text-embedding-004`, **ADC only**).
+  (isolated `google.genai.Client`, e.g. `gemini-embedding-001` / `text-embedding-004`, **ADC only**).
 - **`VectorStoreRepository`** (`adapters/vector/base.py`) — primitives only
   (`ids`/`embeddings`/`documents`/`metadatas` + `VectorMatch`), so the vector
   layer never imports `rag/`. `ChromaVectorStore` forces `hnsw:space=cosine` and
@@ -390,7 +394,9 @@ gates the run for CI. Everything is additive and default-OFF. See
   `webhook` (httpx POST), and the optional `langfuse` sink (extra
   `mangomas[langfuse]`, lazy-imported, `LANGFUSE_*` env/ADC; `per_row` option
   emits one trace/score per row). Multiple sinks compose under per-sink fault
-  isolation. `--output-json` injects `json_file`.
+  isolation. `--output-json` injects `json_file`; when `sink_options` omits
+  paths, `MANGOMAS_EVAL__OUTPUT_DIR` supplies `<output_dir>/report.json` and
+  `<output_dir>/results.db` (`DEFAULT_SINK_ARTIFACTS`).
 - **Plugins** (`eval/discovery.py`): entry-point groups `mangomas.eval.scorers` /
   `mangomas.eval.sinks` / `mangomas.eval.targets` / `mangomas.eval.dataset_sources`;
   discovered only when `MANGOMAS_DISCOVERY_ENABLED=true`; iterates entry points via
@@ -419,6 +425,7 @@ MangomasError           # base; has .code str, .message, .detail
 ├── MaxStepsExceeded    # code="max_steps_exceeded"; .steps int
 ├── PersistenceError    # code="persistence_error"; file/DB I/O failures
 ├── SecretsResolutionError  # code="secrets_resolution_error"; .ref, .provider (503; strict mode)
+├── StepTimeout         # code="step_timeout"; .agent, .timeout_seconds (504)
 ├── ToolNotFound        # code="tool_not_found"; .name, .available
 └── ToolExecutionError  # code="tool_execution_error"; .tool_name
 ```

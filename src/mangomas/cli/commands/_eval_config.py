@@ -12,15 +12,25 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
 
 from mangomas.cli.exit_codes import EXIT_CONFIG_ERROR
 from mangomas.errors import ConfigError
-from mangomas.eval import dataset_source_registry, scorer_registry, sink_registry, target_registry
+from mangomas.eval import (
+    DEFAULT_SINK_ARTIFACTS,
+    JSON_FILE_PATH_OPTION,
+    JSON_FILE_SINK_NAME,
+    dataset_source_registry,
+    scorer_registry,
+    sink_registry,
+    target_registry,
+)
 from mangomas.eval._options import require_non_negative_float, require_unit_float
 from mangomas.eval.provenance import digest_of
+from mangomas.utils.json_path import finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +43,40 @@ def _build_sinks(
     sink_names: list[str],
     sink_options: dict[str, dict[str, object]],
     output_json: str | None,
+    *,
+    output_dir: str | None = None,
 ) -> list[Sink]:
-    """Resolve sink names to instances, honouring the legacy ``--output-json``.
+    """Resolve sink names to instances, honouring ``output_dir`` and ``--output-json``.
 
-    ``--output-json`` injects (or overrides the ``path`` of) the ``json_file``
-    sink so pre-existing invocations keep producing the same file. CLI flag
-    precedence: ``--output-json`` > ``sink_options["json_file"]["path"]``. Any
-    *other* configured ``sink_options["json_file"]`` keys are preserved even
-    when the sink is injected solely by ``--output-json``.
-    Raises :class:`~mangomas.errors.MangomasError` (→ exit 2) on an unknown sink
-    or a misconfigured option.
+    Precedence for ``json_file`` is ``--output-json`` >
+    ``sink_options["json_file"]["path"]`` > ``<output_dir>/report.json``.
+    For ``sqlite_results`` it is ``sink_options["sqlite_results"]["db_path"]`` >
+    ``<output_dir>/results.db``. Explicit invalid option values (e.g. ``""``)
+    are preserved so sink factories continue rejecting them with
+    :class:`~mangomas.errors.ConfigError` (→ exit 2).
     """
     names = list(sink_names)
     options: dict[str, dict[str, object]] = {n: dict(sink_options.get(n, {})) for n in names}
+    default_dir = output_dir.strip() if isinstance(output_dir, str) else ""
+    if default_dir:
+        base = Path(default_dir)
+        for sink_name, (option_key, filename) in DEFAULT_SINK_ARTIFACTS.items():
+            if sink_name in options and options[sink_name].get(option_key) is None:
+                defaulted = str(base / filename)
+                options[sink_name][option_key] = defaulted
+                logger.debug(
+                    "Defaulted %s sink %s from output_dir",
+                    sink_name,
+                    option_key,
+                    extra={"event": "eval_sink_default_path", "sink": sink_name, "path": defaulted},
+                )
     if output_json:
-        if "json_file" not in names:
-            names.append("json_file")
+        if JSON_FILE_SINK_NAME not in names:
+            names.append(JSON_FILE_SINK_NAME)
         # Seed from any configured json_file options so injecting the sink via
         # --output-json never silently drops them; only ``path`` is overridden.
-        options.setdefault("json_file", dict(sink_options.get("json_file", {})))
-        options["json_file"]["path"] = output_json
+        options.setdefault(JSON_FILE_SINK_NAME, dict(sink_options.get(JSON_FILE_SINK_NAME, {})))
+        options[JSON_FILE_SINK_NAME][JSON_FILE_PATH_OPTION] = output_json
     return [sink_registry.get(name)(options.get(name, {})) for name in names]
 
 
@@ -322,20 +346,28 @@ def _resolve_gating(
         )
 
     if gating_engaged:
+        normalized_thresholds: dict[str, float] = {}
         for label, val in (
             ("min-mean-score", eff_min_mean),
             ("min-pass-rate", eff_min_pass),
             ("min-pass-pow-k", eff_min_pass_pow_k),
         ):
-            if val is not None and not 0.0 <= val <= 1.0:
+            if val is None:
+                continue
+            parsed = finite_number(val)
+            if parsed is None or not 0.0 <= parsed <= 1.0:
                 typer.echo(
                     f"Eval configuration error: {label} must be in [0.0, 1.0]; got {val}",
                     err=True,
                 )
                 raise typer.Exit(code=EXIT_CONFIG_ERROR)
+            normalized_thresholds[label] = parsed
+        eff_min_mean = normalized_thresholds.get("min-mean-score")
+        eff_min_pass = normalized_thresholds.get("min-pass-rate")
+        eff_min_pass_pow_k = normalized_thresholds.get("min-pass-pow-k")
         if eff_max_mean_cost is not None:
             try:
-                require_non_negative_float(
+                eff_max_mean_cost = require_non_negative_float(
                     eff_max_mean_cost,
                     owner="eval",
                     field="max-mean-cost-usd",
@@ -376,15 +408,18 @@ def _resolve_regression(
     )
     eff_pass_drop = max_pass_rate_drop if max_pass_rate_drop is not None else cfg.max_pass_rate_drop
     if eff_baseline:
+        normalized_drops: dict[str, float] = {}
         checks = (("max-mean-score-drop", eff_mean_drop), ("max-pass-rate-drop", eff_pass_drop))
         for field, val in checks:
             if val is None:
                 continue
             try:
-                require_unit_float(val, owner="eval", field=field)
+                normalized_drops[field] = require_unit_float(val, owner="eval", field=field)
             except ConfigError as exc:
                 typer.echo(f"Eval configuration error: {exc}", err=True)
                 raise typer.Exit(code=EXIT_CONFIG_ERROR) from exc
+        eff_mean_drop = normalized_drops.get("max-mean-score-drop")
+        eff_pass_drop = normalized_drops.get("max-pass-rate-drop")
     return (
         eff_baseline,
         eff_mean_drop,

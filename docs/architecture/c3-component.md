@@ -13,7 +13,7 @@ C4Component
     Component(correlation, "correlation.py", "ContextVar + logging filter", "ContextVar carrying the per-request correlation id; CorrelationFilter injects it into every log record.")
     Component(trace_mw, "TraceMiddleware", "Starlette middleware / OTel", "Opens and closes an OpenTelemetry span per request. Tracer is obtained lazily via trace.get_tracer() to avoid capturing NoopTracer at import time.")
     Component(error_handler, "MangomasError handler", "FastAPI exception handler", "Walks the exception MRO to select the most specific HTTP status code and returns a structured JSON envelope.")
-    Component(health_routes, "Health routes", "FastAPI routes", "GET /healthz (+ /health alias) → liveness. GET /readyz (+ /ready alias) → ReadinessReport from check_ready(). Never authenticated.")
+    Component(health_routes, "Health routes", "FastAPI routes", "GET /healthz (+ /health alias) → liveness. GET /readyz (+ /ready alias) → ReadinessReport from check_ready(orch, timeout_seconds=app.state.ready_timeout_seconds). Never authenticated.")
     Component(agent_routes, "Agent + history routes", "FastAPI routes", "GET /agents; POST /agents/{name}/invoke (emits invocation/error/duration metrics); POST /agents/{name}/stream; GET /history (bounded limit). Delegates to Orchestrator.")
     Component(llm_routes, "LLM profile routes", "FastAPI routes", "GET /llm/profiles (build_llm_router) → LLMProfilesResponse: name, provider and model per MANGOMAS_LLM_PROFILES__* entry. Never a URL, key or secret ref (spec-0040).")
     Component(workflow_routes, "Workflow routes (opt-in)", "FastAPI routes", "POST /workflows/run and POST /workflows/validate. Resolve the graph source via the shared resolve_workflow_source, then load_workflow + execute_workflow. Reuse the MangomasError envelope (ConfigError 400 / AgentNotFound 404 / MaxStepsExceeded 422).")
@@ -31,7 +31,7 @@ C4Component
     Component(eval_runner, "EvalRunner", "Domain service", "Runs each dataset row through a Target, scores it with a Scorer, and aggregates an EvalReport. mean_score averages non-errored rows only; pass_rate keeps errored rows in the denominator. Bounded concurrency via MANGOMAS_EVAL__PARALLELISM.")
     Component(eval_registries, "Four registries", "Registry[T]", "scorer_registry, target_registry, sink_registry, dataset_source_registry — the same Registry[T] the agent/LLM/storage seams use. Built-ins self-register at import; entry-point plugins load only when MANGOMAS_DISCOVERY_ENABLED=true.")
     Component(eval_gate, "evaluate_gate + evaluate_regression_gate", "Pure functions", "Threshold verdict over an EvalReport, and a regression verdict over a diff against a baseline report. Both pure; the CLI maps a failing verdict to exit code 3 (distinct from 1=runtime, 2=config) and only after sinks have emitted.")
-    Component(eval_sinks, "Sinks", "Sink impls", "console, json_file, sqlite_results, webhook, and the optional langfuse sink. Composed under per-sink fault isolation, so one failing sink cannot lose the others' output.")
+    Component(eval_sinks, "Sinks", "Sink impls", "console, json_file, sqlite_results, webhook, and the optional langfuse sink. Composed under per-sink fault isolation, so one failing sink cannot lose the others' output. DEFAULT_SINK_ARTIFACTS + MANGOMAS_EVAL__OUTPUT_DIR supply <output_dir>/report.json and <output_dir>/results.db defaults when explicit paths are omitted.")
   }
 
   Container_Boundary(harness_boundary, "Harness governance (src/mangomas/harness/ + scripts/) — opt-in") {
@@ -55,7 +55,7 @@ C4Component
     Component(harness_orch, "_HarnessOrchestrator (opt-in)", "Orchestrator subclass", "Engaged only when MANGOMAS_HARNESS__ENABLED=true. Wraps dispatch + stream_dispatch in a harness.agent_invoke parent span carrying agent.name, harness.topology, messages.count attributes. Delegates the actual work to Orchestrator via super(). dispatch_pipeline / dispatch_fan_out inherit the wrap because they delegate through dispatch.")
     Component(profile_mixin, "_LLMProfileDispatchMixin", "composition/llm.py — first base of both composition orchestrators", "Resolves AgentRequest.metadata['llm_profile'] against ctx.extras['llm_profiles'] (built by build_llm_profiles). An unknown profile raises ConfigError (400) before any agent runs or a turn is recorded; the served profile is stamped on response.metadata before persistence. Precedence: profile > MODEL_OVERRIDE > shared client (spec-0040 / ADR-0038).")
     Component(registry, "Registry[T]", "Generic registry", "Thread-safe name → factory/instance store. Used for agents, LLM providers, and storage providers.")
-    Component(health_svc, "check_ready()", "Health service", "Pings LLM via PingableLLMClient.ping() and checks DB connectivity. Returns ReadinessReport.")
+    Component(health_svc, "check_ready()", "Health service", "Pings LLM via PingableLLMClient.ping() and checks DB connectivity (each bounded by _run_bounded_probe / timeout_seconds). Returns ReadinessReport.")
   }
 
   Container_Boundary(agents_boundary, "Agents (src/mangomas/agents/)") {
@@ -67,10 +67,10 @@ C4Component
   }
 
   Container_Boundary(adapters_boundary, "Adapters (src/mangomas/adapters/)") {
-    Component(llm_client, "LLMClient (resolved by llm_registry)", "Protocol — at runtime LMStudioClient or VertexClient", "Provider selected by MANGOMAS_LLM__PROVIDER. Both implementations satisfy LLMClient, StreamingLLMClient, and PingableLLMClient. Vertex requires the `mangomas[vertex]` optional extra; the SDK is lazy-imported so importing the module is always safe.")
+    Component(llm_client, "LLMClient (resolved by llm_registry)", "Protocol — at runtime LMStudioClient or VertexClient", "Provider selected by MANGOMAS_LLM__PROVIDER. Both implementations satisfy LLMClient, StreamingLLMClient, and PingableLLMClient. Vertex builds isolated google.genai.Client instances via the `mangomas[vertex]` optional extra with close_genai_client teardown; the SDK is lazy-imported so importing the module is always safe.")
     Component(sqlite_repo, "SQLiteRepository", "TurnRepository", "Persists conversation turns to a local SQLite database.")
     Component(postgres_repo, "PostgresRepository", "TurnRepository + AsyncCloseableRepository", "Persists conversation turns to Postgres via asyncpg with a connection pool. Activated by MANGOMAS_DB__PROVIDER=postgres; requires the `mangomas[postgres]` optional extra.")
-    Component(embedding_client, "EmbeddingClient (resolved by embedding_registry)", "Protocol — LMStudioEmbeddingClient | SentenceTransformersEmbeddingClient | VertexEmbeddingClient", "Attached to ctx.embeddings when MANGOMAS_EMBEDDINGS__ENABLED=true. embed()/embed_batch()/aclose(). lmstudio uses httpx POST /v1/embeddings; sentence_transformers runs encode() in asyncio.to_thread (mangomas[embeddings-local]); vertex uses text-embedding-004 via ADC (mangomas[vertex]). Heavy SDKs lazy-imported.")
+    Component(embedding_client, "EmbeddingClient (resolved by embedding_registry)", "Protocol — LMStudioEmbeddingClient | SentenceTransformersEmbeddingClient | VertexEmbeddingClient", "Attached to ctx.embeddings when MANGOMAS_EMBEDDINGS__ENABLED=true. embed()/embed_batch()/aclose(). lmstudio uses httpx POST /v1/embeddings; sentence_transformers runs encode() in asyncio.to_thread (mangomas[embeddings-local]); vertex uses isolated google.genai.Client (e.g. gemini-embedding-001 or text-embedding-004 via ADC, mangomas[vertex]) and close_genai_client. Heavy SDKs lazy-imported.")
     Component(vector_store, "ChromaVectorStore (resolved by vector_registry)", "VectorStoreRepository", "Attached to ctx.vector_store when MANGOMAS_VECTOR__ENABLED=true. upsert/query/delete_by_source/aclose over a persistent Chroma collection created with hnsw:space=cosine; VectorMatch.score = 1 - distance/2. chromadb lazy-imported (mangomas[rag]).")
   }
 
@@ -121,7 +121,7 @@ C4Component
   Rel(node_executors, orchestrator, "dispatch / dispatch_pipeline / dispatch_fan_out")
   Rel(backpressure_mw, secrets_provider, "resolve expected auth token")
   Rel(harness_orch, orchestrator, "delegates via super() — harness only adds the parent span")
-  Rel(health_routes, health_svc, "check_ready(orchestrator)")
+  Rel(health_routes, health_svc, "check_ready(orchestrator, timeout_seconds=ready_timeout_seconds)")
   Rel(health_svc, llm_client, "ping()")
   Rel(orchestrator, registry, "looks up Agent by name")
   Rel(orchestrator, sqlite_repo, "persists turn via TurnRepository (when provider=sqlite)")
@@ -176,9 +176,11 @@ C4Component
   (e.g. Vault) plug in via `secrets_registry.register()` with no changes
   to agents or adapters.
 - `check_ready()` is in `src/mangomas/api/health.py` and is called by the
-  `/readyz` route handler. Both `LMStudioClient.ping()` and
-  `VertexClient.ping()` are translated by `check_ready()` into a uniform
-  `ReadinessReport`.
+  `/readyz` and `/ready` route handlers with
+  `app.state.ready_timeout_seconds` (`MANGOMAS_API__READY_TIMEOUT_SECONDS`).
+  `_run_bounded_probe()` bounds both `PingableLLMClient.ping()` and
+  `TurnRepository.list_turns(limit=1)` inside `asyncio.wait_for` and translates
+  timeouts or driver errors into a `ReadinessReport`.
 - The **evaluation harness** is not shown here because it does not run inside
   the FastAPI Application container — it is a CLI consumer of the same
   composition root and uses the same `Orchestrator`. See

@@ -114,7 +114,7 @@ DOCKER_IMAGE ?= mangomas:ci
 # non-root container. Tied to `DEFAULT_REPAIR_ORACLE_IMAGE` by
 # `tests/deploy/test_oracle_image_contract.py`.
 ORACLE_IMAGE ?= mangomas:oracle
-IMAGE_SMOKE_IMPORTS ?= vertexai, asyncpg, google.cloud.secretmanager, opentelemetry.exporter.cloud_trace, mango_contracts
+IMAGE_SMOKE_IMPORTS ?= google.genai, asyncpg, google.cloud.secretmanager, opentelemetry.exporter.cloud_trace, mango_contracts
 # SHA256 of trivy_$(TRIVY_VERSION)_Linux-64bit.tar.gz, pinned from the
 # release's own checksums.txt. Update both together when bumping the version.
 TRIVY_VERSION ?= 0.74.0
@@ -473,6 +473,6 @@ serve: ## Run the API with reload (factory pattern required)
 
 clean: ## Remove caches and coverage artefacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .import_linter_cache .hypothesis htmlcov \
-	       .coverage .coverage.* coverage.xml gitleaks gitleaks.tar.gz \
-	       trivy trivy.tar.gz sbom.cdx.json
+	       .coverage .coverage.* coverage.xml gitleaks gitleaks.exe gitleaks.tar.gz gitleaks.zip \
+	       trivy trivy.exe trivy.tar.gz trivy.zip sbom.cdx.json rendered-service.yaml
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

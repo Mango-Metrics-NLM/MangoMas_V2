@@ -225,3 +225,35 @@ def test_c4_code_names_the_dispatch_surface() -> None:
     )
     missing = [name for name in required if name not in text]
     assert missing == [], f"c4-code.md no longer names {missing}"
+
+
+_DOC_STALE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bgoogle-cloud-aiplatform\b"), "retired google-cloud-aiplatform package"),
+    (
+        re.compile(r"\bvertexai\.(?:init|generative_models|language_models)|`vertexai`"),
+        "retired vertexai SDK reference",
+    ),
+    (re.compile(r"\bmangomas\.api\.correlation\b"), "retired mangomas.api.correlation module"),
+)
+
+
+def test_readme_api_endpoints_table_covers_every_openapi_route() -> None:
+    """Every HTTP route in the OpenAPI snapshot must be documented in ``README.md``."""
+    snapshot = json.loads(_OPENAPI_SNAPSHOT.read_text(encoding="utf-8"))
+    readme_text = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    missing = sorted(
+        path for path in snapshot["paths"] if not _route_token(path).search(readme_text)
+    )
+    assert missing == [], f"README.md API endpoints section omits route(s): {missing}"
+
+
+def test_architecture_and_observability_docs_contain_no_retired_sdk_or_correlation_paths() -> None:
+    """Architecture and observability docs must cite google.genai and mangomas.correlation."""
+    offenders: list[str] = []
+    for path in sorted(_ARCH_DIR.glob("*.md")):
+        rel = path.relative_to(_REPO_ROOT).as_posix()
+        text = path.read_text(encoding="utf-8")
+        for pattern, reason in _DOC_STALE_PATTERNS:
+            if pattern.search(text):
+                offenders.append(f"{rel} ({reason})")
+    assert offenders == [], f"stale architecture reference(s): {offenders}"

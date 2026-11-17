@@ -21,10 +21,9 @@ coverage.xml
 .mypy_cache/
 .ruff_cache/
 .import_linter_cache/
-# Second CUDA-capable interpreter (torch + embeddings-local + rag); created by
-# `make venv-gpu` / `scripts/bootstrap_gpu_env.py` (ENV-1 in
-# docs/testing/rca-20261029.md and docs/tooling/env1-tls-inspection-runbook.md).
-.venv-gpu/
+# Second/verification virtualenvs (e.g. `.venv-gpu/` from `make venv-gpu` /
+# `scripts/bootstrap_gpu_env.py`, or per-version `.venv-aqa311/` / `.venv-aqa312/`).
+.venv-*/
 .certs/
 
 # Secret scanning — downloaded release binary + archive (make secret-scan).
@@ -41,9 +40,13 @@ trivy.zip
 sbom.cdx.json
 
 # Local validation artefacts and lock drafts (not source).
+# `requirements.lock` is the canonical pip-compile runtime lockfile; `uv.lock`
+# and `.uv/` are local contributor tooling artefacts.
 artifacts/
 requirements.lock.compiled
 requirements.lock.new
+uv.lock
+.uv/
 
 # Env / secrets
 .env

@@ -90,6 +90,7 @@ thinking tool, not a gate.
 | [0048](0048-judge-prompt-controls.md) | Judge prompt controls, and calibration pinned to the prompt |
 | [0049](0049-gcp-integration-demonstration.md) | GCP local-CLI demonstration: `.env.gcp-demo`, read-only `make gcp-preflight` (billing-account-open, required APIs), runbook and offline contract suites |
 | [0050](0050-origin-delta-aqa-20261112.md) | Origin-delta AQA for spec-0043..0049: dual-population (`mypy --strict` with `[cloud]`), dual-GPU, Docker/WSL oracle isolation, live LM Studio E2E, and `D-1`..`D-13` hardening |
+| [0051](0051-origin-delta-aqa-20261115.md) | Post-cutover origin-delta AQA, live/GPU/no-mock E2E, and `D-1`..`D-4` remediation (`google.genai` smoke, `/readyz` timeout budget, `MANGOMAS_EVAL__OUTPUT_DIR`, RAG/Vertex docs sync) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -100,4 +101,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0051** (0036 is reserved); next free ADR: **0042**.
+than reused. Next free spec on this branch: **0052** (0036 is reserved); next free ADR: **0042**.

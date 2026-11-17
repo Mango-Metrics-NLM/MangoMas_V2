@@ -13,11 +13,30 @@ The optional ``gate_result`` is the only channel for quality-gate context —
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.gate import GateResult
     from mangomas.eval.runner import EvalReport
+
+JSON_FILE_SINK_NAME: Final[str] = "json_file"
+JSON_FILE_PATH_OPTION: Final[str] = "path"
+DEFAULT_JSON_REPORT_FILENAME: Final[str] = "report.json"
+
+SQLITE_RESULTS_SINK_NAME: Final[str] = "sqlite_results"
+SQLITE_RESULTS_DB_PATH_OPTION: Final[str] = "db_path"
+DEFAULT_SQLITE_RESULTS_FILENAME: Final[str] = "results.db"
+
+# Default artifact filenames resolved under ``MANGOMAS_EVAL__OUTPUT_DIR`` when
+# a file/database sink omits its explicit path option in ``sink_options``.
+DEFAULT_SINK_ARTIFACTS: Final[Mapping[str, tuple[str, str]]] = MappingProxyType(
+    {
+        JSON_FILE_SINK_NAME: (JSON_FILE_PATH_OPTION, DEFAULT_JSON_REPORT_FILENAME),
+        SQLITE_RESULTS_SINK_NAME: (SQLITE_RESULTS_DB_PATH_OPTION, DEFAULT_SQLITE_RESULTS_FILENAME),
+    }
+)
 
 
 @runtime_checkable

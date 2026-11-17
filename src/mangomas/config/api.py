@@ -54,7 +54,11 @@ class APISettings(BaseModel):
 
     host: str = DEFAULT_API_HOST
     port: int = DEFAULT_API_PORT
-    ready_timeout_seconds: float = DEFAULT_API_READY_TIMEOUT
+    ready_timeout_seconds: float = Field(
+        default=DEFAULT_API_READY_TIMEOUT,
+        gt=0.0,
+        allow_inf_nan=False,
+    )
     # Opt-in CORS. Empty origins (default) → CORSMiddleware not installed, so an
     # environment without MANGOMAS_API__CORS_ALLOW_ORIGINS sees no change. The
     # methods/headers/credentials knobs are env-driven too (no hard-coded policy).
