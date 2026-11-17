@@ -28,7 +28,7 @@ code 2 when neither is set.
 env-driven via `MANGOMAS_EVAL__*`:
 
 | Variable | Default | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `MANGOMAS_EVAL__DATASET_PATH` | (unset) | JSONL dataset path |
 | `MANGOMAS_EVAL__SCORER` | `exact_match` | Scorer name (`-s` may be repeated on the CLI to build a `composite`) |
 | `MANGOMAS_EVAL__AGENT` | `chat` | Agent name (used by the `agent` target) |
@@ -113,7 +113,7 @@ thresholds without callers re-implementing the rule).
 ## Built-in scorers
 
 | Scorer | Registry name | Behaviour |
-|---|---|---|
+| --- | --- | --- |
 | `ExactMatchScorer` | `exact_match` | Strict string match, with optional case-folding (`case_sensitive`) and whitespace normalisation (`strip_whitespace`). Default options: case-insensitive, whitespace-collapsing. |
 | `LLMJudgeScorer` | `llm_judge` | Routes a structured prompt through the orchestrator's LLM client. Expects a one-line JSON response `{"score": <float>, "rationale": "..."}`. `passed = score >= threshold` (default `0.7`). Malformed responses raise `LLMBadResponse`. **Self-grading**: the judge is the system under test's own client, so its scores are *reported, not gated* until a calibration record covers its model — see "Judge calibration" below. |
 | `EmbeddingScorer` | `embedding` | Cosine similarity of embeddings of `prediction` and `expected`. Resolves a configured provider via `ScorerContext.embeddings` (`EmbeddingClient`). |
@@ -138,7 +138,7 @@ agent, a multi-agent topology, or a deterministic baseline. Select one with
 ADR-0004.
 
 | Target | Registry name | Behaviour |
-|---|---|---|
+| --- | --- | --- |
 | `AgentTarget` | `agent` | Dispatch one registered agent (default). The agent name comes from `--agent` / `MANGOMAS_EVAL__AGENT`, else `target_options["agent"]["agent"]`. Option `llm_profile` stamps a spec-0040 provider profile on every row's request, so one dataset can be run against a local and a cloud model and the two baselines compared. |
 | `PipelineTarget` | `pipeline` | Run a sequential pipeline (`orch.dispatch_pipeline`); grade the final agent's output. Option: `agents` (non-empty list). |
 | `FanOutTarget` | `fan_out` | Dispatch all agents in parallel (`orch.dispatch_fan_out`). Option: `agents` (list) and `join` (`first` → first agent's content, default; `concat` → newline-joined). |
@@ -164,7 +164,7 @@ A **dataset source** is where rows come from, resolved by name through
 source yields the same validated `DatasetRow` list (via the shared `_parse_row`).
 
 | Source | Registry name | Behaviour |
-|---|---|---|
+| --- | --- | --- |
 | `JsonlSource` | `jsonl` | Read a local JSONL file (default). Path precedence: `--dataset` > `dataset_source_options["jsonl"]["path"]` > `MANGOMAS_EVAL__DATASET_PATH`. Wraps the existing `load_jsonl`. |
 | `InlineSource` | `inline` | Rows supplied directly via `dataset_source_options["inline"]["rows"]` (list of raw row dicts). Validated through `_parse_row`. Handy for tests / small embedded datasets. |
 | `LangfuseDatasetSource` | `langfuse` | Fetch a named Langfuse dataset (`dataset_source_options["langfuse"]["dataset"]`). Requires the `mangomas[langfuse]` extra (lazy-imported); creds via `LANGFUSE_*` env. Items map `input`→messages and `expected_output`→`expected`. |
@@ -269,7 +269,7 @@ Set through `MANGOMAS_EVAL__SCORER_OPTIONS` (flat for `-s llm_judge`, under
 default prompt is byte-identical to the historical one.
 
 | Option | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `threshold` | `0.7` | `passed = score >= threshold` |
 | `rubric` | (none) | A string or list of criteria rendered as a `RUBRIC` block before the output format |
 | `include_input` | `false` | The judge also sees the row's input messages, system prompt included, as `INPUT: [role] content` |
@@ -342,8 +342,8 @@ mangomas eval -d data.jsonl -s exact_match \
 
 A drop is `baseline - current` (current run worse). A missing baseline file is
 exit 2 (config); a malformed one surfaces during the run as exit 1. Row
-regression keys on `row_id` stability — rows whose ids change show up as dropped
-+ new rather than regressed.
+regression keys on `row_id` stability — rows whose ids change show up as
+`dropped + new` rather than regressed.
 
 ## Trials and pass^k (reliability)
 
@@ -354,7 +354,7 @@ correlation id, and `collapse_trials` folds the attempts into the row's one
 result:
 
 | Row field | Under `k` trials |
-|---|---|
+| --- | --- |
 | `passed` | `True` only when **every** attempt was a clean pass |
 | `score` | mean over non-errored attempts (`0.0` if all errored) |
 | `error` | the first attempt's error if any attempt errored (so `fail_on_error` sees intermittent crashes) |
@@ -409,7 +409,7 @@ Two `make` targets run on every CI runner without an LLM and are part of
 `make gate` (spec-0045; see `evals/README.md` for what each can and cannot prove):
 
 | Target | What it runs | Proves |
-|---|---|---|
+| --- | --- | --- |
 | `make eval-selfcheck` | `mangomas eval` with the `echo` target over `evals/datasets/selfcheck_echo_v1.jsonl` against its committed baseline | The harness's own exit codes, threshold gate and baseline regression path. A harness self-test, not a quality gate. |
 | `make eval-lanes` | `tests/evals/test_dataset_lanes.py`: each row of `planner_v1`, `reviewer_v1` and `safety_toolagent_v1` replayed through the real agent with the scripted `FakeLLM` transcript in `metadata.fixture`, scored and diffed against `evals/baselines/` | Agent post-processing (planner / reviewer parse-and-validate), `ToolAgent` policy refusals and trace, the scorer contract, and — via outgoing-prompt assertions — that each agent still sends its schema / tool roster. **Not** prompt quality: replies are fixtures chosen by call index. |
 
@@ -423,7 +423,7 @@ Sinks decouple producing a report from emitting it. The default is `["console"]`
 fault isolation — one failing sink never costs the others their output.
 
 | Sink | Registry name | Behaviour |
-|---|---|---|
+| --- | --- | --- |
 | `ConsoleSink` | `console` | Human-readable stdout summary (+ a `gate=` line when gating). |
 | `JsonFileSink` | `json_file` | Pretty JSON report to `path` (+ a `gate` key when gating). |
 | `SqliteResultsSink` | `sqlite_results` | Append the report + per-row results to two SQLite tables (`eval_reports`, `eval_rows`) at `db_path`. A queryable history; the gate verdict is stored as `gate_json`. |
@@ -437,7 +437,11 @@ MANGOMAS_EVAL__SINKS='["console","json_file"]' \
 ```
 
 The legacy `--output-json PATH` flag is preserved: it injects (or overrides the
-path of) the `json_file` sink.
+path of) the `json_file` sink. When `json_file` (without `--output-json`) or
+`sqlite_results` is configured in `MANGOMAS_EVAL__SINKS` without an explicit
+`sink_options` path, `mangomas eval` resolves `<MANGOMAS_EVAL__OUTPUT_DIR>/report.json`
+and `<MANGOMAS_EVAL__OUTPUT_DIR>/results.db` (`DEFAULT_SINK_ARTIFACTS`), keeping
+`--output-json > sink_options > output_dir` precedence.
 
 ## Plugin discovery (entry points)
 
@@ -452,7 +456,7 @@ additive (built-ins still register in-process) and runs only when
 Every event carries `extra={"event": ..., ...}` for structured-log filters:
 
 | Event | Level | Keys |
-|---|---|---|
+| --- | --- | --- |
 | `eval_dataset_load_start` | DEBUG | `path` |
 | `eval_dataset_loaded` | INFO | `path`, `row_count` |
 | `eval_start` | INFO | `dataset_size`, `scorer`, `agent_name`, `parallelism`, `fail_fast` |
@@ -463,13 +467,14 @@ Every event carries `extra={"event": ..., ...}` for structured-log filters:
 | `eval_llm_judge_request` | DEBUG | `scorer`, `threshold` |
 | `embedding_scorer_unavailable` | WARNING | `scorer`, `reason` |
 | `eval_gate` | INFO | `passed`, `mean_score`, `pass_rate`, `mean_cost_usd`, `errored`, `reasons` |
+| `eval_sink_default_path` | DEBUG | `sink`, `path` |
 | `eval_sink_json_file` | DEBUG | `path` |
 | `eval_sink_langfuse` | INFO | `scorer` |
 | `eval_plugin_load_failed` | WARNING | `group`, `plugin`, `error` |
 | `eval_plugin_override` | INFO | `group`, `plugin` |
 
 Correlation ids propagate automatically: the runner sets a fresh
-`mangomas.correlation.correlation_id_var` per row, so every orchestrator /
+`mangomas.correlation.correlation_id` per row, so every orchestrator /
 adapter log line carries the row's id.
 
 ## Known gaps

@@ -35,7 +35,8 @@ def build_system_router() -> APIRouter:
     async def readyz(request: Request) -> JSONResponse:
         """Readiness probe. ``/ready`` is retained as a compatibility alias."""
         orch: Orchestrator = request.app.state.orchestrator
-        report = await check_ready(orch)
+        timeout_seconds = getattr(request.app.state, "ready_timeout_seconds", None)
+        report = await check_ready(orch, timeout_seconds=timeout_seconds)
         return JSONResponse(status_code=report.http_status, content=report.as_dict())
 
     @router.get("/agents")

@@ -25,14 +25,14 @@ C4Container
   }
 
   System_Ext(lmstudio, "LM Studio", ":1234 — OpenAI-compatible LLM server (default)")
-  System_Ext(vertex, "Vertex AI (optional extra)", "Google Cloud Gemini endpoints via vertexai.generative_models. Selected by MANGOMAS_LLM__PROVIDER=vertex.")
+  System_Ext(vertex, "Vertex AI (optional extra)", "Google Cloud Gemini endpoints via google.genai.Client (vertexai=True). Selected by MANGOMAS_LLM__PROVIDER=vertex.")
   System_Ext(sqlite_file, "SQLite file", "data/mangomas.db — conversation turn store (default)")
   System_Ext(postgres_db, "PostgreSQL (Cloud SQL)", "Cloud SQL via asyncpg connection pool. Activated by MANGOMAS_DB__PROVIDER=postgres.")
   System_Ext(secret_mgr, "GCP Secret Manager", "Resolves API keys / SA JSON at build time. Activated by MANGOMAS_SECRETS__PROVIDER=gcp.")
   System_Ext(mem_file, "File memory", "memory/ — agent memory index")
-  System_Ext(eval_output, "Eval output", "eval-output/ — optional JSON reports from `mangomas eval --output-json`")
+  System_Ext(eval_output, "Eval output", "eval-output/ — optional JSON reports and SQLite results from `mangomas eval` (MANGOMAS_EVAL__OUTPUT_DIR / --output-json)")
   System_Ext(cognitive_signals, "Cognitive signal log (opt-in)", "data/cognitive-signals — JSONL envelopes when MANGOMAS_SIGNAL__ENABLED=true")
-  System_Ext(embed_backend, "Embedding backend (opt-in)", "LM Studio /v1/embeddings (default), in-process sentence-transformers, or Vertex text-embedding-004. Selected by MANGOMAS_EMBEDDINGS__PROVIDER.")
+  System_Ext(embed_backend, "Embedding backend (opt-in)", "LM Studio /v1/embeddings (default), in-process sentence-transformers, or Vertex embeddings (google.genai.Client, e.g. gemini-embedding-001 or text-embedding-004 via ADC). Selected by MANGOMAS_EMBEDDINGS__PROVIDER.")
   System_Ext(chroma_store, "Chroma vector store (opt-in)", "data/chroma — persistent ChromaDB collection (hnsw:space=cosine). Activated by MANGOMAS_VECTOR__ENABLED.")
   System_Ext(otel_out, "OTel / stdout", "Traces and structured logs")
   System_Ext(code_agent_harness, "Mango Code Agent Harness", "Sibling execution/authority plane (classify, authorize, broker). Distinct from the in-repo Claude Code harness container. Companion 1.1.0 bump required before ingest.")

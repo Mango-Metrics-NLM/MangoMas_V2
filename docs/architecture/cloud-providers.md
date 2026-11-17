@@ -3,7 +3,7 @@
 Mango-Mas V2 v0.3.0 ships three GCP-target adapters that complete the
 ADR-001 swap matrix. All three follow the same pattern:
 
-1. **Lazy SDK import** — every `google.*`, `vertexai.*`, and `asyncpg`
+1. **Lazy SDK import** — every `google.*` and `asyncpg`
    import lives inside function bodies (factory bodies in
    `composition/`, method bodies in the adapter modules). The
    adapter modules are importable even when the optional extra is not
@@ -18,7 +18,7 @@ ADR-001 swap matrix. All three follow the same pattern:
    or written to disk.
 
 | Boundary | Adapter | Selected by | Optional extra |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | LLM | `mangomas.adapters.llm.vertex.VertexClient` | `MANGOMAS_LLM__PROVIDER=vertex` | `pip install -e ".[vertex]"` |
 | Storage | `mangomas.adapters.storage.postgres.PostgresRepository` | `MANGOMAS_DB__PROVIDER=postgres` | `pip install -e ".[postgres]"` |
 | Secrets | `mangomas.secrets.gcp.GCPSecretManagerProvider` | `MANGOMAS_SECRETS__PROVIDER=gcp` | `pip install -e ".[gcp]"` |
@@ -32,7 +32,7 @@ The meta-extra `pip install -e ".[cloud]"` installs all three.
 ### Configuration
 
 | Env var | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `MANGOMAS_LLM__PROVIDER` | `lmstudio` | Set to `vertex` to activate |
 | `MANGOMAS_LLM__PROJECT_ID` | _(none)_ | **Required.** GCP project that owns the model |
 | `MANGOMAS_LLM__LOCATION` | `us-central1` | Vertex region |
@@ -49,20 +49,23 @@ factory is invoked (`llm_registry.get(cfg.llm.provider)(cfg.llm)`).
 ### Exception mapping
 
 | Google SDK exception | MangoMas error | HTTP status |
-|---|---|---|
-| `google.auth.exceptions.DefaultCredentialsError` | `LLMUnavailable` | 503 |
-| `google.api_core.exceptions.DeadlineExceeded` / `RetryError` | `LLMTimeout` | 504 |
-| `google.api_core.exceptions.ServiceUnavailable` / `Aborted` | `LLMUnavailable` | 503 |
-| Other `google.api_core.exceptions.GoogleAPIError` | `VertexError` (`LLMBadResponse`) | 502 |
+| --- | --- | --- |
+| `google.genai.errors.{APIError,ClientError,ServerError}` (`code` in `{408, 504}`) | `LLMTimeout` | 504 |
+| `google.genai.errors.{APIError,ClientError,ServerError}` (`code == 429` or `5xx` / absent) | `LLMUnavailable` | 503 |
+| `google.genai.errors.{APIError,ClientError,ServerError}` (`400 <= code < 500`, excl. `408`/`429`) | `VertexError` (`LLMBadResponse`) | 502 |
+| `google.auth.exceptions.{DefaultCredentialsError,RefreshError}` | `LLMUnavailable` | 503 |
+| `google.api_core.exceptions.{DeadlineExceeded,RetryError}` | `LLMTimeout` | 504 |
+| `google.api_core.exceptions.{ServiceUnavailable,InternalServerError,GatewayTimeout,Aborted}` | `LLMUnavailable` | 503 |
+| `google.api_core.exceptions.{InvalidArgument,PermissionDenied,Unauthenticated,NotFound,FailedPrecondition}` | `VertexError` (`LLMBadResponse`) | 502 |
 | Anything else | `LLMUnavailable` | 503 |
 
 ### Notes
 
-- `VertexClient` invokes `generate_content_async` directly when supported by
-  the configured SDK client rather than wrapping every call in `asyncio.to_thread`.
-- `vertexai.init()` mutates a process-global. v0.3.0 constructs one
-  `VertexClient` per orchestrator (single-tenant per process); the
-  multi-tenant story is on the long-term roadmap.
+- `VertexClient` builds an isolated `google.genai.Client(vertexai=True, ...)` per
+  instance and invokes `client.aio.models.generate_content` /
+  `generate_content_stream` directly (closed via `close_genai_client`) instead of
+  mutating process-global SDK init state, so chat (`global`) and
+  embedding (`us-central1`) clients coexist cleanly in-process (`PR #135`).
 - `ping()` issues a one-token `generate_content` — operators running
   aggressive `/readyz` probes against Vertex should widen probe
   intervals or implement a cheaper liveness signal upstream. A
@@ -75,7 +78,7 @@ factory is invoked (`llm_registry.get(cfg.llm.provider)(cfg.llm)`).
 ### Configuration
 
 | Env var | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `MANGOMAS_DB__PROVIDER` | `sqlite` | Set to `postgres` to activate |
 | `MANGOMAS_DB__URL` | `sqlite:///./data/mangomas.db` | asyncpg DSN |
 | `MANGOMAS_DB__POOL_MIN` | `1` | asyncpg pool minimum |
@@ -117,7 +120,7 @@ protocol parity with `SQLiteRepository` (which returns dicts via
 ### Configuration
 
 | Env var | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `MANGOMAS_SECRETS__PROVIDER` | `env` | Set to `gcp` to activate |
 | `MANGOMAS_SECRETS__PROJECT_ID` | _(none)_ | **Required.** GCP project that owns the secrets |
 | `MANGOMAS_SECRETS__TIMEOUT_SECONDS` | `5.0` | `access_secret_version` deadline |
@@ -182,8 +185,8 @@ than Google API ADC credentials.
 
 **Per environment (ADR-0036).** The deploy pipeline runs one GitHub
 Environment per stage (`dev`, `qa`, `prod`), each with its own WIF-federated
-*deploy* service account scoped to its own Cloud Run service and Artifact
-Registry repository, and each non-production service runs as its own *runtime*
+_deploy_ service account scoped to its own Cloud Run service and Artifact
+Registry repository, and each non-production service runs as its own _runtime_
 service account (`deploy/environments.yaml`, `${PROJECT_ID}` filled at render
 time). The WIF principal must be bound on repository id **and** environment;
 see `deploy/README.md` ("Trust model").
@@ -196,7 +199,7 @@ The Cloud Trace exporter has since landed
 (`MANGOMAS_TELEMETRY__EXPORTER=gcp`, lazy `CloudTraceSpanExporter` in
 `telemetry/exporters.py`) — as an exporter seam inside `telemetry/`, not
 as a fourth adapter, so it added no pressure toward a shared adapter base
-class. Where the rule-of-three threshold *was* met, shared helpers were
+class. Where the rule-of-three threshold _was_ met, shared helpers were
 extracted: `adapters/_openai_client.py` (`OpenAICompatHTTPClient`, the
 shared httpx lifecycle for the OpenAI-compatible clients),
 `adapters/_http_errors.py` (httpx → typed-error translation), and

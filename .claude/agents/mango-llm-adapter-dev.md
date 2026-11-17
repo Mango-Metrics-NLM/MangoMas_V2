@@ -20,6 +20,8 @@ Use the `mango-adapter` skill for the recipe, the `OpenAICompatHTTPClient` templ
   tracking, `_translate_error`, `aclose`). Subclasses set the `_LABEL` /
   `_BAD_RESPONSE` ClassVars; `__init_subclass__` raises `TypeError` at import if
   either is missing. Everything past `model` on `__init__` is keyword-only
+- Vertex lifecycle: `src/mangomas/adapters/_genai.py` — `close_genai_client` /
+  `close_client_handle` for isolated `google.genai.Client` handles
 - Error translation: `_http_errors.translate_httpx_error(exc, *, base_url, label, bad_response)`
   for HTTP backends, `_vertex_errors.translate_vertex_error(exc, *, project, bad_request_error)`
   for Vertex — these are the mapping, do not restate it in the adapter
@@ -44,7 +46,7 @@ Use the `mango-adapter` skill for the recipe, the `OpenAICompatHTTPClient` templ
 
 1. `UnknownProvider("vertex")` at startup → factory not registered in the `composition/` package.
 2. `isinstance(client, StreamingLLMClient)` is `False` → `.stream()` signature drift; cross-check base.py.
-3. Coverage gate fails at 85 % adapters floor → add error-path tests.
+3. Coverage gate fails at 98 % adapters floor → add error-path tests.
 4. mypy strict error about `Awaitable[str]` → an `async def` is missing `await`.
 5. `TypeError: <Provider>Client must define _LABEL, _BAD_RESPONSE` at import → an
    `OpenAICompatHTTPClient` subclass omitted a required ClassVar; add both.

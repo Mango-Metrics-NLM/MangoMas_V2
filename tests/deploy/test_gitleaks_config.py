@@ -159,8 +159,9 @@ _EXPECTED_ALLOWLIST_PATHS: frozenset[str] = frozenset(
         r"^gitleaks$",
         r"^gitleaks\.exe$",
         r"(^|/)__pycache__/",
-        r"^\.venv/",
-        r"^\.venv-gpu/",
+        r"(^|/)\.venv/",
+        r"(^|/)\.venv-[^/]+/",
+        r"(^|/)venv/",
     }
 )
 
@@ -261,6 +262,9 @@ def test_real_gitleaks_catches_every_planted_secret(tmp_path: Path) -> None:
         (tmp_path / name).write_text(line + "\n", encoding="utf-8")
     for _label, name, line in _MUST_IGNORE:
         (tmp_path / name).write_text(line + "\n", encoding="utf-8")
+    ignored_venv_file = tmp_path / ".venv-aqa311" / "third_party_key.py"
+    ignored_venv_file.parent.mkdir(parents=True, exist_ok=True)
+    ignored_venv_file.write_text(_github_pat() + "\n", encoding="utf-8")
 
     report = tmp_path / "report.json"
     result = subprocess.run(  # noqa: S603 -- trusted: resolved binary + fixed args
@@ -297,8 +301,30 @@ def test_real_gitleaks_catches_every_planted_secret(tmp_path: Path) -> None:
     missed = sorted({name for _l, name, _line in _MUST_DETECT} - flagged)
     assert missed == [], f"planted secrets the scan did not catch: {missed}"
 
-    false_positives = sorted({name for _l, name, _line in _MUST_IGNORE} & flagged)
+    false_positives = sorted(
+        ({name for _l, name, _line in _MUST_IGNORE} | {ignored_venv_file.name}) & flagged
+    )
     assert false_positives == [], f"scan flagged repo fixtures: {false_positives}"
+
+
+@pytest.mark.parametrize(
+    ("relpath", "expected_ignored"),
+    [
+        (".venv/lib/python3.12/site.py", True),
+        (".venv-gpu/lib/python3.12/site.py", True),
+        (".venv-aqa311/lib/python3.12/site.py", True),
+        ("venv/lib/python3.12/site.py", True),
+        ("tests/deploy/test_gitleaks_config.py", False),
+    ],
+)
+def test_global_allowlist_paths_match_secondary_venvs_only(
+    relpath: str, expected_ignored: bool
+) -> None:
+    """Secondary virtualenvs match the global allowlist while source and tests remain scanned."""
+    allowlist = _config().get("allowlist")
+    assert isinstance(allowlist, dict)
+    patterns = [str(p) for p in allowlist["paths"]]
+    assert any(re.search(pattern, relpath) for pattern in patterns) is expected_ignored
 
 
 # ── .gitleaksignore stays a list of fingerprints ──────────────────────────────

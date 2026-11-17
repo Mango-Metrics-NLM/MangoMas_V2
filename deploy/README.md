@@ -102,7 +102,7 @@ the built image (the `docker-smoke` CI job).
 
 | Selected by | Extra in the image | Required settings | Smoke import |
 |---|---|---|---|
-| `MANGOMAS_LLM__PROVIDER=vertex` | `vertex` | `MANGOMAS_LLM__PROJECT_ID`, `MANGOMAS_LLM__MODEL` | `vertexai` |
+| `MANGOMAS_LLM__PROVIDER=vertex` | `vertex` | `MANGOMAS_LLM__PROJECT_ID`, `MANGOMAS_LLM__MODEL` | `google.genai` |
 | `MANGOMAS_DB__PROVIDER=postgres` | `postgres` | `MANGOMAS_DB__URL` (secretKeyRef) | `asyncpg` |
 | `MANGOMAS_SECRETS__PROVIDER=gcp` | `gcp` | `MANGOMAS_SECRETS__PROJECT_ID` | `google.cloud.secretmanager` |
 | `MANGOMAS_TELEMETRY__EXPORTER=gcp` | `gcp` | — | `opentelemetry.exporter.cloud_trace` |
