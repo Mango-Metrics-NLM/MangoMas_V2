@@ -226,3 +226,33 @@ def test_ignore_rules_preserve_negation_and_order() -> None:
     )
     # Comments and blank lines never become rules.
     assert all(pattern and not pattern.startswith(("#", "!")) for pattern, _ in rules)
+
+
+@pytest.mark.parametrize(
+    "local_path",
+    [
+        ".venv/pyvenv.cfg",
+        ".venv-gpu/pyvenv.cfg",
+        ".venv-aqa311/pyvenv.cfg",
+        "venv/pyvenv.cfg",
+        "uv.lock",
+        ".uv/cache",
+        ".env.gcp-demo",
+    ],
+)
+def test_local_venvs_uv_and_env_templates_are_excluded_from_build_context(local_path: str) -> None:
+    """Secondary virtualenvs, ``uv.lock``, and local env templates stay outside Docker context."""
+    assert _exclusion_rule(local_path, _ignore_rules()) is not None, (
+        f".dockerignore must exclude {local_path!r}"
+    )
+
+
+def test_gitignore_excludes_secondary_venvs_and_uv_artifacts() -> None:
+    """``.gitignore`` excludes secondary interpreter virtualenvs and ``uv.lock``."""
+    gitignore_lines = {
+        line.strip()
+        for line in (_REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    for required in (".venv/", ".venv-*/", "venv/", "uv.lock", ".uv/"):
+        assert required in gitignore_lines, f".gitignore missing {required!r}"

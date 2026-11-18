@@ -22,7 +22,8 @@ adding a tunable — do not restate either here.
   behind an ADR-0019 facade; `create_app` install order is unchanged
 - `src/mangomas/api/tracing.py` — `TraceMiddleware` and W3C context extraction
 - `src/mangomas/api/auth.py` — `resolve_auth_state` / `require_auth` (ADR-0014)
-- `src/mangomas/api/health.py` — `ReadinessReport` and `check_ready`
+- `src/mangomas/api/health.py` — `ReadinessReport` and `check_ready` (bounded
+  by `app.state.ready_timeout_seconds` / `MANGOMAS_API__READY_TIMEOUT_SECONDS`)
 - `src/mangomas/api/routes/system.py` — `/healthz`, `/health`, `/readyz`,
   `/ready`, `GET /agents`
 - `src/mangomas/api/routes/workflows.py` — `/workflows/run`, `/workflows/validate`
@@ -78,9 +79,10 @@ rather than editing them.
    outermost, or `cors_allow_origins` is empty so it was never installed.
 4. Auth returns 401 on a correctly configured deployment → `resolve_auth_state`
    ran before `ensure_secrets_provider`, so the token resolved to `None`.
-5. `/readyz` is 200 while the LLM is down → `check_ready` swallowed the ping
-   failure, or `ready_timeout_seconds` is long enough that the probe never
-   completes within the caller's own timeout.
+5. `/readyz` is 200 while the LLM is down, or hangs on a stalled dependency →
+   `check_ready` swallowed the ping failure, `app.state.ready_timeout_seconds`
+   was not wired in `create_app`, or `MANGOMAS_API__READY_TIMEOUT_SECONDS` exceeds
+   the probe deadline.
 6. Tenancy rows all land under `"default"` → `TenancyMiddleware` was not
    installed (`tenancy.enabled=false`) or the inbound header name does not
    match `MANGOMAS_TENANCY__HEADER`.

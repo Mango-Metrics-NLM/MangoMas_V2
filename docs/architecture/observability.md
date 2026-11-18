@@ -22,7 +22,7 @@ The record helpers live in `src/mangomas/metrics.py`.
 |---|---|---|---|
 | `trace_id` (W3C) | OpenTelemetry tracer (`TraceMiddleware`) | One request, propagated cross-service via `traceparent` | Span attributes; log records (via `TraceContextFilter`) |
 | `span_id` | OpenTelemetry tracer | One operation within the trace | Span attributes; log records |
-| `correlation_id` | `AccessLogMiddleware` (reads `X-Request-ID` or generates) | One request | Response header `X-Request-ID`; OTel baggage key `mangomas.correlation_id`; log records (via `CorrelationFilter`); ContextVar `mangomas.api.correlation.correlation_id` |
+| `correlation_id` | `AccessLogMiddleware` (reads `X-Request-ID` or generates) | One request | Response header `X-Request-ID`; OTel baggage key `mangomas.correlation_id`; log records (via `CorrelationFilter`); ContextVar `mangomas.correlation.correlation_id` |
 
 The W3C ids are great for distributed-tracing tooling. The correlation id
 is the **user-facing** handle: it's what appears in support tickets, gets
@@ -98,9 +98,13 @@ When `MANGOMAS_LOG__FORMAT=json`, the `JsonFormatter` emits records like:
 
 ## Configuring the correlation header
 
-The middleware accepts any non-blank `X-Request-ID` value verbatim:
-clients and upstream proxies can supply their own ids. When absent or
-blank, a fresh 8-hex-character token is generated.
+`AccessLogMiddleware` passes inbound `X-Request-ID` headers through
+`mangomas.correlation.sanitize_inbound_correlation_id`
+(`mangomas._headers.sanitize_header_token`), stripping surrounding whitespace,
+retaining only `[A-Za-z0-9_\-./:]` characters (defending logs and OTel baggage
+against CR/LF and control-character injection), and clamping length to
+`MAX_CORRELATION_ID_LENGTH` (`64`). When absent, blank, or empty after
+sanitisation, a fresh 8-hex-character token is generated.
 
 To disable the inbound-header pathway entirely (e.g. to force regeneration
 for security reasons), strip the header at the edge — there is no

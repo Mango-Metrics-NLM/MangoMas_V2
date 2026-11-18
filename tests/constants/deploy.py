@@ -95,10 +95,10 @@ PROVIDER_REQUIREMENTS: Final[tuple[ProviderRequirement, ...]] = (
         name="vertex",
         selector=(_var("LLM", "PROVIDER"), "vertex"),
         extra="vertex",
-        # `project_id` is forwarded to vertexai.init; `model` must not be the
-        # LM Studio default `local-model`.
+        # `project_id` and `model` reach `google.genai.Client`; `model` must not
+        # stay at the LM Studio default `local-model`.
         required=(_var("LLM", "PROJECT_ID"), _var("LLM", "MODEL")),
-        smoke_module="vertexai",
+        smoke_module="google.genai",
     ),
     ProviderRequirement(
         name="postgres",

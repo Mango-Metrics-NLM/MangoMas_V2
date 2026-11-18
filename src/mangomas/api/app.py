@@ -153,6 +153,7 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
     # through AccessLog (X-Request-ID + access-log line). CORS is added last so
     # it sits outermost (correct for preflight).
     api_cfg = get_settings().api
+    app.state.ready_timeout_seconds = api_cfg.ready_timeout_seconds
     _install_backpressure(app, api_cfg)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(TraceMiddleware)

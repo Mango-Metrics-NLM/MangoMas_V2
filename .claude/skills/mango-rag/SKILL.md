@@ -39,9 +39,11 @@ rag/                   models, chunker, loader, pipeline, retrieval (imports pro
   `embed_batch(texts)` / `aclose()`. `list[float]` everywhere — no numpy.
   Adapters implement only `embed_batch`: `SingleTextEmbedMixin`
   (`adapters/embeddings/_shared.py`) derives `embed` as `embed_batch([text])[0]`,
-  and `NoTransportAcloseMixin` supplies the no-op `aclose()` for backends owning
-  no sockets (`sentence_transformers`, `vertex`). `lmstudio` instead inherits its
-  `aclose()` from `OpenAICompatHTTPClient`, which owns the httpx client.
+  `NoTransportAcloseMixin` supplies the no-op `aclose()` for socket-less
+  backends (`sentence_transformers`), `vertex` closes its isolated
+  `google.genai.Client` via `adapters/_genai.py::close_genai_client`, and
+  `lmstudio` instead inherits its `aclose()` from `OpenAICompatHTTPClient`,
+  which owns the httpx client.
 - **`VectorStoreRepository`** (`adapters/vector/base.py`): primitives only
   (`upsert`/`query`/`delete_by_source`/`aclose` + `VectorMatch`). Keeps the
   vector layer free of any `rag/` import (no cycle).
@@ -53,11 +55,11 @@ rag/                   models, chunker, loader, pipeline, retrieval (imports pro
 ## Rules (do not regress)
 
 | Rule | Detail |
-|------|--------|
+| ------ | -------- |
 | Opt-in | `embeddings.enabled` / `vector.enabled` default `False`. Disabled = no `ctx.embeddings` / `ctx.vector_store`, no behaviour change. |
 | Cosine score | Chroma collection MUST set `metadata={"hnsw:space": "cosine"}`; similarity is `1 - distance / 2` (`_MAX_COSINE_DISTANCE`). Never `1 - distance` (negative in L2). |
 | Re-ingest | `IngestionPipeline` calls `vector_store.delete_by_source(source)` BEFORE upsert so a shrunk doc leaves no orphan `{source}#{index}` chunks. |
-| Lazy SDK | `chromadb` / `sentence_transformers` / `vertexai` imported inside factory helpers with `# noqa: PLC0415` + `# pragma: no cover - requires extra`. Module stays importable without the extra. |
+| Lazy SDK | `chromadb` / `sentence_transformers` / `google.genai` imported inside factory helpers with `# noqa: PLC0415` + `# pragma: no cover - requires extra`. Module stays importable without the extra. |
 | ADC only | Vertex embeddings authenticate via Application Default Credentials only — no service-account-JSON path. |
 | No secrets in logs | `api_key` / bearer tokens never appear in log records or error detail. |
 | Teardown | `Orchestrator.aclose()` closes `ctx.embeddings` and `ctx.vector_store` (fault-tolerant, idempotent) so the LM Studio httpx client and Chroma client don't leak per CLI run. |

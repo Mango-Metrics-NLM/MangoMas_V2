@@ -22,7 +22,11 @@ from typing import TYPE_CHECKING, Any
 from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.errors import ConfigError, PersistenceError
 from mangomas.eval._options import require_str
-from mangomas.eval.sink import Sink
+from mangomas.eval.sink import (
+    SQLITE_RESULTS_DB_PATH_OPTION,
+    SQLITE_RESULTS_SINK_NAME,
+    Sink,
+)
 from mangomas.eval.sink_registry import sink_registry
 from mangomas.utils import clock
 from mangomas.utils.exc import truncated_exc_detail
@@ -81,7 +85,7 @@ _ADDITIVE_REPORT_COLUMNS: tuple[tuple[str, str], ...] = (
 class SqliteResultsSink:
     """Append the report + its rows to two tables in a SQLite database."""
 
-    name = "sqlite_results"
+    name = SQLITE_RESULTS_SINK_NAME
 
     def __init__(self, *, db_path: str) -> None:
         # Normalise ``sqlite:///...`` URLs the same way the storage adapter
@@ -193,8 +197,12 @@ class SqliteResultsSink:
 
 
 def _sqlite_results_factory(options: dict[str, Any]) -> Sink:
-    db_path = require_str(options, "db_path", owner="sqlite_results sink")
+    db_path = require_str(
+        options,
+        SQLITE_RESULTS_DB_PATH_OPTION,
+        owner=f"{SQLITE_RESULTS_SINK_NAME} sink",
+    )
     return SqliteResultsSink(db_path=db_path)
 
 
-sink_registry.register("sqlite_results", _sqlite_results_factory)
+sink_registry.register(SQLITE_RESULTS_SINK_NAME, _sqlite_results_factory)

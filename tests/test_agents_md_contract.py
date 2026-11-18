@@ -23,8 +23,9 @@ import re
 from pathlib import Path
 
 from tests.constants.corpus import AGENTS_MD_IMPORT_LINE, ROOT_INSTRUCTION_RELPATHS
+from tests.tooling._corpus import REPO_ROOT, is_ignored_repo_walk_path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = REPO_ROOT
 _AGENTS_MD = _REPO_ROOT / "AGENTS.md"
 _CLAUDE_MD = _REPO_ROOT / "CLAUDE.md"
 
@@ -128,11 +129,11 @@ def test_no_nested_agents_md_files() -> None:
     """
     excluded_roots = _nested_git_roots()
     nested = sorted(
-        path.relative_to(_REPO_ROOT).as_posix()
+        rel
         for path in _REPO_ROOT.rglob("AGENTS.md")
+        for rel in [path.relative_to(_REPO_ROOT).as_posix()]
         if (
-            ".git/" not in path.as_posix()
-            and ".venv/" not in path.as_posix()
+            not is_ignored_repo_walk_path(rel)
             and path != _AGENTS_MD
             and not any(path.is_relative_to(root) for root in excluded_roots)
         )

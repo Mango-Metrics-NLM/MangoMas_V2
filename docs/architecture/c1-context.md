@@ -15,7 +15,7 @@ C4Context
 
   System_Ext(lmstudio, "LM Studio", "Local LLM server exposing an OpenAI-compatible API on :1234. Default provider for development.")
 
-  System_Ext(vertex, "Vertex AI (optional)", "Google Cloud Gemini endpoints via vertexai.generative_models. Activated by MANGOMAS_LLM__PROVIDER=vertex and the `mangomas[vertex]` optional extra.")
+  System_Ext(vertex, "Vertex AI (optional)", "Google Cloud Gemini endpoints via google.genai.Client (vertexai=True). Activated by MANGOMAS_LLM__PROVIDER=vertex and the `mangomas[vertex]` optional extra.")
 
   System_Ext(sqlite, "SQLite", "Local file-based relational database used for conversation turn persistence (default).")
 

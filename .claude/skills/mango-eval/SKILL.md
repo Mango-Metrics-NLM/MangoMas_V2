@@ -2,8 +2,9 @@
 name: mango-eval
 description: >
   The offline evaluation harness in Mango-Mas V2. Use when: adding or changing
-  a Scorer (exact_match, regex_match, contains, json_keys, llm_judge,
-  embedding, cost_budget), a Sink (console, json_file, sqlite_results, webhook, langfuse), a
+  a Scorer (exact_match, regex_match, contains, json_keys, json_field,
+  tool_trajectory, composite, llm_judge, embedding, cost_budget), a Sink
+  (console, json_file, sqlite_results, webhook, langfuse), a
   Target (agent, pipeline, fan_out, echo), or a DatasetSource (jsonl, inline,
   langfuse); wiring the CI quality gate or the regression/baseline gate; or
   running `mangomas eval`. Covers the scorer_registry / sink_registry /
@@ -59,6 +60,7 @@ eval/discovery.py      entry-point plugins (MANGOMAS_DISCOVERY_ENABLED)
 | Fault isolation | Multiple sinks compose under per-sink fault isolation — one failing sink must not abort the others. |
 | Schema version | `EvalSettings.schema_version` is the forward-compat marker; bump deliberately, never silently. |
 | Optional deps | `langfuse` sink/source is lazy-imported behind the `langfuse` extra; module stays importable without it. |
+| Default artifact paths | `DEFAULT_SINK_ARTIFACTS` (`eval/sink.py`) + `MANGOMAS_EVAL__OUTPUT_DIR` supply `<output_dir>/report.json` (`json_file`) and `<output_dir>/results.db` (`sqlite_results`) when `sink_options` omits explicit paths; precedence is `--output-json > sink_options > output_dir`. |
 | Gate purity | `evaluate_gate` / `diff_reports` / `evaluate_regression_gate` are **pure functions** — no I/O; combine verdicts via `merge_gate_results`. |
 | One payload shape | A sink that serialises the whole report calls `eval/_serialize.py::report_payload(report, gate_result=...)` — never `dataclasses.asdict(report)` itself. `json_file` and `webhook` share it, and `baseline.load_baseline` round-trips that exact shape (the gate verdict lands under the top-level `"gate"` key). |
 

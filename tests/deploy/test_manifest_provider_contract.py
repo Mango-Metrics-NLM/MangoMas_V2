@@ -253,3 +253,15 @@ def test_placeholder_detection_sees_the_base_manifest() -> None:
     values = _plain_values(_manifest.base_manifest())
     assert any(string.Template(v).get_identifiers() for v in values.values())
     assert _PLACEHOLDER_RE.search("${PROJECT_ID}")
+
+
+def test_deploy_readme_smoke_imports_match_provider_requirements() -> None:
+    """``deploy/README.md`` provider contract table must reflect ``PROVIDER_REQUIREMENTS``."""
+    readme = (_REPO_ROOT / "deploy" / "README.md").read_text(encoding="utf-8")
+    for row in PROVIDER_REQUIREMENTS:
+        assert f"`{row.smoke_module}`" in readme, (
+            f"deploy/README.md missing smoke_module `{row.smoke_module}` for provider {row.name!r}"
+        )
+    assert "`vertexai`" not in readme, (
+        "deploy/README.md still cites retired `vertexai` smoke import"
+    )

@@ -83,7 +83,11 @@ classDiagram
     Agent <|.. ChatAgent : implements
     Agent <|.. ToolAgent : implements
     Agent <|.. SummarizeAgent : implements
+    Agent <|.. PlannerAgent : implements
+    Agent <|.. ReviewerAgent : implements
     StreamingAgent <|.. ChatAgent : implements
+    StreamingAgent <|.. PlannerAgent : implements
+    StreamingAgent <|.. ReviewerAgent : implements
     AgentContext --> LLMClient : provides
     AgentContext --> TurnRepository : provides
     LLMClient <|.. LMStudioClient : implements
@@ -125,16 +129,17 @@ classDiagram
 ### 3.1 LLM Adapters (`adapters/llm/`)
 
 - **`OpenAICompatHTTPClient`**: Shared base class for OpenAI-compatible REST endpoints (`LMStudioClient`). Handles `httpx` lifecycle, request execution, timeouts, connection pooling, and error translation.
-- **`VertexClient`**: Native Google Cloud Vertex AI client using the `google-cloud-aiplatform` SDK. Implements lazy SDK importing (`# noqa: PLC0415`) so that the core package remains functional when the optional `[vertex]` extra is not installed.
+- **`VertexClient`**: Native Google Cloud Vertex AI client using isolated `google.genai.Client(vertexai=True, ...)` handles from the `google-genai` SDK (closed cleanly via shared `close_genai_client` in `adapters/_genai.py`). Implements lazy SDK importing (`# noqa: PLC0415`) so that the core package remains functional when the optional `[vertex]` extra is not installed.
 - **Shared Translation**: `_http_errors.py` and `_vertex_errors.py` map raw network and API exceptions into domain-level `LLMError`, `LLMUnavailable`, `LLMTimeout`, and `LLMBadResponse`.
 
 ### 3.2 Embedding Adapters (`adapters/embeddings/`)
 
 - **`SingleTextEmbedMixin`**: Implements `embed(text)` by delegating to `embed_batch([text])` and extracting the head vector.
-- **`NoTransportAcloseMixin`**: Provides a no-op `aclose()` for embedded in-process models.
+- **`NoTransportAcloseMixin`**: Provides a no-op `aclose()` for embedded in-process models (`SentenceTransformersEmbeddingClient`).
 - **`SentenceTransformersEmbeddingClient`**: Local execution adapter backed by `sentence-transformers`.
   - Runs compute-bound inference in `asyncio.to_thread`.
   - Suppresses progress bar output (`show_progress_bar=False`) to prevent stdout corruption and pipe deadlocks in headless CLI/API runtimes.
+- **`VertexEmbeddingClient`**: Google Cloud Vertex AI embedding adapter using `SingleTextEmbedMixin`, isolated `google.genai.Client(vertexai=True, ...)` handles (`google-genai`, ADC-only), and `close_genai_client` / `close_client_handle` lifecycle teardown.
 
 ### 3.3 Persistence & Vector Storage (`adapters/storage/`, `adapters/vector/`)
 

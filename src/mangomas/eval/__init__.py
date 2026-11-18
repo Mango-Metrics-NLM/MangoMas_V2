@@ -41,13 +41,29 @@ from mangomas.eval.protocol import (
 from mangomas.eval.provenance import RunProvenance, build_provenance
 from mangomas.eval.registry import ScorerFactory, scorer_registry
 from mangomas.eval.runner import EvalReport, EvalRowResult, EvalRunner, SliceStats
-from mangomas.eval.sink import Sink
+from mangomas.eval.sink import (
+    DEFAULT_JSON_REPORT_FILENAME,
+    DEFAULT_SINK_ARTIFACTS,
+    DEFAULT_SQLITE_RESULTS_FILENAME,
+    JSON_FILE_PATH_OPTION,
+    JSON_FILE_SINK_NAME,
+    SQLITE_RESULTS_DB_PATH_OPTION,
+    SQLITE_RESULTS_SINK_NAME,
+    Sink,
+)
 from mangomas.eval.sink_registry import SinkFactory, sink_registry
 from mangomas.eval.stats import wilson_interval
 from mangomas.eval.target import Target
 from mangomas.eval.target_registry import TargetFactory, target_registry
 
 __all__ = [
+    "DEFAULT_JSON_REPORT_FILENAME",
+    "DEFAULT_SINK_ARTIFACTS",
+    "DEFAULT_SQLITE_RESULTS_FILENAME",
+    "JSON_FILE_PATH_OPTION",
+    "JSON_FILE_SINK_NAME",
+    "SQLITE_RESULTS_DB_PATH_OPTION",
+    "SQLITE_RESULTS_SINK_NAME",
     "CalibrationPolicy",
     "DatasetRow",
     "DatasetSource",

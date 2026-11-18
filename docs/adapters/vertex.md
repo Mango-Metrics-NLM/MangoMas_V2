@@ -64,6 +64,9 @@ matrix without installing the Google SDK.
 
 | Vertex exception | Typed error | HTTP status |
 |---|---|---|
+| `google.genai.errors.{APIError,ClientError,ServerError}` (`408`/`504`) | `LLMTimeout` | 504 |
+| `google.genai.errors.{APIError,ClientError,ServerError}` (`429` or `5xx`/none) | `LLMUnavailable` | 503 |
+| `google.genai.errors.{APIError,ClientError,ServerError}` (other `4xx`) | `VertexError` (→ `LLMBadResponse`) | 502 |
 | `google.api_core.exceptions.DeadlineExceeded`, `RetryError` | `LLMTimeout` | 504 |
 | `google.api_core.exceptions.ServiceUnavailable`, `InternalServerError`, `GatewayTimeout`, `Aborted` | `LLMUnavailable` | 503 |
 | `google.auth.exceptions.RefreshError`, `DefaultCredentialsError` | `LLMUnavailable` | 503 |
@@ -87,14 +90,15 @@ own any cross-request state — every call inherits the current
 
 ## Streaming
 
-`VertexClient.stream()` delegates to `GenerativeModel.generate_content_async`
-with `stream=True`. Empty / safety-blocked chunks are debug-logged and
-skipped so callers see only non-empty content tokens.
+`VertexClient.stream()` uses an isolated `google.genai.Client(vertexai=True, ...)`
+instance (`_GenAIModelAdapter`) delegating to `client.aio.models.generate_content_stream`.
+Empty / safety-blocked chunks are debug-logged and skipped so callers see only
+non-empty content tokens.
 
 ## Testing
 
 - **Unit**: `tests/test_vertex_unit.py` drives the adapter with
-  `FakeVertexGenerativeModel` from `tests/fakes.py`. No SDK install required.
+  injected fake model clients from `tests/fakes.py`. No SDK install required.
 - **Composition**: `tests/composition/test_vertex.py` verifies the `vertex` key is
   registered and that `_vertex_factory` produces a `VertexClient`.
 - **E2E**: `tests/vertex/` runs against a real Vertex project. Gated by
@@ -110,12 +114,12 @@ RUN_VERTEX=1 \
   python -m pytest tests/vertex --no-cov -q
 ```
 
-## Known gaps and follow-ups
+## Notes and follow-ups
 
 - `VertexClient` handles text generation and streaming; Vertex embeddings are
   provided separately by `VertexEmbeddingClient` (`MANGOMAS_EMBEDDINGS__PROVIDER=vertex`),
   which the evaluation harness's `EmbeddingScorer` consumes via `ScorerContext.embeddings`.
-- `vertexai.init()` mutates module-level SDK state. Building multiple
-  `VertexClient` instances for different projects in the same process is
-  not yet validated — each `init()` call overwrites the prior one. Fine
-  for the single-tenant deployment model in v0.3.0; revisit for multi-tenancy.
+- Both `VertexClient` and `VertexEmbeddingClient` construct isolated
+  `google.genai.Client(vertexai=True, ...)` handles and release them cleanly via
+  `adapters/_genai.py::close_genai_client`, so mixed-region chat (`global`) and
+  embeddings (`us-central1`) coexist safely in one process (`PR #135`).
