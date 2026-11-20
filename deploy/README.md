@@ -221,7 +221,10 @@ make deploy-render ENVIRONMENT="$ENVIRONMENT" IMAGE="$IMAGE"   # -> rendered-ser
 make deploy-apply                                               # gcloud run services replace
 
 URL="$(gcloud run services describe mangomas-qa --region us-central1 --format 'value(status.url)')"
-TOKEN="$(gcloud auth print-identity-token)"   # caller needs roles/run.invoker
+# Human ADC with roles/run.invoker can omit impersonation. CI WIF cannot mint
+# an ID token directly — mirror deploy.yml: impersonate the deploy SA and set
+# --audiences to the service URL.
+TOKEN="$(gcloud auth print-identity-token)"   # or: --impersonate-service-account=… --audiences="${URL}"
 curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/health"
 curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/ready"
 ```

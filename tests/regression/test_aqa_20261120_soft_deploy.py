@@ -8,6 +8,7 @@ Defect classes:
   D2 — service.yaml / Dockerfile still used ``*z`` probe paths against known-issues
   D3 — mangomas-dev Vertex ``LOCATION`` must be ``global`` for gemini-3 flash
   D4 — package version claim drifted from advertised release cut
+  D5 — smoke minted ID tokens without SA impersonation / audiences (WIF break)
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+from tests.constants.deploy import LLM_LOCATION_VAR, VERTEX_PUBLISHER_LOCATION
 from tests.deploy import _makefile, _manifest, _workflows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -57,7 +59,7 @@ def test_d3_mangomas_dev_vertex_location_is_global() -> None:
     """D3: regional gemini-2.5/2.0 IDs 404 on hrmtrain; soft-deploy needs global."""
     registry = yaml.safe_load(_REGISTRY.read_text(encoding="utf-8"))
     env = registry["environments"]["dev"]["overrides"]["env"]
-    assert env["MANGOMAS_LLM__LOCATION"] == "global"
+    assert env[LLM_LOCATION_VAR] == VERTEX_PUBLISHER_LOCATION
 
 
 def test_d4_package_version_is_honest_point_five() -> None:
@@ -66,6 +68,16 @@ def test_d4_package_version_is_honest_point_five() -> None:
     match = re.search(r'^version\s*=\s*"([^"]+)"', text, flags=re.MULTILINE)
     assert match is not None
     assert match.group(1) == "0.5.0"
+
+
+def test_d5_smoke_impersonates_deploy_sa_with_audiences() -> None:
+    """D5: WIF alone cannot ``print-identity-token`` — must impersonate + audiences."""
+    bodies = _deploy_smoke_bodies()
+    assert len(bodies) == 1
+    body = bodies[0]
+    assert "--impersonate-service-account=" in body
+    assert "--audiences=" in body
+    assert "DEPLOY_SERVICE_ACCOUNT" in body
 
 
 def test_makefile_still_owns_deploy_render_apply() -> None:

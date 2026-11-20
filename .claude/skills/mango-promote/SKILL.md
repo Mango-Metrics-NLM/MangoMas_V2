@@ -93,8 +93,8 @@ promotion rather than drifting silently.
 
 ```text
 /loop check PR <n>: CI on the head commit, mergeability, review threads; once merged, the
-deploy.yml run for the target branch (plan → verify → deploy → smoke). Stop when the smoke
-probe passes or something needs a human.
+deploy.yml run for the target branch (plan → verify → deploy → smoke on
+`/health` + `/ready`). Stop when that smoke is green or something needs a human.
 ```
 
 ## Diagnosing Failures

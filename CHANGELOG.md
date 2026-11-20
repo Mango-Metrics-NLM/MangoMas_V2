@@ -14,7 +14,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - `deploy/service.yaml` liveness/readiness and Dockerfile `HEALTHCHECK` now
   use `/health` + `/ready`; CI smoke matches. `/healthz` + `/readyz` remain
   FastAPI aliases. Canonical order in `api/health.py` is non-`z` first.
-  Regression: `tests/regression/test_aqa_20261120_soft_deploy.py`.
+  Smoke contract also pins WIF SA impersonation + `--audiences`. `.gitleaks.toml`
+  allowlists local `uv.lock` / `.uv/` (D-6 parity). Regression:
+  `tests/regression/test_aqa_20261120_soft_deploy.py`.
   References: [Cloud Run known-issues — reserved URL paths](https://cloud.google.com/run/docs/known-issues).
 
 ## [0.5.0] — 2026-11-20

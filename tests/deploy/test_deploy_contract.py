@@ -188,6 +188,11 @@ def test_deploy_workflow_smoke_probes_health_and_ready() -> None:
     assert len(smoke) == 1, f"expected exactly one smoke step probing both paths: {smoke!r}"
     body = smoke[0]
     assert _SMOKE_AUTH_COMMAND in body, "smoke probe must send an identity token"
+    assert "--impersonate-service-account=" in body, (
+        "WIF cannot mint an ID token directly — smoke must impersonate the deploy SA"
+    )
+    assert "DEPLOY_SERVICE_ACCOUNT" in body or "GCP_DEPLOY_SERVICE_ACCOUNT" in body
+    assert "--audiences=" in body, "Cloud Run ID tokens must set --audiences to the service URL"
     assert _SMOKE_CURL_COMMAND in body, "smoke probe must fail the job on non-200 (curl -f)"
     assert re.search(r"for path in /health /ready\b", body), (
         "smoke loop must probe /health then /ready"

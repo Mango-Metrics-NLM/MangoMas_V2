@@ -18,7 +18,7 @@ Keep provider-specific code behind existing protocol and registry boundaries. Fu
 | Storage | SQLite | Cloud SQL Postgres | Add a `postgres` storage registry provider implementing `TurnRepository`. |
 | Secrets | `.env` / process env | Secret Manager | Add a `SecretsProvider` abstraction consumed by settings construction. |
 | Telemetry | stdout logs + console trace exporter | Cloud Logging + Cloud Trace | Swap telemetry exporter through configuration while preserving structured log fields. |
-| Compute | Docker Compose / local uvicorn | Cloud Run | Keep container non-root, `$PORT` aware, and probe `/healthz`. |
+| Compute | Docker Compose / local uvicorn | Cloud Run | Keep container non-root, `$PORT` aware, and probe `/health` + `/ready` (retain `/healthz`/`/readyz` aliases; Cloud Run known-issues recommend avoiding public paths ending in `z`). |
 | Identity | Local credentials | Workload Identity Federation | Provider adapters consume ambient identity, not hardcoded credentials. |
 | Interop | In-process agents behind `/agents/{name}` | A2A peers (any A2A-speaking framework) | Boundary adapter only (ADR-0037): an SDK-backed façade over `Orchestrator` plus a `RemoteA2AAgent` registered by operator-chosen name; no core contract change. |
 
