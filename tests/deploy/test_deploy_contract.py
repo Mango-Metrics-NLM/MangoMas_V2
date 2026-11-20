@@ -182,9 +182,7 @@ def test_deploy_workflow_smoke_probes_health_and_ready() -> None:
     so an anonymous probe proves nothing), and use ``curl -f`` so any non-2xx
     fails the job. ``/health`` is the public-edge-safe alias of ``/healthz``.
     """
-    smoke = [
-        b for b in _deploy_run_bodies() if _SMOKE_LIVENESS_PATH in b and _READYZ_PATH in b
-    ]
+    smoke = [b for b in _deploy_run_bodies() if _SMOKE_LIVENESS_PATH in b and _READYZ_PATH in b]
     assert len(smoke) == 1, f"expected exactly one smoke step probing both paths: {smoke!r}"
     body = smoke[0]
     assert _SMOKE_AUTH_COMMAND in body, "smoke probe must send an identity token"
