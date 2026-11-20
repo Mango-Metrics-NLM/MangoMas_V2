@@ -186,8 +186,10 @@ defect:
   - D-11: should `/readyz` cover the profile clients?
   - D-12: stamp streamed turns. This needs a protected `core/orchestrator/`
     edit.
-  - A5: let eval targets select a profile, the prerequisite for a
-    local-vs-cloud eval baseline.
+  - A5 (agent-only, done): the `agent` eval target selects a profile via
+    `target_options["agent"]["llm_profile"]` (`eval/targets/agent.py`).
+    **A5b deferred** (owner: `mango-eval-dev`): `pipeline` / `fan_out`
+    targets do not yet accept `llm_profile` — do not claim “targets” done.
 
 ---
 
