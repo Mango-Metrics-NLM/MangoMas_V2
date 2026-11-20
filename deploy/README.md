@@ -227,4 +227,9 @@ URL="$(gcloud run services describe mangomas-qa --region us-central1 --format 'v
 TOKEN="$(gcloud auth print-identity-token)"   # or: --impersonate-service-account=… --audiences="${URL}"
 curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/health"
 curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/ready"
+# Authenticated app routes: keep IAM off Authorization (auth prefers Bearer).
+# curl -fsS -H "X-Serverless-Authorization: Bearer ${TOKEN}" \
+#   -H "X-API-Key: ${API_TOKEN}" -H "Content-Type: application/json" \
+#   -d '{"messages":[{"role":"user","content":"hi"}]}' \
+#   "${URL}/agents/chat/invoke"
 ```
