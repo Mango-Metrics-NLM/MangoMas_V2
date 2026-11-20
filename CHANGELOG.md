@@ -9,6 +9,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-20
+
+### Fixed — Soft-deploy smoke path on public Cloud Run edge
+
+- External CI smoke probes `/health` (not `/healthz`): Google's public
+  `*.run.app` front end returns a generic HTML 404 for the exact path
+  `/healthz` while `/health` (same FastAPI handler) and the in-cluster
+  `livenessProbe` path `/healthz` both succeed (`.github/workflows/deploy.yml`).
+
 ### Fixed — Post-cutover origin-delta AQA, main-parity hardening & documentation sync (`spec-0051`)
 
 - Container image smoke alignment (`D-1`, `Makefile`, `tests/constants/deploy.py`, `deploy/README.md`): updated `IMAGE_SMOKE_IMPORTS`, `PROVIDER_REQUIREMENTS["vertex"].smoke_module`, and the provider contract table from retired `vertexai` to `google.genai` to match the `PR #135` runtime SDK migration, and extended `Makefile clean` to cover `gitleaks.exe`, `gitleaks.zip`, `trivy.exe`, `trivy.zip`, and `rendered-service.yaml`.
@@ -2258,7 +2267,8 @@ accepted by code or configuration.
 
 ---
 
-[Unreleased]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.0
