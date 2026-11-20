@@ -5,7 +5,7 @@
 # Docker Hub registry API on 2026-08-22; update the digest when bumping the
 # tag.
 # ── Stage 1: build wheel ──────────────────────────────────────────────────────
-FROM python:3.11-slim@sha256:9c900dea9e8fb7e16277c179b555cc72d29a352dbc33cff48ad5a0412fd5bfc7 AS builder
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS builder
 
 WORKDIR /build
 
@@ -23,7 +23,7 @@ RUN python -m build --wheel --outdir /dist mango-integration-contracts
 
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM python:3.11-slim@sha256:9c900dea9e8fb7e16277c179b555cc72d29a352dbc33cff48ad5a0412fd5bfc7 AS runtime
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
