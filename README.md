@@ -177,10 +177,10 @@ are in [docs/runbooks/gcp-local-demo.md](docs/runbooks/gcp-local-demo.md)
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/healthz` | Liveness probe — returns `{"status": "ok"}` |
-| `GET` | `/health` | Alias for `/healthz` (backwards compatibility) |
-| `GET` | `/readyz` | Readiness probe — bounded LLM + DB connectivity check (`MANGOMAS_API__READY_TIMEOUT_SECONDS`) |
-| `GET` | `/ready` | Alias for `/readyz` (backwards compatibility) |
+| `GET` | `/health` | Liveness probe — returns `{"status": "ok"}` (preferred on Cloud Run) |
+| `GET` | `/healthz` | Alias for `/health` (local/k8s; avoid on public `*.run.app` — GFE may 404) |
+| `GET` | `/ready` | Readiness probe — bounded LLM + DB connectivity check (`MANGOMAS_API__READY_TIMEOUT_SECONDS`) |
+| `GET` | `/readyz` | Alias for `/ready` (local/k8s; prefer `/ready` on Cloud Run) |
 | `GET` | `/agents` | List registered agent names |
 | `GET` | `/llm/profiles` | Secret-free roster of configured `MANGOMAS_LLM_PROFILES__*` provider profiles |
 | `POST` | `/agents/{name}/invoke` | Invoke an agent (buffered response) |
@@ -545,7 +545,7 @@ docker run -p 8000:8000 --env-file .env mangomas
 ```
 
 The image runs as a non-root user, honours `$PORT`, and includes a
-HEALTHCHECK that polls `/healthz`.
+HEALTHCHECK that polls `/health`.
 
 ---
 

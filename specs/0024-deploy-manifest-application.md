@@ -24,8 +24,10 @@ this spec must land **before** the v0.4.0 release cut.
 - The deploy job applies `deploy/service.yaml` (e.g. `gcloud run services
   replace` with image substitution, or an equivalent that provably carries every
   manifest field), replacing the image-only `gcloud run deploy` call.
-- A post-deploy smoke step probes the deployed service's `/healthz` and
-  `/readyz` and fails the job on non-200.
+- A post-deploy smoke step probes the deployed service's `/health` and
+  `/ready` and fails the job on non-200. (Supersedes earlier `/healthz`+`/readyz`
+  wording — Cloud Run known-issues; exact `/healthz` is GFE HTML 404 on
+  `*.run.app`.)
 - `tests/deploy/test_deploy_contract.py` gains a workflow↔manifest tie: the
   deploy workflow must reference `deploy/service.yaml` (both directions — see
   Scenarios).
@@ -44,7 +46,7 @@ this spec must land **before** the v0.4.0 release cut.
 - WHEN the workflow applies the manifest and the manifest parses with both
   probes and `secretKeyRef`s THEN the contract suite passes (never vacuously
   green).
-- WHEN the deployed revision fails its `/readyz` probe THEN the workflow run
+- WHEN the deployed revision fails its `/ready` probe THEN the workflow run
   fails at the smoke step rather than reporting success.
 
 ## Config / env additions
@@ -80,7 +82,7 @@ _None._ All production configuration continues to live in
 - [x] `deploy.yml` applies `deploy/service.yaml`; image-only deploy is gone
       (render + `gcloud run services replace`; a re-added image-only deploy is
       banned by its own test).
-- [x] Post-deploy smoke step probes `/healthz` + `/readyz` (identity-token
+- [x] Post-deploy smoke step probes `/health` + `/ready` (identity-token
       authenticated — `services replace` keeps the service private).
 - [x] Contract test ties workflow to manifest, proven in both directions
       (mutation-proofed: renamed ref fails, renamed file on disk fails).

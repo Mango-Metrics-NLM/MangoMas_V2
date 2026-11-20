@@ -20,10 +20,16 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 # The probe routes, in one place: ``routes/system.py`` mounts them and the
-# concurrency guard exempts them (``create_app``). Each pair is the canonical
-# path plus its retained compatibility alias.
-LIVENESS_PATHS: Final[tuple[str, str]] = ("/healthz", "/health")
-READINESS_PATHS: Final[tuple[str, str]] = ("/readyz", "/ready")
+# concurrency guard exempts them (``create_app``). Each pair is the Cloud Run
+# safe canonical path plus its retained ``*z`` compatibility alias.
+#
+# Cloud Run's public ``*.run.app`` front end reserves some paths ending in
+# ``z`` (official known-issues: avoid all paths ending in ``z``). Exact
+# ``/healthz`` returns a Google HTML 404 before the request reaches the
+# container; prefer ``/health`` and ``/ready`` for probes, smoke, and
+# HEALTHCHECK. The ``*z`` aliases remain for local/k8s callers.
+LIVENESS_PATHS: Final[tuple[str, str]] = ("/health", "/healthz")
+READINESS_PATHS: Final[tuple[str, str]] = ("/ready", "/readyz")
 PROBE_PATHS: Final[frozenset[str]] = frozenset((*LIVENESS_PATHS, *READINESS_PATHS))
 
 _STATUS_OK = "ok"

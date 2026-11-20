@@ -36,6 +36,8 @@ eval/scorers/          exact_match, regex_match, contains, json_keys, json_field
 eval/sink.py + sinks/  console, json_file, sqlite_results, webhook, langfuse
 eval/_serialize.py     report_payload(report, *, gate_result=None) — the one payload builder
 eval/target.py + targets/  agent (default), pipeline, fan_out, echo
+                         # A5: only `agent` accepts llm_profile today; A5b
+                         # (pipeline/fan_out profiles) is deferred — mango-eval-dev
 eval/dataset_source.py + sources/  jsonl (default), inline, langfuse
 eval/runner.py         EvalRunner (reuses Orchestrator) → EvalReport
 eval/gate.py           evaluate_gate() → GateResult (exit 3 on fail)
