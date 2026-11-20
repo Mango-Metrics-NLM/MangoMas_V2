@@ -60,6 +60,9 @@ environments:
         MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
         MANGOMAS_LLM__MODEL: ${LLM_MODEL}
         MANGOMAS_LLM__ALLOWED_MODELS: '["${LLM_MODEL}"]'
+        # hrmtrain currently serves Gemini publisher models on the global
+        # endpoint (regional gemini-2.5/2.0 IDs return 404).
+        MANGOMAS_LLM__LOCATION: global
         MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}
         # A Secret Manager secret *name* (resolved at runtime), not a value;
         # per environment so a dev token never opens production.
