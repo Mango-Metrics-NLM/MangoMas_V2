@@ -86,8 +86,11 @@ After GCP one-time setup (`deploy/README.md`) and `MULTI_ENV_DEPLOY_ENABLED=true
    returns Google HTML 404 before the container sees the request.
 2. Smoke must mint an ID token via deploy-SA impersonation + `--audiences=$URL`
    (WIF alone cannot `print-identity-token`).
-3. Filmed invoke: Cloud Run IAM bearer **and** app `X-API-Key` (or Bearer API
-   token from `MANGOMAS_AUTH__SECRET_REF`). Body is
+3. Filmed invoke needs **two** credentials. Prefer
+   `X-Serverless-Authorization: Bearer <identity-token>` for Cloud Run IAM and
+   `X-API-Key: <api-token>` (from `MANGOMAS_AUTH__SECRET_REF`) for app auth —
+   `require_auth` reads `Authorization: Bearer` first, so putting the IAM JWT
+   there makes authenticated routes 401. Body is
    `{"messages":[{"role":"user","content":"..."}]}`.
 4. KPI is `/health`+`/ready` 200 + authenticated 2xx model text — **not** a
    versioned product release. Prod Release publish is gated until the prod
