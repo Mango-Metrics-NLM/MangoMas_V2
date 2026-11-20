@@ -27,7 +27,11 @@ _SERVICE_YAML = _manifest.SERVICE_YAML
 _README = _DEPLOY / "README.md"
 _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy.yml"
 
-_HEALTHZ_PATH = "/healthz"
+# External CI smoke must use the public-edge-safe liveness alias: Google's
+# *.run.app front end returns HTML 404 for the exact path /healthz while
+# /health (same FastAPI handler) succeeds. In-cluster livenessProbe stays
+# /healthz in deploy/service.yaml.
+_SMOKE_LIVENESS_PATH = "/health"
 _READYZ_PATH = "/readyz"
 
 # ── spec-0024: the workflow must consume the manifest, not just ship it ───────
@@ -172,16 +176,19 @@ def test_deploy_workflow_dropped_the_image_only_deploy() -> None:
 def test_deploy_workflow_smoke_probes_health_and_ready() -> None:
     """spec-0024: a deploy that reports success must have answered 200 twice.
 
-    One step must probe both ``/healthz`` and ``/readyz``, authenticate with
+    One step must probe both ``/health`` and ``/readyz``, authenticate with
     an identity token (the service is private — no allUsers invoker binding —
     so an anonymous probe proves nothing), and use ``curl -f`` so any non-2xx
-    fails the job.
+    fails the job. ``/health`` is the public-edge-safe alias of ``/healthz``.
     """
-    smoke = [b for b in _deploy_run_bodies() if _HEALTHZ_PATH in b and _READYZ_PATH in b]
+    smoke = [
+        b for b in _deploy_run_bodies() if _SMOKE_LIVENESS_PATH in b and _READYZ_PATH in b
+    ]
     assert len(smoke) == 1, f"expected exactly one smoke step probing both paths: {smoke!r}"
     body = smoke[0]
     assert _SMOKE_AUTH_COMMAND in body, "smoke probe must send an identity token"
     assert _SMOKE_CURL_COMMAND in body, "smoke probe must fail the job on non-200 (curl -f)"
+    assert "/healthz" not in body, "external smoke must not probe GFE-blocked /healthz"
 
 
 def test_deploy_job_is_gated_by_the_verify_job() -> None:
