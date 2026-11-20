@@ -69,7 +69,8 @@ factory is invoked (`llm_registry.get(cfg.llm.provider)(cfg.llm)`).
 - `ping()` issues a one-token `generate_content` — operators running
   aggressive `/readyz` probes against Vertex should widen probe
   intervals or implement a cheaper liveness signal upstream. A
-  zero-token metadata-fetch ping is tracked as a v0.4.0 improvement.
+  zero-token metadata-fetch ping shipped in v0.4.0; mangomas-dev soft-deploy
+  (v0.5.0) pins Vertex ``LOCATION=global`` for gemini-3 publisher models.
 
 ---
 

@@ -37,7 +37,7 @@ C4Container
   System_Ext(otel_out, "OTel / stdout", "Traces and structured logs")
   System_Ext(code_agent_harness, "Mango Code Agent Harness", "Sibling execution/authority plane (classify, authorize, broker). Distinct from the in-repo Claude Code harness container. Companion 1.1.0 bump required before ingest.")
 
-  Rel(developer, api, "POST /agents/{name}/invoke, stream; GET /healthz, /readyz, /agents", "HTTP")
+  Rel(developer, api, "POST /agents/{name}/invoke, stream; GET /health (+ /healthz alias), /ready (+ /readyz alias), /agents", "HTTP")
   Rel(developer, cli, "mangomas chat / history / eval", "shell")
   Rel(studio, api, "GET /llm/profiles; invoke + stream with metadata.llm_profile; GET /history; /workflows/*", "HTTP + SSE (CORS)")
   Rel(api, composition, "calls build_orchestrator() at lifespan startup")

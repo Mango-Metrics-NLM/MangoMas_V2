@@ -27,13 +27,13 @@ def build_system_router() -> APIRouter:
     @router.get(LIVENESS_PATHS[0])
     @router.get(LIVENESS_PATHS[1])
     async def healthz() -> dict[str, str]:
-        """Liveness probe. ``/health`` is retained as a compatibility alias."""
+        """Liveness probe. ``/healthz`` is retained as a compatibility alias."""
         return {"status": "ok"}
 
     @router.get(READINESS_PATHS[0])
     @router.get(READINESS_PATHS[1])
     async def readyz(request: Request) -> JSONResponse:
-        """Readiness probe. ``/ready`` is retained as a compatibility alias."""
+        """Readiness probe. ``/readyz`` is retained as a compatibility alias."""
         orch: Orchestrator = request.app.state.orchestrator
         timeout_seconds = getattr(request.app.state, "ready_timeout_seconds", None)
         report = await check_ready(orch, timeout_seconds=timeout_seconds)

@@ -6,7 +6,8 @@ description: >
   contract, or the GitHub Actions deploy workflow; selecting an OpenTelemetry
   exporter (console vs gcp Cloud Trace) via MANGOMAS_TELEMETRY__EXPORTER;
   routing harness spans via MANGOMAS_HARNESS__METRICS_EXPORTER; or reviewing a
-  container for Cloud Run readiness (non-root, $PORT-aware, /healthz probe).
+  container for Cloud Run readiness (non-root, $PORT-aware, /health + /ready
+  probes; avoid public *z paths per Cloud Run known-issues).
   Covers ADR-0001's swap matrix, Workload Identity Federation (no service-account
   keys), lazy cloud-SDK imports behind extras, and the gated-test pattern.
 argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace exporter', 'author the Cloud Run YAML') or paste a failing deploy workflow"
@@ -30,7 +31,7 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
 
 | Boundary | Rule |
 |----------|------|
-| Compute | Container is **non-root**, honours `$PORT`, exposes `/healthz` liveness/readiness. |
+| Compute | Container is **non-root**, honours `$PORT`, exposes `/health` liveness + `/ready` readiness (retain `/healthz`/`/readyz` aliases; never smoke exact `/healthz` on `*.run.app`). |
 | Identity | **Workload Identity Federation only** — no service-account JSON keys in code, config, or CI. |
 | Telemetry | Cloud Trace/Logging selected through configuration, not new call sites. Default exporter unchanged when the env var is absent. |
 | Secrets | Runtime secrets via GCP Secret Manager provider (`MANGOMAS_SECRETS__PROVIDER=gcp`); never baked into the image. |
@@ -75,6 +76,25 @@ argument-hint: "Describe the deploy/telemetry change (e.g. 'add Cloud Trace expo
    Artifact Registry repository and the secrets the overlay names.
 
 Promotion between environments is `mango-promote`'s procedure, not this one.
+
+## Soft-deploy smoke (mangomas-dev)
+
+After GCP one-time setup (`deploy/README.md`) and `MULTI_ENV_DEPLOY_ENABLED=true`:
+
+1. Prefer probes/smoke on **`/health` + `/ready`**. Never external-smoke exact
+   `/healthz` — Cloud Run known-issues reserve some paths ending in `z`; GFE
+   returns Google HTML 404 before the container sees the request.
+2. Smoke must mint an ID token via deploy-SA impersonation + `--audiences=$URL`
+   (WIF alone cannot `print-identity-token`).
+3. Filmed invoke: Cloud Run IAM bearer **and** app `X-API-Key` (or Bearer API
+   token from `MANGOMAS_AUTH__SECRET_REF`). Body is
+   `{"messages":[{"role":"user","content":"..."}]}`.
+4. KPI is `/health`+`/ready` 200 + authenticated 2xx model text — **not** a
+   versioned product release. Prod Release publish is gated until the prod
+   GitHub Environment has GCP secrets.
+
+Offline guards: `tests/regression/test_aqa_20261120_soft_deploy.py`,
+`tests/deploy/test_deploy_contract.py`.
 
 ## Configuration
 

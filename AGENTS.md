@@ -118,7 +118,7 @@ src/mangomas/
 │   │                   (ADR-0019 facade; install order unchanged)
 │   └── routes/         Endpoint routers by resource
 │       ├── agents.py   invoke, stream endpoints (dispatches to orchestrator)
-│       ├── system.py   /healthz + /health, /readyz + /ready, GET /agents
+│       ├── system.py   /health + /healthz, /ready + /readyz, GET /agents
 │       ├── workflows.py /workflows/run, /workflows/validate endpoints
 │       └── llm.py      GET /llm/profiles — secret-free provider-profile roster (spec-0040)
 ├── cli/            Typer CLI, one module per dependency layer behind a

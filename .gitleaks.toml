@@ -81,4 +81,8 @@ paths = [
   '''(^|/)\.venv/''',
   '''(^|/)\.venv-[^/]+/''',
   '''(^|/)venv/''',
+  # Local uv lock / cache (gitignored; ``dir`` scans only) — parity with
+  # ``.gitignore`` / ``.dockerignore`` (CHANGELOG D-6).
+  '''(^|/)uv\.lock$''',
+  '''(^|/)\.uv/''',
 ]
