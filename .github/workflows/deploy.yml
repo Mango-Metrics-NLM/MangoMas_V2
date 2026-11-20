@@ -260,19 +260,28 @@ jobs:
         # no allUsers invoker binding, so the service stays private.
         run: make deploy-apply
 
-      - name: Smoke-test deployed service (/healthz + /readyz)
+      - name: Smoke-test deployed service (/health + /readyz)
         # The service is private (no allUsers run.invoker binding — see the
         # step above), so an anonymous probe would get 401/403 and prove
-        # nothing about health. The probe authenticates with an identity token
-        # minted from the WIF-federated deploy service account
-        # (`gcloud auth print-identity-token`); that account must therefore
-        # hold roles/run.invoker on the service. `curl -f` turns any non-2xx
-        # into a non-zero exit, failing the job.
+        # nothing about health. WIF credentials cannot mint an ID token
+        # directly (`print-identity-token` fails); impersonate the deploy SA
+        # with --audiences set to the service URL. That SA must hold
+        # roles/run.invoker on the service and roles/iam.serviceAccountTokenCreator
+        # on itself. `curl -f` turns any non-2xx into a non-zero exit.
+        #
+        # Probe /health (not /healthz): Google's public *.run.app front end
+        # returns a generic Google HTML 404 for the exact path /healthz while
+        # /health (same FastAPI handler) and in-cluster livenessProbe /healthz
+        # both succeed. External CI smoke must use the public-edge-safe alias.
+        env:
+          DEPLOY_SERVICE_ACCOUNT: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
         run: |
           set -euo pipefail
           URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')"
-          TOKEN="$(gcloud auth print-identity-token)"
-          for path in /healthz /readyz; do
+          TOKEN="$(gcloud auth print-identity-token \
+            --impersonate-service-account="${DEPLOY_SERVICE_ACCOUNT}" \
+            --audiences="${URL}")"
+          for path in /health /readyz; do
             ok=0
             for _ in $(seq 1 "$SMOKE_ATTEMPTS"); do
               if curl -fsS -m 10 -H "Authorization: Bearer ${TOKEN}" "${URL}${path}" > /dev/null; then
