@@ -9,14 +9,22 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — Cloud Run probe paths prefer non-`z` routes (known-issues)
+
+- `deploy/service.yaml` liveness/readiness and Dockerfile `HEALTHCHECK` now
+  use `/health` + `/ready`; CI smoke matches. `/healthz` + `/readyz` remain
+  FastAPI aliases. Canonical order in `api/health.py` is non-`z` first.
+  Regression: `tests/regression/test_aqa_20261120_soft_deploy.py`.
+  References: [Cloud Run known-issues — reserved URL paths](https://cloud.google.com/run/docs/known-issues).
+
 ## [0.5.0] — 2026-11-20
 
 ### Fixed — Soft-deploy smoke path on public Cloud Run edge
 
 - External CI smoke probes `/health` (not `/healthz`): Google's public
   `*.run.app` front end returns a generic HTML 404 for the exact path
-  `/healthz` while `/health` (same FastAPI handler) and the in-cluster
-  `livenessProbe` path `/healthz` both succeed (`.github/workflows/deploy.yml`).
+  `/healthz` while `/health` (same FastAPI handler) succeeds
+  (`.github/workflows/deploy.yml`).
 
 ### Fixed — Post-cutover origin-delta AQA, main-parity hardening & documentation sync (`spec-0051`)
 

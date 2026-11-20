@@ -8,6 +8,23 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: Soft-deploy mangomas-dev live + honest v0.5.0 (2026-11-20)
+
+Shipped: billing + GCP slice + WIF smoke, `/health`+`/ready` probes (Cloud Run
+known-issues: avoid public `*z` paths; exact `/healthz` is GFE HTML 404),
+filmed authenticated chat + plan→tool→reviewer on
+`https://mangomas-dev-…run.app`, local LM Studio companion, historical
+annotated tag `v0.4.0` @ `e4139d6` (no Release), GitHub Release `v0.5.0` with
+**prod deploy gated** until prod GCP secrets exist. A5 = agent-target profile
+only; **A5b** pipeline/fan_out deferred (`mango-eval-dev`).
+
+Follow-ups (not sprint goals): decompose `scripts/verify_gcp_prerequisites.py`
+(~955 LOC) and `scripts/deploy_environment.py` (~755 LOC) via `mango-decompose`;
+optional skill `mango-soft-deploy` recipe extracting the filmed invoke + smoke
+loop from `mango-deploy` / `mango-gcp-demo`.
+
+---
+
 ## Overlay: Post-cutover main parity, live E2E & enterprise governance sync (2026-11-16, spec-0051)
 
 Verified full parity across `origin/dev@45e04fa`, `origin/qa@a45d6cd`, and

@@ -6,7 +6,9 @@
 # Manager via `valueFrom.secretKeyRef` — never as literal values.
 #
 # Compute contract (ADR-0001): non-root container (baked into the image),
-# $PORT-aware, liveness /healthz + readiness /readyz.
+# $PORT-aware, liveness /health + readiness /ready (Cloud Run known-issues:
+# avoid paths ending in z on the public edge; /healthz + /readyz remain
+# app aliases for local/k8s callers).
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -106,7 +108,7 @@ spec:
                   key: latest
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /health
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 30
@@ -114,7 +116,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /ready
               port: 8000
             periodSeconds: 30
             timeoutSeconds: 5

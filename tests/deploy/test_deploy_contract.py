@@ -11,6 +11,7 @@ this repo provisions no GCP resources (ADR-0001).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,13 +28,12 @@ _SERVICE_YAML = _manifest.SERVICE_YAML
 _README = _DEPLOY / "README.md"
 _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy.yml"
 
-# In-cluster Cloud Run livenessProbe (container network — not the public edge).
-_HEALTHZ_PATH = "/healthz"
-_READYZ_PATH = "/readyz"
-# External CI smoke must use the public-edge-safe liveness alias: Google's
-# *.run.app front end returns HTML 404 for the exact path /healthz while
-# /health (same FastAPI handler) succeeds.
+# Cloud Run probes + external smoke prefer non-z paths (known-issues: avoid
+# paths ending in z). /healthz and /readyz remain FastAPI aliases only.
+_LIVENESS_PROBE_PATH = "/health"
+_READINESS_PROBE_PATH = "/ready"
 _SMOKE_LIVENESS_PATH = "/health"
+_SMOKE_READY_PATH = "/ready"
 
 # ── spec-0024: the workflow must consume the manifest, not just ship it ───────
 # Since ADR-0036 the workflow renders the manifest through `make deploy-render`,
@@ -75,8 +75,8 @@ def test_service_yaml_is_valid_yaml() -> None:
 
 def test_service_yaml_has_liveness_and_readiness_probes() -> None:
     container = _service_container()
-    assert container["livenessProbe"]["httpGet"]["path"] == _HEALTHZ_PATH
-    assert container["readinessProbe"]["httpGet"]["path"] == _READYZ_PATH
+    assert container["livenessProbe"]["httpGet"]["path"] == _LIVENESS_PROBE_PATH
+    assert container["readinessProbe"]["httpGet"]["path"] == _READINESS_PROBE_PATH
 
 
 def test_service_yaml_uses_secret_ref_not_literal_secret() -> None:
@@ -177,17 +177,24 @@ def test_deploy_workflow_dropped_the_image_only_deploy() -> None:
 def test_deploy_workflow_smoke_probes_health_and_ready() -> None:
     """spec-0024: a deploy that reports success must have answered 200 twice.
 
-    One step must probe both ``/health`` and ``/readyz``, authenticate with
+    One step must probe both ``/health`` and ``/ready``, authenticate with
     an identity token (the service is private — no allUsers invoker binding —
     so an anonymous probe proves nothing), and use ``curl -f`` so any non-2xx
-    fails the job. ``/health`` is the public-edge-safe alias of ``/healthz``.
+    fails the job. Paths ending in ``z`` are banned (Cloud Run known-issues).
     """
-    smoke = [b for b in _deploy_run_bodies() if _SMOKE_LIVENESS_PATH in b and _READYZ_PATH in b]
+    smoke = [
+        b for b in _deploy_run_bodies() if _SMOKE_LIVENESS_PATH in b and _SMOKE_READY_PATH in b
+    ]
     assert len(smoke) == 1, f"expected exactly one smoke step probing both paths: {smoke!r}"
     body = smoke[0]
     assert _SMOKE_AUTH_COMMAND in body, "smoke probe must send an identity token"
     assert _SMOKE_CURL_COMMAND in body, "smoke probe must fail the job on non-200 (curl -f)"
-    assert "/healthz" not in body, "external smoke must not probe GFE-blocked /healthz"
+    assert re.search(r"for path in /health /ready\b", body), (
+        "smoke loop must probe /health then /ready"
+    )
+    assert not re.search(r"for path in[^\n]*/(?:healthz|readyz)", body), (
+        "external smoke must not probe Cloud Run reserved *z paths"
+    )
 
 
 def test_deploy_job_is_gated_by_the_verify_job() -> None:

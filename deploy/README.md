@@ -40,8 +40,9 @@ separate Cloud Run service built from the same base manifest. See
 - Runtime secrets (API keys, DB URLs) come from **GCP Secret Manager**
   (`MANGOMAS_SECRETS__PROVIDER=gcp`), injected as `secretKeyRef` or resolved via
   `LLMSettings.secret_ref` — never baked into the image or the manifest.
-- Container is **non-root**, honours `$PORT`, and exposes `/healthz` (liveness)
-  + `/readyz` (readiness).
+- Container is **non-root**, honours `$PORT`, and exposes `/health` (liveness)
+  + `/ready` (readiness). `/healthz` and `/readyz` remain FastAPI aliases;
+  Cloud Run known-issues recommend avoiding public paths ending in `z`.
 
 ## Runtime environment-variable contract
 
@@ -204,11 +205,11 @@ enforces it against a modified workflow). The
 workflow applies the rendered manifest in full (spec-0024) — an image-only
 `gcloud run deploy` would drop every env var, `secretKeyRef`, probe, resource
 limit and autoscaling bound above — and then smoke-probes `/health` +
-`/readyz` on the deployed revision with an identity token (the service is
+`/ready` on the deployed revision with an identity token (the service is
 private: `services replace` never creates an `allUsers` invoker binding;
-external smoke uses `/health` because the public `*.run.app` edge returns
-HTML 404 for exact `/healthz`, while in-cluster `livenessProbe` still uses
-`/healthz`). To deploy locally instead, mirror the workflow:
+Cloud Run known-issues reserve some paths ending in `z`, and exact
+`/healthz` is answered by Google Frontend with HTML 404). To deploy
+locally instead, mirror the workflow:
 
 ```bash
 export PROJECT_ID=my-project REGION=us-central1 LLM_MODEL=gemini-2.5-flash
@@ -222,5 +223,5 @@ make deploy-apply                                               # gcloud run ser
 URL="$(gcloud run services describe mangomas-qa --region us-central1 --format 'value(status.url)')"
 TOKEN="$(gcloud auth print-identity-token)"   # caller needs roles/run.invoker
 curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/health"
-curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/readyz"
+curl -fsS -H "Authorization: Bearer ${TOKEN}" "${URL}/ready"
 ```
