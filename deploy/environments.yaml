@@ -86,6 +86,8 @@ environments:
         MANGOMAS_LLM__PROJECT_ID: ${PROJECT_ID}
         MANGOMAS_LLM__MODEL: ${LLM_MODEL}
         MANGOMAS_LLM__ALLOWED_MODELS: '["${LLM_MODEL}"]'
+        # Same publisher-model endpoint as dev (regional gemini-3 IDs 404).
+        MANGOMAS_LLM__LOCATION: global
         MANGOMAS_SECRETS__PROJECT_ID: ${PROJECT_ID}
         MANGOMAS_AUTH__SECRET_REF: mangomas-api-token-qa
       secrets:

@@ -53,6 +53,10 @@ spec:
               value: "${PROJECT_ID}"
             - name: MANGOMAS_LLM__MODEL
               value: "${LLM_MODEL}"
+            # hrmtrain serves Gemini publisher models on the global endpoint
+            # (regional gemini-3 / 2.5 IDs return 404). Overridable per env.
+            - name: MANGOMAS_LLM__LOCATION
+              value: "global"
             - name: MANGOMAS_DB__PROVIDER
               value: "postgres"
             - name: MANGOMAS_SECRETS__PROVIDER
