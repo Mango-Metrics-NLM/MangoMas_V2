@@ -24,8 +24,8 @@ adding a tunable — do not restate either here.
 - `src/mangomas/api/auth.py` — `resolve_auth_state` / `require_auth` (ADR-0014)
 - `src/mangomas/api/health.py` — `ReadinessReport` and `check_ready` (bounded
   by `app.state.ready_timeout_seconds` / `MANGOMAS_API__READY_TIMEOUT_SECONDS`)
-- `src/mangomas/api/routes/system.py` — `/healthz`, `/health`, `/readyz`,
-  `/ready`, `GET /agents`
+- `src/mangomas/api/routes/system.py` — `/health`, `/healthz`, `/ready`,
+  `/readyz`, `GET /agents` (prefer non-`z` paths for Cloud Run smoke/probes)
 - `src/mangomas/api/routes/workflows.py` — `/workflows/run`, `/workflows/validate`
 - `src/mangomas/api/routes/llm.py` — `GET /llm/profiles`, the secret-free
   provider-profile roster (spec-0040); the selection check the agent and
@@ -47,7 +47,7 @@ rather than editing them.
 |-----------|--------|
 | Install order is behaviour, not style | Backpressure is added **first** so it ends up *inner* to the log/trace middlewares — a rejected 413/503 still flows back through `AccessLogMiddleware` and carries `X-Request-ID`. CORS is added **last** so it sits outermost, which is what preflight needs. Starlette applies middleware in reverse registration order; reordering these lines silently changes the wire |
 | Every opt-in surface is default-OFF and byte-identical when unset | `max_body_bytes=0`, `max_concurrent_requests=0`, empty `cors_allow_origins`, `auth.enabled=false` and `tenancy.enabled=false` each mean the middleware is **not installed at all**, not installed-and-inert. A test asserting the default app's middleware stack is the guard |
-| Probes are never authenticated | `/healthz` and `/readyz` must answer before a token can be resolved, or a misconfigured secret backend makes the service undiagnosable from outside |
+| Probes are never authenticated | `/health` and `/ready` (plus `*z` aliases) must answer before a token can be resolved, or a misconfigured secret backend makes the service undiagnosable from outside |
 | The secrets provider is registered before the auth lookup | `ensure_secrets_provider` runs during `create_app`, strictly before `resolve_auth_state`. Relying on the lifespan's `build_orchestrator` to register a cloud backend left `expected_token=None` — a 401 on every request of a correctly configured GCP deployment |
 | `create_app` takes an injected orchestrator or owns a lifespan, never both | Passing one skips `_lifespan` entirely, which is how tests build an app without touching adapters |
 | Readiness is a report, not a boolean | `ReadinessReport.http_status` maps the probe result to 200/503; keep the mapping there so the route stays a serializer |

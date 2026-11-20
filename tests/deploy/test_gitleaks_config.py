@@ -162,6 +162,8 @@ _EXPECTED_ALLOWLIST_PATHS: frozenset[str] = frozenset(
         r"(^|/)\.venv/",
         r"(^|/)\.venv-[^/]+/",
         r"(^|/)venv/",
+        r"(^|/)uv\.lock$",
+        r"(^|/)\.uv/",
     }
 )
 
@@ -314,13 +316,15 @@ def test_real_gitleaks_catches_every_planted_secret(tmp_path: Path) -> None:
         (".venv-gpu/lib/python3.12/site.py", True),
         (".venv-aqa311/lib/python3.12/site.py", True),
         ("venv/lib/python3.12/site.py", True),
+        ("uv.lock", True),
+        (".uv/cache/foo", True),
         ("tests/deploy/test_gitleaks_config.py", False),
     ],
 )
 def test_global_allowlist_paths_match_secondary_venvs_only(
     relpath: str, expected_ignored: bool
 ) -> None:
-    """Secondary virtualenvs match the global allowlist while source and tests remain scanned."""
+    """Secondary virtualenvs + local uv artefacts match allowlist; source stays scanned."""
     allowlist = _config().get("allowlist")
     assert isinstance(allowlist, dict)
     patterns = [str(p) for p in allowlist["paths"]]

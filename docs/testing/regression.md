@@ -200,14 +200,17 @@ Gated on `RUN_VERTEX=1`. Requires Gemini model access in the GCP project.
 ```powershell
 $env:RUN_VERTEX = '1'
 $env:VERTEX_PROJECT_ID = 'your-gcp-project'
-$env:VERTEX_LOCATION = 'us-central1'
-$env:VERTEX_MODEL = 'gemini-2.5-flash'
+# Soft-deploy on hrmtrain: publisher Gemini needs the global endpoint
+# (regional gemini-2.5/2.0 IDs 404). mangomas-dev pins MANGOMAS_LLM__LOCATION=global.
+$env:VERTEX_LOCATION = 'global'
+$env:VERTEX_MODEL = 'gemini-3-flash-preview'
 python -m pytest tests/vertex --no-cov -q
 ```
 
-Status: ⚠️ BLOCKED — project `hrmtrain` returns 404 for all Gemini models.
-Error translation code is correct (unit tests pass); issue is project-level
-model access in GCP Console.
+Status: ✅ Soft-deploy unblocked on `hrmtrain` with `LOCATION=global` +
+`gemini-3-flash-preview` (`mangomas-dev` `/readyz` LLM check OK). Regional
+`us-central1` + older Gemini IDs still 404 on this project — that is a
+location/model roster issue, not missing Vertex API enablement.
 
 ### Postgres (testcontainers)
 

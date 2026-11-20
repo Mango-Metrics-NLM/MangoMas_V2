@@ -64,6 +64,11 @@ AUTH_SECRET_REF_VAR: Final[str] = _var("AUTH", "SECRET_REF")
 API_MAX_BODY_BYTES_VAR: Final[str] = _var("API", "MAX_BODY_BYTES")
 API_MAX_CONCURRENT_REQUESTS_VAR: Final[str] = _var("API", "MAX_CONCURRENT_REQUESTS")
 DB_URL_VAR: Final[str] = _var("DB", "URL")
+LLM_LOCATION_VAR: Final[str] = _var("LLM", "LOCATION")
+# Publisher Gemini on the soft-deploy project is served from the global
+# endpoint (regional 2.5/2.0 IDs 404). Test-scoped — not Settings' default
+# ``us-central1``, which remains correct for regional Vertex workloads.
+VERTEX_PUBLISHER_LOCATION: Final[str] = "global"
 
 
 @dataclass(frozen=True)
