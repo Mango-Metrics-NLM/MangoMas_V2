@@ -27,12 +27,13 @@ _SERVICE_YAML = _manifest.SERVICE_YAML
 _README = _DEPLOY / "README.md"
 _DEPLOY_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "deploy.yml"
 
+# In-cluster Cloud Run livenessProbe (container network — not the public edge).
+_HEALTHZ_PATH = "/healthz"
+_READYZ_PATH = "/readyz"
 # External CI smoke must use the public-edge-safe liveness alias: Google's
 # *.run.app front end returns HTML 404 for the exact path /healthz while
-# /health (same FastAPI handler) succeeds. In-cluster livenessProbe stays
-# /healthz in deploy/service.yaml.
+# /health (same FastAPI handler) succeeds.
 _SMOKE_LIVENESS_PATH = "/health"
-_READYZ_PATH = "/readyz"
 
 # ── spec-0024: the workflow must consume the manifest, not just ship it ───────
 # Since ADR-0036 the workflow renders the manifest through `make deploy-render`,
