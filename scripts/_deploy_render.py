@@ -73,6 +73,7 @@ def _apply_env(container: dict[str, Any], values: Mapping[str, str], env_name: s
 
 
 def _apply_secrets(container: dict[str, Any], secrets: Mapping[str, str], env_name: str) -> None:
+    applied = 0
     for name, secret in secrets.items():
         entry = _env_entry(container, name)
         value_from = None if entry is None else entry.get("valueFrom")
@@ -82,8 +83,9 @@ def _apply_secrets(container: dict[str, Any], secrets: Mapping[str, str], env_na
                 f"[{env_name}] secret override {name}: the base manifest has no secretKeyRef "
                 "for it (secrets may only re-point an existing reference)"
             )
-        logger.debug("[%s] secret %s: %r -> %r", env_name, name, ref.get("name"), secret)
         ref["name"] = secret
+        applied += 1
+    logger.debug("[%s] re-pointed %d secretKeyRef binding(s)", env_name, applied)
 
 
 def substitute(value: str, variables: Mapping[str, str], where: str) -> str:

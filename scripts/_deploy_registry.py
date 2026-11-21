@@ -20,7 +20,6 @@ EXIT_CONFIG_ERROR: Final[int] = 2
 EXIT_REFUSED: Final[int] = 3
 
 SUPPORTED_SCHEMA_VERSION: Final[int] = 1
-DEFAULT_REGISTRY_PATH: Final[Path] = Path("deploy/environments.yaml")
 DEFAULT_REMOTE: Final[str] = "origin"
 DEFAULT_LOG_LEVEL: Final[str] = "INFO"
 LOG_LEVEL_CHOICES: Final[tuple[str, ...]] = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -60,8 +59,6 @@ _ENVIRONMENT_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9-]*$")
 # Cloud Run service names: lowercase, start with a letter, <= 63 chars, no
 # trailing hyphen.
 _SERVICE_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$")
-# A $GITHUB_OUTPUT line is `key=value`; a newline in a value would forge keys.
-OUTPUT_KEY_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9_]*$")
 
 GIT_NOT_ANCESTOR_RETURNCODE: Final[int] = 1
 
@@ -75,9 +72,6 @@ _RESERVED_ENV_VARS: Final[frozenset[str]] = frozenset(
 # execution environment, ...) changes the service's security posture and
 # belongs in the reviewed base manifest, not in a per-environment overlay.
 ANNOTATION_KEY_PREFIXES: Final[tuple[str, ...]] = ("autoscaling.knative.dev/",)
-# Docker tag grammar (OCI distribution spec): a release name becomes an alias
-# tag, so one that cannot be a tag is refused at plan time, not mid-deploy.
-DOCKER_TAG_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 
 # Stand-in for every placeholder during `validate`: rendering must succeed for
 # any value, and a recognisable sentinel makes a leaked one obvious.

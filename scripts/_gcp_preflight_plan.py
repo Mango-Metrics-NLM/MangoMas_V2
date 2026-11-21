@@ -18,13 +18,7 @@ logger = logging.getLogger("verify_gcp_prerequisites")
 HTTP_BAD_REQUEST: Final[int] = 400
 HTTP_FORBIDDEN: Final[int] = 403
 
-BILLING_ACCOUNT_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"\AbillingAccounts/[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}\Z"
-)
 GCP_PROJECT_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"\A[a-z][a-z0-9-]{3,28}[a-z0-9]\Z")
-GCP_API_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\Z"
-)
 CROSS_PROJECT_RESOURCE_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"\Aprojects/([^/]+)/secrets/[^/]+(?:/versions/[^/]+)?\Z"
 )

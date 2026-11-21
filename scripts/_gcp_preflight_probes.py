@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import functools
 import logging
+import re
 import shlex
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Final
 from urllib.parse import quote, quote_plus
 
 from _gcp_preflight_plan import (
     ADC_LOGIN_HINT,
-    BILLING_ACCOUNT_PATTERN,
     CLOUD_BILLING_API,
     CLOUD_PLATFORM_SCOPE,
-    GCP_API_NAME_PATTERN,
     GCP_PROJECT_ID_PATTERN,
     HTTP_BAD_REQUEST,
     HTTP_FORBIDDEN,
@@ -31,6 +30,13 @@ from _gcp_preflight_plan import (
     accepts_kwarg,
     clean_str,
     merge_project_results,
+)
+
+BILLING_ACCOUNT_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"\AbillingAccounts/[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}\Z"
+)
+GCP_API_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\Z"
 )
 
 logger = logging.getLogger("verify_gcp_prerequisites")

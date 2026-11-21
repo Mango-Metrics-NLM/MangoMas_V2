@@ -516,6 +516,22 @@ def test_render_logs_each_override_at_debug(caplog: pytest.LogCaptureFixture) ->
     assert any(f"env {_PLAIN_VAR}" in r.getMessage() for r in caplog.records)
 
 
+def test_render_secrets_override_logs_count_without_secret_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Re-pointing secretKeyRefs must not log clear-text secret or ref names (CodeQL guard)."""
+    caplog.set_level(logging.DEBUG, logger="deploy_environment")
+    base = _base_manifest()
+    target_ref = "custom-env-secret-ref"
+    deploy_env.render_manifest(
+        base, _environment({"secrets": {_SECRET_VAR: target_ref}}), _TEST_IMAGE
+    )
+    joined = "\n".join(r.getMessage() for r in caplog.records)
+    assert "re-pointed 1 secretKeyRef binding(s)" in joined
+    assert target_ref not in joined
+    assert _SECRET_VAR not in joined
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────
 
 

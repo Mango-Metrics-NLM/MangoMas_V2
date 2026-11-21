@@ -305,8 +305,14 @@ def test_decomposed_script_facades_preserve_symbol_identity() -> None:
         "check_adc_credentials",
         "check_billing",
         "check_required_apis",
+        "BILLING_ACCOUNT_PATTERN",
+        "GCP_API_NAME_PATTERN",
     ):
         assert getattr(preflight, attr) is getattr(preflight_probes, attr)
+    assert preflight._accepts_kwarg is preflight_plan.accepts_kwarg
+    assert preflight._merge_project_results is preflight_plan.merge_project_results
+    with pytest.raises(AttributeError):
+        _ = preflight._nonexistent_compat_attr
 
     deploy_env = load_script_module("deploy_environment.py")
     deploy_reg = sys.modules["_deploy_registry"]
@@ -315,3 +321,8 @@ def test_decomposed_script_facades_preserve_symbol_identity() -> None:
         assert getattr(deploy_env, attr) is getattr(deploy_reg, attr)
     for attr in ("render_manifest", "verify_rendered", "validate_registry"):
         assert getattr(deploy_env, attr) is getattr(deploy_render, attr)
+    assert deploy_env._ANNOTATION_KEY_PREFIXES is deploy_reg.ANNOTATION_KEY_PREFIXES
+    assert deploy_env._single_container is deploy_render.single_container
+    assert deploy_env._substitute is deploy_render.substitute
+    with pytest.raises(AttributeError):
+        _ = deploy_env._nonexistent_compat_attr

@@ -47,10 +47,12 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Any, Final
 
 import _deploy_registry
 import _deploy_render
@@ -60,7 +62,7 @@ import yaml
 BRANCH_REF_PREFIX = _deploy_registry.BRANCH_REF_PREFIX
 DEFAULT_BRANCH_REF = _deploy_registry.DEFAULT_BRANCH_REF
 DEFAULT_LOG_LEVEL = _deploy_registry.DEFAULT_LOG_LEVEL
-DEFAULT_REGISTRY_PATH = _deploy_registry.DEFAULT_REGISTRY_PATH
+DEFAULT_REGISTRY_PATH: Final[Path] = Path("deploy/environments.yaml")
 DEFAULT_REMOTE = _deploy_registry.DEFAULT_REMOTE
 EXIT_CONFIG_ERROR = _deploy_registry.EXIT_CONFIG_ERROR
 EXIT_OK = _deploy_registry.EXIT_OK
@@ -84,11 +86,13 @@ Environment = _deploy_registry.Environment
 Overrides = _deploy_registry.Overrides
 Registry = _deploy_registry.Registry
 Trigger = _deploy_registry.Trigger
-_ANNOTATION_KEY_PREFIXES = _deploy_registry.ANNOTATION_KEY_PREFIXES
-_DOCKER_TAG_RE = _deploy_registry.DOCKER_TAG_RE
+# Docker tag grammar (OCI distribution spec): a release name becomes an alias
+# tag, so one that cannot be a tag is refused at plan time, not mid-deploy.
+_DOCKER_TAG_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 _GIT_NOT_ANCESTOR_RETURNCODE = _deploy_registry.GIT_NOT_ANCESTOR_RETURNCODE
 _GIT_REF_MISSING_RETURNCODE = _deploy_registry.GIT_REF_MISSING_RETURNCODE
-_OUTPUT_KEY_RE = _deploy_registry.OUTPUT_KEY_RE
+# A $GITHUB_OUTPUT line is `key=value`; a newline in a value would forge keys.
+_OUTPUT_KEY_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9_]*$")
 _load_yaml = _deploy_registry.load_yaml
 environment_branches = _deploy_registry.environment_branches
 load_registry = _deploy_registry.load_registry
@@ -96,12 +100,24 @@ parse_flag = _deploy_registry.parse_flag
 parse_registry = _deploy_registry.parse_registry
 placeholder_names = _deploy_registry.placeholder_names
 
-_single_container = _deploy_render.single_container
-_substitute = _deploy_render.substitute
 _variables_from_env = _deploy_render.variables_from_env
 render_manifest = _deploy_render.render_manifest
 validate_registry = _deploy_render.validate_registry
 verify_rendered = _deploy_render.verify_rendered
+
+_COMPAT_EXPORTS: Final[dict[str, object]] = {
+    "_ANNOTATION_KEY_PREFIXES": _deploy_registry.ANNOTATION_KEY_PREFIXES,
+    "_single_container": _deploy_render.single_container,
+    "_substitute": _deploy_render.substitute,
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve backwards-compatible private facade attributes on demand."""
+    if name in _COMPAT_EXPORTS:
+        return _COMPAT_EXPORTS[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 logger = logging.getLogger("deploy_environment")
 

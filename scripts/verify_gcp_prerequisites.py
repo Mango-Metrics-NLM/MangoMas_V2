@@ -46,7 +46,7 @@ import math
 import socket
 import sys
 from collections.abc import Callable, Sequence
-from typing import Final
+from typing import Any, Final
 
 import _gcp_postgres_probe
 import _gcp_preflight_plan
@@ -58,12 +58,10 @@ from mangomas.config import Settings
 
 ADC_LOGIN_HINT = _gcp_preflight_plan.ADC_LOGIN_HINT
 ADC_PROJECT_ENV_OVERRIDES = _gcp_preflight_plan.ADC_PROJECT_ENV_OVERRIDES
-BILLING_ACCOUNT_PATTERN = _gcp_preflight_plan.BILLING_ACCOUNT_PATTERN
 CLOUD_BILLING_API = _gcp_preflight_plan.CLOUD_BILLING_API
 CLOUD_PLATFORM_SCOPE = _gcp_preflight_plan.CLOUD_PLATFORM_SCOPE
 CROSS_PROJECT_RESOURCE_PATTERN = _gcp_preflight_plan.CROSS_PROJECT_RESOURCE_PATTERN
 EMBEDDINGS_PROVIDER_APIS = _gcp_preflight_plan.EMBEDDINGS_PROVIDER_APIS
-GCP_API_NAME_PATTERN = _gcp_preflight_plan.GCP_API_NAME_PATTERN
 GCP_PROJECT_ID_PATTERN = _gcp_preflight_plan.GCP_PROJECT_ID_PATTERN
 HTTP_BAD_REQUEST = _gcp_preflight_plan.HTTP_BAD_REQUEST
 HTTP_FORBIDDEN = _gcp_preflight_plan.HTTP_FORBIDDEN
@@ -84,8 +82,6 @@ ApiRequirement = _gcp_preflight_plan.ApiRequirement
 CheckResult = _gcp_preflight_plan.CheckResult
 CheckStatus = _gcp_preflight_plan.CheckStatus
 GoogleAuthBackend = _gcp_preflight_plan.GoogleAuthBackend
-_accepts_kwarg = _gcp_preflight_plan.accepts_kwarg
-_merge_project_results = _gcp_preflight_plan.merge_project_results
 api_plan = _gcp_preflight_plan.api_plan
 api_requirements = _gcp_preflight_plan.api_requirements
 check_gcp_project = _gcp_preflight_plan.check_gcp_project
@@ -94,6 +90,8 @@ required_apis = _gcp_preflight_plan.required_apis
 resolve_ambient_project = _gcp_preflight_plan.resolve_ambient_project
 resolve_project = _gcp_preflight_plan.resolve_project
 
+BILLING_ACCOUNT_PATTERN = _gcp_preflight_probes.BILLING_ACCOUNT_PATTERN
+GCP_API_NAME_PATTERN = _gcp_preflight_probes.GCP_API_NAME_PATTERN
 _open_session = _gcp_preflight_probes.open_session
 check_adc_credentials = _gcp_preflight_probes.check_adc_credentials
 check_billing = _gcp_preflight_probes.check_billing
@@ -101,6 +99,19 @@ check_billing_projects = _gcp_preflight_probes.check_billing_projects
 check_required_apis = _gcp_preflight_probes.check_required_apis
 check_required_apis_by_project = _gcp_preflight_probes.check_required_apis_by_project
 load_google_auth = _gcp_preflight_probes.load_google_auth
+
+_COMPAT_EXPORTS: Final[dict[str, object]] = {
+    "_accepts_kwarg": _gcp_preflight_plan.accepts_kwarg,
+    "_merge_project_results": _gcp_preflight_plan.merge_project_results,
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve backwards-compatible private facade attributes on demand."""
+    if name in _COMPAT_EXPORTS:
+        return _COMPAT_EXPORTS[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 logger = logging.getLogger("verify_gcp_prerequisites")
 
