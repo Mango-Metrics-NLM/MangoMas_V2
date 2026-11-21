@@ -575,3 +575,22 @@ def test_scorecard_skips_manual_dispatches_off_the_default_branch() -> None:
             f"{_SCORECARD_WORKFLOW}:{job} runs manual dispatches on any branch; the pinned "
             "action fails off the default branch and the failure reporter files an issue"
         )
+
+
+def test_eval_gate_scrubs_server_log_before_upload() -> None:
+    """``MANGOMAS_LLM__BASE_URL`` must be scrubbed from uvicorn.log before artifact upload."""
+    steps = _workflows.jobs(_EVAL_GATE_WORKFLOW)["eval-gate"]["steps"]
+    upload_idx = next(
+        idx
+        for idx, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+        and (step.get("with") or {}).get("name") == "uvicorn-log"
+    )
+    upload_step = steps[upload_idx]
+    assert upload_step["with"]["path"] == "uvicorn.redacted.log"
+    scrub_steps = [
+        idx
+        for idx, step in enumerate(steps[:upload_idx])
+        if "uvicorn.redacted.log" in str(step.get("run", ""))
+    ]
+    assert scrub_steps, "expected a log-scrubbing step writing uvicorn.redacted.log before upload"

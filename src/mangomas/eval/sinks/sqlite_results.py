@@ -11,8 +11,6 @@ artifact for regression gating; this sink is a queryable secondary store.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
-import json
 import logging
 import sqlite3
 from contextlib import closing
@@ -22,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from mangomas.adapters.storage._url import path_from_sqlite_url
 from mangomas.errors import ConfigError, PersistenceError
 from mangomas.eval._options import require_str
+from mangomas.eval._serialize import finite_scalar, serialize_json
 from mangomas.eval.sink import (
     SQLITE_RESULTS_DB_PATH_OPTION,
     SQLITE_RESULTS_SINK_NAME,
@@ -120,12 +119,10 @@ class SqliteResultsSink:
         try:
             if self._path != ":memory:":
                 Path(self._path).parent.mkdir(parents=True, exist_ok=True)
-            gate_json = (
-                json.dumps(dataclasses.asdict(gate_result)) if gate_result is not None else None
-            )
+            gate_json = serialize_json(gate_result) if gate_result is not None else None
             with closing(sqlite3.connect(self._path)) as conn:
                 self._insert(conn, report, gate_json)
-        except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
+        except (sqlite3.Error, OSError, TypeError, ValueError, OverflowError) as exc:
             # Mirror the storage adapter's truncated-detail convention (D2):
             # keep the message short and bound the untrusted exception text.
             raise PersistenceError(
@@ -144,10 +141,8 @@ class SqliteResultsSink:
     def _insert(conn: sqlite3.Connection, report: EvalReport, gate_json: str | None) -> None:
         conn.executescript(_SCHEMA)
         SqliteResultsSink._migrate(conn)
-        run_json = json.dumps(dataclasses.asdict(report.run)) if report.run is not None else None
-        judge_json = (
-            json.dumps(dataclasses.asdict(report.judge)) if report.judge is not None else None
-        )
+        run_json = serialize_json(report.run) if report.run is not None else None
+        judge_json = serialize_json(report.judge) if report.judge is not None else None
         cur = conn.execute(
             "INSERT INTO eval_reports "
             "(ts, scorer, agent_name, target_name, dataset_size, passed, failed, "
@@ -159,17 +154,17 @@ class SqliteResultsSink:
                 report.scorer,
                 report.agent_name,
                 report.target_name,
-                report.dataset_size,
-                report.passed,
-                report.failed,
-                report.errored,
-                report.mean_score,
-                report.duration_ms,
+                int(report.dataset_size),
+                int(report.passed),
+                int(report.failed),
+                int(report.errored),
+                finite_scalar(report.mean_score),
+                finite_scalar(report.duration_ms),
                 gate_json,
-                report.mean_cost_usd,
+                finite_scalar(report.mean_cost_usd),
                 run_json,
-                report.trials,
-                report.pass_pow_k,
+                int(report.trials),
+                finite_scalar(report.pass_pow_k),
                 judge_json,
             ),
         )
@@ -182,13 +177,13 @@ class SqliteResultsSink:
                 (
                     report_id,
                     row.row_id,
-                    row.score,
-                    int(row.passed),
-                    row.duration_ms,
+                    finite_scalar(row.score),
+                    int(bool(row.passed)),
+                    finite_scalar(row.duration_ms),
                     row.prediction,
                     row.expected,
                     row.error,
-                    json.dumps(row.metadata),
+                    serialize_json(row.metadata),
                 )
                 for row in report.rows
             ],

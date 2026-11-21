@@ -67,13 +67,16 @@ paths = [
   # bytes trip entropy rules. Gitignored, so this only matters for `dir` scans
   # on a developer machine that has run the fuzz suite.
   '''^\.hypothesis/''',
-  # The downloaded scanner binary itself (gitignored, `dir`-scan only).
+  # The downloaded scanner binaries and SBOM output (gitignored, `dir`-scan only).
   '''^gitleaks$''',
   '''^gitleaks\.exe$''',
-  # Compiled bytecode: gitignored build artefacts that mirror whatever the
-  # source held, so a finding here is always a duplicate of a source finding.
-  # `dir` walks the filesystem, gitignore and all.
+  '''^trivy$''',
+  '''^trivy\.exe$''',
+  '''^sbom\.cdx\.json$''',
+  # Compiled bytecode & mypy incremental compiler cache: gitignored generated
+  # artefacts (`dir` walks the filesystem, gitignore and all).
   '''(^|/)__pycache__/''',
+  '''(^|/)\.mypy_cache/''',
   # In-repo virtualenvs created by README install / `make venv-gpu` / matrix
   # checks (gitignored, `dir`-scan only). Third-party packages ship test keys
   # (testcontainers, pywin32, pip fixtures), so without this local dir scans

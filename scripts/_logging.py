@@ -65,7 +65,9 @@ def configure_harness_telemetry_logging(
         if not available:
             raise ImportError("mangomas is not installed — telemetry unavailable")
         if configure_telemetry_fn is None:
-            from mangomas.telemetry import configure_telemetry as _configure_telemetry  # noqa: PLC0415
+            from mangomas.telemetry import (  # noqa: PLC0415
+                configure_telemetry as _configure_telemetry,
+            )
 
             configure_telemetry_fn = _configure_telemetry
         resolved_cfg = cfg

@@ -31,6 +31,7 @@ from tests.constants import (
     BASH_CAPABLE_AGENT_SLUGS,
     CLAUDE_SKILLS_DIR_RELPATH,
     CORPUS_DOC_RELPATHS,
+    CROSS_CUTTING_SKILL_SLUGS,
     EXPECTED_AGENT_SLUGS,
     EXPECTED_SKILL_SLUGS,
     HARNESS_SKILL_SLUG,
@@ -803,3 +804,53 @@ def test_repair_loop_skill_wires_build_oracle_isolation() -> None:
     assert "MANGOMAS_REPAIR__ORACLE_ISOLATION" in text
     # The entry point that applies the configured timeout as well as the backend.
     assert "run_repair_oracle" in text
+
+
+def test_every_skill_is_owned_by_an_agent_or_recorded_cross_cutting() -> None:
+    """Every skill must be claimed in `AGENT_SKILL_OWNERS` or `CROSS_CUTTING_SKILL_SLUGS`."""
+    owned = {skill for skills in AGENT_SKILL_OWNERS.values() for skill in skills}
+    cross_cutting = set(CROSS_CUTTING_SKILL_SLUGS)
+    overlap = sorted(owned & cross_cutting)
+    assert overlap == [], f"skill(s) both agent-owned and cross-cutting: {overlap}"
+    unclassified = sorted(set(EXPECTED_SKILL_SLUGS) - owned - cross_cutting)
+    assert unclassified == [], f"skill(s) neither agent-owned nor cross-cutting: {unclassified}"
+    stale = sorted(cross_cutting - set(EXPECTED_SKILL_SLUGS))
+    assert stale == [], f"CROSS_CUTTING_SKILL_SLUGS references unknown skill(s): {stale}"
+
+
+_MIN_SKILL_BODY_LINES = 10
+
+
+@pytest.mark.parametrize("skill_dir", _skill_dirs(), ids=lambda p: p.name)
+def test_every_skill_has_substantive_structured_body(skill_dir: Path) -> None:
+    """Every skill body carries substantive markdown headings, code refs, and steps."""
+    text = (skill_dir / _SKILL_FILENAME).read_text(encoding="utf-8")
+    _, _, rest = text.partition("---")
+    _, _, body = rest.partition("---")
+    non_empty = [line for line in body.splitlines() if line.strip()]
+    assert len(non_empty) >= _MIN_SKILL_BODY_LINES, (
+        f"{skill_dir.name} body too thin ({len(non_empty)} non-empty lines)"
+    )
+    assert "## " in body, f"{skill_dir.name} must declare section headings"
+    assert "`" in body, f"{skill_dir.name} must cite concrete commands or symbol refs"
+
+
+_MD_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+
+
+def test_corpus_markdown_has_no_broken_relative_links() -> None:
+    """Every relative markdown link inside `.claude/agents` and `.claude/skills` resolves."""
+    broken: list[str] = []
+    for path in _corpus_files():
+        text = path.read_text(encoding="utf-8")
+        _, _, rest = text.partition("---")
+        _, _, body = rest.partition("---")
+        stripped = _CODE_SPAN_RE.sub("", body)
+        for target in _MD_LINK_RE.findall(stripped):
+            rel_target = target.strip().split("#", 1)[0]
+            if not rel_target or rel_target.startswith(("http://", "https://", "mailto:")):
+                continue
+            resolved = (path.parent / rel_target).resolve()
+            if not resolved.exists():
+                broken.append(f"{path.relative_to(_REPO_ROOT).as_posix()} -> {target}")
+    assert broken == [], f"broken relative link(s) in corpus: {broken}"

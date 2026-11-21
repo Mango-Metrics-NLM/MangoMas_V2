@@ -39,6 +39,7 @@ from mangomas.eval.judge_calibration import (
 from mangomas.eval.protocol import Scorer, ScorerContext, ScoreResult
 from mangomas.eval.provenance import digest_of
 from mangomas.eval.registry import scorer_registry
+from mangomas.utils.json_path import is_bool_scalar
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.adapters.llm.base import LLMClient
@@ -262,12 +263,26 @@ class LLMJudgeScorer:
         )
         raw = await client.complete(self._messages(prediction, expected, context))
         payload, parse_mode = self._parse(raw)
-        try:
-            score = float(payload["score"])
-        except (TypeError, ValueError) as exc:
+        raw_score = payload["score"]
+        if is_bool_scalar(raw_score):
+            logger.debug(
+                "LLM judge returned non-numeric boolean score",
+                extra={"event": "eval_llm_judge_bad_score", "scorer": self.name},
+            )
             raise LLMBadResponse(
                 f"{self.name}: judge 'score' is not numeric",
-                detail=str(payload.get("score"))[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+                detail=str(raw_score)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
+            )
+        try:
+            score = float(raw_score)
+        except (TypeError, ValueError, OverflowError) as exc:
+            logger.debug(
+                "LLM judge returned non-numeric score",
+                extra={"event": "eval_llm_judge_bad_score", "scorer": self.name},
+            )
+            raise LLMBadResponse(
+                f"{self.name}: judge 'score' is not numeric",
+                detail=str(raw_score)[:DEFAULT_ERROR_DETAIL_TRUNCATE],
             ) from exc
         if not math.isfinite(score):
             # ``json.loads`` accepts the non-standard ``NaN`` / ``Infinity``

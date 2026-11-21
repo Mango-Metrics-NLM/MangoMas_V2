@@ -207,9 +207,25 @@ EXPECTED_SKILL_SLUGS: frozenset[str] = frozenset(
         "mango-release",
         "mango-repair-loop",
         "mango-sandbox",
+        "mango-soft-deploy",
+        "mango-supply-chain",
         "mango-testing",
         "mango-topology",
         "mango-workflow",
+        "mango-workflow-generator",
+    }
+)
+
+# Skills intentionally cross-cutting rather than owned by a single write-capable
+# specialist in AGENT_SKILL_OWNERS (mirrored by SKILL_UNMAPPED_AGENT_SLUGS for
+# agents). Enforces a total partition over EXPECTED_SKILL_SLUGS.
+CROSS_CUTTING_SKILL_SLUGS: frozenset[str] = frozenset(
+    {
+        "mango-composition-builder",
+        "mango-coverage-audit",
+        "mango-decompose",
+        "mango-eval-runner",
+        "mango-promote",
         "mango-workflow-generator",
     }
 )
@@ -647,7 +663,14 @@ AGENT_SKILL_OWNERS: dict[str, tuple[str, ...]] = {
     "mango-adr-author": ("mango-release",),
     "mango-agent-impl-dev": ("mango-agent-add", "mango-cognitive", "mango-repair-loop"),
     "mango-api-impl-dev": ("mango-observability", "mango-config"),
-    "mango-ci-dev": ("mango-aqa", "mango-deploy", "mango-gcp-demo", "mango-mutation-proof"),
+    "mango-ci-dev": (
+        "mango-aqa",
+        "mango-deploy",
+        "mango-gcp-demo",
+        "mango-mutation-proof",
+        "mango-soft-deploy",
+        "mango-supply-chain",
+    ),
     "mango-error-taxonomy-dev": ("mango-error",),
     "mango-eval-dev": ("mango-eval",),
     "mango-fake-builder": ("mango-testing",),
@@ -947,6 +970,7 @@ __all__ = [
     "CLAUDE_SKILLS_DIR_RELPATH",
     "CORPUS_DOC_RELPATHS",
     "CREDENTIALED_MCP_SERVERS",
+    "CROSS_CUTTING_SKILL_SLUGS",
     "ENV_FLAG_OFF",
     "ENV_FLAG_ON",
     "ENV_INTERPOLATION_PREFIX",

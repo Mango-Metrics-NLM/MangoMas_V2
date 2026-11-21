@@ -93,20 +93,46 @@ jobs:
           echo $! > uvicorn.pid
 
       - name: Wait for readiness
-        # Poll /readyz (LLM+DB probe) so the eval does not start before the SUT
+        # Poll /ready (canonical LLM+DB probe; /readyz stays as alias) so the eval does not start before the SUT
         # can actually answer; dump the server log on timeout for post-mortem.
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/readyz >/dev/null 2>&1; then
+            if curl -fsS http://localhost:8000/ready >/dev/null 2>&1; then
               echo "ready"; exit 0
             fi
             sleep 1
           done
-          echo "Mango-Mas did not become ready"; cat uvicorn.log || true; exit 1
+          echo "Mango-Mas did not become ready; inspect scrubbed uvicorn-log artifact"; exit 1
 
       - name: Run eval-harness gate
         # Non-zero exit (threshold gate FAIL) fails the job.
         run: eval-harness run --config eval_harness_bridge/config/mangomas.eval.yaml
+
+      - name: Stop Mango-Mas API
+        if: always()
+        run: '[ -f uvicorn.pid ] && kill "$(cat uvicorn.pid)" || true'
+
+      - name: Scrub secrets from server log
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          log_path = Path("uvicorn.log")
+          if not log_path.is_file():
+              raise SystemExit(0)
+          text = log_path.read_text(encoding="utf-8", errors="replace")
+          base_url = os.environ.get("MANGOMAS_LLM__BASE_URL", "")
+          for candidate in {base_url, base_url.strip(), base_url.rstrip("/")}:
+              if candidate:
+                  text = text.replace(candidate, "[REDACTED_BASE_URL]")
+          text = re.sub(r"(https?://)([^/\s@:]+:[^/\s@]+@)", r"\1[REDACTED]@", text)
+          text = re.sub(r"(?i)(authorization:\s*bearer\s+)\S+", r"\1[REDACTED]", text)
+          text = re.sub(r"(?i)(api[_-]?key\s*[=:]\s*)\S+", r"\1[REDACTED]", text)
+          Path("uvicorn.redacted.log").write_text(text, encoding="utf-8")
+          PY
 
       - name: Upload RunResult report
         if: always()
@@ -121,9 +147,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: uvicorn-log
-          path: uvicorn.log
+          path: uvicorn.redacted.log
           if-no-files-found: ignore
-
-      - name: Stop Mango-Mas API
-        if: always()
-        run: '[ -f uvicorn.pid ] && kill "$(cat uvicorn.pid)" || true'

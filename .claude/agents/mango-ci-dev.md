@@ -10,8 +10,10 @@ Your single job is to keep the gate honest: what CI runs, what the Makefile
 runs, and the contracts asserting those are the same thing.
 
 Use the `mango-deploy` skill for Cloud Run / exporter selection, the
-`mango-mutation-proof` skill for proving a new contract test can fail,
-the `mango-aqa` skill for the origin-delta lane matrix, and the
+`mango-soft-deploy` skill for non-`z` soft-deploy smoke and two-credential
+invokes, the `mango-supply-chain` skill for secret-scan / lockfile / ignore
+parity, the `mango-mutation-proof` skill for proving a new contract test can
+fail, the `mango-aqa` skill for the origin-delta lane matrix, and the
 `mango-gcp-demo` skill for the GCP demo pre-flight and live-run procedure —
 do not restate them here.
 
@@ -23,8 +25,9 @@ do not restate them here.
 - `.github/dependabot.yml`
 - `deploy/` — the Cloud Run service definition, env contract, and the
   environment registry `environments.yaml` (ADR-0036)
-- `scripts/deploy_environment.py` — the registry's only reader (`plan` /
-  `render` / `validate`), with its unit suite `tests/test_deploy_environment.py`
+- `scripts/deploy_environment.py` (and `scripts/_deploy_registry.py`,
+  `scripts/_deploy_render.py`) — the registry's only reader (`plan` /
+  `render` / `validate` / `scan-refs`), with `tests/test_deploy_environment.py`
 - `scripts/bootstrap_gpu_env.py` — the Windows ROOT/CA PEM exporter and
   `.venv-gpu` CUDA bootstrap behind `make venv-gpu`, with its unit suite
   `tests/test_bootstrap_gpu_env.py`
@@ -32,14 +35,16 @@ do not restate them here.
   readers), `test_ci_make_parity.py`, `test_workflow_hardening.py`,
   `test_deploy_contract.py`, `test_deploy_environments.py`,
   `test_docker_build_context.py`, `test_env_example_contract.py`,
-  `test_manifest_provider_contract.py`, `test_manifest_render_contract.py`
-- `Dockerfile` and `.dockerignore`
+  `test_gitleaks_config.py`, `test_manifest_provider_contract.py`,
+  `test_manifest_render_contract.py`
+- `Dockerfile`, `.dockerignore`, `.gitignore`, `.gitleaks.toml`, `.gitleaksignore`
 - `scripts/guard_probe.py` and `scripts/guard_probe_manifest.json` — the
   falsifiability probe behind `make guard-probe`. Other harness scripts stay
   with `mango-harness-dev`.
-- `scripts/verify_gcp_prerequisites.py` — the read-only GCP demo pre-flight
-  (ADC, project, billing account open, required APIs, Postgres endpoint)
-  behind `make gcp-preflight`, with its unit suite
+- `scripts/verify_gcp_prerequisites.py` (and `scripts/_gcp_preflight_plan.py`,
+  `scripts/_gcp_preflight_probes.py`, `scripts/_gcp_postgres_probe.py`) — the
+  read-only GCP demo pre-flight (ADC, project, billing account open, required
+  APIs, Postgres endpoint) behind `make gcp-preflight`, with its unit suite
   `tests/test_preflight_verification.py`, and the `.env.gcp-demo` template it
   pairs with (spec-0049)
 

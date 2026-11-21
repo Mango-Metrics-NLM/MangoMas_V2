@@ -18,10 +18,9 @@ annotated tag `v0.4.0` @ `e4139d6` (no Release), GitHub Release `v0.5.0` with
 **prod deploy gated** until prod GCP secrets exist. A5 = agent-target profile
 only; **A5b** pipeline/fan_out deferred (`mango-eval-dev`).
 
-Follow-ups (not sprint goals): decompose `scripts/verify_gcp_prerequisites.py`
-(~955 LOC) and `scripts/deploy_environment.py` (~755 LOC) via `mango-decompose`;
-optional skill `mango-soft-deploy` recipe extracting the filmed invoke + smoke
-loop from `mango-deploy` / `mango-gcp-demo`.
+Follow-ups (updated on `sdlc/origin-delta-aqa-20261120`):
+- **Completed:** Decomposed `scripts/verify_gcp_prerequisites.py` (`_gcp_preflight_plan.py`, `_gcp_preflight_probes.py`, plus existing `_gcp_postgres_probe.py`) and `scripts/deploy_environment.py` (`_deploy_registry.py`, `_deploy_render.py`) behind permanent facades; extracted reusable skills `mango-soft-deploy` and `mango-supply-chain` (`mango-ci-dev`) with deterministic corpus partition/link guards; fixed AQA `D-1..D-6` (`eval/gate.py`, `eval/runner.py`, `eval/_serialize.py`, `eval/scorers/llm_judge.py`, `harness/repair_sandbox.py`, `_deploy_registry.py`) and synced C1/C4, `.dockerignore`, `.gitleaks.toml`, `CHANGELOG.md`, `regression.md`, and `rca-20261120.md`.
+- **Deferred (intentional boundaries):** `src/mangomas/core/orchestrator/_client.py` (protected path requiring `BREAKING-CHANGE` trailer), `A5b` `llm_profile` forwarding in `eval/targets/{pipeline,fan_out}.py`, and remaining backlog skill candidates (`mango-local-e2e`, `mango-contract-sync`, `mango-aqa-pr-handoff` in `docs/tooling/claude-code-ecosystem.md`).
 
 ---
 

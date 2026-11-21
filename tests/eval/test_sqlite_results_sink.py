@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from fractions import Fraction
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -308,3 +310,70 @@ async def test_sqlite_results_sink_stores_judge_json(tmp_path: Path) -> None:
         rows = conn.execute("SELECT judge_json FROM eval_reports ORDER BY id").fetchall()
     assert json.loads(rows[0][0])["calibrated"] is False
     assert rows[1][0] is None
+
+
+async def test_sqlite_results_sink_normalizes_fractions_proxies_and_non_finite_values(
+    tmp_path: Path,
+) -> None:
+    """``Fraction``, ``MappingProxyType``, and non-finite floats serialize cleanly to SQLite."""
+    import dataclasses  # noqa: PLC0415 — local to keep the module header untouched
+
+    from mangomas.eval.judge_calibration import JudgeStatus  # noqa: PLC0415
+
+    db = tmp_path / "normalized.db"
+    row = EvalRowResult(
+        row_id="r-frac",
+        score=Fraction(3, 4),  # type: ignore[arg-type]
+        passed=True,
+        duration_ms=Fraction(5, 2),  # type: ignore[arg-type]
+        prediction="ok",
+        expected="ok",
+        metadata={
+            "ratio": Fraction(1, 4),
+            "readonly": MappingProxyType({"k": Fraction(3, 2)}),
+            "nan_val": float("nan"),
+            "inf_val": float("inf"),
+        },
+    )
+    status = JudgeStatus(
+        calibrated=True,
+        reason="calibrated",
+        judge_model="m",
+        measured_at="2026-10-01",
+        sample_size=300,
+        cohens_kappa=0.86,
+    )
+    report = dataclasses.replace(
+        _report(),
+        dataset_size=1,
+        passed=1,
+        failed=0,
+        mean_score=Fraction(3, 4),  # type: ignore[arg-type]
+        duration_ms=Fraction(5, 2),  # type: ignore[arg-type]
+        mean_cost_usd=Fraction(1, 20),  # type: ignore[arg-type]
+        pass_pow_k=Fraction(1, 1),  # type: ignore[arg-type]
+        rows=[row],
+        judge=status,
+    )
+    gate = evaluate_gate(report, min_mean_score=Fraction(1, 2))  # type: ignore[arg-type]
+
+    await SqliteResultsSink(db_path=str(db)).emit(report, gate_result=gate)
+
+    with sqlite3.connect(db) as conn:
+        rep_row = conn.execute(
+            "SELECT mean_score, duration_ms, mean_cost_usd, pass_pow_k, gate_json, judge_json "
+            "FROM eval_reports"
+        ).fetchone()
+        row_rec = conn.execute("SELECT score, duration_ms, metadata_json FROM eval_rows").fetchone()
+
+    assert rep_row[:4] == (0.75, 2.5, 0.05, 1.0)
+    assert type(rep_row[0]) is float
+    assert json.loads(rep_row[4])["passed"] is True
+    assert json.loads(rep_row[5])["cohens_kappa"] == 0.86
+    assert row_rec[:2] == (0.75, 2.5)
+    assert json.loads(row_rec[2]) == {
+        "ratio": 0.25,
+        "readonly": {"k": 1.5},
+        "nan_val": None,
+        "inf_val": None,
+    }
