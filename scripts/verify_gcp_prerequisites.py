@@ -100,16 +100,25 @@ check_required_apis = _gcp_preflight_probes.check_required_apis
 check_required_apis_by_project = _gcp_preflight_probes.check_required_apis_by_project
 load_google_auth = _gcp_preflight_probes.load_google_auth
 
-_COMPAT_EXPORTS: Final[dict[str, object]] = {
+_COMPAT_RENAMES: Final[dict[str, object]] = {
+    "_ApiProbe": _gcp_preflight_plan.ApiProbe,
     "_accepts_kwarg": _gcp_preflight_plan.accepts_kwarg,
+    "_clean": _gcp_preflight_plan.clean_str,
     "_merge_project_results": _gcp_preflight_plan.merge_project_results,
 }
+_COMPAT_MODULES: Final[tuple[Any, ...]] = (_gcp_preflight_plan, _gcp_preflight_probes)
 
 
 def __getattr__(name: str) -> Any:
     """Resolve backwards-compatible private facade attributes on demand."""
-    if name in _COMPAT_EXPORTS:
-        return _COMPAT_EXPORTS[name]
+    if name.startswith("__") and name.endswith("__"):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if name in _COMPAT_RENAMES:
+        return _COMPAT_RENAMES[name]
+    for module in _COMPAT_MODULES:
+        namespace = vars(module)
+        if name in namespace:
+            return namespace[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

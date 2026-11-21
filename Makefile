@@ -126,6 +126,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local gpu oracle-isolation-docker oracle-isolation-wsl secret-scan pip-audit sbom-scan \
+        numpy-regression \
         install-deploy-tools deploy-plan deploy-render deploy-validate deploy-apply gcp-preflight \
         lock lock-upgrade docker-build docker-smoke oracle-image \
         eval-selfcheck eval-selfcheck-baseline eval-lanes eval-lanes-baseline \
@@ -320,6 +321,9 @@ gated-suites: integration rag ## Gated suites needing no service, extra or netwo
 
 embeddings-local: ## Local sentence-transformers suite (needs the embeddings-local extra)
 	RUN_EMBEDDINGS_LOCAL=1 RUN_RAG=1 $(PYTHON) -m pytest tests/rag --no-cov $(PYTEST_FLAGS)
+
+numpy-regression: ## Real-NumPy scalar, gate, and SQLite regression suite (RUN_NUMPY=1; fails loudly if numpy is absent)
+	RUN_NUMPY=1 $(PYTHON) -m pytest -m numpy tests/test_utils_json_path.py tests/regression/test_aqa_20261120_defects.py --no-cov $(PYTEST_FLAGS)
 
 # Separate from embeddings-local on purpose: RUN_GPU=1 asserts a CUDA device is
 # visible and FAILS without one, so it must never ride the nightly CPU job.

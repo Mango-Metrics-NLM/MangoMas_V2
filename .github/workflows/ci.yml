@@ -321,3 +321,25 @@ jobs:
       # every job above.
       - name: Gitleaks secret scan
         run: make secret-scan
+
+  numpy-regression:
+    name: NumPy scalar regression suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Install NumPy for scalar regression checks
+        run: pip install "numpy>=2,<3"
+
+      - name: Run real-NumPy scalar regression suite
+        run: make numpy-regression

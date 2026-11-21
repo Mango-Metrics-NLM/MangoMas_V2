@@ -41,7 +41,7 @@ class JsonFileSink:
         gate_result: GateResult | None = None,
     ) -> None:
         payload = report_payload(report, gate_result=gate_result)
-        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        text = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False)
         await asyncio.to_thread(self._write, text)
         logger.debug(
             "Eval report written",

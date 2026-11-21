@@ -1481,13 +1481,67 @@
     {
       "id": "MUT-AQA-20261120-01",
       "path": "src/mangomas/eval/gate.py",
-      "fixed": "def _normalize_threshold(raw: float, *, name: str) -> float | None:\n    \"\"\"Validate and coerce a numeric gate threshold, logging invalid inputs.\"\"\"\n    normalized = finite_number(raw)",
-      "defect": "def _normalize_threshold(raw: float, *, name: str) -> float | None:\n    \"\"\"Validate and coerce a numeric gate threshold, logging invalid inputs.\"\"\"\n    normalized = raw",
+      "fixed": "            limit = _normalize_threshold(raw, name=field_name)\n            limits[field_name] = limit",
+      "defect": "            limit = raw  # type: ignore[assignment]\n            limits[field_name] = limit",
       "gate": [
         "{python}",
         "-m",
         "pytest",
         "tests/regression/test_aqa_20261120_defects.py::test_d2_eval_gate_fails_closed_on_non_finite_and_bool_thresholds_and_accepts_numpy_scalars",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-06",
+      "path": "src/mangomas/eval/gate.py",
+      "fixed": "        elif to_exact_fraction(actual_mean) < limits.min_mean_score:",
+      "defect": "        elif float(actual_mean) < float(limits.min_mean_score):",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d2_eval_gate_preserves_exact_real_operands_in_comparisons",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-07",
+      "path": "src/mangomas/eval/gate.py",
+      "fixed": "    delta = finite_real(delta_raw)\n    if delta is None:\n        # Check finiteness on the original value before negating (-True == -1).\n        return None, non_finite_delta_note\n    actual_drop = -to_exact_fraction(delta)",
+      "defect": "    delta = finite_real(-delta_raw)\n    if delta is None:\n        # Check finiteness on the original value before negating (-True == -1).\n        return None, non_finite_delta_note\n    actual_drop = to_exact_fraction(delta)",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d2_regression_gate_validates_deltas_before_negation",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-08",
+      "path": "src/mangomas/eval/runner.py",
+      "fixed": "    number = coerce_real_preserving_overflow(row.metadata.get(EVAL_COST_USD_METADATA_KEY))",
+      "defect": "    from mangomas.utils.json_path import finite_number  # noqa: PLC0415\n\n    number = finite_number(row.metadata.get(EVAL_COST_USD_METADATA_KEY))",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d3_runner_propagates_overflowing_reported_costs_to_cost_gate",
         "-q",
         "--tb=no",
         "-p",

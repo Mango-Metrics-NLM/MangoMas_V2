@@ -23,12 +23,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
+from fractions import Fraction
 from typing import TYPE_CHECKING, Literal
 
 from opentelemetry import trace
 
 from mangomas.eval.runner import EXPECTED_ERROR_METADATA_KEY
-from mangomas.utils.json_path import finite_number
+from mangomas.utils.json_path import finite_real, to_exact_fraction
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.baseline import ReportDiff
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 _COST_UNAVAILABLE_NOTE = "mean_cost_usd unavailable — cost threshold not applied"
 _COST_NON_FINITE_THRESHOLD_NOTE = "max_mean_cost_usd is not a finite number"
+_COST_NEGATIVE_THRESHOLD_NOTE = "max_mean_cost_usd must be >= 0"
 _COST_NON_FINITE_MEAN_NOTE = "mean_cost_usd is not a finite number"
 _EMPTY_DATASET_NOTE = "empty dataset — nothing to gate"
 _MEAN_SCORE_NON_FINITE_NOTE = "mean_score is not a finite number"
@@ -56,6 +58,13 @@ MIN_TRIALS_FOR_PASS_POW_K = 2
 _JUDGE_THRESHOLDS_NOT_APPLIED = "score thresholds not applied"
 _JUDGE_REGRESSION_NOT_APPLIED = "regression thresholds not applied"
 _SCORER_INDEPENDENT = "scorer-independent rows"
+
+
+@dataclass(frozen=True)
+class _ScoreLimits:
+    min_mean_score: Fraction | None = None
+    min_pass_rate: Fraction | None = None
+    min_pass_pow_k: Fraction | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,51 @@ class GateResult:
 _DEFAULT_THRESHOLDS = GateResult(passed=True, actual_mean_score=0.0, actual_pass_rate=0.0)
 
 
+def _validate_score_thresholds(
+    *,
+    min_mean_score: float | None,
+    min_pass_rate: float | None,
+    min_pass_pow_k: float | None,
+) -> tuple[_ScoreLimits, list[str]]:
+    """Validate configured score-derived thresholds up front so bad limits always fail closed."""
+    config_failures: list[str] = []
+    limits: dict[str, Fraction | None] = {}
+    specs = (
+        ("min_mean_score", min_mean_score, _MEAN_SCORE_THRESHOLD_NON_FINITE_NOTE),
+        ("min_pass_rate", min_pass_rate, _RATE_THRESHOLD_NON_FINITE_NOTE),
+        ("min_pass_pow_k", min_pass_pow_k, _POW_K_THRESHOLD_NON_FINITE_NOTE),
+    )
+    for field_name, raw, failure_note in specs:
+        if raw is None:
+            limits[field_name] = None
+        else:
+            limit = _normalize_threshold(raw, name=field_name)
+            limits[field_name] = limit
+            if limit is None:
+                config_failures.append(failure_note)
+    return (
+        _ScoreLimits(
+            min_mean_score=limits["min_mean_score"],
+            min_pass_rate=limits["min_pass_rate"],
+            min_pass_pow_k=limits["min_pass_pow_k"],
+        ),
+        config_failures,
+    )
+
+
+def _validate_cost_threshold(raw: float) -> tuple[Fraction | None, str | None]:
+    """Validate ``max_mean_cost_usd`` (non-negative finite real), logging invalid inputs."""
+    limit = _normalize_threshold(raw, name="max_mean_cost_usd", min_value=0.0, max_value=None)
+    if limit is None:
+        note = (
+            _COST_NON_FINITE_THRESHOLD_NOTE
+            if finite_real(raw) is None
+            else _COST_NEGATIVE_THRESHOLD_NOTE
+        )
+        return None, note
+    return limit, None
+
+
 def evaluate_gate(
     report: EvalReport,
     *,
@@ -118,7 +172,8 @@ def evaluate_gate(
 
     A no-op gate (all thresholds ``None`` and ``fail_on_error=False``) always
     passes. An empty dataset passes with a note — there is nothing to gate, and
-    the runner already returns a zeroed report for that case. ``max_mean_cost_usd``
+    the runner already returns a zeroed report for that case — unless a
+    configured threshold itself is non-finite or out of range. ``max_mean_cost_usd``
     is USD (not a unit score); when the report has no ``mean_cost_usd`` the
     cost check is skipped rather than failed, so a quality-only run stays
     valid if an operator also set a cost threshold. ``min_pass_pow_k`` is the
@@ -126,12 +181,24 @@ def evaluate_gate(
     :data:`MIN_TRIALS_FOR_PASS_POW_K` trials or no ``pass_pow_k`` at all,
     because a reliability threshold that a single attempt can satisfy is
     vacuous (spec-0046). When the report's judge is uncalibrated (spec-0047)
-    the three score-derived thresholds are replaced by one informational
-    note — the judge is *reported, not gated* — while ``fail_on_error`` and
-    the cost threshold still apply.
+    valid score-derived thresholds are replaced by one informational
+    note — the judge is *reported, not gated* — while invalid threshold
+    configurations, ``fail_on_error``, and the cost threshold still apply.
     """
     pass_rate = report.passed / report.dataset_size if report.dataset_size else 0.0
     reasons: list[str] = []
+    score_limits, score_config_failures = _validate_score_thresholds(
+        min_mean_score=min_mean_score,
+        min_pass_rate=min_pass_rate,
+        min_pass_pow_k=min_pass_pow_k,
+    )
+    cost_limit: Fraction | None = None
+    cost_config_failures: list[str] = []
+    if max_mean_cost_usd is not None:
+        cost_limit, cost_failure = _validate_cost_threshold(max_mean_cost_usd)
+        if cost_failure is not None:
+            cost_config_failures.append(cost_failure)
+
     thresholds_configured = any(
         value is not None for value in (min_mean_score, min_pass_rate, min_pass_pow_k)
     )
@@ -140,44 +207,34 @@ def evaluate_gate(
     )
 
     if report.dataset_size == 0:
-        # Nothing to gate — always passes; the threshold checks below are
-        # skipped entirely rather than evaluated against a meaningless
-        # pass_rate/mean_score of 0.0 (which would otherwise fail thresholds).
+        # Nothing to gate — valid thresholds pass with an informational note;
+        # invalid/non-finite threshold configs still fail closed.
         reasons.append(_EMPTY_DATASET_NOTE)
+        reasons.extend(score_config_failures)
+        reasons.extend(cost_config_failures)
     else:
         if judge_excluded and judge_note is not None:
             reasons.append(judge_note)
+            reasons.extend(score_config_failures)
             # Refusal rows never reached the judge, so its demotion does not
-            # cover them: the score thresholds still apply to that subset.
-            reasons.extend(
-                _scorer_independent_reasons(
-                    report,
-                    min_mean_score=min_mean_score,
-                    min_pass_rate=min_pass_rate,
-                    min_pass_pow_k=min_pass_pow_k,
-                )
-            )
+            # cover them: valid score thresholds still apply to that subset.
+            reasons.extend(_scorer_independent_reasons(report, limits=score_limits))
         else:
-            reasons.extend(
-                _score_reasons(
-                    report,
-                    pass_rate,
-                    min_mean_score=min_mean_score,
-                    min_pass_rate=min_pass_rate,
-                    min_pass_pow_k=min_pass_pow_k,
-                )
-            )
+            reasons.extend(score_config_failures)
+            reasons.extend(_evaluate_score_limits(report, pass_rate, score_limits))
         if fail_on_error and report.errored > 0:
             reasons.append(f"{report.errored} row(s) errored (fail_on_error)")
-        if max_mean_cost_usd is not None:
-            reasons.extend(_cost_reasons(report, max_mean_cost_usd))
+        if cost_config_failures:
+            reasons.extend(cost_config_failures)
+        elif cost_limit is not None:
+            reasons.extend(_evaluate_cost_limit(report, cost_limit))
 
     informational = {_EMPTY_DATASET_NOTE, _COST_UNAVAILABLE_NOTE}
     if judge_excluded and judge_note is not None:
         informational.add(judge_note)
     failing = [reason for reason in reasons if reason not in informational]
     result = GateResult(
-        passed=report.dataset_size == 0 or not failing,
+        passed=not failing,
         actual_mean_score=report.mean_score,
         actual_pass_rate=pass_rate,
         min_mean_score=min_mean_score,
@@ -196,15 +253,66 @@ def evaluate_gate(
     return result
 
 
-def _normalize_threshold(raw: float, *, name: str) -> float | None:
-    """Validate and coerce a numeric gate threshold, logging invalid inputs."""
-    normalized = finite_number(raw)
-    if normalized is None:
+def _normalize_threshold(
+    raw: float,
+    *,
+    name: str,
+    min_value: float = 0.0,
+    max_value: float | None = 1.0,
+) -> Fraction | None:
+    """Validate a numeric gate threshold and return its exact :class:`Fraction`."""
+    real = finite_real(raw)
+    if real is None:
         logger.warning(
             "Eval gate threshold is non-finite or invalid; failing closed",
             extra={"event": "eval_gate_invalid_threshold", "threshold": name},
         )
-    return normalized
+        return None
+    exact = to_exact_fraction(real)
+    lower = to_exact_fraction(min_value)
+    upper = None if max_value is None else to_exact_fraction(max_value)
+    if exact < lower or (upper is not None and exact > upper):
+        logger.warning(
+            "Eval gate threshold is out of range; failing closed",
+            extra={
+                "event": "eval_gate_invalid_threshold",
+                "threshold": name,
+                "min_value": min_value,
+                "max_value": max_value,
+            },
+        )
+        return None
+    return exact
+
+
+def _evaluate_score_limits(
+    report: EvalReport,
+    pass_rate: float,
+    limits: _ScoreLimits,
+) -> list[str]:
+    """Compare report metrics against pre-validated exact score limits."""
+    reasons: list[str] = []
+    if limits.min_mean_score is not None:
+        actual_mean = finite_real(report.mean_score)
+        if actual_mean is None:
+            reasons.append(_MEAN_SCORE_NON_FINITE_NOTE)
+        elif to_exact_fraction(actual_mean) < limits.min_mean_score:
+            reasons.append(
+                f"mean_score {float(actual_mean):.3f} < min_mean_score "
+                f"{float(limits.min_mean_score):.3f}"
+            )
+    if limits.min_pass_rate is not None:
+        actual_rate = finite_real(pass_rate)
+        if actual_rate is None:
+            reasons.append(_RATE_NON_FINITE_NOTE)
+        elif to_exact_fraction(actual_rate) < limits.min_pass_rate:
+            reasons.append(
+                f"pass_rate {float(actual_rate):.3f} < min_pass_rate "
+                f"{float(limits.min_pass_rate):.3f}"
+            )
+    if limits.min_pass_pow_k is not None:
+        reasons.extend(_evaluate_reliability_limit(report, limits.min_pass_pow_k))
+    return reasons
 
 
 def _score_reasons(
@@ -216,30 +324,12 @@ def _score_reasons(
     min_pass_pow_k: float | None,
 ) -> list[str]:
     """The three score-derived thresholds (mean, pass rate, pass^k)."""
-    reasons: list[str] = []
-    if min_mean_score is not None:
-        # ``nan < x`` is always False, and ``bool`` subclasses ``int``, so
-        # normalize both threshold and metric via ``finite_number``.
-        limit = _normalize_threshold(min_mean_score, name="min_mean_score")
-        actual_mean = finite_number(report.mean_score)
-        if limit is None:
-            reasons.append(_MEAN_SCORE_THRESHOLD_NON_FINITE_NOTE)
-        elif actual_mean is None:
-            reasons.append(_MEAN_SCORE_NON_FINITE_NOTE)
-        elif actual_mean < limit:
-            reasons.append(f"mean_score {actual_mean:.3f} < min_mean_score {limit:.3f}")
-    if min_pass_rate is not None:
-        rate_limit = _normalize_threshold(min_pass_rate, name="min_pass_rate")
-        actual_rate = finite_number(pass_rate)
-        if rate_limit is None:
-            reasons.append(_RATE_THRESHOLD_NON_FINITE_NOTE)
-        elif actual_rate is None:
-            reasons.append(_RATE_NON_FINITE_NOTE)
-        elif actual_rate < rate_limit:
-            reasons.append(f"pass_rate {actual_rate:.3f} < min_pass_rate {rate_limit:.3f}")
-    if min_pass_pow_k is not None:
-        reasons.extend(_reliability_reasons(report, min_pass_pow_k))
-    return reasons
+    limits, failures = _validate_score_thresholds(
+        min_mean_score=min_mean_score,
+        min_pass_rate=min_pass_rate,
+        min_pass_pow_k=min_pass_pow_k,
+    )
+    return [*failures, *_evaluate_score_limits(report, pass_rate, limits)]
 
 
 def scorer_independent_row_ids(report: EvalReport) -> frozenset[str]:
@@ -250,9 +340,7 @@ def scorer_independent_row_ids(report: EvalReport) -> frozenset[str]:
 def _scorer_independent_reasons(
     report: EvalReport,
     *,
-    min_mean_score: float | None,
-    min_pass_rate: float | None,
-    min_pass_pow_k: float | None,
+    limits: _ScoreLimits,
 ) -> list[str]:
     """Score thresholds over the rows an uncalibrated judge never graded.
 
@@ -274,13 +362,7 @@ def _scorer_independent_reasons(
         pass_pow_k=passed / len(rows),
         rows=rows,
     )
-    found = _score_reasons(
-        subset,
-        passed / len(rows),
-        min_mean_score=min_mean_score,
-        min_pass_rate=min_pass_rate,
-        min_pass_pow_k=min_pass_pow_k,
-    )
+    found = _evaluate_score_limits(subset, passed / len(rows), limits)
     return [f"{_SCORER_INDEPENDENT} ({len(rows)}): {reason}" for reason in found]
 
 
@@ -303,43 +385,62 @@ def _judge_verdict(
     return True, f"{note} — {_JUDGE_THRESHOLDS_NOT_APPLIED}"
 
 
-def _cost_reasons(report: EvalReport, max_mean_cost_usd: float) -> list[str]:
-    """The cost ladder: an unavailable mean is an informational skip, never a fail."""
-    limit = _normalize_threshold(max_mean_cost_usd, name="max_mean_cost_usd")
-    if limit is None:
-        return [_COST_NON_FINITE_THRESHOLD_NOTE]
+def _evaluate_cost_limit(report: EvalReport, limit: Fraction) -> list[str]:
+    """The cost ladder against a pre-validated exact non-negative USD limit."""
     if report.mean_cost_usd is None:
         return [_COST_UNAVAILABLE_NOTE]
-    actual = finite_number(report.mean_cost_usd)
+    actual = finite_real(report.mean_cost_usd)
     if actual is None:
         return [_COST_NON_FINITE_MEAN_NOTE]
-    if actual > limit:
-        return [f"mean_cost_usd {actual} > max_mean_cost_usd {limit}"]
+    if to_exact_fraction(actual) > limit:
+        return [f"mean_cost_usd {actual} > max_mean_cost_usd {float(limit)}"]
     return []
 
 
-def _reliability_reasons(report: EvalReport, min_pass_pow_k: float) -> list[str]:
-    """The ``min_pass_pow_k`` verdict: fails closed when pass^k is not measured.
+def _evaluate_reliability_limit(report: EvalReport, limit: Fraction) -> list[str]:
+    """The ``min_pass_pow_k`` verdict against a pre-validated exact unit limit.
 
     A single attempt cannot measure reliability, so a run with fewer than
     :data:`MIN_TRIALS_FOR_PASS_POW_K` trials fails the threshold outright
     rather than skipping it (the cost gate's skip-when-unavailable rule is
     deliberately *not* reused here — spec-0046).
     """
-    limit = _normalize_threshold(min_pass_pow_k, name="min_pass_pow_k")
-    if limit is None:
-        return [_POW_K_THRESHOLD_NON_FINITE_NOTE]
     if report.trials < MIN_TRIALS_FOR_PASS_POW_K:
         return [
             f"min_pass_pow_k requires trials >= {MIN_TRIALS_FOR_PASS_POW_K}; "
             f"the run used trials={report.trials}"
         ]
-    actual = None if report.pass_pow_k is None else finite_number(report.pass_pow_k)
+    actual = None if report.pass_pow_k is None else finite_real(report.pass_pow_k)
     if actual is None:
         return [_RELIABILITY_UNAVAILABLE_NOTE]
-    if actual < limit:
-        return [f"pass_pow_k {actual:.3f} < min_pass_pow_k {limit:.3f}"]
+    if to_exact_fraction(actual) < limit:
+        return [f"pass_pow_k {float(actual):.3f} < min_pass_pow_k {float(limit):.3f}"]
     return []
+
+
+def _evaluate_drop_criterion(
+    *,
+    threshold_raw: float | None,
+    delta_raw: float,
+    threshold_name: str,
+    metric_name: str,
+    invalid_threshold_note: str,
+    non_finite_delta_note: str,
+) -> tuple[str | None, str | None]:
+    """Evaluate one regression drop threshold, returning ``(config_failure, metric_failure)``."""
+    if threshold_raw is None:
+        return None, None
+    limit = _normalize_threshold(threshold_raw, name=threshold_name)
+    if limit is None:
+        return invalid_threshold_note, None
+    delta = finite_real(delta_raw)
+    if delta is None:
+        # Check finiteness on the original value before negating (-True == -1).
+        return None, non_finite_delta_note
+    actual_drop = -to_exact_fraction(delta)
+    if actual_drop > limit:
+        return None, f"{metric_name} dropped {float(actual_drop):.3f} > max {float(limit):.3f}"
+    return None, None
 
 
 def evaluate_regression_gate(
@@ -358,52 +459,66 @@ def evaluate_regression_gate(
     ``baseline - current`` (positive = regression). A no-op gate
     (``max_*_drop=None`` and ``allow_new_failures=True``) always passes.
     Score deltas from an uncalibrated *judge* are judge-derived too: when any
-    regression criterion is configured, such a ``judge`` turns the verdict into
-    one informational note and ``judge_excluded=True`` — whether or not the
-    raw deltas would have failed, so the flag never depends on luck (spec-0047).
-    Rows in *scorer_independent_rows* (refusal checks) are exempt from that
-    demotion: with ``allow_new_failures=False`` a regressed refusal row still fails.
+    regression criterion is configured, such a ``judge`` turns judge-derived
+    score-drop failures into one informational note and ``judge_excluded=True``
+    — whether or not the raw deltas would have failed, so the flag never
+    depends on luck (spec-0047). Invalid threshold configurations and
+    regressed *scorer_independent_rows* (refusal checks under
+    ``allow_new_failures=False``) are never waived by judge demotion.
     """
-    reasons: list[str] = []
-    mean_drop = -diff.mean_score_delta
-    pass_drop = -diff.pass_rate_delta
-    if max_mean_score_drop is not None:
-        mean_drop_limit = _normalize_threshold(max_mean_score_drop, name="max_mean_score_drop")
-        actual_mean_drop = finite_number(mean_drop)
-        if mean_drop_limit is None:
-            reasons.append(_MEAN_DROP_THRESHOLD_NON_FINITE_NOTE)
-        elif actual_mean_drop is None:
-            # A NaN on either side of the diff makes ``>`` always False.
-            reasons.append(_MEAN_DROP_NON_FINITE_NOTE)
-        elif actual_mean_drop > mean_drop_limit:
-            reasons.append(f"mean_score dropped {actual_mean_drop:.3f} > max {mean_drop_limit:.3f}")
-    if max_pass_rate_drop is not None:
-        rate_drop_limit = _normalize_threshold(max_pass_rate_drop, name="max_pass_rate_drop")
-        actual_rate_drop = finite_number(pass_drop)
-        if rate_drop_limit is None:
-            reasons.append(_RATE_DROP_THRESHOLD_NON_FINITE_NOTE)
-        elif actual_rate_drop is None:
-            reasons.append(_RATE_DROP_NON_FINITE_NOTE)
-        elif actual_rate_drop > rate_drop_limit:
-            reasons.append(f"pass_rate dropped {actual_rate_drop:.3f} > max {rate_drop_limit:.3f}")
+    config_failures: list[str] = []
+    metric_failures: list[str] = []
+    for threshold_raw, delta_raw, threshold_name, metric_name, invalid_note, non_finite_note in (
+        (
+            max_mean_score_drop,
+            diff.mean_score_delta,
+            "max_mean_score_drop",
+            "mean_score",
+            _MEAN_DROP_THRESHOLD_NON_FINITE_NOTE,
+            _MEAN_DROP_NON_FINITE_NOTE,
+        ),
+        (
+            max_pass_rate_drop,
+            diff.pass_rate_delta,
+            "max_pass_rate_drop",
+            "pass_rate",
+            _RATE_DROP_THRESHOLD_NON_FINITE_NOTE,
+            _RATE_DROP_NON_FINITE_NOTE,
+        ),
+    ):
+        cfg_err, metric_err = _evaluate_drop_criterion(
+            threshold_raw=threshold_raw,
+            delta_raw=delta_raw,
+            threshold_name=threshold_name,
+            metric_name=metric_name,
+            invalid_threshold_note=invalid_note,
+            non_finite_delta_note=non_finite_note,
+        )
+        if cfg_err is not None:
+            config_failures.append(cfg_err)
+        if metric_err is not None:
+            metric_failures.append(metric_err)
     if not allow_new_failures and diff.regressed_rows:
         shown = ", ".join(diff.regressed_rows[:5])
-        reasons.append(f"{len(diff.regressed_rows)} row regression(s): {shown}")
+        metric_failures.append(f"{len(diff.regressed_rows)} row regression(s): {shown}")
     criteria_configured = (
         max_mean_score_drop is not None or max_pass_rate_drop is not None or not allow_new_failures
     )
     judge_excluded = judge is not None and not judge.calibrated and criteria_configured
     judge_note = judge.summary() if judge is not None else None
-    failing = reasons
     if judge_excluded and judge_note is not None:
         judge_note = f"{judge_note} — {_JUDGE_REGRESSION_NOT_APPLIED}"
         independent = [r for r in diff.regressed_rows if r in set(scorer_independent_rows)]
-        failing = (
+        independent_failures = (
             [f"{_SCORER_INDEPENDENT}: {len(independent)} regression(s): {', '.join(independent)}"]
             if not allow_new_failures and independent
             else []
         )
+        failing = [*config_failures, *independent_failures]
         reasons = [judge_note, *failing]
+    else:
+        failing = [*config_failures, *metric_failures]
+        reasons = failing
     result = GateResult(
         passed=not failing,
         actual_mean_score=diff.current_mean_score,

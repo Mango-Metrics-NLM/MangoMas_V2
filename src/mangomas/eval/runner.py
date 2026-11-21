@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -29,7 +30,7 @@ from mangomas.correlation import (
 from mangomas.eval.protocol import JudgeAware, ScorerContext
 from mangomas.eval.provenance import RunProvenance, build_provenance
 from mangomas.eval.target import coerce_outcome
-from mangomas.utils.json_path import finite_number, is_bool_scalar
+from mangomas.utils.json_path import coerce_real_preserving_overflow, is_bool_scalar
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -110,8 +111,14 @@ def _skipped_row(row: DatasetRow) -> EvalRowResult:
 
 
 def _row_cost_usd(row: EvalRowResult) -> float | None:
-    """Return a finite numeric ``cost_usd`` from *row* metadata, or ``None``."""
-    return finite_number(row.metadata.get(EVAL_COST_USD_METADATA_KEY))
+    """Return numeric ``cost_usd`` from *row* metadata, preserving overflow as ``±inf``."""
+    number = coerce_real_preserving_overflow(row.metadata.get(EVAL_COST_USD_METADATA_KEY))
+    if number is not None and math.isinf(number):
+        logger.warning(
+            "Eval row reported overflowing or infinite cost_usd; propagating non-finite cost",
+            extra={"event": "eval_row_cost_overflow", "row_id": row.row_id},
+        )
+    return number
 
 
 def _mean_cost_usd(rows: list[EvalRowResult]) -> float | None:

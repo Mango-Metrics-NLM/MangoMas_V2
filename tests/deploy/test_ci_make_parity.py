@@ -65,6 +65,7 @@ _OPT_IN_TARGETS = (
     "langfuse",
     "oracle-isolation-docker",
     "oracle-isolation-wsl",
+    "numpy-regression",
 )
 
 
@@ -631,3 +632,8 @@ def test_makefile_live_secrets_target_enables_integration_gate() -> None:
     body = _make_target_body("gcp-secrets")
     assert "RUN_INTEGRATION=1" in body
     assert "RUN_GCP_SECRETS=1" in body
+
+
+def test_numpy_regression_job_delegates_to_make() -> None:
+    """The real-NumPy CI job delegates its test invocation to `make numpy-regression`."""
+    assert _step_run_commands(_ci_jobs()["numpy-regression"]) == ["make numpy-regression"]

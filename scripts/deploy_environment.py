@@ -88,11 +88,11 @@ Registry = _deploy_registry.Registry
 Trigger = _deploy_registry.Trigger
 # Docker tag grammar (OCI distribution spec): a release name becomes an alias
 # tag, so one that cannot be a tag is refused at plan time, not mid-deploy.
-_DOCKER_TAG_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
+_DOCKER_TAG_RE: Final[re.Pattern[str]] = re.compile(r"\A[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 _GIT_NOT_ANCESTOR_RETURNCODE = _deploy_registry.GIT_NOT_ANCESTOR_RETURNCODE
 _GIT_REF_MISSING_RETURNCODE = _deploy_registry.GIT_REF_MISSING_RETURNCODE
 # A $GITHUB_OUTPUT line is `key=value`; a newline in a value would forge keys.
-_OUTPUT_KEY_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9_]*$")
+_OUTPUT_KEY_RE: Final[re.Pattern[str]] = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _load_yaml = _deploy_registry.load_yaml
 environment_branches = _deploy_registry.environment_branches
 load_registry = _deploy_registry.load_registry
@@ -105,17 +105,26 @@ render_manifest = _deploy_render.render_manifest
 validate_registry = _deploy_render.validate_registry
 verify_rendered = _deploy_render.verify_rendered
 
-_COMPAT_EXPORTS: Final[dict[str, object]] = {
+_COMPAT_RENAMES: Final[dict[str, object]] = {
     "_ANNOTATION_KEY_PREFIXES": _deploy_registry.ANNOTATION_KEY_PREFIXES,
+    "_require_mapping": _deploy_registry.require_mapping,
+    "_require_str": _deploy_registry.require_str,
     "_single_container": _deploy_render.single_container,
     "_substitute": _deploy_render.substitute,
 }
+_COMPAT_MODULES: Final[tuple[Any, ...]] = (_deploy_registry, _deploy_render)
 
 
 def __getattr__(name: str) -> Any:
     """Resolve backwards-compatible private facade attributes on demand."""
-    if name in _COMPAT_EXPORTS:
-        return _COMPAT_EXPORTS[name]
+    if name.startswith("__") and name.endswith("__"):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if name in _COMPAT_RENAMES:
+        return _COMPAT_RENAMES[name]
+    for module in _COMPAT_MODULES:
+        namespace = vars(module)
+        if name in namespace:
+            return namespace[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import math
 import numbers
 from fractions import Fraction
@@ -13,11 +12,14 @@ import pytest
 
 from mangomas.utils.json_path import (
     coerce_finite_float,
+    coerce_real_preserving_overflow,
     finite_number,
+    finite_real,
     is_bool_scalar,
     normalize_json_value,
     resolve_dotted_path,
     strict_json_equals,
+    to_exact_fraction,
 )
 
 
@@ -162,22 +164,65 @@ def test_resolve_dotted_path_walks_nested_mappings() -> None:
     assert resolve_dotted_path({"user": "leaf"}, "user.profile") == (False, None)
 
 
-def test_real_numpy_scalars_when_installed() -> None:
-    """Verify real NumPy scalars without triggering a skip in pure-P1 CI environments."""
-    # Always verify the synthetic contract so the test is meaningful without optional extras.
+def _require_numpy() -> Any:
+    """Import ``numpy`` or fail loudly inside ``RUN_NUMPY=1`` tests."""
+    try:
+        return importlib.import_module("numpy")
+    except ModuleNotFoundError as exc:  # pragma: no cover - asserted via no-numpy lane
+        pytest.fail(f"RUN_NUMPY=1 requires numpy to be installed: {exc}")
+
+
+def test_real_numpy_scalars_synthetic_contract() -> None:
+    """Verify synthetic NumPy scalar guards cleanly in pure-P1 no-NumPy environments."""
     assert is_bool_scalar(_make_fake_numpy_bool_type("bool_")()) is True
     assert strict_json_equals(_make_fake_numpy_bool_type("bool")(), 1) is False
-    if importlib.util.find_spec("numpy") is None:
-        return
-    np = importlib.import_module("numpy")
+
+
+@pytest.mark.numpy
+def test_real_numpy_scalars_when_installed() -> None:
+    """Verify real NumPy scalar handling inside ``RUN_NUMPY=1`` CI/local lanes."""
+    np = _require_numpy()
     assert is_bool_scalar(np.bool_(True)) is True
     assert finite_number(np.bool_(True)) is None
+    assert finite_real(np.bool_(True)) is None
     assert strict_json_equals(np.bool_(True), 1) is False
     assert math.isclose(finite_number(np.float32(0.5)) or 0.0, 0.5)
     assert finite_number(np.int64(7)) == 7.0
+    assert to_exact_fraction(np.float32(0.5)) == Fraction(1, 2)
+    assert to_exact_fraction(np.int64(7)) == Fraction(7, 1)
     assert coerce_finite_float(np.float64(1.25)) == 1.25
+    assert coerce_real_preserving_overflow(np.float64("inf")) == math.inf
+    assert coerce_real_preserving_overflow(np.float32("nan")) is None
     assert finite_number(np.float32("nan")) is None
     assert finite_number(np.float64("inf")) is None
+
+
+def test_finite_real_and_to_exact_fraction() -> None:
+    """Exact Real helpers preserve precision without allowing bools or non-finite values."""
+    high_prec = Fraction(1, 2) + Fraction(1, 2**55)
+    assert finite_real(high_prec) is high_prec
+    assert to_exact_fraction(0.5) < to_exact_fraction(high_prec)
+    assert finite_real(True) is None
+    assert finite_real(float("nan")) is None
+    assert finite_real(10**400) is None
+    for bad in (True, float("nan"), float("inf"), 10**400, _BrokenReal(OverflowError("huge"))):
+        with pytest.raises(ValueError, match="Expected a finite real number"):
+            to_exact_fraction(bad)
+
+
+def test_coerce_real_preserving_overflow() -> None:
+    """Overflowing reported real scalars become ``±inf`` while NaN/bools become ``None``."""
+    assert coerce_real_preserving_overflow(1.5) == 1.5
+    assert coerce_real_preserving_overflow(10**400) == math.inf
+    assert coerce_real_preserving_overflow(-(10**400)) == -math.inf
+    assert coerce_real_preserving_overflow(Fraction(10**400, 1)) == math.inf
+    assert coerce_real_preserving_overflow(float("inf")) == math.inf
+    assert coerce_real_preserving_overflow(float("-inf")) == -math.inf
+    assert coerce_real_preserving_overflow(float("nan")) is None
+    assert coerce_real_preserving_overflow(True) is None
+    assert coerce_real_preserving_overflow("1.5") is None
+    assert coerce_real_preserving_overflow(_BrokenReal(ValueError("bad"))) is None
+    assert coerce_real_preserving_overflow(_BrokenReal(OverflowError("huge"))) == math.inf
 
 
 def test_normalize_json_value_rejects_cyclic_containers() -> None:

@@ -55,15 +55,15 @@ _DEFAULTS_KEYS: Final[frozenset[str]] = frozenset(
 )
 _REGISTRY_KEYS: Final[frozenset[str]] = frozenset({"schema_version", "defaults", "environments"})
 
-_ENVIRONMENT_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9-]*$")
+_ENVIRONMENT_NAME_RE: Final[re.Pattern[str]] = re.compile(r"\A[a-z][a-z0-9-]*\Z")
 # Cloud Run service names: lowercase, start with a letter, <= 63 chars, no
 # trailing hyphen.
-_SERVICE_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$")
+_SERVICE_NAME_RE: Final[re.Pattern[str]] = re.compile(r"\A[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?\Z")
 
 GIT_NOT_ANCESTOR_RETURNCODE: Final[int] = 1
 
 # Overlay env/secret keys must be valid environment-variable names.
-_ENV_VAR_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ENV_VAR_NAME_RE: Final[re.Pattern[str]] = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 # Cloud Run sets these itself and rejects a manifest that sets them.
 _RESERVED_ENV_VARS: Final[frozenset[str]] = frozenset(
     {"PORT", "K_SERVICE", "K_REVISION", "K_CONFIGURATION"}
