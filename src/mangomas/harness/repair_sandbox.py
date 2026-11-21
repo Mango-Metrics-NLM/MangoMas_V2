@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
 import os
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -31,6 +30,7 @@ from mangomas.errors import ConfigError, ToolExecutionError
 from mangomas.harness.governance import GOVERNANCE_SURFACE, PROTECTED_PATHS, normalize_path
 from mangomas.harness.isolation.base import OracleIsolationBackend
 from mangomas.harness.isolation.none import NoIsolationBackend
+from mangomas.utils.json_path import finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -375,7 +375,12 @@ def run_oracle_and_promote(
             "Oracle command must be a non-empty sequence of non-empty argument strings",
             tool_name="repair_sandbox",
         )
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+    normalized_timeout = finite_number(timeout_seconds)
+    if normalized_timeout is None or normalized_timeout <= 0:
+        logger.warning(
+            "Repair sandbox rejected invalid oracle timeout_seconds",
+            extra={"event": "repair_sandbox_invalid_timeout"},
+        )
         raise ToolExecutionError(
             "Oracle timeout_seconds must be positive and finite",
             tool_name="repair_sandbox",
@@ -398,7 +403,7 @@ def run_oracle_and_promote(
         oracle_argv,
         cwd=staging_root.resolve(),
         env=env,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=normalized_timeout,
     )
 
     if completed.returncode != 0:

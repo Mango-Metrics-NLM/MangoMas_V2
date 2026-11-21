@@ -84,6 +84,10 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "wsl_isolation: live WSL2 bubblewrap isolation suite (RUN_WSL_ISOLATION=1)",
     )
+    config.addinivalue_line(
+        "markers",
+        "numpy: real-NumPy scalar/serialization regression suite (RUN_NUMPY=1)",
+    )
 
 
 # ── Collection gates ────────────────────────────────────────────────────────
@@ -106,6 +110,7 @@ _MARKER_GATES: tuple[tuple[str, str], ...] = (
     ("gpu", "RUN_GPU"),
     ("docker_isolation", "RUN_DOCKER_ISOLATION"),
     ("wsl_isolation", "RUN_WSL_ISOLATION"),
+    ("numpy", "RUN_NUMPY"),
 )
 
 

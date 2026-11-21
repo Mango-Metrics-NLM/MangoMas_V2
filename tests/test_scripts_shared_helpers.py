@@ -9,6 +9,7 @@ coverage, not only the path one caller happens to hit.
 from __future__ import annotations
 
 import logging
+import sys
 from io import StringIO
 from pathlib import Path
 
@@ -290,3 +291,89 @@ def test_configure_harness_telemetry_logging_happy_path_and_fallbacks(
     monkeypatch.setattr("mangomas.telemetry.configure_telemetry", lambda **kw: recorded.append(kw))
     script_logging.configure_harness_telemetry_logging(log)
     assert len(recorded) == 2
+
+
+def test_decomposed_script_facades_preserve_symbol_identity() -> None:
+    """Decomposed script facades re-export identical helper objects (ADR-0019 parity)."""
+    preflight = load_script_module("verify_gcp_prerequisites.py")
+    preflight_plan = sys.modules["_gcp_preflight_plan"]
+    preflight_probes = sys.modules["_gcp_preflight_probes"]
+    for attr in ("CheckStatus", "resolve_project", "api_requirements", "configuration_problems"):
+        assert getattr(preflight, attr) is getattr(preflight_plan, attr)
+    for attr in (
+        "load_google_auth",
+        "check_adc_credentials",
+        "check_billing",
+        "check_required_apis",
+        "BILLING_ACCOUNT_PATTERN",
+        "GCP_API_NAME_PATTERN",
+    ):
+        assert getattr(preflight, attr) is getattr(preflight_probes, attr)
+    for attr in (
+        "_STATUS_SEVERITY",
+        "_configured_resource_refs",
+        "_extract_resource_project",
+    ):
+        assert getattr(preflight, attr) is getattr(preflight_plan, attr)
+    for attr in (
+        "_api_verdict",
+        "_billing_account_verdict",
+        "_billing_project_verdict",
+        "_get_json",
+        "_prereq_skip",
+        "_probe_project_apis",
+        "_validate_api_names",
+    ):
+        assert getattr(preflight, attr) is getattr(preflight_probes, attr)
+    assert preflight._ApiProbe is preflight_plan.ApiProbe
+    assert preflight._accepts_kwarg is preflight_plan.accepts_kwarg
+    assert preflight._clean is preflight_plan.clean_str
+    assert preflight._merge_project_results is preflight_plan.merge_project_results
+    for missing in ("_nonexistent_compat_attr", "__nonexistent_dunder__"):
+        with pytest.raises(AttributeError):
+            _ = getattr(preflight, missing)
+
+    deploy_env = load_script_module("deploy_environment.py")
+    deploy_reg = sys.modules["_deploy_registry"]
+    deploy_render = sys.modules["_deploy_render"]
+    for attr in ("DeployConfigError", "Registry", "parse_registry", "environment_branches"):
+        assert getattr(deploy_env, attr) is getattr(deploy_reg, attr)
+    for attr in ("render_manifest", "verify_rendered", "validate_registry"):
+        assert getattr(deploy_env, attr) is getattr(deploy_render, attr)
+    for attr in (
+        "_BOOLEAN_TOKENS",
+        "_DEFAULTS_KEYS",
+        "_ENVIRONMENT_KEYS",
+        "_ENVIRONMENT_NAME_RE",
+        "_ENV_VAR_NAME_RE",
+        "_OVERLAY_KEYS",
+        "_REGISTRY_KEYS",
+        "_RESERVED_ENV_VARS",
+        "_SERVICE_NAME_RE",
+        "_TRIGGER_KEYS",
+        "_check_annotation_keys",
+        "_check_env_names",
+        "_check_uniqueness",
+        "_parse_environment",
+        "_parse_overrides",
+        "_parse_trigger",
+        "_reject_unknown_keys",
+        "_str_mapping",
+    ):
+        assert getattr(deploy_env, attr) is getattr(deploy_reg, attr)
+    for attr in (
+        "_apply_env",
+        "_apply_secrets",
+        "_child_mapping",
+        "_env_entry",
+        "_substitute_overrides",
+    ):
+        assert getattr(deploy_env, attr) is getattr(deploy_render, attr)
+    assert deploy_env._ANNOTATION_KEY_PREFIXES is deploy_reg.ANNOTATION_KEY_PREFIXES
+    assert deploy_env._require_mapping is deploy_reg.require_mapping
+    assert deploy_env._require_str is deploy_reg.require_str
+    assert deploy_env._single_container is deploy_render.single_container
+    assert deploy_env._substitute is deploy_render.substitute
+    for missing in ("_nonexistent_compat_attr", "__nonexistent_dunder__"):
+        with pytest.raises(AttributeError):
+            _ = getattr(deploy_env, missing)

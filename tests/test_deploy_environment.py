@@ -516,6 +516,22 @@ def test_render_logs_each_override_at_debug(caplog: pytest.LogCaptureFixture) ->
     assert any(f"env {_PLAIN_VAR}" in r.getMessage() for r in caplog.records)
 
 
+def test_render_secrets_override_logs_count_without_secret_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Re-pointing secretKeyRefs must not log clear-text secret or ref names (CodeQL guard)."""
+    caplog.set_level(logging.DEBUG, logger="deploy_environment")
+    base = _base_manifest()
+    target_ref = "custom-env-secret-ref"
+    deploy_env.render_manifest(
+        base, _environment({"secrets": {_SECRET_VAR: target_ref}}), _TEST_IMAGE
+    )
+    joined = "\n".join(r.getMessage() for r in caplog.records)
+    assert "re-pointed 1 secretKeyRef binding(s)" in joined
+    assert target_ref not in joined
+    assert _SECRET_VAR not in joined
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────
 
 
@@ -1077,3 +1093,23 @@ def test_main_scan_refs_bad_flag_exits_with_config_error(tmp_path: Path) -> None
         ["--registry", str(_write_registry(tmp_path)), "scan-refs", "--enabled", "maybe"]
     )
     assert code == deploy_env.EXIT_CONFIG_ERROR
+
+
+def test_registry_and_output_regexes_reject_trailing_newline() -> None:
+    """``\\A...\\Z`` anchors reject trailing ``\\n`` that ``$`` would accept."""
+    with pytest.raises(deploy_env.DeployConfigError, match="name must match"):
+        _registry(**{"dev\n": {"trigger": {"branch": "dev"}, "service": "svc-dev"}})
+    with pytest.raises(deploy_env.DeployConfigError, match="valid Cloud Run name"):
+        _registry(dev={"trigger": {"branch": "dev"}, "service": "svc-dev\n"})
+    with pytest.raises(deploy_env.DeployConfigError, match="valid environment variable name"):
+        _environment({"env": {"FOO\n": "bar"}})
+    with pytest.raises(deploy_env.DeployRefused, match="not a valid image tag"):
+        deploy_env.build_plan(
+            _registry(prod={"trigger": {"tag_pattern": "v*"}, "service": "svc"}),
+            ref="refs/tags/v1.0.0\n",
+            requested=None,
+            remote=_TEST_REMOTE,
+            run_git=_fake_git(0, stdout="tree"),
+        )
+    with pytest.raises(deploy_env.DeployConfigError, match="unsafe output"):
+        deploy_env.write_outputs({"service\n": "svc"}, None)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import numbers
 from collections.abc import Mapping, Sequence
+from fractions import Fraction
 from typing import Any
 
 
@@ -40,6 +41,50 @@ def finite_number(value: object) -> float | None:
     except (OverflowError, TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def finite_real(value: object) -> numbers.Real | None:
+    """Return *value* preserving its original :class:`numbers.Real` type when finite.
+
+    Rejects Python ``bool``, NumPy boolean scalars, non-``numbers.Real`` values,
+    ``NaN``, ``±Inf``, and overflowing values where ``float(value)`` fails, without
+    rounding exact inputs such as :class:`fractions.Fraction` or high-precision
+    integers down to ``float``.
+    """
+    if is_bool_scalar(value) or not isinstance(value, numbers.Real):
+        return None
+    if finite_number(value) is None:
+        return None
+    return value
+
+
+def to_exact_fraction(value: object) -> Fraction:
+    """Convert a finite :class:`numbers.Real` to an exact :class:`fractions.Fraction`."""
+    if is_bool_scalar(value) or not isinstance(value, numbers.Real) or finite_number(value) is None:
+        raise ValueError(f"Expected a finite real number, got {value!r}")
+    if isinstance(value, numbers.Rational):
+        return Fraction(int(value.numerator), int(value.denominator))
+    return Fraction(float(value))
+
+
+def coerce_real_preserving_overflow(value: object) -> float | None:
+    """Coerce a numeric real scalar to ``float``, preserving overflow/``±Inf`` as ``±inf``.
+
+    Rejects booleans, non-numeric values, conversion errors, and ``NaN`` by
+    returning ``None``. Unlike :func:`finite_number`, an overflowing
+    :class:`numbers.Real` (such as ``10**400`` or ``Fraction(10**400, 1)``) or an
+    explicit ``±inf`` is preserved as signed ``±math.inf`` so aggregate gates fail
+    closed instead of treating reported overflow costs as absent.
+    """
+    if is_bool_scalar(value) or not isinstance(value, numbers.Real):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return -math.inf if value < 0 else math.inf
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(number) else number
 
 
 def coerce_finite_float(value: object) -> float | None:

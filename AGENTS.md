@@ -205,7 +205,7 @@ All settings are env-driven with prefix `MANGOMAS_`:
 | `MANGOMAS_SECRETS__DEFAULT_VERSION` | `latest` | Secret version used when a ref names none |
 | `MANGOMAS_API__HOST` | `0.0.0.0` | Bind address for `uvicorn` |
 | `MANGOMAS_API__PORT` | `8000` | Bind port |
-| `MANGOMAS_API__READY_TIMEOUT_SECONDS` | `2.0` | `/readyz` LLM-ping budget |
+| `MANGOMAS_API__READY_TIMEOUT_SECONDS` | `2.0` | `/ready` (`/readyz` alias) LLM-ping budget |
 | `MANGOMAS_API__CORS_ALLOW_ORIGINS` | `[]` | Opt-in CORS allow-list; empty → `CORSMiddleware` not installed |
 | `MANGOMAS_API__CORS_ALLOW_METHODS` | `["*"]` | CORS methods (used only when origins non-empty) |
 | `MANGOMAS_API__CORS_ALLOW_HEADERS` | `["*"]` | CORS headers (used only when origins non-empty) |

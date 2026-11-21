@@ -66,11 +66,10 @@ factory is invoked (`llm_registry.get(cfg.llm.provider)(cfg.llm)`).
   `generate_content_stream` directly (closed via `close_genai_client`) instead of
   mutating process-global SDK init state, so chat (`global`) and
   embedding (`us-central1`) clients coexist cleanly in-process (`PR #135`).
-- `ping()` issues a one-token `generate_content` — operators running
-  aggressive `/readyz` probes against Vertex should widen probe
-  intervals or implement a cheaper liveness signal upstream. A
-  zero-token metadata-fetch ping shipped in v0.4.0; mangomas-dev soft-deploy
-  (v0.5.0) pins Vertex ``LOCATION=global`` for gemini-3 publisher models.
+- `ping()` uses zero-token model metadata fetch (`v0.4.0+`) — operators running
+  aggressive `/ready` (`/readyz` alias) probes against Vertex should still widen
+  probe intervals Upstream; `mangomas-dev` soft-deploy (`v0.5.0`) pins Vertex
+  `MANGOMAS_LLM__LOCATION=global` for `gemini-3` publisher models.
 
 ---
 

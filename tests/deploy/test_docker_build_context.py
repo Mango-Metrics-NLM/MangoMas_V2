@@ -238,6 +238,14 @@ def test_ignore_rules_preserve_negation_and_order() -> None:
         "uv.lock",
         ".uv/cache",
         ".env.gcp-demo",
+        ".gitleaksignore",
+        "scripts/deploy_environment.py",
+        "scripts/_deploy_registry.py",
+        "scripts/_deploy_render.py",
+        "scripts/verify_gcp_prerequisites.py",
+        "scripts/_gcp_preflight_plan.py",
+        "scripts/_gcp_preflight_probes.py",
+        "scripts/_gcp_postgres_probe.py",
     ],
 )
 def test_local_venvs_uv_and_env_templates_are_excluded_from_build_context(local_path: str) -> None:
