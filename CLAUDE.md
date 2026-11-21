@@ -203,6 +203,8 @@ tree serves both.
 | `mango-cognitive` | CognitiveSignal 1.1.0 producer: `MANGOMAS_SIGNAL__*`, extras sink, INV-16 |
 | `mango-harness` | Protected-path governance, the `BREAKING-CHANGE` trailer, hooks |
 | `mango-deploy` | Cloud Run deploy + telemetry-exporter selection (GCP swap) |
+| `mango-soft-deploy` | Soft-deploy smoke on non-`z` probes, WIF impersonation, and two-credential invoke (`dev`/`qa`) |
+| `mango-supply-chain` | Two-pass gitleaks scan, non-vacuity selftest, `requirements.lock` / SBOM / ignore parity |
 | `mango-gcp-demo` | GCP local-CLI demo: `make gcp-preflight` first, billing-account trap, consent before billed calls (spec-0049) |
 | `mango-release` | Drafting CHANGELOG, PR description, pre-merge checklist |
 | `mango-repair-loop` | Governed local-LLM repair: stage, oracle, then promote |

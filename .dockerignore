@@ -67,13 +67,13 @@ scripts/bootstrap_gpu_env.py
 # rendered-service.yaml is local `make deploy-render` output carrying a real
 # project id; keep it out of the build context entirely.
 deploy/
-scripts/deploy_environment.py
 rendered-service.yaml
 
-# Local scanner binaries / caches (make secret-scan, make sbom-scan, import-linter)
+# Secret / governance config — never needed inside runtime image
+.gitleaks.toml
+.gitleaksignore
 .cache/
 .import_linter_cache/
-.gitleaks.toml
 gitleaks
 gitleaks.exe
 gitleaks.tar.gz
@@ -84,6 +84,20 @@ trivy.tar.gz
 sbom.cdx.json
 evals/
 scripts/verify_gcp_prerequisites.py
+scripts/_gcp_preflight_plan.py
+scripts/_gcp_preflight_probes.py
+scripts/_gcp_postgres_probe.py
+scripts/deploy_environment.py
+scripts/_deploy_registry.py
+scripts/_deploy_render.py
+scripts/check_coverage.py
+scripts/check_protected_paths.py
+scripts/harness_config_audit.py
+scripts/run_workflow_e2e.py
+scripts/_logging.py
+scripts/_governance.py
+scripts/_stdin_json.py
+scripts/_frontmatter_hooks.py
 
 # Dev-only pytest environment guard — not part of the runtime image
 sitecustomize.py

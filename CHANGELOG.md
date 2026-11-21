@@ -9,6 +9,20 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed — Origin-delta AQA hardening, NumPy scalar safety & boolean edge cases (`2026-11-20`)
+
+- Import-order / lazy-import lint parity (`D-1`, `scripts/_logging.py`, `tests/harness/test_isolation.py`): parenthesized multi-line lazy import with `# noqa: PLC0415` and hoisted `reject_candidate_python_startup_hooks` to fix `ruff I001`.
+- Fail-closed gate thresholds & NumPy scalar handling (`D-2`, `src/mangomas/eval/gate.py`): normalized every threshold and metric (`min_mean_score`, `min_pass_rate`, `min_pass_pow_k`, `max_mean_cost_usd`, `max_mean_score_drop`, `max_pass_rate_drop`, `pass_rate`, and deltas) via shared `finite_number` (`_normalize_threshold`) with warning logs so `NaN`/`±Inf`/`bool`/`np.bool_` fail closed while finite `numbers.Real` / NumPy scalars pass accurately.
+- Eval runner & strict JSON serializer parity (`D-3`, `src/mangomas/eval/{runner.py,_serialize.py}`): reused `finite_number` in `_row_cost_usd` (fixes silent drop of `np.float32`/`np.int64` row costs), rejected boolean `parallelism`/`trials` in `EvalRunner.__init__`, and normalized dataclasses, `Mapping` (`MappingProxyType`), NumPy reals/integrals/bools in `_serialize._finite_only`.
+- LLM judge & repair sandbox boolean/overflow guards (`D-4`, `D-5`, `src/mangomas/eval/scorers/llm_judge.py`, `src/mangomas/harness/repair_sandbox.py`): rejected boolean JSON scores and `OverflowError` int payloads (`10**400`) in `LLMJudgeScorer.score` with structured debug logs, and validated `run_oracle_and_promote(..., timeout_seconds=...)` via `finite_number` with warning logs.
+- Deploy registry boolean schema guard (`D-6`, `scripts/_deploy_registry.py`): rejected `schema_version: true` (`isinstance(version, bool)`) in `parse_registry`.
+
+### Changed — Script decomposition, reusable skills & enterprise governance parity
+
+- God-file decompositions behind permanent backwards-compatible facades (`scripts/verify_gcp_prerequisites.py` → `scripts/_gcp_preflight_plan.py` + `scripts/_gcp_preflight_probes.py` + `scripts/_gcp_postgres_probe.py`; `scripts/deploy_environment.py` → `scripts/_deploy_registry.py` + `scripts/_deploy_render.py`) with facade symbol-identity guards in `tests/test_scripts_shared_helpers.py`.
+- Added reusable skills `.claude/skills/mango-soft-deploy/SKILL.md` and `.claude/skills/mango-supply-chain/SKILL.md` (owned by `mango-ci-dev`), enriched `.claude/skills/mango-workflow-generator/SKILL.md` with concrete workflow schema/CLI/HTTP/env references, wired the corpus into `CLAUDE.md`, `.claude/agents/mango-ci-dev.md`, `docs/tooling/claude-code-ecosystem.md`, and `tests/constants/corpus.py`, and strengthened `tests/tooling/test_corpus_contract.py` with `CROSS_CUTTING_SKILL_SLUGS` partition coverage, substantive body checks, and corpus relative-link verification.
+- Updated `.dockerignore` (`.gitleaksignore` + extracted/dev `scripts/*.py` helpers), `.gitleaks.toml` (`.mypy_cache/`, `trivy`, `trivy.exe`, `sbom.cdx.json` allowlist paired with `tests/deploy/test_gitleaks_config.py`), `.github/workflows/{deploy,eval-gate}.yml` (`/ready`), C1/C4/`cloud-providers` architecture docs, `README.md`, `AGENTS.md`, `docs/testing/regression.md`, `NEXT_STEPS.md`, `scripts/guard_probe_manifest.json` (`MUT-SBX-07` + `MUT-AQA-20261120-01..05`), `tests/harness/test_guard_probe.py` (`76` -> `81`), and `docs/testing/rca-20261120.md`.
+
 ### Fixed — Cloud Run probe paths prefer non-`z` routes (known-issues)
 
 - `deploy/service.yaml` liveness/readiness and Dockerfile `HEALTHCHECK` now

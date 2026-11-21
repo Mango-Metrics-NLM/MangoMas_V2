@@ -93,11 +93,11 @@ jobs:
           echo $! > uvicorn.pid
 
       - name: Wait for readiness
-        # Poll /readyz (LLM+DB probe) so the eval does not start before the SUT
+        # Poll /ready (canonical LLM+DB probe; /readyz stays as alias) so the eval does not start before the SUT
         # can actually answer; dump the server log on timeout for post-mortem.
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/readyz >/dev/null 2>&1; then
+            if curl -fsS http://localhost:8000/ready >/dev/null 2>&1; then
               echo "ready"; exit 0
             fi
             sleep 1

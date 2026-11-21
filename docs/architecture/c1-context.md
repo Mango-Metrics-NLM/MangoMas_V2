@@ -64,9 +64,9 @@ C4Context
   an inbound header into a `ContextVar` that the storage adapters filter rows
   on, so the tenant boundary is enforced inside the existing SQLite/Postgres
   systems rather than by a new one. Default-OFF.
-- Vertex AI adapter code is functional but project-level model access is
-  currently blocked on the GCP side; LM Studio + GCP Secret Manager
-  integration is E2E verified.
+- Vertex AI live chat via isolated `google.genai.Client(vertexai=True, ...)`
+  (`MANGOMAS_LLM__LOCATION=global` for `gemini-3` publisher models on
+  `mangomas-dev`), LM Studio, and GCP Secret Manager integration are verified.
 - The **evaluation harness** runs entirely in-process; it consumes the same
   `Orchestrator` / `LLMClient` stack as `/agents/{name}/invoke`. It does
   not introduce a new external dependency. See
