@@ -57,6 +57,7 @@ def _require_numpy() -> Any:
         return importlib.import_module("numpy")
     except ModuleNotFoundError as exc:  # pragma: no cover - asserted via no-numpy lane
         pytest.fail(f"RUN_NUMPY=1 requires numpy to be installed: {exc}")
+        raise
 
 
 def test_aqa_20261120_rca_register_exists() -> None:
