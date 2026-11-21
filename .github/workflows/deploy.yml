@@ -187,8 +187,9 @@ jobs:
       # `local-model` to Vertex.
       LLM_MODEL: ${{ vars.VERTEX_MODEL }}
       # Smoke-probe tunables (workflow env, not hard-coded in the script):
-      # /readyz exercises the live LLM/DB reachability probe, so allow the
-      # revision a short settling window before declaring the deploy failed.
+      # /ready exercises the live LLM/DB reachability probe (/readyz alias stays
+      # available internally), so allow the revision a short settling window
+      # before declaring the deploy failed.
       SMOKE_ATTEMPTS: "10"
       SMOKE_RETRY_SECONDS: "6"
     steps:

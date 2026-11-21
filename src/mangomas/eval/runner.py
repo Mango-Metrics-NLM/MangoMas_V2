@@ -30,6 +30,7 @@ from mangomas.correlation import (
 from mangomas.eval.protocol import JudgeAware, ScorerContext
 from mangomas.eval.provenance import RunProvenance, build_provenance
 from mangomas.eval.target import coerce_outcome
+from mangomas.utils.json_path import coerce_real_preserving_overflow, is_bool_scalar
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.core import Orchestrator
@@ -110,13 +111,13 @@ def _skipped_row(row: DatasetRow) -> EvalRowResult:
 
 
 def _row_cost_usd(row: EvalRowResult) -> float | None:
-    """Return a numeric ``cost_usd`` from *row* metadata, or ``None``."""
-    raw = row.metadata.get(EVAL_COST_USD_METADATA_KEY)
-    if isinstance(raw, bool) or not isinstance(raw, int | float):
-        return None
-    number = float(raw)
-    if not math.isfinite(number):
-        return None
+    """Return numeric ``cost_usd`` from *row* metadata, preserving overflow as ``±inf``."""
+    number = coerce_real_preserving_overflow(row.metadata.get(EVAL_COST_USD_METADATA_KEY))
+    if number is not None and math.isinf(number):
+        logger.warning(
+            "Eval row reported overflowing or infinite cost_usd; propagating non-finite cost",
+            extra={"event": "eval_row_cost_overflow", "row_id": row.row_id},
+        )
     return number
 
 
@@ -315,9 +316,9 @@ class EvalRunner:
         provenance_labels: Mapping[str, Any] | None = None,
         trials: int = DEFAULT_EVAL_TRIALS,
     ) -> None:
-        if parallelism < 1:
+        if is_bool_scalar(parallelism) or parallelism < 1:
             raise ValueError(f"parallelism must be >= 1; got {parallelism}")
-        if trials < 1:
+        if is_bool_scalar(trials) or trials < 1:
             raise ValueError(f"trials must be >= 1; got {trials}")
         self._orch = orch
         self._scorer = scorer

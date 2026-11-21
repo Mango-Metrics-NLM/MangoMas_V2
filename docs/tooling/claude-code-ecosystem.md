@@ -215,21 +215,30 @@ unmodified" path.
 
 ## Skill and Agent Extraction Candidates
 
-The following reusable workflows identified during audit triage are recorded as
-extraction candidates (kept in backlog rather than added to `.claude/` until an
-owner and contract-test update in `tests/constants/corpus.py` are scheduled):
+The following reusable workflows identified during audit triage have either landed
+in `.claude/skills/` or remain recorded as backlog extraction candidates (kept
+outside `.claude/` until an owner and `tests/constants/corpus.py` update are
+scheduled):
 
-- **`mango-supply-chain`**: Consolidate secret scanning (`.gitleaks.toml`),
-  `make gitleaks-selftest`, worktree/dependency allowlist hygiene, and clean-tree
-  audit checks currently split across ad-hoc PR checklists.
-- **`mango-local-e2e`**: Standardize gated local hardware verification
+- **Landed — `mango-supply-chain`** (`.claude/skills/mango-supply-chain/SKILL.md`,
+  owned by `mango-ci-dev`): Consolidates two-pass secret scanning (`.gitleaks.toml`),
+  `make gitleaks-selftest`, worktree/dependency allowlist parity (`.gitignore` /
+  `.dockerignore` / `.gitleaks.toml`), and lockfile / SBOM checks.
+- **Landed — `mango-soft-deploy`** (`.claude/skills/mango-soft-deploy/SKILL.md`,
+  owned by `mango-ci-dev`): Extracts the Cloud Run non-`z` probe smoke,
+  WIF SA impersonation with `--audiences`, two-credential invoke, and Vertex
+  `LOCATION=global` checklist from `mango-deploy` / `mango-gcp-demo`.
+- **`mango-local-e2e`** (backlog): Standardize gated local hardware verification
   (`make embeddings-local`, `make gpu`, `CUDA_VISIBLE_DEVICES=-1` fail-loud check,
   `make studio-probe-mock`, and live LM Studio runs) with P1/P2 environment guards.
-- **`mango-contract-sync`**: Guide synchronized updates across
+- **`mango-contract-sync`** (backlog): Guide synchronized updates across
   `mango-integration-contracts/`, `src/mangomas/`, `eval_harness_bridge/`,
   `scripts/guard_probe_manifest.json`, and P1/P2 `mypy --strict` typing checks.
-- **`mango-aqa-pr-handoff`**: Bundle origin-delta AQA triage, `make gate`,
+- **`mango-aqa-pr-handoff`** (backlog): Bundle origin-delta AQA triage, `make gate`,
   `make guard-probe`, `docs/testing/rca-*.md` updates, and Tier-C PR packaging.
+
+Note: Updating existing skills/docs for corpus additions preserves `EXPECTED_SKILL_SLUGS`
+and `AGENT_SKILL_OWNERS` parity in `tests/constants/corpus.py`.
 
 `scripts/run_workflow_e2e.py` remains intentionally unowned in
 `UNOWNED_SCRIPT_ENTRY_POINTS` (`tests/constants/corpus.py`) because it is an

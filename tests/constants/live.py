@@ -184,6 +184,7 @@ ENV_GATE_SUITES: dict[str, str] = {
     "RUN_RAG": "chromadb-backed RAG tests",
     "RUN_LANGFUSE": "Langfuse sink tests",
     "RUN_GITLEAKS": "gitleaks config behaviour tests",
+    "RUN_NUMPY": "real-NumPy scalar regression tests",
     # Opt-in, never auto-detected: with the gate set, a missing CUDA device is
     # a FAILURE, not a skip — a GPU box whose torch silently became a CPU
     # wheel must go red (spec-0039, tests/rag/test_device_resolution_gpu.py).

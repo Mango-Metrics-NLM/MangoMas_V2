@@ -95,8 +95,8 @@ $ curl -s localhost:8000/agents/chat/invoke \
 {"content": "Hello! How can I help you today?", "agent": "chat", "metadata": {...}}
 ```
 
-`GET /agents` lists every registered agent name; `GET /readyz` tells you
-whether the LLM backend is reachable (see [Troubleshooting](#troubleshooting)).
+`GET /agents` lists every registered agent name; `GET /ready` (`/readyz` alias)
+tells you whether the LLM backend is reachable (see [Troubleshooting](#troubleshooting)).
 
 ---
 
@@ -506,7 +506,7 @@ Two separate things share the word "harness":
 
 ## Troubleshooting
 
-Start with `GET /readyz`: it returns `503` with
+Start with `GET /ready` (`/readyz` alias): it returns `503` with
 `{"ready": false, "checks": [{"name": "llm", "status": "error", "detail": "…"}, …]}`
 when the LLM ping or the database check fails.
 
@@ -522,8 +522,8 @@ including a missing optional extra, exit `2`.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| API `503` `llm_unavailable`; `/readyz` LLM check `error`; CLI `Chat failed: LM Studio unreachable at …`, exit `1` | LM Studio not running, or its local server is off | Start the server on `:1234`, or point `MANGOMAS_LLM__BASE_URL` at it |
-| API `502` `llm_bad_response` ("LM Studio returned HTTP …") while `/readyz` is green | `MANGOMAS_LLM__MODEL` does not match a loaded model (`/readyz` only lists models, so it cannot catch this) | Set the model id exactly as `GET {base_url}/models` reports it |
+| API `503` `llm_unavailable`; `/ready` LLM check `error`; CLI `Chat failed: LM Studio unreachable at …`, exit `1` | LM Studio not running, or its local server is off | Start the server on `:1234`, or point `MANGOMAS_LLM__BASE_URL` at it |
+| API `502` `llm_bad_response` ("LM Studio returned HTTP …") while `/ready` is green | `MANGOMAS_LLM__MODEL` does not match a loaded model (`/ready` only checks connectivity, so it cannot catch this) | Set the model id exactly as `GET {base_url}/models` reports it |
 | API `504` `step_timeout` | One agent step — every LLM call it makes, plus tool calls — exceeded `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS` (default `30.0`) | Raise `MANGOMAS_LOOP__STEP_TIMEOUT_SECONDS`. With the defaults this deadline fires **before** the LLM timeout, so raising only the LLM timeout changes nothing |
 | API `504` `llm_timeout` | A single LLM call exceeded `MANGOMAS_LLM__TIMEOUT_SECONDS` (default `60.0`). Reachable only once the step timeout is above it | Raise `MANGOMAS_LLM__TIMEOUT_SECONDS`, keeping it below the step timeout |
 | CLI `Missing optional dependency: Vertex AI SDK is not installed …`, exit `2` (the API fails at startup with the same `ImportError`) | `MANGOMAS_LLM__PROVIDER=vertex` without the extra | `pip install 'mangomas[vertex]'` |
