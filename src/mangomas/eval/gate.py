@@ -21,7 +21,6 @@ Metric semantics (must stay aligned with :class:`~mangomas.eval.runner.EvalRunne
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal
@@ -29,6 +28,7 @@ from typing import TYPE_CHECKING, Literal
 from opentelemetry import trace
 
 from mangomas.eval.runner import EXPECTED_ERROR_METADATA_KEY
+from mangomas.utils.json_path import finite_number
 
 if TYPE_CHECKING:  # pragma: no cover
     from mangomas.eval.baseline import ReportDiff
@@ -42,8 +42,14 @@ _COST_NON_FINITE_THRESHOLD_NOTE = "max_mean_cost_usd is not a finite number"
 _COST_NON_FINITE_MEAN_NOTE = "mean_cost_usd is not a finite number"
 _EMPTY_DATASET_NOTE = "empty dataset — nothing to gate"
 _MEAN_SCORE_NON_FINITE_NOTE = "mean_score is not a finite number"
+_MEAN_SCORE_THRESHOLD_NON_FINITE_NOTE = "min_mean_score threshold is non-finite or invalid"
+_RATE_NON_FINITE_NOTE = "pass_rate is non-finite"
+_RATE_THRESHOLD_NON_FINITE_NOTE = "min_pass_rate threshold is non-finite or invalid"
+_POW_K_THRESHOLD_NON_FINITE_NOTE = "min_pass_pow_k threshold is non-finite or invalid"
 _MEAN_DROP_NON_FINITE_NOTE = "mean_score drop is not a finite number"
+_MEAN_DROP_THRESHOLD_NON_FINITE_NOTE = "max_mean_score_drop threshold is non-finite or invalid"
 _RATE_DROP_NON_FINITE_NOTE = "pass_rate drop is not a finite number"
+_RATE_DROP_THRESHOLD_NON_FINITE_NOTE = "max_pass_rate_drop threshold is non-finite or invalid"
 _RELIABILITY_UNAVAILABLE_NOTE = "pass_pow_k unavailable — min_pass_pow_k not met"
 #: ``min_pass_pow_k`` needs at least this many trials to mean anything.
 MIN_TRIALS_FOR_PASS_POW_K = 2
@@ -190,6 +196,17 @@ def evaluate_gate(
     return result
 
 
+def _normalize_threshold(raw: float, *, name: str) -> float | None:
+    """Validate and coerce a numeric gate threshold, logging invalid inputs."""
+    normalized = finite_number(raw)
+    if normalized is None:
+        logger.warning(
+            "Eval gate threshold is non-finite or invalid; failing closed",
+            extra={"event": "eval_gate_invalid_threshold", "threshold": name},
+        )
+    return normalized
+
+
 def _score_reasons(
     report: EvalReport,
     pass_rate: float,
@@ -201,17 +218,25 @@ def _score_reasons(
     """The three score-derived thresholds (mean, pass rate, pass^k)."""
     reasons: list[str] = []
     if min_mean_score is not None:
-        # ``nan < x`` is always False, so an unguarded NaN mean (a plugin
-        # scorer's ``ScoreResult`` is an unvalidated dataclass) would pass
-        # every threshold. Mirrors the cost ladder.
-        if not math.isfinite(report.mean_score):
+        # ``nan < x`` is always False, and ``bool`` subclasses ``int``, so
+        # normalize both threshold and metric via ``finite_number``.
+        limit = _normalize_threshold(min_mean_score, name="min_mean_score")
+        actual_mean = finite_number(report.mean_score)
+        if limit is None:
+            reasons.append(_MEAN_SCORE_THRESHOLD_NON_FINITE_NOTE)
+        elif actual_mean is None:
             reasons.append(_MEAN_SCORE_NON_FINITE_NOTE)
-        elif report.mean_score < min_mean_score:
-            reasons.append(
-                f"mean_score {report.mean_score:.3f} < min_mean_score {min_mean_score:.3f}"
-            )
-    if min_pass_rate is not None and pass_rate < min_pass_rate:
-        reasons.append(f"pass_rate {pass_rate:.3f} < min_pass_rate {min_pass_rate:.3f}")
+        elif actual_mean < limit:
+            reasons.append(f"mean_score {actual_mean:.3f} < min_mean_score {limit:.3f}")
+    if min_pass_rate is not None:
+        rate_limit = _normalize_threshold(min_pass_rate, name="min_pass_rate")
+        actual_rate = finite_number(pass_rate)
+        if rate_limit is None:
+            reasons.append(_RATE_THRESHOLD_NON_FINITE_NOTE)
+        elif actual_rate is None:
+            reasons.append(_RATE_NON_FINITE_NOTE)
+        elif actual_rate < rate_limit:
+            reasons.append(f"pass_rate {actual_rate:.3f} < min_pass_rate {rate_limit:.3f}")
     if min_pass_pow_k is not None:
         reasons.extend(_reliability_reasons(report, min_pass_pow_k))
     return reasons
@@ -280,14 +305,16 @@ def _judge_verdict(
 
 def _cost_reasons(report: EvalReport, max_mean_cost_usd: float) -> list[str]:
     """The cost ladder: an unavailable mean is an informational skip, never a fail."""
-    if not math.isfinite(max_mean_cost_usd):
+    limit = _normalize_threshold(max_mean_cost_usd, name="max_mean_cost_usd")
+    if limit is None:
         return [_COST_NON_FINITE_THRESHOLD_NOTE]
     if report.mean_cost_usd is None:
         return [_COST_UNAVAILABLE_NOTE]
-    if not math.isfinite(report.mean_cost_usd):
+    actual = finite_number(report.mean_cost_usd)
+    if actual is None:
         return [_COST_NON_FINITE_MEAN_NOTE]
-    if report.mean_cost_usd > max_mean_cost_usd:
-        return [f"mean_cost_usd {report.mean_cost_usd} > max_mean_cost_usd {max_mean_cost_usd}"]
+    if actual > limit:
+        return [f"mean_cost_usd {actual} > max_mean_cost_usd {limit}"]
     return []
 
 
@@ -299,15 +326,19 @@ def _reliability_reasons(report: EvalReport, min_pass_pow_k: float) -> list[str]
     rather than skipping it (the cost gate's skip-when-unavailable rule is
     deliberately *not* reused here — spec-0046).
     """
+    limit = _normalize_threshold(min_pass_pow_k, name="min_pass_pow_k")
+    if limit is None:
+        return [_POW_K_THRESHOLD_NON_FINITE_NOTE]
     if report.trials < MIN_TRIALS_FOR_PASS_POW_K:
         return [
             f"min_pass_pow_k requires trials >= {MIN_TRIALS_FOR_PASS_POW_K}; "
             f"the run used trials={report.trials}"
         ]
-    if report.pass_pow_k is None or not math.isfinite(report.pass_pow_k):
+    actual = None if report.pass_pow_k is None else finite_number(report.pass_pow_k)
+    if actual is None:
         return [_RELIABILITY_UNAVAILABLE_NOTE]
-    if report.pass_pow_k < min_pass_pow_k:
-        return [f"pass_pow_k {report.pass_pow_k:.3f} < min_pass_pow_k {min_pass_pow_k:.3f}"]
+    if actual < limit:
+        return [f"pass_pow_k {actual:.3f} < min_pass_pow_k {limit:.3f}"]
     return []
 
 
@@ -337,16 +368,24 @@ def evaluate_regression_gate(
     mean_drop = -diff.mean_score_delta
     pass_drop = -diff.pass_rate_delta
     if max_mean_score_drop is not None:
-        if not math.isfinite(mean_drop):
+        mean_drop_limit = _normalize_threshold(max_mean_score_drop, name="max_mean_score_drop")
+        actual_mean_drop = finite_number(mean_drop)
+        if mean_drop_limit is None:
+            reasons.append(_MEAN_DROP_THRESHOLD_NON_FINITE_NOTE)
+        elif actual_mean_drop is None:
             # A NaN on either side of the diff makes ``>`` always False.
             reasons.append(_MEAN_DROP_NON_FINITE_NOTE)
-        elif mean_drop > max_mean_score_drop:
-            reasons.append(f"mean_score dropped {mean_drop:.3f} > max {max_mean_score_drop:.3f}")
+        elif actual_mean_drop > mean_drop_limit:
+            reasons.append(f"mean_score dropped {actual_mean_drop:.3f} > max {mean_drop_limit:.3f}")
     if max_pass_rate_drop is not None:
-        if not math.isfinite(pass_drop):
+        rate_drop_limit = _normalize_threshold(max_pass_rate_drop, name="max_pass_rate_drop")
+        actual_rate_drop = finite_number(pass_drop)
+        if rate_drop_limit is None:
+            reasons.append(_RATE_DROP_THRESHOLD_NON_FINITE_NOTE)
+        elif actual_rate_drop is None:
             reasons.append(_RATE_DROP_NON_FINITE_NOTE)
-        elif pass_drop > max_pass_rate_drop:
-            reasons.append(f"pass_rate dropped {pass_drop:.3f} > max {max_pass_rate_drop:.3f}")
+        elif actual_rate_drop > rate_drop_limit:
+            reasons.append(f"pass_rate dropped {actual_rate_drop:.3f} > max {rate_drop_limit:.3f}")
     if not allow_new_failures and diff.regressed_rows:
         shown = ", ".join(diff.regressed_rows[:5])
         reasons.append(f"{len(diff.regressed_rows)} row regression(s): {shown}")

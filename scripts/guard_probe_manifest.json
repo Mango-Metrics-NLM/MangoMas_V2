@@ -837,8 +837,8 @@
     {
       "id": "MUT-SBX-07",
       "path": "src/mangomas/harness/repair_sandbox.py",
-      "fixed": "    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:\n",
-      "defect": "    if timeout_seconds <= 0:\n",
+      "fixed": "    normalized_timeout = finite_number(timeout_seconds)\n    if normalized_timeout is None or normalized_timeout <= 0:\n",
+      "defect": "    normalized_timeout = float(timeout_seconds)\n    if normalized_timeout <= 0:\n",
       "gate": [
         "{python}",
         "-m",
@@ -1470,6 +1470,96 @@
         "-m",
         "pytest",
         "tests/regression/test_aqa_20261115_defects.py::test_d5_check_ready_validates_timeout_scalars",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-01",
+      "path": "src/mangomas/eval/gate.py",
+      "fixed": "def _normalize_threshold(raw: float, *, name: str) -> float | None:\n    \"\"\"Validate and coerce a numeric gate threshold, logging invalid inputs.\"\"\"\n    normalized = finite_number(raw)",
+      "defect": "def _normalize_threshold(raw: float, *, name: str) -> float | None:\n    \"\"\"Validate and coerce a numeric gate threshold, logging invalid inputs.\"\"\"\n    normalized = raw",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d2_eval_gate_fails_closed_on_non_finite_and_bool_thresholds_and_accepts_numpy_scalars",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-02",
+      "path": "src/mangomas/eval/runner.py",
+      "fixed": "        if is_bool_scalar(parallelism) or parallelism < 1:",
+      "defect": "        if parallelism < 1:",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d3_eval_runner_and_serialize_handle_numpy_scalars_and_reject_bool_counts",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-03",
+      "path": "src/mangomas/eval/_serialize.py",
+      "fixed": "    if isinstance(value, Mapping):\n        return {k: _finite_only(v) for k, v in value.items()}",
+      "defect": "    if isinstance(value, dict):\n        return {k: _finite_only(v) for k, v in value.items()}",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d3_eval_runner_and_serialize_handle_numpy_scalars_and_reject_bool_counts",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-04",
+      "path": "src/mangomas/eval/scorers/llm_judge.py",
+      "fixed": "        if is_bool_scalar(raw_score):",
+      "defect": "        if False and is_bool_scalar(raw_score):",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d4_llm_judge_rejects_boolean_and_overflow_scores",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-AQA-20261120-05",
+      "path": "scripts/_deploy_registry.py",
+      "fixed": "    if isinstance(version, bool) or version != SUPPORTED_SCHEMA_VERSION:",
+      "defect": "    if version != SUPPORTED_SCHEMA_VERSION:",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/regression/test_aqa_20261120_defects.py::test_d6_deploy_registry_rejects_boolean_schema_version",
         "-q",
         "--tb=no",
         "-p",

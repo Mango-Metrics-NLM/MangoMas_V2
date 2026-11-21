@@ -25,6 +25,7 @@ from mangomas.harness.isolation import (
     select_sandbox_env,
     windows_to_wsl_path,
 )
+from mangomas.harness.isolation.base import reject_candidate_python_startup_hooks
 from mangomas.harness.repair_sandbox import run_oracle_and_promote, stage_candidate_file
 
 
@@ -563,8 +564,6 @@ def test_live_wsl_isolation_enforces_filesystem_and_network_containment(
 
 
 def test_reject_candidate_python_startup_hooks_ignores_missing_dir(tmp_path: Path) -> None:
-    from mangomas.harness.isolation.base import reject_candidate_python_startup_hooks  # noqa: PLC0415
-
     reject_candidate_python_startup_hooks(tmp_path / "missing-staging-dir")
 
 
