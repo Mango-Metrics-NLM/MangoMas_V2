@@ -9,6 +9,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-21
+
 ### Fixed — Origin-delta AQA hardening, NumPy scalar safety & boolean edge cases (`2026-11-20`)
 
 - Import-order / lazy-import lint parity (`D-1`, `scripts/_logging.py`, `tests/harness/test_isolation.py`): parenthesized multi-line lazy import with `# noqa: PLC0415` and hoisted `reject_candidate_python_startup_hooks` to fix `ruff I001`.
@@ -2292,7 +2294,8 @@ accepted by code or configuration.
 
 ---
 
-[Unreleased]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Mango-Metrics-NLM/MangoMas_V2/releases/tag/v0.3.1

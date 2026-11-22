@@ -25,6 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEPLOY_WF = "deploy.yml"
 _DOCKERFILE = _REPO_ROOT / "Dockerfile"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
+_CHANGELOG = _REPO_ROOT / "CHANGELOG.md"
 _REGISTRY = _REPO_ROOT / "deploy" / "environments.yaml"
 
 
@@ -63,11 +64,19 @@ def test_d3_mangomas_dev_vertex_location_is_global() -> None:
 
 
 def test_d4_package_version_is_honest_point_five() -> None:
-    """D4: after historical ``v0.4.0`` tag, trunk advertises ``0.5.0``."""
+    """D4: after ``v0.4.0``, trunk advertises SemVer ``>= 0.5.0`` matching ``CHANGELOG.md``."""
     text = _PYPROJECT.read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*"([^"]+)"', text, flags=re.MULTILINE)
     assert match is not None
-    assert match.group(1) == "0.5.0"
+    version = match.group(1)
+    semver = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
+    assert semver is not None, f"expected strict X.Y.Z SemVer in pyproject.toml, got {version!r}"
+    assert tuple(int(part) for part in semver.groups()) >= (0, 5, 0)
+    changelog = _CHANGELOG.read_text(encoding="utf-8")
+    header = re.search(rf"^## \[{re.escape(version)}\](?:\s|$)", changelog, flags=re.MULTILINE)
+    assert header is not None, (
+        f"CHANGELOG.md is missing section header for pyproject version {version!r}"
+    )
 
 
 def test_d5_smoke_impersonates_deploy_sa_with_audiences() -> None:
