@@ -277,7 +277,8 @@ of them edited stays human work in the first version (spec-0053 R6).
    or a verified branch assignment), and the required check is pinned to its
    source.
 2. **Acceptance is pre-registered.** Contract tests merge before
-   implementation, are hash-pinned in the item, and are excluded from the
+   implementation, must be red on the proposal branch, are hash-pinned in
+   the item, and are excluded from the
    default test and type-check runs until the item is activated, so `dev`
    stays green without a skip; behaviour-preserving items use the unchanged
    suite instead. From L1, changed lines must also be killed by those tests
@@ -319,7 +320,7 @@ of them edited stays human work in the first version (spec-0053 R6).
 | Stage | Scope | Autonomy | Exit criterion |
 |---|---|---|---|
 | Shadow | Behaviour-preserving items outside the trusted base | Draft PRs; every one audited and a verdict recorded before merge | 30 consecutive gate-passed PRs with no false accept and no scope violation |
-| L0 Maintenance | Same | Merge after a skim; sampled audit continues | 60 cumulative with a false-accept bound at or below 5%; escaped-defect rate no worse than the current-process baseline |
+| L0 Maintenance | Same | Merge after a skim; a random audit cohort continues | 60 audited PRs (the Shadow census plus the L0 cohort) with a false-accept bound at or below 5%; escaped-defect rate no worse than the current-process baseline |
 | L1 Features | Items approved through the propose stage (spec, ADR if needed, contract tests merged first) | Implementation PRs with mutation evidence | Held-out verifier live; the bound holds on L1 items |
 | L2 Experiment | Product prompts or the steering corpus | One change per epoch, human-merged, safety text frozen | Stop if two epochs show no held-out gain beyond noise at equal cost |
 
@@ -447,9 +448,14 @@ set, which also gives the product an honest benchmark.
 - *BLOCKED rate:* items the implementer declined with a typed reason.
 
 **Audit protocol.** In Shadow, every gate-passed PR is audited and the verdict
-recorded before merge. From L0, a random sample plus every security-relevant
-or reverted PR. Audit minutes are recorded: they are the real cost. Verdicts
-arrive through a channel implementer sessions cannot write.
+recorded before merge: a census. From L0, a random cohort fixed when each PR
+opens (for example, a hash of the PR number below a threshold) is audited, and
+the false-accept bound is computed on the Shadow census plus that cohort only.
+Security-relevant or reverted PRs outside the cohort are audited too but
+reported separately: their inclusion depends on the outcome being measured,
+so pooling them would bias the bound. Audit minutes are recorded: they are the
+real cost. Verdicts arrive through a channel implementer sessions cannot
+write.
 
 **How many audits are enough.** Exact one-sided 95% upper bounds on the
 false-accept rate:

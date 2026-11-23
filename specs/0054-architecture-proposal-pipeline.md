@@ -77,7 +77,10 @@ Evidence retrieval
   draft; ADR draft at Proposed when `needs_adr`; backlog-item draft (spec-0053);
   contract tests under `tests/contract/<id_snake>/` (spec-0053 R5); and
   `docs/proposals/<request_id>/` holding `evidence.json`, `findings.json` and
-  `proposal.md`.
+  `proposal.md`. Contract tests may appear in a proposal only once spec-0053
+  R5's isolation and explicit runner exist (M2), so a contract-bearing proposal
+  can never turn `dev` red; its CI must show the tests collected and failing
+  before implementation.
 - **R5 Assembly by code.** `proposal.md` is generated from every node's
   output: the design, the critic's and security agent's findings verbatim with
   severity, the evidence table and open questions. No model writes or edits

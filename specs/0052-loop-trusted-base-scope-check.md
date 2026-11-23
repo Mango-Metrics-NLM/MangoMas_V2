@@ -40,12 +40,19 @@ repository variable or a ruleset, is no control over them.
   `claude/**` head fails and every other head passes with a warning, so a
   human PR can restore it.
 - **R2 Classification the session cannot choose.** The branch prefix is a
-  label, not an identity. Before the loop runs (M5), record one of:
+  label, not an identity: a session that can push could publish the same diff
+  as `claude/other` and pass as ungoverned. Before the loop runs (M5), record
+  one of these publication boundaries:
   (a) loop sessions act through a dedicated identity, a GitHub App or machine
-  user, and the check classifies by PR author; or (b) a verified guarantee
-  that a session can push only the branch the driver assigns
-  (`claude/loop-<ID>-<n>` or `claude/proposal-<ID>`). Until one is recorded,
-  the prefix rules catch mistakes, not evasion, and the loop does not run.
+  user, and the check classifies by PR author, so every PR by that identity is
+  governed whatever its branch is called;
+  (b) a verified guarantee that a session can push only the branch the driver
+  assigns (`claude/loop-<ID>-<n>` or `claude/proposal-<ID>`); or
+  (c) the session holds no credential that can push or open a PR, and hands
+  its change to a trusted driver that pushes it to the assigned ref and opens
+  the PR against `dev`.
+  Until one is recorded, the prefix rules catch mistakes, not evasion, and the
+  loop does not run.
   Governed heads must come from this repository and target `dev`; a governed
   prefix from a fork, or aimed at another base, fails. The item ID comes from
   the branch name, which GitHub fixes when the PR opens.
@@ -55,6 +62,7 @@ repository variable or a ruleset, is no control over them.
   wins, so no glob-to-glob intersection is needed. Renames count both paths;
   deletions and mode changes count. The check also enforces, from the GitHub
   API:
+  - the item has no merged implementation PR yet;
   - the item's `max_diff_lines` (additions plus deletions);
   - no other open implementation PR (`max_open_implementation_prs`);
   - every `depends_on` item already has a merged implementation PR;
@@ -103,11 +111,12 @@ repository variable or a ruleset, is no control over them.
   `Guard falsifiability probe` become required on `dev`, `qa` and `main`, with
   the expected source set to GitHub Actions. `CONTRIBUTING.md` lists both, and
   its "Job name in `ci.yml`" column becomes "Job name (workflow)".
-- **R10 Credential.** Before M5, verify and record that the implementer's
-  credential has no write access to workflows, commit statuses, check runs,
-  repository variables or administration, and no ruleset bypass. If any of
-  these cannot be removed, the loop does not run. Option (a) of R2 is the
-  likely way to meet this.
+- **R10 Credential.** Before M5, verify and record that no credential an
+  implementer session can use has write access to workflows, commit statuses,
+  check runs, repository variables or administration, or a ruleset bypass.
+  Under R2(c) the session holds no GitHub credential at all, and the driver's
+  is limited to pushing the assigned ref and opening the PR. If any of these
+  rights cannot be removed, the loop does not run.
 - **R11 Mutation proof.** `scripts/guard_probe_manifest.json` gains
   `MUT-LOOP-*` entries that must each turn a named test red: removing a
   `trusted_base` glob, flipping fail-closed, accepting a truncated listing,
@@ -152,6 +161,11 @@ every case minus the trusted base.
 - WHEN a proposal branch adds `tests/contract/loop_0007/pytest.ini` THEN it
   fails.
 - WHEN a `claude/loop-*` head comes from a fork, or targets `qa`, THEN it fails.
+- WHEN a PR by the loop's identity comes from a head outside both prefixes,
+  such as `claude/other`, THEN the check fails; WHEN a person opens a PR from
+  that branch THEN it passes as ungoverned.
+- WHEN an item already has a merged implementation PR THEN a new
+  implementation PR for it fails.
 - WHEN the policy table is missing THEN `claude/**` heads fail and other heads
   pass with a warning.
 - WHEN the file listing or a patch is truncated THEN the check fails.

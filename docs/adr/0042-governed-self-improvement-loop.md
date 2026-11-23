@@ -42,9 +42,10 @@ measured gain from self-edited harnesses is overfitting or extra compute.
 3. **Pre-registered acceptance.** Work starts only from an approved backlog
    item (spec-0053) whose acceptance was fixed first: hash-pinned contract
    tests, or the unchanged suite for a behaviour-preserving item. From L1,
-   changed lines must also be killed under diff-scoped mutation. Held-out
-   checks live outside this repository. LLM reviewers never gate, which is
-   stricter than spec-0047's "reported, not gated, until calibrated".
+   changed lines must also be killed under diff-scoped mutation, and held-out
+   checks, which live outside this repository, must be live before L1 can exit
+   (M7). LLM reviewers never gate, which is stricter than spec-0047's
+   "reported, not gated, until calibrated".
 4. **Propose stage.** Architecture requests run intake, evidence retrieval,
    requirements / existing-decision / architecture-evidence analysts, design,
    then critic and security review. Code assembles and citation-checks the

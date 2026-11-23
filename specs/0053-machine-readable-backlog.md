@@ -52,11 +52,13 @@ skips and xfails are banned (`CONTRIBUTING.md:166-168`).
   that each contract directory exists with a matching digest. If the shared
   policy reader lands in `scripts/_governance.py`, a protected path, that commit
   carries its own scoped trailer.
-- **R4 Selection versus enforcement.** The driver picks the unblocked item
-  with the lowest (`priority`, `id`) whose `min_stage` is at or below the
-  loop's stage; an empty unblocked set stops the loop. Picking is a
-  convenience: the scope check independently enforces dependencies, stage,
-  diff size, attempts and work in progress (spec-0052 R3).
+- **R4 Selection versus enforcement.** An item with a merged implementation
+  PR is done and never selected again. From the items not yet done, the
+  driver picks the unblocked one with the lowest (`priority`, `id`) whose
+  `min_stage` is at or below the loop's stage; when no undone item is
+  unblocked, the loop stops. Picking is a convenience: the scope check
+  independently enforces completion, dependencies, stage, diff size, attempts
+  and work in progress (spec-0052 R3).
 - **R5 Contract tests.**
   - *Location:* `tests/contract/<id_snake>/`, where `<id_snake>` is the ID
     lowercased with `-` replaced by `_` (`loop_0007`), so it is a valid package
@@ -68,6 +70,9 @@ skips and xfails are banned (`CONTRIBUTING.md:166-168`).
   - *Running:* `make contract ITEM=<ID>` collects, runs and type-checks one
     directory explicitly; collecting zero tests fails. CI runs it for the
     implementation branch of that item.
+  - *Red first:* on the proposal branch, CI runs the same target and requires
+    the tests to be collected and to fail. A contract that already passes
+    before implementation proves nothing about the change and is rejected.
   - *Activation:* after the implementation merges, a proposal branch adds the
     marker file `tests/contract/active/<id_snake>` (a new file), and from then
     on `make gate` runs and type-checks every active directory.
@@ -105,6 +110,10 @@ skips and xfails are banned (`CONTRIBUTING.md:166-168`).
   reports zero items.
 - WHEN `make contract ITEM=<ID>` collects zero tests THEN it fails; WHEN the
   contract tests pass THEN it passes.
+- WHEN a proposal's contract tests already pass before implementation THEN the
+  proposal is rejected; WHEN they fail THEN it passes.
+- WHEN an item already has a merged implementation PR THEN the driver does not
+  select it; WHEN every remaining item is done or blocked THEN the loop stops.
 - WHEN an item's contract directory is unimplemented THEN `make gate` on `dev`
   stays green; WHEN its activation marker exists THEN `make gate` runs it.
 

@@ -113,7 +113,9 @@ both protected, so commits carry one scoped trailer per path, for example
 - **Failing test first:** `tests/test_check_proposal_evidence.py` — a citation
   whose quote does not match the file at the pinned SHA fails; a requirement
   with no acceptance criterion fails.
-- **Depends on:** M1 (proposal branch class), M2 (item format).
+- **Depends on:** M1 (proposal branch class) and M2 (item format, contract
+  isolation and the explicit contract runner); no contract-bearing proposal
+  merges before M2.
 
 ### Milestone M3b — the saved workflow
 

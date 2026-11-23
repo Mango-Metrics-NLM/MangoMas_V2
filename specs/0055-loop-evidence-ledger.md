@@ -44,7 +44,16 @@ label, a comment or a status file, is not evidence about it.
 - **R5 Escaped defect.** A merged loop PR whose merge is reverted, or that a
   later commit fixes and cites, within 14 days of merge.
 - **R6 Bounds.** Every rate is reported with its counts and an exact one-sided
-  95% (Clopper–Pearson) upper bound.
+  95% (Clopper–Pearson) upper bound. The false-accept bound is computed only
+  on a cohort whose membership is fixed before outcomes are known: every
+  gate-passed PR in Shadow (a census) and, from L0, a random cohort drawn when
+  each PR opens (for example, a hash of the PR number below a fixed
+  threshold). Numerator: cohort PRs with a `false_accept` verdict or an
+  escaped defect. Denominator: audited cohort PRs. Targeted audits of
+  security-relevant or reverted PRs outside the cohort are reported
+  separately and never pooled into the bound, because their inclusion depends
+  on the outcome being measured; a false accept they find still triggers the
+  halt rule.
 - **R7 Current-process baseline.** The escaped-defect rate, by the same rules,
   of PRs merged into the trunk over the previous six months (`dev`, and before
   the November rename `feat/initial-release`) whose head is not a governed
@@ -56,8 +65,11 @@ label, a comment or a status file, is not evidence about it.
   against the baseline, the BLOCKED rate, lead time, and cost and audit
   minutes per accepted PR. It informs the maintainer's stage decision and
   never promotes on its own.
-- **R9 No secrets.** The ledger holds PR numbers, SHAs, check names,
-  durations and verdict codes only.
+- **R9 No secrets.** The ledger holds structured metadata only: event type
+  and source, PR numbers and item IDs, SHAs, check names and conclusions,
+  timestamps and durations, verdict codes with a sanitised reason, audit
+  minutes, and cost figures. It never holds tokens, credentials, environment
+  values or raw logs.
 
 ## How many audits are enough
 
@@ -82,6 +94,9 @@ Exact one-sided 95% upper bounds on the false-accept rate:
   defect; WHEN it is reverted on day 20 THEN it does not.
 - WHEN 30 audits show zero false accepts THEN the report shows a bound of 9.5%,
   not 0%.
+- WHEN a targeted audit outside the random cohort finds a false accept THEN it
+  is reported separately and triggers the halt rule, and the cohort bound is
+  unchanged.
 - WHEN a stage has fewer audits than its exit criterion THEN the report says
   "insufficient evidence" instead of a rate.
 
