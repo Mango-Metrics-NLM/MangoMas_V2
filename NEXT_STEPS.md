@@ -34,12 +34,12 @@ Next, in order:
 Corrections to the proposal, recorded so they are not re-litigated: the
 mutation proof already runs in CI (`Guard falsifiability probe`, 84 manifest
 entries); loop acceptance already parses JSON (`json_field`); composite loop
-bodies are blocked because a loop body is one agent name, not by
-`WorkflowStep`.
+bodies have two blockers, not one: a loop body is a single agent name, and a
+sequence cannot be a step (`WorkflowStep` excludes `SequenceNode`).
 
 Admin actions (repository settings, not files): confirm which checks are
-required on `dev`; add `Guard falsifiability probe` now and `Loop scope check`
-after M1.
+required on `dev`, `qa` and `main`; add `Guard falsifiability probe` now and
+`Loop scope check` after M1, each with its source pinned to GitHub Actions.
 
 ---
 

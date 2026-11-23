@@ -54,8 +54,8 @@ loop cannot influence.
 The repo is better prepared than the proposal assumes. It already has a
 mechanised mutation probe in CI (84 planted defects), protected-path policy
 read from the base ref (ADR-0030), parsed-JSON acceptance with load-time
-rejection of self-report predicates (ADR-0034), a "reported, not gated" rule
-for uncalibrated LLM judges (spec-0047), `pass^k` reliability (spec-0046),
+rejection of self-report predicates (spec-0032, spec-0034), a "reported, not
+gated, until calibrated" rule for LLM judges (spec-0047), `pass^k` reliability (spec-0046),
 oracle isolation backends (ADR-0040), and a full CI cycle of about two and a
 half minutes.
 
@@ -68,17 +68,17 @@ the lowest expected payoff for the highest risk.
 
 | # | Claim | Verdict | Evidence | Correction |
 |---|---|---|---|---|
-| 1 | Loop acceptance substring-matches the agent's self-report | Stale in letter, true in substance | `json_field` exists (spec-0032, ADR-0034) and `src/mangomas/workflow/validation.py:102-114` rejects `contains`/`regex` on loops over structured agents. But all three kinds read `response.content` (`workflow/predicate/_spec.py:62`), none reads trusted metadata, and the orchestrator re-injects only the agent's own reply (`core/orchestrator/_client.py:288-291`) | The gap is a verdict from trusted evidence, not substring matching |
-| 2 | The behavioural eval gate is manual and off by default | True, and it cannot simply be made required | `.github/workflows/eval-gate.yml:19` (`workflow_dispatch`) and `:41` (`vars.EVAL_GATE_ENABLED`); 5 rows scored by `exact_match` at `pass_rate >= 0.5` (`eval_harness_bridge/config/mangomas.eval.yaml:32,63`), no baseline. PR-time lanes use the `echo` target and scripted `FakeLLM` replies (`evals/README.md:12-13`); `make eval-live` is documented (`evals/README.md:14`) but no Makefile target exists | A check that never runs on `pull_request` never reports, so requiring it blocks every PR. Grow and calibrate the live gate first (reliability plan C0, C3) |
+| 1 | Loop acceptance substring-matches the agent's self-report | Stale in letter, true in substance | `json_field` exists (spec-0032) and `src/mangomas/workflow/validation.py:102-114` rejects `contains`/`regex` on loops over structured agents (spec-0034). But all three kinds (`workflow/predicate/_spec.py:62`) read `response.content` (`workflow/predicate/_client.py:65,80,93`), none reads trusted metadata, and the orchestrator re-injects only the agent's own reply (`core/orchestrator/_client.py:288-291`) | The gap is a verdict from trusted evidence, not substring matching |
+| 2 | The behavioural eval gate is manual and off by default | True, and it cannot simply be made required | `.github/workflows/eval-gate.yml:19` (`workflow_dispatch`) and `:41` (`vars.EVAL_GATE_ENABLED`); 5 rows scored by `exact_match` at `pass_rate >= 0.5` (`eval_harness_bridge/config/mangomas.eval.yaml:32,63`), no baseline. PR-time lanes use the `echo` target and scripted `FakeLLM` replies (`evals/README.md:13-14`); `make eval-live` is listed as Tier 2 (`evals/README.md:15`) and has no Makefile target yet | A check that never runs on `pull_request` never reports, so requiring it blocks every PR. Grow and calibrate the live gate first (reliability plan C0, C3) |
 | 3 | The mutation-proof procedure exists only on paper | False | `scripts/guard_probe.py` with an 84-entry manifest runs as the `Guard falsifiability probe` job on every PR and push (`.github/workflows/ci.yml:243-244`), deliberately outside `make gate` (`Makefile:252-255`, spec-0033 R6); 2 m 14 s on PR #153 | Real gaps: mutations are curated, not derived from the diff; the manifest is outside the protected set; there is no score or ratchet (ADR-0041 Tier 2); the job is missing from the required-check list (`CONTRIBUTING.md:65-75`) |
-| 4 | Make `eval-gate` and `protected-paths` required checks | Half right | `protected-paths` is not yet required (`NEXT_STEPS.md`, "Protected-paths CI job is not yet a required status check"); `eval-gate` cannot be (row 2) | Require `protected-paths` and the guard probe now; a required check alone can be defeated by a PR that edits CI (section 4, item 2) |
-| 5 | Composite `loop` bodies need the graph widened because `WorkflowStep` excludes `SequenceNode` | Wrong cause | A loop body is one agent name (`workflow/graph.py:51-57`) and the executor hands the whole loop to `orch.dispatch` (`workflow/nodes/loop.py:33-38`); ADR-0011:35-36 deferred composite bodies | With Claude Code as implementer this is off the critical path (product track P2) |
-| 6 | Reuse the plan-execute-review graph and the repair sandbox | Overstated | `examples/workflows/plan-execute-review.json` has no loop or acceptance. The sandbox stages one file (`stage_candidate_file`), runs one oracle and copies the file on exit code 0 (`run_oracle_and_promote`); there is no driver, branch, PR or attempt cap; isolation defaults to `none` (`config/repair.py:10`); nothing limits which staging names are written (`harness/repair_sandbox.py:249-258`) | Reuse its ideas (`allowed_paths`, oracle isolation), not its mechanism |
+| 4 | Make `eval-gate` and `protected-paths` required checks | Half right | `protected-paths` is recorded as not yet required (`NEXT_STEPS.md`, "Protected-paths CI job is not yet a required status check"); `eval-gate` cannot be (row 2) | Require `protected-paths` and the guard probe now; a required check alone can be defeated by a PR that edits CI (section 4, item 2) |
+| 5 | Composite `loop` bodies need the graph widened because `WorkflowStep` excludes `SequenceNode` | Partly right: one of two blockers | A loop body is one agent name (`workflow/graph.py:51-57`) and the executor hands the whole loop to `orch.dispatch` (`workflow/nodes/loop.py:33-38`); looping a sub-pipeline also needs a sequence to be a step, which `WorkflowStep` excludes (`workflow/graph.py:82-87`). ADR-0011:35-36 deferred composite bodies | With Claude Code as implementer, both are off the critical path (product track P2) |
+| 6 | Reuse the plan-execute-review graph and the repair sandbox | Overstated | `examples/workflows/plan-execute-review.json` has no loop or acceptance; its sibling `plan-review-until-passed.json` loops only the reviewer, on its own `passed` field. The sandbox stages one file (`stage_candidate_file`), runs one oracle and copies the file on exit code 0 (`run_oracle_and_promote`); there is no driver, branch, PR or attempt cap; isolation defaults to `none` (`config/repair.py:10`); nothing limits which staging names are written (`harness/repair_sandbox.py:249-258`) | Reuse its ideas (`allowed_paths`, oracle isolation), not its mechanism |
 | 7 | Fixed point: the loop never edits gate, evals, CI or protected paths | Not enforceable today | 13 exact protected paths (`pyproject.toml:147-167`) matched by set intersection (`scripts/check_protected_paths.py:191`). `.github/workflows/*`, `Makefile`, `scripts/check_coverage.py`, the guard manifest, `evals/`, `tests/` and `.claude/` are outside it. An unscoped `BREAKING-CHANGE:` approves every touched path (`scripts/_governance.py:124-126,170-175`); an unreadable base policy falls back to the working tree with a warning (`check_protected_paths.py:165-171`) | A separate, glob-capable, loop-only policy enforced from outside the PR (section 7) |
-| 8 | Held-out evals | Right, harder than stated | The repo is public; all 30 eval rows are committed beside the code; no held-out split exists | Held-out means unreachable: another repository, outside the session's network |
+| 8 | Held-out evals | Right, harder than stated | The repo is public; all 35 eval rows (30 under `evals/`, 5 in the bridge suite) are committed beside the code; no held-out split exists | Held-out means unreachable: another repository, outside the session's network |
 | 9 | Ratchet: no merge if any eval score regresses | Under-specified | Deterministic lanes already require no regressed row (`tests/evals/test_dataset_lanes.py`); live evals are stochastic | Strict for deterministic lanes; noise band plus `pass^k` and a cost term for live ones |
-| 10 | Convert `NEXT_STEPS.md` into a machine-readable backlog | True | 948 lines of dated prose; no stable IDs, dependency or acceptance fields | Item definitions stay human-owned; run state lives in the ledger (spec-0053, spec-0055) |
-| 11 | L0 = Dependabot triage, ledger sync, god-file decomposition | Partly wrong | "Ledger sync" names nothing here. The two largest scripts were decomposed by hand in v0.5.1; six of the seven largest modules left sit in the trusted base (`scripts/lint_agent_frontmatter.py` 791 lines, `core/orchestrator/_client.py` 721, `eval/runner.py` 700, `eval/gate.py` 640, `scripts/_gcp_preflight_probes.py` 463, `harness/repair_sandbox.py` 445); only `config/__init__.py` (669) does not. Dependabot PRs carry untrusted upstream text | L0 = behaviour-preserving work outside the trusted base; Dependabot stays deterministic |
+| 10 | Convert `NEXT_STEPS.md` into a machine-readable backlog | True | Over 900 lines of dated prose; no stable IDs, dependency or acceptance fields | Item definitions stay human-owned; run state lives in the ledger (spec-0053, spec-0055) |
+| 11 | L0 = Dependabot triage, ledger sync, god-file decomposition | Partly wrong | "Ledger sync" names nothing here. The two largest scripts were decomposed by hand in v0.5.1; six of the seven largest modules left sit in the trusted base (`scripts/lint_agent_frontmatter.py` 791 lines, `core/orchestrator/_client.py` 721, `eval/runner.py` 700, `eval/gate.py` 640, `scripts/_gcp_preflight_probes.py` 463, `harness/repair_sandbox.py` 445); only `config/__init__.py` (669) does not, and it is already ADR-0019's re-export facade. Dependabot PRs carry untrusted upstream text | L0 = behaviour-preserving work outside the trusted base; Dependabot stays deterministic |
 | 12 | Watch the false-accept rate | Right, not yet measurable | No definition, denominator, audit channel or sample size | Defined in section 9 and spec-0055 |
 
 ## 4. What the proposal misses
@@ -99,8 +99,9 @@ the lowest expected payoff for the highest risk.
    `Makefile`; that holds only if the PR cannot also change what produces the
    check. Design consequence: a scope check anchored on the default branch
    (`pull_request_target` now always runs the default branch's workflow
-   [GitHub changelog]) that never executes PR code, plus confirming that the
-   implementer's push credential cannot write `.github/workflows/**`.
+   [GitHub changelog]) that never executes PR code, a required check pinned to
+   its source, and an implementer credential that cannot write workflows,
+   statuses, checks, variables or administration.
 3. **Held-out means unreachable, not hidden.** This repository is public.
    Unearned passes concentrate on a few surfaces, chiefly reference solutions
    reachable through git history [Scale AI]; the same leak turned up in another
@@ -110,10 +111,12 @@ the lowest expected payoff for the highest risk.
    when the checks were visible to the agent [DGM].
 4. **Identity cannot separate the loop from the maintainer.** `claude/*` PRs
    are opened under the maintainer's account, so author rules and code-owner
-   review cannot tell them apart (`CODEOWNERS` is also declined,
-   `CONTRIBUTING.md:103-105`), and GitHub blocks approving one's own PR.
-   Separation must come from branch class, base-anchored policy and the tools
-   implementer sessions are allowed.
+   review cannot tell them apart, and GitHub blocks approving one's own PR.
+   Worse, a session acting with the maintainer's permissions can post commit
+   statuses, set repository variables and possibly edit rulesets, and it
+   chooses its own branch name. GitHub-side controls bind the loop only if its
+   credential lacks those rights and its PR class comes from something it
+   cannot choose: a dedicated identity, or a verified branch assignment.
 5. **There is no safe exit.** An abort option cut cheating from 54% to 9%
    (GPT-5) and from 49% to 12% (o3) on Conflicting-SWEbench, while
    retry-with-feedback raised it from 33% to 38% [ImpossibleBench]. An
@@ -140,7 +143,7 @@ the lowest expected payoff for the highest risk.
    budget and no failure breaker. With Claude Code as implementer these belong
    to the driver and are enforced outside the agent.
 10. **The false-accept rate needs a definition, a denominator and a sample
-    size**, plus a false-reject rate and a human baseline. Zero false accepts
+    size**, plus a false-reject rate and a baseline to compare against. Zero false accepts
     in 30 audited PRs still allows a true rate of up to 9.5% (section 9).
 11. **L2 is the weakest bet.** In 21 settings with significant gains, 54% of
     the gain from harness evolution was overfitting and 14% extra compute on
@@ -201,6 +204,9 @@ the lowest expected payoff for the highest risk.
   plausible but unmeasured.
 - Monitor detection rates vary widely with task realism, so no single number
   for "how often an LLM reviewer catches cheating" should be trusted here.
+- Whether stronger models game less is contested: SpecBench finds smaller gaps
+  for more capable models, while ImpossibleBench found frontier models
+  cheating more often on realistic tasks.
 
 ## 6. Threat model
 
@@ -211,6 +217,10 @@ from "the check passes" to "the work is wrong" will be found eventually.
 |---|---|---|---|
 | Specification gaming | Special-casing, editing tests or fixtures, weakening assertions, assertion-free tests that lift coverage | Trusted base; pre-registered contract tests; implementer tests never count; diff-scoped mutation; held-out checks | M1, M6, M7 |
 | Gate tampering | Editing `ci.yml`, `Makefile`, gate scripts, coverage floors, the guard manifest, eval datasets or baselines | Base-anchored scope check; required checks; no workflow-write credential | M1 |
+| Tool-config overrides | A nested `ruff.toml`, `mypy.ini` or `pyproject.toml`, a `.pyi` stub, or a `GNUmakefile` that changes how a gate behaves without touching it | Every tool-configuration file, at any depth, is in the trusted base | M1 |
+| Suppression comments | Adding `# pragma: no cover`, `# noqa` or `# type: ignore` inside allowed paths | Added suppressions fail unless the item allows them | M1 |
+| Branch-name evasion | Naming a branch outside the governed prefixes, or opening from a fork | Class from a dedicated identity or a verified branch assignment; forks and non-`dev` bases fail | M1, M5 |
+| Maintainer-level credential | Posting a same-named status, flipping a repository variable, editing a ruleset | Required check pinned to its source; an implementer credential without those rights | M1, M5 |
 | Governance edge cases | Unscoped `BREAKING-CHANGE:`; working-tree policy fallback | Governed branches may not touch protected paths at all; the scope check fails closed without a base policy | M1 |
 | Test-environment detection | Code that behaves differently under pytest; startup hooks (`conftest.py`, `*.pth`, `sitecustomize.py`) | Hook files in the trusted base; held-out checks run outside this test harness | M1, M7 |
 | Leakage | Reading held-out answers or later history | Held-out in another repository; history-free replay snapshots | M3, M7 |
@@ -226,71 +236,90 @@ from "the check passes" to "the work is wrong" will be found eventually.
 ### 7.1 Authority split
 
 The implementer proposes, a trusted verifier disposes, the maintainer
-promotes, matching ADR-0029's rule that whoever proposes never disposes. The
-load-bearing invariant: **no guarantee depends on an agent behaving well.**
-Every guarantee is enforced by GitHub, by CI code from the base branch, by
-checks outside this repository, or by the maintainer.
+promotes, by analogy with ADR-0029's runtime boundary (cognition proposes; the
+harness disposes). The load-bearing invariant: **no guarantee depends on an
+agent behaving well.** Every guarantee is enforced by GitHub, by CI code from
+the base branch, by checks outside this repository, or by the maintainer, and
+the implementer's credential cannot change any of them.
 
 ### 7.2 Trust zones
 
 - **Trusted base** — implementation branches may never touch it (full glob
-  list and reasons in spec-0052): CI and build configuration, `scripts/**`,
-  test-runner hook files, `tests/**`, the eval instrument (`evals/**`,
-  `eval_harness_bridge/**`, `src/mangomas/eval/**`), the safety instrument
-  (`src/mangomas/harness/**`), protected paths, the steering corpus
-  (`.claude/**`, `AGENTS.md`, every `CLAUDE.md`), deploy and secret-scanning
-  files, and the design records and backlog.
-- **Work area** — only what an approved backlog item's `allowed_paths` names,
-  always inside `src/mangomas/**` minus the instruments and protected paths,
-  live docs, `examples/**`, `README.md` or `CHANGELOG.md`.
+  list and reasons in spec-0052): CI, build and dependency configuration;
+  every tool-configuration file at any depth (`pyproject.toml`, `ruff.toml`,
+  `mypy.ini`, `pytest.ini`, ignore files, `.pyi` stubs, `conftest.py`);
+  `scripts/**`; `tests/**` and the `examples/**` fixtures tests load; the eval
+  instrument (`evals/**`, `eval_harness_bridge/**`, `src/mangomas/eval/**`,
+  and its CLI and settings); the safety instrument (`src/mangomas/harness/**`
+  and its wiring); all of `src/mangomas/core/**`; the steering corpus
+  (`.claude/**` at any depth, every `AGENTS.md` and `CLAUDE.md`); deploy and
+  secret-scanning files; and the design records and backlog.
+- **Work area** — a positive allowlist: only what an approved item's
+  `allowed_paths` names, always inside `src/mangomas/**` minus the above, live
+  docs, `README.md` or `CHANGELOG.md`.
 - **Evidence** — an append-only ledger derived from GitHub and CI.
 
-Known limitation: an item whose acceptance requires editing the root
-instruction pair, such as a new `MANGOMAS_*` setting documented in
-`AGENTS.md`, stays human work in the first version.
+Known limitation: tests bind some trusted-base files to `src/` (the OpenAPI
+snapshot, facade completeness in `tests/test_import_compat.py`, directory
+`CLAUDE.md` contracts, the source-owner roster, guard-probe snippets, and the
+configuration docs in `AGENTS.md` and `.env.example`). An item that needs one
+of them edited stays human work in the first version (spec-0053 R6).
 
 ### 7.3 Design moves
 
 1. **One anchored scope check makes every other check trustworthy.** If a loop
    PR touches no trusted-base file, every other CI job ran base-identical gate
-   code. Two branch classes: implementation (`claude/loop-*`) may touch only an
-   approved item's `allowed_paths`; proposal (`claude/proposal-*`) may touch
-   only design records, the backlog and contract tests, never `src/` or CI.
+   code and configuration. Two branch classes: implementation may change only
+   an approved item's `allowed_paths`, and may not add suppression comments the
+   item does not allow; proposal may only add new design records, backlog
+   items and contract tests, never edit an existing record, `src/` or CI. The
+   class comes from something the session cannot choose (a dedicated identity
+   or a verified branch assignment), and the required check is pinned to its
+   source.
 2. **Acceptance is pre-registered.** Contract tests merge before
-   implementation, are hash-pinned in the item, and live outside the default
-   test run until implemented, so `dev` stays green without a vacuous skip.
-   Changed lines must be killed by those tests under diff-scoped mutation.
+   implementation, are hash-pinned in the item, and are excluded from the
+   default test and type-check runs until the item is activated, so `dev`
+   stays green without a skip; behaviour-preserving items use the unchanged
+   suite instead. From L1, changed lines must also be killed by those tests
+   under diff-scoped mutation.
 3. **Held-out checks are unreachable** from the implementer: another
    repository, another credential, pass/fail only.
 4. **The ratchet** is strict for deterministic lanes and noise-aware with
    `pass^k` and a cost term for live ones. Floors, baselines and the guard
    manifest count move only by human PR.
-5. **The driver owns the base case:** one open loop PR at a time, per-item and
-   daily budgets, a halt after N consecutive failures, and a kill switch (a
-   repository variable the scope check reads). BLOCKED is success; merged-PR
-   count is never the target.
+5. **Limits are enforced by the scope check, not the driver:** one open
+   implementation PR at a time, a diff cap, attempt and consecutive-failure
+   limits, dependencies and stage, all read from GitHub. The driver only
+   decides when to start sessions and how long they run. `LOOP_ENABLED` stops
+   new implementation PRs and new sessions; it does not stop a session that is
+   already running. BLOCKED is success; merged-PR count is never the target.
 6. **The measuring instrument is always the base version:** the trusted base
    guarantees it in CI, and the held-out verifier pins a release tag.
 
 ### 7.4 Fit with recorded decisions
 
 - ADR-0030 kept `Makefile` and `ci.yml` out of the protected set to avoid
-  marker fatigue. The trusted base is therefore a separate, loop-only policy;
-  `protected_paths` and the human trailer rules are unchanged.
-- `CONTRIBUTING.md:103-105` declines `CODEOWNERS`; nothing here needs it.
+  marker fatigue, and deliberately keeps a loud working-tree fallback and
+  broad bare markers for human PRs. The trusted base is therefore a separate,
+  loop-only policy that makes the opposite, fail-closed choices for loop
+  branches. The human trailer rules are unchanged; only the loop checker's own
+  two files join `protected_paths`.
+- Nothing here needs `CODEOWNERS` (`CONTRIBUTING.md:103-105` declines
+  generating it from the skill roster).
 - ADR-0036 is unchanged: loop PRs target `dev` like any feature branch, and
   promotion to `qa` and `main` stays human.
 - spec-0033 R6 is unchanged: the guard probe stays its own CI job.
-- LLM reviewers follow spec-0047's pattern: reported, not gated.
-- ADR-0029's authority split (cognition proposes; a harness disposes) is the
-  same principle applied to the repository itself.
+- LLM reviewers never gate. That is stricter than spec-0047, which lets a
+  calibrated judge gate.
+- ADR-0029's runtime boundary (cognition proposes; the harness disposes) is
+  the analogy, applied here to the repository itself.
 
 ### 7.5 Stages and promotion
 
 | Stage | Scope | Autonomy | Exit criterion |
 |---|---|---|---|
 | Shadow | Behaviour-preserving items outside the trusted base | Draft PRs; every one audited and a verdict recorded before merge | 30 consecutive gate-passed PRs with no false accept and no scope violation |
-| L0 Maintenance | Same | Merge after a skim; sampled audit continues | 60 cumulative with a false-accept bound at or below 5%; escaped-defect rate no worse than the human baseline |
+| L0 Maintenance | Same | Merge after a skim; sampled audit continues | 60 cumulative with a false-accept bound at or below 5%; escaped-defect rate no worse than the current-process baseline |
 | L1 Features | Items approved through the propose stage (spec, ADR if needed, contract tests merged first) | Implementation PRs with mutation evidence | Held-out verifier live; the bound holds on L1 items |
 | L2 Experiment | Product prompts or the steering corpus | One change per epoch, human-merged, safety text frozen | Stop if two epochs show no held-out gain beyond noise at equal cost |
 
@@ -339,7 +368,8 @@ the maintainer's approval. M3 makes it repeatable and measurable.
 
 **First substrate: Claude Code.** The orchestration is a saved Claude Code
 workflow under `.claude/workflows/` (trusted base). It cannot be a skill: a
-skill never delegates to an agent (`CLAUDE.md:68`).
+skill never delegates to an agent (`CLAUDE.md:68`). Read-only roles get no
+file or GitHub write tools, MCP servers included.
 
 | Node | Does | Reuses |
 |---|---|---|
@@ -363,20 +393,24 @@ skill never delegates to an agent (`CLAUDE.md:68`).
 3. **Findings are advisory and shown verbatim.** Code writes the proposal, so
    no finding can be dropped or softened; reviewer agents inform, they do not
    gate.
-4. **"Evidence-backed" is checked by code.** Every repo citation must resolve
-   at the pinned SHA with a matching quote; every requirement must map to an
-   acceptance criterion; touched paths are intersected with the protected set
-   and the trusted base. A proposal that fails is not presented.
+4. **Citations are checked by code.** Every repo citation must resolve at the
+   pinned SHA with a matching quote; every requirement must map to an
+   acceptance criterion; trusted-base and protected-path impact is computed.
+   A proposal that fails is not presented. Whether a quote actually supports
+   its claim is the maintainer's judgement, measured by the sampled
+   unsupported-claim rate.
 5. **Separation of duties by branch class:** proposal branches cannot touch
-   code; implementation branches cannot touch acceptance.
+   code or edit an existing record; implementation branches cannot touch
+   acceptance.
 6. **Tests before code.** Contract tests written from the spec cannot lock in
    an implementation's bugs, unlike tests generated from existing code. They
    can still be weak; approval and diff-scoped mutation cover that.
 
 **Evaluation: replay this repo's own decisions.** Give the pipeline the Context
 section of a past ADR, run it on a history-free snapshot of the tree from
-before that ADR landed, and compare its recommendation with the recorded
-Decision and Alternatives. Prefer ADRs dated after the model's training cutoff
+before that ADR landed, with no network access to the repository host and the
+`github` and `fetch` MCP servers disabled, and compare its recommendation with
+the recorded Decision and Alternatives. Prefer ADRs dated after the model's training cutoff
 and hold out a subset never used to tune role prompts. Metrics: agreement with
 recorded decisions, unsupported-claim rate on a sampled audit, finding
 precision, issues found later that the pipeline missed, approval rate, cost
@@ -427,8 +461,12 @@ false-accept rate:
 | 100 | 3.0% | 4.7% | 6.2% |
 | 300 | 1.0% | 1.6% | 2.1% |
 
-**Human baseline.** The same escaped-defect measure over human-authored PRs
-into `dev` for the previous six months, computed by the same builder.
+**Current-process baseline.** The same escaped-defect measure over trunk PRs
+from the previous six months (`dev`, and before the November rename
+`feat/initial-release`) whose head is not a governed prefix, computed by the
+same builder. It includes interactive Claude Code sessions, because identity
+cannot separate them from human work here, so it measures the current process
+rather than human-only work.
 
 **Flow metrics** (DORA-style): lead time from item approval to merge; change
 failure rate (escaped defects); time to restore (revert time); cost and audit
@@ -439,15 +477,16 @@ minutes per accepted PR.
 - **Product goal:** return maintainer time on well-specified work without
   lowering quality. Leading indicator: audit minutes per accepted PR falling
   while the false-accept bound holds. Lagging: escaped-defect rate at or below
-  the human baseline.
+  the current-process baseline.
 - **Non-goals:** PR count, autonomy level, lines changed. Each becomes a
   target that gets gamed.
 - **Definition of Ready:** stable ID; `allowed_paths` outside the trusted
   base; acceptance pre-registered (contract tests, or behaviour-preserving
   against the unchanged suite); diff cap; budget; approved on `dev`.
 - **Definition of Done:** all required checks green including the scope
-  check; at least one contract test collected and passing; evidence recorded;
-  human verdict "accept"; merged by the maintainer.
+  check; the item's contract tests collected and passing, or the unchanged
+  suite for a behaviour-preserving item; evidence recorded; human verdict
+  "accept"; merged by the maintainer.
 - **WIP of one** open loop PR protects review attention and keeps diffs small,
   which is where DORA finds AI helps.
 - **Cadence:** a weekly 30-minute review covering metrics, a sampled
@@ -463,14 +502,17 @@ minutes per accepted PR.
 
 ## 11. Staging critique
 
-- **L0: right idea, wrong examples.** Good L0 work is behaviour-preserving and
-  outside the trusted base: rolling out a lint family after a human enables it
-  for a path (the deferred `RET`/`PERF`/`C90` families in `NEXT_STEPS.md`),
-  decomposing non-instrument modules such as `src/mangomas/config/__init__.py`
-  (669 lines) with facade-identity tests pre-registered, tightening types and
-  docstrings. Not Dependabot (deterministic grouping already exists, and an
-  LLM reading changelogs adds injection risk); not gate, governance or deploy
-  scripts; not protected contracts.
+- **L0: right idea, wrong examples.** The two largest scripts were already
+  decomposed by hand in v0.5.1. Good L0 work is behaviour-preserving, inside
+  the work area and free of companion edits: rolling out one of the deferred
+  `RET`/`PERF`/`C90` lint families for a single package (the contract test
+  runs the rule on that package, and only after the implementation merges
+  does a human enable it, so `dev` never goes red); extracting private helpers
+  from `src/mangomas/adapters/llm/vertex/_client.py` (439 lines) without
+  changing a public import path; tightening types and docstrings. Not
+  Dependabot (deterministic grouping already exists, and an LLM reading
+  changelogs adds injection risk); not gate, governance or deploy scripts; not
+  core contracts.
 - **L1: contract-first through the propose stage.** The implementer receives
   an approved item and frozen acceptance.
 - **L2: a bounded experiment, not a stage.** Targets are product prompts or
@@ -482,14 +524,15 @@ minutes per accepted PR.
 | Risk | Likelihood | Impact | Mitigation | Owner milestone |
 |---|---|---|---|---|
 | A loop PR neuters a gate via CI or scripts | Medium without M1 | High | Scope check from the default branch; required checks; no workflow-write credential | M1 |
-| Required-check name spoofed by a PR-added workflow | Low after M1 | High | Workflow edits are a trusted-base violation; credential check; App-sourced check if needed | M1 |
+| Required-check name spoofed by a PR-added workflow or a posted status | Low after M1 | High | Workflow edits are a trusted-base violation; the required check is pinned to its source; the implementer credential cannot write workflows or statuses | M1 |
 | Weak or wrong contract tests | Medium | Medium | Human approval; diff-scoped mutation; held-out | M3, M6, M7 |
 | Audit fatigue erodes the false-accept measure | Medium | High | WIP of one; diff cap; audit minutes tracked; sampled re-audit | M4, M5 |
 | Held-out set leaks | Low | High | Separate repository and credential; pass/fail only | M7 |
 | Prompt injection through backlog or proposal inputs | Medium | Medium | Untrusted text is data; items human-approved | M3 |
 | Throughput too low to matter | Medium | Low | Measure audit minutes; widen scope only on evidence | M4 |
 | The loop becomes a goal in itself | Medium | Medium | Non-goals stated; the kill criterion applies to every stage | all |
-| Required-check settings drift unnoticed | Low | High | Scorecard already re-runs on `branch_protection_rule`; record the expected list | M1 |
+| Required-check settings drift unnoticed | Low | High | Record the expected list in `CONTRIBUTING.md` and re-verify it after any settings change; Scorecard's `branch_protection_rule` trigger covers classic branch protection, not rulesets | M1 |
+| The session evades governance by branch name, or acts with maintainer rights | Medium until settled | High | A dedicated identity or verified branch assignment; a credential without workflow, status, variable or admin rights; the loop does not run until both are recorded | M1, M5 |
 
 ## 13. Decisions for the maintainer
 
@@ -528,6 +571,9 @@ Papers (read through alphaXiv; identifiers are arXiv numbers):
   Testing*, 2610.11835 — https://www.alphaxiv.org/abs/2610.11835
 - [Kahani & Bagherzadeh] *Mutation Testing for Multi-Agent Workflows*,
   2611.09895 — https://www.alphaxiv.org/abs/2611.09895
+
+Papers cited from abstracts and secondary summaries (not read in full):
+
 - [DGM] Zhang et al., *Darwin Gödel Machine*, 2505.22954 —
   https://arxiv.org/abs/2505.22954
 - [GitInject] 2606.09935 — https://arxiv.org/abs/2606.09935

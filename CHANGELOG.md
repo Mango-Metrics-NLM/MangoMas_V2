@@ -20,7 +20,10 @@ Versioning: [Semantic Versioning](https://semver.org/).
   pipeline, the propose stage) and 0055 (evidence ledger and false-accept
   rate). References: `docs/analysis/20261123-self-improvement-loop-deep-dive.md`,
   `docs/plans/20261123T000000Z-governed-self-improvement-loop-plan.md`,
-  `docs/adr/0042-governed-self-improvement-loop.md`.
+  `docs/adr/0042-governed-self-improvement-loop.md`. Locked in by
+  `tests/tooling/test_decision_record_numbering.py` (record numbering) and
+  `tests/tooling/test_doc_links.py` (links in `NEXT_STEPS.md` and
+  `specs/README.md`).
 
 ## [0.5.1] — 2026-11-21
 

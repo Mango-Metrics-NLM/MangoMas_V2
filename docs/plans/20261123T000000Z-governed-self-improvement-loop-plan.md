@@ -11,10 +11,11 @@
 
 M0 records the decision. M1 makes the gate trustworthy for agent branches
 before any agent branch exists: one scope check anchored on the default
-branch, two branch classes, fail-closed. M2 and M3 give the loop its input: a
+branch, two branch classes, fail-closed, plus a recorded answer to who the
+loop acts as and with what rights. M2 and M3 give the loop its input: a
 machine-readable backlog and the propose stage that fills it with approved
 items. M4 makes the loop measurable: a ledger derived from GitHub and CI, a
-human baseline and the false-accept bound. Only then does M5 start the Shadow
+current-process baseline and the false-accept bound. Only then does M5 start the Shadow
 driver; M6 opens L1 with diff-scoped mutation; M7 adds held-out and live
 behavioural checks; M8 runs L2 as an experiment. The constraint that shaped
 the order: **nothing the loop does is trusted until something it cannot
@@ -23,6 +24,8 @@ before autonomy.
 
 Analysis and rationale:
 [deep dive](../analysis/20261123-self-improvement-loop-deep-dive.md).
+Milestones are numbered across PRs (M0–M8) rather than per PR as in the
+template, because they span four specs.
 
 ## PR A — Decision records (M0)
 
@@ -36,52 +39,72 @@ Analysis and rationale:
 
 ## PR B — Trusted base and scope check (spec-0052)
 
-Owners: `mango-harness-dev` (policy, checker, sandbox fix) and `mango-ci-dev`
-(workflow, Makefile). Touches `pyproject.toml`, a protected path, so a commit
-carries `BREAKING-CHANGE: pyproject.toml — add the loop trusted-base policy (ADR-0042)`.
+Owners: `mango-harness-dev` (policy, checker) and `mango-ci-dev` (workflow,
+Makefile). Touches `pyproject.toml` and `src/mangomas/harness/governance.py`,
+both protected, so commits carry one scoped trailer per path, for example
+`BREAKING-CHANGE: pyproject.toml — add the loop trusted-base policy (ADR-0042)`.
 
 ### Milestone M1a — policy and checker
 
 - **Failing test first:** `tests/test_check_loop_scope.py` — an implementation
-  branch whose diff touches `Makefile` fails; a proposal branch touching `src/`
-  fails; an ungoverned branch passes; a missing base policy fails closed. Red
-  until `scripts/check_loop_scope.py` exists.
+  branch whose diff touches `Makefile`, adds a nested `ruff.toml` or adds an
+  unallowed `# type: ignore` fails; a second open implementation PR fails; a
+  proposal branch touching `src/` or editing an existing ADR fails; a governed
+  head from a fork fails; an ungoverned branch passes; a missing policy fails
+  `claude/**` heads only. Red until `scripts/check_loop_scope.py` exists.
 - **Depends on:** ADR-0042 accepted.
 - `[tool.mangomas.governance.loop]` in `pyproject.toml`;
-  `scripts/check_loop_scope.py` (stdlib only, reusing `scripts/_governance.py`);
-  `make loop-scope`.
+  `scripts/check_loop_scope.py` (stdlib only, reusing `scripts/_governance.py`)
+  with its tests in `SCRIPTS_TESTS`; `make loop-scope`; both new files added to
+  `protected_paths` and `GOVERNANCE_SURFACE`.
 
 ### Milestone M1b — anchored workflow and required checks
 
 - **Failing test first:** `tests/deploy/test_workflow_hardening.py`
   (`_EXPECTED_WORKFLOW_COUNT` 6 → 7) plus a new assertion that
-  `loop-scope.yml` uses `pull_request_target`, never checks out a PR ref, and
-  grants only `contents: read` and `pull-requests: read`.
+  `loop-scope.yml` uses `pull_request_target`, never checks out a PR ref,
+  grants only `contents: read` and `pull-requests: read`, and keys its
+  concurrency group per PR.
 - **Depends on:** M1a.
 - `.github/workflows/loop-scope.yml`. `CONTRIBUTING.md`'s required-check list
-  gains `Guard falsifiability probe` and `Loop scope check`; an admin marks
-  both required on `dev`, `qa` and `main`. Record whether the implementer's
-  push credential can write `.github/workflows/**` (spec-0052 R7).
+  (its column renamed "Job name (workflow)") gains `Guard falsifiability
+  probe` and `Loop scope check`; an admin marks both required on `dev`, `qa`
+  and `main`, with the source pinned to GitHub Actions.
 
-### Milestone M1c — mutation proof and the staging hole
+### Milestone M1c — mutation proof
 
-- **Failing test first:** a staged `conftest.py` is refused by the repair
-  sandbox (red today); `MUT-LOOP-*` guard-probe entries turn the scope tests
-  red when a trusted-base glob is removed or fail-closed is flipped.
+- **Failing test first:** `MUT-LOOP-*` guard-probe entries turn the scope tests
+  red when a trusted-base glob is removed, fail-closed is flipped, a truncated
+  listing is accepted, the suppression rule is dropped, or the open-PR check
+  is skipped.
 - **Depends on:** M1a.
-- Extend the startup-hook refusal in `src/mangomas/harness/isolation/base.py`
-  to test-runner hook and configuration files; add the guard-probe entries.
+
+### Milestone M1d — identity and credential (gates M5)
+
+- **Failing test first:** none is possible inside this repository; this is a
+  recorded verification.
+- **Depends on:** M1b.
+- Settle spec-0052 R2 (a dedicated loop identity, or a verified branch
+  assignment) and R10 (the implementer's credential has no write access to
+  workflows, statuses, checks, variables or administration, and no ruleset
+  bypass). Record both results in spec-0052. M5 does not start until they are
+  recorded.
 
 ## PR C — Machine-readable backlog (spec-0053)
 
-### Milestone M2 — schema, validator, seed items
+### Milestone M2 — schema, validator, contract runner, seed items
 
 - **Failing test first:** `tests/test_check_backlog.py` — an item whose
-  `allowed_paths` intersects the trusted base, a dependency cycle, or a
-  contract-hash mismatch fails.
+  `allowed_paths` leaves the work area, a dependency cycle, or a
+  contract-digest mismatch fails; `make contract ITEM=<ID>` fails when it
+  collects zero tests.
 - **Depends on:** M1a (the validator reads the same policy).
-- `backlog/<ID>.toml` items; `scripts/check_backlog.py`; `make backlog-check`
-  wired into `gate`; three to five Shadow seed items written by hand.
+- `backlog/<ID>.toml` items and `backlog/README.md`; `scripts/check_backlog.py`
+  with its tests in `SCRIPTS_TESTS`; `make backlog-check` in `make gate` and
+  the `lint` CI job; pytest and mypy exclusions for `tests/contract/` (a
+  `pyproject.toml` trailer); `make contract ITEM=<ID>` and activation markers
+  under `tests/contract/active/`; three to five Shadow seed items written by
+  hand.
 
 ## PR D — Propose stage (spec-0054)
 
@@ -116,22 +139,23 @@ carries `BREAKING-CHANGE: pyproject.toml — add the loop trusted-base policy (A
   reproduces the expected events exactly; a verdict from an unauthorised
   channel is rejected.
 - **Depends on:** M1, M2.
-- `scripts/build_loop_ledger.py`; `make loop-metrics`; the human
-  escaped-defect baseline over six months of `dev` history.
+- `scripts/build_loop_ledger.py`; `make loop-metrics`; the current-process
+  escaped-defect baseline over six months of trunk history (`dev`, previously
+  `feat/initial-release`).
 
 ## PR F — Shadow driver (spec written when started)
 
 ### Milestone M5 — driver and implementer environment
 
-- **Failing test first:** with an open `claude/loop-*` PR the driver refuses to
-  start another (WIP of one); with `LOOP_ENABLED` unset the scope check fails
-  every implementation branch.
-- **Depends on:** M1–M4.
+- **Failing test first:** with `LOOP_ENABLED` not `true` the driver starts no
+  session; with an item's wall-clock budget spent the driver stops it.
+- **Depends on:** M1–M4, with M1d's results recorded.
 - A scheduled cloud task starts a fresh session per item from a trusted
   prompt, in a dedicated environment with no secrets and a minimal network
-  allowlist. Merge, review and label tools are denied to implementer sessions;
-  budgets and the consecutive-failure breaker are enforced by the driver;
-  BLOCKED outcomes are recorded.
+  allowlist, acting through the identity and credential recorded in M1d. The
+  driver handles liveness only (when to start a session, wall-clock budgets);
+  every safety limit belongs to the scope check. BLOCKED outcomes are
+  recorded.
 
 ## PR G — L1 on approved proposals (spec written when started)
 
@@ -181,7 +205,10 @@ carries `BREAKING-CHANGE: pyproject.toml — add the loop trusted-base policy (A
 - Loop edits to the trusted base, or widening it without amending ADR-0042.
 - MangoMas on local models as the implementer (ADR-0042, alternatives).
 - Requiring `eval-gate.yml` before reliability plan C0 and C3 land.
-- Items whose acceptance needs edits to the root instruction pair.
+- Items that need companion edits in the trusted base (spec-0053 R6).
+- The repair sandbox's staging hole (a staged `conftest.py` reaches a pytest
+  oracle): real, but on the ADR-0039/0040 line, since the loop does not use
+  the sandbox.
 
 ## Verification
 

@@ -12,7 +12,7 @@ every architecture request in this repo already follows an informal path:
 gather evidence, check existing decisions, design, critique, decide. Today
 that path depends on whoever runs it, its evidence is not checked, and
 reviewer findings can be summarised away. This spec makes it repeatable,
-evidence-checked and measurable, and ends it where the authority sits: human
+citation-checked and measurable, and ends it where the authority sits: human
 approval.
 
 ## Pipeline
@@ -49,7 +49,8 @@ Evidence retrieval
 
 ## Requirements
 
-- **R1 Roles.** The analyst, critic and security roles are read-only.
+- **R1 Roles.** The analyst, critic and security roles are read-only: no file
+  or GitHub write tools, MCP servers included.
 
   | Node | Output | Reuses |
   |---|---|---|
@@ -74,7 +75,7 @@ Evidence retrieval
   never followed as an instruction (reliability plan E0).
 - **R4 Proposal package** on a `claude/proposal-<request_id>` branch: spec
   draft; ADR draft at Proposed when `needs_adr`; backlog-item draft (spec-0053);
-  contract tests under `tests/contract/<item-id>/`; and
+  contract tests under `tests/contract/<id_snake>/` (spec-0053 R5); and
   `docs/proposals/<request_id>/` holding `evidence.json`, `findings.json` and
   `proposal.md`.
 - **R5 Assembly by code.** `proposal.md` is generated from every node's
@@ -86,21 +87,29 @@ Evidence retrieval
   quote matches after whitespace normalisation; every requirement maps to at
   least one acceptance criterion; the package's paths fit the proposal branch
   class (spec-0052); trusted-base and protected-path impact is computed, not
-  claimed. External URLs are listed for sampling, not fetched.
+  claimed. External URLs are listed for sampling, not fetched. It also
+  re-assembles `proposal.md` from the JSON files and fails on any difference,
+  so no model can edit the findings after assembly. The checker confirms that
+  quotes exist; whether a quote supports its claim is judged by the maintainer
+  and measured by the sampled unsupported-claim rate.
 - **R7 One pass.** No automatic revise-until-approved loop. The maintainer may
   send a proposal back once with comments; the re-run is a new pass that takes
   the comments as input.
 - **R8 Approval.** The maintainer approves by merging the proposal PR.
   Send-backs and rejections are recorded too (spec-0055). Moving an ADR from
-  Proposed to Accepted is a human edit.
-- **R9 Substrate.** A saved Claude Code workflow at
-  `.claude/workflows/architecture-proposal.*` (trusted base). Not a skill: a
-  skill never delegates to an agent (`CLAUDE.md:68`).
+  Proposed to Accepted is a human edit: proposal branches cannot modify an
+  existing record (spec-0052 R5).
+- **R9 Substrate.** A saved Claude Code workflow (the Workflow tool loads
+  named workflows from `.claude/workflows/`) at
+  `.claude/workflows/architecture-proposal.*`, inside the trusted base. Not a
+  skill: a skill never delegates to an agent (`CLAUDE.md:68`).
 - **R10 Replay evaluation.** A maintainer-curated set of past ADRs, preferring
   those dated after the model's training cutoff, each paired with the commit
-  before it landed. The pipeline runs on a history-free export of that commit
-  with no access to the repository's later history; its output is compared
-  with the recorded Decision and Alternatives. A held-out subset is never used
+  before it landed. The pipeline runs on a history-free export of that commit,
+  with no network access to the repository host and the `github` and `fetch`
+  MCP servers disabled (`.mcp.json` ships both), because this repository is
+  public and the recorded decision is otherwise one request away. Its output is
+  compared with the recorded Decision and Alternatives. A held-out subset is never used
   to tune role briefs.
 
 ## Metrics
@@ -121,8 +130,11 @@ proposal.
 - WHEN the critic reports a blocking finding THEN it appears verbatim in
   `proposal.md` and the proposal still reaches the maintainer: findings inform,
   they do not gate.
-- WHEN a replay snapshot contains `.git` or files from after the decision THEN
-  the replay harness refuses to run.
+- WHEN `proposal.md` differs from a re-assembly of its JSON files THEN the
+  checker fails.
+- WHEN a replay snapshot contains `.git` or files from after the decision, or
+  the replay environment can reach the repository host or has the `github` or
+  `fetch` MCP server enabled, THEN the replay harness refuses to run.
 
 ## Config / env additions
 
@@ -153,7 +165,8 @@ on the replay set.
 ## Test plan
 
 - Unit: `tests/test_check_proposal_evidence.py` and the assembler's tests, both
-  directions for every scenario, with fixture repositories and no network.
+  directions for every scenario, with fixture repositories and no network,
+  registered in `SCRIPTS_TESTS`.
 - Corpus: a contract that the analyst, critic and security roles name only
   read-only agents.
 - Replay: the snapshot refusal in R10.

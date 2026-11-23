@@ -7,20 +7,25 @@
 
 ## Problem
 
-The loop needs input it can parse. `NEXT_STEPS.md` is 948 lines of dated prose
-with no stable item IDs, dependency fields or acceptance criteria, and plan
-milestones carry "Failing test first" and "Depends on" as prose bullets
+The loop needs input it can parse. `NEXT_STEPS.md` is over 900 lines of dated
+prose with no stable item IDs, dependency fields or acceptance criteria, and
+plan milestones carry "Failing test first" and "Depends on" as prose bullets
 (`docs/plans/_template.md`). Without items a machine can read, "the top
 unblocked item" is the agent's own interpretation, which is another
-self-report.
+self-report. And acceptance tests written before the code cannot simply sit in
+`tests/`: `testpaths` and mypy's `files` both include it
+(`pyproject.toml:279,335`), so a red-first test would turn `dev` red, and
+skips and xfails are banned (`CONTRIBUTING.md:166-168`).
 
 ## Requirements
 
-- **R1 One file per item.** `backlog/<ID>.toml`, read with the stdlib `tomllib`.
-  One file per item keeps approvals independent and merge conflicts rare. Items
-  are definitions: written by a human or drafted by the propose stage
-  (spec-0054), and approved by merging them. They never hold run state; status
-  lives in the ledger (spec-0055).
+- **R1 One file per item.** `backlog/<ID>.toml`, read with the stdlib
+  `tomllib`, plus a `backlog/README.md` the validator ignores. One file per
+  item keeps approvals independent and merge conflicts rare. Items are
+  definitions: written by a human, or added on a proposal branch
+  (spec-0054), and approved by merging. They are never edited afterwards
+  (spec-0052 R5) and never hold run state; status lives in the ledger
+  (spec-0055).
 - **R2 Fields.** Unknown keys are rejected.
 
   | Field | Type | Rule |
@@ -32,41 +37,76 @@ self-report.
   | `priority` | int | Lower runs first; ties break on `id` |
   | `source` | string | The `NEXT_STEPS.md` overlay, plan milestone or proposal it came from |
   | `depends_on` | list of IDs | Each must exist; no cycles |
-  | `allowed_paths` | list of globs | Must not intersect the trusted base (spec-0052) |
-  | `behaviour_preserving` | bool | When true, the existing suite must pass unchanged |
-  | `contract_tests` | list of pytest node IDs | Under `tests/contract/<id>/`; required unless `behaviour_preserving` |
-  | `contract_sha256` | string | Digest over the contract files' bytes, in path order |
-  | `max_diff_lines` | int | Size cap on the implementation diff (default 300) |
-  | `budget` | table | `max_attempts` and `max_wall_minutes` |
+  | `allowed_paths` | list of globs | Each inside the work area (spec-0052) |
+  | `allowed_suppressions` | list | Suppression comments the diff may add (spec-0052 R4); empty by default |
+  | `behaviour_preserving` | bool | When true, the existing suite must pass unchanged and no contract directory is required |
+  | `contract_sha256` | string | Required unless `behaviour_preserving`: SHA-256 over the sorted (relative path, LF-normalised bytes) pairs of every file in the item's contract directory |
+  | `max_diff_lines` | int | Default 300; enforced by the scope check |
+  | `budget` | table | `max_attempts` (enforced by the scope check) and `max_wall_minutes` (enforced by the driver) |
 
 - **R3 Validator.** `scripts/check_backlog.py` (stdlib only) and
-  `make backlog-check`, wired into `gate`: schema, ID and filename agreement,
-  unique IDs, an acyclic dependency graph, `allowed_paths` disjoint from the
-  trusted base (using spec-0052's policy reader), and contract files present
-  with a matching digest.
-- **R4 Deterministic selection.** An item is unblocked when every `depends_on`
-  item has a merged outcome in the ledger. The driver picks the unblocked item
+  `make backlog-check`, wired into `make gate` and the `lint` CI job, with its
+  tests in `SCRIPTS_TESTS`. It checks the schema, ID and filename agreement,
+  unique IDs, an acyclic dependency graph, that every `allowed_paths` entry's
+  literal prefix (up to its first wildcard) lies under a work-area root, and
+  that each contract directory exists with a matching digest. If the shared
+  policy reader lands in `scripts/_governance.py`, a protected path, that commit
+  carries its own scoped trailer.
+- **R4 Selection versus enforcement.** The driver picks the unblocked item
   with the lowest (`priority`, `id`) whose `min_stage` is at or below the
-  loop's current stage. An empty unblocked set stops the loop.
-- **R5 Seed.** Three to five Shadow items written by hand, each
-  behaviour-preserving and outside the trusted base: for example, a lint-family
-  rollout for one package after a human enables the rule for it, or a
-  decomposition of `src/mangomas/config/__init__.py` with facade-identity
-  contract tests.
+  loop's stage; an empty unblocked set stops the loop. Picking is a
+  convenience: the scope check independently enforces dependencies, stage,
+  diff size, attempts and work in progress (spec-0052 R3).
+- **R5 Contract tests.**
+  - *Location:* `tests/contract/<id_snake>/`, where `<id_snake>` is the ID
+    lowercased with `-` replaced by `_` (`loop_0007`), so it is a valid package
+    name.
+  - *Exclusion:* M2 adds (in a human PR carrying the `pyproject.toml` trailer)
+    exclusions so the default pytest run and mypy skip `tests/contract/`. A
+    red-first contract test then never turns `dev` red, and no skip or xfail is
+    needed.
+  - *Running:* `make contract ITEM=<ID>` collects, runs and type-checks one
+    directory explicitly; collecting zero tests fails. CI runs it for the
+    implementation branch of that item.
+  - *Activation:* after the implementation merges, a proposal branch adds the
+    marker file `tests/contract/active/<id_snake>` (a new file), and from then
+    on `make gate` runs and type-checks every active directory.
+- **R6 Companion edits are out of scope in the first version.** Tests bind
+  some trusted-base files to `src/`. An item whose change needs any of these
+  edited stays human work, and the propose stage routes it there:
+  - `tests/snapshots/openapi.json` (the HTTP surface);
+  - `tests/test_import_compat.py` (facade completeness for the config, CLI,
+    composition and telemetry facades);
+  - directory `CLAUDE.md` files checked by `tests/tooling/test_directory_claude_md.py`;
+  - the source-owner roster in `tests/tooling/test_corpus_contract.py` (a new
+    top-level entry under `src/mangomas`);
+  - guard-probe snippets the change would alter (`tests/harness/test_guard_probe.py`);
+  - the configuration documentation (`AGENTS.md`, `.env.example`).
+- **R7 Seed.** Three to five Shadow items written by hand, each
+  behaviour-preserving, inside the work area and free of companion edits. For
+  example:
+  - extract private helpers from `src/mangomas/adapters/llm/vertex/_client.py`
+    (439 lines) into a private sibling module, changing no public import path;
+  - a lint-family rollout for one package: the contract test runs
+    `ruff check --select <FAMILY>` on that package, and only after the
+    implementation merges does a human enable the rule in `pyproject.toml`.
 - `NEXT_STEPS.md` stays the human roadmap; an item cites it in `source`.
 
 ## Scenarios (WHEN/THEN)
 
-- WHEN an item's `allowed_paths` includes `Makefile` THEN `backlog-check` fails
-  and names the glob; WHEN every path is outside the trusted base THEN it
-  passes.
+- WHEN an item's `allowed_paths` includes `Makefile` or `tests/` THEN
+  `backlog-check` fails and names the entry; WHEN every entry lies under a
+  work-area root THEN it passes.
 - WHEN two items depend on each other THEN it fails; WHEN the dependencies form
   a DAG THEN it passes.
-- WHEN a contract test file changes after approval THEN the digest check fails
-  until the item is re-approved with the new digest.
+- WHEN a contract file changes after approval THEN the digest check fails.
 - WHEN `backlog/` is missing THEN the validator fails, so a moved directory
-  cannot validate nothing; WHEN it exists and is empty THEN it passes and
+  cannot validate nothing; WHEN it holds only its README THEN it passes and
   reports zero items.
+- WHEN `make contract ITEM=<ID>` collects zero tests THEN it fails; WHEN the
+  contract tests pass THEN it passes.
+- WHEN an item's contract directory is unimplemented THEN `make gate` on `dev`
+  stays green; WHEN its activation marker exists THEN `make gate` runs it.
 
 ## Config / env additions
 
@@ -80,17 +120,19 @@ None in `Settings`. The file format is the contract.
 
 ## Backwards-compatibility
 
-- A new directory and make target; nothing existing changes.
+- A new directory, two make targets and two exclusions in `pyproject.toml`;
+  nothing existing changes behaviour.
 
 ## Test plan
 
 - Unit: `tests/test_check_backlog.py`, both directions for every scenario.
 - Gates: a `MUT-BACKLOG-01` guard-probe entry; a validator that accepts an
-  intersecting glob must turn it red.
+  entry outside the work area must turn it red.
 
 ## Acceptance criteria
 
 - [ ] Every scenario is a test, in both directions.
-- [ ] `make backlog-check` runs inside `make gate`.
-- [ ] Seed items validate and none touches the trusted base.
-- [ ] CHANGELOG updated.
+- [ ] `make backlog-check` runs inside `make gate` and in CI.
+- [ ] Seed items validate, stay inside the work area and need no companion
+      edit.
+- [ ] CHANGELOG updated, naming the tests that lock this in.

@@ -15,13 +15,17 @@ label, a comment or a status file, is not evidence about it.
 ## Requirements
 
 - **R1 Derived, not written.** `scripts/build_loop_ledger.py` rebuilds the
-  ledger from GitHub (PRs on governed branches, check-run conclusions, merges,
-  closures, reverts and follow-up fixes) and CI artifacts. Output: append-only
-  JSONL, one event per line, each with a `source` field. Rebuilding and
-  comparing detects tampering with any stored copy.
-- **R2 Events.** `item_approved`, `proposal_reviewed`, `run_started`,
-  `gate_result`, `scope_result`, `blocked`, `verdict`, `merged`, `closed`,
-  `escaped_defect`.
+  ledger from GitHub (pull requests, check-run conclusions, merges, closures,
+  reverts and follow-up fixes) and CI artifacts. It ingests every PR whose head
+  starts with `claude/`, classifies it, and flags any head that matches neither
+  governed prefix. Output: append-only JSONL, one event per line, each with a
+  `source` field. Rebuilding and comparing detects tampering with any stored
+  copy.
+- **R2 Events.** Derived: `item_approved`, `proposal_reviewed`, `pr_opened`,
+  `gate_result`, `scope_result`, `verdict`, `merged`, `closed`,
+  `escaped_defect`. Self-reported: `blocked`, the implementer's typed refusal,
+  recorded with `source: self_reported`. It stops an item and never counts
+  toward acceptance.
 - **R3 Verdict channel.** Audit verdicts (`accept`, `false_accept`,
   `false_reject`, `scope_violation` or `unsure`, with a reason and the audit
   minutes) come only through a channel implementer sessions cannot write.
@@ -41,8 +45,12 @@ label, a comment or a status file, is not evidence about it.
   later commit fixes and cites, within 14 days of merge.
 - **R6 Bounds.** Every rate is reported with its counts and an exact one-sided
   95% (Clopper–Pearson) upper bound.
-- **R7 Human baseline.** The escaped-defect rate of human-authored PRs into
-  `dev` over the previous six months, computed by the same rules.
+- **R7 Current-process baseline.** The escaped-defect rate, by the same rules,
+  of PRs merged into the trunk over the previous six months (`dev`, and before
+  the November rename `feat/initial-release`) whose head is not a governed
+  prefix. It includes interactive Claude Code sessions, because identity cannot
+  separate them from human work here, so it is named for what it measures: the
+  current process, not human-only work (ADR-0033).
 - **R8 Report.** `make loop-metrics` prints, per stage: audited count, false
   accepts and their bound, the false-reject estimate, the escaped-defect rate
   against the baseline, the BLOCKED rate, lead time, and cost and audit
@@ -95,7 +103,7 @@ None in `Settings`.
 
 - Unit: `tests/test_build_loop_ledger.py` over recorded GitHub API fixtures (no
   network in CI); a property test for the bound function against a reference
-  implementation.
+  implementation; both registered in `SCRIPTS_TESTS`.
 - Gates: a `MUT-LEDGER-01` guard-probe entry; a builder that accepts an
   unauthorised verdict must turn it red.
 
@@ -103,5 +111,6 @@ None in `Settings`.
 
 - [ ] Every scenario is a test, in both directions.
 - [ ] The verdict channel is chosen and recorded in this spec.
-- [ ] The human baseline is computed and committed with its date range.
+- [ ] The current-process baseline is computed and committed with its date
+      range.
 - [ ] CHANGELOG updated.
