@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Governed self-improvement loop: decision records (ADR-0042 / spec-0052..0055)
+
+- Docs only; no code, test, CI or configuration change. A deep dive checks a
+  proposal to let MangoMas improve its own repository in a loop against the
+  code and the 2025–26 literature, and records the resulting design.
+  ADR-0042 (Proposed): agents propose, code from the base branch verifies, the
+  maintainer promotes. Draft specs: 0052 (trusted base and base-anchored scope
+  check), 0053 (machine-readable backlog), 0054 (architecture-proposal
+  pipeline, the propose stage) and 0055 (evidence ledger and false-accept
+  rate). References: `docs/analysis/20261123-self-improvement-loop-deep-dive.md`,
+  `docs/plans/20261123T000000Z-governed-self-improvement-loop-plan.md`,
+  `docs/adr/0042-governed-self-improvement-loop.md`.
+
 ## [0.5.1] — 2026-11-21
 
 ### Fixed — Origin-delta AQA hardening, NumPy scalar safety & boolean edge cases (`2026-11-20`)
