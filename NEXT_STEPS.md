@@ -8,6 +8,41 @@ extension, backwards-compatible contracts.
 
 ---
 
+## Overlay: Governed self-improvement loop — decision records (2026-11-23, ADR-0042 Proposed)
+
+A proposal to let MangoMas improve its own repository in a loop was checked
+against the code and the 2025–26 literature
+([deep dive](docs/analysis/20261123-self-improvement-loop-deep-dive.md)).
+Verdict: do not close the loop until acceptance is computed by something the
+loop cannot influence. [ADR-0042](docs/adr/0042-governed-self-improvement-loop.md)
+(Proposed) records the design: agents propose, code from the base branch
+verifies, the maintainer promotes. The
+[delivery plan](docs/plans/20261123T000000Z-governed-self-improvement-loop-plan.md)
+sequences M1–M8; nothing after M0 starts until the ADR is accepted.
+
+Next, in order:
+
+1. M1 — trusted base and a scope check anchored on the default branch
+   ([spec-0052](specs/0052-loop-trusted-base-scope-check.md)).
+2. M2 — machine-readable backlog
+   ([spec-0053](specs/0053-machine-readable-backlog.md)).
+3. M3 — the propose stage, an architecture-proposal pipeline ending in human
+   approval ([spec-0054](specs/0054-architecture-proposal-pipeline.md)).
+4. M4 — evidence ledger and the false-accept rate
+   ([spec-0055](specs/0055-loop-evidence-ledger.md)).
+
+Corrections to the proposal, recorded so they are not re-litigated: the
+mutation proof already runs in CI (`Guard falsifiability probe`, 84 manifest
+entries); loop acceptance already parses JSON (`json_field`); composite loop
+bodies have two blockers, not one: a loop body is a single agent name, and a
+sequence cannot be a step (`WorkflowStep` excludes `SequenceNode`).
+
+Admin actions (repository settings, not files): confirm which checks are
+required on `dev`, `qa` and `main`; add `Guard falsifiability probe` now and
+`Loop scope check` after M1, each with its source pinned to GitHub Actions.
+
+---
+
 ## Overlay: Soft-deploy mangomas-dev live + honest v0.5.0 (2026-11-20)
 
 Shipped: billing + GCP slice + WIF smoke, `/health`+`/ready` probes (Cloud Run

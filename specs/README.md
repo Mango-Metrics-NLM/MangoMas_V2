@@ -91,6 +91,10 @@ thinking tool, not a gate.
 | [0049](0049-gcp-integration-demonstration.md) | GCP local-CLI demonstration: `.env.gcp-demo`, read-only `make gcp-preflight` (billing-account-open, required APIs), runbook and offline contract suites |
 | [0050](0050-origin-delta-aqa-20261112.md) | Origin-delta AQA for spec-0043..0049: dual-population (`mypy --strict` with `[cloud]`), dual-GPU, Docker/WSL oracle isolation, live LM Studio E2E, and `D-1`..`D-13` hardening |
 | [0051](0051-origin-delta-aqa-20261115.md) | Post-cutover origin-delta AQA, live/GPU/no-mock E2E, and `D-1`..`D-4` remediation (`google.genai` smoke, `/readyz` timeout budget, `MANGOMAS_EVAL__OUTPUT_DIR`, RAG/Vertex docs sync) |
+| [0052](0052-loop-trusted-base-scope-check.md) | Loop trusted base and base-anchored scope check (ADR-0042, milestone M1) |
+| [0053](0053-machine-readable-backlog.md) | Machine-readable backlog (ADR-0042, milestone M2) |
+| [0054](0054-architecture-proposal-pipeline.md) | Architecture-proposal pipeline, the propose stage (ADR-0042, milestone M3) |
+| [0055](0055-loop-evidence-ledger.md) | Loop evidence ledger and the false-accept rate (ADR-0042, milestone M4) |
 
 Note: spec and ADR numbers advance independently ("next free integer" applies
 within each directory), so the two sequences do not line up. On this branch
@@ -101,4 +105,4 @@ differently (`0007` = declarative agent workflows, `0011` = harness-hook-hardeni
 (supersedes `main`'s ADR-0007). `docs/adr/` also has no `0022`: that number was
 forward-referenced by ADR-0021 for a separate "harness governance port" ADR that
 ADR-0021 ended up absorbing, so it was never written and is left as a gap rather
-than reused. Next free spec on this branch: **0052** (0036 is reserved); next free ADR: **0042**.
+than reused. Next free spec on this branch: **0056** (0036 is reserved); next free ADR: **0043**.
