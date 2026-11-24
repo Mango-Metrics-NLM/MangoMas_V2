@@ -31,7 +31,9 @@ These core contracts are **protected paths** — and, since
 [ADR-0030](docs/adr/0030-self-protecting-governance-gate.md), so is the
 governance mechanism itself (`.mcp.json`, `pyproject.toml`,
 `scripts/_governance.py`, `scripts/check_protected_paths.py`,
-`sitecustomize.py`, `src/mangomas/harness/governance.py`):
+`sitecustomize.py`, `src/mangomas/harness/governance.py`) and, since
+[ADR-0042](docs/adr/0042-governed-self-improvement-loop.md), the loop scope
+check (`scripts/check_loop_scope.py`, `.github/workflows/loop-scope.yml`):
 
 | Path | Why |
 |---|---|
@@ -62,17 +64,24 @@ These jobs must be required status checks on every environment branch —
 merging red. This file cannot flip the GitHub setting — a repo admin has to
 mark them required:
 
-| Job name in `ci.yml` | Make target |
+| Job name (workflow) | Make target |
 |---|---|
-| Lint & type-check | `validate-config`, `lint`, `format-check`, `frontmatter`, `typecheck`, `lint-imports` |
-| Test (Python 3.11) | `test-xml`, `coverage`, `gated-suites` |
-| Test (Python 3.12) | same |
-| Protected-path governance gate | `protected-paths` |
-| Scripts coverage gate | `scripts-coverage` |
-| Bridge coverage gate | `bridge-coverage` |
-| Contracts coverage gate | `contracts-coverage` |
-| Dependency vulnerability audit | `pip-audit` |
-| Secret scan | `secret-scan` |
+| Lint & type-check (`ci.yml`) | `validate-config`, `lint`, `format-check`, `frontmatter`, `typecheck`, `lint-imports` |
+| Test (Python 3.11) (`ci.yml`) | `test-xml`, `coverage`, `gated-suites` |
+| Test (Python 3.12) (`ci.yml`) | same |
+| Protected-path governance gate (`ci.yml`) | `protected-paths` |
+| Scripts coverage gate (`ci.yml`) | `scripts-coverage` |
+| Bridge coverage gate (`ci.yml`) | `bridge-coverage` |
+| Contracts coverage gate (`ci.yml`) | `contracts-coverage` |
+| Dependency vulnerability audit (`ci.yml`) | `pip-audit` |
+| Secret scan (`ci.yml`) | `secret-scan` |
+| Guard falsifiability probe (`ci.yml`) | `guard-probe` |
+| Loop scope check (`loop-scope.yml`) | `loop-scope` |
+
+`Loop scope check` runs on `pull_request_target`, so GitHub always runs the
+default branch's copy and a pull request cannot change what judges it. When
+you mark it required, pin its expected source to GitHub Actions, so a status
+posted by anything else cannot satisfy it (spec-0052 R9).
 
 ## Branches and promotion (ADR-0036)
 

@@ -1,0 +1,55 @@
+# Loop scope check (ADR-0042 / spec-0052).
+#
+# Runs on pull_request_target, so GitHub always executes the DEFAULT branch's
+# copy of this file, of the Makefile and of scripts/check_loop_scope.py, and
+# reads the policy from the default branch's pyproject.toml. A pull request
+# cannot change what judges it: an edit to any of these takes effect only once
+# merged, and on a loop branch the edit is itself a violation.
+#
+# The job never checks out or runs pull-request code. It reads the PR through
+# the API with the job's read-only token, holds no repository secrets, and
+# installs nothing (the checker is stdlib-only). Event values reach the script
+# through the event file and env bindings, never through `${{ }}` in `run:`.
+#
+# Required on dev, qa and main (spec-0052 R9). It runs for PRs into qa and main
+# only so that a loop branch aimed there fails visibly.
+name: Loop scope
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+    branches: [dev, qa, main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Under pull_request_target, github.ref is the default branch for every PR, so
+# the group is keyed per PR as well; the hardening contract requires github.ref.
+concurrency:
+  group: loop-scope-${{ github.ref }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  loop-scope:
+    name: Loop scope check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # No `ref:` and no `repository:`: this checks out the default branch.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No `cache:`: a cache written by one PR's run must never feed another's.
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Loop scope check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LOOP_ENABLED: ${{ vars.LOOP_ENABLED }}
+          LOOP_STAGE: ${{ vars.LOOP_STAGE }}
+        run: make loop-scope

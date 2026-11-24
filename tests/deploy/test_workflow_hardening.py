@@ -24,8 +24,8 @@ attacker-influenced family, not just the one instance that was fixed.
 
 Discovery is guarded (file, run-body and uses counts) so a moved or renamed
 workflow directory degrades to a loud failure rather than a vacuously green
-pass. The file count is exact — six: ci, deploy, eval-gate, nightly, plus the
-two security-scanning workflows (scorecard, codeql) — because a count that
+pass. The file count is exact — seven: ci, deploy, eval-gate, nightly, the
+two security-scanning workflows (scorecard, codeql) and loop-scope — because a count that
 tolerated one fewer would let a deleted workflow go unnoticed by every rule
 that iterates them — the same fail-open defect class ``test_env_example_contract.py``
 documents. Parsing lives in ``tests/deploy/_workflows.py`` so this suite and
@@ -48,7 +48,7 @@ from tests.tooling.test_toolchain_pin_parity import (
     normalize_distribution,
 )
 
-_EXPECTED_WORKFLOW_COUNT = 6
+_EXPECTED_WORKFLOW_COUNT = 7
 # Vacuity floors: low enough that a legitimate change never trips them, high
 # enough that a glob matching nothing (or a workflow losing every step) fails
 # loudly. Deliberately not the exact counts — see the module docstring.
@@ -594,3 +594,59 @@ def test_eval_gate_scrubs_server_log_before_upload() -> None:
         if "uvicorn.redacted.log" in str(step.get("run", ""))
     ]
     assert scrub_steps, "expected a log-scrubbing step writing uvicorn.redacted.log before upload"
+
+
+# ── The loop scope check: anchored to the default branch (spec-0052 R7) ──────
+#
+# Everything this workflow does is safe only because of how it is triggered and
+# what it is allowed to do. `pull_request_target` runs the default branch's copy
+# of the workflow, the Makefile and the checker, with a token that can write
+# whatever the permissions block grants. So the trigger, the token's scope and
+# "never check out the PR" are each pinned here: a `pull_request` trigger would
+# run the PR's own copy of the judge, a `ref:` on checkout would run PR code with
+# that token, and a cache would let one PR's run feed another's.
+_LOOP_SCOPE_WORKFLOW = "loop-scope.yml"
+_LOOP_SCOPE_JOB_NAME = "Loop scope check"
+_LOOP_SCOPE_TYPES = ["opened", "synchronize", "reopened", "edited"]
+_LOOP_SCOPE_PERMISSIONS = {"contents": "read", "pull-requests": "read"}
+_LOOP_SCOPE_ACTIONS = {"actions/checkout", "actions/setup-python"}
+_LOOP_SCOPE_CONCURRENCY = "loop-scope-${{ github.ref }}-${{ github.event.pull_request.number }}"
+_CHECKOUT_TARGETING_KEYS = ("ref", "repository")
+
+
+def test_loop_scope_workflow_is_anchored_to_the_default_branch() -> None:
+    doc = _workflows.workflow_docs()[_LOOP_SCOPE_WORKFLOW]
+    triggers = _workflows.triggers(_LOOP_SCOPE_WORKFLOW)
+    assert set(triggers) == {"pull_request_target"}, triggers
+    target = triggers["pull_request_target"]
+    assert target["types"] == _LOOP_SCOPE_TYPES
+    ci_branches = _workflows.triggers("ci.yml")["pull_request"]["branches"]
+    assert target["branches"] == ci_branches, "must cover every branch CI gates"
+
+    assert doc["permissions"] == _LOOP_SCOPE_PERMISSIONS
+    assert doc["concurrency"]["group"] == _LOOP_SCOPE_CONCURRENCY
+
+    jobs = _workflows.jobs(_LOOP_SCOPE_WORKFLOW)
+    assert list(jobs) == ["loop-scope"]
+    job = jobs["loop-scope"]
+    assert job["name"] == _LOOP_SCOPE_JOB_NAME, "the required check is matched by this name"
+    assert "permissions" not in job, "the job must not widen the workflow's token"
+
+    steps = job["steps"]
+    uses = {_action_name(str(step["uses"])) for step in steps if "uses" in step}
+    assert uses == _LOOP_SCOPE_ACTIONS
+    for step in steps:
+        with_block = step.get("with") or {}
+        assert not any(key in with_block for key in _CHECKOUT_TARGETING_KEYS), step
+        assert "cache" not in with_block, step
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
+    assert checkout["with"]["persist-credentials"] is False
+    assert [step["run"] for step in steps if "run" in step] == ["make loop-scope"]
+
+
+def test_loop_scope_workflow_reads_no_secret_and_no_pr_code() -> None:
+    """Text-level backstop for what the structural test above cannot see."""
+    raw = (_workflows.WORKFLOWS_DIR / _LOOP_SCOPE_WORKFLOW).read_text(encoding="utf-8")
+    assert "secrets." not in raw
+    assert "pull_request.head" not in raw, "the PR head must never reach a step"
+    assert "github.head_ref" not in raw

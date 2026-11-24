@@ -624,11 +624,15 @@ PROTECTED_PATH_OWNER_SLUGS: frozenset[str] = frozenset(
         "mango-orchestrator-dev",
         "mango-schema-evolution",
         "mango-hypothesis-fuzz",
-        # Owns four protected paths (pyproject.toml, scripts/_governance.py,
-        # scripts/check_protected_paths.py, src/mangomas/harness/governance.py)
-        # and was missing here, so the roster the trailer test walks was a
-        # strict subset of the agents that actually need the trailer.
+        # Owns five protected paths (pyproject.toml, scripts/_governance.py,
+        # scripts/check_protected_paths.py, scripts/check_loop_scope.py,
+        # src/mangomas/harness/governance.py) and was missing here, so the
+        # roster the trailer test walks was a strict subset of the agents that
+        # actually need the trailer.
         "mango-harness-dev",
+        # Owns `.github/workflows/`, which holds the protected
+        # loop-scope.yml (ADR-0042 / spec-0052 R8).
+        "mango-ci-dev",
     }
 )
 # The description is the entire routing surface and loads at every session

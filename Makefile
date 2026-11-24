@@ -31,7 +31,8 @@ SCRIPTS_TESTS ?= tests/test_lint_agent_frontmatter.py tests/test_harness_session
                  tests/test_scripts_shared_helpers.py tests/test_check_coverage.py \
                  tests/test_deploy_environment.py tests/harness \
                  tests/test_studio_consumer_probe.py tests/test_destructive_bash.py \
-                 tests/test_bootstrap_gpu_env.py tests/test_preflight_verification.py
+                 tests/test_bootstrap_gpu_env.py tests/test_preflight_verification.py \
+                 tests/test_check_loop_scope.py
 # Measured baseline (2026-08-22, spec-0023 R5): 94% total. check_coverage.py
 # was the gate's own blind spot — 24%, imported only for its FLOORS/
 # GLOBAL_FLOOR constants, with `_check`/`main` exercised by nothing. A defect
@@ -122,7 +123,7 @@ TRIVY_SHA256 ?= 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
 
 .DEFAULT_GOAL := help
 .PHONY: help install venv-gpu validate-config lint format format-check typecheck lint-imports frontmatter \
-        protected-paths test test-xml guard-probe studio-probe-mock studio-probe \
+        protected-paths loop-scope test test-xml guard-probe studio-probe-mock studio-probe \
         coverage bridge-coverage contracts-coverage scripts-coverage gate precommit serve clean gitleaks-selftest \
         integration lmstudio vertex postgres rag gcp-secrets gcp-trace langfuse \
         gated-suites embeddings-local gpu oracle-isolation-docker oracle-isolation-wsl secret-scan pip-audit sbom-scan \
@@ -213,6 +214,12 @@ frontmatter: ## Validate .claude/agents + .claude/skills frontmatter
 
 protected-paths: ## Fail if a protected core contract changed without a BREAKING-CHANGE commit (ADR-0021)
 	$(PYTHON) scripts/check_protected_paths.py --base-ref $(BASE_REF)
+
+# Not part of `gate`: it judges one pull request through the GitHub API, so it
+# needs the event payload and token that .github/workflows/loop-scope.yml
+# provides on pull_request_target (spec-0052).
+loop-scope: ## Judge a PR against the loop policy (CI only: needs the PR event and the GitHub API)
+	$(PYTHON) scripts/check_loop_scope.py
 
 test: ## Full unit suite (addopts supply --cov and --cov-fail-under)
 	$(PYTHON) -m pytest $(PYTEST_FLAGS)

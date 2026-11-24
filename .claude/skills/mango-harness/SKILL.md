@@ -18,7 +18,9 @@ argument-hint: "Name the protected file you are changing, or paste the failing g
   `core/structured.py`, `core/tools.py`, `errors.py`, `registry.py`, or the
   governance mechanism files (`.mcp.json`, `pyproject.toml`,
   `scripts/_governance.py`, `scripts/check_protected_paths.py`,
-  `sitecustomize.py`, `src/mangomas/harness/governance.py`) — the thirteen protected paths
+  `sitecustomize.py`, `src/mangomas/harness/governance.py`), or the loop scope
+  check (`scripts/check_loop_scope.py`, `.github/workflows/loop-scope.yml`;
+  ADR-0042) — the fifteen protected paths
 - The `Protected-path governance gate` CI job failed and you need to know why
 - Adding or changing a hook in `.claude/settings.json`
 - Deciding whether a change is genuinely breaking, or additive and marker-free
@@ -67,6 +69,8 @@ the three cannot drift.
 | `scripts/check_protected_paths.py` | `mango-harness-dev` (governance surface, ADR-0030) |
 | `sitecustomize.py` | `mango-harness-dev` (governance surface, ADR-0030) |
 | `src/mangomas/harness/governance.py` | `mango-harness-dev` (governance surface, ADR-0030) |
+| `scripts/check_loop_scope.py` | `mango-harness-dev` (loop scope check, ADR-0042) |
+| `.github/workflows/loop-scope.yml` | `mango-ci-dev` (loop scope check, ADR-0042) |
 
 Note `src/mangomas/core/agent.md` is **not** protected; the table lists
 `agent.py`. One character apart.

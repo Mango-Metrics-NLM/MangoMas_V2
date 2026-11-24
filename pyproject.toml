@@ -153,18 +153,93 @@ protected_paths = [
     "src/mangomas/core/tools.py",
     "src/mangomas/errors.py",
     "src/mangomas/registry.py",
-    # The governance mechanism itself (ADR-0030). Kept in lock-step with
-    # `mangomas.harness.governance.GOVERNANCE_SURFACE`, whose docstring records
-    # why `Makefile`, `.github/workflows/ci.yml` and
+    # The governance mechanism itself (ADR-0030), and the loop scope check with
+    # the workflow that anchors it (ADR-0042 / spec-0052 R8). Kept in lock-step
+    # with `mangomas.harness.governance.GOVERNANCE_SURFACE`, whose docstring
+    # records why `Makefile`, `.github/workflows/ci.yml` and
     # `scripts/lint_agent_frontmatter.py` are deliberately NOT here.
+    ".github/workflows/loop-scope.yml",
     ".mcp.json",
     "pyproject.toml",
     "scripts/_governance.py",
+    "scripts/check_loop_scope.py",
     "scripts/check_protected_paths.py",
     "sitecustomize.py",
     "src/mangomas/harness/governance.py",
 ]
 breaking_change_marker_aliases = ["BREAKING-CHANGE", "# approved-breaking-change"]
+
+# The self-improvement loop's trusted base and scope (ADR-0042 / spec-0052).
+# scripts/check_loop_scope.py reads this table from the DEFAULT branch, because
+# .github/workflows/loop-scope.yml runs on pull_request_target: a PR is judged
+# by the policy already merged, never by its own copy. In every glob, `**` spans
+# whole path segments and `*` and `?` stay within one. Deny lists match
+# case-insensitively; allow lists match exactly. A missing or malformed table
+# fails every `claude/` head and lets every other head pass with a warning.
+[tool.mangomas.governance.loop]
+implementation_prefix = "claude/loop-"
+proposal_prefix = "claude/proposal-"
+base_branch = "dev"
+# PR authors governed whatever their branch is called (spec-0052 R2(a)). Empty
+# until a dedicated loop identity exists (milestone M1d).
+loop_identities = []
+stages = ["shadow", "l0", "l1", "l2"]
+max_open_implementation_prs = 1
+max_consecutive_failures = 3
+# Closed implementation PRs numbered at or below this are left out of the halt
+# count. A human PR raising it (it needs a trailer) lifts a halt.
+halt_reset_after_pr = 0
+# Configuration and steering files, denied at any depth on every governed
+# branch: each one changes how a tool or an agent behaves for its directory.
+denied_anywhere = [
+    "**/conftest.py", "**/pytest.ini", "**/.pytest.ini", "**/tox.ini", "**/setup.cfg",
+    "**/pyproject.toml", "**/.coveragerc", "**/ruff.toml", "**/.ruff.toml",
+    "**/mypy.ini", "**/.mypy.ini",
+    "**/sitecustomize.py", "**/usercustomize.py", "**/*.pth", "**/*.pyi",
+    "**/.gitignore", "**/.ignore", "**/.gitattributes",
+    "**/.claude/**", "**/AGENTS.md", "**/CLAUDE.md", "**/.mcp.json",
+]
+# What an implementation branch may never change. The checker adds every
+# `protected_paths` entry above.
+trusted_base = [
+    # CI, build, dependency and tool configuration.
+    ".github/**",
+    "Makefile", "GNUmakefile", "makefile",
+    "requirements*.txt", "requirements.lock*", "uv.lock", ".python-version",
+    ".pre-commit-config.yaml", "pyrightconfig.json", ".importlinter", "typings/**",
+    # Gates, acceptance tests and the fixtures they load.
+    "scripts/**", "tests/**", "examples/**",
+    # The measuring instrument, with its CLI and settings.
+    "evals/**", "eval_harness_bridge/**", "src/mangomas/eval/**",
+    "src/mangomas/cli/commands/eval.py", "src/mangomas/cli/commands/_eval_config.py",
+    "src/mangomas/cli/exit_codes.py", "src/mangomas/config/evaluation.py",
+    # The safety instrument and its wiring.
+    "src/mangomas/harness/**", "src/mangomas/config/harness.py",
+    "src/mangomas/config/repair.py", "src/mangomas/composition/harness.py",
+    "src/mangomas/composition/repair.py",
+    # Public contracts.
+    "src/mangomas/core/**",
+    # Deploy, secret scanning and the configuration contract.
+    "deploy/**", "Dockerfile*", ".dockerignore", "docker-compose.yml",
+    ".gitleaks.toml", ".gitleaksignore", ".env.example", ".env.gcp-demo",
+    "mango-integration-contracts/**",
+    # Design and acceptance records (added only on proposal branches), and the
+    # process records.
+    "backlog/**", "specs/**", "docs/adr/**", "docs/plans/**", "docs/analysis/**",
+    "docs/proposals/**",
+    "CONTRIBUTING.md", "SECURITY.md", "NEXT_STEPS.md",
+]
+# The positive allowlist an item's `allowed_paths` must sit inside, minus both
+# deny lists.
+work_area = ["src/mangomas/**", "docs/**", "README.md", "CHANGELOG.md"]
+# Where a proposal branch may add files. `tests/contract/**` joins in M2, which
+# also takes it out of the default pytest and mypy runs (spec-0054 R4).
+proposal_new_paths = [
+    "specs/**", "docs/adr/**", "docs/plans/**", "docs/analysis/**", "docs/proposals/**",
+    "backlog/**",
+]
+# The only existing files a proposal branch may modify.
+proposal_index_files = ["specs/README.md", "NEXT_STEPS.md", "CHANGELOG.md"]
 
 [tool.ruff]
 line-length = 100

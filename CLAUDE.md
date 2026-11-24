@@ -67,9 +67,9 @@ when". Name them directly:
 its boundary, its invariants, and the shape of its output. An agent reaches for
 a skill for the how; a skill never delegates to an agent.
 
-Five agents own a **protected path** (`mango-error-taxonomy-dev`,
+Six agents own a **protected path** (`mango-error-taxonomy-dev`,
 `mango-orchestrator-dev`, `mango-schema-evolution`, `mango-hypothesis-fuzz`,
-`mango-harness-dev`)
+`mango-harness-dev`, `mango-ci-dev`)
 and say so in their bodies: those edits need a `BREAKING-CHANGE` commit
 trailer, and the `PreToolUse` hook that warns about it is advisory only.
 
@@ -127,7 +127,9 @@ Protected core paths (`src/mangomas/core/agent.py`,
 still accepted) on at least one commit message when touched. Since ADR-0030
 the **governance mechanism itself** is protected on the same terms —
 `pyproject.toml`, `scripts/check_protected_paths.py`, `scripts/_governance.py`,
-`src/mangomas/harness/governance.py`, `sitecustomize.py` and `.mcp.json`
+`src/mangomas/harness/governance.py`, `sitecustomize.py`, `.mcp.json`, and
+since ADR-0042 the loop scope check `scripts/check_loop_scope.py` with its
+workflow `.github/workflows/loop-scope.yml`
 (named by `harness.governance.GOVERNANCE_SURFACE`) — and a marker may name the
 path it approves: `BREAKING-CHANGE: <path> — <rationale>` binds to that file,
 while a bare `BREAKING-CHANGE: <rationale>` still approves every touched path.
@@ -167,6 +169,12 @@ Harness scripts in `scripts/` complete the layer:
   `--check-protected-paths <path>` flag (staged-diff based) remains for
   pre-commit, where a staged diff genuinely exists.
 - `check_protected_paths.py` — the CI gate described above.
+- `check_loop_scope.py` — the loop scope check (ADR-0042 / spec-0052).
+  `.github/workflows/loop-scope.yml` runs the default branch's copy on
+  `pull_request_target`: it reads the PR through the API, never runs PR code,
+  and judges `claude/loop-*` and `claude/proposal-*` heads against
+  `[tool.mangomas.governance.loop]`. Every other head passes as ungoverned.
+  `make loop-scope` needs the PR event and the API, so it is not in `make gate`.
 - `harness_config_audit.py` — `ConfigChange` hook; evaluates
   `mangomas.harness.config_audit.evaluate_config_change` against
   `HarnessSettings.config_audit_mode`, deferring its `mangomas.config`/

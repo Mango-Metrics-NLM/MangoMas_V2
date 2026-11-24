@@ -47,9 +47,11 @@ _FALLBACK_PROTECTED_PATHS: Final[frozenset[str]] = frozenset(
         "src/mangomas/core/tools.py",
         "src/mangomas/errors.py",
         "src/mangomas/registry.py",
+        ".github/workflows/loop-scope.yml",
         ".mcp.json",
         "pyproject.toml",
         "scripts/_governance.py",
+        "scripts/check_loop_scope.py",
         "scripts/check_protected_paths.py",
         "sitecustomize.py",
         "src/mangomas/harness/governance.py",
@@ -124,6 +126,12 @@ GOVERNANCE_SURFACE: Final[frozenset[str]] = frozenset(
         # Declares the MCP servers a session loads; cloud sessions load them
         # with no approval step.
         ".mcp.json",
+        # The loop scope check (ADR-0042 / spec-0052 R8) and the workflow that
+        # runs it from the default branch on pull_request_target. A loop PR
+        # cannot change the copies that judge it, but a merged edit changes
+        # what judges every later one, so each edit must leave a record.
+        "scripts/check_loop_scope.py",
+        ".github/workflows/loop-scope.yml",
     }
 )
 

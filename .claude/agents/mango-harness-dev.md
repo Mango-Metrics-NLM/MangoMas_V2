@@ -36,11 +36,16 @@ skills do not cover: the shape of this code.
   lock-step tests in `tests/harness/test_governance.py` are red otherwise
 - `src/mangomas/harness/config_audit.py` — the `ConfigChange` decision table
 - `scripts/check_protected_paths.py` — the authoritative CI gate
+- `scripts/check_loop_scope.py` — the loop scope check (ADR-0042 /
+  spec-0052) and the `[tool.mangomas.governance.loop]` policy it reads. Both
+  are protected paths. The workflow that runs it,
+  `.github/workflows/loop-scope.yml`, belongs to `mango-ci-dev`
 - `scripts/lint_agent_frontmatter.py` — frontmatter lint plus both hook modes
 - `scripts/harness_config_audit.py` — the `ConfigChange` hook
 - `scripts/harness_session_start.py` — the SessionStart probe
 - `HarnessSettings` in `mangomas.config`
 - Tests: `tests/harness/`, `tests/test_check_protected_paths.py`,
+  `tests/test_check_loop_scope.py`,
   `tests/test_lint_agent_frontmatter.py`, `tests/test_harness_config_audit.py`,
   `tests/test_harness_session_start.py`, `tests/tooling/test_corpus_contract.py`
   (only its live-corpus schema-lint and `AGENT_SKILL_OWNERS` resolution

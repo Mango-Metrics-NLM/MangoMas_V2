@@ -21,7 +21,8 @@ do not restate them here.
 
 - `Makefile` — every target, the gate chain, and the `?=` variables
   (`SCRIPTS_FLOOR`, `BRIDGE_FLOOR`, `CONTRACTS_FLOOR`, `GITLEAKS_VERSION`/`_SHA256`, `BASE_REF`)
-- `.github/workflows/` — `ci.yml`, `deploy.yml`, `eval-gate.yml`, `nightly.yml`
+- `.github/workflows/` — `ci.yml`, `deploy.yml`, `eval-gate.yml`, `nightly.yml`,
+  and `loop-scope.yml`, which is a protected path (see Invariants)
 - `.github/dependabot.yml`
 - `deploy/` — the Cloud Run service definition, env contract, and the
   environment registry `environments.yaml` (ADR-0036)
@@ -53,6 +54,12 @@ floor list in `scripts/check_coverage.py` (`mango-test-engineer`).
 
 ## Invariants
 
+- **`loop-scope.yml` is a protected path** (ADR-0042 / spec-0052 R8). A commit
+  range that touches it needs a `BREAKING-CHANGE: .github/workflows/loop-scope.yml — <why>`
+  trailer; the `mango-harness` skill has the trailer contract. It runs on
+  `pull_request_target`, so it executes the default branch's copy with a live
+  token: it must never check out or run PR code, use a cache, read a secret or
+  widen its read-only permissions. `test_workflow_hardening.py` pins all of it.
 - **Every CI step is a bare `make <target>`.** A command must live in exactly
   one place. `test_ci_make_parity.py` asserts each job's `run:` list equals
   the expected `make` invocations, so inlining a command in `ci.yml` fails.
