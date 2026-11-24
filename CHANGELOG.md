@@ -9,6 +9,34 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — Loop scope check anchored to the default branch (ADR-0042 / spec-0052, M1)
+
+- `scripts/check_loop_scope.py` judges every PR into `dev`, `qa` or `main`
+  against a new `[tool.mangomas.governance.loop]` policy.
+  - **How it runs.** `.github/workflows/loop-scope.yml` runs it on
+    `pull_request_target`, so GitHub uses the default branch's copy. The job
+    reads the PR only through the API, with a read-only token, and never
+    checks out or runs PR code.
+  - **`claude/loop-*` heads** may change only an approved backlog item's
+    `allowed_paths`, inside the work area and never in the trusted base. The
+    diff may add no unallowed suppression and must stay within the item's
+    size, dependency, stage and attempt limits. Only one such PR may be open
+    at a time, and only while `LOOP_ENABLED` is `true`.
+  - **`claude/proposal-*` heads** may only add records and touch the three
+    index files.
+  - **Every other head** passes as ungoverned.
+  - **Fails closed** on an unreadable policy, a truncated listing, a moved
+    head, a fork head, a symlink or submodule, and an unknown item.
+- Both new files are protected paths and part of `GOVERNANCE_SURFACE`, so
+  `mango-ci-dev` now owns a protected path. `CONTRIBUTING.md`'s
+  required-check table now names each job's workflow and lists
+  `Guard falsifiability probe` and `Loop scope check`. An admin still has to
+  mark them required.
+- Locked in by `tests/test_check_loop_scope.py`,
+  `tests/deploy/test_workflow_hardening.py::test_loop_scope_workflow_is_anchored_to_the_default_branch`,
+  `tests/harness/test_governance.py` and guard-probe entries `MUT-LOOP-01`
+  to `MUT-LOOP-05`.
+
 ### Added — Governed self-improvement loop: decision records (ADR-0042 / spec-0052..0055)
 
 - Docs only; no code, test, CI or configuration change. A deep dive checks a

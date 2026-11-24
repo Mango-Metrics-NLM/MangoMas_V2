@@ -23,7 +23,10 @@ sequences M1–M8; nothing after M0 starts until the ADR is accepted.
 Next, in order:
 
 1. M1 — trusted base and a scope check anchored on the default branch
-   ([spec-0052](specs/0052-loop-trusted-base-scope-check.md)).
+   ([spec-0052](specs/0052-loop-trusted-base-scope-check.md)). M1a–M1c are
+   implemented: `scripts/check_loop_scope.py`, the
+   `[tool.mangomas.governance.loop]` policy, `.github/workflows/loop-scope.yml`,
+   and `MUT-LOOP-01` to `05`. M1d (loop identity and credential) is open.
 2. M2 — machine-readable backlog
    ([spec-0053](specs/0053-machine-readable-backlog.md)).
 3. M3 — the propose stage, an architecture-proposal pipeline ending in human

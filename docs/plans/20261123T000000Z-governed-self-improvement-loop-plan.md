@@ -3,7 +3,7 @@
 - **Branch:** `claude/modest-heisenberg-6gengs` (M0); each later milestone on its own branch
 - **Date:** 2026-11-23
 - **Target release:** rolling
-- **Status:** Draft — M0 in review; nothing after M0 starts until ADR-0042 is accepted
+- **Status:** Active. M0 merged (#163). M1a–M1c were built at the maintainer's request while ADR-0042 is still Proposed, and should merge only once it is accepted. M1d is open.
 - **Specs:** spec-0052 (M1), spec-0053 (M2), spec-0054 (M3), spec-0055 (M4); M5–M8 get specs when they start
 - **ADRs:** ADR-0042 (Proposed)
 
@@ -46,6 +46,8 @@ both protected, so commits carry one scoped trailer per path, for example
 
 ### Milestone M1a — policy and checker
 
+- **Status:** done (PR B).
+
 - **Failing test first:** `tests/test_check_loop_scope.py` — an implementation
   branch whose diff touches `Makefile`, adds a nested `ruff.toml` or adds an
   unallowed `# type: ignore` fails; a second open implementation PR fails; a
@@ -60,6 +62,8 @@ both protected, so commits carry one scoped trailer per path, for example
 
 ### Milestone M1b — anchored workflow and required checks
 
+- **Status:** done (PR B).
+
 - **Failing test first:** `tests/deploy/test_workflow_hardening.py`
   (`_EXPECTED_WORKFLOW_COUNT` 6 → 7) plus a new assertion that
   `loop-scope.yml` uses `pull_request_target`, never checks out a PR ref,
@@ -73,6 +77,8 @@ both protected, so commits carry one scoped trailer per path, for example
 
 ### Milestone M1c — mutation proof
 
+- **Status:** done (PR B).
+
 - **Failing test first:** `MUT-LOOP-*` guard-probe entries turn the scope tests
   red when a trusted-base glob is removed, fail-closed is flipped, a truncated
   listing is accepted, the suppression rule is dropped, or the open-PR check
@@ -80,6 +86,8 @@ both protected, so commits carry one scoped trailer per path, for example
 - **Depends on:** M1a.
 
 ### Milestone M1d — identity and credential (gates M5)
+
+- **Status:** open.
 
 - **Failing test first:** none is possible inside this repository; this is a
   recorded verification.

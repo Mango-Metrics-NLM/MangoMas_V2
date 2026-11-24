@@ -1,8 +1,8 @@
 # Spec-0052: Loop trusted base and base-anchored scope check
 
-- **Status:** Draft
+- **Status:** Implemented except M1d (R2 and R10 are still to be recorded)
 - **Linked ADR:** [ADR-0042](../docs/adr/0042-governed-self-improvement-loop.md) (Proposed)
-- **Linked CHANGELOG entry:** `[Unreleased]` › `Added — Governed self-improvement loop: decision records (ADR-0042 / spec-0052..0055)`
+- **Linked CHANGELOG entries:** `[Unreleased]` › `Added — Governed self-improvement loop: decision records (ADR-0042 / spec-0052..0055)` and `Added — Loop scope check anchored to the default branch (ADR-0042 / spec-0052, M1)`
 - **Delivery plan:** [milestone M1](../docs/plans/20261123T000000Z-governed-self-improvement-loop-plan.md)
 
 ## Problem
@@ -206,6 +206,65 @@ running application.
 - `protected_paths` keeps its 13 entries plus R8's two, and the trailer rules
   and `scripts/check_protected_paths.py` are unchanged.
 
+## Implementation notes (M1)
+
+M1a–M1c landed as `scripts/check_loop_scope.py`, the
+`[tool.mangomas.governance.loop]` table in `pyproject.toml`,
+`.github/workflows/loop-scope.yml` and five `MUT-LOOP-*` guard-probe entries.
+They depart from the requirements above in these deliberate ways:
+
+- **`denied_anywhere`.** The configuration and steering files that change how
+  a tool or an agent behaves for a whole directory (`conftest.py`,
+  `pytest.ini`, `ruff.toml`, `*.pyi`, `*.pth`, `.gitattributes`, `CLAUDE.md`,
+  `AGENTS.md`, `.claude/**` and the rest, at any depth) form a list of their
+  own, denied on **both** branch classes. R5 named only test-runner files for
+  proposals, so a proposal could have added `docs/proposals/<id>/CLAUDE.md`,
+  which Claude Code loads when it works in that directory. `.gitattributes`
+  is new: it can mark a file binary, and GitHub then returns no patch for it.
+- **More policy keys than R1 lists:**
+  - `base_branch`: R2's `dev`, named once;
+  - `loop_identities`: R2(a), empty until M1d;
+  - `stages`: the order in which `LOOP_STAGE` and `min_stage` are compared;
+  - `halt_reset_after_pr`: implementation PRs numbered at or below it leave
+    the halt count, so lifting a halt is a human PR with a trailer.
+
+  Unknown keys and missing keys are both errors.
+- **Case.** Deny lists match case-insensitively, because macOS and Windows
+  checkouts fold case. Allow lists match exactly.
+- **Links.** A governed diff may not add a symlink or a submodule (tree modes
+  120000 and 160000, read from the head tree). A truncated tree fails.
+- **Plain paths.** A path with a backslash, a control character, or an empty
+  or `..` segment fails.
+- **`tests/contract/**` waits for M2.** It is not yet in `proposal_new_paths`,
+  because until M2 removes that directory from the default pytest and mypy
+  runs, a contract test would run in the default suite (spec-0054 R4).
+- **Suppressions.** R4's list is extended with:
+  - `pragma: no branch`;
+  - `pyright:` directives;
+  - `fmt: off` and `fmt: skip`;
+  - `pytest.importorskip(`;
+  - unittest skips.
+
+  The coverage pragma is matched the way coverage.py matches it, with or
+  without the colon. An item names the suppressions it allows (`type-ignore`,
+  `noqa` and so on) in `allowed_suppressions`.
+- **The job token.** R7's "uses no secrets" holds for repository secrets. The
+  check calls the API with the job's own `GITHUB_TOKEN`, which the workflow's
+  permissions block makes read-only.
+- **Head moved.** The PR is read again after its files are listed. If the
+  head SHA has changed, the check fails, and the run for the newer head
+  decides.
+- **History** counts only heads from this repository. A fork can neither
+  satisfy a dependency nor count toward the loop's limits.
+- **Items.** The check reads, from `backlog/<ID>.toml` on the default branch,
+  only the spec-0053 fields it enforces: `id`, `allowed_paths`,
+  `allowed_suppressions`, `max_diff_lines`, `depends_on`, `min_stage` and
+  `budget.max_attempts`. Until M2 adds items, every implementation PR fails
+  as having no approved backlog item.
+- **Not in M1.** There is no local, git-based mode for `make loop-scope` yet
+  (it would serve as the M5 pre-flight). The target needs the PR event and
+  the API, so it is not part of `make gate`.
+
 ## Out of scope
 
 The repair sandbox's staging hole (a staged `conftest.py` reaches a pytest
@@ -225,10 +284,10 @@ the repair sandbox.
 
 ## Acceptance criteria
 
-- [ ] Every scenario is a test, in both directions.
-- [ ] `make gate` and the guard probe are green.
+- [x] Every scenario is a test, in both directions.
+- [x] `make gate` and the guard probe are green.
 - [ ] `Loop scope check` and `Guard falsifiability probe` are required on
       `dev`, `qa` and `main` with their source pinned, and `CONTRIBUTING.md`
       lists both.
 - [ ] The R2 and R10 results are recorded in this spec.
-- [ ] CHANGELOG updated, naming the tests that lock this in.
+- [x] CHANGELOG updated, naming the tests that lock this in.
