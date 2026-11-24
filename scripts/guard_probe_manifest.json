@@ -1621,6 +1621,106 @@
         "-o",
         "addopts="
       ]
+    },
+    {
+      "id": "MUT-LOOP-01",
+      "path": "pyproject.toml",
+      "fixed": "    \".github/**\",\n",
+      "defect": "    \".github/workflows/ci.yml\",\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_loop_scope.py",
+        "-k",
+        "shipped_policy_denies_every_trusted_base_row",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-LOOP-02",
+      "path": "scripts/check_loop_scope.py",
+      "fixed": "    if pull.head_ref.startswith(GOVERNED_NAMESPACE):\n",
+      "defect": "    if False:\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_loop_scope.py",
+        "-k",
+        "missing_policy_fails_the_governed_namespace",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-LOOP-03",
+      "path": "scripts/check_loop_scope.py",
+      "fixed": "    if len(files) != pull.changed_files:\n",
+      "defect": "    if len(files) > pull.changed_files:\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_loop_scope.py",
+        "-k",
+        "a_truncated_listing_fails",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-LOOP-04",
+      "path": "scripts/check_loop_scope.py",
+      "fixed": "    \"type-ignore\": re.compile(r\"#\\s*type\\s*:\\s*ignore\\b\", re.IGNORECASE),\n",
+      "defect": "    \"type-ignore\": re.compile(r\"(?!x)x\"),\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_loop_scope.py",
+        "-k",
+        "an_unallowed_type_ignore_fails",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
+    },
+    {
+      "id": "MUT-LOOP-05",
+      "path": "scripts/check_loop_scope.py",
+      "fixed": "    if len(open_others) >= policy.max_open_implementation_prs:\n",
+      "defect": "    if False:\n",
+      "gate": [
+        "{python}",
+        "-m",
+        "pytest",
+        "tests/test_check_loop_scope.py",
+        "-k",
+        "a_second_open_implementation_pr_fails",
+        "-q",
+        "--tb=no",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "addopts="
+      ]
     }
   ]
 }

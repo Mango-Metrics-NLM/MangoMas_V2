@@ -305,8 +305,10 @@ def test_shipped_manifest_snippets_each_occur_once() -> None:
     # + 1 MUT-EVAL-03 (spec-0045 B7: a planner fixture that loses `steps` reddens the lane)
     # + 4 MUT-AQA-1115-* (spec-0051: readiness timeout + eval output_dir + finite bounds)
     # + 8 MUT-AQA-20261120-* (eval gate/runner/serialize, llm_judge, deploy schema_version,
-    #   and PR #156 review follow-ups).
-    assert len(entries) == 84
+    #   and PR #156 review follow-ups)
+    # + 5 MUT-LOOP-* (spec-0052 R11: the loop scope check's trusted base, fail-closed
+    #   policy, truncated listing, suppression rule and open-PR limit).
+    assert len(entries) == 89
     assert len({entry.entry_id for entry in entries}) == len(entries), "ids must be unique"
     proofs = [(entry.path, _gate_test(entry.gate)) for entry in entries]
     duplicated = sorted({proof for proof in proofs if proofs.count(proof) > 1})
